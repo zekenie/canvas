@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """The geometry the layout uses (boxes, arcs, offsets from a shape's sides: `right of "A" left (gap: x)
 below "A" top (gap: y)`), the sizes of what it draws, and measuring.
-    gen2.py measure M...              note heights at their widths, on a scratch subboard
-    gen2.py about-pad M...            each About note's height, with room for its mentions' symbols"""
+    geometry.py measure M...          note heights at their widths, on a scratch subboard
+    geometry.py about-pad M...        each About note's height, with room for its mentions' symbols"""
 import json, math, os, re, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import gen
-from gen import q, text_lit, ftitle, board_files, file_text, about_text, about_title, PROD, MODS, BANDS, FOLDER_BOARDS, draw, cli
+import common
+from common import q, text_lit, ftitle, board_files, file_text, about_text, about_title, PROD, MODS, BANDS, FOLDER_BOARDS, draw, cli
 
 NOTE_W, ABOUT_W = 300, 360
 SUB_W, SUB_H = 360, 180
 PILL_H, PILL_STEP, PILL_GAP = 32, 16, 80   # a pill; draw's step between the pills beside a start, and its gap from it
 PILL_PITCH = PILL_H + PILL_STEP
 FRAME_MIN_H = 64                            # the smallest frame draw makes (96 wide), as the Frame tool
-MEASURED = os.path.join(gen.PROJECT, 'measured.json')
+MEASURED = os.path.join(common.PROJECT, 'measured.json')
 
 def pill_w(title):
     return min(280, 70 + 7.6 * len(title))
@@ -98,30 +98,30 @@ def step_measure(mods):
     text (a note's size lasts until its text changes, and it then fits its text), then deleted. What a
     note mentions that isn't drawn yet stands in on the scratch subboard meanwhile."""
     notes = []
-    _, other_all = gen.edges_between(set(PROD))
+    _, other_all = common.edges_between(set(PROD))
     def file_note(k):
-        return (ftitle(k), note_w(ftitle(k), gen.is_public(k, other_all)), file_text(k))
+        return (ftitle(k), note_w(ftitle(k), common.is_public(k, other_all)), file_text(k))
     for m in mods:      # a module with folder boards: its own board's About note and files
         if m in FOLDER_BOARDS:
             notes.append((about_title(m), ABOUT_W, about_text(m)))
             notes += [file_note(k) for k in board_files(m)]
-    for board in gen.boards_for(mods):
+    for board in common.boards_for(mods):
         notes.append((about_title(board), ABOUT_W, about_text(board)))
         notes += [file_note(k) for k in board_files(board)]
     if not notes:
         raise SystemExit('name the modules to measure')
     scratch = 'zz-measure'
     cli(f'delete {q(scratch)}\n', dry=False)
-    draw('v2-measure-0', f'subboard {q(scratch)} right of board\n')     # clear of what's drawn
+    draw('measure-0', f'subboard {q(scratch)} right of board\n')     # clear of what's drawn
     first = 'zz:' + notes[0][0]
     lines = [f"sticky-note {q(first)} in {q(scratch)} size: {notes[0][1]}x200 text: \"x\""]
     lines += [f"sticky-note {q('zz:' + t)} in {q(scratch)} below {q(first)} size: {w}x200 text: \"x\"" for t, w, _ in notes[1:]]
-    found = gen.canvas('query', '--board', gen.BOARD, '--limit', '10000', '[title]')
+    found = common.canvas('query', '--board', common.BOARD, '--limit', '10000', '[title]')
     if found['count'] > len(found['rows']):
         raise SystemExit(f"measure: {found['count']} titled shapes, more than a query lists")
     mentioned = set(re.findall(r'@\[([^\]]+)\]', ''.join(tx for _, _, tx in notes)))
     lines += [f"sticky-note {q(t)} in {q(scratch)} below {q(first)}" for t in sorted(mentioned - {r['title'] for r in found['rows']})]
-    draw('v2-measure-1', '\n'.join(lines) + '\n')
+    draw('measure-1', '\n'.join(lines) + '\n')
     rc, r = cli('\n'.join(f"sticky-note {q('zz:' + t)} text: {text_lit(tx)}" for t, w, tx in notes) + '\n', dry=False)   # overlaps don't matter here
     if 'error' in r:
         raise SystemExit(f"measuring refused: {r['error']}")
@@ -130,7 +130,7 @@ def step_measure(mods):
         if c.get('kind') == 'sticky-note' and c.get('title', '').startswith('zz:'):
             M[c['title'][3:]] = c['at'][1][1]
     json.dump(M, open(MEASURED, 'w'), indent=1)
-    draw('v2-measure-3', f'delete {q(scratch)}\n')
+    draw('measure-3', f'delete {q(scratch)}\n')
     print(f"measured {len(notes)} notes; tallest {max(M[t] for t, _, _ in notes)}")
 
 def about_height(board, M):
@@ -139,9 +139,9 @@ def about_height(board, M):
 
 def step_about_pad(mods):
     M = measured()
-    boards = gen.boards_for(mods) + [m for m in mods if m in FOLDER_BOARDS]
+    boards = common.boards_for(mods) + [m for m in mods if m in FOLDER_BOARDS]
     for board in boards:
-        draw(f'v2-about-{board.replace("/", "_")}', f"sticky-note {q(about_title(board))} size: {ABOUT_W}x{about_height(board, M)}\n")
+        draw(f'about-{board.replace("/", "_")}', f"sticky-note {q(about_title(board))} size: {ABOUT_W}x{about_height(board, M)}\n")
 
 if __name__ == '__main__':
     step, args = sys.argv[1], sys.argv[2:]

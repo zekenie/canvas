@@ -41,7 +41,7 @@
 
 ## Per board
 
-"Uses" counts a pair used both ways once. "Now" is gen4's `decide_board`. Each hub is followed by its number of users on the board.
+"Uses" counts a pair used both ways once. "Now" is what the layout's `decide_board` chose before these rules. Each hub is followed by its number of users on the board.
 
 | Board | Files | Uses | h | Hubs (users) | After hubs | Arrows | Now |
 |---|---:|---:|---:|---|---:|---:|---:|

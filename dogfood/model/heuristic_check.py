@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from heuristic import *
 bad = []
 digest = hashlib.sha256()
-for b in gen.boards_for(PROD):
+for b in common.boards_for(PROD):
     d = decide(b)
     E, R, A = d['uses'], references(b), arrows(b)
     if R | A != E or R & A: bad.append((b, 'not a partition'))
@@ -18,7 +18,7 @@ for b in gen.boards_for(PROD):
     files, uses = board_uses(b)
     if references_of(files, uses, symbols, ftitle) != R: bad.append((b, 'references_of differs'))
     digest.update(json.dumps([b, sorted(map(list, R))]).encode())
-for m in gen.FOLDER_BOARDS:
+for m in common.FOLDER_BOARDS:
     nodes, uses, w = folder_graph(m)
     cr = references_of(nodes, uses, w)
     digest.update(json.dumps(sorted(map(list, cr))).encode())

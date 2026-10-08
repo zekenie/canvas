@@ -26,7 +26,7 @@ A project Xcode or `swift build` builds has an index store already (DerivedData'
 ## model.json
 
 ```
-language    "swift", "typescript", ...: the words a note uses (gen.py's WORDS)
+language    "swift", "typescript", ...: the words a note uses (common.py's WORDS)
 modules     [{name, path, deps: [module], test, layer: a tag or null, files: [rel], lines, doc, folders: {folder: doc}}]
 files       [{module, rel (its path in its module), path, lines, doc, api, decls: [{name, kind, visibility, line}]}]
 uses        [{from: [module, rel], to: [module, rel], names: [what it uses]}]
@@ -49,23 +49,23 @@ Infinite Canvas's `spec.py` has them all, Canvas's eight folder boards among the
 ## Drawing
 
 ```bash
-python3 gen2.py measure <modules>                                    # note heights, on a scratch subboard
-python3 gen5.py plan                                                 # each board's plan and which arrows stay
-python3 gen5.py reset                                                # deletes what's drawn, and the marks of what was
-python3 gen5.py all                                                  # draws what isn't drawn yet (marks in runs/v9-done-*)
-GALLERY_CLONE=<clone> python3 check.py gen5                          # the board against the plan, once the app has saved it
+python3 geometry.py measure <modules>                                # note heights, on a scratch subboard
+python3 layout.py plan                                               # each board's plan and which arrows stay
+python3 layout.py reset                                              # deletes what's drawn, and the marks of what was
+python3 layout.py all                                                # draws what isn't drawn yet (marks in runs/done-*)
+GALLERY_CLONE=<clone> python3 check.py                               # the board against the plan, once the app has saved it
 ```
 
-`gen5.py` is the layout. `all` alone picks up a run that stopped; `reset` then `all` redraws. A new project needs a board file of its own: `canvas new <file>` makes one and opens it, and the `id` it answers is the `CANVAS_BOARD` to pass.
+`layout.py` is the layout. `all` alone picks up a run that stopped; `reset` then `all` redraws. A new project needs a board file of its own: `canvas new <file>` makes one and opens it, and the `id` it answers is the `CANVAS_BOARD` to pass.
 
 - Which uses between a board's files are arrows comes from `heuristic.py` ([heuristic-report.md](heuristic-report.md)): every use of a board's hubs, its most-used files, and every arrow that two stronger ones already relay, is a pill. An arrow that would cross more than `ALLOW` lets it (now: pill frames, but no note) is a pill too. `heuristic_check.py` checks the heuristic's promises on every board.
 - A frame whose files have arrows between them is a ladder: two columns, the left one's pills on its left, the right one's on its right, the arrows between them. A small search moves and swaps files between the columns while that makes the frame's own arrows cross less, on a ladder of up to 10 files (`LADDER_SEARCH`: past a dozen it takes minutes, so a folder of many files with no spec keeps its first split).
-- Then a search over the whole board (`board_search`) moves the files linked across frames within their ladders, flips ladders and swaps neighbouring frames, while that leaves fewer arrows to make pills, and then less crossing and shorter arrows. It takes a few minutes over every board, so its result is kept in `runs/v9-search.json`, each board's stamped with its frames, uses and note heights: a board whose stamp changed is searched again (delete the file after changing the rules).
+- Then a search over the whole board (`board_search`) moves the files linked across frames within their ladders, flips ladders and swaps neighbouring frames, while that leaves fewer arrows to make pills, and then less crossing and shorter arrows. It takes a few minutes over every board, so its result is kept in `runs/search.json`, each board's stamped with its frames, uses and note heights: a board whose stamp changed is searched again (delete the file after changing the rules).
 - A module with folder boards (Canvas) has its folders' cards on its board, in place of their files' notes.
 - A note's pills are grouped by where they come from, each group in a frame titled "<where> (<note>)" (on the root, by layer), 16 between its pills, as draw stacks a start's pills; a group of one pill is centered in the smallest frame (64 tall). Draw leaves no gaps between groups for the frames' titles, so a board's notes are drawn first in a staging area beside it, and the groups move home in temporary frames (`overlap: allow` takes in what one is drawn over; each frame moved, then deleted). A frame is at least 64 tall, and in draw's list a group of one pill has 16 above and below it, so the groups go in pairs first, each pair's frame moved so its first group lands home, then each pair's second group on its own, from just below the first (`Column.moves`). Then the group frames go down around the groups, and the notes go home.
 - On the root (`root_decide`), an import is an arrow when it clears every shape after a small bend and its module takes six arrows or fewer. It has no legend: its shapes hang from a temporary note, deleted once its pills are home.
 - A file's title is its name, else its module's and its name, else the shortest end of its path no other file could take (`cors/index.ts`).
 
-`check.py` reads every board's shapes from the file of the board drawn on (`CANVAS_BOARD`), once the app has saved it, through the gallery test's dump, and compares each with the plan. `gen2.py` holds the geometry and the measuring, and `gen.py` the model and the runner.
+`check.py` reads every board's shapes from the file of the board drawn on (`CANVAS_BOARD`), once the app has saved it, through the gallery test's dump, and compares each with the plan. `geometry.py` holds the geometry and the measuring, and `common.py` the model and the runner.
 
 `GalleryCapture.swift.txt` is the throwaway test that renders boards to PNGs and, with `GALLERY_DUMP`, writes every board's shapes. Register it in a scratch clone's CompositionTests (`check.py` finds that clone through `GALLERY_CLONE`) and run `GALLERY_FILE=… GALLERY_OUT=… TEST_FILTER=Gallery build/debug/CompositionTests/CompositionTests`.
