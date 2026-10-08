@@ -6,8 +6,9 @@ import CoreGraphics
 /// restates with placements), in script order, each with its placements resolved to boxes; the
 /// boxes that stay put that a placement names (`fixed`: board shapes, `board`, `view`); and the
 /// shapes the free boxes must keep clear of (obstacles: every closed board shape the script doesn't
-/// move), which may be thousands, so they're asked for by region and named only when a message
-/// needs one. Positions are world units, y down; a box's position is its top-left.
+/// move, met where the box that takes it along puts it, if one does), which may be thousands, so
+/// they're asked for by region and named only when a message needs one. Positions are world units,
+/// y down; a box's position is its top-left.
 ///
 /// Not `Sendable`: it carries the caller's lookups, which run on the caller's thread, while
 /// `solve()` does.
@@ -34,7 +35,12 @@ public struct LayoutProblem {
         /// may overlap it. Its placements say where in it. Nil for none.
         public var holder: Holder?
         /// The obstacles (by id) that go wherever it goes: what it holds, as a container does. It's
-        /// never kept clear of them, and none of them is a zone of it.
+        /// never kept clear of them, and none of them is a zone of it. A restated box (`current`)
+        /// takes them as far as it moves, so every other box meets them there, never where they
+        /// are now: kept clear of them there as of a part of this box, which it follows if this box
+        /// moves on, or sitting on one there that's its zone. Where restated boxes nest, each takes
+        /// along what the inner one doesn't. A fixed box or a holder is where it is now, so none may
+        /// be one a box takes along: the caller refuses a placement against one.
         public var carries: Set<Int>
         /// A box the caller made up beside what a statement says (a stand-in for an edge's end), which
         /// no script wrote a placement for: where it clashes with another free box that nothing
@@ -182,8 +188,10 @@ public struct LayoutProblem {
     /// Asked for each free box as it's placed, again after every solve, once for the region a
     /// drawing with nothing to hang on may land in, once more for each box where it lands (the
     /// zones it sits in), and once for each obstacle a box lands wholly on (whether it holds
-    /// others), so a caller keeps its answers: `ObstacleGrid.obstacles(in:)` files the obstacles so
-    /// a question costs what's near it, and keeps each answer.
+    /// others); each of those again for each restated box that takes obstacles along (`Free.carries`),
+    /// about the region as far back as that box moves. So a caller keeps its answers:
+    /// `ObstacleGrid.obstacles(in:)` files the obstacles so a question costs what's near it, and
+    /// keeps each answer.
     public var obstacles: (CGRect) -> [Obstacle]
     /// The bounds of every obstacle (the `board` target), nil when there are none: a drawing with
     /// nothing to hang on goes right of it when the view is full.
@@ -241,7 +249,8 @@ public struct LayoutSolution: Sendable, Equatable {
     /// box where it lands and other shapes too, or the `view` it's placed against (or its drawing
     /// with nothing to hang on is drawn in), and isn't one it's `inside` or `on`. A free box held
     /// counts only if it's on the zone for a reason of its own (`Solver.counted(by:in:)`). It sits
-    /// on them, so it paints above them, and it isn't kept within them.
+    /// on them, so it paints above them, and it isn't kept within them. Each is where the boxes
+    /// leave it: one a restated box takes along (`Free.carries`), moved as far as that box moves.
     public var zones: [[LayoutProblem.Obstacle]]
 
     /// `zones` nil: none for any box.

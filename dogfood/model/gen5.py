@@ -968,26 +968,10 @@ def root_report(pilled, lay):
     H = lay.bands[-1]['y'] + lay.bands[-1]['h']
     print(f"root: {len(kept)} arrows, {len(pilled)} pills in {sum(len(v) for v in lay.gframes.values())} group frames; {W} x {H}")
 
-def where(titles, kinds):
-    """Where each shape is, or None when they aren't all on the board."""
-    rc, r = cli('\n'.join(f"{kinds[t]} {q(t)}" for t in titles) + '\n', dry=True)
-    if 'error' in r or any(c['did'] == 'created' for c in r['changes']):
-        return None
-    return {c['title']: c['at'] for c in r['changes']}
-
 def root_bands(lay):
     """The anchor and the layer bands. They name no shape already drawn, so they go on the board the window
     shows: the window goes to the root first."""
     gen.canvas('show', '--board', gen.BOARD, '--root')
-    titles = [b['title'] for b in lay.bands]
-    now = where(titles, {t: 'frame' for t in titles})
-    if now:     # bands on the board already: aside first (dogfood/bugs.md, 4), from the anchor a stopped run left
-        anchor = where([ANCHOR], {ANCHOR: 'sticky-note'})
-        if not anchor:
-            raise SystemExit("the root has bands but no anchor: run `gen5.py reset` first")
-        lx, ly = anchor[ANCHOR][0]
-        far = max(x + w for (x, y), (w, h) in now.values()) - lx + 2000
-        draw('v9-root-0-aside', '\n'.join(f"frame {q(t)} {at(ANCHOR, x - lx + far, y - ly)}" for t, ((x, y), _) in now.items()) + '\n')
     lines = [f"sticky-note {q(ANCHOR)} size: {ANCHOR_W}x{ANCHOR_W}"]
     lines += [f"frame {q(b['title'])} size: {b['w']}x{b['h']} {at(ANCHOR, b['x'], b['y'])}" for b in lay.bands]
     saved = gen.EXPECTED

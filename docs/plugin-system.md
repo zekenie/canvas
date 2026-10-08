@@ -8995,8 +8995,11 @@ language:
   board as the run starts (`unsupported` for one the script draws: draw it, then what's in it),
   writable (a read-only one, a locked frame, is `read_only`: nothing goes in it), and neither the
   shape nor one it holds (`circular`).
-- **What a run puts down settles as by hand**, one by one, as it's applied (`transaction.settle`):
-  a new shape, and a restated one it places or resizes, over a container's edge goes wholly in or
+- **What a run puts down settles as by hand**, one by one, once every shape is where it goes, so
+  each is judged against where the others land, never where a shape the run moves was
+  (`transaction.settle`; the shapes that hold none first, then the containers, so what's put down
+  in one goes along if it's nudged): a new shape, and a restated one it places or resizes, over a
+  container's edge goes wholly in or
   out by most of its area, nudged, said in a warning (`"N" was over the edge of "Pen", so it was
   nudged in`), and glided after a real run (`editor.glide`); a container put down takes in what it
   lands on, and what it holds over its new edge goes in or out, said too (`a shape over the edge of
@@ -9004,8 +9007,11 @@ language:
   run (`read_only`). So `inside`, `on` and landing on a zone put a shape in a container too, and a
   container's edge is never a zone's to warn about.
 - **A restated container placed elsewhere takes what it holds along** (`translate`), which is
-  never in its way (`Free.carries`); a placement against what it takes along is `unsupported`,
-  since the layout has that where it was. Containers are applied before what they hold.
+  never in its way (`Free.carries`), and which every other shape the run places meets where the
+  container takes it, never where it is now: kept clear of it there, as of a part of the
+  container (a shape `in` the container is; one placed over where it was isn't), so containers
+  can trade places in one run. A placement against what it takes along is `unsupported`, since
+  the layout has that where it was. Containers are applied before what they hold.
 - **Read-only is inherited** (`transaction.isReadOnly(_:)` and `BoardReading.isReadOnly(_:)`, which
   read a shape through the board it's on): a shape in a locked frame, or on a locked subboard's
   board, refuses a real change and a delete (`read_only`), as a locked shape does.

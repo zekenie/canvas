@@ -1,6 +1,7 @@
 import Adornments
 import AppKit
 @_spi(Host) import Canvas
+import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import Composition
@@ -395,6 +396,32 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         expectEqual(q4.box?.size, CGSize(width: 900, height: 600))
         let right = try require(q4.box).minX, edge = try require(sprint.box).maxX
         expect(right > edge, "right of it")
+    },
+    test("canvas draw moves bands holding notes into each other's places in one run: each lands where it's placed, holding its note, and nothing is pushed or nudged") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        /// A band's statement, at `y` below the anchor's top, as the dogfood scripts place them.
+        func band(_ title: String, _ height: Int, _ y: Int) -> String {
+            #"frame "\#(title)" size: 600x\#(height) right of "Anchor" left (gap: 200) below "Anchor" top (gap: \#(y))"#
+        }
+        // The anchor at (40, 40); the bands stacked down from (240, 40), 40 apart.
+        _ = try drawnInProcess(#"sticky-note "Anchor" size: 160x100 inside view top-left"#, on: editor)
+        _ = try drawnInProcess([band("Band 1", 200, 0), band("Band 2", 240, 240), band("Band 3", 280, 520)].joined(separator: "\n"), on: editor)
+        _ = try drawnInProcess(["One", "Two", "Three"].enumerated().map { #"sticky-note "\#($1)" size: 160x100 in "Band \#($0 + 1)""# }
+            .joined(separator: "\n"), on: editor)
+        @MainActor func shape(_ title: String) throws -> AnyShapeRecord { try require(editor.document.shapes.first { $0[TitleProperty.self] == title }) }
+        // Turned upside down: Band 3 over all of where Band 1 was and some of Band 2, Band 1 over some of Band 3.
+        let result = try drawnInProcess([band("Band 3", 280, 0), band("Band 2", 240, 320), band("Band 1", 200, 600)].joined(separator: "\n"), on: editor)
+        expectEqual(result["changes"]?.arrayValue?.compactMap { $0["pushedPast"] }, [])
+        expectEqual(result["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue } ?? [], [])
+        let bands = try ["Band 1", "Band 2", "Band 3"].map(shape)
+        expectEqual(bands.map(\.box), [CGRect(x: 240, y: 640, width: 600, height: 200), CGRect(x: 240, y: 360, width: 600, height: 240),
+                                       CGRect(x: 240, y: 40, width: 600, height: 280)])
+        let notes = try ["One", "Two", "Three"].map(shape)
+        expectEqual(notes.map(\.box), [CGRect(x: 280, y: 680, width: 160, height: 100), CGRect(x: 280, y: 400, width: 160, height: 100),
+                                       CGRect(x: 280, y: 80, width: 160, height: 100)], "each 40 in from its band's top-left still")
+        expectEqual(notes.map { editor.holder(of: $0.id) }, bands.map(\.id))
+        expectEqual(bands.map { editor.holder(of: $0.id) }, [nil, nil, nil])
     },
     test("in the app's canvas view, a note mentions a titled frame from the @ picker; the frame's panel lists it, its menu shows what does, and following it goes to it") {
         let pasteboard = NSPasteboard.withUniqueName()
