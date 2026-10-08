@@ -270,6 +270,29 @@ private struct LinesDefinition: ShapeDefinition {
         expectEqual(MentionText([.mention(idA, label: "A")]).firstLine, nil)
     },
 
+    test("a reading spells each mention as it's told, and a spelling, or any of it, is its pill in the text as drawn") {
+        let idC = ShapeID()
+        let text = MentionText([.text("Ask "), .mention(idA, label: "Groceries"), .mention(idB, label: "Bo"), .text(" now "),
+                                .mention(idC, label: ""), .text("!")])
+        let read = text.reading { id, label in id == idA ? "Food" : label }
+        // Drawn: "Ask " (0–4), A's pill 4, B's pill 5, " now " (6–11), C's pill 11, "!" 12.
+        expectEqual(read.text, "Ask FoodBo now !")
+        expectEqual(read.mentions.map(\.spelling), [4..<8, 8..<10, 15..<15])
+        expectEqual(read.mentions.map(\.pill), [4, 5, 11])
+        let cases: [(NSRange, NSRange, String)] = [
+            (NSRange(location: 4, length: 4), NSRange(location: 4, length: 1), "a spelling, its pill"),
+            (NSRange(location: 5, length: 4), NSRange(location: 4, length: 2), "from inside one to inside the next, both pills"),
+            (NSRange(location: 8, length: 2), NSRange(location: 5, length: 1), "a spelling right after another, its own pill"),
+            (NSRange(location: 11, length: 3), NSRange(location: 7, length: 3), "text after pills, shifted"),
+            (NSRange(location: 15, length: 1), NSRange(location: 12, length: 1), "a start at an empty spelling, after its pill"),
+            (NSRange(location: 10, length: 5), NSRange(location: 6, length: 5), "an end at an empty spelling, before its pill"),
+            (NSRange(location: 12, length: 0), NSRange(location: 8, length: 0), "an empty range, empty"),
+            (NSRange(location: 0, length: 16), NSRange(location: 0, length: 13), "the whole text, the whole drawn text"),
+        ]
+        for (range, drawn, what) in cases { expectEqual(read.drawnRange(of: range), drawn, what) }
+        expectEqual(MentionText(plain: "plain").reading { _, _ in "x" }.drawnRange(of: NSRange(location: 1, length: 3)), NSRange(location: 1, length: 3))
+    },
+
     test("parsing is linear: thousands of @[ that never close, on one line, read in a moment, as text") {
         for unclosed in [String(repeating: "@[", count: 20_000), String(repeating: "@[x\\", count: 10_000), "@[" + String(repeating: "\\@[", count: 10_000)] {
             var text = MentionText(plain: "")

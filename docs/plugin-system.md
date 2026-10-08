@@ -9777,9 +9777,10 @@ and the sync writes one from the other, as it writes every other part
   (each mention `@` and the word of the name it holds) and the schema with each `$ref` to a
   mentioned card its word (`SchemaHighlightsShown`), with `highlightsReferences` as the request's
   context when it names some, and an answer is found in those texts, then moved onto the description
-  as it's drawn, where a mention is one character, its pill (`SchemaModelText.shownRange`): words in a
-  mention's word highlight its pill. Resting the pointer on the words that say a `$ref` to a card in
-  the file shows that card's schema (the part its fragment points to), not the `$ref`.
+  as it's drawn, where a mention is one character, its pill (Mentions' `MentionReading.drawnRange`,
+  which Find's hits in a name go through too): words in a mention's word highlight its pill. Resting
+  the pointer on the words that say a `$ref` to a card in the file shows that card's schema (the
+  part its fragment points to, percent-decoded as `JSONPointer` reads a fragment), not the `$ref`.
 - **Completing one.** At a `$ref`'s value in the panel's JSON, ⌃Space lists, after the card's own
   definitions, the file's other titled cards by their titles, each written as its URI.
 

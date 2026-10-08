@@ -102,7 +102,7 @@ public struct PlacedHighlight: Equatable, Sendable {
 /// description with each mention `@` and a word of the name it holds, and the schema with each `$ref`
 /// to a card it mentions that word (`SchemaReferenceNames`), as the sync shows them; its words are
 /// found in that, and moved to the text as it's drawn, words in a mention's word its pill
-/// (`SchemaModelText.shownRange`). The schema is the card's last that was a JSON object while its text
+/// (`MentionReading.drawnRange`). The schema is the card's last that was a JSON object while its text
 /// isn't one (`SchemaReadings.shownText`), so a keystroke that breaks it doesn't take the highlights
 /// away. A pair with no answer is asked about once the card's two texts are in step
 /// (`SchemaSync.isInStep`), its schema's text a JSON object, so what's linked is what both say.
@@ -116,7 +116,7 @@ public enum SchemaHighlightsShown {
     private struct Read {
         let prompt: SchemaPromptText
         let schema: String
-        let text: SchemaModelText
+        let text: MentionReading
         let modelSchema: String
         let context: String
     }
@@ -147,7 +147,7 @@ public enum SchemaHighlightsShown {
         for link in map.links {
             // Words in one mention's word are its pill, which only the first of them takes. The
             // map's own text is what its ranges are of; it reads as the card's (`ProseMapService.map`).
-            let range = texts.text.shownRange(of: NSRange(link.inProse, in: map.prose))
+            let range = texts.text.drawnRange(of: NSRange(link.inProse, in: map.prose))
             guard range.length > 0, range.location >= end, let part = link.address.resolve(in: root)?.range else { continue }
             end = NSMaxRange(range)
             placed.append(PlacedHighlight(range: range, role: link.role, pointer: link.address, part: part))

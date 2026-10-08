@@ -154,10 +154,10 @@ extension SyncBench {
         let read = names.modelText(of: prompt)
         expectEqual(read.text, "Its @LineItem and its bedrooms")
         let text = read.text as NSString
-        expectEqual(read.shownRange(of: text.range(of: "@LineItem")), NSRange(location: 4, length: 1), "the pill")
-        expectEqual(read.shownRange(of: text.range(of: "Item")), NSRange(location: 4, length: 1))
-        expectEqual(read.shownRange(of: text.range(of: "bedrooms")), NSRange(location: 14, length: 8), "after the pill, shifted")
-        expectEqual(read.shownRange(of: text.range(of: "Its @Line")), NSRange(location: 0, length: 5))
+        expectEqual(read.drawnRange(of: text.range(of: "@LineItem")), NSRange(location: 4, length: 1), "the pill")
+        expectEqual(read.drawnRange(of: text.range(of: "Item")), NSRange(location: 4, length: 1))
+        expectEqual(read.drawnRange(of: text.range(of: "bedrooms")), NSRange(location: 14, length: 8), "after the pill, shifted")
+        expectEqual(read.drawnRange(of: text.range(of: "Its @Line")), NSRange(location: 0, length: 5))
     },
     test("a $ref to a named card reads as its word, a fragment kept; the model's words read back as URIs, any case; anything else stays as written") {
         let a = ShapeID(), other = ShapeID()
@@ -314,6 +314,22 @@ extension SyncBench {
         let line = try require(lines.first?.first)
         b.move(to: CGPoint(x: line.midX, y: line.midY))
         expectEqual(b.popoverAfterDelay(), addressSchema)
+    },
+    test("resting the pointer on a mention's highlight whose $ref has a fragment shows that part of the schema it refers to, percent-encoded or not") {
+        let moneySchema = #"{"title": "Money", "type": "object", "$defs": {"Unit Price": {"type": "number", "minimum": 0}}}"#
+        for fragment in ["#/$defs/Unit%20Price", "#/$defs/Unit Price"] {
+            let b = try HighlightBench()
+            let money = b.editor.add(SchemasTests.card(moneySchema, at: CGPoint(x: 500, y: 100)))
+            b.answer = .success(ModelResponse(text: #"[{"text": "@Money", "address": "/properties/address"}]"#))
+            var props = SchemaCard(frame: CGRect(x: 100, y: 100, width: 320, height: 52), schema: SchemaText(houseSchema(uri(money) + fragment)))
+            props.setPrompt(described("A house: its @, and bedrooms", mentioning: money, as: "Money"))
+            let house = b.editor.add(props)
+            b.frame()
+            b.settle()
+            let line = try require(b.lines(try require(b.card(house))).first?.first)
+            b.move(to: CGPoint(x: line.midX, y: line.midY))
+            expectEqual(b.popoverAfterDelay(), #""Unit Price": {"type": "number", "minimum": 0}"#, fragment)
+        }
     },
     test("a $ref's completions list the file's other titled cards by their names, each written as its URI; a card's own list leaves it out") {
         let b = try SyncBench()

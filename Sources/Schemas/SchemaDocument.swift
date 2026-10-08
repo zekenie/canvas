@@ -221,25 +221,11 @@ struct SchemaResolver {
     }
 
     /// What a `$ref` within the document points to: `#`, or a JSON pointer after it
-    /// (`#/$defs/money`, `#/properties/a/items`). Nil for one outside the document.
+    /// (`#/$defs/money`, `#/properties/a/items`), read as `JSONPointer` reads a fragment. Nil for
+    /// one outside the document, or an anchor (`#name`), which isn't read.
     func resolve(_ ref: String) -> JSONNode? {
         guard ref.hasPrefix("#") else { return nil }
-        let pointer = ref.dropFirst()
-        guard !pointer.isEmpty else { return root }
-        guard pointer.hasPrefix("/") else { return nil }   // an anchor (`#name`): not read
-        var node = root
-        for raw in pointer.dropFirst().split(separator: "/", omittingEmptySubsequences: false) {
-            let token = (String(raw).removingPercentEncoding ?? String(raw))
-                .replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
-            if let child = node[token] {
-                node = child
-            } else if let elements = node.elements, let i = Int(token), elements.indices.contains(i) {
-                node = elements[i]
-            } else {
-                return nil
-            }
-        }
-        return node
+        return JSONPointer(ref)?.resolve(in: root)?.value
     }
 
     /// A `$ref`'s name: the last component of where it points (`#/$defs/money` is `money`,

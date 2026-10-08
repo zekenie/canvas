@@ -28,6 +28,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -240,6 +241,12 @@ def anchor(prompt, texts):
 def resolve(schema, pointer):
     """JSONPointer.resolve: whether an RFC 6901 pointer (or its "#…" form) leads to a member."""
     p = pointer[1:] if pointer.startswith("#") else pointer
+    # A "#…" form is percent-decoded first, as written where an escape is malformed.
+    if pointer.startswith("#") and not re.search(r"%(?![0-9A-Fa-f]{2})", p):
+        try:
+            p = urllib.parse.unquote(p, errors="strict")
+        except UnicodeDecodeError:
+            pass
     if p == "":
         return True
     if not p.startswith("/"):

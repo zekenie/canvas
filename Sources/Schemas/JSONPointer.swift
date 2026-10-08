@@ -2,20 +2,26 @@ import Foundation
 
 // A JSON Pointer (RFC 6901): where a value is in a JSON document, by the keys and indexes that lead
 // to it from the root. A schema card's highlights name the part of its schema their words say by
-// one (`SchemaTarget`'s address), as the model writes it (`LosslessStringConvertible`).
+// one (`SchemaTarget`'s address), as the model writes it (`LosslessStringConvertible`), and a `$ref`
+// within a schema, or to a part of another card's, by one in its URI fragment form.
 
 /// An RFC 6901 JSON Pointer: the reference tokens from the root, unescaped (`~1` is "/", `~0` is
-/// "~"). Its URI fragment form ("#/properties/key", as a `$ref` writes one) reads the same, though
-/// what a fragment would percent-encode isn't decoded.
+/// "~"). Its URI fragment form ("#/properties/key", as a `$ref` writes one) is percent-decoded
+/// first, as RFC 6901 reads a fragment: `#/$defs/My%20Thing` is `/$defs/My Thing`.
 public struct JSONPointer: Hashable, Sendable, LosslessStringConvertible {
     public var tokens: [String]
 
     public init(tokens: [String]) { self.tokens = tokens }
 
-    /// Nil for text that isn't a pointer: not empty, and not starting with "/" (after a "#").
+    /// Nil for text that isn't a pointer: not empty, and not starting with "/" (after a "#"). After
+    /// a "#" it's decoded, or read as written where an escape is malformed (`%zz`), as the
+    /// validator reads it (`SchemaValidator`); without one nothing is decoded.
     public init?(_ text: String) {
         var text = Substring(text)
-        if text.hasPrefix("#") { text = text.dropFirst() }
+        if text.hasPrefix("#") {
+            text = text.dropFirst()
+            text = text.removingPercentEncoding.map { Substring($0) } ?? text
+        }
         guard !text.isEmpty else {
             tokens = []
             return

@@ -160,6 +160,73 @@ public struct ScopedMentionText<Scope: MentionScope>: Sendable, ExpressibleByStr
         }
         return plain
     }
+
+    /// What it reads as with each mention spelled as `spelling` says, given its shape and the label
+    /// it holds (Find's, its name; a schema card's model's, `@` and a word), and where each spelling
+    /// is against the mention's pill in the text as drawn.
+    public func reading(spelling: (ShapeID, String) -> String) -> MentionReading {
+        var text = "", mentions: [MentionReading.Mention] = []
+        var offset = 0, drawn = 0
+        for run in runs {
+            switch run {
+            case .text(let string):
+                text += string
+                let length = string.utf16.count
+                offset += length
+                drawn += length
+            case .mention(let id, let label):
+                let spelled = spelling(id, label)
+                text += spelled
+                let length = spelled.utf16.count
+                mentions.append(MentionReading.Mention(spelling: offset..<offset + length, pill: drawn))
+                offset += length
+                drawn += 1
+            }
+        }
+        return MentionReading(text: text, mentions: mentions)
+    }
+}
+
+/// Mention text as something reads it (`ScopedMentionText.reading(spelling:)`): each mention
+/// spelled out, the text as it is, and where each spelling is against the mention's pill, one
+/// character (U+FFFC) of the text as drawn (`MentionTextStyle.attributedString`). So a range found
+/// in what's read (a find's hit, a model's quote) is drawn over its words, and a spelling, or any
+/// of it, over its pill.
+public struct MentionReading: Equatable, Sendable {
+    public let text: String
+    /// Each mention's spelling in `text`, and its pill in the text as drawn: UTF-16 offsets, in order.
+    public let mentions: [Mention]
+
+    public struct Mention: Equatable, Sendable {
+        public let spelling: Range<Int>
+        public let pill: Int
+    }
+
+    /// A range of `text` as a range of the text as drawn (UTF-16): a spelling, or any of it, is its
+    /// pill. Empty for an empty range.
+    public func drawnRange(of range: NSRange) -> NSRange {
+        let start = drawn(range.location, isEnd: false), end = drawn(NSMaxRange(range), isEnd: true)
+        return NSRange(location: start, length: max(0, end - start))
+    }
+
+    /// Where a place in `text` is in the text as drawn, as a range's start or end: a start in a
+    /// spelling is its pill's start, an end in one its pill's end. At an empty spelling (a mention
+    /// with no name), a start is after its pill and an end before it.
+    private func drawn(_ location: Int, isEnd: Bool) -> Int {
+        var shift = 0
+        for mention in mentions {
+            let spelling = mention.spelling
+            if isEnd {
+                guard spelling.lowerBound < location else { break }
+                if location <= spelling.upperBound { return mention.pill + 1 }
+            } else {
+                guard spelling.lowerBound <= location else { break }
+                if location < spelling.upperBound { return mention.pill }
+            }
+            shift += spelling.count - 1
+        }
+        return location - shift
+    }
 }
 
 /// Equal when stored alike, byte for byte: two spellings of one mention (a lowercase id) differ,
