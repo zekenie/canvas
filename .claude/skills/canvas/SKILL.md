@@ -197,7 +197,7 @@ edge "Ship v1" -> "Sprint 3"
 edge "Ship v1" -> "Sprint 3" channel: none
 ```
 
-An arrow can't leave its board, so an edge to a shape on another board goes into a **reference**: a pill that stands for the shape, which the run puts beside the shape on this board. `edge "Checkout" -> "Auth"`, with Auth on a subboard's board, draws a reference to Auth right of Checkout and the arrow into it, and the row says `via: "reference"`. Only a public shape can be stood for, and making one public is the user's call: for one that isn't, the script is refused (`several_boards`) and you ask. `via: reference` asks for a reference on one board too, for a shape that other edges point at. [reference/language.md](reference/language.md#through-a-reference) has the rest.
+An arrow can't leave its board, so an edge to a shape on another board goes into a **reference**: a pill that stands for the shape, which the run puts beside the shape on this board. `edge "Checkout" -> "Auth"`, with Auth on a subboard's board, draws a reference to Auth right of Checkout and the arrow into it, and the row says `via: "reference"`. `delete edge "Checkout" -> "Auth"`, or `delete "Checkout"`, takes the reference with the arrow, once no other arrow is on it. Only a public shape can be stood for, and making one public is the user's call: for one that isn't, the script is refused (`several_boards`) and you ask. `via: reference` asks for a reference on one board too, for a shape that other edges point at. [reference/language.md](reference/language.md#through-a-reference) has the rest.
 
 ### Styles
 

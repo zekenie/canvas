@@ -9025,10 +9025,9 @@ can be made to stand for a shape (`makers`) and which shapes each admits (Topolo
   edge across). Otherwise **`Drawing.goesThroughStandIn(from:to:)` decides, the one function that
   does**, and the place to grow: today an edge goes through a stand-in when its ends are on different
   boards, and nothing else decides (a rule about distance or kinds would go there, and nowhere else).
-  It goes through the first of `makers` that admits the end stood for (`standInKind(for:)`), and a
-  warning says why (`"Auth" is on "Payments"'s board, so the arrow goes into a reference to it beside
-  "Checkout"`; `comes from` where the far end is the start), none where `via:` asked. Where no kind
-  admits it, the edge is `several_boards`, with a hint that only such a shape can be stood for and to
+  It goes through the first of `makers` that admits the end stood for (`standInKind(for:)`), and only
+  the edge's row says so (`via`), as where `via:` asked: a warning for each edge between boards would
+  bury the warnings that need reading in a run of many. Where no kind admits it, the edge is `several_boards`, with a hint that only such a shape can be stood for and to
   ask the user (`Drawing.standInHint`); where nothing stands in at all, the hint is the old one.
 - **Which end.** The one off the board the run draws on; with `via:`, the arrow's end (however the
   edge is written, `<-` too), put beside the start. Either end may be the far one: a stand-in for the
@@ -9053,7 +9052,9 @@ can be made to stand for a shape (`makers`) and which shapes each admits (Topolo
     (with nothing else to say, the run goes to its board, and the edge is straight there), else hard
     (and the hint asks for it to be made so, as it does for any end).
 
-  A script with no edge between boards reads none of this (`standIns` is read only when one shows up).
+  A script with no edge between boards reads none of this (a board's arrows are read only when one
+  shows up). `Drawing` reads `standIns` for a script with any edge or delete: a delete's arrows may
+  run into stand-ins.
 - **The stand-in is a shape of the run.** `registry.standIns.make` makes the record (the kind's
   tool's shape, standing for the end, called as the end's title folds), and `routeEdge` adds it to
   the run as a `ShapeItem` (`standsFor` set), placed as any new shape is: right of the start where
@@ -9078,14 +9079,18 @@ can be made to stand for a shape (`makers`) and which shapes each admits (Topolo
   written over an edge drawn straight, or through a stand-in for its start, is `invalid_value` (`the
   edge "A" -> "B" is drawn straight to "B"`), the hint saying to `delete edge` it above the line; two
   matches are `ambiguous_edge`, as two straight ones are.
-- **`delete edge`** takes what matches, either way round for `<->`, then each stand-in the run
-  leaves with no arrow at all, loose ones included (`standInsEmptied`; one that's read-only is
-  `read_only`, and the edge stays). `delete "X"` takes X's arrows and leaves the stand-ins they ran
-  into, which have no title for a script to name.
+- **Deletes.** `delete edge` takes what matches, either way round for `<->`, and `delete "X"` every
+  connection bound to X; then each stand-in at the other end of one (a direct one, as matching reads
+  them, never one whose answer can change) that the run leaves with no arrow at all, loose ones
+  included, goes too (`standInsEmptied`): it has no title for a script to name, and it stood for its
+  shape for those arrows alone. One that's read-only is `read_only` (`the reference that delete "X"
+  leaves with no arrow is read-only (locked, say)`), and nothing is deleted. A stand-in for X with
+  arrows from elsewhere stays.
 - **The result.** An edge's row has `via` (the stand-in's kind) whenever its arrow goes through one,
-  `unchanged` rows too; the stand-in has a row of its own on the edge's line, before the edge's
-  (`created`, with its `kind` and `at` and no title; `deleted` with its kind alone). A dry run says
-  the same, and one undo takes the stand-in and the arrow back together.
+  `unchanged` and `deleted` rows too (a `delete "X"`'s among them, naming the shape a stand-in stands
+  for, as an edge's row does); the stand-in has a row of its own on its statement's line: `created`,
+  with its `kind` and `at` and no title, before the edge's; `deleted`, with its kind alone, after its
+  arrows'. A dry run says the same, and one undo takes the stand-in and the arrow back together.
 
 Before any of it, a run is refused while a drag is under way on the board (`editor.session`,
 `busy`: its Escape would put back what the script moved), or a press is held

@@ -142,7 +142,7 @@ extension CanvasEditor {
 }
 
 @MainActor let drawStandInTests = Suite("draw: an edge to a shape on another board goes through a stand-in", [
-    test("an edge to a shape on another board is drawn into a relay for it beside the start: a shape of the run, before the arrow, with the arrow's row saying via, and a warning why") {
+    test("an edge to a shape on another board is drawn into a relay for it beside the start: a shape of the run, before the arrow, with the arrow's row saying via, and no warning") {
         let h = Harbor(), log = EdgeLog()
         let editor = try h.editor(log: log)
         let result = try drawn(#"edge "Hub" -> "Deep""#, on: editor)
@@ -166,7 +166,7 @@ extension CanvasEditor {
         expectEqual(changes[0]["title"], nil, "a relay has no title")
         expect(changes[0]["at"] != nil, "it says where it landed")
         expectEqual(changes[1], ["line": 1, "did": "connected", "kind": "link", "from": "Hub", "to": "Deep", "via": "relay"])
-        expectEqual(messages(result), [#""Deep" is on "P"'s board, so the arrow goes into a relay to it beside "Hub""#])
+        expectEqual(messages(result), [], "the row says it went through a relay")
         expectEqual(result["on"]?["board"], "root", "it drew where Hub is")
         expectEqual(editor.board, .root)
         // The edge maker was asked of the relay as one that stands for a tile, on the relay's own sides.
@@ -188,7 +188,7 @@ extension CanvasEditor {
         expectEqual(editor.linkNames(), ["relay Deep -> Hub"])
         expectEqual(editor.linkEnds().first?.from, relay.id)
         expectEqual(rows(result).last, ["line": 1, "did": "connected", "kind": "link", "from": "Deep", "to": "Hub", "via": "relay"])
-        expectEqual(messages(result), [#""Deep" is on "P"'s board, so the arrow comes from a relay to it beside "Hub""#])
+        expectEqual(messages(result), [])
         expectEqual(log.requests.last?.fromStandsFor, [Tile.kind])
         expectEqual(log.requests.last?.toStandsFor, [])
 
@@ -254,7 +254,8 @@ extension CanvasEditor {
         let deep = try require(editor.file.record(open.deep)?.box)
         expectEqual(relay.frame.maxX, deep.minX - 80, "left of Deep: Deep is where the arrow ends")
         expectEqual(editor.linkNames(on: BoardID(owner: open.p)), ["relay Hub -> Deep"])
-        expectEqual(messages(result).first, #""Hub" is on the root board, so the arrow comes from a relay to it beside "Deep""#)
+        expectEqual(rows(result).last?["via"], "relay")
+        expectEqual(messages(result), [])
 
         // Hub can't be: it claims the root, which `in "P"` doesn't, and nothing can be said of two.
         let closed = try Harbor().editor()
@@ -404,7 +405,7 @@ extension CanvasEditor {
 ])
 
 @MainActor let drawViaTests = Suite("draw: via names the kind a stand-in is made as", [
-    test("via puts a stand-in for the end beside the start, even where both are on the board: the arrow runs into it, and the row says so, with no warning") {
+    test("via puts a stand-in for the end beside the start, even where both are on the board: the arrow runs into it, and the row says so") {
         let h = Harbor(), log = EdgeLog()
         let editor = try h.editor(log: log)
         let result = try drawn(#"edge "Hub" -> "Dock" via: relay"#, on: editor)
@@ -416,7 +417,7 @@ extension CanvasEditor {
         expectEqual(relay.frame.minX, hub.maxX + 80)
         expectEqual(rows(result).map { $0["did"] }, ["created", "connected"])
         expectEqual(rows(result).last?["via"], "relay")
-        expectEqual(messages(result), [], "it was asked for, so nothing's said")
+        expectEqual(messages(result), [])
         expectEqual(log.requests.last?.toStandsFor, [Tile.kind])
         // <-> works the same.
         _ = try drawn(#"edge "Hub" <-> "Pocket" via: relay"#.replacingOccurrences(of: "Pocket", with: "Dock"), on: try Harbor().editor(log: log))
@@ -427,7 +428,7 @@ extension CanvasEditor {
         let editor = try h.editor()
         let result = try drawn(#"edge "Hub" -> "Deep" via: relay"#, on: editor)
         expectEqual(editor.linkNames(), ["Hub -> relay Deep"])
-        expectEqual(messages(result), [], "named, not worked out")
+        expectEqual(messages(result), [])
         // `<-` is the same edge written the other way: the stand-in is for its end, Hub.
         var open = Harbor()
         open.openHub = true
@@ -619,7 +620,7 @@ extension CanvasEditor {
     },
 ])
 
-@MainActor let drawStandInDeleteTests = Suite("draw: delete edge through a stand-in", [
+@MainActor let drawStandInDeleteTests = Suite("draw: delete edge and delete through a stand-in", [
     test("delete edge takes the arrow and the relay it leaves with none, each a row; undone, both are back") {
         let h = Harbor()
         let editor = try h.editor()
@@ -675,14 +676,103 @@ extension CanvasEditor {
         expectEqual(rows(loose).map { $0["kind"] }, ["link"])
         expectEqual(editor.relays().count, 1)
     },
-    test("delete \"X\" takes X's arrows and leaves the relays they ran into") {
+    test("delete \"X\" takes X's arrows and each relay they leave with no arrow, either way round, each a row after theirs; a dry run says the same, and one undo brings them back") {
+        let h = Harbor()
+        let editor = try h.editor()
+        _ = try drawn("""
+            edge "Hub" -> "Deep"
+            edge "Pier" -> "Hub"
+            """, on: editor)
+        expectEqual(editor.linkNames(), ["Hub -> relay Deep", "relay Pier -> Hub"])
+        let made = editor.file
+        let dry = try drawn(#"delete "Hub""#, on: editor, ["--dry-run"])
+        expectEqual(editor.file, made)
+        let result = try drawn(#"delete "Hub""#, on: editor)
+        // Each arrow's row names what the relay stood for, as delete edge's does.
+        expectEqual(rows(result), [["line": 1, "did": "deleted", "kind": "tile", "title": "Hub"],
+                                   ["line": 1, "did": "deleted", "kind": "link", "from": "Hub", "to": "Deep", "via": "relay"],
+                                   ["line": 1, "did": "deleted", "kind": "link", "from": "Pier", "to": "Hub", "via": "relay"],
+                                   ["line": 1, "did": "deleted", "kind": "relay"],
+                                   ["line": 1, "did": "deleted", "kind": "relay"]])
+        expectEqual(messages(result), [])
+        expectEqual(rows(dry), rows(result))
+        expectEqual(editor.relays().count, 0)
+        expectEqual(editor.linkEnds().count, 0)
+        expect(editor.file.record(h.deep) != nil && editor.file.record(h.pier) != nil, "the shapes they stood for stay")
+        expectEqual(editor.undoHistory.undoName, "Draw")
+        editor.undo()
+        expectEqual(editor.file, made, "one step: Hub, its arrows and the relays")
+    },
+    test("a shape deleted and drawn again with its edge in one script has one relay: the old one goes, a new one is made") {
         let h = Harbor()
         let editor = try h.editor()
         _ = try drawn(#"edge "Hub" -> "Deep""#, on: editor)
-        let result = try drawn(#"delete "Hub""#, on: editor)
-        expectEqual(rows(result).map { $0["kind"] }, ["tile", "link"])
+        let result = try drawn("""
+            delete "Hub"
+            tile "Hub" below "Gate"
+            edge "Hub" -> "Deep"
+            """, on: editor)
+        expectEqual(rows(result).map { $0["did"] }, ["deleted", "deleted", "deleted", "created", "created", "connected"])
+        expectEqual(rows(result).map { $0["kind"] }, ["tile", "link", "relay", "tile", "relay", "link"])
         expectEqual(editor.relays().count, 1)
-        expectEqual(editor.linkEnds().count, 0)
+        expectEqual(editor.linkNames(), ["Hub -> relay Deep"])
+    },
+    test("a relay with an arrow from elsewhere stays; it goes with the last, whichever statement takes it; an arrow with a free end holds it") {
+        let h = Harbor()
+        let editor = try h.editor()
+        let relay = editor.addRelay(for: h.deep, says: "Deep")
+        editor.addLink(h.hub, relay)
+        editor.addLink(h.dock, relay)
+        let one = try drawn(#"delete "Hub""#, on: editor)
+        expectEqual(rows(one).map { $0["kind"] }, ["tile", "link"], "the relay isn't deleted: Dock's arrow is on it")
+        expectEqual(editor.linkNames(), ["Dock -> relay Deep"])
+        editor.undo()
+        let both = try drawn("""
+            delete "Hub"
+            delete "Dock"
+            """, on: editor)
+        expectEqual(rows(both).map { $0["kind"] }, ["tile", "link", "tile", "link", "relay"])
+        expectEqual(rows(both).map { $0["line"] }, [1, 1, 2, 2, 2], "the relay goes on the line that leaves it empty")
+        expectEqual(editor.relays().count, 0)
+        editor.undo()
+        let mixed = try drawn("""
+            delete edge "Dock" -> "Deep"
+            delete "Hub"
+            """, on: editor)
+        expectEqual(rows(mixed).map { $0["kind"] }, ["link", "tile", "link", "relay"])
+        expectEqual(rows(mixed).map { $0["line"] }, [1, 2, 2, 2])
+        expectEqual(editor.relays().count, 0)
+        // An arrow with one end free is still an arrow on the relay.
+        editor.undo()
+        editor.addLink(relay, nil)
+        let loose = try drawn("""
+            delete "Hub"
+            delete "Dock"
+            """, on: editor)
+        expectEqual(rows(loose).map { $0["kind"] }, ["tile", "link", "tile", "link"])
+        expectEqual(editor.relays().count, 1)
+    },
+    test("a relay that may stand for several shapes stays, as delete edge never takes one; a locked relay delete \"X\" would empty is read_only, and nothing goes") {
+        let h = Harbor()
+        let editor = try h.editor()
+        let several = AnyShapeRecord(ShapeRecord(Relay(CGRect(x: 200, y: 450, width: 80, height: 40), stands: [h.dock, h.gate], says: "Docks")))
+        editor.transact { $0.insert(several) }
+        editor.addLink(h.hub, several.id)
+        expectEqual(rows(try drawn(#"delete "Hub""#, on: editor)).map { $0["kind"] }, ["tile", "link"])
+        expectEqual(editor.relays().count, 1)
+        editor.undo()
+
+        let relay = editor.addRelay(for: h.deep, says: "Deep", at: CGPoint(x: 200, y: 520))
+        editor.addLink(h.hub, relay)
+        editor.transact { $0.update(relay) { $0.meta[Sealed.self] = true } }
+        let before = editor.file, step = editor.undoHistory.undoName
+        let locked = try refused(#"delete "Hub""#, on: editor)
+        expectEqual(locked.reason, "read_only")
+        expectEqual(locked.message, #"the relay that delete "Hub" leaves with no arrow is read-only (locked, say), so it can't be deleted"#)
+        expectEqual(locked.hint, "leave it out of the script, or ask the user to unlock it")
+        expectEqual(locked.data?["line"], 1)
+        expectEqual(editor.file, before, "nothing deleted")
+        expectEqual(editor.undoHistory.undoName, step)
     },
     test("nothing drawn from one to the other is nothing_to_delete, the shapes on another board included; a locked relay can't go") {
         let h = Harbor()
@@ -950,7 +1040,7 @@ private func openHarbor() -> Harbor {
         expectEqual(editor.relays().count, 0)
         expectEqual(rows(result).map { $0["did"] }, ["created", "created", "connected"])
         expectEqual(rows(result).last?["via"], "relay")
-        expectEqual(messages(result), [#""Dock" is on the root board, so the arrow goes into a relay to it beside "Skiff""#])
+        expectEqual(messages(result), [])
         let skiff = try require(editor.contents(of: BoardID(owner: h.p)).shapes.first { $0.typed(as: Tile.self)?.props.label == "Skiff" })
         expectEqual(relay.frame.minX, try require(skiff.box).maxX + 80, "right of Skiff, which is the start")
         // The far shape may be the start: the relay is left of Skiff, and the arrow runs out of it.
@@ -960,7 +1050,8 @@ private func openHarbor() -> Harbor {
             """, on: editor)
         expectEqual(reverse["on"]?["board"], .string(h.p.description))
         expectEqual(editor.linkNames(on: BoardID(owner: h.p)), ["Skiff -> relay Dock", "relay Dock -> Barge"])
-        expectEqual(messages(reverse), [#""Dock" is on the root board, so the arrow comes from a relay to it beside "Barge""#])
+        expectEqual(rows(reverse).last?["via"], "relay")
+        expectEqual(messages(reverse), [])
     },
     test("placed against a shape on another board, the script's shape is on that board, and via: puts the relay beside it the same") {
         let h = Harbor()
@@ -972,7 +1063,7 @@ private func openHarbor() -> Harbor {
         expectEqual(result["on"]?["board"], .string(h.p.description))
         expectEqual(editor.relays(on: BoardID(owner: h.p)).first?.props.stands.map(\.shape), [h.dock])
         expectEqual(editor.linkNames(on: BoardID(owner: h.p)), ["Skiff -> relay Dock"])
-        expectEqual(messages(result), [], "it was asked for")
+        expectEqual(messages(result), [])
     },
     test("with nothing else to say, the run draws on the board of the end the file has, and the edge is straight there, as it always was") {
         let h = Harbor()

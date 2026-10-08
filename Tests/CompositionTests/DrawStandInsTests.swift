@@ -8,6 +8,7 @@ import Connections
 import CoreGraphics
 import Foundation
 import LanguageModels
+import Locking
 import Mentions
 import Publishing
 import References
@@ -20,9 +21,9 @@ import Topology
 // An edge to a shape on another board, as shipped, through `canvas` as built against the command
 // server: a note on the root joined to a public note two boards down goes through a reference to it
 // beside the note, the arrow into the pill (and `canvas query` reads it as into the original, with
-// its `via`); either way round; `via: reference` on one board; a run again; `delete edge`, which takes
-// the pill; a shape that isn't public, which can't be reached; and the run undone, pill and arrow
-// together.
+// its `via`); either way round; `via: reference` on one board; a run again; `delete edge`, and
+// `delete` of the note, which take the pill; a shape that isn't public, which can't be reached; and
+// the run undone, pill and arrow together.
 
 /// A file: on the root, notes Checkout, Ledger and Docs (Docs public) and subboard Payments; on
 /// Payments' board, subboard Gateway; on Gateway's board, notes Auth (public) and Vault.
@@ -105,8 +106,7 @@ extension CanvasEditor {
         expectEqual(json["changes"]?.arrayValue?.map { $0["did"] }, ["created", "connected"])
         expectEqual(json["changes"]?.arrayValue?.first?["kind"], "reference")
         expectEqual(json["changes"]?.arrayValue?.last, ["line": 1, "did": "connected", "kind": "arrow", "from": "Checkout", "to": "Auth", "channel": "note-link", "via": "reference"])
-        expectEqual(json["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue },
-                    [#""Auth" is on "Gateway"'s board, so the arrow goes into a reference to it beside "Checkout""#])
+        expectEqual(json["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue }, [], "the row says it went through a reference")
         expectEqual(json["on"]?["board"], "root")
         expectEqual(editor.board, .root)
 
@@ -140,8 +140,8 @@ extension CanvasEditor {
         expectEqual(pill.frame.maxX, ledger.minX - 80, "left of Ledger")
         expectEqual(editor.arrowEnds(), ["reference to Auth -> Ledger"])
         let json = try JSON(text: result.output)
-        expectEqual(json["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue },
-                    [#""Auth" is on "Gateway"'s board, so the arrow comes from a reference to it beside "Ledger""#])
+        expectEqual(json["changes"]?.arrayValue?.last?["via"], "reference")
+        expectEqual(json["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue }, [])
         let asked = try canvas(server, ["query", #"sticky-note:edge-from("Auth")"#, "--brief", "--board", "\(board.number)"])
         expectEqual(try JSON(text: asked.output)["rows"]?.arrayValue?.map { $0["title"] }, ["Ledger"])
     },
@@ -162,7 +162,7 @@ extension CanvasEditor {
         expectEqual(editor.arrowEnds(), ["Checkout -> reference to Docs"])
         let json = try JSON(text: first.output)
         expectEqual(json["changes"]?.arrayValue?.last?["via"], "reference")
-        expectEqual(json["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue }, [], "it was asked for")
+        expectEqual(json["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue }, [])
         // Again: nothing changes, the row says it went through the pill, and so does the edge without via.
         let file = editor.file, undoName = editor.undoHistory.undoName
         for script in [#"edge "Checkout" -> "Docs" via: reference"#, #"edge "Checkout" -> "Docs""#] {
@@ -185,7 +185,7 @@ extension CanvasEditor {
         expectEqual(error?["hint"], #"write delete edge "Ledger" -> "Docs" above this line to draw it through a reference"#)
     },
 
-    test("delete edge takes the arrow, and the pill it leaves with none; one undo brings both back") {
+    test("delete edge takes the arrow, and the pill it leaves with none, and so does delete of the note it starts from, unless the pill is locked; one undo brings both back") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -207,10 +207,28 @@ extension CanvasEditor {
         expect(editor.file.record(wharf.auth) != nil && editor.file.record(wharf.checkout) != nil, "the notes stay")
         editor.undo()
         expectEqual(editor.file, drawn)
-        // delete "Checkout" takes its arrows, not the pills they ran into.
-        expectEqual(try canvas(server, ["draw", #"delete "Checkout""#]).status, 0)
-        expectEqual(editor.references().count, 1)
+        // delete "Checkout" takes its arrow, and the pill it leaves with none, the arrow's row naming Auth.
+        let gone = try canvas(server, ["draw", #"delete "Checkout""#])
+        expectEqual(gone.status, 0, gone.error)
+        expectEqual(try JSON(text: gone.output)["changes"]?.arrayValue,
+                    [["line": 1, "did": "deleted", "kind": "sticky-note", "title": "Checkout"],
+                     ["line": 1, "did": "deleted", "kind": "arrow", "from": "Checkout", "to": "Auth", "via": "reference"],
+                     ["line": 1, "did": "deleted", "kind": "reference"]])
+        expectEqual(editor.references().count, 0)
         expectEqual(editor.arrowEnds(), [])
+        expect(editor.file.record(wharf.auth) != nil, "Auth stays")
+        editor.undo()
+        expectEqual(editor.file, drawn, "one step")
+        // A locked pill can't go with it: read_only, and nothing is deleted.
+        let pill = try require(editor.references().first)
+        editor.transact { $0.update(pill.id) { $0[LockedProperty.self] = true } }
+        let locked = editor.file
+        let refused = try canvas(server, ["draw", #"delete "Checkout""#])
+        expectEqual(refused.status, 1)
+        let error = try JSON(text: refused.error)["error"]
+        expectEqual(error?["reason"], "read_only")
+        expectEqual(error?["message"], #"the reference that delete "Checkout" leaves with no arrow is read-only (locked, say), so it can't be deleted"#)
+        expectEqual(editor.file, locked)
     },
 
     test("a shape that isn't public can't be reached: several_boards, asking the user; and with the other end public, the run is the private one's board") {
@@ -357,8 +375,7 @@ extension CanvasEditor {
         expectEqual(editor.references(on: payments).first?.props.target, ReferenceTarget(id: wharf.docs, label: "Docs"))
         expectEqual(editor.arrowEnds(on: payments), ["Refund -> reference to Docs"])
         expectEqual(editor.references().count, 0)
-        expectEqual(json["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue },
-                    [#""Docs" is on the root board, so the arrow goes into a reference to it beside "Refund""#])
+        expectEqual(json["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue }, [])
         // Vault isn't public, so it can't be reached from there: refused, and the user is asked.
         let before = editor.file
         let refused = try canvas(server, ["draw", "-"], input: """

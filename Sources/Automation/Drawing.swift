@@ -151,8 +151,9 @@ struct Drawing {
     private(set) var edges: [EdgeItem] = []
     /// Each `delete edge`'s ends, for telling one written twice.
     private var edgeDeletes: [(from: ShapeID, to: ShapeID, eitherWay: Bool, line: Int)] = []
-    /// The stand-ins a `delete edge` took an arrow from, with the statement that did last and the edge
-    /// as it wrote it: each goes too, once no arrow is left on it.
+    /// The stand-ins a delete took an arrow from (`delete edge`'s, or X's, which `delete "X"` takes),
+    /// with the statement that did last, as a message says it: each goes too, once no arrow is left
+    /// on it.
     private var standInsEmptied: [ShapeID: (statement: Statement, written: String)] = [:]
 
     /// Titles of statements that couldn't be resolved: whatever names them is left unresolved,
@@ -165,7 +166,8 @@ struct Drawing {
     /// The file's names, when the script names shapes: what says a title it can't find here is on
     /// another board.
     let fileNames: FileNames?
-    /// What stands in for what, when the script has an edge (`DrawStandIns.swift`); nil otherwise.
+    /// What stands in for what, when the script has an edge or a delete (`DrawStandIns.swift`); nil
+    /// otherwise.
     let standIns: StandIns?
     /// What writes the texts a script gives properties of a media type some plugin writes, nil
     /// where none does.
@@ -181,8 +183,10 @@ struct Drawing {
         naming = registry.drawNaming
         edging = registry.drawEdging
         edgeKind = registry.drawEdging.flatMap { $0.kind(registry) }
-        // What stands in for what matters only to a script that joins shapes.
-        standIns = script.statements.contains(where: \.joinsShapes) && edgeKind != nil ? registry.standIns : nil
+        // What stands in for what matters only to a script that joins shapes, or deletes them: the
+        // stand-ins a delete's arrows ran into go with them.
+        let hasDeletes = script.statements.contains(where: \.isDelete)
+        standIns = (hasDeletes || script.statements.contains(where: \.joinsShapes)) && edgeKind != nil ? registry.standIns : nil
         // Where the view is headed, if it's gliding (a --reveal a moment ago): the view the drawing
         // is seen in once it settles; on a board not shown, the view it would be shown with. The
         // part of it the host leaves clear (below the path's pill over a subboard), as every fit is.
@@ -193,14 +197,13 @@ struct Drawing {
             names = BoardNames(target.document, naming: naming, registry: registry)
         }
         // What connects to what, for the deletes (edges read the transaction's document).
-        let deletes = script.statements.contains { if case .delete = $0.body { true } else { false } }
-        if deletes { _ = boardConnections() }
+        if hasDeletes { _ = boardConnections() }
 
         for statement in script.statements {
             guard case .delete(let delete) = statement.body else { continue }
             do throws(AutomationError) { try resolve(delete, statement) } catch { keep(error) }
         }
-        // A stand-in a `delete edge` left with no arrow goes with it.
+        // A stand-in the deletes left with no arrow goes with them.
         do throws(AutomationError) { try retireEmptiedStandIns() } catch { keep(error) }
         for statement in script.statements {
             guard case .shape(let shape) = statement.body else { continue }
@@ -369,6 +372,14 @@ struct Drawing {
             deleted.insert(record.id)
             deleted.formUnion(attached.map(\.record.id))
             deleted.formUnion(loose.map(\.id))
+            // A stand-in at the other end of one of its arrows goes too, as `delete edge`'s does, once
+            // the run leaves it no arrow: it has no title for a script to delete it by.
+            for connection in attached {
+                let other = connection.from == record.id ? connection.to : connection.from
+                if standIn(at: other, in: target.document) != nil {
+                    standInsEmptied[other] = (statement, "\(Keyword.delete.rawValue) \(quoted(title))")
+                }
+            }
         case .edges(let fromWritten, let toWritten, let eitherWay):
             let written = "\(quoted(fromWritten)) \(eitherWay ? EdgeArrow.both.rawValue : EdgeArrow.forward.rawValue) \(quoted(toWritten))"
             guard edgeKind != nil else { throw noEdges(statement) }
@@ -411,19 +422,25 @@ struct Drawing {
             let fresh = found.filter { !deleted.contains($0.connection.record.id) }
             deletes.append(DeleteItem(statement: statement, shape: nil, connections: fresh.map(\.connection)))
             deleted.formUnion(fresh.map(\.connection.record.id))
-            for match in fresh { if let standIn = match.standIn { standInsEmptied[standIn.id] = (statement, written) } }
+            let said = "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(written)"
+            for match in fresh { if let standIn = match.standIn { standInsEmptied[standIn.id] = (statement, said) } }
         }
     }
 
-    /// A stand-in a `delete edge` took an arrow from goes too, if that leaves no arrow on it (one
-    /// bound at both ends, or at one): it stood for a shape for that arrow alone.
+    /// A stand-in a delete took an arrow from (`delete edge`, or `delete "X"` taking X's) goes too, if
+    /// that leaves no arrow on it (one bound at both ends, or at one): it stood for a shape for those
+    /// arrows alone.
     private mutating func retireEmptiedStandIns() throws(AutomationError) {
+        guard !standInsEmptied.isEmpty else { return }
+        // Those an arrow the run leaves holds still, found in one pass over the board's.
+        var held: Set<ShapeID> = []
+        for connection in connections where !deleted.contains(connection.record.id) {
+            for end in [connection.from, connection.to] where standInsEmptied[end] != nil { held.insert(end) }
+        }
         for (id, emptied) in standInsEmptied.sorted(by: { ($0.value.statement.line, $0.key.description) < ($1.value.statement.line, $1.key.description) }) {
-            guard !deleted.contains(id), let standIn = target.document[id] else { continue }
-            let arrows = connections.filter { $0.from == id || $0.to == id }.map(\.record) + (looseConnections[id] ?? [])
-            guard arrows.allSatisfy({ deleted.contains($0.id) }) else { continue }
-            try writable(standIn, emptied.statement, "the \(standIn.kind) that \(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(emptied.written) leaves with no arrow",
-                         so: "it can't be deleted")
+            guard !deleted.contains(id), !held.contains(id), let standIn = target.document[id] else { continue }
+            guard (looseConnections[id] ?? []).allSatisfy({ deleted.contains($0.id) }) else { continue }
+            try writable(standIn, emptied.statement, "the \(standIn.kind) that \(emptied.written) leaves with no arrow", so: "it can't be deleted")
             deletes.append(DeleteItem(statement: emptied.statement, shape: standIn, connections: []))
             deleted.insert(id)
         }

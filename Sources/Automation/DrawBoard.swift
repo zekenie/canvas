@@ -450,8 +450,13 @@ extension Statement {
         if case .shape(let shape) = body { shape.container != nil } else { false }
     }
 
+    /// Whether it's a delete (`delete "X"` or `delete edge`).
+    var isDelete: Bool {
+        if case .delete = body { true } else { false }
+    }
+
     /// Whether it joins shapes (an edge, or a `delete edge`), which is when what stands in for what
-    /// matters.
+    /// matters to the board's claims (to `Drawing`, a delete's too).
     var joinsShapes: Bool {
         switch body {
         case .edge, .delete(.edges): true
