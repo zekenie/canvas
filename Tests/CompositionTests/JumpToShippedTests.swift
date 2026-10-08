@@ -1,5 +1,4 @@
 import AppKit
-import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
@@ -8,7 +7,6 @@ import CoreGraphics
 import Frames
 import Geometry
 import JumpTo
-import Keyboard
 import Mentions
 import Selection
 import StickyNotes

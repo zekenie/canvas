@@ -8,7 +8,6 @@ import Selection
 import SwiftUI
 import TestKit
 import TextEditing
-import Titles
 
 // Mention text in the panel (`MentionTextArea`): the jot's text, and the brief's Blocked By (which
 // commits), in the detail panel in an unshown window, the editor keeping real time (the panel's

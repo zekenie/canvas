@@ -12,7 +12,6 @@ import Publishing
 import Selection
 import StickyNotes
 import TestKit
-import Titles
 
 // Publishing as shipped: which kinds can be public, its chip beside the lock's, a copy, and a draw.
 

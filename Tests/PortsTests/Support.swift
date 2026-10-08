@@ -4,7 +4,6 @@ import CanvasTesting
 import Connections
 import CoreGraphics
 import Foundation
-import Geometry
 import Keyboard
 import Selection
 import Topology

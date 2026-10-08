@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasUI
-import Composition
 import Foundation
 import Geometry
 import TestKit

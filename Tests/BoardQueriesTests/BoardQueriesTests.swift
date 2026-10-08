@@ -2,7 +2,6 @@ import Boards
 import Canvas
 import CanvasTesting
 import Queries
-import QueryLexicon
 import TestKit
 
 // A query's rows naming the boards a shape is inside as the path over the canvas names them

@@ -1,4 +1,3 @@
-import Automation
 import Canvas
 import CanvasRPC
 import CanvasTesting
@@ -6,7 +5,6 @@ import CoreGraphics
 import Foundation
 import Queries
 import QueryCommands
-import QueryLanguage
 import TestKit
 import Topology
 

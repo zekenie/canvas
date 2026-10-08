@@ -1,7 +1,6 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
-import Geometry
 import TestKit
 
 // Putting a container down around shapes (`editor.place(_:around:padding:minimumSize:)`, what Frames'

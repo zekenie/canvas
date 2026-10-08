@@ -1,5 +1,4 @@
 import AppKit
-import CanvasTesting
 import TestKit
 import TextEditing
 

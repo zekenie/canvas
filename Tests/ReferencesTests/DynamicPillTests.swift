@@ -5,7 +5,6 @@ import Geometry
 import Publishing
 import References
 import TestKit
-import Titles
 
 // A dynamic pill once its query is answered, drawn to bitmaps in light and dark and zoomed out:
 // every dynamic pill leads with the magnifier; a first-match one trails the first match's kind

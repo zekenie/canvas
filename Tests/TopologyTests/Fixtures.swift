@@ -2,7 +2,6 @@
 import CanvasTesting
 import CoreGraphics
 import Foundation
-import TestKit
 import Topology
 
 // Edge types and sources over CanvasTesting's kinds, never a real plugin's: a link bound at both

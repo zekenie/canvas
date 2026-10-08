@@ -6,7 +6,6 @@ import Neighbors
 import Queries
 import Selection
 import TestKit
-import Topology
 
 // What the subject is, and how the answer for it comes: the pointer on a shape, a shape hovered
 // elsewhere (the shape of a row of another board's shapes, which the canvas doesn't show), the answer

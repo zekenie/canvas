@@ -2,9 +2,7 @@
 import CanvasTesting
 import CoreGraphics
 import Foundation
-import Keyboard
 import Mentions
-import Selection
 import TestKit
 import Validation
 

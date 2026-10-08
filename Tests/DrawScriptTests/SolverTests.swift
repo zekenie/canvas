@@ -1,6 +1,5 @@
 import CoreGraphics
 import DrawScript
-import Geometry
 import TestKit
 
 // Cards are 200 × 100, boxes 100 × 100, discs 120 × 120 (fixtureSizes). Gaps: none 0, tight 40,

@@ -3,10 +3,8 @@ import CanvasTesting
 import CoreGraphics
 import Find
 import Geometry
-import Keyboard
 import Selection
 import TestKit
-import Topology
 
 @MainActor let scopeTests = Suite("Find's scope and order", [
     test("from the root: the root's shapes in file order, then each board under it, depth first in file order") {

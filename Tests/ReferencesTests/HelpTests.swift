@@ -1,8 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import Geometry
-import Publishing
 import Titles
 import References
 import TestKit

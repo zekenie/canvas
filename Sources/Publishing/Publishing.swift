@@ -1,11 +1,7 @@
-import Adornments
 import Canvas
 import ContextMenus
-import DetailPanel
-import SlashCommands
 import SwiftUI
 import TableOfContents
-import Topology
 
 /// Publishing, as a plugin: a shape is public or private. Only a public shape can be stood for by
 /// another (`Topology`'s stand-ins admit it, `PublishingState.admitting`), so what a lot of shapes

@@ -4,7 +4,6 @@ import Foundation
 import Queries
 import QueryLanguage
 import TestKit
-import Topology
 
 // Edges, answered: which way each word reads, a type with those under it against the type alone,
 // lists of types and a type nobody declares, edges from a shape to itself, when an anchor is part of

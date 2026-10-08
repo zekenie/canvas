@@ -2,7 +2,6 @@ import Canvas
 import CanvasTesting
 import Queries
 import QueryLanguage
-import QueryLexicon
 import TestKit
 import Titles
 

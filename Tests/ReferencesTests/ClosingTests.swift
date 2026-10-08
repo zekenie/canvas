@@ -1,13 +1,10 @@
 import AppKit
-@_spi(Host) import Canvas
 import CanvasTesting
 import LanguageModels
 import Queries
 import QueryTranslation
 import References
 import TestKit
-import Titles
-import Topology
 
 // A file closed while references are asking: the editor goes, and what it had out stops with it. A
 // model call in flight is cancelled (it would otherwise run on, up to a minute, spending the

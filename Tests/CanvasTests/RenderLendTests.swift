@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
-import Geometry
 import TestKit
 
 // A render may read a service (`RenderContext.service(_:)`), which tells the editor to draw again

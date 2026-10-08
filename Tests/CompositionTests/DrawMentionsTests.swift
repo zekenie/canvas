@@ -1,12 +1,9 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
-import CanvasTesting
 import CanvasUI
-import Composition
 import CoreGraphics
 import Foundation
-import LanguageModels
 import Mentions
 import Schemas
 import StickyNotes

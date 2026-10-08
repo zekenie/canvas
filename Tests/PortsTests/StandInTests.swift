@@ -6,7 +6,6 @@ import CoreGraphics
 import Geometry
 import Selection
 import TestKit
-import Topology
 
 // A kind may have ports on every channel (`portsOnEveryChannel`), and a shape that stands for others
 // (Topology's stand-ins) has the ports of what it stands for, instance by instance: one kind, that

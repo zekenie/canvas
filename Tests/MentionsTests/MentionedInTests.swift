@@ -5,7 +5,6 @@ import DetailPanel
 import Mentions
 import Selection
 import TestKit
-import Titles
 
 // The Mentioned In tab: what mentions a shape, in its panel, on the kinds that opt into being
 // mentioned. Headless (the layout), and in the panel in an unshown window (its lines).

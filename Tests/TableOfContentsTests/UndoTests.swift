@@ -1,8 +1,6 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
-import Keyboard
-import Selection
 import TableOfContents
 import TestKit
 

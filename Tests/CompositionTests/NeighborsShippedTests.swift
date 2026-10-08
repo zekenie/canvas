@@ -15,7 +15,6 @@ import StickyNotes
 import Subboards
 import TableOfContents
 import TestKit
-import Topology
 
 // Neighbors over the shipped plugins: hovering a note, or its row in the table of contents, outlines
 // what it points to (arrows out of it, what a reference stands for), what points to it, what it

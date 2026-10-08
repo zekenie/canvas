@@ -1,5 +1,4 @@
 import AppKit
-import Canvas
 import Geometry
 
 // An arrow's label: its text, set on its body, which gives way to it. A port of tldraw's

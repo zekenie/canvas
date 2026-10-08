@@ -1,6 +1,5 @@
 import AppKit
 import Canvas
-import FuzzyMatching
 import TextEditing
 
 /// One name of a row's path: a container's title, or, for one with none, what its kind is called,

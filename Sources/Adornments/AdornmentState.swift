@@ -1,7 +1,6 @@
 import Canvas
 import CoreGraphics
 import Geometry
-import Selection
 
 /// Per editor: which adornments each kind's shapes may show, found once per kind (the registry is
 /// frozen), and what each shape shows, laid out: its labels made once, with their faces (text set

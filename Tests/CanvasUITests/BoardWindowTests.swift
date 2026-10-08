@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Geometry
 import TestKit
 
 /// Text that keeps an undo manager of its own, as a SwiftUI field's editor may.

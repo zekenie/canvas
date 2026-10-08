@@ -3,7 +3,6 @@ import CanvasRPC
 import CoreGraphics
 import DrawScript
 import Foundation
-import Geometry
 
 // The command line's own commands: what any board can do whatever's installed. `draw` puts shapes
 // on a board from a script; `kinds` says what a script can draw, and with what. Other plugins add

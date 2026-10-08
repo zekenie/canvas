@@ -4,7 +4,6 @@ import Foundation
 import Queries
 import QueryLanguage
 import TestKit
-import Topology
 import os
 
 // Where a query runs, and when it stops: the file as it was taken up, with derived names as the app

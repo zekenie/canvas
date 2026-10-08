@@ -2,7 +2,6 @@ import Adornments
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
-import Frames
 import Geometry
 import Selection
 import TestKit

@@ -2,7 +2,6 @@ import AppKit
 import Canvas
 import ContextMenus
 import Keyboard
-import Selection
 
 /// Cut, copy and paste, as a plugin: ⌘X, ⌘C and ⌘V (registered with Keyboard), Edit › Cut, Copy
 /// and Paste (the commands the board's window runs), and Cut, Copy and Paste in every context

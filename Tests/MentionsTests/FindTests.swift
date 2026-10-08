@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Find
-import Geometry
 import Mentions
 import TestKit
 import Titles

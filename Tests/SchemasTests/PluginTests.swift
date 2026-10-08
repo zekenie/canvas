@@ -1,14 +1,12 @@
 import Adornments
 import AppKit
 @_spi(Host) import Canvas
-import CanvasTesting
 import Connections
 import DetailPanel
 import Foundation
 import Keyboard
 import Mentions
 import Schemas
-import Selection
 import TableOfContents
 import TestKit
 import Titles

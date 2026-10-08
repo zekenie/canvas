@@ -1,9 +1,6 @@
-import Automation
 @_spi(Host) import Canvas
 import CanvasRPC
-import CanvasTesting
 import CoreGraphics
-import DrawLexicon
 import Foundation
 import Mentions
 import TestKit

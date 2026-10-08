@@ -2,7 +2,6 @@ import Canvas
 import CanvasTesting
 import Foundation
 import Queries
-import QueryLanguage
 import TestKit
 import Topology
 import os

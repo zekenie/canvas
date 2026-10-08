@@ -1,14 +1,11 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import ContextMenus
 import CoreGraphics
 import Geometry
-import Publishing
 import References
 import Selection
 import TestKit
-import Titles
 
 // Going to the original: the pill's leading symbol is a canvas button (hovered, pressed, clicked),
 // and the context menu's first item and the panel's button run the same command. A button press

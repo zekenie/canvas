@@ -1,7 +1,6 @@
 import AppKit
 import Canvas
 import Connections
-import DetailPanel
 import Keyboard
 import Mentions
 import Selection

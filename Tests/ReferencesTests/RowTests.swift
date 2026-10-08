@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Publishing
-import References
 import SwiftUI
 import TableOfContents
 import TestKit

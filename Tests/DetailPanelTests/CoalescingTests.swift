@@ -1,7 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import CanvasUI
 import DetailPanel
 import Selection
 import SwiftUI

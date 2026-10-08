@@ -2,7 +2,6 @@
 import CanvasTesting
 import CoreGraphics
 import Foundation
-import TestKit
 import Topology
 
 // Stand-ins over the fixtures, never a real plugin's: a proxy stands for the shapes its citations

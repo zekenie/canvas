@@ -4,12 +4,9 @@ import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Composition
 import CoreGraphics
-import DetailPanel
 import Foundation
 import Geometry
-import Keyboard
 import Mentions
 import Schemas
 import Selection

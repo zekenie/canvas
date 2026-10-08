@@ -1,5 +1,4 @@
 import CoreGraphics
-import Geometry
 
 // The hand is in HandTool.swift, and moving shapes with the pointer in Translating.swift.
 

@@ -8,12 +8,9 @@ import Connections
 import Foundation
 import Geometry
 import Keyboard
-import LanguageModels
 import Mentions
 import Publishing
 import Queries
-import QueryLanguage
-import QueryTranslation
 import References
 import Selection
 import SlashCommands

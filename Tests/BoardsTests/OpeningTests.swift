@@ -2,7 +2,6 @@ import AppKit
 import Boards
 import Canvas
 import CanvasTesting
-import ContextMenus
 import DetailPanel
 import Keyboard
 import Selection

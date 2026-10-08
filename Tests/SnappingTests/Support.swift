@@ -1,7 +1,6 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
-import Geometry
 import Snapping
 
 /// What the move tool drags: the shapes a test names, or else the shape pressed.

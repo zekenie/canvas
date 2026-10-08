@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
-import Geometry
 import TestKit
 
 // Editable's two hooks, `discardsWhenEditingEnds` and `editingStepName`, on a fixture kind of this

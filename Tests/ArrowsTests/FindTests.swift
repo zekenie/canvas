@@ -4,7 +4,6 @@ import CanvasTesting
 import Connections
 import CoreGraphics
 import Find
-import Geometry
 import Keyboard
 import Selection
 import TableOfContents

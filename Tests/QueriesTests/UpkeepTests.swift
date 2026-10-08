@@ -5,7 +5,6 @@ import Foundation
 import Queries
 import QueryLanguage
 import TestKit
-import Topology
 
 // What queries cost the app between them: nothing. No snapshot outlives its query, however it ends;
 // a commit reaches nothing of theirs; and a switch of board works out no change set for them.

@@ -3,7 +3,6 @@ import AppKit
 import CanvasTesting
 import Connections
 import CoreGraphics
-import Geometry
 import Keyboard
 import Selection
 import TestKit

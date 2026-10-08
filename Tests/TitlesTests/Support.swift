@@ -9,7 +9,6 @@ import Selection
 import SlashCommands
 import SwiftUI
 import TableOfContents
-import TestKit
 import Titles
 
 // Fixtures only: the CanvasTesting kinds plus a local plaque, so every test here shows the

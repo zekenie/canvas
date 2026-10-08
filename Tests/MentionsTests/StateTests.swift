@@ -1,7 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import Keyboard
 import Mentions
 import Observation
 import Selection

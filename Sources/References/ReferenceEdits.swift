@@ -1,4 +1,3 @@
-import Canvas
 import CoreGraphics
 
 /// How a reference is written: each keeps exactly one mode (so `target`, `words` and `query` never
