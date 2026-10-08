@@ -34,17 +34,23 @@ public struct AskStyle: Sendable, Equatable {
     /// a decline (a cyber or frontier-LLM one is answered by Sonnet 5; any other still comes back
     /// a refusal, `declined`).
     public static let sonnet = AskStyle(model: "claude-sonnet-5-5", maxTokens: 2_048, effort: "low", fallbacks: .default)
-    /// What ships: the model the evaluations picked, the cheaper that clears the bar. Round 2
-    /// (`scripts/query-prompts/results.tsv`, 192 runs each) put Sonnet 5.5 at 192 of 192 first try;
-    /// Haiku 4.5 at 189, under the bar in one category (80% of "state": it read "links to" as
-    /// mentions too), so Sonnet 5.5 is the only one that clears it. Every request names it; the
-    /// editor's own model stays Haiku 4.5, for the schema cards.
-    public static let shipped = sonnet
+    /// Claude Haiku 5.5: no temperature (it refuses any but its default), the room Sonnet 5.5 gets,
+    /// `high` effort (it thinks, and at `low` it missed the bar), and no fallbacks (the service has
+    /// none for it: a decline stays one).
+    public static let haiku55 = AskStyle(model: "claude-haiku-5-5", maxTokens: 2_048, effort: "high")
+    /// What ships: the model the evaluations picked, the cheaper that clears the bar. Round 4
+    /// (`scripts/query-prompts/README.md`, ten rounds of 192 runs each) put Haiku 5.5 at 1,907 of
+    /// 1,920 after repair (99.3%), nine of ten rounds clearing the bar, against Sonnet 5.5's 1,920 of
+    /// 1,920, a question some 18 times cheaper. Haiku 4.5 misses it ("state" at 80%: it read "links
+    /// to" as mentions too), and so did Haiku 5.5 at `low` effort (91%); `medium` met it by a run (96%).
+    /// Every request names it; the editor's own model stays Haiku 4.5, which answers only a request that names none.
+    public static let shipped = haiku55
 
-    /// The style for a model named by its id (an evaluation's `QUERY_MODEL`): Sonnet 5.5's for its
-    /// id, else the editor's model's settings with that model (none: the editor's own).
+    /// The style for a model named by its id (an evaluation's `QUERY_MODEL`): Sonnet 5.5's or Haiku
+    /// 5.5's for its id, else the editor's model's settings with that model (none: the editor's own).
     public static func named(_ model: String?) -> AskStyle {
         if model == sonnet.model { return sonnet }
+        if model == haiku55.model { return haiku55 }
         var style = haiku
         style.model = model.flatMap { $0.isEmpty ? nil : $0 }
         return style

@@ -17,12 +17,12 @@ import TestKit
         let recipe = ProseMapPrompt.system(for: Steps.self)
         expect(recipe.contains("- <recipe>: the recipe, which says") && !recipe.contains("code"), "named as the target is, everywhere")
     },
-    test("the request asks Sonnet 5.5 at low effort, its temperature its own, the prose and the target in their blocks, each trimmed") {
+    test("the request asks Haiku 5.5 at medium effort, its temperature its own and no fallback, the prose and the target in their blocks, each trimmed") {
         let request = ProseMapPrompt.request(Snippet.self, prose: " sum the prices \n", target: "\nfunc total() {}\n")
-        expectEqual(request.model, "claude-sonnet-5-5")
-        expectEqual(request.effort, "low")
+        expectEqual(request.model, "claude-haiku-5-5")
+        expectEqual(request.effort, "medium")
         expectEqual(request.temperature, nil)
-        expectEqual(request.fallbacks, .default)
+        expectEqual(request.fallbacks, nil, "the service has none for Haiku 5.5")
         expectEqual(request.maxTokens, 2048)
         expectEqual(request.system, ProseMapPrompt.system(for: Snippet.self))
         expectEqual(request.messages, [.user("<prose>\nsum the prices\n</prose>\n\n<code>\nfunc total() {}\n</code>")])

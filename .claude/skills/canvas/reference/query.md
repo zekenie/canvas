@@ -682,7 +682,7 @@ A title or an id that no shape has is refused, never answered 0, so a no always 
 
 ## From English
 
-`build/canvas query --board 2 --ask "which notes mention the gateway?"` has the app ask Claude (Claude Sonnet 5.5, the model the app's evaluation of this prompt picked: it answered all 192 of its runs right the first time; with the key the person saved in Infinite Canvas › Settings…) to write the query, runs it, and answers as a query does, with `asked`, the question, and `query`, what Claude wrote: read it, to check it asks what the person meant. A query Claude writes that's refused, or an answer that isn't one, is sent back once, with what was wrong, if that happens within 40 seconds; the answer warns `repaired` when it's the second. It waits up to 60 seconds.
+`build/canvas query --board 2 --ask "which notes mention the gateway?"` has the app ask Claude (Claude Haiku 5.5, the model the app's evaluation of this prompt picked: it answered 1,907 of its 1,920 runs right, 1,904 of them the first time; with the key the person saved in Infinite Canvas › Settings…) to write the query, runs it, and answers as a query does, with `asked`, the question, and `query`, what Claude wrote: read it, to check it asks what the person meant. A query Claude writes that's refused, or an answer that isn't one, is sent back once, with what was wrong, if that happens within 40 seconds; the answer warns `repaired` when it's the second. It waits up to 60 seconds.
 
 What leaves the machine: the question, what the app's queries can name (`query-vocabulary`'s `vocabulary`), the names of the boards on the way to the one shown, what's selected (by title and kind, or kind and id), and up to 200 titles with their kinds and boards. Never a shape's text.
 
