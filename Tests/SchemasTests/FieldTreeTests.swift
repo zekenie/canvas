@@ -137,6 +137,8 @@ func lines(_ text: String) -> [String] { SchemaDocument(text).fields.map(line) }
             "self: → # { list {…}, circle, loop, escaped {…}, aliased {…}, self {…}, pointer {…}, remote, anchor, missing, overridden {…} }",
             "pointer: → list { value, next {…} }", "remote: → address.json", "anchor: → top", "missing: → nope", "overridden: → node { own }",
         ])
+        expectEqual(lines(##"{ "properties": { "home": { "$ref": "#/$defs/my%20place" } }, "$defs": { "my place": { "properties": { "street": {} } } } }"##),
+                    ["home: → my%20place { street }"], "a fragment percent-decoded, as the panel's completions write one")
         // A list of nodes goes on as far as it's followed.
         var node = try require(fields.first)
         for _ in 0..<50 { node = try require(node.fields.last) }

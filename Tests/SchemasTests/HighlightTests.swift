@@ -99,12 +99,16 @@ final class RedrawCounter: CanvasEditorDelegate {
 }
 
 @MainActor let highlightTests = Suite("Schema highlights", [
-    test("a JSON Pointer reads as RFC 6901 writes one: the root, escapes, indexes and a fragment's #; and leads nowhere past what's there") {
+    test("a JSON Pointer reads as RFC 6901 writes one: the root, escapes, indexes and a fragment's #, percent-decoded; and leads nowhere past what's there") {
         expectEqual(JSONPointer("")?.tokens, [])
         expectEqual(JSONPointer("/")?.tokens, [""])
         expectEqual(JSONPointer("/a~1b/c~0d/~01")?.tokens, ["a/b", "c~d", "~1"], "~1 is read before ~0")
         expectEqual(JSONPointer("#/properties/key")?.tokens, ["properties", "key"])
         expectEqual(JSONPointer("properties/key"), nil)
+        expectEqual(JSONPointer("#/$defs/My%20Thing")?.tokens, ["$defs", "My Thing"], "a fragment is decoded")
+        expectEqual(JSONPointer("#/caf%C3%A9/a~1b%7E0")?.tokens, ["café", "a/b~"], "UTF-8, and decoded before ~ is read")
+        expectEqual(JSONPointer("/My%20Thing")?.tokens, ["My%20Thing"], "a pointer that isn't a fragment isn't")
+        expectEqual(JSONPointer("#/50%/x")?.tokens, ["50%", "x"], "a malformed escape, as written")
         expectEqual(JSONPointer(tokens: ["a/b", "c~d"]).description, "/a~1b/c~0d")
         let text = #"{"a": {"b": [10, {"c": true}]}, "a": {"b": [20]}, "e/f": 1}"#
         @MainActor func at(_ pointer: String) -> String? {

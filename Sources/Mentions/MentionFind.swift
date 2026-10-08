@@ -34,20 +34,14 @@ enum MentionFind {
     static func texts(of record: AnyShapeRecord, in editor: CanvasEditor) -> [FindableText] {
         let state = editor.mentions
         return editor.registry.mentionTextPlacements(of: record).enumerated().map { index, placement in
-            var text = ""
-            for run in placement.text.runs {
-                switch run {
-                case .text(let plain): text += plain
-                case .mention(let id, let stored): text += label(of: id, stored: stored, state: state)
-                }
-            }
-            return FindableText(field: String(index), text: text)
+            FindableText(field: String(index), text: reading(of: placement, state: state).text)
         }
     }
 
-    /// What a pill names its target: its live name, else the name the mention holds.
-    private static func label(of id: ShapeID, stored: String, state: MentionState?) -> String {
-        state?.resolve(id).appearance?.label ?? stored
+    /// A placement's text as Find reads it: each mention as its pill names it, its target's live
+    /// name, else the name the mention holds.
+    private static func reading(of placement: MentionTextPlacement, state: MentionState?) -> MentionReading {
+        placement.text.reading { id, stored in state?.resolve(id).appearance?.label ?? stored }
     }
 
     /// Where each range of a placement's text is drawn, from the shape's bounds' top-left: the
@@ -60,39 +54,14 @@ enum MentionFind {
               let bounds = editor.shapeContext.geometry(of: record.id)?.bounds, !bounds.isNull else { return none }
         let placement = placements[index]
         let box = placement.laidOutBox
-        let state = editor.mentions
-        // Each run's start in the text read and in the text drawn, and its length in the first.
-        var runs: [(read: Int, drawn: Int, length: Int, isPill: Bool)] = []
-        var read = 0, drawn = 0
-        for run in placement.text.runs {
-            switch run {
-            case .text(let plain):
-                let length = plain.utf16.count
-                runs.append((read, drawn, length, false))
-                read += length
-                drawn += length
-            case .mention(let id, let stored):
-                let length = label(of: id, stored: stored, state: state).utf16.count
-                runs.append((read, drawn, length, true))
-                read += length
-                drawn += 1
-            }
-        }
-        /// Where a unit of the text read is in the text drawn: in a name, its pill.
-        func drawnRange(_ range: Range<Int>) -> NSRange? {
-            guard let first = runs.last(where: { $0.read <= range.lowerBound }),
-                  let last = runs.last(where: { $0.read <= range.upperBound - 1 }) else { return nil }
-            let lower = first.isPill ? first.drawn : first.drawn + range.lowerBound - first.read
-            let upper = last.isPill ? last.drawn + 1 : last.drawn + range.upperBound - last.read
-            return upper > lower ? NSRange(location: lower, length: upper - lower) : nil
-        }
-        let mapped = ranges.map(drawnRange)
+        let read = reading(of: placement, state: editor.mentions)
+        let mapped = ranges.map { read.drawnRange(of: NSRange(location: $0.lowerBound, length: $0.count)) }
         var resolver = MentionResolver(registry: editor.registry, lookup: { [unowned editor] in editor.shape(inFile: $0) })
         let entry = MentionTextMemo.shared.entry(for: placement, resolver: &resolver)
-        let found = entry.lineRects(of: mapped.map { $0 ?? NSRange(location: NSNotFound, length: 0) }, in: box.size, style: placement.style)
+        let found = entry.lineRects(of: mapped.map { $0.length > 0 ? $0 : NSRange(location: NSNotFound, length: 0) }, in: box.size, style: placement.style)
         let dx = box.minX - bounds.minX, dy = box.minY - bounds.minY
         return zip(mapped, found).map { range, rects in
-            range == nil ? [] : rects.map { $0.offsetBy(dx: dx, dy: dy) }
+            range.length == 0 ? [] : rects.map { $0.offsetBy(dx: dx, dy: dy) }
         }
     }
 }

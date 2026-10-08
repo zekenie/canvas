@@ -94,22 +94,27 @@ public enum SchemaReferences {
     public static func refs(in text: String) -> [Ref] {
         guard mayRefer(text), let root = try? JSONReader.read(text) else { return [] }
         var refs: [Ref] = []
-        collect(root, into: &refs)
+        forEachRef(in: root) { value, range in
+            if let target = target(of: value) { refs.append(Ref(card: target.card, fragment: target.fragment, range: range)) }
+        }
         return refs
     }
 
-    private static func collect(_ node: JSONNode, into refs: inout [Ref]) {
+    /// Calls `body` with each `$ref` under `node` whose value is a string, in the text's order: the
+    /// value, and where it is in the text (UTF-8 offsets, the quotes included). A `$ref`'s value is
+    /// never looked into.
+    static func forEachRef(in node: JSONNode, _ body: (String, Range<Int>) -> Void) {
         switch node.value {
         case .object(let members):
             for member in members {
                 if member.key == "$ref", let value = member.value.string {
-                    if let target = target(of: value) { refs.append(Ref(card: target.card, fragment: target.fragment, range: member.value.range)) }
+                    body(value, member.value.range)
                 } else {
-                    collect(member.value, into: &refs)
+                    forEachRef(in: member.value, body)
                 }
             }
         case .array(let elements):
-            for element in elements { collect(element, into: &refs) }
+            for element in elements { forEachRef(in: element, body) }
         default:
             break
         }
@@ -180,36 +185,6 @@ public enum SchemaReferences {
 }
 
 // MARK: What the model is shown
-
-/// A card's description as the model reads it (`SchemaReferenceNames.modelText`): each mention `@`
-/// and its card's word, the text as it is, and where each word is against the mention's pill, one
-/// character (U+FFFC) of the description as it's drawn (`MentionTextStyle.attributedString`).
-public struct SchemaModelText: Equatable, Sendable {
-    public let text: String
-    /// Each mention's word in `text`, and its pill in the text as drawn: UTF-16 offsets, in order.
-    public let mentions: [Mention]
-
-    public struct Mention: Equatable, Sendable {
-        public let word: Range<Int>
-        public let pill: Int
-    }
-
-    /// A range of `text` as a range of the text as drawn: a word, or any of it, is its pill.
-    public func shownRange(of range: NSRange) -> NSRange {
-        let start = shown(range.location, isEnd: false), end = shown(NSMaxRange(range), isEnd: true)
-        return NSRange(location: start, length: max(0, end - start))
-    }
-
-    private func shown(_ location: Int, isEnd: Bool) -> Int {
-        var shift = 0
-        for mention in mentions {
-            guard location > mention.word.lowerBound else { break }
-            if location < mention.word.upperBound { return isEnd ? mention.pill + 1 : mention.pill }
-            shift += mention.word.count - 1
-        }
-        return location - shift
-    }
-}
 
 /// The words a model is shown for the cards a card's texts name, and how what it writes is read
 /// back. Each card is `@` and a word made of its name: its words run together, each after the first
@@ -284,27 +259,10 @@ public struct SchemaReferenceNames: Equatable, Sendable {
     /// The card a word is, written in any case.
     public func card(forWord word: String) -> ShapeID? { cards[word.lowercased()] }
 
-    /// The description as the model reads it: each mention its card's word.
-    public func modelText(of prompt: SchemaPromptText) -> SchemaModelText {
-        var text = "", mentions: [SchemaModelText.Mention] = []
-        var offset = 0, shown = 0
-        for run in prompt.runs {
-            switch run {
-            case .text(let string):
-                text += string
-                let length = string.utf16.count
-                offset += length
-                shown += length
-            case .mention(let card, let label):
-                let word = "@" + (words[card] ?? Self.word(for: label))
-                text += word
-                let length = word.utf16.count
-                mentions.append(SchemaModelText.Mention(word: offset..<offset + length, pill: shown))
-                offset += length
-                shown += 1
-            }
-        }
-        return SchemaModelText(text: text, mentions: mentions)
+    /// The description as the model reads it: each mention `@` and its card's word, against its
+    /// pill in the description as it's drawn.
+    public func modelText(of prompt: SchemaPromptText) -> MentionReading {
+        prompt.reading { card, label in "@" + (words[card] ?? Self.word(for: label)) }
     }
 
     /// The schema as the model reads it: each `$ref` to a named card its word.
@@ -322,28 +280,13 @@ public struct SchemaReferenceNames: Equatable, Sendable {
     public func schema(fromModel text: String) -> String {
         guard !named.isEmpty, text.contains("@"), let root = try? JSONReader.read(text) else { return text }
         var edits: [(range: Range<Int>, with: String)] = []
-        collectWords(root, into: &edits)
-        return SchemaReferences.splice(text, edits)
-    }
-
-    private func collectWords(_ node: JSONNode, into edits: inout [(range: Range<Int>, with: String)]) {
-        switch node.value {
-        case .object(let members):
-            for member in members {
-                if member.key == "$ref", let value = member.value.string {
-                    guard value.hasPrefix("@") else { continue }
-                    let hash = value.firstIndex(of: "#") ?? value.endIndex
-                    guard let card = card(forWord: String(value[value.index(after: value.startIndex)..<hash])) else { continue }
-                    edits.append((member.value.range, JSONReader.literal(SchemaReferences.uri(of: card) + value[hash...])))
-                } else {
-                    collectWords(member.value, into: &edits)
-                }
-            }
-        case .array(let elements):
-            for element in elements { collectWords(element, into: &edits) }
-        default:
-            break
+        SchemaReferences.forEachRef(in: root) { value, range in
+            guard value.hasPrefix("@") else { return }
+            let hash = value.firstIndex(of: "#") ?? value.endIndex
+            guard let card = card(forWord: String(value[value.index(after: value.startIndex)..<hash])) else { return }
+            edits.append((range, JSONReader.literal(SchemaReferences.uri(of: card) + value[hash...])))
         }
+        return SchemaReferences.splice(text, edits)
     }
 
     /// The model's description, each `@` and a word (in any case, the longest that fits) a mention
