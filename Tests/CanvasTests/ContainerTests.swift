@@ -2,7 +2,6 @@
 import CanvasTesting
 import CoreGraphics
 import Foundation
-import Geometry
 import TestKit
 
 // Containers within a board (`ShapeContaining`), with CanvasTesting's corrals standing in for

@@ -1,8 +1,6 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
-import Moving
-import SlashCommands
 import TestKit
 
 // /move-near: beside a shape, as `canvas draw` places `right of "X"` (80 away, centered on it the other way),

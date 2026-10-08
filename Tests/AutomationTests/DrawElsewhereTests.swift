@@ -1,4 +1,3 @@
-import Automation
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting

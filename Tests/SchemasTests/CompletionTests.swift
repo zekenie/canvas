@@ -1,4 +1,3 @@
-import Canvas
 import Foundation
 import Schemas
 import TestKit

@@ -3,7 +3,6 @@ import Canvas
 import Geometry
 import Publishing
 import Selection
-import TableOfContents
 
 /// Arrows as a shape kind: no box; handles; their own translation; painted just above the
 /// highest shape they're bound to. Each capability is its own extension.

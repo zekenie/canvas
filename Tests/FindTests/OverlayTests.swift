@@ -4,10 +4,7 @@ import CanvasTesting
 import CoreGraphics
 import Find
 import Geometry
-import Keyboard
-import Selection
 import TestKit
-import Topology
 
 /// A memo-like kind whose rects take a millisecond each to lay out: what the overlay's budget holds
 /// a frame to.

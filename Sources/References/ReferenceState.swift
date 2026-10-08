@@ -1,11 +1,9 @@
 import AppKit
 import Canvas
-import Connections
 import Geometry
 import LanguageModels
 import Mentions
 import Publishing
-import Queries
 import Selection
 import Topology
 

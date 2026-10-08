@@ -2,7 +2,6 @@ import Canvas
 import CanvasRPC
 import CoreGraphics
 import DrawScript
-import Geometry
 import Topology
 
 // Resolving a script against the board as the run starts: each statement's kind, the shape its

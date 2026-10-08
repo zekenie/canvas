@@ -3,7 +3,6 @@ import CanvasTesting
 import Queries
 import QueryLanguage
 import TestKit
-import Topology
 
 @MainActor let resolutionTests = Suite("Resolution", [
     test("what resolves, and the query it ran") {

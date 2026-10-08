@@ -8,7 +8,6 @@ import Publishing
 import Selection
 import TestKit
 import Titles
-import Topology
 
 // The chip, as the adornment frames report it (the label as drawn, and where). A fixture chip stands
 // in for the lock at order 300, at the right end of the row, so the chip's place beside it is held

@@ -1,7 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import Geometry
 import References
 import Selection
 import TestKit

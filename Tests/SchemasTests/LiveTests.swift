@@ -1,5 +1,4 @@
 import Canvas
-import CanvasTesting
 import CoreGraphics
 import Foundation
 import LanguageModels

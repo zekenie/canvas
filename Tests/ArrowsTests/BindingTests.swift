@@ -3,9 +3,7 @@ import CanvasTesting
 import Connections
 import CoreGraphics
 import Geometry
-import Keyboard
 import Selection
-import TableOfContents
 import TestKit
 
 // How a dragged end binds, by tldraw's rules: an arrow's end re-aimed from its handle, the drag a

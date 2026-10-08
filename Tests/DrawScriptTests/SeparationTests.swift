@@ -1,6 +1,5 @@
 import CoreGraphics
 import DrawScript
-import Geometry
 import TestKit
 
 @MainActor let obstacleTests = Suite("Keeping clear of the board", [

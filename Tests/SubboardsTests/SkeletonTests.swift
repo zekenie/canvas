@@ -1,5 +1,4 @@
 import AppKit
-import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import Selection

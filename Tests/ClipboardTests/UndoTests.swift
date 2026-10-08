@@ -2,9 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Clipboard
-import ContextMenus
 import CoreGraphics
-import Keyboard
 import Selection
 import TestKit
 

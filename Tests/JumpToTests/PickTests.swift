@@ -3,7 +3,6 @@ import CanvasTesting
 import CoreGraphics
 import Geometry
 import JumpTo
-import Keyboard
 import Selection
 import TestKit
 

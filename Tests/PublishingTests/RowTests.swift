@@ -1,6 +1,5 @@
 @_spi(Host) import Canvas
 import CanvasTesting
-import Publishing
 import SwiftUI
 import TableOfContents
 import TestKit

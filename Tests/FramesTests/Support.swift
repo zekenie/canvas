@@ -5,7 +5,6 @@ import CanvasTesting
 import ContextMenus
 import DetailPanel
 import Frames
-import Geometry
 import Keyboard
 import Mentions
 import Selection

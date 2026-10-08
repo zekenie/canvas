@@ -3,17 +3,14 @@ import AppKit
 import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
-import CanvasUI
 import ContextMenus
 import DetailPanel
 import Foundation
-import Geometry
 import JumpTo
 import Keyboard
 import Selection
 import SlashCommands
 import SwiftUI
-import TestKit
 import Titles
 import Topology
 

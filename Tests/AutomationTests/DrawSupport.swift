@@ -4,7 +4,6 @@ import CanvasRPC
 import CanvasTesting
 import CoreGraphics
 import Foundation
-import TestKit
 
 // What `canvas draw` needs from plugins it doesn't know, as tests give it: names (a tile is called
 // by its label, a card by its nickname, else "Card, 100 × 60", worked out from its size), edges

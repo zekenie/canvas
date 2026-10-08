@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Geometry
 import TestKit
 
 /// A box that owns a board and shows its preview, inset 10 from its edges, on a white body: what a

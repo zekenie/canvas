@@ -2,9 +2,7 @@ import Canvas
 import CanvasTesting
 import Foundation
 import Queries
-import QueryLanguage
 import TestKit
-import Topology
 
 // What an answer lists: each row's id, kind, name, board and the boards it's inside, named as the
 // path names them; its attributes as they read (none that says where it is, not its name), cut

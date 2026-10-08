@@ -4,7 +4,6 @@ import Foundation
 import Queries
 import QueryLanguage
 import TestKit
-import Topology
 
 // Containment, answered: what's inside what, at any depth or directly, from either side, through
 // boards and containers on them (corrals, standing in for frames) alike; the top board and the board

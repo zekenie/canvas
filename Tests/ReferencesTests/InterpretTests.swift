@@ -1,17 +1,11 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import DetailPanel
 import LanguageModels
-import Mentions
-import Publishing
-import Queries
 import QueryTranslation
 import References
 import Selection
 import TestKit
-import TextEditing
-import Titles
 import Topology
 
 // Words become a query by the model, with a scripted one and never the network: typed into a pill

@@ -1,10 +1,8 @@
 import AppKit
 import Canvas
 import CanvasTesting
-import DetailPanel
 import Foundation
 import LanguageModels
-import Mentions
 import Schemas
 import TestKit
 import TextEditing

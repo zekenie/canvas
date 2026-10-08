@@ -1,5 +1,4 @@
 import Canvas
-import DetailPanel
 
 /// Mentions, as a plugin: text that mentions shapes, as pills. A kind opts into being mentioned
 /// (`x.mentionable(...)`), saying how its shapes are called; text holds mentions when its type is

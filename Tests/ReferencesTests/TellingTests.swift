@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Observation
-import Publishing
 import References
 import Titles
 import TestKit

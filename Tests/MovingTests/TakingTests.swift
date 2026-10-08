@@ -1,8 +1,6 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
-import Moving
-import SlashCommands
 import TestKit
 
 // Which shapes each command takes: its rule, which is also what the `@` picker lists on its line. /move-to

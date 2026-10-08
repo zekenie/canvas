@@ -1,5 +1,4 @@
 import AppKit
-import Canvas
 
 /// Arrow constants, in world units unless noted. The values follow tldraw.
 extension NSAppearance {

@@ -1,7 +1,6 @@
 import AppKit
 import Canvas
 import CanvasTesting
-import CanvasUI
 import Composition
 import DetailPanel
 import LanguageModels

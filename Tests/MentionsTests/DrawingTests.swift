@@ -4,7 +4,6 @@ import CanvasTesting
 import Geometry
 import Mentions
 import TestKit
-import Titles
 
 // Mention text on the canvas: what `drawMentionText` draws, where `mentionPills(of:)` says each pill
 // is, and what's kept between frames. Pixels come from `renderBitmap`, with fixtures of this file's

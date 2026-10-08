@@ -1,6 +1,5 @@
 import Canvas
 import Observation
-import Selection
 import TableOfContents
 
 /// A board on the path to the one shown, as the path shows it: what it's called and its symbol, and

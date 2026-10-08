@@ -1,7 +1,6 @@
 import Canvas
 import CoreGraphics
 import Geometry
-import Topology
 
 /// Arrow behavior, modeled closely on tldraw's: targeting, binding and the one shared precise timer.
 ///

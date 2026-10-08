@@ -4,7 +4,6 @@ import CoreGraphics
 import Publishing
 import References
 import TestKit
-import Titles
 import Topology
 
 // A direct reference stands for the shape it names, in Topology (`standsIn`, admitted while the shape

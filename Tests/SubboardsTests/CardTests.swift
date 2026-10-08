@@ -5,7 +5,6 @@ import CanvasTesting
 import Selection
 import Subboards
 import TestKit
-import Titles
 
 // A card at `cardFrame` (40, 40, 240 × 160), the whole frame: while it shows no preview, its caption
 // in its middle (112 to 128 down), or for an empty board the kind's symbol above "Empty", which is

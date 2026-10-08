@@ -6,7 +6,6 @@ import Composition
 import DetailPanel
 import Geometry
 import LanguageModels
-import Mentions
 import Selection
 import StickyNotes
 import SwiftUI

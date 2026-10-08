@@ -4,7 +4,6 @@ import ContextMenus
 import CoreGraphics
 import Keyboard
 import Selection
-import TestKit
 
 // Fixtures only: the CanvasTesting kinds plus two local appliances, so every test here shows the
 // horizontal knows no real kind.

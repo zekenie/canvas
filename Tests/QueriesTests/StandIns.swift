@@ -2,9 +2,6 @@ import Canvas
 import CanvasTesting
 import CoreGraphics
 import Foundation
-import Queries
-import QueryLanguage
-import TestKit
 import Topology
 
 // Stand-ins for queries' tests, never a real plugin's (Topology's own tests have their own): a

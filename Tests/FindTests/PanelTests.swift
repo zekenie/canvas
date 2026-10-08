@@ -4,12 +4,9 @@ import CanvasTesting
 import CanvasUI
 import DetailPanel
 import Find
-import Geometry
-import Keyboard
 import Selection
 import SwiftUI
 import TestKit
-import Topology
 
 /// The canvas beside the detail panel, Find's panel in its takeover slot, as Composition places
 /// them, in an unshown window: the real `TaskScheduler`, so the panel's updates and the index's

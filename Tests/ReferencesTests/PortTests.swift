@@ -4,11 +4,9 @@ import CanvasTesting
 import Connections
 import DetailPanel
 import Geometry
-import Publishing
 import References
 import Selection
 import TestKit
-import Titles
 import Topology
 
 // Ports at a pill: its dots and what may end on it are those of what it stands for (boxes take beams,

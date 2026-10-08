@@ -1,7 +1,6 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
-import Geometry
 import TestKit
 
 // The core's undo history, with no Keyboard or Selection: presses go through the Hand (the default

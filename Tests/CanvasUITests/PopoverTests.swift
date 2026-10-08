@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Geometry
 import TestKit
 
 // The canvas shows the editor's popover over everything it hosts, beside its anchor, and it takes

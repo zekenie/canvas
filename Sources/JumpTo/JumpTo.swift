@@ -1,5 +1,4 @@
 import AppKit
-import Boards
 import Canvas
 import Keyboard
 

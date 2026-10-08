@@ -6,7 +6,6 @@ import Neighbors
 import Queries
 import Selection
 import TestKit
-import Topology
 
 // What a hover lights: each light's matches in its color, a ring for each light a shape is in, a
 // card for what's on another board, nothing for the subject or what's on a board above, and what a

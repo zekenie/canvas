@@ -1,10 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import ContextMenus
 import DetailPanel
-import Mentions
-import Publishing
 import References
 import Selection
 import SwiftUI

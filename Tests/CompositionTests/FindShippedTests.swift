@@ -5,7 +5,6 @@ import CanvasUI
 import Composition
 import Connections
 import Find
-import Geometry
 import LanguageModels
 import Mentions
 import Schemas
@@ -13,7 +12,6 @@ import Selection
 import StickyNotes
 import Subboards
 import TestKit
-import Titles
 
 // Find in the shipped app: Edit › Find's items, the inspector it shows, and what it finds in the
 // shipped kinds (a note's text, a schema card's description, an arrow's label, a title), on every

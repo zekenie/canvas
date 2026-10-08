@@ -2,7 +2,6 @@
 import CanvasTesting
 import Connections
 import CoreGraphics
-import Geometry
 import Selection
 import TestKit
 

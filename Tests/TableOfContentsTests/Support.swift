@@ -5,7 +5,6 @@ import Keyboard
 import Selection
 import SwiftUI
 import TableOfContents
-import TestKit
 
 // Fixtures only: the CanvasTesting kinds plus local ones, so every test here shows the table of
 // contents knows no real kind.

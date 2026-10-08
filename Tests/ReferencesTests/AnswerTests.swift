@@ -2,9 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Mentions
-import Publishing
 import Queries
-import QueryLanguage
 import References
 import Selection
 import TestKit

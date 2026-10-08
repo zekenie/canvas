@@ -2,7 +2,6 @@ import Adornments
 import Automation
 @_spi(Host) import Canvas
 import CanvasRPC
-import CanvasTesting
 import ContextMenus
 import CoreGraphics
 import DetailPanel

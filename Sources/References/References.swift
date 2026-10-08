@@ -4,12 +4,10 @@ import Connections
 import ContextMenus
 import DetailPanel
 import Keyboard
-import Mentions
 import Publishing
 import Queries
 import QueryLanguage
 import Selection
-import TableOfContents
 import Topology
 import Validation
 

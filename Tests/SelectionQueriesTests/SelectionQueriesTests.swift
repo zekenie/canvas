@@ -1,4 +1,3 @@
-import Canvas
 import CanvasTesting
 import Queries
 import QueryLanguage

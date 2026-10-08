@@ -3,7 +3,6 @@ import CanvasTesting
 import CoreGraphics
 import DetailPanel
 import Publishing
-import Selection
 import TestKit
 import Topology
 
