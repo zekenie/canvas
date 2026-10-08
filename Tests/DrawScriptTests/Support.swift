@@ -106,12 +106,14 @@ func draw(_ source: String, on board: Board = Board(), obstacleOrder: @escaping 
                 continue
             }
             freeIndex[title] = free.count
-            free.append(LayoutProblem.Free(line: statement.line, name: "\"\(title)\"", size: shape.size ?? board.shapes[at].rect.size,
+            let had = board.shapes[at].rect.size
+            free.append(LayoutProblem.Free(line: statement.line, name: "\"\(title)\"", size: shape.size?.size(height: had.height) ?? had,
                                            gap: shape.gap, overlapAllowed: shape.overlapAllowed, current: board.shapes[at].rect))
         } else {
             if let title = shape.title { freeIndex[title] = free.count }
             let name = shape.title.map { "\"\($0)\"" } ?? "the \(shape.word) on line \(statement.line)"
-            free.append(LayoutProblem.Free(line: statement.line, name: name, size: shape.size ?? fixtureSizes[shape.word] ?? CGSize(width: 50, height: 50),
+            let placed = fixtureSizes[shape.word] ?? CGSize(width: 50, height: 50)
+            free.append(LayoutProblem.Free(line: statement.line, name: name, size: shape.size?.size(height: placed.height) ?? placed,
                                            gap: shape.gap, overlapAllowed: shape.overlapAllowed, implied: shape.word == impliedWord))
         }
         titles.append(shape.title)

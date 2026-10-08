@@ -204,6 +204,30 @@ private final class ContentsList {
         expectEqual(editor.note(note)?.props.text.stored,
                     MentionText([.text("See "), .mention(groceriesID, label: "Groceries"), .text(" soon")]).stored, "nothing written")
     },
+    test("a note made from properties (the command line's draw) with mentions is as tall as its editor fits it: each pill measured live, by the name it holds; editing writes nothing") {
+        let editor = try noteEditor()
+        let targets = [("Groceries", groceriesID), ("Milk and eggs", ShapeID()), ("Q", ShapeID())]
+        for (index, (title, id)) in targets.enumerated() {
+            editor.addNote("", titled: title, at: CGPoint(x: 400 * CGFloat(index), y: -400), id: id)
+        }
+        let text = MentionText((0..<30).flatMap { index -> [MentionRun] in
+            let (title, id) = targets[index % targets.count]
+            return [.text(index == 0 ? "Ask " : index % 7 == 0 ? ",\nthen " : " and "), .mention(id, label: title)]
+        } + [.text(" soon.")])
+        for (index, width) in [200.0, 260, 360].enumerated() {
+            let frame: JSONValue = [[.number(400 * Double(index)), 0], [.number(width), 200]]
+            let made = try editor.registry.shape(StickyNote.kind, properties: ["frame": frame, "text": .string(text.stored)])
+            editor.transact { $0.insert(made) }
+            let inserted = editor.document[made.id]
+            let height = try require(made.box?.height)
+            expect(height > 200, "grown to its text: \(height)")
+            expect(editor.beginEditing(made.id))
+            _ = try require(editor.makeEditingView())
+            expectEqual(editor.document[made.id]?.box?.height, height, "\(width) wide: the editor fits it as it was made")
+            editor.endEditing()
+            expectEqual(editor.document[made.id], inserted, "nothing written")
+        }
+    },
     test("typing beside a pill writes the text with its mention, named as its shape is now; a change that says the same writes nothing") {
         let counter = Contributor(id: "commit-counter") { $0.service { _ in CommitCounter() } }
         let editor = CanvasEditor(registry: try Registry(plugins: notePlugins + [counter]), scheduler: ManualScheduler())

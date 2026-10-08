@@ -161,6 +161,18 @@ extension Registry {
         }
         return propertyTable.normalized(record)
     }
+
+    /// The shape with what its kind works out from the rest of its props put in step
+    /// (`DerivedProps`: a note's height, from its text at its width), as setting any of its own
+    /// properties leaves it; as it is for a kind that works nothing out, and for one kept aside. For
+    /// what changes a shape's frame and wants what follows from it: `canvas draw`'s width alone
+    /// (`size: 300x`), which may set no property at all.
+    public func derived(_ record: AnyShapeRecord) -> AnyShapeRecord {
+        guard !record.isOpaque, let derived = definition(for: record.kind) as? any DerivedProps else { return record }
+        var record = record
+        derived.erasedDerive(&record)
+        return record
+    }
 }
 
 /// Why `Registry.shape(_:properties:)` or `shape(_:setting:)` made no shape.

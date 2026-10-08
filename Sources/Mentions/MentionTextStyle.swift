@@ -78,6 +78,21 @@ public struct MentionTextStyle: @MainActor Hashable {
         return string
     }
 
+    /// The text as it's measured from itself alone, where no shape is looked up (a kind fitting its
+    /// height to it as a pure function of its props, `DerivedProps`: a note made by `canvas draw`):
+    /// each mention a live pill by the name it holds, which is as wide as the canvas draws it while
+    /// its shape is called that, whatever its kind's symbol (a symbol has a slot of its own,
+    /// `MentionStyle.symbolSlot`). One drawn missing or unavailable has no symbol, so it's narrower.
+    public func measuredString<S>(_ text: ScopedMentionText<S>, width: CGFloat?) -> NSAttributedString {
+        var labels = text.runs.lazy.compactMap { run -> String? in
+            if case .mention(_, let label) = run { label } else { nil }
+        }.makeIterator()
+        // Its symbol is drawn nowhere, so it names none: the slot is the same.
+        return attributedString(text, width: width) { _ in
+            .live(MentionAppearance(label: labels.next() ?? "", systemImage: "", kindName: "", detail: ""))
+        }
+    }
+
     /// Where each of `ranges` of `string` (made by `attributedString`) is when the canvas draws it
     /// in a box of `size` (`drawMentionText`): a rect a line the range is on, from the box's
     /// top-left (down is +y), as wide as its glyphs and pills there and as tall as the line; none

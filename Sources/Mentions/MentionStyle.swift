@@ -19,6 +19,11 @@ enum MentionStyle {
     static let pillPadding: CGFloat = 0.3
     /// The kind's symbol, semibold: 0.7 em.
     static let symbolSize: CGFloat = 0.7
+    /// The room the symbol is centered in, whatever its kind's: 1 em, as wide as the widest shipped
+    /// symbol is at 0.7 (a frame's `rectangle.dashed`, 16 points at 16; a wider one is drawn smaller
+    /// to fit). So a live pill is as wide as its label makes it, and text measured from itself alone,
+    /// where no shape is looked up, is as wide as it's drawn (`MentionTextStyle.measuredString`).
+    static let symbolSlot: CGFloat = 1
     /// Between the symbol and the label: 0.2 em.
     static let symbolGap: CGFloat = 0.2
     /// The label, medium: 0.85 em.

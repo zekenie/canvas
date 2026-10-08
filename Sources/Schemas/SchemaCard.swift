@@ -49,7 +49,7 @@ public struct SchemaCard: BoxShapeProps {
     public init() { self.init(frame: .zero) }
 
     /// Sets the description and the card's height to its text at the card's width, set as the card
-    /// sets it (a note's text: `SchemaStyle`), each mention a pill by the name it holds, keeping its
+    /// sets it (a note's text: `SchemaStyle`), each mention a live pill by the name it holds, keeping its
     /// top-left corner and width, so the card grows and shrinks downward in the same transaction;
     /// never shorter than one line (`SchemaCardMetrics.emptyHeight`). A card too narrow for text keeps
     /// its height.

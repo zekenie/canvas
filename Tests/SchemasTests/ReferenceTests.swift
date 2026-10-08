@@ -63,6 +63,15 @@ extension SyncBench {
     func write(_ id: ShapeID, _ prompt: SchemaPromptText) {
         editor.transact { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt(prompt) } }
     }
+
+    /// How tall the card is once editing it begins, which grows one too short for its description as
+    /// its editor shows it, pills and all.
+    func heightEditing(_ id: ShapeID) throws -> CGFloat? {
+        expect(editor.beginEditing(id))
+        _ = try require(editor.makeEditingView())
+        defer { editor.endEditing() }
+        return editor.document[id]?.box?.height
+    }
 }
 
 @MainActor let referenceTests = Suite("Schema references", [
@@ -260,7 +269,7 @@ extension SyncBench {
         expect(b.editor.mentions?.isMentioned(address) == true)
         expectEqual(b.editor.mentions?.backlinks(of: address).map(\.id), [house])
     },
-    test("the card draws its description's mentions as pills, live, inside its text; one fitted from properties is as tall as its text with them") {
+    test("the card draws its description's mentions as pills, live, inside its text; one fitted from properties is as tall as its editor fits it, each pill measured live by the name it holds") {
         let b = try SyncBench()
         let address = b.add(addressSchema)
         let house = b.place()
@@ -275,6 +284,25 @@ extension SyncBench {
                                                                     mentioning: address, as: "Address").stored),
         ])
         expectEqual(made.box?.height, frame.height, "fitted, the pill measured by the name it holds")
+        // A short name's pills, three to a line drawn, five measured without their symbols.
+        let zip = b.add(#"{"title": "Zip", "type": "object"}"#, at: CGPoint(x: 800, y: 0))
+        let many = described(String(repeating: "@ ", count: 12) + "and more", mentioning: zip, as: "Zip")
+        let fitted = try b.editor.registry.shape(SchemaCard.kind, properties: ["frame": [[0, 300], [240, 52]], "prompt": .string(many.stored)])
+        b.editor.transact { $0.insert(fitted) }
+        let height = try require(fitted.box?.height)
+        expect(height > 52, "\(height)")
+        expectEqual(try b.heightEditing(fitted.id), height, "as its editor fits it")
+    },
+    test("a description the model writes with mentions is as tall as the card's editor fits it") {
+        let b = try SyncBench()
+        let zip = b.add(#"{"title": "Zip", "type": "object"}"#)
+        let house = b.place()
+        b.typeSchema(house, houseSchema(uri(zip)))
+        b.sync(house, answer: "A house at " + String(repeating: "@Zip ", count: 12) + "and bedrooms (required).")
+        expectEqual(b.card(house)?.prompt.runs.filter { if case .mention = $0 { true } else { false } }.count, 12)
+        let height = try require(b.editor.document[house]?.box?.height)
+        expect(height > 89, "\(height)")
+        expectEqual(try b.heightEditing(house), height)
     },
     test("a highlight on a mention is its pill: the model's words are found in the description as it read it, and the words after it are where they're drawn") {
         let b = try HighlightBench()

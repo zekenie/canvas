@@ -41,8 +41,8 @@ public struct ShapeStatement: Sendable, Equatable {
     public var word: String
     /// Its title as written (escapes undone), or nil for an untitled shape. Never blank.
     public var title: String?
-    /// `size:`, from the statement or a style.
-    public var size: CGSize?
+    /// `size:`, from the statement or a style: both sides, or a width alone.
+    public var size: Size?
     /// `gap:`, from the statement or a style.
     public var gap: Gap?
     /// `overlap: allow`, from the statement or a style.
@@ -60,7 +60,7 @@ public struct ShapeStatement: Sendable, Equatable {
     /// written. Not a placement: it says which shape holds it, not where it sits.
     public var container: String?
 
-    public init(word: String, title: String? = nil, size: CGSize? = nil, gap: Gap? = nil, overlapAllowed: Bool = false,
+    public init(word: String, title: String? = nil, size: Size? = nil, gap: Gap? = nil, overlapAllowed: Bool = false,
                 newTitle: String? = nil, styles: [String] = [], attributes: [Attribute] = [], clauses: [Clause] = [], container: String? = nil) {
         self.word = word
         self.title = title

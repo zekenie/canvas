@@ -160,7 +160,7 @@ An attribute is `key: value`. Each key appears once in a statement; the second i
 
 | key | value | what it does |
 |---|---|---|
-| `size:` | `<width>x<height>` (`x` or `×`), or `[w, h]`; both above 0, and at most 100000 | The shape's size in world units. A new shape defaults to what its tool places; a restated one keeps its size. |
+| `size:` | `<width>x<height>` (`x` or `×`), or `[w, h]`; both above 0, and at most 100000. Or a width alone, `<width>x` | The shape's size in world units. A new shape defaults to what its tool places; a restated one keeps its size. A width alone leaves the height to the kind: a note's or a schema card's fitted to its text at that width, any other kind's as it was (a new one's as its tool places it). |
 | `gap:` | `none`, `tight`, `normal`, `wide`, or a number from 0 to 100000 | This shape's default gap in every placement it's in, from either end. See [Gaps](#gaps). |
 | `overlap:` | `allow` | This shape may overlap others. It's never pushed, and it's never part of a list. |
 | `style:` | a name, or several joined by `,` or `and` | The styles it takes, in order. See [Styles](#styles). |
@@ -181,7 +181,7 @@ Every other key is one of the kind's properties, named as its schema names it; `
 
 The shipped kinds' attributes:
 
-- **sticky-note**: `text` (what it says: past eight lines or so the note grows taller to fit it, from its top. A `size:` holds as drawn only until its text changes, typed by the user or set again by a script without `size:`: then it's as tall as its text again, never under 200, and opening it to edit grows it to its text. So don't use a note as a zone of a set height), `locked`, `public`.
+- **sticky-note**: `text` (what it says: past eight lines or so the note grows taller to fit it, from its top. A `size:` with a height holds as drawn only until its text changes, typed by the user or set again by a script without `size:`: then it's as tall as its text again, never under 200, and opening it to edit grows it to its text. So don't use a note as a zone of a set height. A width alone, `size: 320x`, makes it that wide and as tall as its text there, in one run), `locked`, `public`.
 - **schema-card**: `prompt` (what the schema should hold, in words: the card shows it, as a note shows its text, and grows to fit it; with none it's blank; it may mention other schema cards by their titles, and only them), `schema` (a JSON Schema, as text: its properties in the order written, shown in the card's panel), `locked`, `public`. What a script writes is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree.
 - **subboard**: `locked` (locking a subboard locks what's on its board, at any depth), `public`.
 - **frame**: `locked` (locking a frame locks what's in it, at any depth), `public`.
@@ -195,6 +195,12 @@ A value past a bound (a title over 80 characters, say) isn't refused. The shape 
 ```draw
 sticky-note "Backfill" below "Ingest" text: "Waiting on the vendor's March files"
 sticky-note "Nightly schedule" below "Load" text: "Pick a time after @[Load], and add a timeout"
+```
+
+A note wider than a new one, as tall as its text, takes a width alone:
+
+```draw
+sticky-note "Vendor contacts" left of "Row" size: 360x text: "Files: data-ops at the vendor, weekdays. Outages: their on-call line, any hour. Billing: the account manager, who answers within a day."
 ```
 
 ### A text that mentions shapes
@@ -217,7 +223,7 @@ sticky-note "Nightly schedule" text: "Pick a time after @[Lod], and add a timeou
 ### Keys that are refused
 
 - **The title, as an attribute, on a new shape** (`unsupported`). The title goes after the kind, in quotes. On a restated shape, `title:` renames it.
-- **Coordinates** (`unsupported`). The box's `frame`, and any property that holds a point or a rectangle, can't be set: there are no coordinates here. Say where a shape goes with a placement, and how big with `size:`. `x:`, `y:`, `at:` and `position:` get the same answer, and `width:` and `height:` are pointed to `size:`.
+- **Coordinates** (`unsupported`). The box's `frame`, and any property that holds a point or a rectangle, can't be set: there are no coordinates here. Say where a shape goes with a placement, and how big with `size:`. `x:`, `y:`, `at:` and `position:` get the same answer, and `width:` and `height:` are pointed to `size:` (a width alone is `size: 300x`).
 - **A kind's property named like a language key** (`size`, `gap`, `overlap`, `style`, `title`) can't be set. `canvas kinds` marks any such property; none of the shipped kinds has one.
 
 ## Placements
@@ -680,7 +686,7 @@ sticky-note "Backfill March" below "Fix the loader" style: big text: "Rerun once
 
 A statement whose title is already on the board updates that shape. It changes only what it says.
 
-- **No placements**: the shape stays where it is. A new `size:` grows or shrinks it from its top-left, with a warning if it now overlaps something.
+- **No placements**: the shape stays where it is. A new `size:` grows or shrinks it from its top-left, with a warning if it now overlaps something. A width alone fits a note to its text again at that width, whatever height it was drawn with.
 - **With placements**: the shape moves, and is kept clear like a new one. An axis no placement speaks for stays where it was. A lone direction still centers the other axis, as it does for a new shape.
 - `did` says what happened: `updated` (attributes changed), `moved` (only when its bounds changed), `renamed`, or `unchanged`. A statement that changes nothing is `unchanged` and never an error, even on a locked shape.
 - A locked shape refuses any real change (`read_only`). Saying `locked: false` unlocks it, but that's the user's call.

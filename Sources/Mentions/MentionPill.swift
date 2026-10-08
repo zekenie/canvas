@@ -7,8 +7,9 @@ import Canvas
 /// which TextKit 2 and string drawing both honor: the canvas and the note's editor draw it alike.
 ///
 /// Its metrics come from its style's font (an em): as tall as a line holds without growing, its
-/// bottom just above the font's descender, the kind's symbol then the label, no wider than 16 em
-/// (or its text, if narrower), a longer label ending in "…". Live, it's the text's color at 10% on
+/// bottom just above the font's descender, the kind's symbol (in a slot as wide whatever the symbol,
+/// so the pill is as wide as its label makes it) then the label, no wider than 16 em (or its text,
+/// if narrower), a longer label ending in "…". Live, it's the text's color at 10% on
 /// a shape's surface, the system's on a neutral one; selected, the selection's colors; naming a
 /// shape that isn't there or can't be mentioned, a dashed outline and the name it holds, in
 /// italic, with no symbol.
@@ -160,15 +161,20 @@ public struct MentionPillLayout {
         } else {
             symbol = nil
         }
-        let symbolWidth = symbol.map { $0.size.width + MentionStyle.symbolGap * em } ?? 0
+        // A live pill's symbol has its slot, whichever symbol it is (or none, if it can't be found).
+        let slot = MentionStyle.symbolSlot * em
+        let symbolWidth = isLive ? slot + MentionStyle.symbolGap * em : 0
         let measured = ceil((label as NSString).size(withAttributes: [.font: font]).width)
         let natural = ceil(padding * 2 + symbolWidth + measured)
         let widest = min(MentionStyle.maxWidth * em, widthLimit ?? .infinity)
         let width = max(ceil(padding * 2 + symbolWidth), min(natural, floor(widest)))
         bounds = CGRect(x: 0, y: style.font.descender + MentionStyle.pillBottomAboveDescender * em, width: width, height: height)
 
-        let symbolSize = symbol?.size ?? .zero
-        symbolRect = CGRect(x: padding, y: ((height - symbolSize.height) / 2).rounded(), width: symbolSize.width, height: symbolSize.height)
+        // Centered in its slot, and no wider: one that's wider is drawn smaller.
+        var symbolSize = symbol?.size ?? .zero
+        if symbolSize.width > slot { symbolSize = CGSize(width: slot, height: symbolSize.height * slot / symbolSize.width) }
+        symbolRect = CGRect(x: padding + (slot - symbolSize.width) / 2, y: ((height - symbolSize.height) / 2).rounded(),
+                            width: symbolSize.width, height: symbolSize.height)
         let lineHeight = ceil(font.ascender - font.descender)
         let labelX = padding + symbolWidth
         labelRect = CGRect(x: labelX, y: ((height - lineHeight) / 2).rounded(), width: max(0, width - labelX - padding), height: lineHeight)

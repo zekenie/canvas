@@ -78,7 +78,7 @@ extension Script {
 /// A style as defined, and what it gives, read.
 struct StyleSource {
     var definition: StyleDefinition
-    var size: CGSize?
+    var size: Size?
     var gap: Gap?
     var overlapAllowed: Bool
     /// What it gives but the language's keys.
@@ -453,27 +453,35 @@ struct LineParser {
         seen.append((key, written))
     }
 
-    func size(_ value: Attribute.Value, key: String) throws(ScriptError) -> CGSize {
-        let refusal = error(.invalidValue, "\(key) \(value.written) isn't a size", hint: "write \(key) <width>x<height>, as \(key) 200x120 (world units)")
+    /// `<width>x<height>` (or `×`), `[w, h]`, or a width alone, `<width>x`: each side finite, more
+    /// than 0, and at most `largest`.
+    func size(_ value: Attribute.Value, key: String) throws(ScriptError) -> Size {
+        let refusal = error(.invalidValue, "\(key) \(value.written) isn't a size",
+                            hint: "write \(key) <width>x<height>, as \(key) 200x120, or a width alone, as \(key) 200x (world units)")
         let numbers: [Double]
         switch value {
         case .word(let word):
             let parts = word.replacingAll("×", with: "x").split(separator: "x", omittingEmptySubsequences: false)
             guard parts.count == 2 else { throw refusal }
-            numbers = parts.compactMap { Double($0) }
+            // A width alone (`300x`): the height is the kind's.
+            let sides = parts[1].isEmpty ? [parts[0]] : parts
+            numbers = sides.compactMap { Double($0) }
+            guard numbers.count == sides.count else { throw refusal }
         case .json(let json):
             let inner = json.trimmingSpaces
             guard inner.hasPrefix("["), inner.hasSuffix("]") else { throw refusal }
-            numbers = inner.dropFirst().dropLast().split(separator: ",", omittingEmptySubsequences: false).compactMap { Double(String($0).trimmingSpaces) }
-            guard inner.dropFirst().dropLast().split(separator: ",", omittingEmptySubsequences: false).count == 2 else { throw refusal }
+            // Both sides: JSON has no width alone.
+            let parts = inner.dropFirst().dropLast().split(separator: ",", omittingEmptySubsequences: false)
+            numbers = parts.compactMap { Double(String($0).trimmingSpaces) }
+            guard parts.count == 2, numbers.count == 2 else { throw refusal }
         case .quoted: throw refusal
         }
-        guard numbers.count == 2, numbers.allSatisfy({ $0.isFinite && $0 > 0 }) else { throw refusal }
+        guard numbers.allSatisfy({ $0.isFinite && $0 > 0 }) else { throw refusal }
         guard numbers.allSatisfy({ $0 <= Self.largest }) else {
             throw error(.invalidValue, "\(key) \(value.written) is too big: a side is at most \(Self.written(Self.largest)) world units",
                         hint: "write \(key) <width>x<height>, each at most \(Self.written(Self.largest))")
         }
-        return CGSize(width: numbers[0], height: numbers[1])
+        return Size(width: numbers[0], height: numbers.count == 2 ? numbers[1] : nil)
     }
 
     /// The most a `size:` side or a gap's number may be, in world units: more than any board needs,

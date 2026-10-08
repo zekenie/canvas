@@ -30,7 +30,7 @@ public enum Keyword: String, Sendable, CaseIterable {
 /// The attribute keys the language keeps for itself. Every other key on a shape is one of its
 /// kind's properties, which the caller checks.
 public enum LanguageKey: String, Sendable, CaseIterable {
-    /// `size: 200x120`, in world units.
+    /// `size: 200x120`, in world units, or a width alone, `size: 200x`.
     case size
     /// `gap: wide`: this shape's default gap in every placement it's in.
     case gap
@@ -179,6 +179,29 @@ public enum Gap: Sendable, Hashable {
         case .named(let name): name.rawValue
         case .units(let units): units == units.rounded() && abs(units) < 1e15 ? String(Int(units)) : "\(units)"
         }
+    }
+}
+
+/// `size:` as written: a width and a height (`300x200`), or a width alone (`300x`), the height then
+/// what the caller's kind gives it (a note as tall as its text at that width). World units.
+public struct Size: Sendable, Hashable {
+    public var width: CGFloat
+    /// Nil for a width alone.
+    public var height: CGFloat?
+
+    public init(width: CGFloat, height: CGFloat?) {
+        self.width = width
+        self.height = height
+    }
+
+    /// Both sides: its own, its height else `height`.
+    public func size(height fallback: CGFloat) -> CGSize {
+        CGSize(width: width, height: height ?? fallback)
+    }
+
+    /// As a script writes it: `300x200`, `300x`.
+    public var written: String {
+        Gap.units(width).written + "x" + (height.map { Gap.units($0).written } ?? "")
     }
 }
 

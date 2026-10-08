@@ -638,8 +638,9 @@ the same way): `NoteStyle.fittedHeight(of:width:keeping:)` measures the text as 
 it, pills and all, with string drawing, and the note's editor writes the height in the same update
 as the text (`textDidChange`), so growing is part of the typing's step; its text view grows with
 the editor the canvas lays over the note. A note made or given text from properties is fitted too
-(`DerivedProps`, each mention measured by the name it holds), so `canvas draw` places it as tall as
-it is; a board read keeps what it saved.
+(`DerivedProps`, each mention measured as a live pill by the name it holds, `measuredString`), so
+`canvas draw` places it as tall as typing it would make it, and beginning to edit it grows it no
+taller; a board read keeps what it saved.
 
 The note's render draws its text with string drawing (`NSAttributedString.draw`), and its editing
 view is a TextKit 2 `NSTextView` laid over it, which the canvas scales by the zoom; the two must
@@ -5382,7 +5383,13 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
 - **The pill** (`MentionAttachment`, one U+FFFC character) is the kind's symbol and the name, no
   "@", its metrics fractions of the font's size (`MentionStyle`): 17 points tall in 16-point text,
   so a note's lines keep their 19 points; at most 16 em wide, or the line, its name ending in "…".
-  A missing one has no fill, a dashed outline, and its name in italic. Its image is drawn afresh
+  The symbol is centered in a slot an em wide (`MentionStyle.symbolSlot`, the widest shipped
+  symbol's width; a wider one is drawn smaller), so a live pill is as wide as its name makes it,
+  whatever its kind. That's what lets text be measured from itself alone, where no shape is looked
+  up (`MentionTextStyle.measuredString(_:width:)`, what a note's and a schema card's `DerivedProps`
+  fit their height to): each mention a live pill by the name it holds, as wide as it's drawn while
+  its shape is called that. A missing one has no fill, a dashed outline, no symbol, and its name in
+  italic. Its image is drawn afresh
   wherever it's drawn, never kept as a bitmap (`cacheMode` `.never`): the canvas keeps thousands
   of pills built, and a bitmap for each scale they're drawn at would come to hundreds of megabytes
   after a pan at 400%.
@@ -8916,7 +8923,11 @@ steps, the first three against the board as the run starts:
    in a warning). A new shape starts as what its tool places (`placement.shape(at:)`), and every
    shape's attributes are set by the core (`registry.shape(_:setting:)`), so the registry builds
    every record, and what the kind derives from them (a schema card's height, a note's from its
-   text, `DerivedProps`) is the size it's placed at, unless the statement gives one. What a shape is bound to
+   text, `DerivedProps`) is the size it's placed at, unless the statement gives one; given a width
+   alone (`size: 300x`, a `Size` with no height), the shape is built at that width and what the
+   kind derives is put in step there, whether any property is set or not (`registry.derived(_:)`),
+   so a note is that wide and as tall as its text in one run, and a kind that derives nothing keeps
+   its height. What a shape is bound to
    (`ShapeReferencing`) must be on the board as the script leaves it, or it's `invalid_value`; what
    it only names (`ShapeNaming`, a note's mentions) needn't be. A kind whose titles are only
    derived (a schema card's, from its schema's `"title"`) takes no title in its statement
@@ -9612,9 +9623,10 @@ registrar.channel(SchemaLink.self)
 - **Its height** is its description's, set in the same transaction: `setPrompt` sets the text and
   fits the height to it at the card's width (`prompt` is `internal(set)`, so nothing writes it
   without), as a note's text fits a note (`SchemaStyle.fittedHeight`: its lines, measured as string
-  drawing sets them, each pill by the name its mention holds, with half a point spare, and the
-  padding; the editor's `setPrompt(_:shown:)` measures its text as it shows it), at least a line: a new card is
-  240 × 52. The editor writes it with every change, so the card grows and shrinks with what's typed,
+  drawing sets them, each pill live by the name its mention holds (`measuredString`), with half a
+  point spare, and the padding; the editor's `setPrompt(_:shown:)` measures its text as it shows
+  it), at least a line: a new card is 240 × 52. So a description drawn, or written by the model, is
+  as tall as the editor fits it. The editor writes it with every change, so the card grows and shrinks with what's typed,
   in the typing's step, and grows one too short for its description as editing begins (a card
   drawn with a `size:`); one drawn taller keeps its height until it's typed into. The width is the
   person's. A card made from properties, or given a description that way (`canvas draw`), is as
@@ -10155,7 +10167,7 @@ it, the core or a horizontal.
 | `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the drag's delta (the pointer's, or what the [translation adjuster](#the-cores-part-the-translation-adjuster) made of it: Snapping's snap), after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding) |
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
-| `DerivedProps` | Props that hold something following from the rest, which the kind's setters keep in step. A shape made from properties written somewhere else, `registry.shape(_:properties:)`, or given some of its own that way, `registry.shape(_:setting:)` (the command line's `draw`), goes through `derive(_:)` first, so it's as its setters would have left it; a board read (a shape is as saved), a paste, and what a person does don't. | Schemas (a card's height, from its description; `draw`'s `size:` still wins), StickyNotes (a note's height, from its text) |
+| `DerivedProps` | Props that hold something following from the rest, which the kind's setters keep in step. A shape made from properties written somewhere else, `registry.shape(_:properties:)`, or given some of its own that way, `registry.shape(_:setting:)` (the command line's `draw`), goes through `derive(_:)` first, so it's as its setters would have left it, and so does one handed to `registry.derived(_:)` (`draw`'s width alone); a board read (a shape is as saved), a paste, and what a person does don't. | Schemas (a card's height, from its description; `draw`'s `size:` still wins, but for a width alone), StickyNotes (a note's height, from its text) |
 | `CustomSkeleton` | Drawn more simply zoomed out. `renderSkeleton` draws in `render`'s place while the canvas draws [skeletons](#skeletons) (the camera's zoom under `editor.skeletonZoom`, 35%), but for the shape being edited: its fills, and bars where its text would be (`context.fillSkeletonText`, each as long as its text's columns, `SkeletonText`), never text, shadows or pictures of its own, cheaply: the shape, its kept geometry and `context.zoom`, and what its plugin already keeps of the shape if it's there, never parsing or laying out text; a picture only through `RenderContext` (a subboard's board preview). Its outline there (selected, hovered, the hint) is its kept geometry's, right for a skeleton that fills its geometry or differs from a rect only by corners rounded a pixel or two, unless it adopts `CustomSkeletonOutline`; a shape a few pixels across is outlined by its bounds. Without it a kind is the default skeleton, its geometry in one gray (`context.drawSkeleton(of:color:)`). | StickyNotes (its yellow, its text greeked), Subboards (fills and its preview), Schemas (square, with an edge, so outlined by its frame, its description greeked as a note's text), Arrows (its arc and heads) |
 | `CustomSkeletonOutline` | A `CustomSkeleton` outlined its own way while skeletons are drawn (selected, hovered, the hint): `skeletonIndicatorPath(of:in:)`, what `renderSkeleton` draws, so the outline and the skeleton agree, made from the shape and its kept geometry, since ⌘A zoomed out asks it of every shape of the kind in view each frame; nil for its kept geometry's. Found once per kind (`registry.skeletonOutlines`), so no other kind's shape is asked; never asked for a shape a few pixels across, outlined by its bounds. | Arrows (the arc and its heads, where its kept geometry is three points) |
 | `StrokedShape` | A kind drawn as a line, an open shape, saying how wide its line is, in world units: `lineWidth(of:in:)`. What a tinted outline of it (`Outlines.tinted`, a plugin's own colors: Neighbors' lights) covers, drawn in full: as wide on screen as the line and a point more, round, so the shape's own line and heads don't show along the middle of the outline, a stripe in a thick line at 200% and wider than a thin one at 50%. Zoomed out, where the skeleton is a point-wide line, a tint is its plain width, and the selection's and a hover's outlines stay thin whatever it says. Found once per kind (`registry.strokedShapes`), so no other kind's shape is asked; `registry.lineWidth(of:in:)` reads it, for what decorates along a line. | Arrows (3.5, `ArrowStyle.strokeWidth`); CanvasTesting's `Cable` |

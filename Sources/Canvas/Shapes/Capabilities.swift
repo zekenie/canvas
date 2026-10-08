@@ -145,7 +145,8 @@ public struct ShapeTranslation<Props: ShapeProps> {
 /// (a schema card's height, which `setPrompt` fits to its description). A shape made from properties
 /// written somewhere else, `Registry.shape(_:properties:)`, or given some of its own that way,
 /// `shape(_:setting:)` (the command line's `draw`), goes through `derive` before anything else is
-/// done with it, so it's in step as the setters would have left it. A board read doesn't (a shape
+/// done with it, so it's in step as the setters would have left it, and so does one handed to
+/// `registry.derived(_:)` (`draw`'s width alone, at the new width). A board read doesn't (a shape
 /// is as it was saved), nor does a paste, nor anything a person does.
 public protocol DerivedProps: ShapeDefinition {
     func derive(_ props: inout Props)

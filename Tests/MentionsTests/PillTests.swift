@@ -51,6 +51,15 @@ private func live(_ label: String, symbol: String = "rectangle.fill", tint: NSCo
     }
 }
 
+/// The pills in an attributed string, in order.
+@MainActor private func pills(in string: NSAttributedString) -> [MentionAttachment] {
+    var pills: [MentionAttachment] = []
+    string.enumerateAttribute(.attachment, in: NSRange(location: 0, length: string.length)) { value, _, _ in
+        if let pill = value as? MentionAttachment { pills.append(pill) }
+    }
+    return pills
+}
+
 /// How tall text is laid out `width` points wide, by string drawing.
 @MainActor private func drawnHeight(_ string: NSAttributedString, width: CGFloat) -> CGFloat {
     string.boundingRect(with: CGSize(width: width, height: 10_000), options: [.usesLineFragmentOrigin]).height
@@ -90,6 +99,49 @@ private func live(_ label: String, symbol: String = "rectangle.fill", tint: NSCo
         expectEqual(narrow.bounds.width, 100)
         let short = MentionAttachment(target: idA, storedLabel: "", resolution: live("A"), style: note, width: 100)
         expect(short.bounds.width < 40, "\(short.bounds.width)")
+    },
+
+    test("a live pill's symbol is centered in a slot an em wide, so a pill is as wide whatever its symbol; a wider one is drawn smaller, within it") {
+        // 9 to 18 points wide at 0.7 em, and one that isn't a symbol.
+        let symbols = ["rectangle.fill", "note.text", "square.dashed", "curlybraces", "ellipsis.curlybraces", "no.such.symbol"]
+        for style in [note, neutral] {
+            let widths = symbols.map { MentionAttachment(target: idA, storedLabel: "", resolution: live("Groceries", symbol: $0), style: style).bounds.width }
+            expectEqual(Set(widths).count, 1, "\(widths)")
+        }
+        // 0.3 em at each end, the slot's em, and 0.2 em before the label: 28.8 at 16.
+        let wide = MentionAttachment(target: idA, storedLabel: "", resolution: live("", symbol: "ellipsis.curlybraces"), style: note)
+        expectEqual(wide.bounds.width, 29)
+        let rep = draw(wide)
+        expect(anyPixel(rep, in: CGRect(x: 5, y: 0, width: 15, height: wide.bounds.height)) { $0[0] < 160 }, "the symbol, in its slot")
+        expect(!anyPixel(rep, in: CGRect(x: 21.5, y: 0, width: wide.bounds.width - 21.5, height: wide.bounds.height)) { $0[0] < 200 },
+               "none of it past the slot, 4.8 to 20.8")
+    },
+
+    test("text measured from itself alone: each mention a live pill by the name it holds, as wide as one drawn live while its shape is called that, whatever its kind; a missing one is narrower") {
+        let text = MentionText([.text("Ask "), .mention(idA, label: "Groceries"), .text(" and "), .mention(idB, label: "Milk"), .text(" or "),
+                                .mention(idA, label: "Food")])
+        for style in [note, neutral] {
+            let measured = style.measuredString(text, width: 200)
+            var shown = [live("Groceries", symbol: "note.text"), live("Milk", symbol: "rectangle.dashed"), live("Food", symbol: "square.dashed")]
+                .makeIterator()
+            let drawn = style.attributedString(text, width: 200) { _ in shown.next()! }
+            expectEqual(measured.string, drawn.string)
+            expectEqual(pills(in: measured).map(\.bounds), pills(in: drawn).map(\.bounds))
+            expectEqual(pills(in: measured).map(\.shownLabel), ["Groceries", "Milk", "Food"])
+            expectEqual(pills(in: measured).map(\.target), [idA, idB, idA])
+            let missing = style.attributedString(text, width: 200) { _ in .missing }
+            expect(zip(pills(in: missing), pills(in: measured)).allSatisfy { $0.bounds.width < $1.bounds.width }, "no symbol")
+        }
+        // A long name is cut where a drawn one is: at the text's width.
+        let long = MentionText([.mention(idA, label: String(repeating: "Very long name ", count: 10))])
+        expectEqual(pills(in: note.measuredString(long, width: 100)).first?.bounds.width, 100)
+        // So a text of many mentions is as tall measured as drawn, where measuring each as missing
+        // (as notes made by draw were) left lines out.
+        let many = MentionText((0..<24).flatMap { [MentionRun.text($0 == 0 ? "See " : " and "), .mention($0 % 2 == 0 ? idA : idB, label: "Milk")] })
+        let width: CGFloat = 168
+        let drawn = note.attributedString(many, width: width) { _ in live("Milk", symbol: "note.text") }
+        expectEqual(drawnHeight(note.measuredString(many, width: width), width: width), drawnHeight(drawn, width: width))
+        expect(drawnHeight(note.attributedString(many, width: width) { _ in .missing }, width: width) < drawnHeight(drawn, width: width))
     },
 
     test("missing and unavailable: the name held, or what's wrong when it holds none, and a tooltip") {
