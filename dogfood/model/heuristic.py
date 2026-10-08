@@ -32,8 +32,8 @@ import collections, os, sys
 
 MODEL = os.environ.get('MODEL_DIR', os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, MODEL)
-import gen                                              # noqa: E402  (loads the project's model.json)
-from gen import PROD, ftitle, board_files, board_of    # noqa: E402
+import common                                              # noqa: E402  (loads the project's model.json)
+from common import PROD, ftitle, board_files, board_of    # noqa: E402
 
 # ---- the rules, over any graph -----------------------------------------------------------------------
 
@@ -119,8 +119,8 @@ def references_of(nodes, uses, weight, title=str):
 
 # ---- a module's (or folder's) board --------------------------------------------------------------------
 
-SAME, _ = gen.edges_between(set(PROD))
-NAMES = {(a, b): len(names) for a, b, names in gen.USES}
+SAME, _ = common.edges_between(set(PROD))
+NAMES = {(a, b): len(names) for a, b, names in common.USES}
 
 def symbols(a, b):
     """How much file a uses file b: the number of b's symbols a names (the index's `names`)."""
@@ -152,9 +152,9 @@ def arrows(board):
 def folder_graph(m):
     """A module's folder boards as a graph: a folder uses another when one of its files uses one of the
     other's; the weight is how many file pairs do. The files on the module's own board are left out."""
-    folders = set(gen.folder_boards(m))
+    folders = set(common.folder_boards(m))
     pairs = collections.Counter()
-    for a, b, _ in gen.USES:
+    for a, b, _ in common.USES:
         if a[0] == m and b[0] == m:
             x, y = board_of(a), board_of(b)
             if x != y and x in folders and y in folders:
@@ -166,7 +166,7 @@ if __name__ == '__main__':
     import time
     t0 = time.time()
     total = kept = 0
-    for b in gen.boards_for(PROD):
+    for b in common.boards_for(PROD):
         d = decide(b)
         g = d['graph']
         n, k = len(g.units(d['uses'])), len(g.units(d['arrows']))
@@ -174,7 +174,7 @@ if __name__ == '__main__':
         if n:
             print(f"{b:<20} {k:>3} of {n:>3} arrows  h={d['h']}  hubs: {', '.join(ftitle(x) for x in d['hubs']) or '-'}")
     print(f"{kept} of {total} same-board uses stay arrows; {time.time() - t0:.2f}s")
-    for m in gen.FOLDER_BOARDS:
+    for m in common.FOLDER_BOARDS:
         nodes, uses, w = folder_graph(m)
         d = decide_graph(nodes, uses, w)
         g = d['graph']

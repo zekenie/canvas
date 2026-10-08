@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Layout v5. Which uses between a board's files are arrows comes from heuristic.py: a board's hubs, and
+"""The layout. Which uses between a board's files are arrows comes from heuristic.py: a board's hubs, and
 the arrows two stronger ones already relay, are pills; so is an arrow that would cross more than ALLOW
 lets it. A frame whose files have arrows between them is a ladder: two columns, pills on the outer sides,
 the arrows between them. A module with folder boards (Canvas) is drawn the same way, its folders' cards in place of notes.
@@ -8,17 +8,17 @@ start's pills as a group packs them, but with no gaps between groups for their f
 first in a staging area, the groups move into place in temporary frames, and the notes go home. On the root, an import is an arrow only when it clears every shape but its
 ends after a small bend and its end takes no more than CAP arrows. The root hangs from a temporary note,
 deleted once its pills are home.
-    gen5.py plan                  checks every board's plan, draws nothing
-    gen5.py reset                 deletes what's drawn, and the marks of what was
-    gen5.py all                   draws what isn't drawn yet (resumable: runs/v9-done-*)
-    check.py gen5                 the board against the plan"""
+    layout.py plan                checks every board's plan, draws nothing
+    layout.py reset               deletes what's drawn, and the marks of what was
+    layout.py all                 draws what isn't drawn yet (resumable: runs/done-*)
+    check.py                      the board against the plan"""
 import hashlib, json, math, os, sys, collections
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import gen, gen2
-from gen import (q, text_lit, ftitle, bare, board_of, board_files, folder_boards, key_in, file_text, about_text, about_title,
+import common, geometry
+from common import (q, text_lit, ftitle, bare, board_of, board_files, folder_boards, key_in, file_text, about_text, about_title,
                  PROD, MODS, FILES, USES, BOARDS, BANDS, GROUPS, BY_MODULE, FOLDER_BOARDS, draw, cli, RUNS)
-from gen2 import Box, arc_points, at, note_w, list_h, pill_w, measured, ABOUT_W, SUB_W, SUB_H, PILL_GAP, PILL_PITCH, PILL_H, FRAME_MIN_H
+from geometry import Box, arc_points, at, note_w, list_h, pill_w, measured, ABOUT_W, SUB_W, SUB_H, PILL_GAP, PILL_PITCH, PILL_H, FRAME_MIN_H
 
 P = 64                  # inside a frame, from each edge: `in` needs 40, a group frame reaches 16 past its pills
 GX, GY = 80, 96         # between units
@@ -431,17 +431,17 @@ def plan_board(board, pilled=frozenset()):
     M = measured()
     def height(t):
         if t not in M:
-            raise SystemExit(f"no height measured for {t}: run gen2.py measure {BOARDS[board][0]}")
+            raise SystemExit(f"no height measured for {t}: run geometry.py measure {BOARDS[board][0]}")
         return M[t]
-    same, other = gen.edges_between(set(PROD))
+    same, other = common.edges_between(set(PROD))
     arrows = [(k, t) for k, t, _ in board_pairs(board) if (k, t) not in pilled]
     def unit(k):
         t = ftitle(k)
-        pub = gen.is_public(k, other) or any(t2 == k for _, t2 in pilled)
+        pub = common.is_public(k, other) or any(t2 == k for _, t2 in pilled)
         right, left = file_columns(k, other, sorted((t2 for k2, t2 in pilled if k2 == k), key=ftitle))
         return Unit(t, file_text(k), note_w(t, pub), height(t), pub, right, left, key=k)
     measured_about = height(about_title(board))
-    about = Unit(about_title(board), about_text(board), ABOUT_W, gen2.about_height(board, M) if '@[' in about_text(board) else measured_about,
+    about = Unit(about_title(board), about_text(board), ABOUT_W, geometry.about_height(board, M) if '@[' in about_text(board) else measured_about,
                  False, Column('', [], 'r'), Column('', [], 'l'))
     frames, notes = [], []
     spec = GROUPS.get(board)
@@ -603,7 +603,7 @@ def board_pairs(board):
     return out + file_pairs(board)
 
 def file_pairs(board):
-    same, _ = gen.edges_between(set(PROD))
+    same, _ = common.edges_between(set(PROD))
     files = set(board_files(board))
     done, out = set(), []
     for k in sorted(files, key=ftitle):
@@ -638,7 +638,7 @@ def chosen_references(board):
 _decided = {}
 BOARD_SEARCH = True
 _searched = set()
-SEARCH_FILE = os.path.join(RUNS, 'v9-search.json')
+SEARCH_FILE = os.path.join(RUNS, 'search.json')
 
 def search_stamp(board):
     """What a board's search was run against: its frames, its uses and its notes' heights."""
@@ -786,7 +786,7 @@ def label(board):
     """A board's name in run marks, script files and temporary titles: its title with '_' for '/', made unique."""
     if not _labels:
         _labels[None] = 'root'      # the root's own
-        for b in [m for m in PROD if m in FOLDER_BOARDS] + gen.boards_for(PROD):
+        for b in [m for m in PROD if m in FOLDER_BOARDS] + common.boards_for(PROD):
             base, n = b.replace('/', '_'), 1
             while (base if n == 1 else f"{base}-{n}") in _labels.values():
                 n += 1
@@ -804,7 +804,7 @@ def step_boards(boards):
         A = about.title
         lines = [f"sticky-note {q(A)} in {q(board)} size: {ABOUT_W}x{math.ceil(about.nh)} text: {text_lit(about.text)}"]
         lines += [f"frame {q(f['title'])} in {q(board)} size: {f['w']}x{f['h']} {at(A, f['bx'], f['by'])}" for f in frames if f['parent'] is None]
-        draw(f'v9-board-{label(board)}-frames', '\n'.join(lines) + '\n')
+        draw(f'board-{label(board)}-frames', '\n'.join(lines) + '\n')
         fr = {f['title']: f for f in frames}
         level = {f['title']: 0 for f in frames if f['parent'] is None}
         pending, depth = [f for f in frames if f['parent'] is not None], 1
@@ -812,12 +812,12 @@ def step_boards(boards):
             now = [f for f in pending if level.get(f['parent']) == depth - 1]
             lines = [f"frame {q(f['title'])} in {q(f['parent'])} size: {f['w']}x{f['h']} "
                      f"{at(f['parent'], f['bx'] - fr[f['parent']]['bx'], f['by'] - fr[f['parent']]['by'])}" for f in now]
-            draw(f'v9-board-{label(board)}-frames-{depth + 1}', '\n'.join(lines) + '\n')
+            draw(f'board-{label(board)}-frames-{depth + 1}', '\n'.join(lines) + '\n')
             for f in now: level[f['title']] = depth
             pending = [f for f in pending if f not in now]
             depth += 1
         lines = [note_stmt(n['unit'], at(A, n['stage'].x, n['stage'].y), board) for n in notes]
-        draw(f'v9-board-{label(board)}-notes', '\n'.join(lines) + '\n')
+        draw(f'board-{label(board)}-notes', '\n'.join(lines) + '\n')
 
 def step_edges(boards):
     """Pills, then the arrows that stay arrows, bent as decided."""
@@ -833,7 +833,7 @@ def step_edges(boards):
             bend = arrow_of(about, notes, k, t)
             lines.append(f"edge {q(title_of(k))} {'<->' if both else '->'} {q(title_of(t))}" + (f" bend: {bend}" if bend else ''))
         if lines:
-            draw(f'v9-edges-{label(board)}', '\n'.join(lines) + '\n')
+            draw(f'edges-{label(board)}', '\n'.join(lines) + '\n')
 
 def size(b):
     return f"size: {math.ceil(b.w)}x{math.ceil(b.h)}"
@@ -850,7 +850,7 @@ def step_groups(boards):
             for g in n['gframes']:
                 lines.append(group_stmt(g, n['holder'], n['hx'], n['hy']) if n['holder'] else group_stmt(g, board, 0, 0, about.title))
         if lines:
-            draw(f'v9-groups-{label(board)}', '\n'.join(lines) + '\n')
+            draw(f'groups-{label(board)}', '\n'.join(lines) + '\n')
 
 def place_in(board, about, n, b):
     """Where box b goes, as `in` and an exact offset: in the note's holder, or on the board."""
@@ -866,28 +866,28 @@ def step_temps(boards, rnd=1):
         lines = [f"frame {q(t)} {f'in {q(board)} {at(about.title, b0.x, b0.y)}' if rnd == 1 else place_in(board, about, n, b0)} "
                  f"{size(b0)} overlap: allow" for t, b0, b1, n in temps(notes, label(board), rnd)]
         if lines:
-            draw(f'v9-temps{rnd if rnd > 1 else ""}-{label(board)}', '\n'.join(lines) + '\n')
+            draw(f'temps{rnd if rnd > 1 else ""}-{label(board)}', '\n'.join(lines) + '\n')
 
 def step_pack(boards, rnd=1):
     for board in boards:
         about, _, notes, _, _ = plan_for(board)
         lines = [f"frame {q(t)} {place_in(board, about, n, b1)}" for t, b0, b1, n in temps(notes, label(board), rnd)]
         if lines:
-            draw(f'v9-pack{rnd if rnd > 1 else ""}-{label(board)}', '\n'.join(lines) + '\n')
+            draw(f'pack{rnd if rnd > 1 else ""}-{label(board)}', '\n'.join(lines) + '\n')
 
 def step_untemp(boards, rnd=1):
     for board in boards:
         _, _, notes, _, _ = plan_for(board)
         lines = [f"delete {q(t)}" for t, _, _, _ in temps(notes, label(board), rnd)]
         if lines:
-            draw(f'v9-untemp{rnd if rnd > 1 else ""}-{label(board)}', '\n'.join(lines) + '\n')
+            draw(f'untemp{rnd if rnd > 1 else ""}-{label(board)}', '\n'.join(lines) + '\n')
 
 def step_home(boards):
     for board in boards:
         about, _, notes, _, _ = plan_for(board)
         lines = [f"{n['unit'].kind} {q(n['unit'].title)} {place_in(board, about, n, n['box'])}" for n in notes]
         if lines:
-            draw(f'v9-home-{label(board)}', '\n'.join(lines) + '\n')
+            draw(f'home-{label(board)}', '\n'.join(lines) + '\n')
 
 # ---- the root -------------------------------------------------------------------------------------
 
@@ -900,7 +900,7 @@ def balanced_rows(ms, per=7):
 
 class RootLayout:
     def __init__(self, pilled):
-        bands = gen2.band_order()
+        bands = geometry.band_order()
         pos = {m: (bi, i) for bi, (_, ms) in enumerate(bands) for i, m in enumerate(ms)}
         self.cols = {}
         for m in PROD:
@@ -1012,18 +1012,18 @@ def root_report(pilled, lay):
 def root_bands(lay):
     """The anchor and the layer bands. They name no shape already drawn, so they go on the board the window
     shows: the window goes to the root first."""
-    gen.canvas('show', '--board', gen.BOARD, '--root')
+    common.canvas('show', '--board', common.BOARD, '--root')
     lines = [f"sticky-note {q(ANCHOR)} size: {ANCHOR_W}x{ANCHOR_W}"]
     lines += [f"frame {q(b['title'])} size: {b['w']}x{b['h']} {at(ANCHOR, b['x'], b['y'])}" for b in lay.bands]
-    saved = gen.EXPECTED
-    gen.EXPECTED = saved + ('was nudged wholly in or out',)
+    saved = common.EXPECTED
+    common.EXPECTED = saved + ('was nudged wholly in or out',)
     try:
-        draw('v9-root-1-bands', '\n'.join(lines) + '\n')
+        draw('root-1-bands', '\n'.join(lines) + '\n')
     finally:
-        gen.EXPECTED = saved
+        common.EXPECTED = saved
 
 def root_modules(lay):
-    draw('v9-root-2-modules', '\n'.join(f"subboard {q(m)} {at(ANCHOR, lay.stage[m].x, lay.stage[m].y)} size: {SUB_W}x{SUB_H} public: true"
+    draw('root-2-modules', '\n'.join(f"subboard {q(m)} {at(ANCHOR, lay.stage[m].x, lay.stage[m].y)} size: {SUB_W}x{SUB_H} public: true"
                                          for m in PROD) + '\n')
 
 def root_temps(lay, rnd=1):
@@ -1046,43 +1046,43 @@ def root_edges(pilled, lay):
         r, l = lay.cols[m]
         lines += r.edges(m, via=True) + l.edges(m, via=True)
     lines += [f"edge {q(m)} -> {q(d)} bend: {lay.arrow(m, d)}" for m, d in EDGES if (m, d) not in pilled]
-    draw('v9-root-3-edges', '\n'.join(lines) + '\n')
+    draw('root-3-edges', '\n'.join(lines) + '\n')
 
 def root_temps_step(pilled, lay):
     tt = root_temps(lay)
-    draw('v9-root-4-temps', '\n'.join(f"frame {q(t)} {at(ANCHOR, b0.x, b0.y)} {size(b0)} overlap: allow" for t, b0, b1, m in tt) + '\n')
+    draw('root-4-temps', '\n'.join(f"frame {q(t)} {at(ANCHOR, b0.x, b0.y)} {size(b0)} overlap: allow" for t, b0, b1, m in tt) + '\n')
 
 def root_pack(pilled, lay):
-    draw('v9-root-5-pack', '\n'.join(f"frame {q(t)} {root_in_band(lay, m, b1)}" for t, b0, b1, m in root_temps(lay)) + '\n')
+    draw('root-5-pack', '\n'.join(f"frame {q(t)} {root_in_band(lay, m, b1)}" for t, b0, b1, m in root_temps(lay)) + '\n')
 
 def root_untemp(pilled, lay):
-    draw('v9-root-6-untemp', '\n'.join([f"delete {q(t)}" for t, _, _, _ in root_temps(lay)] + [f"delete {q(ANCHOR)}"]) + '\n')
+    draw('root-6-untemp', '\n'.join([f"delete {q(t)}" for t, _, _, _ in root_temps(lay)] + [f"delete {q(ANCHOR)}"]) + '\n')
 
 def root_temps2(pilled, lay):
     """The second round's frames, in the bands, where the first left the pills: the anchor's gone by then."""
     tt = root_temps(lay, 2)
     if tt:
-        draw('v9-root-6a-temps2', '\n'.join(f"frame {q(t)} {root_in_band(lay, m, b0)} {size(b0)} overlap: allow" for t, b0, b1, m in tt) + '\n')
+        draw('root-6a-temps2', '\n'.join(f"frame {q(t)} {root_in_band(lay, m, b0)} {size(b0)} overlap: allow" for t, b0, b1, m in tt) + '\n')
 
 def root_pack2(pilled, lay):
     tt = root_temps(lay, 2)
     if tt:
-        draw('v9-root-6b-pack2', '\n'.join(f"frame {q(t)} {root_in_band(lay, m, b1)}" for t, b0, b1, m in tt) + '\n')
+        draw('root-6b-pack2', '\n'.join(f"frame {q(t)} {root_in_band(lay, m, b1)}" for t, b0, b1, m in tt) + '\n')
 
 def root_untemp2(pilled, lay):
     tt = root_temps(lay, 2)
     if tt:
-        draw('v9-root-6c-untemp2', '\n'.join(f"delete {q(t)}" for t, _, _, _ in tt) + '\n')
+        draw('root-6c-untemp2', '\n'.join(f"delete {q(t)}" for t, _, _, _ in tt) + '\n')
 
 def root_groups(pilled, lay):
     lines = []
     for m in PROD:
         b = lay.band_of[m]
         lines += [group_stmt(g, b['title'], b['x'], b['y']) for g in lay.gframes[m]]
-    draw('v9-root-7-groups', '\n'.join(lines) + '\n')
+    draw('root-7-groups', '\n'.join(lines) + '\n')
 
 def root_home(pilled, lay):
-    draw('v9-root-8-home', '\n'.join(f"subboard {q(m)} {root_in_band(lay, m, lay.card[m])}" for m in PROD) + '\n')
+    draw('root-8-home', '\n'.join(f"subboard {q(m)} {root_in_band(lay, m, lay.card[m])}" for m in PROD) + '\n')
 
 ROOT_STEPS = dict(edges=root_edges, temps=root_temps_step, pack=root_pack, untemp=root_untemp, temps2=root_temps2, pack2=root_pack2,
                   untemp2=root_untemp2, groups=root_groups, home=root_home)
@@ -1090,14 +1090,14 @@ ROOT_STEPS = dict(edges=root_edges, temps=root_temps_step, pack=root_pack, untem
 # ---- everything ----------------------------------------------------------------------------------
 
 def all_boards():
-    return gen.boards_for(PROD)
+    return common.boards_for(PROD)
 
 def step_reset():
     """Everything at the root, so every board under it, and the marks of what was drawn; the window goes to
     the root first, since a board the window shows can't be deleted. Only what's there is deleted: a delete
     of a title that isn't there refuses the whole script."""
-    gen.canvas('show', '--board', gen.BOARD, '--root')
-    found = gen.canvas('query', '--board', gen.BOARD, '--limit', '10000', 'subboard, frame, sticky-note')
+    common.canvas('show', '--board', common.BOARD, '--root')
+    found = common.canvas('query', '--board', common.BOARD, '--limit', '10000', 'subboard, frame, sticky-note')
     if found['count'] > len(found['rows']):
         raise SystemExit(f"reset: {found['count']} shapes, more than a query lists")
     here = {r['title']: r['kind'] for r in found['rows'] if r.get('board') == 'root' and r.get('title')}
@@ -1119,7 +1119,7 @@ def step_reset():
             raise SystemExit(f"reset refused: {r['error']}")
         print(f"deleted: {len(r['changes'])} rows")
     for f in os.listdir(RUNS):
-        if f.startswith(('drawn-', 'v9-done-')):
+        if f.startswith('done-'):
             os.remove(os.path.join(RUNS, f))
 
 def drawn_boards():
@@ -1150,7 +1150,7 @@ def step_plan():
           + (f"twice: {twice[:8]}" if twice else "each once"))
 
 def once(name, fn):
-    mark = os.path.join(RUNS, f'v9-done-{name}')
+    mark = os.path.join(RUNS, f'done-{name}')
     if os.path.exists(mark): return
     fn()
     open(mark, 'w').write('')
@@ -1172,7 +1172,7 @@ def step_all():
             once(f'{name}-{label(b)}', lambda b=b, fn=fn: fn([b]))
     for name, fn in ROOT_STEPS.items():
         once(f'root-{name}', lambda fn=fn: fn(pilled, lay))
-    once('about-pad', lambda: gen2.step_about_pad(PROD))
+    once('about-pad', lambda: geometry.step_about_pad(PROD))
 
 if __name__ == '__main__':
     step, args = sys.argv[1], sys.argv[2:]
@@ -1185,5 +1185,5 @@ if __name__ == '__main__':
     elif step == 'reset':
         step_reset()
     elif step == 'boards' or step in STEPS:
-        boards = ([m for m in args if m in FOLDER_BOARDS] + gen.boards_for(args)) if args else drawn_boards()
+        boards = ([m for m in args if m in FOLDER_BOARDS] + common.boards_for(args)) if args else drawn_boards()
         (step_boards if step == 'boards' else STEPS[step])(boards)
