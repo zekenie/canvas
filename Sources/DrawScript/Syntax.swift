@@ -219,7 +219,17 @@ public struct Clause: Sendable, Hashable {
     }
 
     static func write(_ relation: Relation, _ targets: [Target], gap: String?) -> String {
-        let named = listed(targets.map(\.written))
+        write(relation, naming: targets.map(\.written), gap: gap)
+    }
+
+    /// A placement quoted back with its targets named as given: one a caller makes up against a shape
+    /// no title names, said in words of its own (`below the reference to "Auth" (gap: 16)`).
+    public static func written(_ relation: Relation, naming targets: [String], gap: Gap? = nil) -> String {
+        write(relation, naming: targets, gap: gap?.written)
+    }
+
+    static func write(_ relation: Relation, naming targets: [String], gap: String?) -> String {
+        let named = listed(targets)
         let bracket = gap.map { " (\(LanguageKey.gap.rawValue): \($0))" } ?? ""
         switch relation {
         case .direction(let direction):

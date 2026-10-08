@@ -17,7 +17,7 @@ extension FrameStyle {
 extension PluginRegistrar {
     /// Create Frame, in the menu of any shapes a frame can hold (those with a box: an arrow alone has
     /// none): a frame around them, holding them, put down by the core (`place(_:around:)`), reaching
-    /// `FrameStyle.padding` past them and never under `Frame.minimumSize` where the frame they're all in
+    /// `FrameStyle.padding` past them and never under its placement's `minimumSize` where the frame they're all in
     /// has room, in that frame, just below the lowest of them; what it mostly covers comes in, what it
     /// barely reaches is nudged out. Selected, one step, named as the item is. A locked one among them
     /// leaves it all as it was, and shakes. An item for the canvas, as Turn into Subboard is: it's for
@@ -28,7 +28,8 @@ extension PluginRegistrar {
                 let document = subject.editor.document
                 return subject.shapes.contains { document[$0]?.box != nil }
             }) { ids, editor in
-                editor.place(ShapeRecord(Frame()), around: ids, padding: FrameStyle.padding, minimumSize: Frame.minimumSize)
+                editor.place(ShapeRecord(Frame()), around: ids, padding: FrameStyle.padding,
+                             minimumSize: editor.registry.placement(for: Frame.kind)?.minimumSize ?? .zero)
             }
         }
     }

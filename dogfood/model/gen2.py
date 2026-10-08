@@ -11,7 +11,9 @@ from gen import q, text_lit, ftitle, board_files, file_text, about_text, about_t
 
 NOTE_W, ABOUT_W = 300, 360
 SUB_W, SUB_H = 360, 180
-PILL_H, PILL_PITCH, PILL_GAP = 32, 96, 80
+PILL_H, PILL_STEP, PILL_GAP = 32, 16, 80   # a pill; draw's step between the pills beside a start, and its gap from it
+PILL_PITCH = PILL_H + PILL_STEP
+FRAME_MIN_H = 64                            # the smallest frame draw makes (96 wide), as the Frame tool
 MEASURED = os.path.join(gen.PROJECT, 'measured.json')
 
 def pill_w(title):

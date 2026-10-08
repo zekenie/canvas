@@ -1,6 +1,7 @@
 import Canvas
 import CoreGraphics
 import DrawScript
+import Geometry
 import Topology
 
 // Edges through stand-ins. An arrow can't leave its board, and a shape many arrows point at needs no
@@ -300,8 +301,10 @@ extension Drawing {
 
     /// Adds a stand-in for `target`, called `label`, as a new shape of the run beside the shape `near`
     /// (on the board, or the item of one the script draws): right of it where it's the start of the
-    /// edge, left of it where it's the end, or on the side the edge names for it. It's placed as any new
-    /// shape is, kept clear of what's there, and put down in or out of the containers it lands on.
+    /// edge, left of it where it's the end, or on the side the edge names for it; where a run before left
+    /// a column of stand-ins there, at the end of it (`columnEnd`). It's placed as any new shape is,
+    /// kept clear of what's there, and put down in or out of the containers it lands on; those beside
+    /// one shape on one side are a list, `LayoutProblem.impliedListStep` apart.
     private mutating func addStandIn(_ kind: ShapeKind, for target: AnyShapeRecord, called label: String, beside near: ShapeID, item: Int?,
                                      title nearTitle: String, nearIs place: EdgePlace, side: EdgeSide?,
                                      _ statement: Statement) throws(AutomationError) -> ShapeID {
@@ -323,12 +326,88 @@ extension Drawing {
         } else {
             throw AutomationError(statement, .internal, "\(quoted(nearTitle)) isn't on the board the reference is drawn on")
         }
-        let clause = Clause(relation: .direction(direction), targets: [Target(.title(nearTitle))])
-        var standIn = ShapeItem(statement: statement, shape: ShapeStatement(word: kind.rawValue, clauses: [clause]), kind: kind, title: nil,
+        var clauses = [Clause(relation: .direction(direction), targets: [Target(.title(nearTitle))])]
+        var targets: [[ShapeItem.Found]] = [[found]]
+        if let end = columnEnd(beside: near, item: item, direction) {
+            // Next in the column: a step past its end, lined up with it as the list was.
+            let named = standInName(end), step = Gap.units(LayoutProblem.impliedListStep)
+            let way: Direction = direction == .above ? .above : .below
+            clauses = [Clause(relation: .direction(way), targets: [Target(.title(named))], gap: step,
+                              written: Clause.written(.direction(way), naming: [named], gap: step))]
+            let line: AlignSide? = switch direction {
+            case .right: .left
+            case .left: .right
+            default: nil
+            }
+            if let line {
+                clauses.append(Clause(relation: .level(line), targets: [Target(.title(named))], written: Clause.written(.level(line), naming: [named])))
+            }
+            targets = clauses.map { _ in [.shape(end)] }
+        }
+        var standIn = ShapeItem(statement: statement, shape: ShapeStatement(word: kind.rawValue, clauses: clauses), kind: kind, title: nil,
                                 existing: nil, record: record, size: size)
-        standIn.targets = [[found]]
+        standIn.targets = targets
         standIn.standsFor = label
         items.append(standIn)
         return record.id
+    }
+
+    // MARK: Joining a column
+
+    /// The end of the column of stand-ins a run before left beside `near` on the side `direction`
+    /// names, which a new one there joins: of the stand-ins an arrow on the board joins to it (each
+    /// standing for one shape), those wholly on that side of it, lined up as a list beside it lines
+    /// its members up (left edges right of it, right edges left of it, middles above and below it), on
+    /// the line nearest it whose stand-ins reach across from its middle, as a list drawn beside it does
+    /// (one dragged off elsewhere isn't beside it); and of those, the lowest (above it, the topmost),
+    /// which the new one goes past. Nil for none, and wherever this run moves `near` (a shape it draws,
+    /// places or carries in a container it moves) or that end, which wouldn't be beside it any more.
+    private mutating func columnEnd(beside near: ShapeID, item: Int?, _ direction: Direction) -> AnyShapeRecord? {
+        if let item, items[item].moves { return nil }
+        guard let nearBox = target.shapes.geometry(of: near)?.bounds, nearBox.isFinite, !movesWithRun(near) else { return nil }
+        let slack: CGFloat = 0.5
+        var beside: [(record: AnyShapeRecord, box: CGRect)] = []
+        for other in connected(to: near) {
+            guard !deleted.contains(other), standIn(at: other, in: target.document) != nil, let record = target.document[other],
+                  !beside.contains(where: { $0.record.id == other }),
+                  let box = target.shapes.geometry(of: other)?.bounds, box.isFinite else { continue }
+            let wholly = switch direction {
+            case .right: box.minX >= nearBox.maxX - slack
+            case .left: box.maxX <= nearBox.minX + slack
+            case .below: box.minY >= nearBox.maxY - slack
+            default: box.maxY <= nearBox.minY + slack
+            }
+            if wholly { beside.append((record, box)) }
+        }
+        /// Where a stand-in's box is across the column, and how far from `near` it is.
+        func line(_ box: CGRect) -> (across: CGFloat, distance: CGFloat) {
+            switch direction {
+            case .right: (box.minX, box.minX - nearBox.maxX)
+            case .left: (box.maxX, nearBox.minX - box.maxX)
+            case .below: (box.midX, box.minY - nearBox.maxY)
+            default: (box.midX, nearBox.minY - box.maxY)
+            }
+        }
+        for nearest in beside.sorted(by: { line($0.box).distance < line($1.box).distance }) {
+            let column = beside.filter { abs(line($0.box).across - line(nearest.box).across) <= slack }
+            let span = column.reduce(CGRect.null) { $0.union($1.box) }
+            let across = direction == .right || direction == .left ? span.minY <= nearBox.midY && nearBox.midY <= span.maxY
+                : span.minX <= nearBox.midX && nearBox.midX <= span.maxX
+            guard across else { continue }
+            let end = direction == .above ? column.min { $0.box.minY < $1.box.minY } : column.max { $0.box.maxY < $1.box.maxY }
+            guard let end, !movesWithRun(end.record.id) else { return nil }
+            return end.record
+        }
+        return nil
+    }
+
+    /// A stand-in on the board, as a message names it: `the reference to "Auth"`, by the title of what it
+    /// stands for, else where it is.
+    func standInName(_ record: AnyShapeRecord) -> String {
+        guard let stoodFor = standsForShape(record.id, in: target.document),
+              let title = Drawing.title(of: stoodFor, names: names, naming: naming, registry: registry) else {
+            return "the \(Drawing.location(of: record, in: target.shapes))"
+        }
+        return "the \(record.kind) to \(quoted(title))"
     }
 }

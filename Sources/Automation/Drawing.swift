@@ -135,6 +135,11 @@ struct Drawing {
     /// edge that may go through a stand-in; `boardConnections()`); empty without DrawEdges.
     private var connections: [BoardConnection] = []
     private var connectionsRead = false
+    /// The other ends of the board's connections, by shape, but those the run deletes, once a stand-in
+    /// asks (`connected(to:)`).
+    private var connectedEnds: [ShapeID: [ShapeID]]?
+    /// The board shapes the run moves, restated with placements, once a stand-in asks (`movesWithRun`).
+    private var movingShapes: Set<ShapeID>?
     /// The board's connections that don't join two shapes (an end left free), by each shape they
     /// name, as the run starts: a delete takes them with the shape.
     private var looseConnections: [ShapeID: [AnyShapeRecord]] = [:]
@@ -495,6 +500,15 @@ struct Drawing {
         // A width alone keeps the height, until the kind works out its own at that width (`complete`).
         let had = existing?.box?.size ?? placement.size
         let size = shape.size?.size(height: had.height) ?? had
+        // The smallest its shapes are drawn, the kind's tool's and resizing's too (a frame's 96 × 64);
+        // a shape restated at the size it is already changes nothing.
+        let least = placement.minimumSize
+        if let written = shape.size, size.width < least.width || size.height < least.height, size != existing?.box?.size {
+            let fitted = Size(width: max(written.width, least.width), height: written.height.map { max($0, least.height) } ?? (size.height < least.height ? least.height : nil))
+            let key = LanguageKey.size.rawValue
+            throw AutomationError(statement, .invalidValue, "\(key): \(written.written) is too small: \(indefinite(kind)) is at least \(Self.written(least))",
+                                  hint: "write \(key): \(fitted.written), or bigger")
+        }
         if let title { itemByTitle[title] = items.count }
         items.append(ShapeItem(statement: statement, shape: shape, kind: kind, title: title, existing: existing, record: base, size: size,
                                nearMiss: nearMiss))
@@ -1020,6 +1034,31 @@ struct Drawing {
             }
         }
         return connections
+    }
+
+    /// The shapes the board's connections join to this one, as the run starts, but those it deletes:
+    /// indexed the first time a shape is asked about, so a run that asks of many pays one pass over
+    /// the board's connections. Asked once the deletes are known, as an edge is resolved.
+    mutating func connected(to id: ShapeID) -> [ShapeID] {
+        if connectedEnds == nil {
+            var ends: [ShapeID: [ShapeID]] = [:]
+            for connection in boardConnections() where !deleted.contains(connection.record.id) && connection.from != connection.to {
+                ends[connection.from, default: []].append(connection.to)
+                ends[connection.to, default: []].append(connection.from)
+            }
+            connectedEnds = ends
+        }
+        return connectedEnds?[id] ?? []
+    }
+
+    /// Whether this run moves a board shape: restates it with placements, or moves a container that
+    /// holds it. Asked once every shape statement is known, as an edge is resolved.
+    mutating func movesWithRun(_ id: ShapeID) -> Bool {
+        if movingShapes == nil { movingShapes = Set(items.compactMap { $0.moves ? $0.existing?.id : nil }) }
+        guard let moving = movingShapes, !moving.isEmpty else { return false }
+        if moving.contains(id) { return true }
+        let kinds = registry.containingKinds
+        return !kinds.isEmpty && target.document.containers(of: id, containingKinds: kinds).contains(where: moving.contains)
     }
 
     static func connections(in document: CanvasDocument, kind: ShapeKind, edging: DrawEdging, registry: Registry) -> [BoardConnection] {

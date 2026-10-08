@@ -17,7 +17,8 @@ import Geometry
 // 3. A box still without a position on an axis is tied to nothing there.
 //
 // Around that: region alignments (a placement against boxes that move apart, measured on a solve,
-// in rounds: one waits for those of what it lines up with), then separation rounds (the first
+// in rounds: one waits for those of what it lines up with), each list held as one across, where
+// that first solve has its members (its step holds it down the page), then separation rounds (the first
 // overlapping pair in a fixed order, pushed apart along what the placements already say, one pair
 // a round, each pair once, and every box that moves reported), repeated until a pass separates
 // nothing; and one drawing with nothing to hang on, solved alone and put where the view is clear.
@@ -295,20 +296,40 @@ struct Solver {
         }
     }
 
-    /// Boxes whose placements are written alike, in script order: two or more stack down the page
-    /// as one, each the list's step below the one before.
+    /// What makes boxes a list: placements alike, in the same order, each naming the same boxes and
+    /// parts with the same gap (a script's are written alike; one the caller made up names an untitled
+    /// shape in words of its own), and being boxes the caller made up or not, which never list
+    /// together: a box the script wrote is placed by what it says, not as one of the stand-ins
+    /// beside the same shape.
+    struct ListKey: Hashable {
+        struct Placed: Hashable {
+            var relation: Relation
+            var targets: [TargetKey]
+            var gap: Gap?
+        }
+
+        var placements: [Placed]
+        var implied: Bool
+    }
+
+    /// Boxes placed alike, in script order: two or more stack down the page as one, each the list's
+    /// step below the one before.
     mutating func findLists() {
-        var keys: [String] = []
-        var members: [String: [Int]] = [:]
+        var keys: [ListKey] = []
+        var members: [ListKey: [Int]] = [:]
         for (index, box) in problem.free.enumerated() where !box.clauses.isEmpty && !box.overlapAllowed {
-            let key = box.clauses.map(\.written).joined(separator: "\n")
+            let placements = box.clauses.map { clause in
+                ListKey.Placed(relation: clause.relation, targets: clause.targets.map { TargetKey(ref: $0.ref, part: $0.part) }, gap: clause.gap)
+            }
+            let key = ListKey(placements: placements, implied: box.implied)
             if members[key] == nil { keys.append(key) }
             members[key, default: []].append(index)
         }
         for key in keys {
             guard let list = members[key], list.count > 1 else { continue }
             let gaps = list.map { problem.free[$0].gap }
-            let step = gaps.allSatisfy({ $0 != nil && $0 == gaps[0] }) ? gaps[0]!.value : LayoutProblem.listStep
+            let step = gaps.allSatisfy({ $0 != nil && $0 == gaps[0] }) ? gaps[0]!.value
+                : key.implied ? LayoutProblem.impliedListStep : LayoutProblem.listStep
             let height = list.reduce(0) { $0 + problem.free[$1].size.height } + step * CGFloat(list.count - 1)
             for member in list { listOf[member] = lists.count }
             lists.append(List(members: list, step: step, height: height))
@@ -415,7 +436,7 @@ struct Solver {
         axis == .x ? "left level with \(targets) or right of \(targets)" : "level with \(targets) or below \(targets)"
     }
 
-    struct TargetKey: Equatable {
+    struct TargetKey: Hashable {
         var ref: LayoutProblem.Ref
         var part: Part?
     }
@@ -646,10 +667,20 @@ struct Solver {
         let within = inside.filter { inRun[node($0.box)] }
         var bounds = kept
         var solution: PerAxis<AxisSolution>
+        var listsHeld = false
         while true {
             bounds = kept
             let unsettled = try solveAll(bounds)
             solution = try settle(aligning, &bounds, from: unsettled)
+            if !listsHeld {
+                listsHeld = true
+                let ties = listHolds(boxes, solution.x)
+                if !ties.isEmpty {
+                    kept.x += ties
+                    bounds.x += ties
+                    solution = try solveAll(bounds)
+                }
+            }
             try keepInside(within, solution)
             var added = false
             while let clash = firstClash(boxes, solution, obstacles: obstacles) {
@@ -671,6 +702,23 @@ struct Solver {
             moved[index].placementsHold = placementsHold(moved[index].box, moved[index].way.axis, solution, bounds)
         }
         return (solution, moved)
+    }
+
+    /// What holds each list of these boxes as one across the page, where this solve, before anything
+    /// is kept apart, has its members: each member that far across from the one before. Its step
+    /// already holds it down the page, so a push either way moves the whole list, never a member alone.
+    func listHolds(_ boxes: [Int], _ across: AxisSolution) -> [Bound] {
+        var ties: [Bound] = []
+        let inRun = Set(boxes)
+        for list in lists where inRun.contains(list.members[0]) {
+            for (previous, member) in zip(list.members, list.members.dropFirst()) {
+                let from = across.pos[node(previous)], to = across.pos[node(member)]
+                guard from > -.infinity, to > -.infinity else { continue }
+                ties.append(Bound(from: node(previous), to: node(member), weight: to - from, why: .list(box: member, after: previous)))
+                ties.append(Bound(from: node(member), to: node(previous), weight: from - to, why: .list(box: member, after: previous)))
+            }
+        }
+        return ties
     }
 
     /// What one separation moved on its axis: each of the pair kept apart, past the other (or the
@@ -1066,7 +1114,16 @@ struct Solver {
     /// What's placed against it still follows it.
     enum Freedom { case after, before, held }
 
+    /// A list moves as one, so it's only as free as every member is: down the page a later member's
+    /// own placements say nothing (its head's hold the list), and alone it would drag the head off them.
     func freedom(_ box: Int, _ axis: Axis, _ solution: PerAxis<AxisSolution>, _ bounds: PerAxis<[Bound]>) -> Freedom {
+        guard let list = listOf[box] else { return ownFreedom(box, axis, solution, bounds) }
+        let each = lists[list].members.map { ownFreedom($0, axis, solution, bounds) }
+        return each.allSatisfy { $0 == each[0] } ? each[0] : .held
+    }
+
+    /// `freedom`, by a box's own placements alone.
+    func ownFreedom(_ box: Int, _ axis: Axis, _ solution: PerAxis<AxisSolution>, _ bounds: PerAxis<[Bound]>) -> Freedom {
         let solved = solution[axis], at = node(box)
         /// Whether one of its placements has it as far that way as it goes from a free box it names.
         func dragging(on: Bool) -> Bool {

@@ -3,9 +3,9 @@
 the arrows two stronger ones already relay, are pills; so is an arrow that would cross more than ALLOW
 lets it. A frame whose files have arrows between them is a ladder: two columns, pills on the outer sides,
 the arrows between them. A module with folder boards (Canvas) is drawn the same way, its folders' cards in place of notes.
-Pills are grouped by where they come from, each group in a frame titled "<where> (<note>)". Draw puts a
-start's pills 96 apart, so notes go first in a staging area, each pill moves into place in a temporary
-frame, and the notes go home. On the root, an import is an arrow only when it clears every shape but its
+Pills are grouped by where they come from, each group in a frame titled "<where> (<note>)". Draw stacks a
+start's pills as a group packs them, but with no gaps between groups for their frames' titles, so notes go
+first in a staging area, the groups move into place in temporary frames, and the notes go home. On the root, an import is an arrow only when it clears every shape but its
 ends after a small bend and its end takes no more than CAP arrows. The root hangs from a temporary note,
 deleted once its pills are home.
     gen5.py plan                  checks every board's plan, draws nothing
@@ -18,19 +18,18 @@ sys.path.insert(0, HERE)
 import gen, gen2
 from gen import (q, text_lit, ftitle, bare, board_of, board_files, folder_boards, key_in, file_text, about_text, about_title,
                  PROD, MODS, FILES, USES, BOARDS, BANDS, GROUPS, BY_MODULE, FOLDER_BOARDS, draw, cli, RUNS)
-from gen2 import Box, arc_points, at, note_w, list_h, pill_w, measured, ABOUT_W, SUB_W, SUB_H, PILL_GAP, PILL_PITCH, PILL_H
+from gen2 import Box, arc_points, at, note_w, list_h, pill_w, measured, ABOUT_W, SUB_W, SUB_H, PILL_GAP, PILL_PITCH, PILL_H, FRAME_MIN_H
 
 P = 64                  # inside a frame, from each edge: `in` needs 40, a group frame reaches 16 past its pills
 GX, GY = 80, 96         # between units
 BGX, BGY = 160, 200     # between blocks
 SUB = 112               # above a frame's subframes
-PADF, SLACK, TITLE = 12, 24, 40   # a group frame past its pills; more on the ragged side; its title, above it
-TPITCH = 48             # a pill and the gap under it, packed
+PADF, SLACK, TITLE = 12, 24, 40   # a group frame past its pills (a lone pill's, centered in the smallest frame); more on the ragged side; its title, above it
+TPITCH = PILL_PITCH     # a pill and the gap under it, packed: as draw stacks them, so a group moves whole
 FRAME_GAP = 64          # between two group frames: the lower one's title, clear to about 42% (draw's list step)
 PGAP, PGAP_MAX = 100, 260   # from a note to its pills, packed: farther for a tall column, so its fan isn't steep
 TALL = 640              # a file's column taller than this splits, its later groups going left
 DRAW_GAP = PILL_GAP     # where draw puts them first
-TEMP_H = 40             # a temporary frame around one pill (draw takes frames under the tool's 64)
 STAGE_GAP, STAGE_W = 200, 12000
 LAYER_OF = {m: t for t, ms in BANDS for m in ms}
 LAYER_RANK = {t: i for i, (t, _) in enumerate(BANDS)}
@@ -48,7 +47,7 @@ class Column:
     def __init__(self, owner, groups, side, via=()):
         self.owner, self.groups, self.side, self.via = owner, [(g, ps) for g, ps in groups if ps], side, set(via)
         self.pills = [p for _, ps in self.groups for p in ps]
-        self.fh = [2 * PADF + len(ps) * TPITCH - (TPITCH - PILL_H) for _, ps in self.groups]
+        self.fh = [max(FRAME_MIN_H, 2 * PADF + list_h(len(ps))) for _, ps in self.groups]
         self.H = (sum(self.fh) + FRAME_GAP * (len(self.groups) - 1)) if self.groups else 0
         self.fw = [math.ceil(max(max(pill_w(p) for p in ps) + 2 * PADF + SLACK, min(300, 6 * len(self.frame_title(g)) + 24))) for g, ps in self.groups]
         self.gap = min(PGAP_MAX, max(PGAP, round(0.25 * self.H)))
@@ -68,10 +67,11 @@ class Column:
             w = self.fw[gi]
             fx = s.x + s.w + self.gap - PADF if self.side == 'r' else s.x - self.gap + PADF - w
             frames.append(Box(fx, y, w, self.fh[gi], self.frame_title(g)))
+            top = y + (self.fh[gi] - list_h(len(ps))) / 2
             for j, p in enumerate(ps):
                 pw = pill_w(p)
                 px = s.x + s.w + self.gap if self.side == 'r' else s.x - self.gap - pw
-                pills.append(Box(px, y + PADF + j * TPITCH, pw, PILL_H, p))
+                pills.append(Box(px, top + j * TPITCH, pw, PILL_H, p))
             y += self.fh[gi] + FRAME_GAP
         return pills, frames
 
@@ -85,10 +85,45 @@ class Column:
             out.append(Box(px, top + j * PILL_PITCH, pw, PILL_H, p))
         return out
 
-    def temp_box(self, pill):
-        """A temporary frame around a pill, with room for its width to be off my estimate on its ragged side."""
-        x = pill.x - 8 if self.side == 'r' else pill.x + pill.w - (pill.w + 32)
-        return Box(x, pill.y - 4, pill.w + 40, TEMP_H, pill.name)
+    def by_group(self, pills):
+        """A column's pills (as place or drawn gives them), group by group."""
+        out, i = [], 0
+        for _, ps in self.groups:
+            out.append(pills[i:i + len(ps)])
+            i += len(ps)
+        return out
+
+    def carrier(self, pills):
+        """A temporary frame round these pills, with room for their widths to be off my estimate on their
+        ragged side: from 4 above the first, down to 4 below the last, or further, to the smallest frame."""
+        w = max(p.w for p in pills)
+        x = pills[0].x - 8 if self.side == 'r' else pills[0].x + pills[0].w + 8 - (w + 40)
+        top = pills[0].y - 4
+        return Box(x, top, w + 40, max(FRAME_MIN_H, pills[-1].y + PILL_H + 4 - top))
+
+    def moves(self, s0, s1):
+        """How the pills get from where draw puts them beside a start whose box is s0 to their groups beside it
+        at s1: two rounds of temporary frames, each a list of (where a frame is drawn, where it goes). Draw
+        stacks them as a group packs them, so a group moves whole; but a frame is at least FRAME_MIN_H tall,
+        and in draw's list a group of one pill has only 16 above and below it, so the groups go home in pairs
+        first, each pair's frame moved so its first group lands home (the last group, alone, at the list's
+        end, with room below it), then each pair's second group on its own, from just below the first,
+        its frame reaching down into the gap it's headed for."""
+        drawn, home = self.by_group(self.drawn(s0)), self.by_group(self.place(s1)[0])
+        def shifted(b, d):
+            return Box(b.x + d[0], b.y + d[1], b.w, b.h, b.name)
+        def delta(a, b):
+            return (b[0].x - a[0].x, b[0].y - a[0].y)
+        first, second = [], []
+        for i in range(0, len(drawn), 2):
+            d = delta(drawn[i], home[i])
+            frame = self.carrier(drawn[i] + (drawn[i + 1] if i + 1 < len(drawn) else []))
+            first.append((frame, shifted(frame, d)))
+            if i + 1 < len(drawn):
+                after = [shifted(p, d) for p in drawn[i + 1]]
+                frame = self.carrier(after)
+                second.append((frame, shifted(frame, delta(after, home[i + 1]))))
+        return first, second
 
     def edges(self, start, via=False):
         side = ' from: left' if self.side == 'l' else ''
@@ -462,17 +497,18 @@ def stage(notes, x0):
         x += u.uw0 + STAGE_GAP
         rowh = max(rowh, u.uh0)
 
-def temps(notes, prefix):
-    """Each pill's temporary frame: its title, where it goes down in the staging area, where it goes
-    to put the pill where it ends up, and its note."""
+TEMP_TAGS = ('zz-p', 'zz-q')    # the temporary frames' titles, round by round
+
+def temps(notes, prefix, rnd=1):
+    """Each temporary frame of a round (Column.moves): its title, where it's drawn (the first round's in the
+    staging area, the second's where the first left its pills), where it goes to put its pills home, and its note."""
     out, i = [], 0
     for n in notes:
         u = n['unit']
         for col in (u.right, u.left):
-            final, _ = col.place(n['box'])
-            for p0, p1 in zip(col.drawn(n['stage']), final):
+            for b0, b1 in col.moves(n['stage'], n['box'])[rnd - 1]:
                 i += 1
-                out.append((f"zz-p {prefix} {i}", col.temp_box(p0), col.temp_box(p1), n))
+                out.append((f"{TEMP_TAGS[rnd - 1]} {prefix} {i}", b0, b1, n))
     return out
 
 def check_plan(board, about, frames, notes):
@@ -799,9 +835,12 @@ def step_edges(boards):
         if lines:
             draw(f'v9-edges-{label(board)}', '\n'.join(lines) + '\n')
 
+def size(b):
+    return f"size: {math.ceil(b.w)}x{math.ceil(b.h)}"
+
 def group_stmt(g, holder, hx, hy, anchor=None):
     place = at(anchor or holder, g.x - hx, g.y - hy)
-    return f"frame {q(g.name)} in {q(holder)} {place} size: {math.ceil(g.w)}x{math.ceil(g.h)} overlap: allow"
+    return f"frame {q(g.name)} in {q(holder)} {place} {size(g)} overlap: allow"
 
 def step_groups(boards):
     for board in boards:
@@ -819,27 +858,29 @@ def place_in(board, about, n, b):
         return f"in {q(n['holder'])} {at(n['holder'], b.x - n['hx'], b.y - n['hy'])}"
     return f"in {q(board)} {at(about.title, b.x, b.y)}"
 
-def step_temps(boards):
+def step_temps(boards, rnd=1):
+    """A round's temporary frames, drawn over the pills they carry (`overlap: allow` takes them in): the first
+    round's in the staging area, the second's in the notes' holders, where the first left the pills."""
     for board in boards:
         about, _, notes, _, _ = plan_for(board)
-        lines = [f"frame {q(t)} in {q(board)} {at(about.title, b0.x, b0.y)} size: {math.ceil(b0.w)}x{TEMP_H} overlap: allow"
-                 for t, b0, b1, n in temps(notes, label(board))]
+        lines = [f"frame {q(t)} {f'in {q(board)} {at(about.title, b0.x, b0.y)}' if rnd == 1 else place_in(board, about, n, b0)} "
+                 f"{size(b0)} overlap: allow" for t, b0, b1, n in temps(notes, label(board), rnd)]
         if lines:
-            draw(f'v9-temps-{label(board)}', '\n'.join(lines) + '\n')
+            draw(f'v9-temps{rnd if rnd > 1 else ""}-{label(board)}', '\n'.join(lines) + '\n')
 
-def step_pack(boards):
+def step_pack(boards, rnd=1):
     for board in boards:
         about, _, notes, _, _ = plan_for(board)
-        lines = [f"frame {q(t)} {place_in(board, about, n, b1)}" for t, b0, b1, n in temps(notes, label(board))]
+        lines = [f"frame {q(t)} {place_in(board, about, n, b1)}" for t, b0, b1, n in temps(notes, label(board), rnd)]
         if lines:
-            draw(f'v9-pack-{label(board)}', '\n'.join(lines) + '\n')
+            draw(f'v9-pack{rnd if rnd > 1 else ""}-{label(board)}', '\n'.join(lines) + '\n')
 
-def step_untemp(boards):
+def step_untemp(boards, rnd=1):
     for board in boards:
         _, _, notes, _, _ = plan_for(board)
-        lines = [f"delete {q(t)}" for t, _, _, _ in temps(notes, label(board))]
+        lines = [f"delete {q(t)}" for t, _, _, _ in temps(notes, label(board), rnd)]
         if lines:
-            draw(f'v9-untemp-{label(board)}', '\n'.join(lines) + '\n')
+            draw(f'v9-untemp{rnd if rnd > 1 else ""}-{label(board)}', '\n'.join(lines) + '\n')
 
 def step_home(boards):
     for board in boards:
@@ -985,15 +1026,14 @@ def root_modules(lay):
     draw('v9-root-2-modules', '\n'.join(f"subboard {q(m)} {at(ANCHOR, lay.stage[m].x, lay.stage[m].y)} size: {SUB_W}x{SUB_H} public: true"
                                          for m in PROD) + '\n')
 
-def root_temps(lay):
-    """Each root pill's temporary frame, as temps() gives a board's."""
+def root_temps(lay, rnd=1):
+    """Each temporary frame of a round on the root, as temps() gives a board's."""
     out, i = [], 0
     for m in PROD:
         for col in lay.cols[m]:
-            final, _ = col.place(lay.card[m])
-            for p0, p1 in zip(col.drawn(lay.stage[m]), final):
+            for b0, b1 in col.moves(lay.stage[m], lay.card[m])[rnd - 1]:
                 i += 1
-                out.append((f"zz-p root {i}", col.temp_box(p0), col.temp_box(p1), m))
+                out.append((f"{TEMP_TAGS[rnd - 1]} root {i}", b0, b1, m))
     return out
 
 def root_in_band(lay, m, b):
@@ -1010,13 +1050,29 @@ def root_edges(pilled, lay):
 
 def root_temps_step(pilled, lay):
     tt = root_temps(lay)
-    draw('v9-root-4-temps', '\n'.join(f"frame {q(t)} {at(ANCHOR, b0.x, b0.y)} size: {math.ceil(b0.w)}x{TEMP_H} overlap: allow" for t, b0, b1, m in tt) + '\n')
+    draw('v9-root-4-temps', '\n'.join(f"frame {q(t)} {at(ANCHOR, b0.x, b0.y)} {size(b0)} overlap: allow" for t, b0, b1, m in tt) + '\n')
 
 def root_pack(pilled, lay):
     draw('v9-root-5-pack', '\n'.join(f"frame {q(t)} {root_in_band(lay, m, b1)}" for t, b0, b1, m in root_temps(lay)) + '\n')
 
 def root_untemp(pilled, lay):
     draw('v9-root-6-untemp', '\n'.join([f"delete {q(t)}" for t, _, _, _ in root_temps(lay)] + [f"delete {q(ANCHOR)}"]) + '\n')
+
+def root_temps2(pilled, lay):
+    """The second round's frames, in the bands, where the first left the pills: the anchor's gone by then."""
+    tt = root_temps(lay, 2)
+    if tt:
+        draw('v9-root-6a-temps2', '\n'.join(f"frame {q(t)} {root_in_band(lay, m, b0)} {size(b0)} overlap: allow" for t, b0, b1, m in tt) + '\n')
+
+def root_pack2(pilled, lay):
+    tt = root_temps(lay, 2)
+    if tt:
+        draw('v9-root-6b-pack2', '\n'.join(f"frame {q(t)} {root_in_band(lay, m, b1)}" for t, b0, b1, m in tt) + '\n')
+
+def root_untemp2(pilled, lay):
+    tt = root_temps(lay, 2)
+    if tt:
+        draw('v9-root-6c-untemp2', '\n'.join(f"delete {q(t)}" for t, _, _, _ in tt) + '\n')
 
 def root_groups(pilled, lay):
     lines = []
@@ -1028,7 +1084,8 @@ def root_groups(pilled, lay):
 def root_home(pilled, lay):
     draw('v9-root-8-home', '\n'.join(f"subboard {q(m)} {root_in_band(lay, m, lay.card[m])}" for m in PROD) + '\n')
 
-ROOT_STEPS = dict(edges=root_edges, temps=root_temps_step, pack=root_pack, untemp=root_untemp, groups=root_groups, home=root_home)
+ROOT_STEPS = dict(edges=root_edges, temps=root_temps_step, pack=root_pack, untemp=root_untemp, temps2=root_temps2, pack2=root_pack2,
+                  untemp2=root_untemp2, groups=root_groups, home=root_home)
 
 # ---- everything ----------------------------------------------------------------------------------
 
@@ -1052,7 +1109,7 @@ def step_reset():
         raise SystemExit(f"reset: the root's edges can't be listed: {r['error']}")
     on_board = {c['line'] for c in r.get('changes', []) if c.get('kind') == 'arrow' and c.get('did') == 'unchanged'}
     lines = [f'delete edge {q(a)} -> {q(b)}' for i, (a, b) in enumerate(pairs) if i + 1 in on_board]
-    lines += [f'delete {q(t)}' for t, kind in sorted(here.items()) if kind == 'frame' and (' (' in t or t.startswith('zz-p '))]
+    lines += [f'delete {q(t)}' for t, kind in sorted(here.items()) if kind == 'frame' and (' (' in t or t.startswith(tuple(f'{tag} ' for tag in TEMP_TAGS)))]
     lines += [f'delete {q(t)}' for t in [m for _, ms in BANDS for m in ms] if here.get(t) == 'subboard']
     lines += [f'delete {q(t)}' for t, _ in BANDS if here.get(t) == 'frame']
     lines += [f'delete {q(t)}' for t in (ANCHOR, LEGEND) if here.get(t) == 'sticky-note']
@@ -1098,7 +1155,9 @@ def once(name, fn):
     fn()
     open(mark, 'w').write('')
 
-STEPS = dict(edges=step_edges, temps=step_temps, pack=step_pack, untemp=step_untemp, groups=step_groups, home=step_home)
+STEPS = dict(edges=step_edges, temps=step_temps, pack=step_pack, untemp=step_untemp,
+             temps2=lambda b: step_temps(b, 2), pack2=lambda b: step_pack(b, 2), untemp2=lambda b: step_untemp(b, 2),
+             groups=step_groups, home=step_home)
 
 def step_all():
     pilled, lay = root_decide()

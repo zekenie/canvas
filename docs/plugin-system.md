@@ -618,7 +618,11 @@ is compiled by `./test.sh`, even before anything depends on it.
   the closure, so what makes shapes without the pointer places it as a click would
   (`registry.placement(for:)`: `canvas draw`); the tool puts it down with `editor.place(_:at:)`, or
   `editor.place(_:in:)` with the rect it drew, which is `place` with no press under way: settled at
-  once, the default tool back, `didPlace` heard. Any tool or gesture can also insert a shape itself, with
+  once, the default tool back, `didPlace` heard. A placement may say the smallest its shapes are
+  drawn, `placement(size:minimumSize:props:)` (`Placement.minimumSize`, zero for none), the one place
+  the kind says it: the tool that draws its rect keeps to it, the kind hands it to its resizing, and
+  `canvas draw` refuses a `size:` under it ([draw](#draw)), so a frame is never under 96 × 64 however
+  it's drawn. Any tool or gesture can also insert a shape itself, with
   `editor.transact { $0.insert(record) }`, as a port's drag does its arrow.
 
 What a real vertical adds on top ([StickyNotes](../Sources/StickyNotes/StickyNotes.swift)):
@@ -7850,11 +7854,11 @@ across its edge. The rest is opt-ins, as a subboard's are
 
 ```swift
 registrar.shape(FrameDefinition()) { frame in                     // FrameDefinition: ShapeContaining, BrushHitTesting
-    let place = frame.placement(size: Frame.defaultSize) { Frame() }
+    let place = frame.placement(size: Frame.defaultSize, minimumSize: Frame.minimumSize) { Frame() }   // what a click and draw place, never under 96 × 64
     frame.tool(label: "Frame", systemImage: "rectangle.dashed", shortcut: "f", placing: place) { _ in FrameTool(placing: place) }
     frame.title(placeholderInPill: "Frame")                        // Titles keeps its name; untitled, a dimmed pill to grab
     frame.mentionable(tint: { _ in FrameStyle.tint })              // Mentions: by its title; followed, it's gone to
-    frame.resizable(minimumSize: Frame.minimumSize)                // Selection's eight handles
+    frame.resizable(minimumSize: place.minimumSize)                // Selection's eight handles, no smaller than it's drawn
     frame.frameRow()                                               // the table of contents, named by Titles
     frame.frameHeader()                                            // renamed in the panel's header
     frame.turnable(through: ContainerChannel.self)                 // Transform: turned into whatever takes the container channel
@@ -7895,7 +7899,8 @@ registrar.createFrameItem()                                        // Create Fra
   take in shows through, and put down at the release; a click places one of 640 × 400
   (`Frame.defaultSize`) centered on it, and so does a press that goes less than 12 view points from
   where it began along either axis (`FrameStyle.smallestDrawn`, a click's jitter). Drawn, it's never
-  smaller than `Frame.minimumSize` (96 × 64), grown from the press toward the pointer; ⇧ draws a
+  smaller than its placement's `minimumSize` (`Frame.minimumSize`, 96 × 64, which resizing, Create
+  Frame and `canvas draw` read there too), grown from the press toward the pointer; ⇧ draws a
   square and ⌥ draws it about the press, as a resize keeps its proportions and its center, each as
   it's pressed or let go; the canvas scrolls at its edges; Escape puts nothing down, and the tool
   stays. Either way it's put down as a placed shape is, through the core's `editor.place` (a drawn
@@ -8930,7 +8935,9 @@ steps, the first three against the board as the run starts:
    alone (`size: 300x`, a `Size` with no height), the shape is built at that width and what the
    kind derives is put in step there, whether any property is set or not (`registry.derived(_:)`),
    so a note is that wide and as tall as its text in one run, and a kind that derives nothing keeps
-   its height. What a shape is bound to
+   its height; a `size:` under the smallest the kind's placement draws (`Placement.minimumSize`: a
+   frame's 96 × 64, its tool's and resizing's too) is `invalid_value`, as one too big is, and `kinds`
+   says it (`smallest`). What a shape is bound to
    (`ShapeReferencing`) must be on the board as the script leaves it, or it's `invalid_value`; what
    it only names (`ShapeNaming`, a note's mentions) needn't be. A kind whose titles are only
    derived (a schema card's, from its schema's `"title"`) takes no title in its statement
@@ -9084,7 +9091,19 @@ can be made to stand for a shape (`makers`) and which shapes each admits (Topolo
   nothing orders it against (two stand-ins beside notes side by side) it's the one that moves,
   past the other, on the axis its own placements leave free (`LayoutProblem.Free.implied`,
   `Solver.yielding`), where a box the script wrote would be `unordered`; its push warns, naming `from:`
-  and `to:` as the fix. It's inserted before the arrow, in the run's one transaction.
+  and `to:` as the fix. The stand-ins beside one shape on one side are a list of their own, 16
+  apart (`LayoutProblem.impliedListStep`: a pill has no title above it to leave room for), never with
+  a shape the script places there, which stays where its placement puts it while they give way past
+  it (`Solver.findLists` keys implied boxes apart, and lists by what placements say, not their
+  text). A list moves as one, down the page or across (`Solver.listHolds`, each member held where the
+  first solve puts it from the one before), and is as free to move as all its members are, so a push
+  never splits a column. Beside a shape the run doesn't move, a stand-in joins the column a run
+  before left on that side (`Drawing.columnEnd`: of the stand-ins an arrow joins to it, those wholly
+  that side of it, in line as a list lines them, on the nearest line whose stand-ins reach across from
+  its middle, so one dragged off elsewhere isn't beside it), 16 past its end
+  and in line with it, its placements said in words (`Clause.written(_:naming:gap:)`), rather than
+  centered on the shape and pushed past the column. It's inserted before the arrow, in the run's one
+  transaction.
 - **Its channel and sides** are the edge maker's: `EdgeRequest.fromStandsFor` and `toStandsFor` say
   the kinds of what an end stands for (none for a shape itself), and `PortEdgesPlugin` judges the end
   as those kinds would be, on the stand-in's own sides
@@ -11855,13 +11874,18 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   rows in at several places logs no AppKit warning; DrawBoardsTests' subboards (drawn over, and
   deleted with their boards), a run as one undo step, and schema cards (renamed by their schemas,
   and never asking the `ScriptedLanguageModel` anything); DrawStandInsTests' edge to a shape on another
-  board, as shipped (a reference beside the note, either way round, `via:`, a run again, `delete edge`
-  taking the pill, a private shape refused, one undo); AutomationTests' DrawStandInTests (a fixture
+  board, as shipped (a reference beside the note, either way round, two in a column 16 apart and a
+  later run's joining it, `via:`, a run again, `delete edge` taking the pill, a private shape refused,
+  one undo); FramesShippedTests' frame refused under 96 × 64; AutomationTests' DrawStandInTests (a fixture
   `Relay` that stands for what it cites and is made for an open shape only, over a `Harbor` of shapes
   on the root and on subboards two deep: the decision and the board's hard and soft claims, the
   stand-in's place, a side named for it, its push, `via:` and its refusals, matching on a run again
   and on one board, `delete edge` and what it leaves with no arrow, the result's rows and warnings, one
-  undo, a dry run), DrawScriptTests' `via:` and an implied box yielding, and PortEdgesTests' channel and
+  undo, a dry run; and, over a `Shoal`, the column: 16 apart, a written shape beside it left where it
+  says while the column yields as one, a column meeting a wall moving as one, a later run's joining it
+  on every side, and a shape the run moves leaving it), DrawContainerTests' `size:` under a placement's
+  smallest, DrawScriptTests' `via:`, an implied box yielding, implied lists apart and 16 apart, and a
+  list moving as one, and PortEdgesTests' channel and
   sides of a stand-in at an end; AutomationTests' undo steps, an agent's
   commit, and bindings and names across a file's boards (`DrawFileTests.swift`, with `Pin`, a
   kind a tool places that binds and names); and SkillTests, which runs every example in the canvas skill (`.claude/skills/canvas`), each
@@ -11869,7 +11893,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   and push nothing aside, and one tagged `draw-error`, run as a dry run, must fail with the reason
   its first line names (`// reason: <reason>`) and change nothing; and it reads the skill's
   tables of kinds (SKILL.md's and the reference's) and holds each kind's size, attributes and
-  channels by side to what `canvas kinds` says. A block tagged `query` or `query-error` runs
+  channels by side to what `canvas kinds` says, and each kind's `smallest` to both pages' words. A block tagged `query` or `query-error` runs
   through `canvas query`, its first line a CSS comment saying what it answers (`/* matches:
   "Title", (kind) */`, the shapes in answer order, an untitled one as its kind in brackets, nothing
   after the colon for none; `/* count: N */`) or why it's refused (`/* reason: … */`), and must leave

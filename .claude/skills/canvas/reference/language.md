@@ -160,7 +160,7 @@ An attribute is `key: value`. Each key appears once in a statement; the second i
 
 | key | value | what it does |
 |---|---|---|
-| `size:` | `<width>x<height>` (`x` or `×`), or `[w, h]`; both above 0, and at most 100000. Or a width alone, `<width>x` | The shape's size in world units. A new shape defaults to what its tool places; a restated one keeps its size. A width alone leaves the height to the kind: a note's or a schema card's fitted to its text at that width, any other kind's as it was (a new one's as its tool places it). |
+| `size:` | `<width>x<height>` (`x` or `×`), or `[w, h]`; both above 0, and at most 100000; for a kind with a smallest, at least that (`canvas kinds`' `smallest`). Or a width alone, `<width>x` | The shape's size in world units. A new shape defaults to what its tool places; a restated one keeps its size. A width alone leaves the height to the kind: a note's or a schema card's fitted to its text at that width, any other kind's as it was (a new one's as its tool places it). Under the kind's smallest it's `invalid_value`, with the size to write. |
 | `gap:` | `none`, `tight`, `normal`, `wide`, or a number from 0 to 100000 | This shape's default gap in every placement it's in, from either end. See [Gaps](#gaps). |
 | `overlap:` | `allow` | This shape may overlap others. It's never pushed, and it's never part of a list. |
 | `style:` | a name, or several joined by `,` or `and` | The styles it takes, in order. See [Styles](#styles). |
@@ -384,15 +384,16 @@ A placement's gap is the first of these that applies:
 3. The larger of the shape's `gap:` and its target's `gap:`, when the target is also stated in this script.
 4. `normal`.
 
-Other spacing is fixed. A list steps 64. Shapes pushed apart keep 40 between them side by side, and 64 one above the other. The extra room is for the row just above a shape, where its title's pill and a lock's chip go, which sits 27 units above it at 100% zoom and 54 at 50%, so it clears the shape above down to about 42% zoom (below 35%, where shapes are skeletons, no pill or chip is drawn).
+Other spacing is fixed. A list steps 64 (the references an edge puts beside a shape, 16: [Through a reference](#through-a-reference)). Shapes pushed apart keep 40 between them side by side, and 64 one above the other. The extra room is for the row just above a shape, where its title's pill and a lock's chip go, which sits 27 units above it at 100% zoom and 54 at 50%, so it clears the shape above down to about 42% zoom (below 35%, where shapes are skeletons, no pill or chip is drawn).
 
 ## Lists
 
-New or restated shapes whose placements are written identically form a list. "Identically" means the same placements in the same order, bracketed gaps included, as quoted back: `right "A"` and `right of "A"` count as the same. The members stack down the page in script order and are placed as one box. Three shapes `right of "Hub"` make a column centered on Hub. Two shapes `below "Hub"` stack under it, each centered across on Hub.
+New or restated shapes whose placements are written identically form a list. "Identically" means the same placements in the same order, against the same shapes, bracketed gaps included, as quoted back: `right "A"` and `right of "A"` count as the same. The members stack down the page in script order and are placed as one box. Three shapes `right of "Hub"` make a column centered on Hub. Two shapes `below "Hub"` stack under it, each centered across on Hub.
 
 - They're 64 apart, or the members' `gap:` if they all state the same one.
 - An `overlap: allow` shape is never in a list.
-- A list isn't extended across runs. A later `right of "Hub"` is centered on Hub and pushed past the old column. To add a member, restate every member with the same placement.
+- A list moves as one. A member pushed past something takes the others with it, either way: down, or across, which would otherwise split the column.
+- A list isn't extended across runs. A later `right of "Hub"` is centered on Hub and pushed past the old column. To add a member, restate every member with the same placement. (The references an edge puts beside a shape are the exception: a later run's join the column there, [Through a reference](#through-a-reference).)
 - A list `inside` a shape stacks down from its part, and one too long to fit is `no_room`.
 - For a flow with arrows between steps, a wider step gives the arrows room: give every member the same `gap:`.
 
@@ -491,7 +492,7 @@ sticky-note "Spike" in "Sprint" right of "Sprint" left (gap: 600) below "Sprint"
 - **Nothing sits across a frame's edge.** Whatever a script puts down over one (a new shape, or one it places or resizes) goes wholly in or out of it by most of its area, nudged to 16 clear of the edge, as by hand, and a warning says which: `"Draft" was over the edge of "Sprint", so it was nudged in`. So a shape placed `inside` a frame, `on` it, or against a shape in it, that lands within it, is in it too. The row's `at` is where it ended up.
 - **A frame placed elsewhere takes what's in it along**, and what's in it is never in its way. Every other shape the script places meets what's in it where the frame takes it, never where it was, so frames moved in one script can trade places: each lands where it's placed. Placing another shape against one it takes along, in the same script, is `unsupported`: place it against the frame, or in a run of its own. Resized, a frame leaves what's in it where it is, and what's then over its edge goes wholly in or out (a warning says how many).
 - **A locked frame locks what's in it**, at any depth, and takes nothing new: `in` it, or a script that would put a shape in it, is `read_only`, and so is any change to what's in it.
-- **Draw a frame in its own script first.** `in` a frame the same script draws is `unsupported`. A frame doesn't grow to fit what's drawn in it, so give it a `size:` with room.
+- **Draw a frame in its own script first.** `in` a frame the same script draws is `unsupported`. A frame doesn't grow to fit what's drawn in it, so give it a `size:` with room. A frame is at least 96x64, the smallest the Frame tool draws one: a `size:` under that is `invalid_value`.
 - **Deleting a frame leaves what's in it where it is**, now in what held the frame, or on the board.
 
 ```draw-error
@@ -623,7 +624,7 @@ The run made a reference for Cutoff right of Load, and drew the arrow into it. T
 edge "Cutoff" -> "Backfill"
 ```
 
-**Where the reference goes.** It's a new shape of the run, placed as any new shape is: right of the edge's start when that's the end that stays, left of its end when that is, at the normal gap and centered on it, and kept clear of what's there. If something is in the way it's pushed past, and the result says so as it does for any push; the fix is a side for it. `from:` or `to:` on the end that stays says which side the reference goes on, and the arrow leaves or arrives there. A side named for the end that's stood for is the reference's own, which takes arrows on its left and right alone, so `top` or `bottom` there is `invalid_value`. Unnamed, the arrow aims at the reference's middle, as it does at any shape's.
+**Where the reference goes.** It's a new shape of the run, placed as any new shape is: right of the edge's start when that's the end that stays, left of its end when that is, at the normal gap and centered on it, and kept clear of what's there. If something is in the way it's pushed past, and the result says so as it does for any push; the fix is a side for it. The references beside one shape on one side are a list of their own, 16 apart (a reference has no title above it to leave room for), and move as one: never in a list with a shape your script places there, which stays where its placement puts it while they give way past it. A later run's reference beside a shape that already has a column of them on that side joins it: 16 below its end (above its top, for a column above the shape), in line with it, rather than centered on the shape and pushed past the column. A shape the run moves leaves its column behind, and its new references go beside it where it lands. `from:` or `to:` on the end that stays says which side the reference goes on, and the arrow leaves or arrives there. A side named for the end that's stood for is the reference's own, which takes arrows on its left and right alone, so `top` or `bottom` there is `invalid_value`. Unnamed, the arrow aims at the reference's middle, as it does at any shape's.
 
 **What can be stood for.** A public shape. A shape that isn't can't be reached, and an edge between boards with neither end public is `several_boards`, as it always was; its hint says that only a public shape can be reached, and to ask the user to make one public:
 
@@ -871,7 +872,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `cannot_connect` | The app won't connect that end at all, and the message names the end. | Connect a different shape. |
 | `no_edges` | No plugin in this app draws connections. | Draw shapes only. |
 | `no_names` | No plugin in this app names shapes, so titles can't be matched. | Titled statements can't work in this app. |
-| `no_view` | `view` was named, but the board's window has no size. | Place against a shape or `board`, or leave one shape unplaced. |
+| `no_view` | `view` was named, but the board's window has no size. Under the kind's smallest it's `invalid_value`, with the size to write. | Place against a shape or `board`, or leave one shape unplaced. |
 | `unsupported` | Something the language doesn't do. `an edge joins two shapes, and this one goes on to a third` · `in` a subboard or frame this script draws · a placement against a shape in a frame the script moves · `frame: says where "N" is, and there are no coordinates here` · `x: would say where "N" is, and there are no coordinates here` · `"N" is new, and title: renames a shape` · `title: null would take the shape's title away, and a script only renames` | Leave it out, write each edge on its own line, place the shape instead, or put the title after the kind. |
 | `nothing_to_delete` | `delete edge` found no connection. | Check the direction, or use `<->`. |
 | `busy` | Someone is dragging on this board. | Try again in a moment. |
@@ -994,6 +995,7 @@ delete edge "Ingest" -> "Load"
 - `drawable`: whether a script can draw it, with the reason if not (`why`).
 - `names`: `named` (a title you give it), `derived` (worked out from what it is), or `none`.
 - `size`: what its tool places, like `"200x200"`.
+- `smallest`: the smallest its shapes are drawn, like `"96x64"` (a frame's), the same for its tool and resizing; a `size:` under it is `invalid_value`. Absent where any size goes.
 - `holds`: what its shapes hold, for `in` to name: `board` (a subboard's, a board of its own) or `shapes` (a frame's, on the board it's on); absent for neither.
 - `attributes`: each attribute a script can set, with a compact type. The types are a set's words joined by `|`, `true|false`, `number ≥ 0`, `integer`, `text`, `text (≤ 80)`, `date (YYYY-MM-DD or date-time)`, and JSON shapes like `JSON [{done, text}]` (members in alphabetical order; an id nobody writes, like a list item's, isn't listed). A text a plugin writes says what it takes after its type, in brackets: `text (@[Title] mentions)` for a note's `text` and a schema card's `prompt`, so a value's refusal hint (`text: takes text (@[Title] mentions)`) says it too. Keys a script can't set, like the frame, aren't listed.
 - `edges`: the channels an edge from it can take, by side.

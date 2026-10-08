@@ -22,7 +22,7 @@ extension FrameTool: Tool {
 
 /// A frame being drawn, from the press to the pointer, shown over what it's drawn on (its surface at
 /// `FrameStyle.previewFillOpacity`, so what it will take in shows through) until the release puts it
-/// down (`editor.place(_:in:)`), never smaller than `Frame.minimumSize`, grown from the press toward
+/// down (`editor.place(_:in:)`), never smaller than its placement's `minimumSize`, grown from the press toward
 /// the pointer. ⇧ draws a square, ⌥ draws it about its center, as a resize keeps its proportions and
 /// its center, each taking effect as it's pressed or let go. It's drawn once the pointer has gone
 /// `FrameStyle.smallestDrawn` from the press along either axis; a release before that is a click (its
@@ -48,7 +48,7 @@ final class DrawingFrameSession {
     private var drawn: CGRect? {
         guard isDrawing else { return nil }
         return Self.rect(from: origin, to: last.world, square: last.modifiers.contains(.shift), fromCenter: last.modifiers.contains(.option),
-                         minimum: Frame.minimumSize)
+                         minimum: placement.minimumSize)
     }
 
     /// The rect a drag from `origin` to `corner` draws (world units): from the press to the pointer,
