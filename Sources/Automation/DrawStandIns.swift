@@ -17,8 +17,8 @@ import Topology
 // side the edge names for it), drawn before the arrow. An arrow already on the board between the
 // near end and a stand-in whose record stands for exactly the far end is that edge, so a run again
 // draws neither a second arrow nor a second stand-in, and `delete edge` takes the arrow, and the
-// stand-in if that leaves it with none. It's found on whichever board it is: the run draws there
-// (`DrawBoard.swift`), by the same `edgeMatches`.
+// stand-in if that leaves it with none, as `delete "X"` takes one X's arrows leave with none. It's
+// found on whichever board it is: the run draws there (`DrawBoard.swift`), by the same `edgeMatches`.
 
 /// Which end of an edge: the start, or the end.
 enum EdgePlace {
@@ -292,13 +292,10 @@ extension Drawing {
         // Drawn straight already, which `via:` has asked to be through one: left as it is (`connect` says).
         guard matches.isEmpty else { return nil }
 
+        // Said by the edge's row alone (`via`), with `via:` or without: a warning for each edge between
+        // boards would bury the warnings that need reading.
         let id = try addStandIn(kind, for: standEnd.record, called: standTitle, beside: nearID, item: nearItem, title: nearTitle,
                                 nearIs: nearPlace, side: nearPlace == .from ? edge.fromSide : edge.toSide, statement)
-        // An edge the statement didn't send through one is said to have gone.
-        if via == nil, let naming {
-            notes.append(DrawWarning(line: statement.line,
-                                     "\(quoted(standTitle)) is on \(FileNames.named(standEnd.board, in: editor, naming: naming)), so the arrow \(stoodFor == .to ? "goes into" : "comes from") \(indefinite(kind)) to it beside \(quoted(nearTitle))"))
-        }
         return NewStandIn(id: id, place: stoodFor, kind: kind)
     }
 

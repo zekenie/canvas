@@ -589,9 +589,9 @@ Load is on the board the window shows, and Cutoff on Monday's:
 edge "Load" -> "Cutoff"
 ```
 
-The run made a reference for Cutoff right of Load, and drew the arrow into it. The result has a row for the reference (`created`, `kind: "reference"`, `at`) before the edge's, which says `connected` and `via: "reference"` (every row of an edge that goes through a reference has `via`, `unchanged` ones too), and a warning that says why: `"Cutoff" is on "Monday"'s board, so the arrow goes into a reference to it beside "Load"`. The arrow's channel is the one a drag from Load's port to the reference would find, `note-link`: a reference takes what the shape it stands for takes.
+The run made a reference for Cutoff right of Load, and drew the arrow into it. The result has a row for the reference (`created`, `kind: "reference"`, `at`) before the edge's, which says `connected` and `via: "reference"` (every row of an edge that goes through a reference has `via`, `unchanged` and `deleted` ones too). The row is all that says so: there's no warning, so in a run of many such edges the warnings left are the ones to read. The arrow's channel is the one a drag from Load's port to the reference would find, `note-link`: a reference takes what the shape it stands for takes.
 
-**When.** An edge goes through a reference when its ends are on different boards, and only then, unless `via:` asks for one (below). The end that's stood for is the one that's off the board the run draws on ([Which board](#which-board)), and either end may be, so the far one may be the start. The reference is then left of the end that stays, the arrow runs from it, and the warning says `comes from`:
+**When.** An edge goes through a reference when its ends are on different boards, and only then, unless `via:` asks for one (below). The end that's stood for is the one that's off the board the run draws on ([Which board](#which-board)), and either end may be, so the far one may be the start. The reference is then left of the end that stays, and the arrow runs from it:
 
 ```draw
 edge "Cutoff" -> "Backfill"
@@ -649,7 +649,7 @@ edge "Load" -> "Cutoff"
 edge "Load" -> "Cutoff" to: top
 ```
 
-**Deleting.** `delete edge "A" -> "B"` takes such an arrow, and a reference that's left with no arrow at all ([Deleting](#deleting)); `delete "A"` takes A's arrows and leaves the references they ran into, which are shapes of their own with no title for a script to name. The reference and the arrow are one run and one step of undo, and a dry run says the same as the real one.
+**Deleting.** `delete edge "A" -> "B"` takes such an arrow, and `delete "A"` takes all of A's; either takes a reference like this one (standing for one shape) that it leaves with no arrow at all too, since a reference has no title for a script to delete it by ([Deleting](#deleting)). The reference and the arrow are one run and one step of undo, and a dry run says the same as the real one.
 
 ## Styles
 
@@ -707,10 +707,10 @@ sticky-note "Nightly schedule" title: "Nightly run"
 
 ### Deleting
 
-`delete "X"` removes the shape and every connection with an end on it, each reported as its own `deleted` row: one to another shape with `from` and `to`, and one whose other end is free (re-aimed off every shape) with neither. `delete edge "A" -> "B"` removes the connections from A to B, and `delete edge "A" <-> "B"` removes them either way round.
+`delete "X"` removes the shape and every connection with an end on it, each reported as its own `deleted` row: one to another shape with `from` and `to` (one into a reference that stands for one shape, as an edge's does, with `via: "reference"` and that shape as its end), and one whose other end is free (re-aimed off every shape) with neither. `delete edge "A" -> "B"` removes the connections from A to B, and `delete edge "A" <-> "B"` removes them either way round.
 
 - An unknown title is `unknown_title`. `delete edge` with nothing to delete is `nothing_to_delete`. A locked shape or connection is `read_only`.
-- **An edge drawn through a reference** is still the edge from A to B ([Through a reference](#through-a-reference)): `delete edge "A" -> "B"` removes the arrow between one end and a reference that stands for the other (its row has `via`), either way round for `<->`, and then each reference that's left with no arrow at all, as a row of its own; one that still has an arrow stays. The shapes a reference stood for stay. A reference that's locked, or in a locked frame, is `read_only`, and the edge stays. `delete "A"` takes A's arrows and leaves the references they ran into, which are shapes of their own and have no title to delete them by.
+- **An edge drawn through a reference** is still the edge from A to B ([Through a reference](#through-a-reference)): `delete edge "A" -> "B"` removes the arrow between one end and a reference that stands for the other (its row has `via`), either way round for `<->`, and `delete "A"` removes A's arrows, those into references too; then each reference that stands for one shape (as an edge's does) and is left with no arrow at all goes, as a row of its own after the arrows'; one that still has an arrow stays, and so does one drawn by its `query:`. The shapes a reference stood for stay. A reference that's locked, or in a locked frame, is `read_only`, and nothing is deleted.
 - A shape that holds a board (a subboard) takes its board with it, and every board under that, with everything on them. That isn't refused: a warning says how much went (`"Payments" held a board, and 1 more under it: the 4 shapes on them are deleted with it`), and Undo brings it all back. One whose board, or a board under it, holds a locked shape isn't deleted (`read_only`: `"Payments" holds a read-only shape (locked, say) on its board, so it can't be deleted`).
 - `delete edge "A" -> "B"` after `delete "A"` asks for what the delete already does, and is fine, as it is the other way round: A's connections go with it, on the delete's row.
 - A shape the script deletes can't be a target in the same script, unless the script draws it again.
@@ -750,7 +750,7 @@ reference above "Owner" query: "sticky-note[public"
 1. **Read.** Every line is read. Lines that can't be read are reported together, up to 20.
 2. **Resolve.** Kinds, titles, attributes (JSON member by member), styles, placements' targets, each edge's ends and attribute keys, and each delete's shape and connections are checked against the board as it is. An edge that goes through a reference ([Through a reference](#through-a-reference)) adds the reference to the run as a shape of its own here. Mistakes that don't depend on each other are reported together here too.
 3. **Place.** Positions are worked out against the board as it is, the references an edge goes through placed as any new shape is. Only the first placing error is reported, since one mistake there makes others.
-4. **Apply**, in one change or not at all. Deletes come first (a reference that a `delete edge` leaves with no arrow among them), then new and restated shapes (each after any shape the script draws or restates that it's placed `inside` or `on`, a reference an edge goes through among them), then edges. Each edge's channel and sides are checked as it's drawn, one at a time: the first that's wrong (`no_channel`, `cannot_connect`, a channel or side that's `invalid_value`, `ambiguous_edge`, `read_only`) is the error, and nothing is drawn. The result and its warnings are read from the changed board.
+4. **Apply**, in one change or not at all. Deletes come first (a reference that a delete leaves with no arrow among them), then new and restated shapes (each after any shape the script draws or restates that it's placed `inside` or `on`, a reference an edge goes through among them), then edges. Each edge's channel and sides are checked as it's drawn, one at a time: the first that's wrong (`no_channel`, `cannot_connect`, a channel or side that's `invalid_value`, `ambiguous_edge`, `read_only`) is the error, and nothing is drawn. The result and its warnings are read from the changed board.
 
 A dry run goes through all four steps and then throws the change away.
 
@@ -781,7 +781,7 @@ An illustration (not the board on this page):
 
 - **`board`**: the file it ran on, as `build/canvas boards` lists it: its `id` and `name`, and the board inside it the window shows, `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (from the root down).
 - **`on`**: the board the script drew on ([Which board](#which-board)): `board` (`"root"`, or the id of the shape that holds it), that shape's `title`, and whether the window `shown` it.
-- **`changes`**: a row for each thing done, with its `line`. `did` is `created`, `updated`, `moved`, `renamed`, `unchanged`, `deleted`, `connected` or `reconnected`. A shape's row has its `kind` and `title`, and `at`, its bounds as `[[x, y], [width, height]]` in world units (top-left first, y down). A connection's row has `from`, `to` and `channel` (if it's on one) instead, and `via: "reference"` when it goes through one ([Through a reference](#through-a-reference)). A reference an edge made has a row of its own on the edge's line, before the edge's: `created`, with `kind: "reference"` and `at`, and no title. One that `delete edge` took is a `deleted` row with its kind alone. No ids appear anywhere, because titles are the names.
+- **`changes`**: a row for each thing done, with its `line`. `did` is `created`, `updated`, `moved`, `renamed`, `unchanged`, `deleted`, `connected` or `reconnected`. A shape's row has its `kind` and `title`, and `at`, its bounds as `[[x, y], [width, height]]` in world units (top-left first, y down). A connection's row has `from`, `to` and `channel` (if it's on one) instead, and `via: "reference"` when it goes through one ([Through a reference](#through-a-reference)). A reference an edge made has a row of its own on the edge's line, before the edge's: `created`, with `kind: "reference"` and `at`, and no title. One a delete took (`delete edge`, or `delete` of a shape whose arrows ran into it) is a `deleted` row with its kind alone, after the arrows'. No ids appear anywhere, because titles are the names.
 - **`inView`**: whether the shape landed in the window (on a board the window doesn't show, in the part of it the window shows when it's opened).
 - **`pushedPast`**: what the shape was pushed past to keep clear ([Keeping clear](#keeping-clear)).
 - **`was`**: a renamed shape's old title.
@@ -794,7 +794,6 @@ The run succeeds with these **warnings**, each with its `severity`, the `line` o
 - every push;
 - sides that face away;
 - titles that nearly match one on the board;
-- an edge that went through a reference without `via:` saying so (`"Cutoff" is on "Monday"'s board, so the arrow goes into a reference to it beside "Load"`, or `comes from` when the far end is the start);
 - how many shapes landed outside the view (`3 shapes landed outside the view — --reveal brings them into view`), unless `--reveal` brought them into view;
 - a shape that hangs over the edge of a zone it sits on (placed against something in it, restated, or placed against the view);
 - a shape nudged into or out of a frame, over whose edge it was put down (`"N" was over the edge of "Sprint", so it was nudged in`), and how many shapes a frame put down or resized nudged across its edge;
