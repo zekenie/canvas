@@ -967,7 +967,7 @@ import TestKit
         expectEqual(x.message, #"x: would say where "AB" is, and there are no coordinates here"#)
         let width = try refused(#"card "AB" width: 300"#, on: editor)
         expectEqual(width.reason, "unsupported")
-        expectEqual(width.hint, "size: <width>x<height>, as size: 300x200")
+        expectEqual(width.hint, "size: <width>x<height>, as size: 300x200, or a width alone, as size: 300x")
     },
     test("styles: each gives a shape what its kind takes; one that gives it nothing, or gives what nothing takes, is refused") {
         let editor = try drawEditor()

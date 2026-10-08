@@ -132,14 +132,8 @@ def step_measure(mods):
     print(f"measured {len(notes)} notes; tallest {max(M[t] for t, _, _ in notes)}")
 
 def about_height(board, M):
-    """An About note's height: as measured, plus room for its mention pills' symbols, which a note's
-    fit leaves out when its text comes from draw (dogfood/bugs.md, 3)."""
-    text = about_text(board)
-    n = text.count('@[')
-    if not n:
-        return math.ceil(M[about_title(board)])
-    lines = math.ceil(n * 20 / (ABOUT_W - 32)) + 1
-    return math.ceil(M[about_title(board)] + 19 * lines)
+    """An About note's height: as measured, its mention pills and all."""
+    return math.ceil(M[about_title(board)])
 
 def step_about_pad(mods):
     M = measured()

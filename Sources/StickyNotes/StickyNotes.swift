@@ -85,10 +85,11 @@ extension StickyNoteDefinition: ShapeDefinition {
 
 /// A note is as tall as its text, and no shorter than a new one: typing fits it (`NoteEditor`), and
 /// so does a note made or given text from properties (the command line's `draw`), each mention
-/// measured by the name it holds, as the pure function of its props this is.
+/// measured as a live pill by the name it holds (`measuredString`), as the pure function of its
+/// props this is: as tall as typing it would make it while its shapes are called that.
 extension StickyNoteDefinition: DerivedProps {
     func derive(_ note: inout StickyNote) {
-        let string = NoteStyle.text.attributedString(note.text, width: note.frame.width - NoteStyle.padding * 2) { _ in .missing }
+        let string = NoteStyle.text.measuredString(note.text, width: note.frame.width - NoteStyle.padding * 2)
         note.frame.size.height = NoteStyle.fittedHeight(of: string, width: note.frame.width, keeping: note.frame.height)
     }
 }

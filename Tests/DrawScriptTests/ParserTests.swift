@@ -83,7 +83,7 @@ import TestKit
         let card = try shape(#"card "API" priority: high right of "Web" size: 300x120 notes: "a b" gap: wide below "Top" overlap: allow"#)
         expectEqual(card.word, "card")
         expectEqual(card.title, "API")
-        expectEqual(card.size, CGSize(width: 300, height: 120))
+        expectEqual(card.size, Size(width: 300, height: 120))
         expectEqual(card.gap, .named(.wide))
         expectEqual(card.overlapAllowed, true)
         expectEqual(card.attributes, [Attribute(key: "priority", value: .word("high")), Attribute(key: "notes", value: .quoted("a b"))])
@@ -163,15 +163,25 @@ import TestKit
         expectEqual(key?.message, #"card "A": size:200x100 isn't a placement or an attribute"#)
         expectEqual(key?.hint, "an attribute is written key: value, with a space after the colon: size: 200x100")
     },
-    test("size: w x h, with x or ×, or [w, h]; both finite and more than 0") {
-        expectEqual(try shape(#"card size: 200x120"#).size, CGSize(width: 200, height: 120))
-        expectEqual(try shape("card size: 200×120.5").size, CGSize(width: 200, height: 120.5))
-        expectEqual(try shape(#"card size: [80, 40]"#).size, CGSize(width: 80, height: 40))
-        for bad in ["0x10", "10x-1", "10", "10x10x10", "wide", "[1]", "[1, 2, 3]", #""10x10""#, "infx10"] {
+    test("size: w x h, with x or ×, or [w, h], or a width alone, w x; each side finite and more than 0") {
+        expectEqual(try shape(#"card size: 200x120"#).size, Size(width: 200, height: 120))
+        expectEqual(try shape("card size: 200×120.5").size, Size(width: 200, height: 120.5))
+        expectEqual(try shape(#"card size: [80, 40]"#).size, Size(width: 80, height: 40))
+        expectEqual(try shape(#"card size: 300x"#).size, Size(width: 300, height: nil))
+        expectEqual(try shape("card size: 300.5×").size, Size(width: 300.5, height: nil))
+        for bad in ["0x10", "10x-1", "10", "10x10x10", "wide", "[1]", "[1, 2, 3]", "[1,,2]", "[1, x]", "[300, null]", #""10x10""#, "infx10",
+                    "x200", "x", "0x", "-5x", "infx", "10xx"] {
             let error = parseError("card size: \(bad)")
             expectEqual(error?.reason, .invalidValue, bad)
-            expectEqual(error?.hint, "write size: <width>x<height>, as size: 200x120 (world units)")
+            expectEqual(error?.hint, "write size: <width>x<height>, as size: 200x120, or a width alone, as size: 200x (world units)", bad)
         }
+    },
+    test("a size is written as a script writes it: both sides, or a width alone") {
+        expectEqual(Size(width: 300, height: 200).written, "300x200")
+        expectEqual(Size(width: 300, height: nil).written, "300x")
+        expectEqual(Size(width: 120.5, height: 40).written, "120.5x40")
+        expectEqual(Size(width: 300, height: nil).size(height: 80), CGSize(width: 300, height: 80))
+        expectEqual(Size(width: 300, height: 200).size(height: 80), CGSize(width: 300, height: 200))
     },
     test("gap: none, tight, normal, wide, or a number at least 0") {
         expectEqual(try shape("card gap: none").gap, .named(.none))
@@ -187,8 +197,9 @@ import TestKit
         expectEqual(typo?.hint, "did you mean wide? a gap is none, tight, normal, wide, or a number of world units")
     },
     test("a size's sides and a gap's number are at most 100000 world units") {
-        expectEqual(try shape("card size: 100000x100000").size, CGSize(width: 100_000, height: 100_000))
-        for bad in ["100001x10", "10x1e300", "1e300x1e300", "[5, 1e7]"] {
+        expectEqual(try shape("card size: 100000x100000").size, Size(width: 100_000, height: 100_000))
+        expectEqual(try shape("card size: 100000x").size, Size(width: 100_000, height: nil))
+        for bad in ["100001x10", "10x1e300", "1e300x1e300", "[5, 1e7]", "100001x"] {
             let error = parseError("card size: \(bad)")
             expectEqual(error?.reason, .invalidValue, bad)
             expectEqual(error?.message, "card: size: \(bad) is too big: a side is at most 100000 world units")
@@ -501,16 +512,22 @@ import TestKit
         let script = try Script(parsing: """
             style big size: 400x300 gap: wide overlap: allow
             style small size: 50x50
+            style narrow size: 120x
             card "A" style: big
             card "B" style: big, small gap: tight
+            card "C" style: big, narrow
+            card "D" style: narrow size: 60x30
             """)
-        guard case .shape(let a) = script.statements[0].body, case .shape(let b) = script.statements[1].body else { throw RequireFailed() }
-        expectEqual(a.size, CGSize(width: 400, height: 300))
+        guard case .shape(let a) = script.statements[0].body, case .shape(let b) = script.statements[1].body,
+              case .shape(let c) = script.statements[2].body, case .shape(let d) = script.statements[3].body else { throw RequireFailed() }
+        expectEqual(a.size, Size(width: 400, height: 300))
         expectEqual(a.gap, .named(.wide))
         expectEqual(a.overlapAllowed, true)
         expectEqual(a.attributes, [])
-        expectEqual(b.size, CGSize(width: 50, height: 50))
+        expectEqual(b.size, Size(width: 50, height: 50))
         expectEqual(b.gap, .named(.tight))
+        expectEqual(c.size, Size(width: 120, height: nil), "a width alone, the later style's, whole")
+        expectEqual(d.size, Size(width: 60, height: 30), "the statement's own")
         expectEqual(script.styles[0].attributes.map(\.key), ["size", "gap", "overlap"])
     },
     test("a style's values are checked where it's defined") {

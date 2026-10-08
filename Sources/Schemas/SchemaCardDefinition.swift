@@ -134,11 +134,12 @@ enum SchemaStyle {
     /// point spare so string drawing never cuts the last line; never shorter than one line
     /// (`SchemaCardMetrics.emptyHeight`). `height`, the card's own, is kept when the width leaves no
     /// room for text to measure. A note's measure (`NoteStyle.fittedHeight`), with a line for its
-    /// least. Each mention is measured by the name it holds, as a pure function of the text.
+    /// least. Each mention is measured as a live pill by the name it holds (`measuredString`), as a
+    /// pure function of the text: as wide as it's drawn while its card is called that.
     static func fittedHeight(of text: SchemaPromptText, width: CGFloat, keeping height: CGFloat) -> CGFloat {
         let inner = width - SchemaCardMetrics.padding * 2
         guard inner > 0 else { return height }
-        return fittedHeight(of: self.text.attributedString(text, width: inner) { _ in .missing }, width: width, keeping: height)
+        return fittedHeight(of: self.text.measuredString(text, width: inner), width: width, keeping: height)
     }
 
     /// The same, of the text as it's shown (the editor's, each pill as its card is called now).

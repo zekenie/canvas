@@ -179,6 +179,65 @@ extension CanvasEditor {
         expectEqual(try canvas(server, ["draw", #"sticky-note "Reader" text: "Reads @[Ingest]" right of "Ingest""#]).status, 0)
     },
 
+    test("a note drawn mentioning a shape of every shipped kind is as tall as its editor fits it; with a width alone, that wide and as tall as its text there, in one run") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let order = scripted(#"{"title": "Order", "type": "object"}"#)
+        let targets = try canvas(server, ["draw", "-"], input: """
+            frame "Sprint" size: 640x300
+            subboard "Plans" right of "Sprint"
+            sticky-note "Q" right of "Plans"
+            schema-card below "Sprint" schema: "\(order)"
+            """)
+        expectEqual(targets.status, 0, targets.error)
+        // Each kind's symbol is another width; a short name's pill is the most of it.
+        let text = String(repeating: "Read @[Sprint], then @[Plans] and @[Q] or @[Order]; ", count: 6)
+        let result = try canvas(server, ["draw", "-"], input: """
+            sticky-note "Reading" below "Order" text: "\(text)"
+            sticky-note "Wide" right of "Reading" size: 320x text: "\(text)"
+            """)
+        expectEqual(result.status, 0, result.error)
+        expectEqual(board.editor.undoHistory.undoName, "Draw")
+        let editor = board.editor
+        @MainActor func fitted(_ title: String, width: CGFloat) throws -> CGFloat? {
+            let note = try require(editor.shapeInFile(titled: title)?.typed(as: StickyNote.self))
+            let frame: JSONValue = [[0, 0], [.number(width), 200]]
+            let made: AnyShapeRecord = try editor.registry.shape(StickyNote.kind, properties: ["frame": frame, "text": .string(note.props.text.stored)])
+            return made.box?.height
+        }
+        @MainActor func edited(_ title: String) throws -> CGSize? {
+            let id = try require(editor.shapeInFile(titled: title)?.id)
+            let before = editor.document[id]
+            expect(editor.beginEditing(id))
+            _ = try require(editor.makeEditingView())
+            defer { editor.endEditing() }
+            expectEqual(editor.document[id], before, "\(title): editing grows it no taller")
+            return editor.document[id]?.box?.size
+        }
+        let reading = try require(editor.shapeInFile(titled: "Reading"))
+        expectEqual(editor.mentionPills(of: reading.id).count, 24)
+        expect(editor.mentionPills(of: reading.id).allSatisfy(\.isLive))
+        let height = try require(reading.box?.height)
+        expect(height > 200, "\(height)")
+        expectEqual(try edited("Reading"), CGSize(width: 200, height: height))
+        let wide = try require(edited("Wide"))
+        expectEqual(wide.width, 320)
+        expectEqual(wide.height, try fitted("Wide", width: 320))
+        expect(wide.height < height, "fewer lines, wider")
+        // Restated with a width alone, it's fitted there; one undo takes it back.
+        expectEqual(try canvas(server, ["draw", #"sticky-note "Wide" size: 480x"#]).status, 0)
+        let wider = try require(edited("Wide"))
+        expectEqual(wider.width, 480)
+        expectEqual(wider.height, try fitted("Wide", width: 480))
+        editor.undo()
+        expectEqual(editor.shapeInFile(titled: "Wide")?.box?.size, wide)
+    },
+
     test("kinds says a note's text and a schema card's prompt take @[Title], after their type") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

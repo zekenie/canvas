@@ -493,7 +493,9 @@ struct Drawing {
         }
         let placement = registry.placement(for: kind)!
         let base = existing ?? placement.shape(at: .zero)
-        let size = shape.size ?? existing?.box?.size ?? placement.size
+        // A width alone keeps the height, until the kind works out its own at that width (`complete`).
+        let had = existing?.box?.size ?? placement.size
+        let size = shape.size?.size(height: had.height) ?? had
         if let title { itemByTitle[title] = items.count }
         items.append(ShapeItem(statement: statement, shape: shape, kind: kind, title: title, existing: existing, record: base, size: size,
                                nearMiss: nearMiss))
@@ -589,8 +591,9 @@ struct Drawing {
                                           hint: "say where it goes with a placement: right of \"A\", below board, inside view top-left")
                 }
                 if Self.sizeKeys.contains(key) {
-                    throw AutomationError(statement, .unsupported, "\(key): would say how big \(subject) is, and here that's \(LanguageKey.size.rawValue):",
-                                          hint: "\(LanguageKey.size.rawValue): <width>x<height>, as \(LanguageKey.size.rawValue): 300x200")
+                    let size = LanguageKey.size.rawValue
+                    throw AutomationError(statement, .unsupported, "\(key): would say how big \(subject) is, and here that's \(size):",
+                                          hint: "\(size): <width>x<height>, as \(size): 300x200, or a width alone, as \(size): 300x")
                 }
                 throw unknownAttribute(key, of: item, vocabulary)
             }
@@ -627,12 +630,25 @@ struct Drawing {
         if let existing = item.existing {
             settings = settings.filter { key, value in !Self.alreadyHas(existing, key, value, in: registry) }
         }
-        // Every shape a script makes is built by the registry, as the kind's schema reads it.
-        if !settings.isEmpty || item.existing == nil { items[index].record = try record(item.record, setting: settings, item, vocabulary) }
-        try references(of: items[index].record, item)
+        // Every shape a script makes is built by the registry, as the kind's schema reads it. Given a
+        // width alone (`size: 300x`), it's built at that width, and what the kind works out from the
+        // rest (a note's height, from its text) is worked out there, whether anything's set or not.
+        var built = item.record
+        let widthAlone = shape.size.flatMap { $0.height == nil ? $0.width : nil }
+        if let widthAlone, var box = built.box {
+            box.size.width = widthAlone
+            built.box = box
+            built = registry.derived(built)
+        }
+        if !settings.isEmpty || item.existing == nil { built = try record(built, setting: settings, item, vocabulary) }
+        items[index].record = built
+        try references(of: built, item)
         // A size the kind works out from what was set (a note's or a schema card's height, from its text) is
-        // the one it's placed at, unless the statement says one.
-        if shape.size == nil, let before = item.record.box?.size, let after = items[index].record.box?.size, after != before {
+        // the one it's placed at, unless the statement says one; with a width alone, the height it works
+        // out at that width (any other kind's height as it was).
+        if let widthAlone, let height = built.box?.height {
+            items[index].size = CGSize(width: widthAlone, height: height)
+        } else if shape.size == nil, let before = item.record.box?.size, let after = built.box?.size, after != before {
             items[index].size = after
         }
 
@@ -868,7 +884,7 @@ struct Drawing {
     /// Refuses a change that would change a restated shape's title (one its kind works out).
     func keepsName(_ record: AnyShapeRecord, _ title: String, _ item: ShapeItem) throws(AutomationError) {
         guard let naming, let now = naming.name(record, registry), now != title else { return }
-        let size = item.shape.size.map { "\(LanguageKey.size.rawValue): \(Self.written($0))" }
+        let size = item.shape.size.map { "\(LanguageKey.size.rawValue): \($0.written)" }
         throw AutomationError(item.statement, .renames, "\(size ?? "this") would rename \(quoted(title)) to \(quoted(now))",
                               hint: "its title is worked out from what it is: give it one with \(LanguageKey.title.rawValue): \"…\" first, or leave it as it is")
     }
