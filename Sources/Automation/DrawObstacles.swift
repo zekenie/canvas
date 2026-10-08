@@ -39,6 +39,13 @@ final class ObstacleIndex {
     /// All of them together; nil with none.
     var bounds: CGRect? { grid.bounds }
 
+    /// All of them together but those whose ids are `excluded`; nil with none left.
+    func bounds(excluding excluded: Set<Int>) -> CGRect? {
+        guard !excluded.isEmpty else { return bounds }
+        let rects = entries.lazy.filter { !excluded.contains($0.id) }.map(\.rect)
+        return rects.isEmpty ? nil : rects.reduce(CGRect.null) { $0.union($1) }
+    }
+
     /// The obstacles that meet `area` (touching counts), in paint order, as the layout asks for them.
     func obstacles(in area: CGRect) -> [LayoutProblem.Obstacle] { grid.obstacles(in: area) }
 

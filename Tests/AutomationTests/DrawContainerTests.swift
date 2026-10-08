@@ -240,6 +240,49 @@ private func at(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat)
         let pen = try require(editor.document[board.pen]?.box)
         expectEqual(editor.document[board.m]?.box, CGRect(x: pen.minX + 150, y: pen.minY + 100, width: 120, height: 80))
     },
+    test("pens one run moves are each judged where the others land: one moved over most of where another was goes where it's placed, pushed past nothing and nudged into nothing") {
+        let editor = try penEditor()
+        tile("Anchor", CGRect(x: -600, y: 0, width: 120, height: 80), in: editor)
+        let ma = tile("MA", CGRect(x: 90, y: 60, width: 120, height: 80), in: editor).id
+        let mb = tile("MB", CGRect(x: 490, y: 60, width: 120, height: 80), in: editor).id
+        let a = pen("A", CGRect(x: 0, y: 0, width: 300, height: 200), holding: [ma], in: editor)
+        let b = pen("B", CGRect(x: 400, y: 0, width: 300, height: 200), holding: [mb], in: editor)
+        // A to (450, 0), over 250 of B's 300 columns, MB's among them; B to (450, 300), below where A lands.
+        for allow in ["", " overlap: allow"] {
+            let script = #"pen "A" right of "Anchor" left (gap: 1050) below "Anchor" top (gap: none)"# + allow + "\n"
+                + #"pen "B" right of "Anchor" left (gap: 1050) below "Anchor" top (gap: 300)"# + allow
+            let result = try drawn(script, on: editor)
+            expectEqual(rows(result).map { $0["at"] }, [at(450, 0, 300, 200), at(450, 300, 300, 200)], allow)
+            expectEqual(rows(result).map { $0["pushedPast"] }, [nil, nil], allow)
+            expectEqual(messages(result), [], allow)
+            expectEqual(editor.document[ma]?.box, CGRect(x: 540, y: 60, width: 120, height: 80), allow)
+            expectEqual(editor.document[mb]?.box, CGRect(x: 540, y: 360, width: 120, height: 80), allow)
+            expectEqual([ma, mb, a, b].map { editor.holder(of: $0) }, [a, b, nil, nil], allow)
+            editor.undo()
+        }
+    },
+    test("a shape in a pen the run moves is kept clear of what the pen holds where the pen takes it, not where it was") {
+        let editor = try penEditor()
+        tile("Anchor", CGRect(x: -600, y: 0, width: 120, height: 80), in: editor)
+        let m = tile("M", CGRect(x: 100, y: 60, width: 120, height: 80), in: editor).id
+        let a = pen("A", CGRect(x: 0, y: 0, width: 440, height: 260), holding: [m], in: editor)
+        // A to (360, 0), and M with it to (460, 60), under where N would land, 40 in from A's top-left.
+        let result = try drawn(#"pen "A" right of "Anchor" left (gap: 960) below "Anchor" top (gap: none)"# + "\n" + #"tile "N" in "A""#, on: editor)
+        expectEqual(rows(result).map { $0["at"] }, [at(360, 0, 440, 260), at(620, 40, 120, 80)])
+        expectEqual(rows(result).last?["pushedPast"], ["M"])
+        expectEqual(editor.document[m]?.box, CGRect(x: 460, y: 60, width: 120, height: 80))
+        expectEqual(editor.holder(of: try require(shape("N", in: editor)).id), a)
+    },
+    test("right of board, in a run that moves a pen, is right of the shapes that stay, not of what the pen takes along") {
+        let editor = try penEditor()
+        tile("Anchor", CGRect(x: -600, y: 0, width: 120, height: 80), in: editor)
+        let m = tile("M", CGRect(x: 90, y: 60, width: 120, height: 80), in: editor).id
+        pen("A", CGRect(x: 0, y: 0, width: 300, height: 200), holding: [m], in: editor)
+        // A to (-1100, -60), left of Anchor, with M; the board that stays is Anchor alone.
+        let result = try drawn(#"pen "A" left of "Anchor" (gap: 200)"# + "\n" + #"tile "X" right of board"#, on: editor)
+        expectEqual(rows(result).map { $0["at"] }, [at(-1100, -60, 300, 200), at(-400, 0, 120, 80)])
+        expectEqual(editor.document[m]?.box, CGRect(x: -1010, y: 0, width: 120, height: 80))
+    },
     test("resized where it stays, a pen puts what's over its new edge wholly in or out; a shape grown over its pen's edge is nudged too") {
         let editor = try penEditor()
         let board = PenBoard(editor)

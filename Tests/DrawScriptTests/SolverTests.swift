@@ -207,6 +207,54 @@ let hub = ("Hub", rect(0, 0, 200, 100))
         expectEqual(carrying.zones[0], [], "nor a zone of it")
         expect(try moved([]).solve().pushes.count > 0, "not carrying it, it's kept clear of it")
     },
+    test("what a restated box carries is where it takes it, for every other box: one placed where it was isn't kept clear of it, one in the box is, there; the inner of two carrying it takes it") {
+        // F carries M and K, E (restated in F) carries K too. F goes below L, to (-600, 500), and M
+        // with it to (-520, 780); E right of L, to (800, -100), and K with E to (820, -80).
+        let l = rect(-300, 0, 200, 100), m = rect(80, 280, 100, 100), k = rect(40, 40, 50, 50)
+        let obstacles = [LayoutProblem.Obstacle(id: 0, rect: m), LayoutProblem.Obstacle(id: 1, rect: l), LayoutProblem.Obstacle(id: 2, rect: k)]
+        @MainActor func clauses(_ line: String, _ refs: [LayoutProblem.Ref]) throws -> [LayoutProblem.ResolvedClause] {
+            try shape(line).clauses.map { LayoutProblem.ResolvedClause($0, refs: refs) }
+        }
+        let box = CGSize(width: 100, height: 100)
+        let problem = LayoutProblem(
+            free: [LayoutProblem.Free(line: 1, name: "\"F\"", size: CGSize(width: 800, height: 400), clauses: try clauses(#"card below "L" (gap: 400)"#, [.fixed(0)]),
+                                      current: rect(0, 0, 800, 400), carries: [0, 2]),
+                   LayoutProblem.Free(line: 2, name: "\"E\"", size: CGSize(width: 300, height: 300), clauses: try clauses(#"card right of "L" (gap: 900)"#, [.fixed(0)]),
+                                      current: rect(20, 20, 300, 300), carries: [2]),
+                   // Where M was.
+                   LayoutProblem.Free(line: 3, name: "\"G\"", size: box, clauses: try clauses(#"box right of "L" (gap: 180) below "L" (gap: 180)"#, [.fixed(0)])),
+                   // Where K would be, had it gone with F.
+                   LayoutProblem.Free(line: 4, name: "\"H\"", size: box, clauses: try clauses(#"box inside "F" top-left"#, [.free(0)])),
+                   // Over where M goes, (-560, 760): pushed right past it, 40 on.
+                   LayoutProblem.Free(line: 5, name: "\"J\"", size: box, clauses: try clauses(#"box inside "F" bottom-left"#, [.free(0)]))],
+            fixed: [LayoutProblem.Fixed(rect: l, obstacle: 1)],
+            obstacles: { area in obstacles.filter { $0.rect.intersects(area) } })
+        let solved = try problem.solve()
+        for (got, expected) in zip(solved.rects, [rect(-600, 500, 800, 400), rect(800, -100, 300, 300), rect(80, 280, 100, 100),
+                                                  rect(-560, 540, 100, 100), rect(-380, 760, 100, 100)]) {
+            expectRect(got, expected)
+        }
+        expectEqual(solved.pushes, [LayoutSolution.Push(box: 4, past: .obstacle(0), way: .right)])
+        expectEqual(solved.zones.map(\.count), [0, 0, 0, 0, 0])
+    },
+    test("a box kept clear of what a restated box carries follows it when that box is pushed on later") {
+        // N, inside F at its top-left, lands on M where F takes it, (-380, 200), and goes below it,
+        // 144 below F's top. Then F, below L at (-400, 180), is pushed down past W to 514, and N with it.
+        let l = rect(-300, 0, 200, 100), m = rect(20, 20, 200, 60), w = rect(-150, 400, 50, 50)
+        let obstacles = [LayoutProblem.Obstacle(id: 0, rect: m), LayoutProblem.Obstacle(id: 1, rect: l), LayoutProblem.Obstacle(id: 2, rect: w)]
+        let inside = try shape(#"box inside "F" top-left"#).clauses[0], below = try shape(#"card below "L""#).clauses[0]
+        let problem = LayoutProblem(
+            free: [LayoutProblem.Free(line: 1, name: "\"N\"", size: CGSize(width: 100, height: 100),
+                                      clauses: [LayoutProblem.ResolvedClause(inside, refs: [.free(1)])]),
+                   LayoutProblem.Free(line: 2, name: "\"F\"", size: CGSize(width: 400, height: 300),
+                                      clauses: [LayoutProblem.ResolvedClause(below, refs: [.fixed(0)])], current: rect(0, 0, 400, 300), carries: [0])],
+            fixed: [LayoutProblem.Fixed(rect: l, obstacle: 1)],
+            obstacles: { area in obstacles.filter { $0.rect.intersects(area) } })
+        let solved = try problem.solve()
+        expectRect(solved.rects[1], rect(-400, 514, 400, 300))
+        expectRect(solved.rects[0], rect(-360, 658, 100, 100))
+        expectEqual(solved.pushedPast, [[.obstacle(0)], [.obstacle(2)]])
+    },
     test("moved out of a zone by another pair kept apart, it's no_room naming that pair") {
         // N is kept clear of the zone drawn with it by going down, and takes A, which it's
         // centered on, out of the zone.

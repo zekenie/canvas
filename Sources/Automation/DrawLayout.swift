@@ -12,7 +12,8 @@ import Geometry
 // `ObstacleGrid`), and the solver asks for them by region, each answer kept: however many times it
 // asks, a question costs what's near the box it's about. A shape `in` a container on the board (a
 // frame) is kept within it, as `inside` keeps one; a container that moves takes what it holds
-// along, which is never in its way.
+// along, which is never in its way, and which every other shape the script places meets where the
+// container takes it, never where it is now (`LayoutProblem.Free.carries`).
 
 extension Drawing {
     /// Places every shape the script moves, or says why it can't (the solver's first problem), and
@@ -37,15 +38,17 @@ extension Drawing {
         let obstacles: (CGRect) -> [LayoutProblem.Obstacle] = { area in filed.obstacles(in: area) }
 
         // The boxes that move, in script order; a container among them with what it holds, which
-        // goes along with it.
+        // goes along with it (`carried`, by place in the document: what goes where those go).
         let kinds = registry.containingKinds
         var free: [LayoutProblem.Free] = []
+        var carried: Set<Int> = []
         for index in items.indices where items[index].moves {
             let item = items[index]
             items[index].free = free.count
             let carries = item.existing.map { existing in
                 kinds.isEmpty ? [] : Set(document.descendants(of: existing.id, containingKinds: kinds).compactMap { document.index(of: $0) })
             } ?? []
+            carried.formUnion(carries)
             free.append(LayoutProblem.Free(line: item.statement.line, name: subject(of: item), size: item.size, gap: item.shape.gap,
                                            overlapAllowed: item.shape.overlapAllowed, current: item.existing?.box, carries: carries,
                                            implied: item.standsFor != nil))
@@ -58,7 +61,9 @@ extension Drawing {
         var fixedWords: [PlaceWord: Int] = [:]
         let needsBoard = items.contains { item in item.targets.joined().contains { if case .board = $0 { true } else { false } } }
             || items.contains { $0.existing == nil && $0.shape.clauses.isEmpty }
-        let boardBounds = needsBoard ? filed.bounds : nil
+        // The board's shapes as they stay: what a container the script moves takes along isn't
+        // where it is now, any more than the container is.
+        let boardBounds = needsBoard ? filed.bounds(excluding: carried) : nil
         func fixedShape(_ record: AnyShapeRecord, rect: CGRect, gap: Gap?) -> LayoutProblem.Ref {
             if let at = fixedShapes[record.id] { return .fixed(at) }
             let obstacle = context.solidBounds(of: record.id) != nil ? document.index(of: record.id) : nil
@@ -262,8 +267,10 @@ extension Drawing {
                                       hint: "leave it out of the script, or ask the user to unlock it")
             }
             items[index].record = record
-            // Resized where it stays, over what's around it.
-            if let existing = item.existing, !item.moves, let placed = item.placed, placed.size != existing.box?.size, !item.shape.overlapAllowed {
+            // Resized where it stays, over what's around it: not one a container the script moves
+            // takes along, which doesn't stay where it is.
+            if let existing = item.existing, !item.moves, let placed = item.placed, placed.size != existing.box?.size, !item.shape.overlapAllowed,
+               !(document.index(of: existing.id).map(carried.contains) ?? false) {
                 // Over a container's edge, it's put down again, wholly in or out (`Transaction.settle`),
                 // and so is what a container resized holds, or reaches beside it: said then.
                 let level = registry.container(of: existing, in: document)

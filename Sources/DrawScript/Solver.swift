@@ -21,6 +21,8 @@ import Geometry
 // overlapping pair in a fixed order, pushed apart along what the placements already say, one pair
 // a round, each pair once, and every box that moves reported), repeated until a pass separates
 // nothing; and one drawing with nothing to hang on, solved alone and put where the view is clear.
+// An obstacle a restated box takes along (a container's contents) is part of that box: met where
+// that box puts it, and kept clear of by a bound against that box's node, not the board's.
 
 extension LayoutProblem {
     /// Places every free box, or says why they can't all go where the script says: the first
@@ -122,8 +124,15 @@ struct Solver {
     var separations: [Separation] = []
     var separated: Set<PairKey> = []
     /// Whether each obstacle asked about wholly holds another: the board doesn't move while a
-    /// script is placed, so each is worked out once.
+    /// script is placed, so each is worked out once, unless a box takes obstacles along
+    /// (`Placement.holders`).
     let holders = Holders()
+    /// For each obstacle a restated box takes along (`Free.carries`), that box: where two take it
+    /// along (a container moved in one that moves), the inner one, which takes along fewer. Every
+    /// other box meets the obstacle where that box takes it.
+    var carrierOf: [Int: Int] = [:]
+    /// The boxes in `carrierOf`, in script order.
+    var carriers: [Int] = []
 
     static let slack: CGFloat = 1e-6
     static let relax: CGFloat = 1e-9
@@ -137,10 +146,12 @@ struct Solver {
 
     /// One solve's free boxes as zones are asked about them: where each is (nil while it's nowhere
     /// yet), and, for each zone asked about, the boxes it counts as holding (`counted(by:in:)`),
-    /// worked out once.
+    /// worked out once; and, while boxes take obstacles along, whether each obstacle asked about
+    /// wholly holds another where this solve has them.
     final class Placement {
         let rects: [CGRect?]
         var counted: [Int: [Bool]] = [:]
+        let holders = Holders()
 
         init(_ rects: [CGRect?]) {
             self.rects = rects
@@ -199,6 +210,9 @@ struct Solver {
         var other: LayoutProblem.Ref
         var otherRect: CGRect
         var overlap: Overlap
+        /// For an obstacle a restated box takes along, that box: it's kept clear of where that box
+        /// takes it.
+        var carrier: Int?
     }
 
     // MARK: Building the bounds
@@ -211,6 +225,12 @@ struct Solver {
         inDrawing = Array(repeating: false, count: count)
         listOf = Array(repeating: nil, count: count)
         try validate()
+        for (index, box) in problem.free.enumerated() where box.current != nil {
+            for id in box.carries where carrierOf[id].map({ problem.free[$0].carries.count > box.carries.count }) ?? true {
+                carrierOf[id] = index
+            }
+        }
+        carriers = Set(carrierOf.values).sorted()
 
         let unplaced = problem.free.indices.filter { problem.free[$0].clauses.isEmpty && problem.free[$0].current == nil }
         if unplaced.count > 1 {
@@ -491,7 +511,8 @@ struct Solver {
             for box in rest { rects[box] = rect(box, tied.solution) }
             let drawing = try run(cluster, obstacles: false, anchored: anchor)
             try checkTied(cluster, drawing.solution)
-            let at = spot(for: cluster.map { (box: $0, rect: rect($0, drawing.solution)) }, clearOf: rest.map { rects[$0] })
+            let at = spot(for: cluster.map { (box: $0, rect: rect($0, drawing.solution)) }, clearOf: rest.map { rects[$0] },
+                          among: Placement(rects.map { $0.isNull ? nil : $0 }))
             for box in cluster { rects[box] = rect(box, drawing.solution).offsetBy(dx: at.x, dy: at.y) }
             pushes = tied.pushes + drawing.pushes
         } else {
@@ -508,14 +529,49 @@ struct Solver {
     /// neither what it's `inside` or `on` nor in its way, but what it sits in.
     func zones(of box: Int, _ placement: Placement) -> [LayoutProblem.Obstacle] {
         guard let mine = placement.rects[box], mine.isFinite else { return [] }
-        var seen: Set<Int> = []
-        return problem.obstacles(mine).filter { seen.insert($0.id).inserted }.sorted { $0.id < $1.id }.filter { obstacle in
+        return obstacles(in: mine, placement).filter { obstacle in
             !exemptObstacles[box].contains(obstacle.id) && overlap(mine, obstacle.rect) != nil && isZone(obstacle, for: box, placement)
         }
     }
 
+    /// The obstacles that meet `area` where `placement` has them, each once, in stacking order: a
+    /// board shape where it is, and one a restated box takes along (`Free.carries`) moved as far as
+    /// that box moves, or nowhere while that box is nowhere. With no box taking any along, it's
+    /// the one question `problem.obstacles` answers; with some, one more for each.
+    func obstacles(in area: CGRect, _ placement: Placement) -> [LayoutProblem.Obstacle] {
+        var seen: Set<Int> = []
+        var found = problem.obstacles(area).filter { carrierOf[$0.id] == nil && seen.insert($0.id).inserted }
+        guard !carriers.isEmpty else { return found.sorted { $0.id < $1.id } }
+        for carrier in carriers {
+            guard let moved = offset(of: carrier, placement) else { continue }
+            for obstacle in problem.obstacles(area.offsetBy(dx: -moved.x, dy: -moved.y))
+            where carrierOf[obstacle.id] == carrier && seen.insert(obstacle.id).inserted {
+                found.append(LayoutProblem.Obstacle(id: obstacle.id, rect: obstacle.rect.offsetBy(dx: moved.x, dy: moved.y)))
+            }
+        }
+        return found.sorted { $0.id < $1.id }
+    }
+
+    /// How far a restated box is from where it is now in `placement`: how far what it takes along
+    /// moves. Nil while it's nowhere.
+    func offset(of box: Int, _ placement: Placement) -> CGPoint? {
+        guard let rect = placement.rects[box], let current = problem.free[box].current else { return nil }
+        return CGPoint(x: rect.minX - current.minX, y: rect.minY - current.minY)
+    }
+
+    /// Where an obstacle `obstacles(in:_:)` gave is now, before anything moves.
+    func unmoved(_ obstacle: LayoutProblem.Obstacle, _ placement: Placement) -> CGRect {
+        guard let carrier = carrierOf[obstacle.id], let moved = offset(of: carrier, placement) else { return obstacle.rect }
+        return obstacle.rect.offsetBy(dx: -moved.x, dy: -moved.y)
+    }
+
     func rect(_ box: Int, _ solution: PerAxis<AxisSolution>) -> CGRect {
         CGRect(origin: CGPoint(x: solution.x.pos[node(box)], y: solution.y.pos[node(box)]), size: problem.free[box].size)
+    }
+
+    /// Where a solve has the free boxes: nil for one it doesn't tie to the board.
+    func placement(_ solution: PerAxis<AxisSolution>) -> Placement {
+        Placement((0..<count).map { isTied($0, solution) ? rect($0, solution) : nil })
     }
 
     func isTied(_ box: Int, _ solution: PerAxis<AxisSolution>) -> Bool {
@@ -879,9 +935,9 @@ struct Solver {
     /// then the obstacles near it in stacking order. Pairs `inside`, `on` or `overlap: allow`
     /// exempts are skipped, and so is a zone (`isZone`): an obstacle the box already sat on, that
     /// holds a shape it's placed against, that it lands among other shapes on, or that holds the
-    /// `view` it's placed against.
+    /// `view` it's placed against. An obstacle a restated box takes along is where that box takes it.
     func firstClash(_ boxes: [Int], _ solution: PerAxis<AxisSolution>, obstacles: Bool) -> Clash? {
-        let placement = Placement((0..<count).map { isTied($0, solution) ? rect($0, solution) : nil })
+        let placement = placement(solution)
         for (at, box) in boxes.enumerated() where !problem.free[box].overlapAllowed && isTied(box, solution) {
             let mine = rect(box, solution)
             for other in boxes[(at + 1)...] where !problem.free[other].overlapAllowed && isTied(other, solution) && !exemptPairs.contains(Pair(box, other)) {
@@ -889,11 +945,9 @@ struct Solver {
                 if let overlap = overlap(mine, theirs) { return Clash(box: box, other: .free(other), otherRect: theirs, overlap: overlap) }
             }
             guard obstacles else { continue }
-            var seen: Set<Int> = []
-            let near = problem.obstacles(mine).filter { seen.insert($0.id).inserted }.sorted { $0.id < $1.id }
-            for obstacle in near where !exemptObstacles[box].contains(obstacle.id) {
+            for obstacle in self.obstacles(in: mine, placement) where !exemptObstacles[box].contains(obstacle.id) {
                 guard let overlap = overlap(mine, obstacle.rect), !isZone(obstacle, for: box, placement) else { continue }
-                return Clash(box: box, other: .obstacle(obstacle.id), otherRect: obstacle.rect, overlap: overlap)
+                return Clash(box: box, other: .obstacle(obstacle.id), otherRect: obstacle.rect, overlap: overlap, carrier: carrierOf[obstacle.id])
             }
         }
         return nil
@@ -930,7 +984,8 @@ struct Solver {
         let free = problem.free[box]
         // A box that goes in its holder itself: what the holder holds is in its way, never under it.
         if let holder = free.holder, holder.direct, let held = rect(of: holder.ref, placement), holds(held, zone.rect) { return false }
-        if let current = free.current, holds(zone.rect, current) { return true }
+        // Where it sat: the zone held it before anything moved, wherever a box takes the zone.
+        if let current = free.current, holds(unmoved(zone, placement), current) { return true }
         if inDrawing[box], let view = problem.view, holds(zone.rect, view) { return true }
         for clause in free.clauses {
             for target in clause.targets {
@@ -949,7 +1004,7 @@ struct Solver {
             }
         }
         guard let mine = placement.rects[box], holds(zone.rect, mine, times: Self.zoneArea) else { return false }
-        return holdsAnother(zone) || among && (0..<count).contains { $0 != box && counts($0) }
+        return holdsAnother(zone, placement) || among && (0..<count).contains { $0 != box && counts($0) }
     }
 
     /// The free boxes a zone counts as holding: those it wholly holds that are on it for a reason
@@ -976,7 +1031,6 @@ struct Solver {
         return counts
     }
 
-    /// Whether `outer` wholly holds `inner`, and is at least `times` its area.
     /// Where a box a placement or a holder names is: a fixed box's rect, or a free box's where `placement`
     /// has it (nil while it's nowhere yet).
     func rect(of ref: LayoutProblem.Ref, _ placement: Placement) -> CGRect? {
@@ -987,17 +1041,21 @@ struct Solver {
         }
     }
 
+    /// Whether `outer` wholly holds `inner`, and is at least `times` its area.
     func holds(_ outer: CGRect, _ inner: CGRect, times: CGFloat = 0) -> Bool {
         outer.minX <= inner.minX + Self.slack && outer.minY <= inner.minY + Self.slack
             && outer.maxX >= inner.maxX - Self.slack && outer.maxY >= inner.maxY - Self.slack
             && outer.width * outer.height >= times * inner.width * inner.height
     }
 
-    /// Whether an obstacle wholly holds another.
-    func holdsAnother(_ obstacle: LayoutProblem.Obstacle) -> Bool {
-        if let known = holders.known[obstacle.id] { return known }
-        let found = problem.obstacles(obstacle.rect).contains { $0.id != obstacle.id && holds(obstacle.rect, $0.rect) }
-        holders.known[obstacle.id] = found
+    /// Whether an obstacle wholly holds another, where `placement` has them: worked out once for
+    /// the run, or once for the placement while boxes take obstacles along, which move with each
+    /// solve.
+    func holdsAnother(_ obstacle: LayoutProblem.Obstacle, _ placement: Placement) -> Bool {
+        let kept = carriers.isEmpty ? holders : placement.holders
+        if let known = kept.known[obstacle.id] { return known }
+        let found = obstacles(in: obstacle.rect, placement).contains { $0.id != obstacle.id && holds(obstacle.rect, $0.rect) }
+        kept.known[obstacle.id] = found
         return found
     }
 
@@ -1066,12 +1124,16 @@ struct Solver {
                 // Wholly on a shape at least twice its size, it would sit on it, if that one held
                 // anything that counts.
                 let region = holds(clash.otherRect, rect(box, solution), times: Self.zoneArea) ? clash.otherRect : nil
-                throw held(box, clash.other, region: region)
+                throw held(box, clash.other, region: region, placement(solution))
             }
             separations.append(Separation(box: box, other: clash.other, axis: axis))
+            // Kept clear of the board, or of what a box takes along as part of that box, so it
+            // follows if that box moves on.
+            let anchor = clash.carrier.map(node) ?? 0
+            let start = clash.otherRect.origin[axis] - solution[axis].pos[anchor]
             let bound = freedoms[axis] == .after
-                ? Bound(from: 0, to: node(box), weight: clash.otherRect.origin[axis] + clash.otherRect.size[axis] + clearance(axis), why: .separation(index))
-                : Bound(from: node(box), to: 0, weight: problem.free[box].size[axis] + clearance(axis) - clash.otherRect.origin[axis], why: .separation(index))
+                ? Bound(from: anchor, to: node(box), weight: start + clash.otherRect.size[axis] + clearance(axis), why: .separation(index))
+                : Bound(from: node(box), to: anchor, weight: problem.free[box].size[axis] + clearance(axis) - start, why: .separation(index))
             return (axis, bound)
         }
     }
@@ -1128,16 +1190,17 @@ struct Solver {
     /// at twice its area, and would be its zone if it held anything that counts. The hint then says
     /// what it does hold (nothing, or no shape wholly: one hangs over its edge), and offers placing
     /// the box elsewhere first, since the region may be a note whose words the box would cover; a
-    /// first shape inside it is how to start it as a zone.
-    func held(_ box: Int, _ other: LayoutProblem.Ref, region: CGRect? = nil) -> ScriptError {
+    /// first shape inside it is how to start it as a zone. What's around it is where `placement`
+    /// has it.
+    func held(_ box: Int, _ other: LayoutProblem.Ref, region: CGRect? = nil, _ placement: Placement? = nil) -> ScriptError {
         let free = problem.free[box]
         let where_ = free.clauses.isEmpty ? "stays where it is" : "is \(listed(free.clauses.map(\.written)))"
         var line = free.line
         if case .free(let other) = other { line = max(line, problem.free[other].line) }
         let named = name(other)
         var hint = "say overlap: allow, or place it elsewhere"
-        if let region, case .obstacle(let id) = other {
-            let partly = problem.obstacles(region).contains { $0.id != id && overlap(region, $0.rect) != nil && !holds($0.rect, region) }
+        if let region, let placement, case .obstacle(let id) = other {
+            let partly = obstacles(in: region, placement).contains { $0.id != id && overlap(region, $0.rect) != nil && !holds($0.rect, region) }
             hint = "\(named) \(partly ? "holds no shape wholly yet" : "holds nothing yet"), so it's in the way: place it elsewhere, "
                 + "or, if \(named) is meant to hold shapes, place a first one inside it"
         }
@@ -1213,8 +1276,9 @@ struct Solver {
     /// higher, then further left), where none of it (but what may overlap) comes within
     /// `anchorClearance` of an obstacle (but one that holds the whole view) or a box placed on the
     /// board. Past the last ring, right of everything, top-aligned with it. Returns how far to move
-    /// it.
-    func spot(for drawing: [(box: Int, rect: CGRect)], clearOf placed: [CGRect]) -> CGPoint {
+    /// it. The obstacles are where `placement` (the boxes placed on the board) has them: what a box
+    /// in the drawing takes along goes with the drawing.
+    func spot(for drawing: [(box: Int, rect: CGRect)], clearOf placed: [CGRect], among placement: Placement) -> CGPoint {
         let bounds = drawing.map(\.rect).reduce(CGRect.null) { $0.union($1) }
         let solid = drawing.filter { !problem.free[$0.box].overlapAllowed }.map(\.rect)
         let margin = LayoutProblem.anchorClearance, step = LayoutProblem.ringStep
@@ -1222,7 +1286,7 @@ struct Solver {
         let region = CGRect(center: problem.viewMiddle, size: bounds.size).insetBy(dx: -reach, dy: -reach)
         // A region that holds the whole view isn't in the way: the drawing is drawn on it, as a
         // shape placed against the view is (`isZone`).
-        let found = problem.obstacles(region).filter { obstacle in problem.view.map { !holds(obstacle.rect, $0) } ?? true }.map(\.rect)
+        let found = obstacles(in: region, placement).filter { obstacle in problem.view.map { !holds(obstacle.rect, $0) } ?? true }.map(\.rect)
         let middle = bounds.center
         let start = CGPoint(x: problem.viewMiddle.x - middle.x, y: problem.viewMiddle.y - middle.y)
         // A box moved to a spot takes it if, grown by the margin, it shares more than a sliver of

@@ -286,7 +286,7 @@ delete "Backend"
 
 A target is a quoted title, optionally followed by a part, or one of two unquoted words:
 
-- **`board`** is the box around every [obstacle](#keeping-clear): the shapes on the board that this script doesn't move (the board the window shows, not the boards inside its subboards). `right of board` is a new column past everything, `below board` is the space under everything. On an empty board it's `unknown_title`, because there's nothing to be right of. Leave one shape unplaced instead, and the drawing goes in the window.
+- **`board`** is the box around every [obstacle](#keeping-clear): the shapes on the board that this script doesn't move, nor a frame it moves takes along (the board the window shows, not the boards inside its subboards). `right of board` is a new column past everything, `below board` is the space under everything. On an empty board it's `unknown_title`, because there's nothing to be right of. Leave one shape unplaced instead, and the drawing goes in the window.
 - **`view`** is the part of the board in the window (below the path's pill over a subboard, which covers the window's top there). `inside view top-right` puts a legend in a corner. `view` needs the board's window to have a size, or it's `no_view`.
 
 Both are fixed boxes, measured once when the script runs.
@@ -469,7 +469,7 @@ sticky-note "Search" in "Sprint" right of "Login bug" text: "Index the archive"
 ```
 
 - **Nothing sits across a frame's edge.** Whatever a script puts down over one (a new shape, or one it places or resizes) goes wholly in or out of it by most of its area, nudged to 16 clear of the edge, as by hand, and a warning says which: `"Draft" was over the edge of "Sprint", so it was nudged in`. So a shape placed `inside` a frame, `on` it, or against a shape in it, that lands within it, is in it too. The row's `at` is where it ended up.
-- **A frame placed elsewhere takes what's in it along**, and what's in it is never in its way. Placing another shape against one it takes along, in the same script, is `unsupported`: place it against the frame, or in a run of its own. Resized, a frame leaves what's in it where it is, and what's then over its edge goes wholly in or out (a warning says how many).
+- **A frame placed elsewhere takes what's in it along**, and what's in it is never in its way. Every other shape the script places meets what's in it where the frame takes it, never where it was, so frames moved in one script can trade places: each lands where it's placed. Placing another shape against one it takes along, in the same script, is `unsupported`: place it against the frame, or in a run of its own. Resized, a frame leaves what's in it where it is, and what's then over its edge goes wholly in or out (a warning says how many).
 - **A locked frame locks what's in it**, at any depth, and takes nothing new: `in` it, or a script that would put a shape in it, is `read_only`, and so is any change to what's in it.
 - **Draw a frame in its own script first.** `in` a frame the same script draws is `unsupported`. A frame doesn't grow to fit what's drawn in it, so give it a `size:` with room.
 - **Deleting a frame leaves what's in it where it is**, now in what held the frame, or on the board.

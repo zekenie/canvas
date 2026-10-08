@@ -7,8 +7,9 @@ import Geometry
 // Applying a placed script, in one transaction: the deletes, the shapes (each after every script
 // shape it's drawn inside or on, or in, new ones added on top, restated ones updated in place and
 // raised above a shape they're moved inside or on, or a zone they sit in where they land; a
-// container moved taking what it holds along), each put down as by hand, settled in or out of the
-// containers it's over (`Transaction.settle`), then the edges, through DrawEdges, against the board
+// container moved taking what it holds along); then, with every one where it goes, each put down as
+// by hand, settled in or out of the containers it's over (`Transaction.settle`), those that hold no
+// shapes first, then the containers; then the edges, through DrawEdges, against the board
 // as the transaction has it (so an end may be new). Then what it did, read from the transaction's
 // document, and what it should say: each shape's issues (DrawChecks), pushes, nudges, near misses,
 // edges whose side faces away, shapes out of view. Anything wrong throws, and the transaction
@@ -53,12 +54,11 @@ extension Drawing {
             }
         }
 
-        // Shapes, each after what it's drawn inside or on, or in, so it paints above it; each put
-        // down as by hand, once there's a container on the board to put it down in or out of
-        // (settling looks at the whole board, so a board without one isn't looked at for each).
-        var nudges: [ShapeID: CGPoint] = [:]
-        var settles = !registry.containingKinds.isEmpty && transaction.document.shapes.contains(where: registry.isContainer)
-        for index in applyOrder() {
+        // Shapes, each after what it's drawn inside or on, or in, so it paints above it: every one
+        // where it goes first, then each put down as by hand, against the board as the run leaves
+        // it, never against where another shape it moves was.
+        let order = applyOrder()
+        for index in order {
             let item = items[index]
             if let existing = item.existing {
                 // Raised while it can be: before a change that locks it, or after one that unlocks
@@ -71,10 +71,6 @@ extension Drawing {
                     update(item, existing, in: &transaction)
                     if let now = transaction.document[existing.id], !transaction.isReadOnly(now) { raise(item, in: &transaction) }
                 }
-                // Put down again: moved by a placement, or resized where it is.
-                if settles, item.moves || item.record.box?.size != existing.box?.size {
-                    try settle(item, in: &transaction, nudges: &nudges, warnings: &warnings)
-                }
             } else {
                 guard isNew(item.record.id, in: transaction) else {
                     throw AutomationError(item.statement, .internal, "\(subject(of: item)) came out a shape already drawn")
@@ -84,8 +80,20 @@ extension Drawing {
                     throw AutomationError(item.statement, .internal, "\(subject(of: item)) couldn't go on the board")
                 }
                 raise(item, in: &transaction)
-                if registry.isContainer(item.record) { settles = true }
-                if settles { try settle(item, in: &transaction, nudges: &nudges, warnings: &warnings) }
+            }
+        }
+        // Put down: new, moved by a placement, or resized where it is; once there's a container on
+        // the board to put them in or out of (settling looks at the whole board, so a board without
+        // one isn't looked at for each). The shapes that hold none go down first, each into the
+        // container it lands in, then the containers, each taking in what it lands on, so what's
+        // put down in one goes along if it's nudged.
+        var nudges: [ShapeID: CGPoint] = [:]
+        if !registry.containingKinds.isEmpty, transaction.document.shapes.contains(where: registry.isContainer) {
+            let holding = order.filter { registry.isContainer(items[$0].record) }
+            for index in order.filter({ !registry.isContainer(items[$0].record) }) + holding {
+                let item = items[index]
+                if let existing = item.existing, !item.moves, item.record.box?.size == existing.box?.size { continue }
+                try settle(item, in: &transaction, nudges: &nudges, warnings: &warnings)
             }
         }
 
