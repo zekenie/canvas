@@ -8673,6 +8673,7 @@ app's to change.
 ```
 canvas status                           whether the app is running: its version, protocol and boards
 canvas boards                           the open boards: each one's id, name, file, which is in front, and what it shows
+canvas new <file>                       a new board's file, made and opened
 canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]
                                         shapes, and the edges between them, made, changed or deleted by a script, all at once
 canvas kinds [<kind>] [--schema]        what a script can draw, and with what
@@ -8689,7 +8690,7 @@ The modules, one job each:
 |---|---|---|
 | CanvasRPC | wire | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener, which answers each request as a main-actor task of its own (one that waits holds up neither the main actor nor another connection), each connection's answers in the order its requests came, and cancels the requests still running (not notifications) once its client hangs up. Knows no canvas, plugin or AppKit. |
 | CanvasCLI | cli | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
-| CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status` and `boards` are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
+| CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
 | Automation | language | The commands plugins give the command line (`AutomationCommands`), its own two, `draw` and `kinds`, and the four points `draw` takes what it doesn't own from (on the query engine, Queries, a surface, to check a query a property holds). The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
 | DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
 | FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
@@ -8746,14 +8747,15 @@ registrar.automationCommand("draw", "Draw shapes on a board, and connect them, f
   says `"x-timeout": N` (`Property(…).keywords(["x-timeout": 60])`, `--ask`'s) makes `canvas` wait
   up to N seconds for the answer when it's given (`CommandArgument.waits`): a call waits
   `--timeout`, else the longest such wait among the params given, else 10 s, and help says "(waits
-  up to N s)". The app checks what comes against the schema and decodes it, so `run` gets its
+  up to N s)". Text whose schema says `"x-path": true` (`new`'s file) is a file named from where
+  `canvas` runs, which it sends whole (`CommandArgument.isPath`), since the app runs elsewhere. The app checks what comes against the schema and decodes it, so `run` gets its
   params typed.
 - **A board command** (the default scope) runs on a board: `context.board()` is its editor. An app
   command (`scope: .app`, as `kinds` is) runs with the registry. `board` is the server's param, and
   `canvas`'s own options (`socket`, `format`, `timeout`, `help`, `version`) are `canvas`'s, so the
   registry refuses a command that declares one; a name the command line can't type (words of
   lowercase letters, digits and hyphens: `draw`, `board list`) or one that's kept
-  (`RPC.reservedCommandNames`: the protocol's `describe`, the server's `status` and `boards`,
+  (`RPC.reservedCommandNames`: the protocol's `describe`, the server's `status`, `boards` and `new`,
   `canvas`'s `help`); a positional that isn't a param; and two commands of one name.
 - **An error says why, and what to do**: `AutomationError(message, reason:, hint:)`, where `reason`
   is a word an agent can branch on (`unknown_kind`) and `hint` is often the command, or the line,
@@ -8794,7 +8796,8 @@ a command works on the one its window shows, `editor.board`, as the window does:
 `transact` and the undo step its change makes are that board's (a `draw` is one step, Draw, there,
 and undoing it from another board shows that one first). `canvas boards` says which, for each open
 file: `shows`, the board shown (`"root"`, or the id of the shape that owns it, as a `BoardID` is
-written), `showsPath`, the boards from the root down to it, and `shapes`, how many it holds;
+written), `showsPath`, the boards from the root down to it, `shapes`, how many it holds, and
+`fileShapes`, how many the file holds, on every board;
 `canvas status` names the front file's as `frontmostShows`; and a board command's result names it
 in its `board` (`id`, `name`, `shows`, `showsPath`, as `boards` has them), read in the
 command's own job as it starts: a command that doesn't wait (`draw`) runs in that job, so no
@@ -11161,7 +11164,9 @@ with who made the change.
 
 A board is a file (`.canvasboard`; `.board` is Freeform's), with every board inside it, opened and
 autosaved in place by `BoardDocument` (CanvasUI, an `NSDocument`). `BoardCodec` (Canvas) reads and writes it: JSON, sorted and
-pretty-printed, so a board diffs cleanly.
+pretty-printed, so a board diffs cleanly. Only a board's document writes its file: a new one made
+from the command line (`canvas new <file>`) is a new, empty `BoardDocument` saved there as Save As
+saves one (`BoardDocument.newFile(at:)`), never JSON written by hand.
 
 ```json
 {

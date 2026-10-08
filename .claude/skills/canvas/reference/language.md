@@ -44,7 +44,7 @@ EOF
 - **The script**: `-` reads it from standard input. Use a heredoc with a quoted delimiter (`<<'EOF'`), which passes every character through untouched. With an unquoted delimiter the shell expands `$` and backticks and turns `\\` into `\`. The script can also be the one argument, but quoting it for the shell is error-prone, and an apostrophe in a title breaks it.
 - **`--dry-run`** does everything a run does (reading, placing, checking and building the result) and then throws the change away. On the same board, a dry run and a real run say the same, unless the user is typing in a shape the script changes: a real run ends their typing first, so what they typed is part of the shape it changes.
 - **`--reveal`** eases the camera to fit everything the script made or changed. Without it the camera stays where the user left it.
-- **`--board <board>`** names the board by the id `build/canvas boards` gives it (which lasts while that board is open), by its file, or by its name. Without it the script goes to the board in front, which changes whenever the user clicks another window, so pass it on every `draw`. `kinds`, `status` and `boards` are about the app, and take none.
+- **`--board <board>`** names the board by the id `build/canvas boards` gives it (which lasts while that board is open), by its file, or by its name. Without it the script goes to the board in front, which changes whenever the user clicks another window, so pass it on every `draw`. `kinds`, `status`, `boards` and `new` are about the app, and take none.
 - **A file's boards.** `--board` names a file, and a file can hold boards inside shapes (a subboard's). A script draws on one of them, and never says which: it's the board the shapes it names are on ([Which board](#which-board)), else the one the file's window shows. The window doesn't move. `build/canvas boards` says what the window shows, as `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (from the root down), and every result's `on` says where the script drew. To move the window, `build/canvas show "<subboard title>"`, or `build/canvas show --root`.
 - Options can come before or after `draw`. `canvas`'s own options work too: `--format json|text`, and `--timeout <seconds>` (default 10).
 
@@ -223,7 +223,7 @@ sticky-note "Nightly schedule" text: "Pick a time after @[Lod], and add a timeou
 ### Keys that are refused
 
 - **The title, as an attribute, on a new shape** (`unsupported`). The title goes after the kind, in quotes. On a restated shape, `title:` renames it.
-- **Coordinates** (`unsupported`). The box's `frame`, and any property that holds a point or a rectangle, can't be set: there are no coordinates here. Say where a shape goes with a placement, and how big with `size:`. `x:`, `y:`, `at:` and `position:` get the same answer, and `width:` and `height:` are pointed to `size:` (a width alone is `size: 300x`).
+- **Coordinates** (`unsupported`). The box's `frame`, and any property that holds a point or a rectangle, can't be set: there are no coordinates here. Say where a shape goes with a placement (to the unit, with [an exact offset](#an-exact-offset) from a shape), and how big with `size:`. `x:`, `y:`, `at:` and `position:` get the same answer, and `width:` and `height:` are pointed to `size:` (a width alone is `size: 300x`).
 - **A kind's property named like a language key** (`size`, `gap`, `overlap`, `style`, `title`) can't be set. `canvas kinds` marks any such property; none of the shipped kinds has one.
 
 ## Placements
@@ -319,6 +319,20 @@ sticky-note "Retry" right of "Load" top level with "Nightly schedule" text: "Try
 ```draw
 sticky-note "Runbook" below "Backfill" and "Retry" text: "What to do when a load fails"
 sticky-note "Alerts" below "Runbook" (gap: tight) text: "Page the owner"
+```
+
+### An exact offset
+
+```text
+right of "A" left (gap: x) below "A" top (gap: y)      the shape's top-left x right of A's and y below it
+```
+
+A direction against a side of a shape is measured from that side, wherever the shape lands: `right of "A" left (gap: 520)` puts the shape's left edge 520 right of A's left edge, over A or past it, and `below "A" top (gap: 20)` its top edge 20 below A's top. Together they put its top-left exactly that far from A's. That's how to draw a layout worked out elsewhere, by a script that computes positions: take one shape on the board as the origin, and give every shape its offset from it. `inside "A" top-left (gap: 20)` doesn't do it: its one gap is the same across and down, and keeps the shape that far in from every side. A gap is never negative, so make the origin a shape at the layout's top-left. An offset is a placement like any other: a shape that lands on another is pushed past it, and the result says so (`pushedPast`). For offsets inside a frame, draw the shapes `in` it ([Frames](#frames)).
+
+```draw
+// Owner's top-left is the origin: each note's top-left is the offset written.
+sticky-note "Glossary" right of "Owner" left (gap: 520) below "Owner" top (gap: 20) text: "Words the team uses"
+sticky-note "Contacts" right of "Owner" left (gap: 760) below "Owner" top (gap: 20) text: "Who to call"
 ```
 
 ## Which board
@@ -466,6 +480,12 @@ frame "Sprint" below board size: 900x600
 sticky-note "Login bug" in "Sprint" text: "Sessions expire too soon"
 sticky-note "Billing" in "Sprint" text: "Move invoices to the new API"
 sticky-note "Search" in "Sprint" right of "Login bug" text: "Index the archive"
+```
+
+At an exact spot in the frame, a shape is placed by its offset from the frame's top-left ([An exact offset](#an-exact-offset)), and `in` the frame, which is then never in its way:
+
+```draw
+sticky-note "Spike" in "Sprint" right of "Sprint" left (gap: 600) below "Sprint" top (gap: 340) text: "Try the new parser"
 ```
 
 - **Nothing sits across a frame's edge.** Whatever a script puts down over one (a new shape, or one it places or resizes) goes wholly in or out of it by most of its area, nudged to 16 clear of the edge, as by hand, and a warning says which: `"Draft" was over the edge of "Sprint", so it was nudged in`. So a shape placed `inside` a frame, `on` it, or against a shape in it, that lands within it, is in it too. The row's `at` is where it ended up.
@@ -857,9 +877,12 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `busy` | Someone is dragging on this board. | Try again in a moment. |
 | `empty_script` | The script has no statements (comments and styles don't count). | Write at least one shape, edge or delete. |
 | `internal` | A bug in the app. | Report it, with the script. |
-| `no_board` | No board is open. | Ask the user to open or make one. |
+| `no_board` | No board is open. | Make one, `build/canvas new <file>`, or ask the user to open one. |
 | `ambiguous_board` | Several boards are open and none is in front, or two open boards have the name `--board` gives. | Name one by its id, from `build/canvas boards`. |
 | `unknown_board` | No open board has that id, file or name (an id goes when its board closes). | Run `build/canvas boards` and use an id it lists. |
+| `file_exists` | `new` was given a file that's there already, or that a board open is. | Use that board (`--board`, with the id the message names, if it's open), or name another file. |
+| `no_folder` | `new` was given a file in a folder that isn't there. | Make the folder, or name a file in another. |
+| `cannot_save` | `new` couldn't save the file there (no permission, say). | Name a file somewhere else. |
 | `usage` | The command line is wrong (exit 2): no such command or option, a value that isn't one, `--board` on a command about the app, or standard input that can't be read or isn't UTF-8. | Follow the hint; `build/canvas help draw` says what `draw` takes. |
 | `not_running` | The app isn't running (exit 3). | Start it: `./build.sh && open build/InfiniteCanvas.app`. |
 | `unreachable` | The socket can't be reached (exit 3), usually a sandbox. | Ask the user. |
@@ -981,7 +1004,7 @@ delete edge "Ingest" -> "Load"
 
 These are left out on purpose. What they protect is that the app never chooses an arrangement for you. It works out the one your sentences describe, and refuses the rest.
 
-- **Coordinates**, in any form, including as an escape hatch. A position is always said against something named. The board stores positions, and the script never sees them.
+- **Coordinates**, in any form, including as an escape hatch. A position is always said against something named, an exact one too ([An exact offset](#an-exact-offset)). The board stores positions, and the script never sees them.
 - **Guessing an axis.** When nothing settles an axis, or two placements settle it differently, the app refuses rather than picking a row or a column.
 - **Two drawings with nothing to hang on.** Only one shape per script may be unplaced, because two unrelated drawings would have to be put somewhere relative to each other, and that's a choice.
 - **Overlap without an order.** When two shapes would overlap and nothing says which side of the other either sits on, it's refused rather than split the difference.

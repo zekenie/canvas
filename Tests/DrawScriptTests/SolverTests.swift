@@ -41,6 +41,21 @@ let hub = ("Hub", rect(0, 0, 200, 100))
         expectRect(draw(#"card "A" below "B" left"#, on: board)["A"], rect(-100, 180, 200, 100))
         expectRect(draw(#"card "A" level with "B" bottom right of "B""#, on: board)["A"], rect(280, 50, 200, 100))
     },
+    test("a direction against a side clears that side by the gap, so two put a shape's top-left at an exact offset from the target's, past it or held in it") {
+        let board = Board([("F", rect(100, 50, 300, 200))])
+        expectRect(draw(#"card "A" right of "F" left (gap: 400) below "F" top (gap: 250)"#, on: board)["A"], rect(500, 300, 200, 100))
+        // Held in F (`in`), an offset that lands on it is where it says: what holds it isn't in its way.
+        let f = rect(100, 50, 800, 600)
+        let clauses = try shape(#"card right of "F" left (gap: 120) below "F" top (gap: 40)"#).clauses
+        let held = LayoutProblem(free: [LayoutProblem.Free(line: 1, name: "\"N\"", size: CGSize(width: 200, height: 100),
+                                                           clauses: clauses.map { LayoutProblem.ResolvedClause($0, refs: [.fixed(0)]) },
+                                                           holder: LayoutProblem.Holder(.fixed(0), written: #"in "F""#))],
+                                 fixed: [LayoutProblem.Fixed(rect: f, obstacle: 0)],
+                                 obstacles: { area in [LayoutProblem.Obstacle(id: 0, rect: f)].filter { $0.rect.intersects(area) } }, name: { _ in "\"F\"" })
+        let solved = try held.solve()
+        expectRect(solved.rects[0], rect(220, 90, 200, 100))
+        expectEqual(solved.pushes, [])
+    },
     test("a part the caller puts elsewhere (a corner on an outline) is where it says") {
         let clause = try shape(#"card right of "B" top-right"#).clauses[0]
         let problem = LayoutProblem(

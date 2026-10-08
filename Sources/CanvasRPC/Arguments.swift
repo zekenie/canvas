@@ -14,7 +14,9 @@ import Foundation
 // Text whose schema says `"x-stdin": true` (a script) is read from standard input when it's given
 // as -, as JSON always is; help writes its value <script>|-. A param whose schema says
 // `"x-timeout": 60` has the app wait on something slow (a language model): given, `canvas` waits up
-// to that many seconds for the answer, and help says so.
+// to that many seconds for the answer, and help says so. Text whose schema says `"x-path": true` is a
+// file, named as it's typed where `canvas` runs, which `canvas` sends whole, since the app runs
+// elsewhere.
 //
 // `--name=value` works as well as `--name value`, `fooBar` is `--foo-bar` (or `--fooBar`), `--`
 // ends the options, and the command's positionals take what's left, in order.
@@ -39,6 +41,9 @@ public struct CommandArgument: Equatable, Sendable {
     /// How long, in seconds, `canvas` waits for the answer to a request that gives it: its schema's
     /// `"x-timeout"`, for a param the app waits on something slow for. Nil: the usual wait.
     public let waits: TimeInterval?
+    /// It's a file, named relative to where `canvas` runs, which sends it whole: its schema says
+    /// `"x-path": true`.
+    public let isPath: Bool
 
     /// Whether `--word` names it.
     func matches(_ word: String) -> Bool { word == name || "--\(word)" == option }
@@ -110,13 +115,14 @@ extension CommandSpec {
                                    isRequired: required.contains(name), value: shape, summary: schema["description"]?.stringValue,
                                    defaultValue: schema["default"], valueName: valueName(name, written, shape),
                                    readsStandardInput: schema["x-stdin"] == .bool(true),
-                                   waits: schema["x-timeout"]?.numberValue.flatMap { $0 > 0 && $0.isFinite ? $0 : nil })
+                                   waits: schema["x-timeout"]?.numberValue.flatMap { $0 > 0 && $0.isFinite ? $0 : nil },
+                                   isPath: schema["x-path"] == .bool(true))
         }
         if scope == .board {
             arguments.append(CommandArgument(
                 name: RPC.boardParam, option: "--\(RPC.boardParam)", isPositional: false, isRequired: false, value: .text(choices: nil),
                 summary: "The board to work on: its id (`\(RPC.commandName) boards`), its file, or its name. Default: the board in front.",
-                defaultValue: nil, valueName: "board", readsStandardInput: false, waits: nil))
+                defaultValue: nil, valueName: "board", readsStandardInput: false, waits: nil, isPath: false))
         }
         return arguments
     }

@@ -6,7 +6,9 @@ public enum RPC {
     /// refuses an app that speaks another version. 2: a text param may be read from standard input
     /// (`x-stdin`), and an error's data may say where in a script it is (`line`, `statement`,
     /// `errors`). What an older reader passes over keeps the version: a param's `x-timeout` (an
-    /// older `canvas` waits its usual time, and says `timed_out`), an error's `column` and `length`.
+    /// older `canvas` waits its usual time, and says `timed_out`), a param's `x-path` (an older
+    /// `canvas` sends a file as typed, which the app refuses unless it's whole), an error's `column`
+    /// and `length`.
     public static let protocolVersion = 2
     /// What the command line is called: in help, and in the examples commands give.
     public static let commandName = "canvas"
@@ -14,12 +16,13 @@ public enum RPC {
     /// command: `canvas` asks it before running any.
     public static let describeMethod = "describe"
     /// The commands every app that speaks this protocol answers itself, about the app as a whole:
-    /// whether it's running, and which boards it has open.
+    /// whether it's running, which boards it has open, and a new board's file, made and opened.
     public static let statusCommand = "status"
     public static let boardsCommand = "boards"
+    public static let newCommand = "new"
     /// Names no plugin's command may take: the protocol's own, the app's own, and the command line's
     /// `help`.
-    public static let reservedCommandNames: Set<String> = [describeMethod, statusCommand, boardsCommand, "help"]
+    public static let reservedCommandNames: Set<String> = [describeMethod, statusCommand, boardsCommand, newCommand, "help"]
     /// The param a board command's board is named by (`--board`); the app takes it out before the
     /// command sees its params. No command may declare a param of this name.
     public static let boardParam = "board"
