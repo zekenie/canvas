@@ -121,7 +121,7 @@ private func isFieldTinted(_ pixel: [Int]) -> Bool { pixel[2] - pixel[0] >= 20 &
         ProseMapService.forgetEveryAnswer()
         SchemaHighlightsShown.forgetEverything()
         panel.model.fallback = { request in
-            request.model == ProseMapPrompt.model ? .success(ModelResponse(text: jiraAnswer)) : .failure(.server(status: 0, message: "no"))
+            isHighlightRequest(request) ? .success(ModelResponse(text: jiraAnswer)) : .failure(.server(status: 0, message: "no"))
         }
         let id = panel.show(card(jiraSchema, prompt: jiraPrompt, at: CGPoint(x: 100, y: 100), width: 320))
         _ = renderBitmap(panel.editor, size: panel.canvas.frame.size)          // a frame draws it in full, which asks

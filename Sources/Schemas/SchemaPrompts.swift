@@ -7,8 +7,8 @@ import LanguageModels
 // What they ask (the system prompts, and the user message) and how an answer is read. When to ask,
 // and what's written, is `SchemaSync`'s, and for highlights `ProseMapService`'s.
 // scripts/schema-prompts/evals.py reads the sync's two prompts, what each says of other schemas, their
-// max_tokens and the temperature out of this file (and the model's id and a new card's schema out of
-// AnthropicModel.swift and SchemaCard.swift), and highlight_evals.py the highlights' guide and what
+// max_tokens, the model and its effort out of this file (and a new card's schema out of
+// SchemaCard.swift), and highlight_evals.py the highlights' guide and what
 // it says of other schemas (and the frame they go in, the model, its effort and max_tokens out of
 // ProseMapPrompt.swift); each copies the request and the parse rule it tests, so the evals test what
 // ships. What a prompt
@@ -43,16 +43,21 @@ public enum SchemaPrompts {
     /// what a long one takes: 16,000 tokens, some 43 KB of JSON Schema laid out as the prompt asks
     /// (2.7 bytes a token for plain properties, 3.4 with descriptions: some 780 plain properties, or
     /// 400 with a description each), and about the most a request that doesn't stream should ask
-    /// for (Haiku writes some 150 tokens a second: nearly two minutes). 2048 hold a prompt of well
-    /// over 1,000 words.
+    /// for (Haiku writes some 150 tokens a second: nearly two minutes). The model's thinking counts
+    /// against them: the sixth `toSchemaMaxLength` leaves is its room. 4096 hold a prompt of well
+    /// over 1,000 words and the thinking before it.
     public static let toSchemaMaxTokens = 16_000
-    public static let toPromptMaxTokens = 2048
+    public static let toPromptMaxTokens = 4096
     /// A schema longer than this (UTF-8 bytes) is never sent to be written again from its prompt:
     /// it might not fit `toSchemaMaxTokens`, counting 2.5 bytes a token and leaving a sixth for what
     /// the edit adds. The person edits it by hand, and the prompt follows.
     public static let toSchemaMaxLength = 34_000
-    /// Both directions are the least edit that says it, the same way every time.
-    public static let temperature = 0.0
+    /// Both directions are the least edit that says it. Haiku 5.5, named on every request (the
+    /// editor's own model stays Haiku 4.5): it takes no temperature but its default, so the same way
+    /// every time is the prompts' to ask for, not a setting's; and it thinks as much as its effort
+    /// says, `medium` (its own default, said here).
+    public static let model = "claude-haiku-5-5"
+    public static let effort = "medium"
 
     /// Asks for the schema that says `prompt`: the one the card has, edited. `previousPrompt` is
     /// the prompt at the last sync (what `schema` last matched), whose difference from `prompt` is
@@ -87,7 +92,7 @@ public enum SchemaPrompts {
             guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
             return "<\(tag)>\n\(text)\n</\(tag)>"
         }.joined(separator: "\n\n")
-        return ModelRequest(system: system, messages: [.user(message)], maxTokens: maxTokens, temperature: temperature)
+        return ModelRequest(system: system, messages: [.user(message)], maxTokens: maxTokens, temperature: nil, model: model, effort: effort)
     }
 
     /// Reads an answer: the text trimmed, and unwrapped (`ModelAnswer.unwrapped`: a safety net,

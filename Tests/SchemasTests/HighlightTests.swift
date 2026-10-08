@@ -9,7 +9,11 @@ import ProseMaps
 import Schemas
 import TestKit
 
-/// The owner's example: a description, the schema it says, and what Sonnet 5.5 linked in the evals.
+/// Whether a request asks for highlights, not the sync: its message has a `<prose>` block. They name one
+/// model now (Haiku 5.5), so the model can't tell them apart.
+func isHighlightRequest(_ request: ModelRequest) -> Bool { request.messages.first?.text.hasPrefix("<prose>") == true }
+
+/// The owner's example: a description, the schema it says, and what the model linked in the evals.
 let jiraPrompt = "a jira ticket we point to: its key, a one-line summary and a link to it"
 let jiraSchema = """
 {
@@ -48,7 +52,7 @@ final class HighlightBench {
         SchemaHighlightsShown.forgetEverything()
         editor = try schemaEditor(scheduler: scheduler, model: model)
         model.fallback = { [unowned self] request in
-            request.model == ProseMapPrompt.model ? self.answer : .failure(.server(status: 0, message: "no answer for the sync"))
+            isHighlightRequest(request) ? self.answer : .failure(.server(status: 0, message: "no answer for the sync"))
         }
     }
 
@@ -59,7 +63,7 @@ final class HighlightBench {
     }
 
     var maps: ProseMapService { editor.proseMaps! }
-    var asked: [ModelRequest] { model.requests.filter { $0.model == ProseMapPrompt.model } }
+    var asked: [ModelRequest] { model.requests.filter { isHighlightRequest($0) } }
 
     /// A frame of the canvas, 800 × 600 at the camera's zoom: what's drawn in full is read.
     func frame() { _ = renderBitmap(editor, size: CGSize(width: 800, height: 600)) }
@@ -159,12 +163,12 @@ final class RedrawCounter: CanvasEditorDelegate {
         }
         """, "as written, at the left margin")
     },
-    test("the request asks Sonnet 5.5 at low effort, its temperature its own, told of a schema by its guide, the description and the schema in their blocks") {
+    test("the request asks Haiku 5.5 at medium effort, its temperature its own and no fallback, told of a schema by its guide, the description and the schema in their blocks") {
         let request = ProseMapPrompt.request(SchemaTarget.self, prose: " a pet \n", target: "{}")
-        expectEqual(request.model, "claude-sonnet-5-5")
-        expectEqual(request.effort, "low")
+        expectEqual(request.model, "claude-haiku-5-5")
+        expectEqual(request.effort, "medium")
         expectEqual(request.temperature, nil)
-        expectEqual(request.fallbacks, .default)
+        expectEqual(request.fallbacks, nil)
         expectEqual(request.maxTokens, 2048)
         let system = try require(request.system)
         expect(system.hasPrefix("A user writes in a few plain words what their schema says."), system)
@@ -202,7 +206,7 @@ final class RedrawCounter: CanvasEditorDelegate {
         b.settle()
         expectEqual(b.asked.count, 0, "an edit waiting")
         b.model.fallback = { request in
-            request.model == ProseMapPrompt.model ? .success(ModelResponse(text: jiraAnswer)) : .success(ModelResponse(text: jiraSchema))
+            isHighlightRequest(request) ? .success(ModelResponse(text: jiraAnswer)) : .success(ModelResponse(text: jiraSchema))
         }
         try require(b.editor.schemaSync).commit(id)
         spinRunLoop(until: { b.model.waiting == 1 })
@@ -219,7 +223,7 @@ final class RedrawCounter: CanvasEditorDelegate {
     test("an answer that leaves the schema as it was brings the card into step though it commits nothing, and the canvas draws again to ask about its texts") {
         let b = try HighlightBench()
         b.model.fallback = { request in
-            request.model == ProseMapPrompt.model ? .success(ModelResponse(text: jiraAnswer)) : .success(ModelResponse(text: jiraSchema))
+            isHighlightRequest(request) ? .success(ModelResponse(text: jiraAnswer)) : .success(ModelResponse(text: jiraSchema))
         }
         let id = b.editor.add(card(jiraSchema, prompt: jiraPrompt))
         b.frame()

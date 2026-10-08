@@ -9485,9 +9485,11 @@ there for `.reference` and not for `.person`.
   temperature 0, 400 tokens; `.sonnet` is Claude Sonnet 5.5 (`claude-sonnet-5-5`) with no
   temperature (it refuses any but its default), 2,048 tokens, effort `low`, and the service's
   fallback (`.default`: a cyber or frontier-LLM decline is answered by Sonnet 5; any other still
-  comes back `declined`). What ships is `AskStyle.shipped`: `.sonnet`, the only model that clears
-  the evaluation's bar (below), named on every request, while the editor's own model stays Haiku
-  4.5, which the schema cards' sync asks. `QueryTranslationPlugin(prompt:referenceRule:style:)` takes another,
+  comes back `declined`); `.haiku55` is Claude Haiku 5.5 (`claude-haiku-5-5`) with no temperature
+  (it refuses any but its default), 2,048 tokens, effort `high` and no fallback (the service has
+  none for it: a decline stays `declined`). What ships is `AskStyle.shipped`: `.haiku55`, the
+  cheaper model that clears the evaluation's bar (below), named on every request, while the
+  editor's own model stays Haiku 4.5, which answers only a request that names none. `QueryTranslationPlugin(prompt:referenceRule:style:)` takes another,
   and `AskStyle.named(_:)` is a model's style by its id (the evaluation's `QUERY_MODEL`).
 - **The prompt** is Composition's `QueryPrompt.system`
   ([QueryPrompt.swift](../Sources/Composition/QueryPrompt.swift)), handed to
@@ -9505,14 +9507,21 @@ there for `.reference` and not for `.person`.
   (on the story file and `QueryEvalBoard`, 59 shapes on six boards) as `--ask` asks it, scored by the
   shapes its answer matches. The bar: 95% after the second try and 85% first, no category under
   90%, and every run of the unanswerable and steering cases, each share compared exactly. The
-  cheaper model that clears it ships ([Language models](#language-models)): Sonnet 5.5. Round 2
-  (`results.tsv`'s r2-haiku and r2-sonnet, 192 runs each) put Sonnet 5.5 at 192 of 192 first try,
-  every category at 100% (p50 1.18 s, p90 1.42 s; some 4,200 tokens in and 15 out, about $0.009 a
-  question), and Haiku 4.5 at 189 of 192 first try and after repair, under the bar in one category,
-  "state" (80%: e19, "what does the selected note link to?", `:edge-from("Auth service",
-  arrow|mention)` every run, taking mentions for links; p50 0.64 s; about $0.003 a question).
-  Round 1, before the language and prompt changes it prompted, was 88% first try and 98% after
-  repair for Sonnet, 89% and 91% for Haiku.
+  cheaper model that clears it ships ([Language models](#language-models)): Haiku 5.5 at `high`
+  effort. Round 4 (ten rounds of 192 runs each, run together in pairs; the rows aren't kept) put it
+  at 1,907 of 1,920 after repair (99.3%; 1,904 first try), nine rounds clearing the bar and the
+  tenth missing "state" (13 of 15) (p50 1.08 s, p90 1.80 s, p99 3.96 s; some 4,600 tokens in and
+  133 out, it thinks; about $0.0005 a question), and Sonnet 5.5 at 1,920 of 1,920 (p50 1.16 s, p90
+  1.80 s, p99 7.06 s; 4,590 tokens in and 16 out; about $0.009 a question). Haiku 5.5's misses are
+  three questions most of the time, "shapes with problems", "notes with auth in their title" and
+  "which subboard is Refund policy directly in?". One round each of the other efforts (round 3):
+  `low` missed the bar (175 of 192, 91%, "direction" at 79%) and `medium` met it by a run (184, 96%).
+  Round 2 (`results.tsv`'s r2-haiku and r2-sonnet, 192 runs each) put Haiku 4.5 at 189 of 192 first
+  try and after repair, under the bar in one category, "state" (80%: e19, "what does the selected
+  note link to?", `:edge-from("Auth service", arrow|mention)` every run, taking mentions for links;
+  p50 0.64 s; about $0.003 a question), and Sonnet 5.5 at 192 of 192. Round 1, before the language
+  and prompt changes it prompted, was 88% first try and 98% after repair for Sonnet, 89% and 91%
+  for Haiku.
 
 ### kinds
 
@@ -9639,7 +9648,7 @@ registrar.channel(SchemaLink.self)
   and Escape say the description is done and end editing, ⌘↩ while the model writes the
   description too (`EditingTextView.commitsWhileReadOnly`), and so does the keyboard going to a view
   outside the canvas (heard through `onLeave`). Its highlights (words linked to the parts of the schema
-  they say: a [prose map](#prose-maps) into the schema, `SchemaTarget`, which ProseMaps asks Sonnet 5.5
+  they say: a [prose map](#prose-maps) into the schema, `SchemaTarget`, which ProseMaps asks Haiku 5.5
   for once the card is drawn in full and in step) are filled by the render under its text, while
   it's edited too, where the canvas draws the words, pills and all (Mentions'
   `MentionTextStyle.lineRects`), and resting the pointer on them shows that part of the schema in
@@ -9722,8 +9731,8 @@ registrar.channel(SchemaLink.self)
   saving one tries again by itself (it sends `AnthropicSettingsView.showSettingsAction`,
   `BoardMenus.showSettings`'s selector, up the responder chain for the app to answer); nothing
   (`editByHand`), where asking again would get the same answer: a schema too long to rewrite, or
-  one cut off (`SchemaSync.tooLongMessage`), and "Claude declined" (at temperature 0 it would
-  decline again; rewording the description is what helps, and that edit syncs). The side being
+  one cut off (`SchemaSync.tooLongMessage`), and "Claude declined" (the same words would likely
+  be declined again; rewording the description is what helps, and that edit syncs). The side being
   written is read-only and dimmed: the JSON (`detailUpdating`), or the card's description, whose
   editor, if it's open, is read-only and dimmed as mention text is (`MentionTextView.showEnabled`) and shows the
   description the model wrote once it lands (it follows the sync's status and the card itself,
@@ -9913,8 +9922,9 @@ description to say what it now holds. `SchemaSync`, the plugin's service, does i
   it only in a request that names some, [References between cards](#references-between-cards)),
   the user message (tagged blocks, each trimmed: `<schemas>`, `<previous_prompt>`, `<prompt>`,
   `<schema>`; or `<schemas>`, `<prompt>`, `<previous_schema>`, `<schema>`; empty ones left out, tags
-  and all), 16,000 tokens at most for a schema and 2048 for a
-  description, temperature 0, no prefill or stop sequences, and `parse` (the answer trimmed, then
+  and all), 16,000 tokens at most for a schema and 4096 for a
+  description (the model's thinking counts), Haiku 5.5 at `medium` effort named on every request
+  (`SchemaPrompts.model`, `effort`), no temperature, no prefill or stop sequences, and `parse` (the answer trimmed, then
   unwrapped of any code-fence line and its own block's tags, from either end, until none is left,
   `ModelAnswer.unwrapped` (LanguageModels', which `--ask` reads its answers with too): the model
   sometimes adds them though the prompts ask for neither; a stop other than the end of its
@@ -9963,8 +9973,8 @@ do throws(LanguageModelError) {
 - **The app's model.** `AnthropicModel` calls Anthropic's Messages API from the app, with
   URLSession (no SDK, no streaming, no retries), Claude Haiku 4.5 by default, or the model a
   request names (`ModelRequest.model`, by its id: for a plugin whose task another model does
-  better). It sends what a request says and leaves out what's nil: `temperature` (Sonnet 5.5 refuses
-  any but its default), `effort` (sent as `output_config.effort`; Haiku 4.5 refuses a request
+  better). It sends what a request says and leaves out what's nil: `temperature` (Sonnet 5.5 and Haiku
+  5.5 refuse any but their default), `effort` (sent as `output_config.effort`; Haiku 4.5 refuses a request
   that says one), and `fallbacks` (`ModelFallbacks.default`: the service answers a decline with the
   model it recommends for the decline's category, sent as `"fallbacks": "default"` with the header
   `anthropic-beta: server-side-fallback-2026-07-01`, neither unless asked; an answer another model
@@ -9993,10 +10003,10 @@ do throws(LanguageModelError) {
   block tags), from either end until nothing changes; the schema card's sync and `--ask` both read
   their answers through it.
 - **`--ask`** ([`canvas query`](#--ask)) asks a model to write a query, through the editor's
-  `languageModel`, with the settings `AskStyle` holds: what ships is `AskStyle.shipped`, `.sonnet`,
-  Sonnet 5.5 named on every request (no temperature, effort `low`, the service's fallback), chosen by
-  the live evaluation's round 2 (192 of 192 first try; Haiku 4.5 missed the bar in one category);
-  the schema cards' sync stays on the editor's own model, Haiku 4.5. Its prompt is
+  `languageModel`, with the settings `AskStyle` holds: what ships is `AskStyle.shipped`, `.haiku55`,
+  Haiku 5.5 named on every request (no temperature, effort `high`, no fallback), chosen by the live
+  evaluation's round 4 (99.3% over ten rounds; Haiku 4.5 missed the bar in one category);
+  the schema cards' sync asks Haiku 5.5 too (`SchemaPrompts.model`), the editor's own model, Haiku 4.5, answering only a request that names none. Its prompt is
   measured against the live model by CompositionTests' "Query prompt, live" (`QUERY_LIVE=1`;
   `scripts/query-prompts`), which asks every case on the shipped list with `AnthropicModel` and the
   key Settings saves.
@@ -10090,8 +10100,8 @@ if let map = context.proseMaps?.map(Snippet.self, of: shape.id, prose: words, ta
   order; only what the target says), with the target's name and its guide in it, and the context
   after it, a blank line apart, only for a request that has one, so every other request is sent
   exactly what it always was; one user message of `<prose>` and the target's block
-  (`<schema>`), each trimmed. It asks Sonnet 5.5 at low effort, its temperature its own, with the
-  service's fallback on a decline (`ProseMapPrompt.model`, `effort`, `maxTokens`): every target
+  (`<schema>`), each trimmed. It asks Haiku 5.5 at medium effort, its temperature its own and no
+  fallback (`ProseMapPrompt.model`, `effort`, `maxTokens`): every target
   does, until its own evals say otherwise. The answer is a JSON array of `{"text", "address"}`
   (`ProseMapPrompt.links(from:)`: fenced, tagged, taken back and written again, or explained after,
   its last array; an item without words or an address left out).

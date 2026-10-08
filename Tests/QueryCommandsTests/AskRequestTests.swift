@@ -30,9 +30,9 @@ import TestKit
         expectEqual(request.system, systemPrompt)
         expectEqual(request.maxTokens, 2_048)
         expectEqual(request.temperature, nil)
-        expectEqual(request.model, "claude-sonnet-5-5", "the shipped style's model, not the editor's")
-        expectEqual(request.effort, "low")
-        expectEqual(request.fallbacks, .default)
+        expectEqual(request.model, "claude-haiku-5-5", "the shipped style's model, not the editor's")
+        expectEqual(request.effort, "high")
+        expectEqual(request.fallbacks, nil, "the service has none for Haiku 5.5")
         expectEqual(request.stopSequences, [])
         let vocabulary = try require(h.editor.queries).vocabulary.text
         // Titles sharing a word with the question first, then the board shown's, then the rest, each
@@ -145,10 +145,13 @@ import TestKit
         expectEqual(json["count"], 4)
         expectEqual(json["warnings"], nil)
     },
-    test("AskStyle holds the model's settings: Sonnet 5.5's ship, the model named, no temperature, room to think, low effort, the service's fallback") {
-        expectEqual(AskStyle.shipped, AskStyle.sonnet, "the model the evaluations picked")
+    test("AskStyle holds the model's settings: Haiku 5.5's ship, the model named, no temperature, room to think, high effort, no fallback") {
+        expectEqual(AskStyle.shipped, AskStyle.haiku55, "the model the evaluations picked")
         expectEqual(AskStyle.haiku, AskStyle(model: nil, temperature: 0, maxTokens: 400, effort: nil, fallbacks: nil))
         expectEqual(AskStyle.sonnet, AskStyle(model: "claude-sonnet-5-5", temperature: nil, maxTokens: 2_048, effort: "low", fallbacks: .default))
+        expectEqual(AskStyle.haiku55, AskStyle(model: "claude-haiku-5-5", temperature: nil, maxTokens: 2_048, effort: "high", fallbacks: nil),
+                    "Haiku 5.5 refuses a temperature, and has no fallback to ask for")
+        expectEqual(AskStyle.named("claude-haiku-5-5"), .haiku55)
         expectEqual(AskStyle.named("claude-sonnet-5-5"), .sonnet)
         expectEqual(AskStyle.named(nil), .haiku)
         expectEqual(AskStyle.named(""), .haiku)
@@ -159,19 +162,26 @@ import TestKit
         expectEqual(AskStyle.titles, 200)
         expectEqual(AskStyle.selected, 20)
 
-        // As shipped: every request says the model, since the editor's is Haiku 4.5 (the schema cards'), a second try too.
+        // As shipped: every request says the model, since the editor's is Haiku 4.5, a second try too.
         let model = ScriptedLanguageModel(answers: ["chor", "chore"])
         let h = try askHarness(model)
         let json = try answered(["query", "--ask", "chores"], on: h)
         expectEqual(json["query"], "chore")
         expectEqual(model.requests.count, 2)
         for request in model.requests {
-            expectEqual(request.model, "claude-sonnet-5-5")
+            expectEqual(request.model, "claude-haiku-5-5")
             expectEqual(request.temperature, nil)
             expectEqual(request.maxTokens, 2_048)
-            expectEqual(request.effort, "low")
-            expectEqual(request.fallbacks, .default)
+            expectEqual(request.effort, "high")
+            expectEqual(request.fallbacks, nil)
         }
+        // Sonnet 5.5's, the other the evaluations ask: its effort and the service's fallback.
+        let sonnet = ScriptedLanguageModel(answers: ["chore"])
+        _ = try answered(["query", "--ask", "chores"], on: try askHarness(sonnet, askStyle: .sonnet))
+        let sonnetRequest = try require(sonnet.lastRequest)
+        expectEqual(sonnetRequest.model, "claude-sonnet-5-5")
+        expectEqual(sonnetRequest.effort, "low")
+        expectEqual(sonnetRequest.fallbacks, .default)
         let haiku = ScriptedLanguageModel(answers: ["chore"])
         _ = try answered(["query", "--ask", "chores"], on: try askHarness(haiku, askStyle: .haiku))
         let request = try require(haiku.lastRequest)

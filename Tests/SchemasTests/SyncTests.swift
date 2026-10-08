@@ -107,7 +107,8 @@ let petSchema = """
         let request = try require(b.model.lastRequest)
         expectEqual(request.system, SchemaPrompts.toSchemaSystem)
         expectEqual([request.maxTokens], [16_000])
-        expectEqual(request.temperature, 0)
+        expectEqual(request.temperature, nil)
+        expectEqual([request.model, request.effort], ["claude-haiku-5-5", "medium"])
         expectEqual(request.stopSequences, [])
         expectEqual(request.messages, [.user("<prompt>\na pet in my household\n</prompt>\n\n<schema>\n\(SchemaCard.starter)\n</schema>")])
         expectEqual(b.card(id)?.schema.text, petSchema)
@@ -161,8 +162,8 @@ let petSchema = """
         b.sync(id, answer: "a pet in my household, with its microchip ID")
         let request = try require(b.model.lastRequest)
         expectEqual(request.system, SchemaPrompts.toPromptSystem)
-        expectEqual([request.maxTokens], [2048])
-        expectEqual(request.temperature, 0)
+        expectEqual([request.maxTokens], [4096])
+        expectEqual(request.temperature, nil)
         expectEqual(request.messages, [.user("<prompt>\na pet in my household\n</prompt>\n\n<previous_schema>\n\(petSchema)\n</previous_schema>\n\n<schema>\n\(edited)\n</schema>")])
         expectEqual(b.card(id)?.prompt, "a pet in my household, with its microchip ID")
         expectEqual(b.card(id)?.schema.text, edited, "the side the person wrote isn't touched")
@@ -690,10 +691,11 @@ let petSchema = """
         expectEqual(SchemaPrompts.toSchema(previousPrompt: " ", prompt: "a", schema: "{}").messages.first?.text.hasPrefix("<prompt>"), true)
         let toPrompt = SchemaPrompts.toPrompt(prompt: "", previousSchema: nil, schema: "{\"a\": 1}")
         expectEqual(toPrompt.messages, [.user("<schema>\n{\"a\": 1}\n</schema>")])
-        expectEqual([toSchema.maxTokens, toPrompt.maxTokens], [16_000, 2048])
-        expectEqual([toSchema.temperature, toPrompt.temperature], [0, 0])
-        // The editor's own model, Haiku 4.5, whatever --ask asks.
-        expectEqual([toSchema.model, toPrompt.model], [nil, nil])
+        expectEqual([toSchema.maxTokens, toPrompt.maxTokens], [16_000, 4096])
+        // Haiku 5.5 takes no temperature but its default, and has no fallback to ask for; it thinks as much as its effort says.
+        expectEqual([toSchema.temperature, toPrompt.temperature], [nil, nil])
+        expectEqual([toSchema.model, toPrompt.model], ["claude-haiku-5-5", "claude-haiku-5-5"], "named on every request, not the editor's own")
+        expectEqual([toSchema.effort, toPrompt.effort], ["medium", "medium"])
         expectEqual([toSchema.fallbacks, toPrompt.fallbacks], [nil, nil])
     },
     test("what the prompts say of other schemas goes after them only in a request that names some, whose words come first; one that names none is sent what it always was") {

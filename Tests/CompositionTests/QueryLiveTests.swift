@@ -344,7 +344,9 @@ private func tally(_ runs: [QueryEvalRun]) -> String {
         let runs = max(Int(environment["QUERY_RUNS"] ?? "") ?? 3, 1)
         let jobs = max(Int(environment["QUERY_JOBS"] ?? "") ?? 4, 1)
         // The model --ask ships with, unless QUERY_MODEL names another.
-        let style = environment["QUERY_MODEL"].flatMap { $0.isEmpty ? nil : AskStyle.named($0) } ?? AskStyle.shipped
+        var style = environment["QUERY_MODEL"].flatMap { $0.isEmpty ? nil : AskStyle.named($0) } ?? AskStyle.shipped
+        // QUERY_EFFORT: another effort than the model's style says (`low`, `medium`, `high`…); not for Haiku 4.5, which refuses one.
+        if let effort = environment["QUERY_EFFORT"], !effort.isEmpty { style.effort = effort }
         let model = style.model ?? AnthropicModel.haiku
         let only = environment["QUERY_CASES"].map { Set($0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }) }
         let cases = try queryEvalCases().filter { only?.contains($0.id) ?? true }

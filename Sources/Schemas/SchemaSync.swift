@@ -382,7 +382,7 @@ public final class SchemaSync {
         guard now[call.writes] == call.sent[call.writes] else { return .idle }
         switch SchemaPrompts.parse(response, call.direction) {
         case let .failure(reason):
-            // A schema cut off would be cut off again, and a refusal, at temperature 0, refused
+            // A schema cut off would be cut off again, and a refusal refused
             // again: the person edits instead (rewording the description, say), and the next
             // commit syncs. Only an unusable answer is worth asking again.
             let cutOff = response.stopReason == .maxTokens && call.writes == .schema

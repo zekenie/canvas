@@ -40,14 +40,14 @@ from gen_cases import fmt, STARTER, ORDER  # noqa: E402
 API_URL = "https://api.anthropic.com/v1/messages"
 SOURCES = os.path.normpath(os.path.join(HERE, "..", "..", "Sources"))
 SWIFT = os.path.join(SOURCES, "Schemas", "SchemaPrompts.swift")
-MODEL_SWIFT = os.path.join(SOURCES, "LanguageModels", "AnthropicModel.swift")
-# Each direction's system prompt and max_tokens (the Swift constants they're read from), and its
-# temperature: `swift_settings` fills in the values, and MODEL, from the Swift.
+# Each direction's system prompt and max_tokens (the Swift constants they're read from):
+# `swift_settings` fills in the values, and MODEL and EFFORT, from the Swift.
 CONFIG = {
     "to_schema": {"system": "toSchemaSystem", "references": "toSchemaReferences", "max_tokens_name": "toSchemaMaxTokens"},
     "to_prompt": {"system": "toPromptSystem", "references": "toPromptReferences", "max_tokens_name": "toPromptMaxTokens"},
 }
 MODEL = None
+EFFORT = None
 NO_CHANGE = "NO_CHANGE"
 # A prompt answer that reads as something other than the prompt (SchemaPrompts.isNotAPrompt).
 PREAMBLES = ("here's ", "here’s ", "here is ", "here are ", "updated prompt", "updated description",
@@ -190,10 +190,16 @@ def system_prompt(direction, schemas=""):
 
 
 def swift_settings():
-    """Reads each direction's max_tokens, the temperature and the model's id out of the Swift, so the
-    evals send what the app does."""
-    global MODEL
+    """Reads each direction's max_tokens, the model and its effort out of the Swift, so the evals
+    send what the app does."""
+    global MODEL, EFFORT
     src = swift_source()
+
+    def text(name):
+        m = re.search(r'static let ' + name + r' = "([^"]+)"', src)
+        if not m:
+            raise Fatal(f"no {name} in {SWIFT}")
+        return m.group(1)
 
     def number(name):
         m = re.search(r'static let ' + name + r' = ([0-9_.]+)', src)
@@ -203,12 +209,8 @@ def swift_settings():
 
     for cfg in CONFIG.values():
         cfg["max_tokens"] = int(number(cfg["max_tokens_name"]))
-        cfg["temperature"] = number("temperature")
-    with open(MODEL_SWIFT, encoding="utf-8") as f:
-        m = re.search(r'static let haiku = "([^"]+)"', f.read())
-    if not m:
-        raise Fatal(f"no haiku in {MODEL_SWIFT}")
-    MODEL = m.group(1)
+    MODEL = text("model")
+    EFFORT = text("effort")
 
 
 def call(key, direction, user, schemas=""):
@@ -216,7 +218,7 @@ def call(key, direction, user, schemas=""):
     body = json.dumps({
         "model": MODEL,
         "max_tokens": cfg["max_tokens"],
-        "temperature": cfg["temperature"],
+        "output_config": {"effort": os.environ.get("EVAL_EFFORT") or EFFORT},
         "system": system_prompt(direction, schemas),
         "messages": [{"role": "user", "content": user}],
     }).encode("utf-8")
@@ -686,12 +688,12 @@ def main():
     args = ap.parse_args()
 
     swift_settings()
-    print(f"model {MODEL}; a new card's schema {STARTER!r}")
+    print(f"model {MODEL}, effort {EFFORT}; a new card's schema {STARTER!r}")
     for d in CONFIG:
         text = system_prompt(d)
         print(f"{d}: {CONFIG[d]['system']}, {len(text)} characters, {len(text.splitlines())} lines, "
               f"and {CONFIG[d]['references']}, {len(literal(CONFIG[d]['references']))} characters, for other schemas; "
-              f"max_tokens {CONFIG[d]['max_tokens']}, temperature {CONFIG[d]['temperature']}")
+              f"max_tokens {CONFIG[d]['max_tokens']}")
     if Draft202012Validator is None:
         print("metaschema check skipped: no jsonschema in _pylib (see README.md)")
     if args.check:

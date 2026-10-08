@@ -11,16 +11,19 @@ import LanguageModels
 /// The request that asks which words of the prose say which parts of the target, and how its answer
 /// is read.
 public enum ProseMapPrompt {
-    /// The model that links words to the parts of a target: Sonnet 5.5, named on every request,
-    /// while the editor's own model (Haiku 4.5) does what plugins ask of it. The schema card's
-    /// highlight evals (scripts/schema-prompts/highlight_evals.py, 28 cases run four times) put Sonnet
-    /// 5.5 at 753 of 760 links found with this frame, and none pointing at the wrong part, some 1.8 s
-    /// an answer (the prompt it replaced, 749), and Haiku 4.5 at 91% in an earlier round, some
-    /// pointing at the wrong field: every target uses it until its own evals say otherwise.
-    public static let model = "claude-sonnet-5-5"
-    /// Sonnet 5.5 takes no temperature but its default; `low` effort answers in some 2 s.
-    public static let effort = "low"
-    /// A ceiling, not a cost: 20 links are some 500 tokens.
+    /// The model that links words to the parts of a target: Haiku 5.5, named on every request,
+    /// while the editor's own model (Haiku 4.5) answers only a request that names none. The schema card's
+    /// highlight evals (scripts/schema-prompts/highlight_evals.py, 28 cases run four times) put Haiku
+    /// 5.5 at `medium` effort at 748 of 760 links found with this frame, four pointing at the wrong
+    /// part (all one case, "cells" of a list of lists, which can be read either way), against Sonnet
+    /// 5.5's 751 and none, and Haiku 4.5 at 91% in an earlier round, some pointing at the wrong
+    /// field. At `low` effort Haiku 5.5 also wrote words the description doesn't have: every target
+    /// uses it until its own evals say otherwise.
+    public static let model = "claude-haiku-5-5"
+    /// Haiku 5.5 takes no temperature but its default, and thinks as much as its effort says:
+    /// `medium` (its own default, said here) found about as many links as `high` in the evals (748 and 750, one round each).
+    public static let effort = "medium"
+    /// A ceiling, not a cost: 20 links are some 500 tokens, and the model's thinking counts.
     public static let maxTokens = 2048
 
     /// What the model is told for a target: the frame with the target's name and guide in it (less
@@ -42,7 +45,7 @@ public enum ProseMapPrompt {
             return text.isEmpty ? nil : "<\(tag)>\n\(text)\n</\(tag)>"
         }.joined(separator: "\n\n")
         return ModelRequest(system: system(for: type, context: context), messages: [.user(message)], maxTokens: maxTokens,
-                            temperature: nil, model: model, effort: effort, fallbacks: .default)
+                            temperature: nil, model: model, effort: effort, fallbacks: nil)
     }
 
     /// Reads an answer: its links, each address as the model wrote it, or nil for an answer that

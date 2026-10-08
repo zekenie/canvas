@@ -101,10 +101,10 @@ def call(key, settings, model, user, names_schemas=False):
     system = settings["system"] + "\n" + settings["references"] if names_schemas else settings["system"]
     body = {"model": model, "max_tokens": settings["max_tokens"], "system": system,
             "messages": [{"role": "user", "content": user}]}
-    if model.startswith("claude-haiku"):
-        body["temperature"] = 0.0      # Haiku takes no effort; the app asks it at 0, as the sync does
-    else:
-        body["output_config"] = {"effort": settings["effort"]}
+    if model.startswith("claude-haiku-4"):
+        body["temperature"] = 0.0      # Haiku 4.5 takes no effort; the app asks it at 0, as the sync does
+    else:                              # Sonnet 5.5 and Haiku 5.5 take an effort and no temperature but their default
+        body["output_config"] = {"effort": os.environ.get("EVAL_EFFORT") or settings["effort"]}
     data = json.dumps(body).encode("utf-8")
     headers = {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01"}
     delay = 2.0

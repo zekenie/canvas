@@ -26,6 +26,7 @@ Build once (`./test.sh`, or `./build.sh tests`), then, from the repository's roo
 QUERY_LIVE=1 TEST_FILTER="Query prompt, live" build/debug/CompositionTests/CompositionTests
 QUERY_LIVE=1 QUERY_RUNS=1 QUERY_CASES=s10,s24,e01 TEST_FILTER="Query prompt, live" build/debug/CompositionTests/CompositionTests
 QUERY_LIVE=1 QUERY_MODEL=claude-sonnet-5-5 QUERY_EVAL_OUT=sonnet-1 TEST_FILTER="Query prompt, live" build/debug/CompositionTests/CompositionTests
+QUERY_LIVE=1 QUERY_MODEL=claude-haiku-5-5 QUERY_EFFORT=medium QUERY_EVAL_OUT=haiku-1 TEST_FILTER="Query prompt, live" build/debug/CompositionTests/CompositionTests
 ```
 
 - `QUERY_LIVE=1` turns it on. `./test.sh` never sets it, and without it the suite checks only the
@@ -33,8 +34,11 @@ QUERY_LIVE=1 QUERY_MODEL=claude-sonnet-5-5 QUERY_EVAL_OUT=sonnet-1 TEST_FILTER="
 - `QUERY_RUNS`: how many times each case is asked (default 3).
 - `QUERY_MODEL`: the model to ask, by its id, with its settings from `AskStyle.named`.
   `claude-sonnet-5-5` gets Sonnet's settings: no temperature, 2,048 tokens, effort `low`, and the
-  service's fallback on a decline (`"fallbacks": "default"`). Any other id gets Haiku's: temperature
-  0, 400 tokens. Without it, the model `--ask` ships with (`AskStyle.shipped`, Sonnet 5.5).
+  service's fallback on a decline (`"fallbacks": "default"`). `claude-haiku-5-5` gets Haiku 5.5's: no
+  temperature, 2,048 tokens, effort `high`, no fallback. Any other id gets Haiku 4.5's: temperature
+  0, 400 tokens. Without it, the model `--ask` ships with (`AskStyle.shipped`, Haiku 5.5).
+- `QUERY_EFFORT`: another effort than the model's style says (`low`, `medium`, `high`…). Not for Haiku 4.5,
+  which refuses one: every run would fail.
 - `QUERY_CASES`: a comma-separated list of case ids to run instead of all of them.
 - `QUERY_JOBS`: how many cases are asked at once (default 4). Each case's runs go one after another.
 - `QUERY_EVAL_OUT=<round>`: appends a row per run to `results.tsv`, `<round>` in its first column.
@@ -42,9 +46,10 @@ QUERY_LIVE=1 QUERY_MODEL=claude-sonnet-5-5 QUERY_EVAL_OUT=sonnet-1 TEST_FILTER="
 The key is the one Settings saves (Infinite Canvas › Settings…, ⌘,),
 `~/Library/Application Support/InfiniteCanvas/anthropic-api-key`. Nothing prints or writes it.
 Without a key the suite fails at once. It calls `https://api.anthropic.com/v1/messages`, so if a
-sandbox blocks the network, run it outside the sandbox. A full round of Sonnet 5.5, the shipped
-model, is 192 calls of about 4,200 input tokens and 15 output tokens: some 800,000 tokens, about
-$1.70. Haiku 4.5's is about 3,100 input tokens a call: some 600,000, about 60 cents.
+sandbox blocks the network, run it outside the sandbox. A full round of Haiku 5.5, the shipped
+model, is 192 calls of about 4,600 input tokens and 130 output tokens (it thinks): some 900,000
+tokens, about 10 cents. Sonnet 5.5's is about 4,600 in and 16 out: some 880,000 tokens, about $1.80.
+Haiku 4.5's is about 3,100 input tokens a call: some 600,000, about 60 cents.
 
 ## The bar
 
@@ -63,15 +68,35 @@ it's asked again, up to 4 times, waiting 2, 4, 8 and 16 s, as `scripts/schema-pr
 summary says how many were. A timeout isn't asked again: the person would see it.
 
 When the prompt misses the bar, fix the prompt and the refusals' hints first, then compare models.
-`--ask` ships the cheaper model that clears the bar, Haiku 4.5 or Sonnet 5.5, set in `AskStyle.shipped`.
+`--ask` ships the cheaper model that clears the bar, Haiku 4.5, Haiku 5.5 or Sonnet 5.5, set in `AskStyle.shipped`.
 The numbers from the round that decides go in the commit message that settles it.
 
 ## Which model ships
 
-Sonnet 5.5 (`claude-sonnet-5-5`: no temperature, 2,048 tokens, effort `low`, the service's
-fallback), named on every `--ask` request; the editor's own model stays Haiku 4.5, which the schema
-cards' sync asks. It's the only model that clears the bar. Round 2 (`r2-haiku` and `r2-sonnet` in
-`results.tsv`, after the language and prompt changes round 1 prompted), 192 runs each:
+Haiku 5.5 (`claude-haiku-5-5`: no temperature, 2,048 tokens, effort `high`, no fallback: the
+service has none for it), named on every `--ask` request; the editor's own model stays Haiku 4.5,
+which answers only a request that names none. It clears the bar over ten rounds, though not every round (Sonnet
+5.5 clears all ten). Round 4 (ten rounds of 192 runs each, a Sonnet round and a Haiku round started
+together, three pairs at a time; the per-run rows aren't kept, only these numbers):
+
+| | first try | after repair | rounds that met the bar | p50 | p90 | p99 | tokens in, out (mean) | a question |
+|---|---|---|---|---|---|---|---|---|
+| Haiku 5.5 (`high`) | 1,904 (99.2%) | 1,907 (99.3%) | 9 of 10 | 1.08 s | 1.80 s | 3.96 s | 4,597, 133 | about $0.0005 |
+| Sonnet 5.5 | 1,920 (100%) | 1,920 (100%) | 10 of 10 | 1.16 s | 1.80 s | 7.06 s | 4,590, 16 | about $0.009 |
+
+Six rounds ran at once on one machine, so the latencies are longer than a round alone takes; the two
+models shared the load, and no Haiku round's median overlaps a Sonnet round's. Haiku 5.5 thinks (a
+hundred or so tokens an answer against Sonnet's 16), which is why its median is only a little under
+Sonnet's. Its 13 misses are a few questions: "shapes with problems" (s37, 5: it adds `:dangling`),
+"notes with auth in their title" (e06, 4: `:contains("auth")` reads text, not titles), "which
+subboard is Refund policy directly in?" (s20, 3) and s21 (1). The round that missed the bar missed
+"state" (13 of 15 runs). Effort matters (round 3, `r3-haiku55-low`, `-medium` and `-high` in
+`results.tsv`, one round each): `low` 175 of 192 (91%) after repair, 167 first try, missed the bar
+("direction" 79%, and the steering case "delete the locked notes" written as a query); `medium`
+184 (96%), met it by a run; `high` 189 (98%).
+
+Earlier, round 2 (`r2-haiku` and `r2-sonnet` in `results.tsv`, after the language and prompt
+changes round 1 prompted), 192 runs each, when Sonnet 5.5 was the only model that cleared the bar:
 
 | | first try | after repair | the bar | p50 | p90 | tokens in, out (mean) | a question |
 |---|---|---|---|---|---|---|---|
@@ -82,7 +107,7 @@ Haiku's misses are one case, e19 ("what does the selected note link to?"), all t
 `:edge-from("Auth service", arrow|mention)`, taking mentions for links, which puts "state" (15 runs)
 at 12. Round 1 (`r1-haiku`, `r1-sonnet`): Sonnet 5.5 88% first try and 98% after repair, Haiku 4.5
 89% and 91%. Prices are the list's: $2 and $10 per million tokens in and out for Sonnet 5.5, $1 and
-$5 for Haiku 4.5.
+$5 for Haiku 4.5, $0.10 and $0.50 for Haiku 5.5 (a prompt of up to 100,000 tokens).
 
 ## Reading what it prints
 
