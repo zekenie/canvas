@@ -31,7 +31,10 @@ final class SchemaPanelWindow {
         editor = try schemaEditor(scheduler: scheduler, model: model, document: document)
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 1000 - DetailStyle.idealWidth, height: 800)
-        let panel = DetailPanelView(editor: editor) { [unowned canvas, window] in window.makeFirstResponder(canvas) }
+        // Weak: the window holds the panel, which holds this, and may call it after the test let go.
+        let panel = DetailPanelView(editor: editor) { [weak canvas, weak window] in
+            if let canvas { window?.makeFirstResponder(canvas) }
+        }
         hosting = NSHostingView(rootView: panel)
         hosting.frame = CGRect(x: 1000 - DetailStyle.idealWidth, y: 0, width: DetailStyle.idealWidth, height: 800)
         let root = NSView(frame: CGRect(x: 0, y: 0, width: 1000, height: 800))

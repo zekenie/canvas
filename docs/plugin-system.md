@@ -11908,7 +11908,9 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   panel counts how often it has drawn a shape's panel (`detailPanel.panelsDrawn`), so ReadOnlyTests
   holds another shape's commits to drawing it no more, and its container's lock to drawing it again.
 - A test target is `Tests/<Name>Tests` with a `main.swift` that calls `runTests([...])`. Every
-  `Suite` must be listed there (`test.sh` checks). `<M>Tests` may depend only on M, what M
+  `Suite` must be listed there (`test.sh` checks). Each test runs in an autorelease pool of its
+  own (`runAsTest`), as the app handles each event in one, so a window a test lets go goes with it,
+  and nothing it scheduled acts in the next test. `<M>Tests` may depend only on M, what M
   depends on, and the test-support and ui modules, and so may a target named for a plugin of M
   that says so in its line, `// layer: test of M`: ArrowsTests, PortsTests and ArrowPortsTests, of
   Connections; TitleNamesTests, PortEdgesTests, ValidationChecksTests and MentionTextsTests, of DrawLexicon; and

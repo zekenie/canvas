@@ -39,7 +39,9 @@ final class FindWindow {
         root.addSubview(canvas)
         root.addSubview(hosting)
         window.contentView = root
-        exit = { [unowned self] in
+        // Weak: the panel may hand the keyboard back a turn after the test let this go.
+        exit = { [weak self] in
+            guard let self else { return }
             exits += 1
             window.makeFirstResponder(canvas)
         }

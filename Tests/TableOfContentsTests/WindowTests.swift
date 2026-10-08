@@ -26,7 +26,9 @@ final class ContentsWindow {
         self.editor = editor
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: listWidth, y: 0, width: 1000 - listWidth, height: 700)
-        let contents = TableOfContentsView(editor: editor, onExit: { [unowned self] in
+        // Weak: the list may hand the keyboard back after the test let this go.
+        let contents = TableOfContentsView(editor: editor, onExit: { [weak self] in
+            guard let self else { return }
             exits += 1
             window.makeFirstResponder(canvas)
         }, heading: heading)

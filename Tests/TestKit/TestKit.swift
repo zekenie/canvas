@@ -114,10 +114,28 @@ public func require<T>(_ value: T?, _ message: @autoclosure () -> String = "", f
     return value
 }
 
+/// Runs `body` as `runTests` runs a test, and returns its failures (file:line and what failed),
+/// which aren't the calling test's: in an autorelease pool of its own, as the app handles each event
+/// in one, so what it let go is gone when it returns. Without the pool nothing a test made with
+/// AppKit went (no run loop here drains one): its windows, their views and what those had scheduled
+/// (a panel handing the keyboard back a turn later) lived on into the tests after it.
+@MainActor
+public func runAsTest(_ body: @MainActor () throws -> Void, afterEach: @MainActor () -> Void = {}) -> [String] {
+    let outer = failures
+    failures = []
+    defer { failures = outer }
+    autoreleasepool {
+        do { try body() } catch is RequireFailed {} catch { failures.append("threw \(error)") }
+        afterEach()
+    }
+    return failures
+}
+
 /// Runs every test (TEST_FILTER=substring runs the matching ones; empty means all), prints failures
 /// with file:line, ends with "N passed, M failed" (test.sh reads it), and exits 1 if any failed.
 /// TEST_TIMES=1 writes each test's seconds to standard error ("0.123 Suite: test"). `afterEach` runs
-/// after each test, whatever it did, as part of it: what it expects there fails that test.
+/// after each test, whatever it did, as part of it: what it expects there fails that test. Each test
+/// runs as `runAsTest` runs one.
 @MainActor
 public func runTests(_ suites: [Suite], afterEach: @MainActor () -> Void = {}) -> Never {
     // Line-buffered even into a file (test.sh sends this to one), so a crash doesn't swallow what came before.
@@ -130,10 +148,8 @@ public func runTests(_ suites: [Suite], afterEach: @MainActor () -> Void = {}) -
         for test in suite.tests {
             let name = "\(suite.name): \(test.name)"
             if let filter, !name.localizedCaseInsensitiveContains(filter) { continue }
-            failures = []
             let start = Date()
-            do { try test.body() } catch is RequireFailed {} catch { failures.append("threw \(error)") }
-            afterEach()
+            let failures = runAsTest(test.body, afterEach: afterEach)
             if timed { FileHandle.standardError.write(Data((String(format: "%.3f ", Date().timeIntervalSince(start)) + name + "\n").utf8)) }
             if failures.isEmpty {
                 passed += 1
