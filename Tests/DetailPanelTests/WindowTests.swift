@@ -39,7 +39,9 @@ final class PanelWindow {
         }
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 1000 - panelWidth, height: 700)
-        let exit: @MainActor () -> Void = { [unowned self] in
+        // Weak: the panel may hand the keyboard back a turn after the test let this go.
+        let exit: @MainActor () -> Void = { [weak self] in
+            guard let self else { return }
             exits += 1
             window.makeFirstResponder(canvas)
         }
@@ -121,6 +123,24 @@ final class PanelWindow {
     }
 
     private var time: TimeInterval = 1
+}
+
+/// How often a panel handed the keyboard back.
+@MainActor final class HandBacks {
+    var count = 0
+}
+
+/// A panel in an unshown window that has the keyboard itself, just hidden: the panel hands the
+/// keyboard back on the scheduler's next turn, through `onExit`.
+@MainActor func panelHandingBack(_ handBacks: HandBacks) throws -> NSWindow {
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    let hosting = NSHostingView(rootView: DetailPanelView(editor: try gadgetEditor(scheduler: TaskScheduler()), onExit: { handBacks.count += 1 }))
+    window.contentView = hosting
+    window.settle()
+    window.makeFirstResponder(nil)
+    hosting.isHidden = true
+    return window
 }
 
 /// Counts its section's builds.
@@ -289,6 +309,25 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         expectEqual(panel.exits, 1)
         expectEqual(editor.document[id]?.box?.width, 250)
     },
+    test("a panel let go by its test goes with it, and so does the keyboard it would hand back a turn later") {
+        // Kept past its test, its window still has the keyboard when the turn comes: handed back.
+        let handBacks = HandBacks()
+        var kept: NSWindow?
+        expectEqual(runAsTest { kept = try panelHandingBack(handBacks) }, [])
+        spinRunLoop { handBacks.count == 1 }
+        // Let go, it's gone as its test ends (TestKit drains each test's autorelease pool, as the app
+        // drains each event's), so the turn finds no window: nothing it was handed is called.
+        weak var window: NSWindow?
+        expectEqual(runAsTest { window = try panelHandingBack(handBacks) }, [])
+        expect(window == nil, "the window went with its test")
+        // Another kept past its test: once its hand-back lands, the one scheduled before it has had
+        // its turn (the main actor runs them in order), so the count says whether it handed back too.
+        expectEqual(runAsTest { kept = try panelHandingBack(handBacks) }, [])
+        spinRunLoop { handBacks.count >= 2 }
+        expectEqual(handBacks.count, 2)
+        kept = nil
+    },
+
     test("dividers go between sections, not under the last") {
         let editor = try gadgetEditor(scheduler: TaskScheduler())
         let panel = PanelWindow(editor)

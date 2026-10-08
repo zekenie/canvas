@@ -13,6 +13,8 @@ import TestKit
 private func hostSettings(keys: AnthropicKeyStore, model: ScriptedLanguageModel) -> (NSWindow, NSHostingView<AnthropicSettingsView>) {
     let hosting = NSHostingView(rootView: AnthropicSettingsView(keys: keys, model: model))
     let window = NSWindow(contentRect: CGRect(origin: .zero, size: hosting.fittingSize), styleMask: [.titled], backing: .buffered, defer: false)
+    // Closed by the test, which holds it: released on close too, it would be released once too often.
+    window.isReleasedWhenClosed = false
     window.contentView = hosting
     window.settle()
     return (window, hosting)

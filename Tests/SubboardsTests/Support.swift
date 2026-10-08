@@ -153,7 +153,10 @@ final class PanelWindow {
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 900 - DetailStyle.idealWidth, height: 600)
         let canvas = canvas, window = window
-        hosting = NSHostingView(rootView: DetailPanelView(editor: editor, onExit: { window.makeFirstResponder(canvas) }))
+        // Weak: the window holds the panel, which holds this.
+        hosting = NSHostingView(rootView: DetailPanelView(editor: editor, onExit: { [weak window, weak canvas] in
+            if let canvas { window?.makeFirstResponder(canvas) }
+        }))
         hosting.frame = CGRect(x: 900 - DetailStyle.idealWidth, y: 0, width: DetailStyle.idealWidth, height: 600)
         let root = NSView(frame: CGRect(x: 0, y: 0, width: 900, height: 600))
         root.addSubview(canvas)

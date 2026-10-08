@@ -71,7 +71,9 @@ final class MentionPanel {
             window = NSWindow(contentRect: frame, styleMask: [.titled], backing: .buffered, defer: true)
         }
         window.isReleasedWhenClosed = false
-        let exit: @MainActor () -> Void = { [unowned self] in
+        // Weak: the panel may hand the keyboard back a turn after the test let this go.
+        let exit: @MainActor () -> Void = { [weak self] in
+            guard let self else { return }
             exits += 1
             window.makeFirstResponder(canvas)
         }

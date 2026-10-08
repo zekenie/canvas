@@ -111,7 +111,11 @@ final class HeaderWindow {
         self.editor = editor
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 900 - DetailStyle.idealWidth, height: 600)
-        hosting = NSHostingView(rootView: DetailPanelView(editor: editor, onExit: { [unowned self] in window.makeFirstResponder(canvas) }))
+        // Weak: the panel may hand the keyboard back a turn after the test let this go.
+        hosting = NSHostingView(rootView: DetailPanelView(editor: editor, onExit: { [weak self] in
+            guard let self else { return }
+            window.makeFirstResponder(canvas)
+        }))
         hosting.frame = CGRect(x: 900 - DetailStyle.idealWidth, y: 0, width: DetailStyle.idealWidth, height: 600)
         let root = NSView(frame: CGRect(x: 0, y: 0, width: 900, height: 600))
         root.addSubview(canvas)
