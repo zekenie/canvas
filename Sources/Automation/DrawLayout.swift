@@ -342,25 +342,38 @@ extension Drawing {
         if !holds, let loosened = loosened(item, way) {
             so = ", so \(leader == nil ? "it" : subject(of: item)) no longer sits against \(listed(loosened))"
         }
+        // A stand-in the run made for an edge has no placement of its own to change: the edge says
+        // which side of the end it's beside.
+        let sides = "\(EdgeKey.from.rawValue): or \(EdgeKey.to.rawValue):"
         guard let leader else {
-            // A stand-in the run made for an edge has no placement of its own to change: the edge says
-            // which side of the end it's beside.
-            let advice = item.standsFor == nil ? "place it on another side, or say overlap: allow"
-                : "name another side for it with \(EdgeKey.from.rawValue): or \(EdgeKey.to.rawValue):"
+            let advice = item.standsFor == nil ? "place it on another side, or say overlap: allow" : "name another side for it with \(sides)"
             return "\(subject(of: item)) was pushed \(how) past \(listed(past)) to keep clear of it\(so) — \(advice)"
         }
         let them = past.count == 1 ? "it" : "them"
-        return "\(subject(of: item)) moved \(how) along with \(subject(of: leader)), which was pushed past \(listed(past)) to keep clear of \(them)\(so)"
-            + " — place \(subject(of: leader)) on another side, or give \(subject(of: leader)) overlap: allow"
+        let advice = leader.standsFor == nil ? "place \(subject(of: leader)) on another side, or give \(subject(of: leader)) overlap: allow"
+            : "name another side for \(subject(of: leader)) with \(sides)"
+        return "\(subject(of: item)) moved \(how) along with \(subject(of: leader)), which was pushed past \(listed(past)) to keep clear of \(them)\(so) — \(advice)"
     }
 
     /// What a push loosened: the targets of the shape's first placement that holds it from the side
     /// it went away from (`right of` for a push right), whose gap is what grew.
     private func loosened(_ item: ShapeItem, _ way: Direction) -> [String]? {
-        item.shape.clauses.first { clause in
+        let found = item.shape.clauses.firstIndex { clause in
             guard let direction = clause.direction else { return false }
             return way.horizontal != 0 ? direction.horizontal == way.horizontal : direction.vertical == way.vertical
-        }.map { $0.targets.map(\.written) }
+        }
+        guard let index = found else { return nil }
+        // A stand-in's placements are the run's, against shapes it names by what they are (the end of a
+        // column of stand-ins has no title).
+        guard item.standsFor != nil, item.targets.indices.contains(index) else { return item.shape.clauses[index].targets.map(\.written) }
+        return item.targets[index].map { target in
+            switch target {
+            case .item(let other): subject(of: items[other])
+            case .shape(let record): standIn(at: record.id, in: self.target.document) != nil ? standInName(record) : named(record)
+            case .board: PlaceWord.board.rawValue
+            case .view: PlaceWord.view.rawValue
+            }
+        }
     }
 
     private func broken(_ item: ShapeItem, _ why: String) -> AutomationError {

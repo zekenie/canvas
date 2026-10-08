@@ -1130,3 +1130,174 @@ private func openHarbor() -> Harbor {
         expectEqual(shape.hint, #"place it clear of "Pen", or ask the user to unlock it"#)
     },
 ])
+
+/// A shoal: Hub alone near the root's top, Rock below-left of it, and pocket P far below, whose board
+/// holds open tiles Deep, Pier, Reef, Kelp and Lagoon (each relay to one 56 wide, Lagoon's 72).
+@MainActor struct Shoal {
+    let p = ShapeID(), hub = ShapeID()
+
+    var file: CanvasFile {
+        let center = AnyShapeRecord(ShapeRecord(id: hub, Tile(CGRect(x: 400, y: 150, width: 120, height: 80), label: "Hub")))
+        let rock = AnyShapeRecord(ShapeRecord(Tile(CGRect(x: 100, y: 600, width: 120, height: 80), label: "Rock")))
+        var pocket = AnyShapeRecord(ShapeRecord(id: p, Pocket(CGRect(x: 400, y: 800, width: 100, height: 100))))
+        pocket[Nickname.self] = "P"
+        let far = ["Deep", "Pier", "Reef", "Kelp", "Lagoon"].enumerated().map { index, label in
+            var record = AnyShapeRecord(ShapeRecord(Tile(CGRect(x: 150 + 200 * CGFloat(index), y: 150, width: 120, height: 80), label: label)))
+            record.meta[Open.self] = true
+            return record
+        }
+        return CanvasFile(root: CanvasDocument(shapes: [center, rock, pocket]), children: [p: CanvasDocument(shapes: far)])
+    }
+
+    func editor(_ more: [any CanvasPlugin] = []) throws -> CanvasEditor {
+        let editor = try drawEditor([TopologyPlugin(), PocketsPlugin(), namedPockets, relaysPlugin()] + more)
+        editor.replaceFile(with: file)
+        return editor
+    }
+}
+
+extension CanvasEditor {
+    /// Each relay on the root by what it says, with its frame.
+    func relayFrames() -> [String: CGRect] {
+        Dictionary(uniqueKeysWithValues: relays().map { ($0.props.says, $0.frame) })
+    }
+}
+
+@MainActor let drawStandInColumnTests = Suite("draw: the stand-ins beside a shape are a column", [
+    test("those beside one shape on one side are a list of their own, 16 apart, lined up as one") {
+        let editor = try Shoal().editor()
+        let result = try drawn("""
+            edge "Hub" -> "Deep"
+            edge "Hub" -> "Pier"
+            edge "Hub" -> "Reef"
+            """, on: editor)
+        let frames = editor.relayFrames()
+        expectEqual(frames["Deep"], CGRect(x: 600, y: 114, width: 56, height: 40), "centered on Hub as one column")
+        expectEqual(frames["Pier"], CGRect(x: 600, y: 170, width: 56, height: 40))
+        expectEqual(frames["Reef"], CGRect(x: 600, y: 226, width: 56, height: 40))
+        expectEqual(rows(result).compactMap { $0["pushedPast"] }, [])
+    },
+    test("a shape the script places beside it as they are is no member: it's where it says, and they give way past it as one, each said") {
+        let editor = try Shoal().editor()
+        let result = try drawn("""
+            tile "H" right of "Hub"
+            edge "Hub" -> "Deep"
+            edge "Hub" -> "Pier"
+            """, on: editor)
+        expectEqual(shape("H", in: editor)?.box, CGRect(x: 600, y: 150, width: 120, height: 80), "centered on Hub, as right of says")
+        let frames = editor.relayFrames()
+        expectEqual(frames["Deep"], CGRect(x: 760, y: 142, width: 56, height: 40), "past H, still a column centered on Hub")
+        expectEqual(frames["Pier"], CGRect(x: 760, y: 198, width: 56, height: 40))
+        expectEqual(rows(result).map { $0["pushedPast"] }, [nil, ["H"], nil, nil, nil])
+        expectEqual(messages(result), [
+            #"the relay to "Deep" was pushed right past "H" to keep clear of it, so it no longer sits against "Hub" — name another side for it with from: or to:"#,
+            #"the relay to "Pier" moved right along with the relay to "Deep", which was pushed past "H" to keep clear of it, so the relay to "Pier" no longer sits against "Hub" — name another side for the relay to "Deep" with from: or to:"#,
+        ])
+    },
+    test("a column meeting a wall moves as one: the one that met it is pushed, the rest go along") {
+        let editor = try Shoal().editor()
+        tile("W", CGRect(x: 620, y: 175, width: 60, height: 20), in: editor)
+        let result = try drawn("""
+            edge "Hub" -> "Deep"
+            edge "Hub" -> "Pier"
+            edge "Hub" -> "Reef"
+            """, on: editor)
+        let frames = editor.relayFrames()
+        expectEqual(frames.values.map(\.minX), [720, 720, 720], "only Pier's met W, and all three went past it")
+        expectEqual(frames["Pier"]?.minY, 170, "down the page, where they were")
+        expectEqual(rows(result).compactMap { $0["pushedPast"] }, [["W"]])
+        expectEqual(messages(result), [
+            #"the relay to "Deep" moved right along with the relay to "Pier", which was pushed past "W" to keep clear of it, so the relay to "Deep" no longer sits against "Hub" — name another side for the relay to "Pier" with from: or to:"#,
+            #"the relay to "Pier" was pushed right past "W" to keep clear of it, so it no longer sits against "Hub" — name another side for it with from: or to:"#,
+            #"the relay to "Reef" moved right along with the relay to "Pier", which was pushed past "W" to keep clear of it, so the relay to "Reef" no longer sits against "Hub" — name another side for the relay to "Pier" with from: or to:"#,
+        ])
+    },
+    test("a later run's stand-ins join the column there: 16 past its end, lined up with it, as one list") {
+        let editor = try Shoal().editor()
+        _ = try drawn("""
+            edge "Hub" -> "Deep"
+            edge "Hub" -> "Pier"
+            """, on: editor)
+        expectEqual(editor.relayFrames()["Pier"], CGRect(x: 600, y: 198, width: 56, height: 40))
+        let later = try drawn("""
+            edge "Hub" -> "Lagoon"
+            edge "Hub" -> "Reef"
+            """, on: editor)
+        let frames = editor.relayFrames()
+        expectEqual(frames["Lagoon"], CGRect(x: 600, y: 254, width: 72, height: 40), "below Pier's, left edges in line")
+        expectEqual(frames["Reef"], CGRect(x: 600, y: 310, width: 56, height: 40))
+        expectEqual(frames["Deep"]?.minY, 142, "the column already there stays")
+        expectEqual(rows(later).compactMap { $0["pushedPast"] }, [])
+        expectEqual(messages(later), [])
+    },
+    test("on the left their right edges are in line, below and above their middles, and above it grows up") {
+        let editor = try Shoal().editor()
+        _ = try drawn(#"edge "Deep" -> "Hub""#, on: editor)
+        _ = try drawn(#"edge "Lagoon" -> "Hub""#, on: editor)
+        var frames = editor.relayFrames()
+        expectEqual(frames["Deep"], CGRect(x: 264, y: 170, width: 56, height: 40), "left of Hub")
+        expectEqual(frames["Lagoon"], CGRect(x: 248, y: 226, width: 72, height: 40), "below it, right edges in line")
+        _ = try drawn(#"edge "Hub" -> "Pier" from: bottom"#, on: editor)
+        _ = try drawn(#"edge "Hub" -> "Kelp" from: bottom"#, on: editor)
+        frames = editor.relayFrames()
+        expectEqual(frames["Pier"], CGRect(x: 432, y: 310, width: 56, height: 40), "below Hub")
+        expectEqual(frames["Kelp"], CGRect(x: 432, y: 366, width: 56, height: 40), "below that, middles in line")
+        _ = try drawn(#"edge "Hub" -> "Reef" from: top"#, on: editor)
+        let reef = try require(editor.relayFrames()["Reef"])
+        expectEqual(reef, CGRect(x: 432, y: 30, width: 56, height: 40), "above Hub")
+    },
+    test("a column's end in the way of what's there: pushed past it, the push naming the stand-in it no longer sits against") {
+        let editor = try Shoal().editor()
+        _ = try drawn("""
+            edge "Hub" -> "Deep"
+            edge "Hub" -> "Pier"
+            """, on: editor)
+        tile("W", CGRect(x: 590, y: 260, width: 80, height: 20), in: editor)
+        let result = try drawn(#"edge "Hub" -> "Reef""#, on: editor)
+        expectEqual(editor.relayFrames()["Reef"], CGRect(x: 600, y: 344, width: 56, height: 40), "down past W, still in line")
+        expectEqual(messages(result).last,
+                    #"the relay to "Reef" was pushed down past "W" to keep clear of it, so it no longer sits against the relay to "Pier" — name another side for it with from: or to:"#)
+    },
+    test("a stand-in dragged off elsewhere is no column: one across from the shape's middle is, past one dragged nearer") {
+        let editor = try Shoal().editor()
+        _ = try drawn(#"edge "Hub" -> "Deep""#, on: editor)
+        let deep = try require(editor.relays().first)
+        editor.transact { $0.update(deep.id) { $0.box?.origin = CGPoint(x: 900, y: 700) } }
+        _ = try drawn(#"edge "Hub" -> "Pier""#, on: editor)
+        expectEqual(editor.relayFrames()["Pier"], CGRect(x: 600, y: 170, width: 56, height: 40), "centered on Hub, as with no column")
+        // Deep's, dragged right of Hub but nearer than Pier's column and below Hub, is passed over for it.
+        editor.transact { $0.update(deep.id) { $0.box?.origin = CGPoint(x: 560, y: 400) } }
+        _ = try drawn(#"edge "Hub" -> "Reef""#, on: editor)
+        expectEqual(editor.relayFrames()["Reef"], CGRect(x: 600, y: 226, width: 56, height: 40), "below Pier's")
+    },
+    test("a column a frame the run moves carries off is left behind too: the new stand-in goes beside the shape") {
+        let editor = try Shoal().editor([pens])
+        _ = try drawn("""
+            edge "Hub" -> "Deep"
+            edge "Hub" -> "Pier"
+            """, on: editor)
+        let pen = AnyShapeRecord(ShapeRecord(Pen(CGRect(x: 580, y: 120, width: 120, height: 140), label: "Pen")))
+        editor.transact { $0.insert(pen) }
+        editor.transact { $0.setContainer(editor.relays().map(\.id), to: pen.id) }
+        let result = try drawn("""
+            pen "Pen" below "Rock"
+            edge "Hub" -> "Reef"
+            """, on: editor)
+        expectEqual(rows(result).compactMap { $0["did"]?.stringValue }, ["moved", "created", "connected"])
+        let reef = try require(editor.relayFrames()["Reef"])
+        expect(reef.minY != 254, "not joined below Pier's, which moved with the pen: \(reef)")
+        expectEqual(reef.midY, 190, "centered on Hub")
+    },
+    test("a shape the run moves leaves its column behind: its new stand-ins go beside it where it lands") {
+        let editor = try Shoal().editor()
+        _ = try drawn(#"edge "Hub" -> "Deep""#, on: editor)
+        _ = try drawn("""
+            tile "Hub" right of "Rock"
+            edge "Hub" -> "Pier"
+            """, on: editor)
+        let hub = try require(shape("Hub", in: editor)?.box)
+        expectEqual(hub, CGRect(x: 300, y: 600, width: 120, height: 80))
+        expectEqual(editor.relayFrames()["Pier"], CGRect(x: 500, y: 620, width: 56, height: 40), "right of Hub where it is now, centered")
+        expectEqual(editor.relayFrames()["Deep"], CGRect(x: 600, y: 170, width: 56, height: 40), "the old column stays where it was")
+    },
+])

@@ -175,9 +175,10 @@ public struct ShapeRegistrar<Definition: ShapeDefinition> {
 // Placements, gated by the type system: only box shapes can be placed, and only editable ones can
 // be placed straight into editing.
 extension ShapeRegistrar where Definition.Props: BoxShapeProps {
-    /// Centered where the canvas is pressed, and following the pointer until release.
-    public func placement(size: CGSize, props: @escaping @MainActor () -> Definition.Props) -> Placement {
-        Placement(kind: kind, size: size, completion: .translate, props: props)
+    /// Centered where the canvas is pressed, and following the pointer until release. `minimumSize`:
+    /// the smallest its shapes are drawn, whoever draws one (`Placement.minimumSize`).
+    public func placement(size: CGSize, minimumSize: CGSize = .zero, props: @escaping @MainActor () -> Definition.Props) -> Placement {
+        Placement(kind: kind, size: size, minimumSize: minimumSize, completion: .translate, props: props)
     }
 }
 
@@ -185,7 +186,7 @@ extension ShapeRegistrar where Definition: Editable, Definition.Props: BoxShapeP
     /// Centered where the canvas is pressed, following the pointer until release, and then being
     /// edited (placed with no press under way, at once).
     public func editingPlacement(size: CGSize, props: @escaping @MainActor () -> Definition.Props) -> Placement {
-        Placement(kind: kind, size: size, completion: .edit, props: props)
+        Placement(kind: kind, size: size, minimumSize: .zero, completion: .edit, props: props)
     }
 }
 
@@ -223,22 +224,28 @@ public struct Placement {
     public let kind: ShapeKind
     /// The size of what it places.
     public let size: CGSize
+    /// The smallest its shapes are drawn, the one place a kind says it, which whatever draws one keeps
+    /// to: a tool that draws its shape's rect with a drag (the Frame tool), `canvas draw`, which refuses
+    /// a `size:` under it, and the kind's own resizing, which it hands this (`resizable(minimumSize:)`).
+    /// Zero for none.
+    public let minimumSize: CGSize
     let completion: Completion
     let make: @MainActor (CGRect) -> AnyShapeRecord
 
     enum Completion { case translate, edit }
 
-    init<P: BoxShapeProps>(kind: ShapeKind, size: CGSize, completion: Completion, props: @escaping @MainActor () -> P) {
-        self.init(kind: kind, size: size, completion: completion) { frame in
+    init<P: BoxShapeProps>(kind: ShapeKind, size: CGSize, minimumSize: CGSize, completion: Completion, props: @escaping @MainActor () -> P) {
+        self.init(kind: kind, size: size, minimumSize: minimumSize, completion: completion) { frame in
             var shape = props()
             shape.frame = frame
             return AnyShapeRecord(ShapeRecord(shape))
         }
     }
 
-    private init(kind: ShapeKind, size: CGSize, completion: Completion, make: @escaping @MainActor (CGRect) -> AnyShapeRecord) {
+    private init(kind: ShapeKind, size: CGSize, minimumSize: CGSize, completion: Completion, make: @escaping @MainActor (CGRect) -> AnyShapeRecord) {
         self.kind = kind
         self.size = size
+        self.minimumSize = minimumSize
         self.completion = completion
         self.make = make
     }
@@ -256,7 +263,7 @@ public struct Placement {
     /// value its kind doesn't opt into is dropped as the shape is placed.
     public func setting<P: ShapeProperty>(_: P.Type, to value: P.Value) -> Placement {
         let make = make
-        return Placement(kind: kind, size: size, completion: completion) { frame in
+        return Placement(kind: kind, size: size, minimumSize: minimumSize, completion: completion) { frame in
             var record = make(frame)
             record[P.self] = value
             return record

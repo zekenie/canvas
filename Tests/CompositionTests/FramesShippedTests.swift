@@ -383,7 +383,7 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         expect(editor.showBoard(BoardID(owner: frames.research)))
         expectEqual(editor.document.shapes.map(\.id), [frames.inside])
     },
-    test("canvas draw draws a frame by its tool's placement: 640 × 400 unless its size says otherwise, named by its title") {
+    test("canvas draw draws a frame by its tool's placement: 640 × 400 unless its size says otherwise, named by its title, never under 96 × 64") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
         _ = try drawnInProcess(#"frame "Sprint 3""#, on: editor)
@@ -395,6 +395,14 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         expectEqual(q4.box?.size, CGSize(width: 900, height: 600))
         let right = try require(q4.box).minX, edge = try require(sprint.box).maxX
         expect(right > edge, "right of it")
+        // The smallest the Frame tool draws one, and resizing leaves one: its placement's, said once.
+        let strip = try refusedInProcess(#"frame "Strip" size: 160x40 below "Sprint 3""#, on: editor)
+        expectEqual(strip.reason, "invalid_value")
+        expectEqual(strip.message, "size: 160x40 is too small: a frame is at least 96x64")
+        expectEqual(strip.hint, "write size: 160x64, or bigger")
+        expectEqual(editor.registry.placement(for: Frame.kind)?.minimumSize, Frame.minimumSize)
+        _ = try drawnInProcess(#"frame "Strip" size: 160x64 below "Sprint 3""#, on: editor)
+        expectEqual(editor.document.shapes.first { $0[TitleProperty.self] == "Strip" }?.box?.size, CGSize(width: 160, height: 64))
     },
     test("canvas draw moves bands holding notes into each other's places in one run: each lands where it's placed, holding its note, and nothing is pushed or nudged") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())

@@ -401,6 +401,75 @@ let hub = ("Hub", rect(0, 0, 200, 100))
         expectRect(allowed["B"], rect(280, -82, 200, 100))
         expectRect(allowed["C"], rect(280, 82, 200, 100))
     },
+    test("boxes the caller made up, placed alike, are a list of their own, 16 apart") {
+        let drawn = draw("""
+            pill "P1" right of "Hub"
+            pill "P2" right of "Hub"
+            pill "P3" right of "Hub"
+            """, on: Board([hub]))
+        expectRect(drawn["P1"], rect(280, -11, 60, 30))
+        expectRect(drawn["P2"], rect(280, 35, 60, 30))
+        expectRect(drawn["P3"], rect(280, 81, 60, 30))
+        expectEqual(drawn.solution?.pushes.count, 0)
+    },
+    test("a box the script wrote is never listed with them: it's placed as it says, and they give way to it as one") {
+        // H is right of G as the pills are, but it's no member of their list, which would center the list on G,
+        // H and all, and take H off G's middle. The pills yield past H, as one.
+        let drawn = draw("""
+            card "G" below "X" size: 200x200
+            card "H" right of "G" size: 200x200
+            pill "P1" right of "G"
+            pill "P2" right of "G"
+            pill "P3" right of "G"
+            """, on: Board([("X", rect(0, 0, 200, 200))]))
+        expectRect(drawn["G"], rect(0, 280, 200, 200))
+        expectRect(drawn["H"], rect(280, 280, 200, 200))
+        expectRect(drawn["P1"], rect(520, 319, 60, 30))
+        expectRect(drawn["P2"], rect(520, 365, 60, 30))
+        expectRect(drawn["P3"], rect(520, 411, 60, 30))
+        expectEqual(drawn.pushedPast("P1"), ["H"])
+        expectEqual(drawn.pushedPast("P2"), [])
+        expectEqual(drawn.solution?.pushes.map(\.along), [nil, 2, 2], "the rest went along with the first")
+    },
+    test("a list moves as one across: a member pushed past a wall takes the others with it") {
+        // Only P2 meets W; the whole column goes right past it.
+        let pills = draw("""
+            card "G" below "X" size: 200x200
+            pill "P1" right of "G"
+            pill "P2" right of "G"
+            pill "P3" right of "G"
+            """, on: Board([("X", rect(0, 0, 200, 200)), ("W", rect(300, 360, 100, 40))]))
+        expectRect(pills["P1"], rect(440, 319, 60, 30))
+        expectRect(pills["P2"], rect(440, 365, 60, 30))
+        expectRect(pills["P3"], rect(440, 411, 60, 30))
+        expectEqual(pills.pushedPast("P2"), ["W"])
+        expectEqual(pills.solution?.pushes.map(\.box), [2, 1, 3])
+        expectEqual(pills.solution?.pushes.map(\.along), [nil, 2, 2])
+        // Shapes the script wrote too: only C meets W, held down the page by A's centering on Hub.
+        let cards = draw("""
+            card "A" right of "Hub"
+            card "B" right of "Hub"
+            card "C" right of "Hub"
+            """, on: Board([hub, ("W", rect(300, 200, 100, 30))]))
+        expectRect(cards["A"], rect(440, -164, 200, 100))
+        expectRect(cards["B"], rect(440, 0, 200, 100))
+        expectRect(cards["C"], rect(440, 164, 200, 100))
+        expectEqual(cards.pushedPast("C"), ["W"])
+    },
+    test("a list is only as free as its members: a later one can't drag its head off a centering") {
+        // C overlaps W least down the page, but A is centered on G, so the list goes across, and G stays put.
+        let drawn = draw("""
+            card "G" below "X"
+            card "A" right of "G"
+            card "B" right of "G"
+            card "C" right of "G"
+            """, on: Board([("X", rect(0, 0, 200, 200)), ("W", rect(300, 530, 400, 30))]))
+        expectRect(drawn["G"], rect(0, 280, 200, 100))
+        expectRect(drawn["A"], rect(740, 116, 200, 100))
+        expectRect(drawn["C"], rect(740, 444, 200, 100))
+        expectEqual(drawn.pushedPast("C"), ["W"])
+        expectEqual(drawn.pushedPast("G"), [])
+    },
 ])
 
 @MainActor let regionTests = Suite("Region alignments", [

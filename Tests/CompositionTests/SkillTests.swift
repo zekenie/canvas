@@ -315,7 +315,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         }
         expectEqual(written, declared, "the reference's edge types")
     },
-    test("the skill's tables of kinds are what canvas kinds says: every drawable kind, its size, its attributes, its channels by side") {
+    test("the skill's tables of kinds are what canvas kinds says: every drawable kind, its size, its attributes, its channels by side, and its smallest") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let commands = ShippedPlugins.commands(in: registry)
         let listed = try awaitResult { try await commands.run("kinds", [:], nil) }.arrayValue ?? []
@@ -381,6 +381,14 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
             }
         }
         expectEqual(inBullets, Set(kinds.keys), "the reference's attributes, for every drawable kind")
+
+        // The smallest a kind is drawn, where it has one, as both pages say it.
+        let smallest = kinds.compactMapValues { $0["smallest"]?.stringValue }
+        expect(!smallest.isEmpty, "a shipped kind has a smallest size (a frame)")
+        for (kind, size) in smallest {
+            expect(skill.contains("\(kind) is at least \(size)"), "SKILL.md: a \(kind) is at least \(size)")
+            expect(reference.contains("\(kind) is at least \(size)"), "the reference: a \(kind) is at least \(size)")
+        }
     },
 ])
 

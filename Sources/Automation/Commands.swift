@@ -115,6 +115,9 @@ struct KindSummary: Encodable {
     let names: String
     /// What its tool places: `200x200`.
     let size: String?
+    /// The smallest its shapes are drawn (`Placement.minimumSize`), under which a `size:` is refused:
+    /// `96x64`; nil where any size goes.
+    let smallest: String?
     /// What a shape of it holds, which `in "X"` names it for: `board`, a board of its own (a
     /// subboard's, which the shape goes on), or `shapes` on the board it's on (a frame's, which the
     /// shape goes in); nil for neither.
@@ -170,6 +173,7 @@ func kinds(_ params: ListKinds, in registry: Registry) throws(AutomationError) -
                            tool: registry.tools.first { $0.id == ToolID(placing: kind) }?.label,
                            drawable: why == nil, why: why, names: names,
                            size: placement.map { Drawing.written($0.size) },
+                           smallest: placement.flatMap { $0.minimumSize == .zero ? nil : Drawing.written($0.minimumSize) },
                            holds: registry.boardOwningKinds.contains(kind) ? "board" : registry.containingKinds.contains(kind) ? "shapes" : nil,
                            attributes: attributes,
                            edges: sides.isEmpty ? nil : Dictionary(uniqueKeysWithValues: sides.map { ($0.key.rawValue, $0.value) }),

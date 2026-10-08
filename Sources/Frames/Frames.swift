@@ -23,7 +23,9 @@ public struct Frame: BoxShapeProps {
     }
     /// What a click with the Frame tool places, centered on the click.
     public static let defaultSize = CGSize(width: 640, height: 400)
-    /// The smallest a frame is drawn or resized to: its pill's row, and a small shape inside it.
+    /// The smallest a frame is drawn or resized to: its pill's row, and a small shape inside it. Said once,
+    /// by its placement (`Placement.minimumSize`), which the Frame tool, resizing, Create Frame and
+    /// `canvas draw` all read.
     public static let minimumSize = CGSize(width: 96, height: 64)
 
     public var frame: CGRect
@@ -55,12 +57,13 @@ public struct FramesPlugin: CanvasPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.shape(FrameDefinition()) { frame in
-            // What a click places, and what `canvas draw` places; a drag draws its own rect.
-            let place = frame.placement(size: Frame.defaultSize) { Frame() }
+            // What a click places, and what `canvas draw` places; a drag draws its own rect. Never under
+            // its minimum, however it's drawn.
+            let place = frame.placement(size: Frame.defaultSize, minimumSize: Frame.minimumSize) { Frame() }
             frame.tool(label: "Frame", systemImage: Frame.systemImage, shortcut: "f", placing: place) { _ in FrameTool(placing: place) }
             frame.title(placeholderInPill: Frame.pillPlaceholder, coverSurface: FrameStyle.fill)  // Titles keeps its name, in a pill above it
             frame.mentionable(tint: { _ in FrameStyle.tint })               // by its name; followed, it's gone to
-            frame.resizable(minimumSize: Frame.minimumSize)                 // eight handles, Selection's
+            frame.resizable(minimumSize: place.minimumSize)                 // eight handles, Selection's
             frame.frameRow()                                                // the table of contents, named by Titles
             frame.frameHeader()                                             // renamed in the panel's header
             frame.turnable(through: ContainerChannel.self)                  // turned through the container channel: into a subboard, where Subboards takes it

@@ -46,7 +46,8 @@ public struct LayoutProblem {
         /// no script wrote a placement for: where it clashes with another free box that nothing
         /// orders against it, it's the one that moves, past that box, the way its own placements leave
         /// it free to go, where for a box the script wrote that is `unordered`. The later of two such
-        /// boxes yields to the earlier.
+        /// boxes yields to the earlier. Such boxes placed alike list only with each other, never with a
+        /// box the script wrote, `impliedListStep` apart.
         public var implied: Bool
 
         public init(line: Int, name: String, size: CGSize, clauses: [ResolvedClause] = [], gap: Gap? = nil,
@@ -149,7 +150,8 @@ public struct LayoutProblem {
         /// What it's placed against, in the order written.
         public var targets: [ResolvedTarget]
         public var gap: Gap?
-        /// As written, for messages, and what makes placements alike for a list.
+        /// As written, for messages. Placements alike for a list are alike in what they say (relation,
+        /// targets, parts and gap), which, for a script's, is being written alike.
         public var written: String
 
         public init(relation: Relation, targets: [ResolvedTarget], gap: Gap? = nil, written: String) {
@@ -222,6 +224,10 @@ public struct LayoutProblem {
     /// for the row of things shown just above the next (a title's pill, a lock's chip): 27 view
     /// points, so 27 units at 100% and 54 at 50%, clear down to about 42%.
     public static let listStep: CGFloat = 64
+    /// Between the members of a list of boxes the caller made up (`Free.implied`: an edge's
+    /// stand-ins, beside the shape it's from), unless they all say the same `gap:`: a pill that
+    /// stands in has no title, so nothing is shown above it to leave room for.
+    public static let impliedListStep: CGFloat = 16
     /// Kept between two boxes pushed apart side by side: more than what's shown beside a shape
     /// reaches past its side (6 view points, 24 units at the 25% it stops growing at).
     public static let horizontalClearance: CGFloat = 40

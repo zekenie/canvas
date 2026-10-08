@@ -120,6 +120,36 @@ extension CanvasEditor {
         expectEqual(connection["via"]?["to"]?["id"], .string(pill.id.description), "through the pill")
     },
 
+    test("the references beside a note are a column of their own, 16 apart; a later run's joins it, 16 below its end, in line with it") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let wharf = Wharf()
+        let board = wharf.board()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let both = try canvas(server, ["draw", "-"], input: """
+            edge "Checkout" -> "Auth"
+            edge "Checkout" -> "Docs" via: reference
+            """)
+        expectEqual(both.status, 0, both.error)
+        let editor = board.editor
+        let checkout = try require(editor.file.record(wharf.checkout)?.box)
+        expectEqual(editor.references().map(\.frame.minX), [checkout.maxX + 80, checkout.maxX + 80], "in line, right of Checkout")
+        expectEqual(editor.references().map(\.frame.minY), [checkout.midY - 40, checkout.midY + 8], "32 tall, 16 apart, centered on it as one")
+        expectEqual(try JSON(text: both.output)["changes"]?.arrayValue?.compactMap { $0["pushedPast"] }, [])
+        editor.undo()
+        expectEqual(editor.references().count, 0)
+        _ = try canvas(server, ["draw", #"edge "Checkout" -> "Auth""#])
+        let later = try canvas(server, ["draw", #"edge "Checkout" -> "Docs" via: reference"#])
+        expectEqual(later.status, 0, later.error)
+        let pills = editor.references().map(\.frame)
+        expectEqual(pills.map(\.minY), [checkout.midY - 16, checkout.midY + 32], "the first where it was, the next 16 below it")
+        expectEqual(pills.map(\.minX), [checkout.maxX + 80, checkout.maxX + 80])
+        expectEqual(try JSON(text: later.output)["warnings"]?.arrayValue ?? [], [])
+    },
+
     test("the far note may be the start: the reference is left of the note, and the arrow runs out of it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

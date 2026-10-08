@@ -11,7 +11,7 @@ import TestKit
 // a script moves takes what it holds along.
 
 /// A box that holds shapes on its board (`ShapeContaining`), as a frame does, which a tool places,
-/// 400 × 300: what a script draws containers with. Called by its label.
+/// 400 × 300, and never under 120 × 80: what a script draws containers with. Called by its label.
 struct Pen: BoxShapeProps {
     static let kind: ShapeKind = "pen"
     static let properties = Properties<Pen>(title: "Pen") {
@@ -41,7 +41,7 @@ extension PenDefinition: ShapeContaining {}
 
 let pens = Contributor(id: "pens") { registrar in
     registrar.shape(PenDefinition()) { pen in
-        pen.tool(label: "Pen", systemImage: "square.dashed", placing: pen.placement(size: CGSize(width: 400, height: 300)) { Pen() })
+        pen.tool(label: "Pen", systemImage: "square.dashed", placing: pen.placement(size: CGSize(width: 400, height: 300), minimumSize: CGSize(width: 120, height: 80)) { Pen() })
     }
 }
 
@@ -321,5 +321,29 @@ private func at(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat)
         expectEqual(kind("pen")?["drawable"], true)
         expectEqual(kind("pocket")?["holds"], "board")
         expectEqual(kind("tile")?["holds"], nil)
+    },
+    test("a size under the smallest its placement draws is invalid_value, as a size too big is; kinds says it") {
+        let editor = try penEditor()
+        let before = editor.file
+        let small = try refused(#"pen "Small" size: 100x50"#, on: editor)
+        expectEqual(small.reason, "invalid_value")
+        expectEqual(small.message, "size: 100x50 is too small: a pen is at least 120x80")
+        expectEqual(small.hint, "write size: 120x80, or bigger")
+        let flat = try refused(#"pen "Flat" right of board size: 300x40"#, on: editor)
+        expectEqual(flat.hint, "write size: 300x80, or bigger", "only the side that's short grows")
+        let styled = try refused("style slim size: 300x40\n" + #"pen "Slim" style: slim"#, on: editor)
+        expectEqual(styled.reason, "invalid_value", "a style's size too")
+        expectEqual(editor.file, before, "nothing drawn")
+        // At the smallest it's drawn; one already smaller is left as it is when a script doesn't size it.
+        expectEqual(rows(try drawn(#"pen "Least" size: 120x80"#, on: editor)).first?["at"]?.arrayValue?.last, [120, 80])
+        pen("Tiny", CGRect(x: 1000, y: 0, width: 60, height: 40), in: editor)
+        expectEqual(rows(try drawn(#"pen "Tiny""#, on: editor)).first?["did"], "unchanged")
+        expectEqual(rows(try drawn(#"pen "Tiny" size: 60x40"#, on: editor)).first?["did"], "unchanged", "restated at the size it is, a run again")
+        expectEqual(try refused(#"pen "Tiny" size: 60x50"#, on: editor).reason, "invalid_value", "but not to another size under it")
+        // What has no smallest takes any size.
+        expectEqual(rows(try drawn(#"tile "Speck" below "Least" size: 4x2"#, on: editor)).first?["did"], "created")
+        let all = try run(["kinds"], on: nil, registry: editor.registry).get().arrayValue ?? []
+        expectEqual(all.first { $0["kind"] == "pen" }?["smallest"], "120x80")
+        expectEqual(all.first { $0["kind"] == "tile" }?["smallest"], nil)
     },
 ])
