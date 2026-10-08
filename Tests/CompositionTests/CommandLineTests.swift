@@ -49,6 +49,11 @@ edge "Backend" -> "Cache"
 edge "API" -> "Cache" channel: none
 """#
 
+/// The boards a test's server opened (`CommandServer`'s `show`), in order.
+@MainActor final class Opened {
+    var boards: [BoardDocument] = []
+}
+
 @MainActor func newBoard() -> BoardDocument {
     let board = BoardDocument()
     board.start(with: CanvasDocument())
@@ -184,6 +189,97 @@ edge "API" -> "Cache" channel: none
         expectEqual(first.editor.document.shapes.count, 0)
         let missing = try canvas(server, ["draw", "sticky-note", "--board", "Nope"])
         expectEqual(try JSON(text: missing.error)["error"]?["reason"], "unknown_board")
+    },
+    test("canvas new makes a board's file as Save As does, opens it, and says it as boards lists it; a file that's there or open, a folder that isn't, another type's file and a save that fails are refused") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let first = newBoard()
+        defer { first.close() }
+        let folder = scratchURL("new")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let opened = Opened()
+        defer { for board in opened.boards { board.close() } }
+        let commands = ShippedPlugins.commands(in: try require(BoardDocument.configuration).registry)
+        let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
+                                   boards: { [first] + opened.boards }, frontmost: { opened.boards.last ?? first }, show: { opened.boards.append($0) })
+        try server.start()
+        defer { server.stop() }
+
+        let made = try canvas(server, ["new", folder.appendingPathComponent("Plans").path])
+        expectEqual(made.status, 0, made.error)
+        let board = try require(opened.boards.first)
+        let file = folder.appendingPathComponent("Plans.canvasboard")
+        expectEqual(board.fileURL?.resolvingSymlinksInPath(), file.resolvingSymlinksInPath(), "with the boards' extension")
+        expectEqual(board.fileType, BoardConfiguration.typeIdentifier)
+        expectEqual(try Data(contentsOf: file), try BoardCodec(registry: board.editor.registry).encode(CanvasFile()), "the codec's empty board")
+        expect(!board.isDocumentEdited)
+        let said = try JSON(text: made.output)
+        let listed = try JSON(text: canvas(server, ["boards"]).output).arrayValue ?? []
+        expectEqual(listed.count, 2)
+        expectEqual(said, listed.last, "as boards lists it")
+        expectEqual(said["id"], .number(Double(board.number)))
+        expectEqual(said["path"], board.fileURL.map { .string($0.path) })
+        expectEqual(said["frontmost"], true)
+        expectEqual(said["fileShapes"], 0)
+        let drawn = try canvas(server, ["draw", #"sticky-note "First""#, "--board", "\(board.number)"])
+        expectEqual(drawn.status, 0, drawn.error)
+        expectEqual(board.editor.document.shapes.count, 1, "its id is its --board")
+        expectEqual(first.editor.document.shapes.count, 0)
+
+        @MainActor func refused(_ path: String) throws -> JSON? { try JSON(text: canvas(server, ["new", path]).error)["error"] }
+        let again = try refused(file.path)
+        expectEqual(again?["reason"], "file_exists")
+        expectEqual(again?["message"], .string("\(file.path) is open already, as board \(board.number)."))
+        expectEqual(again?["hint"], .string("Name it with --board \(board.number), or make another file."))
+        let old = folder.appendingPathComponent("Old.canvasboard")
+        FileManager.default.createFile(atPath: old.path, contents: Data("kept".utf8))
+        expectEqual(try refused(old.path)?["reason"], "file_exists")
+        expectEqual(try Data(contentsOf: old), Data("kept".utf8), "left as it was")
+        let sub = folder.appendingPathComponent("Sub")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        expectEqual(try refused(sub.path)?["message"], .string("\(sub.path) is a folder."), "as written, a folder, not Sub.canvasboard")
+        let text = try refused(folder.appendingPathComponent("Notes.txt").path)
+        expectEqual(text?["reason"], "invalid_params")
+        expectEqual(text?["message"], "A board's file ends in .canvasboard, and Notes.txt is a .txt file.")
+        expectEqual(text?["hint"], .string("canvas new \(folder.appendingPathComponent("Notes.canvasboard").path)"))
+        let nowhere = try refused(folder.appendingPathComponent("Later/Plans.canvasboard").path)
+        expectEqual(nowhere?["reason"], "no_folder")
+        expectEqual(nowhere?["message"], .string("There's no folder \(folder.appendingPathComponent("Later").path)."))
+        let locked = folder.appendingPathComponent("Locked")
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path) }
+        expectEqual(try refused(locked.appendingPathComponent("Plans").path)?["reason"], "cannot_save")
+        expectEqual(opened.boards.count, 1, "nothing refused was opened")
+        expectEqual(BoardDocument.unclosed.count, 2, "a board whose save failed is closed")
+        expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("Notes.canvasboard").path))
+        expectEqual(try canvas(server, ["new", "--board", "1", file.path]).status, 2, "about the app, not a board")
+
+        // A name with a dot that's no type's extension is a name: the boards' extension goes after it.
+        let dotted = try canvas(server, ["new", folder.appendingPathComponent("Sprint 3.2").path])
+        expectEqual(dotted.status, 0, dotted.error)
+        expect(try JSON(text: dotted.output)["path"]?.stringValue?.hasSuffix("/Sprint 3.2.canvasboard") == true, dotted.output)
+        expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Sprint 3.2.canvasboard").path))
+        // Two at once for one file: one makes it, and the other is refused, whichever comes first.
+        let request = RPCRequest(id: .number(1), method: RPC.newCommand, params: ["path": .string(folder.appendingPathComponent("Twice").path)])
+        let both = try awaitResult {
+            async let one = server.respond(to: request)
+            async let two = server.respond(to: request)
+            return await [one, two]
+        }
+        expectEqual(both.filter { (try? $0.get()) != nil }.count, 1)
+        expectEqual(both.compactMap { if case .failure(let error) = $0 { error.reason } else { nil } }, ["file_exists"])
+        expectEqual(opened.boards.count, 3)
+
+        let none = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
+                                 boards: { [] }, frontmost: { nil })
+        try none.start()
+        defer { none.stop() }
+        let nothing = try JSON(text: canvas(none, ["draw", #"sticky-note "A""#]).error)["error"]
+        expectEqual(nothing?["reason"], "no_board")
+        expectEqual(nothing?["hint"], "Make one: canvas new <file>, or open one in Infinite Canvas.")
     },
     test("a board command's result says which board it worked on, as boards lists it; an app command's doesn't") {
         try configureBoards()
@@ -338,7 +434,7 @@ edge "API" -> "Cache" channel: none
         let note = try JSON(text: canvas(server, ["kinds", "sticky-note", "--schema"]).output).arrayValue?.first
         expectEqual(note?["schema"]?["properties"]?["title"]?["maxLength"], 80)
         let help = try canvas(server, ["help"]).output
-        for command in ["status", "boards", "draw", "kinds"] { expect(help.contains("\n  \(command) "), help) }
+        for command in ["status", "boards", "new", "draw", "kinds"] { expect(help.contains("\n  \(command) "), help) }
     },
     test("canvas draw says what a habit meant, refuses a kind no tool places, and deletes an arrow with the shape it leaves") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
@@ -398,6 +494,8 @@ edge "API" -> "Cache" channel: none
         expectEqual(boards.map { $0["shows"] }, [.string(q.id.description), "root"])
         expectEqual(boards.first?["showsPath"], .array(["root", .string(p.id.description), .string(q.id.description)]))
         expectEqual(boards.first?["shapes"], 1, "the board shown's")
+        expectEqual(boards.first?["fileShapes"], 3, "every board's")
+        expectEqual(boards.last?["fileShapes"], 0)
         let text = try canvas(server, ["boards", "--format", "text"]).output
         expect(text.contains("shows") && text.contains(q.id.description), text)
 

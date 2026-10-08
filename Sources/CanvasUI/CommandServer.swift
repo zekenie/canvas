@@ -2,15 +2,16 @@ import AppKit
 import Canvas
 import CanvasRPC
 import Foundation
+import UniformTypeIdentifiers
 
 /// The app's end of the command line (`canvas`): it listens where `canvas` looks (`SocketPath`),
 /// tells it what the app is and what it runs (`describe`), and answers each request on the main
-/// actor. Two commands are its own, since they're about the app's boards, which only it knows:
-/// `status` and `boards`. It's given the rest (`Commands`: the plugins' commands, from Composition),
-/// and runs each on the board its request names (`board`), or the one in front, whose editor it
-/// changes as anything else does, so the board's window shows each change as it's made. A file with
-/// boards inside shapes is worked on where its window is: the board it shows (`editor.board`),
-/// which `status` and `boards` name. A board command's result, when it's an object, says which
+/// actor. Three commands are its own, since they're about the app's boards, which only it knows:
+/// `status`, `boards` and `new`, which makes a board's file as Save As does and opens it. It's given
+/// the rest (`Commands`: the plugins' commands, from Composition), and runs each on the board its
+/// request names (`board`), or the one in front, whose editor it changes as anything else does, so
+/// the board's window shows each change as it's made. A file with boards inside shapes is worked on
+/// where its window is: the board it shows (`editor.board`), which `status` and `boards` name. A board command's result, when it's an object, says which
 /// board that was: `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the
 /// command's own job as it starts, so nothing switches boards between the two for a command that
 /// doesn't wait (`draw`). A command that knows better where inside the file it worked (a query:
@@ -43,19 +44,24 @@ public final class CommandServer {
     private let commands: Commands
     private let boards: @MainActor () -> [BoardDocument]
     private let frontmost: @MainActor () -> BoardDocument?
+    private let show: @MainActor (BoardDocument) -> Void
+    /// The files `new` is saving, so a second `new` for one is refused while the first saves.
+    private var making: Set<URL> = []
     private var listener: RPCListener?
 
     /// `boards` and `frontmost` are the app's open boards, and the one whose window is in front;
-    /// tests give their own.
+    /// `show` shows a board `new` made, as the app opens one. Tests give their own.
     public init(path: String = SocketPath.resolve(), commands: Commands,
                 boards: @escaping @MainActor () -> [BoardDocument] = { NSDocumentController.shared.documents.compactMap { $0 as? BoardDocument } },
-                frontmost: @escaping @MainActor () -> BoardDocument? = { NSApp.orderedDocuments.lazy.compactMap { $0 as? BoardDocument }.first }) {
+                frontmost: @escaping @MainActor () -> BoardDocument? = { NSApp.orderedDocuments.lazy.compactMap { $0 as? BoardDocument }.first },
+                show: @escaping @MainActor (BoardDocument) -> Void = { $0.openWindow() }) {
         let own = Self.ownSpecs.map(\.name)
         precondition(commands.specs.allSatisfy { !own.contains($0.name) }, "a plugin's command takes the name of one of the app's own (the registry refuses it: RPC.reservedCommandNames): \(own)")
         self.path = path
         self.commands = commands
         self.boards = boards
         self.frontmost = frontmost
+        self.show = show
     }
 
     /// Starts listening. Throws if it can't: another copy of the app is listening there, say.
@@ -96,14 +102,9 @@ public final class CommandServer {
             return .success(.object(status))
         case RPC.boardsCommand:
             let front = frontmost()
-            return .success(.array(boards().map { board in
-                var entry = Self.shown(board)
-                entry["frontmost"] = .bool(board === front)
-                entry["edited"] = .bool(board.isDocumentEdited)
-                entry["shapes"] = .number(Double(board.editor.document.shapes.count))
-                if let url = board.fileURL { entry["path"] = .string(url.path) }
-                return .object(entry)
-            }))
+            return .success(.array(boards().map { .object(Self.listed($0, frontmost: front)) }))
+        case RPC.newCommand:
+            return await newBoard(params)
         default:
             guard let spec = commands.specs.first(where: { $0.name == request.method }) else {
                 return .failure(RPCError(RPCError.methodNotFound, reason: "unknown_command", "There's no command \(request.method).",
@@ -232,12 +233,33 @@ public final class CommandServer {
                     params: ["type": "object", "properties": [:], "additionalProperties": false],
                     examples: [CommandExample("\(RPC.commandName) status", "The app's version, its process, and its boards.")]),
         CommandSpec(name: RPC.boardsCommand, summary: "List the open boards: each one's id, name, file, which is in front, and what its window shows.",
-                    discussion: "A board command works on the board in front unless --board names another: by its id here (which lasts while the app runs), its file, or its name. A file can hold boards inside its shapes; a command works on the one its window shows: shows (\"root\", or the id of the shape that owns it), whose shapes are counted, and showsPath, the boards from the root down to it.",
+                    discussion: "A board command works on the board in front unless --board names another: by its id here (which lasts while the app runs), its file, or its name. A file can hold boards inside its shapes; a command works on the one its window shows: shows (\"root\", or the id of the shape that owns it) and showsPath, the boards from the root down to it. shapes counts that board's shapes, and fileShapes the file's, on every board.",
                     scope: .app, params: ["type": "object", "properties": [:], "additionalProperties": false],
                     examples: [CommandExample("\(RPC.commandName) boards", "Every open board.")]),
+        CommandSpec(name: RPC.newCommand, summary: "Make a new, empty board's file, open it, and say it as boards lists it.",
+                    discussion: "Its id is the board's --board. The file gets .\(BoardConfiguration.fileExtension) unless it ends in it (Sprint 3.2 is Sprint 3.2.\(BoardConfiguration.fileExtension)). A file that's there already, or open, another type's file (.txt), and a folder that isn't there are refused.",
+                    scope: .app,
+                    params: ["type": "object",
+                             "properties": ["path": ["type": "string", "description": "The board's file.", "x-value-name": "file", "x-path": true]],
+                             "required": ["path"], "additionalProperties": false],
+                    positionals: ["path"],
+                    examples: [CommandExample("\(RPC.commandName) new ~/Boards/Plans.\(BoardConfiguration.fileExtension)", "Make Plans, and open it.")]),
     ]
 
     // MARK: Boards
+
+    /// A board as `boards` lists it: what a board command's result names it by (`shown`), which is
+    /// in front, whether it's edited, how many shapes the board shown holds and how many the file
+    /// does, on every board, and its file.
+    private static func listed(_ board: BoardDocument, frontmost: BoardDocument?) -> [String: JSON] {
+        var entry = shown(board)
+        entry["frontmost"] = .bool(board === frontmost)
+        entry["edited"] = .bool(board.isDocumentEdited)
+        entry["shapes"] = .number(Double(board.editor.document.shapes.count))
+        entry["fileShapes"] = .number(Double(board.editor.file.shapeCount))
+        if let url = board.fileURL { entry["path"] = .string(url.path) }
+        return entry
+    }
 
     /// A file and the board inside it its window shows, as `boards` lists them and a board
     /// command's result names them: the file's id and name, `shows` ("root", or the id of the shape
@@ -257,7 +279,7 @@ public final class CommandServer {
             if let front = frontmost() { return .success(front) }
             if open.count == 1 { return .success(open[0]) }
             return .failure(open.isEmpty
-                ? .failed("No board is open.", reason: "no_board", hint: "Open or make one in Infinite Canvas.")
+                ? .failed("No board is open.", reason: "no_board", hint: "Make one: \(RPC.commandName) \(RPC.newCommand) <file>, or open one in Infinite Canvas.")
                 : .failed("\(open.count) boards are open, and none is in front.", reason: "ambiguous_board",
                           hint: "Name one with --board: \(listing)."))
         }
@@ -278,6 +300,71 @@ public final class CommandServer {
         }
         return .failure(.failed("No open board is \(text).", reason: "unknown_board",
                                 hint: open.isEmpty ? "No board is open." : "The open boards: \(listing)."))
+    }
+
+    // MARK: A new board
+
+    /// `new`: a new board's file at `path` (whole, as `canvas` sends it), made as Save As makes one
+    /// (`BoardDocument.newFile(at:)`), never written here, then shown as the app opens a board, and
+    /// said as `boards` lists it. A file gets the boards' extension unless it ends in a known type's,
+    /// as the Save panel adds one (`Sprint 3.2` is `Sprint 3.2.canvasboard`), which is refused (a
+    /// `.txt`), as are a file that's there already, or that a board open is or a `new` is saving, and
+    /// a folder that isn't there.
+    private func newBoard(_ params: [String: JSON]) async -> Result<JSON, RPCError> {
+        let new = RPC.newCommand, ending = BoardConfiguration.fileExtension
+        guard let written = params["path"]?.stringValue, params.keys.allSatisfy({ $0 == "path" }) else {
+            return .failure(.invalidParams("\(new) takes path, the board's file, and nothing else."))
+        }
+        guard written.hasPrefix("/") else {
+            return .failure(.invalidParams("A board's file is named by its whole path, from /, and \(written.isEmpty ? "none was given" : "\(written) isn't one")."))
+        }
+        let given = URL(fileURLWithPath: written).standardizedFileURL
+        var url = given
+        if given.pathExtension.lowercased() != ending {
+            let other = given.pathExtension
+            if !other.isEmpty, let type = UTType(filenameExtension: other), !type.isDynamic {
+                return .failure(.invalidParams("A board's file ends in .\(ending), and \(given.lastPathComponent) is a .\(other) file.",
+                                               hint: "\(RPC.commandName) \(new) \(Self.quoted(given.deletingPathExtension().appendingPathExtension(ending).path))"))
+            }
+            var name = given.lastPathComponent
+            while name.hasSuffix(".") { name.removeLast() }
+            url = given.deletingLastPathComponent().appendingPathComponent("\(name).\(ending)")
+        }
+        let file = url.resolvingSymlinksInPath()
+        if let board = boards().first(where: { $0.fileURL?.standardizedFileURL.resolvingSymlinksInPath() == file }) {
+            return .failure(.failed("\(url.path) is open already, as board \(board.number).", reason: "file_exists",
+                                    hint: "Name it with --board \(board.number), or make another file."))
+        }
+        guard !making.contains(file) else {
+            return .failure(.failed("\(url.path) is being made already.", reason: "file_exists", hint: "Wait for it, then name it with --board."))
+        }
+        // A folder as written too: `new plans` beside a folder called plans is a mistake, not plans.canvasboard.
+        if url != given, Self.isFolder(given) {
+            return .failure(.failed("\(given.path) is a folder.", reason: "file_exists", hint: "Name a file inside it, or another file."))
+        }
+        if FileManager.default.fileExists(atPath: url.path) {
+            return .failure(.failed("\(url.path) is there already\(Self.isFolder(url) ? ", a folder" : "").", reason: "file_exists",
+                                    hint: Self.isFolder(url) ? "Name a file inside it, or another file." : "Open it in Infinite Canvas: open \(Self.quoted(url.path)). Or make another file."))
+        }
+        let folder = url.deletingLastPathComponent()
+        guard Self.isFolder(folder) else {
+            return .failure(.failed("There's no folder \(folder.path).", reason: "no_folder", hint: "Make it first: mkdir -p \(Self.quoted(folder.path))"))
+        }
+        making.insert(file)
+        defer { making.remove(file) }
+        let board: BoardDocument
+        do {
+            board = try await BoardDocument.newFile(at: url)
+        } catch {
+            return .failure(.failed("\(url.path) couldn't be saved: \(error.localizedDescription)", reason: "cannot_save"))
+        }
+        show(board)
+        return .success(.object(Self.listed(board, frontmost: frontmost())))
+    }
+
+    private static func isFolder(_ url: URL) -> Bool {
+        var isFolder: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder) && isFolder.boolValue
     }
 
     private static func quoted(_ path: String) -> String {

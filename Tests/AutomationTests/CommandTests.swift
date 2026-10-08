@@ -217,9 +217,9 @@ extension SizeWord: ShapeProperty {
         let nothing: @MainActor (NoParams, AutomationContext) throws(AutomationError) -> String = { _, _ in "" }
         expectEqual(refusal { $0.automationCommand("Make It", "", params: NoParams.self, run: nothing) },
                     "AutomationCommands: command Make It: a name is words of lowercase letters, digits and hyphens, one space apart")
-        for name in ["help", "boards", "status", "describe"] {
+        for name in ["help", "boards", "status", "new", "describe"] {
             expectEqual(refusal { $0.automationCommand(name, "", params: NoParams.self, run: nothing) },
-                        "AutomationCommands: command \(name): the app answers that one itself, or canvas does (boards, describe, help, status)")
+                        "AutomationCommands: command \(name): the app answers that one itself, or canvas does (boards, describe, help, new, status)")
         }
         expectEqual(refusal { $0.automationCommand("go", "", params: BoardParam.self) { _, _ throws(AutomationError) in "" } },
                     "AutomationCommands: command go: a param can't be named board, which canvas keeps for itself")

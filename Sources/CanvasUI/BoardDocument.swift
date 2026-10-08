@@ -10,6 +10,8 @@ import SwiftUI
 public struct BoardConfiguration {
     /// The file type boards are saved as: the type the app's Info.plist exports, as `.canvasboard` files (not `.board`, which Apple's Freeform owns).
     public static let typeIdentifier = "com.example.InfiniteCanvas.board"
+    /// What a board's file name ends in, as the Info.plist says.
+    public static let fileExtension = "canvasboard"
 
     public var registry: Registry
     /// A board window's content: the canvas, and whatever goes around it.
@@ -153,6 +155,20 @@ public final class BoardDocument: NSDocument {
         editor.replaceDocument(with: document)
     }
 
+    /// A new, empty board, saved at `url` as File › Save As saves one, so its file is what the codec
+    /// writes, as every board's is; unedited, and not shown yet (`canvas new`'s). A save that fails
+    /// throws, and the board is closed.
+    public static func newFile(at url: URL) async throws -> BoardDocument {
+        let board = try BoardDocument(type: BoardConfiguration.typeIdentifier)
+        do {
+            try await board.save(to: url, ofType: BoardConfiguration.typeIdentifier, for: .saveAsOperation)
+        } catch {
+            board.close()
+            throw error
+        }
+        return board
+    }
+
     // MARK: Reading and writing
 
     public override func data(ofType typeName: String) throws -> Data {
@@ -239,6 +255,14 @@ public final class BoardDocument: NSDocument {
     }
 
     // MARK: Windows
+
+    /// Opens the board in a window of its own, one of the app's documents, as File › Open does: a new
+    /// board, one `canvas new` made, or a copy of an earlier version.
+    public func openWindow() {
+        NSDocumentController.shared.addDocument(self)
+        makeWindowControllers()
+        showWindows()
+    }
 
     /// Its window, with the view this Mac remembers of the file: the details and the minimap, each
     /// board's camera, and the board left open, which it opens on, if the file can still show it
@@ -498,10 +522,10 @@ final class EarlierVersionOpener: NSObject {
         return MainActor.assumeIsolated {
             let controller = NSDocumentController.shared
             do {
-                let copy = try controller.makeDocument(for: nil, withContentsOf: url, ofType: BoardConfiguration.typeIdentifier)
-                controller.addDocument(copy)
-                copy.makeWindowControllers()
-                copy.showWindows()
+                guard let copy = try controller.makeDocument(for: nil, withContentsOf: url, ofType: BoardConfiguration.typeIdentifier) as? BoardDocument else {
+                    return false
+                }
+                copy.openWindow()
                 return true
             } catch {
                 NSApp.presentError(error)

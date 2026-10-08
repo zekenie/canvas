@@ -98,6 +98,9 @@ struct Invocation {
         if command.scope == .board, let board = params[RPC.boardParam]?.stringValue, Self.isPath(board) {
             params[RPC.boardParam] = .string(Self.absolute(board))
         }
+        for argument in command.arguments where argument.isPath {
+            if let file = params[argument.name]?.stringValue, !file.isEmpty { params[argument.name] = .string(Self.absolute(file)) }
+        }
         // As long as the params given say their answer takes (a model's), unless --timeout says.
         let waits = command.arguments.filter { params[$0.name] != nil }.compactMap(\.waits).max()
         do {

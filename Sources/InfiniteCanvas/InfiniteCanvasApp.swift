@@ -87,9 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             guard let board = try controller.makeUntitledDocument(ofType: BoardConfiguration.typeIdentifier) as? BoardDocument else { return false }
             board.start(with: shapes)
-            controller.addDocument(board)
-            board.makeWindowControllers()
-            board.showWindows()
+            board.openWindow()
             return true
         } catch {
             NSApp.presentError(error)

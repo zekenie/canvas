@@ -56,7 +56,7 @@ python3 gen5.py all                                                  # draws wha
 GALLERY_CLONE=<clone> python3 check.py gen5                          # the board against the plan, once the app has saved it
 ```
 
-`gen5.py` is the layout. `all` alone picks up a run that stopped; `reset` then `all` redraws. A new project needs a board file of its own: `canvas` can't make one, so copy an empty one (`{"boards": {}, "format": 5, "shapes": [], ...}`), open it in the app and pass its id as `CANVAS_BOARD`.
+`gen5.py` is the layout. `all` alone picks up a run that stopped; `reset` then `all` redraws. A new project needs a board file of its own: `canvas new <file>` makes one and opens it, and the `id` it answers is the `CANVAS_BOARD` to pass.
 
 - Which uses between a board's files are arrows comes from `heuristic.py` ([heuristic-report.md](heuristic-report.md)): every use of a board's hubs, its most-used files, and every arrow that two stronger ones already relay, is a pill. An arrow that would cross more than `ALLOW` lets it (now: pill frames, but no note) is a pill too. `heuristic_check.py` checks the heuristic's promises on every board.
 - A frame whose files have arrows between them is a ladder: two columns, the left one's pills on its left, the right one's on its right, the arrows between them. A small search moves and swaps files between the columns while that makes the frame's own arrows cross less, on a ladder of up to 10 files (`LADDER_SEARCH`: past a dozen it takes minutes, so a folder of many files with no spec keeps its first split).

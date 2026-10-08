@@ -9,9 +9,9 @@ import TestKit
 /// back, which standard input may give), `touch` (a board's: the board it's given back), `fail`
 /// (an error; with `--lines`, one about a script, as `draw`'s are, and with `--at`, one about where
 /// on a line, as a query's are), `rows` (a list), `drew` (what a draw says), `sorts` (a list whose
-/// rows have objects and sentences, as `kinds`'s do), `found` (shapes, as a query finds them), and
-/// `slow` (an answer a second late, the main actor free meanwhile; `--briefly` says to wait for it
-/// 0.3 s, and `--patiently` 3).
+/// rows have objects and sentences, as `kinds`'s do), `found` (shapes, as a query finds them), `file`
+/// (a file, as `new` takes one, back), and `slow` (an answer a second late, the main actor free
+/// meanwhile; `--briefly` says to wait for it 0.3 s, and `--patiently` 3).
 @MainActor
 final class FakeApp {
     let path = temporarySocketPath()
@@ -48,6 +48,9 @@ final class FakeApp {
             CommandSpec(name: "drew", summary: "Say what was drawn.", scope: .app),
             CommandSpec(name: "sorts", summary: "Some sorts of shape.", scope: .app),
             CommandSpec(name: "found", summary: "Say what was found.", scope: .app),
+            CommandSpec(name: "file", summary: "Name a file.", scope: .app, params: [
+                "type": "object", "properties": ["path": ["type": "string", "x-path": true]], "required": ["path"],
+            ], positionals: ["path"]),
             CommandSpec(name: "slow", summary: "Answer late.", scope: .app, params: [
                 "type": "object",
                 "properties": [
@@ -119,7 +122,7 @@ final class FakeApp {
         methods.append(request.method)
         switch request.method {
         case RPC.describeMethod: return .success(try! JSON(encoding: description))
-        case "echo", "recite": return .success(request.params ?? [:])
+        case "echo", "recite", "file": return .success(request.params ?? [:])
         case "touch": return .success(["board": request.params?["board"] ?? .null])
         case "fail" where request.params?["lines"] == true: return .failure(FakeApp.scriptError)
         case "fail" where request.params?["at"] == true: return .failure(FakeApp.wordError)
@@ -237,6 +240,18 @@ final class FakeApp {
         let first = try canvas(["--socket", app.path, "--board", "2", "touch"])
         expectEqual(first.status, 0, first.error)
         expectEqual(try JSON(text: first.output), ["board": "2"], "the command's options may come before its name")
+    },
+    test("a param that's a file (x-path) is sent as the whole path, named from where canvas runs; other text is sent as typed") {
+        let app = try FakeApp()
+        defer { app.stop() }
+        let here = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let relative = try canvas(["--socket", app.path, "file", "plans/../b.canvasboard"])
+        expectEqual(relative.status, 0, relative.error)
+        expectEqual(try JSON(text: relative.output), ["path": .string(here.appendingPathComponent("b.canvasboard").standardizedFileURL.path)])
+        let home = try canvas(["--socket", app.path, "file", "--path=~/b.canvasboard"])
+        expectEqual(try JSON(text: home.output), ["path": .string(NSHomeDirectory() + "/b.canvasboard")])
+        expectEqual(try JSON(text: canvas(["--socket", app.path, "file", "/tmp/b.canvasboard"]).output), ["path": "/tmp/b.canvasboard"])
+        expectEqual(try JSON(text: canvas(["--socket", app.path, "echo", "plans/b"]).output), ["text": "plans/b"])
     },
     test("help lists the app's commands, and a command's help its arguments, with no request run") {
         let app = try FakeApp()
