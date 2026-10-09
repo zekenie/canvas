@@ -1,4 +1,4 @@
 import TestKit
 
 runTests([transformRegistrationTests, transformResolutionTests, transformMenuTests, transformSlashTests, transformRefusalTests, transformSettlingTests,
-          transformBindingTests])
+          transformBindingTests, transformOfferTests, transformVetoTests])

@@ -165,6 +165,91 @@ public struct TransformTarget {
     }
 }
 
+// MARK: Offers and vetoes (what a file, not the registry, decides)
+
+/// One way the shapes of a menu can be turned that the registry doesn't know, because it comes from what's in
+/// the file (a shape someone made): "Employee card". `turn` does it to one shape, in the transaction that
+/// turns them all, as a target's closure does (`transaction.turn(_:into:)` and what else it needs); the
+/// shape keeps its id. `id` is stable and names the offer in the menu; `label` is the words after "Turn
+/// into".
+@MainActor
+public struct TurnOffer {
+    public let id: String
+    public let label: String
+    let turn: @MainActor (ShapeID, inout Transaction) throws -> Void
+
+    public init(id: String, label: String, turn: @escaping @MainActor (ShapeID, inout Transaction) throws -> Void) {
+        self.id = id
+        self.label = label
+        self.turn = turn
+    }
+}
+
+/// The extension point: what the shapes of a context menu can be turned into, decided when the menu opens
+/// (`registrar.turnOffers`). A list, in plugin order. `TransformPlugin` renders what the providers offer: one
+/// offer as an item, "Turn into <label>", several as a "Turn into" submenu, in the order given, in the same
+/// band as a kind's own targets, which stay flat items after them.
+public enum TransformOffers {}
+
+extension TransformOffers: ExtensionPoint {
+    public typealias Contribution = TurnOfferProvider
+    public static var owner: PluginID { .transform }
+
+    public static func summary(of _: TurnOfferProvider, for _: ShapeTarget) -> String { "turn offers → every shape" }
+}
+
+/// What `TransformOffers` stores. Only the sugar below makes one.
+@MainActor
+public struct TurnOfferProvider {
+    let offers: @MainActor ([AnyShapeRecord], CanvasEditor) -> [TurnOffer]
+}
+
+/// What is about to be turned, as a veto sees it.
+public struct TurnRequest {
+    /// The shapes about to turn (each once, on the board shown, not kept aside), in the order given.
+    public let shapes: [ShapeID]
+    /// What they turn into, as the menu says it: a target's label, an offer's.
+    public let label: String
+    /// The kind they turn into, for a target of the registry; nil for an offer.
+    public let kind: ShapeKind?
+    /// The offer's `id`; nil for a target.
+    public let offer: String?
+}
+
+/// A refusal to turn some shapes: which, and what to do about it (open a panel at the reason).
+@MainActor
+public struct TurnVeto {
+    public let shapes: Set<ShapeID>
+    let action: @MainActor () -> Void
+
+    /// `action` runs when the turn is refused, once the shapes have been heard refused. It may change
+    /// the document only through `editor.transact`.
+    public init(shapes: Set<ShapeID>, then action: @escaping @MainActor () -> Void = {}) {
+        self.shapes = shapes
+        self.action = action
+    }
+}
+
+/// The extension point: rules that refuse a turn, whatever it is into (a target of the registry or an offer),
+/// asked before anything changes. A contribution looks at what's about to turn and may refuse some of the
+/// shapes (`registrar.vetoTurns`); every contribution is asked, in plugin order. If any refuses, Transform
+/// turns nothing, makes no step, has the refused shapes heard refused (`editor.refuseChanges`: Locking
+/// shakes them) and runs the refusals' actions in plugin order.
+public enum TransformVetoes {}
+
+extension TransformVetoes: ExtensionPoint {
+    public typealias Contribution = TurnVetoRule
+    public static var owner: PluginID { .transform }
+
+    public static func summary(of _: TurnVetoRule, for _: ShapeTarget) -> String { "turn veto → every shape" }
+}
+
+/// What `TransformVetoes` stores. Only the sugar below makes one.
+@MainActor
+public struct TurnVetoRule {
+    let veto: @MainActor (TurnRequest, CanvasEditor) -> TurnVeto?
+}
+
 /// The band of items a transform brings to a menu: after Mentions' (50), before Cut, Copy and Paste (100),
 /// as a feature's items go.
 public enum TransformMenuGroup {}
@@ -231,6 +316,34 @@ extension PluginRegistrar {
     }
 }
 
+extension PluginRegistrar {
+    /// What the shapes of a menu can be turned into that depends on the file, asked when the menu opens
+    /// (and again by `editor.transforms?.offers(for:)`): the shapes, in the menu's order, all on the board
+    /// shown and none kept aside. Return no offers for a selection it doesn't suit (shapes of two kinds, say).
+    /// One offer is a menu item, several a "Turn into" submenu; choosing one is `turn(_:by:)`: one undo step,
+    /// "Turn into <label>", all or nothing, as for a target. The registry refuses a plugin list without
+    /// `TransformPlugin()`.
+    ///
+    ///     registrar.turnOffers { shapes, editor in
+    ///         shapes.allSatisfy { $0.kind == "note" } ? cards.map { TurnOffer(id: $0.id, label: $0.title) { id, transaction in … } } : []
+    ///     }
+    public mutating func turnOffers(_ offers: @escaping @MainActor (_ shapes: [AnyShapeRecord], _ editor: CanvasEditor) -> [TurnOffer]) {
+        contribute(TurnOfferProvider(offers: offers), to: TransformOffers.self)
+    }
+
+    /// A rule that refuses some turns before any happens, whatever they turn into: given what is about to
+    /// turn, nil to let it, or the shapes it refuses and what to do about it. Transform then turns nothing,
+    /// shakes the shapes and runs the action.
+    ///
+    ///     registrar.vetoTurns { request, editor in
+    ///         let held = request.shapes.filter { hasInstances($0) }
+    ///         return held.isEmpty ? nil : TurnVeto(shapes: Set(held)) { editor.openPanel(at: held[0]) }
+    ///     }
+    public mutating func vetoTurns(_ veto: @escaping @MainActor (_ request: TurnRequest, _ editor: CanvasEditor) -> TurnVeto?) {
+        contribute(TurnVetoRule(veto: veto), to: TransformVetoes.self)
+    }
+}
+
 // MARK: The graph of transforms
 
 extension Registry {
@@ -253,15 +366,34 @@ extension Registry {
 
 // MARK: The plugin
 
-/// Makes the service that says what a shape can turn into, and turns shapes. It adds no item or command of
-/// its own: the kinds that take a channel (Subboards') bring them to the kinds that offer it (Frames'). A
-/// list with either needs it (`ownerNotInstalled` otherwise), and a target's item and command need
-/// `ContextMenusPlugin()` and `SlashCommandsPlugin()` too.
+/// Makes the service that says what a shape can turn into, and turns shapes. It adds no item or command for
+/// the registry's targets: the kinds that take a channel (Subboards') bring them to the kinds that offer it
+/// (Frames'). Its one item for the canvas is "Turn into" for what the file offers (`turnOffers`), made when
+/// the menu opens. A list with either needs it (`ownerNotInstalled` otherwise), and a target's item and
+/// command need `ContextMenusPlugin()` and `SlashCommandsPlugin()` too, as does the plugin.
 public struct TransformPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .transform }
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { TransformState(editor: $0) }
+        registrar.contextMenuForCanvas {
+            MenuItems(in: TransformMenuGroup.self, id: "turn-offers") { subject in
+                let offers = subject.editor.transforms?.offers(for: subject.shapes) ?? []
+                if offers.count == 1, let offer = offers.first {
+                    MenuItem("Turn into \(offer.label)", in: TransformMenuGroup.self, id: "turn-offer:\(offer.id)") { ids, editor in
+                        editor.transforms?.turn(ids, by: offer)
+                    }
+                } else if !offers.isEmpty {
+                    Submenu("Turn into", in: TransformMenuGroup.self, id: "turn-offers-menu") {
+                        for offer in offers {
+                            MenuItem(offer.label, in: TransformMenuGroup.self, id: "turn-offer:\(offer.id)", stepName: "Turn into \(offer.label)") { ids, editor in
+                                editor.transforms?.turn(ids, by: offer)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
