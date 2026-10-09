@@ -14,6 +14,20 @@ enum CorePoints {
         static func uniqueKeys(of c: ToolRegistration, for _: ShapeTarget) -> [AnyHashable] { [ToolKey(id: c.descriptor.id)] }
     }
 
+    /// The menus on tools' segments of the toolbar (`registrar.toolMenu`). One per tool, and the tool
+    /// must be registered.
+    enum ToolMenus: KeyedExtensionPoint {
+        typealias Contribution = ToolMenuRegistration
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of c: ToolMenuRegistration, for _: ShapeTarget) -> [AnyHashable] { [ToolMenuKey(id: c.tool)] }
+        static func check(_ registry: Registry) throws {
+            let tools = Set(registry.tools.map(\.id))
+            for menu in registry.contributions(to: ToolMenus.self).map(\.value) where !tools.contains(menu.tool) {
+                throw RegistryError.invalid(point: "ToolMenus", reason: "no plugin registers tool \(menu.tool), which has a menu")
+            }
+        }
+    }
+
     /// What a kind is called, and its symbol (`ShapeRegistrar.label`). One per kind.
     enum KindLabels: KeyedExtensionPoint {
         typealias Contribution = KindLabel
@@ -110,6 +124,11 @@ struct ToolKey: Hashable, CustomStringConvertible {
     var description: String { "tool \(id)" }
 }
 
+struct ToolMenuKey: Hashable, CustomStringConvertible {
+    let id: ToolID
+    var description: String { "the menu of tool \(id)" }
+}
+
 struct KindLabelKey: Hashable, CustomStringConvertible {
     let target: ShapeTarget
     var description: String { "the label of \(target)" }
@@ -130,13 +149,23 @@ struct ToolRegistration {
     let descriptor: ToolDescriptor
     /// What it places, for a tool that places a shape (`ShapeRegistrar.tool(placing:)`).
     var placement: Placement?
+    /// Whether it puts shapes on the board, with or without a placement of its own: such a tool is
+    /// dimmed on a board that takes none.
+    var placesShapes: Bool
     let make: @MainActor (CanvasEditor) -> any Tool
 
-    init(descriptor: ToolDescriptor, placement: Placement? = nil, make: @escaping @MainActor (CanvasEditor) -> any Tool) {
+    init(descriptor: ToolDescriptor, placement: Placement? = nil, placesShapes: Bool = false,
+         make: @escaping @MainActor (CanvasEditor) -> any Tool) {
         self.descriptor = descriptor
         self.placement = placement
+        self.placesShapes = placesShapes || placement != nil
         self.make = make
     }
+}
+
+struct ToolMenuRegistration {
+    let tool: ToolID
+    let entries: @MainActor (CanvasEditor) -> [ToolMenuEntry]
 }
 
 struct ServiceRegistration {
