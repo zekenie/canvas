@@ -111,6 +111,9 @@ let package = Package(
         .target(name: "Transform", dependencies: ["Canvas", "ContextMenus", "SlashCommands"]), // layer: concern
 
         .target(name: "Automation", dependencies: ["Canvas", "CanvasRPC", "DrawScript", "Geometry", "Queries", "QueryLanguage", "Topology"]), // layer: language
+        // Placing: where shapes land beside, in or anywhere on a board, placed as `canvas draw` places one (DrawScript's solver); Moving's
+        // solver, moved out so any plugin that puts shapes down uses it.
+        .target(name: "Placing", dependencies: ["Canvas", "DrawScript", "Geometry"]), // layer: surface
         .target(name: "Queries", dependencies: ["Canvas", "DrawScript", "QueryLanguage", "Topology"]), // layer: surface
         .target(name: "QueryTranslation", dependencies: ["Canvas", "LanguageModels", "Queries", "QueryLanguage"]), // layer: surface
         .target(name: "QueryCommands", dependencies: ["Automation", "Canvas", "CanvasRPC", "LanguageModels", "Queries", "QueryLanguage", "QueryTranslation"]), // layer: language
@@ -130,7 +133,7 @@ let package = Package(
         // Moving (`/move-to`, `/move-near`): a feature no kind opts into and nothing imports, as Jump To and Reordering are: two slash
         // commands that move a shape into a frame, onto a subboard's board or beside a shape, placed as `canvas draw` places one (DrawScript),
         // and the table of contents' drops that move shapes into a frame, onto a subboard's board or out of frames (`ContentsMoves`).
-        .target(name: "Moving", dependencies: ["Canvas", "DrawScript", "Geometry", "SlashCommands", "TableOfContents"]), // layer: vertical
+        .target(name: "Moving", dependencies: ["Canvas", "DrawScript", "Placing", "SlashCommands", "TableOfContents"]), // layer: vertical
         // Neighbors: a feature no kind opts into and nothing imports, as Jump To and Moving are: hovering a shape, on the canvas or by its row in
         // the table of contents (Selection's `hovered`, and `hoveredElsewhere` for a row of another board), outlines every shape connected to it in a
         // color for each way, through the core's tinted outlines. What counts as connected is a query, which Composition writes and Queries answers;
@@ -181,6 +184,7 @@ let package = Package(
         .executableTarget(name: "FramesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "ContextMenus", "DetailPanel", "Frames", "Geometry", "Keyboard", "Mentions", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Transform"], path: "Tests/FramesTests"), // layer: test
         .executableTarget(name: "JumpToTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasTesting", "CanvasUI", "ContextMenus", "DetailPanel", "Geometry", "JumpTo", "Keyboard", "Selection", "SlashCommands", "TestKit", "TextEditing", "Titles", "Topology"], path: "Tests/JumpToTests"), // layer: test
         .executableTarget(name: "ReferencesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Mentions", "Publishing", "Queries", "QueryTranslation", "References", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Validation"], path: "Tests/ReferencesTests"), // layer: test
+        .executableTarget(name: "PlacingTests", dependencies: ["Canvas", "CanvasTesting", "Placing", "TestKit"], path: "Tests/PlacingTests"), // layer: test
         .executableTarget(name: "MovingTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Moving", "Selection", "SlashCommands", "TableOfContents", "TestKit"], path: "Tests/MovingTests"), // layer: test
         .executableTarget(name: "NeighborsTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Neighbors", "Queries", "Selection", "TestKit", "Topology"], path: "Tests/NeighborsTests"), // layer: test
         .executableTarget(name: "SnappingTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "Snapping", "TestKit"], path: "Tests/SnappingTests"), // layer: test

@@ -1,5 +1,6 @@
 import Canvas
 import CoreGraphics
+import Placing
 
 /// One shape a command moves: on the board shown, with a box. Each command asks its rule again before it
 /// moves anything (what it was given may have changed since the line was typed): a target it no longer

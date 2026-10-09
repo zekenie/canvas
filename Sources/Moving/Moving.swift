@@ -46,10 +46,6 @@ public struct MovingPlugin: CanvasPlugin {
 enum MovingStyle {
     /// The undo step either command makes: a drag's name, so Edit › Undo Move takes it back.
     static let stepName = "Move"
-    /// The sides `/move-near` tries, in order: of the sides that land as near the shape, the first wins.
-    static let sides: [Direction] = [.right, .below, .left, .above]
-    /// The corners `/move-to` tries in a frame, in reading order: the first with room wins.
-    static let corners: [Part] = [.topLeft, .topRight, .bottomLeft, .bottomRight]
 }
 
 /// Whether a kind's shapes have a box (`BoxShapeProps`): the kinds a drag moves, which the commands go on.
