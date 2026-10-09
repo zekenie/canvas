@@ -344,7 +344,7 @@ private struct Resolver {
 
     /// The words people write in brackets for what a query says otherwise: `[kind=chore]` for the
     /// kind `chore`, `[id=…]` for `#…`, `[name=…]` for the names point's attribute, `[board=…]` for
-    /// what's on a board, and `[class=…]`, planned. Nil for any other. A hint made from the value is
+    /// what's on a board, and `[class=…]`, refused toward the app's word for a type's shapes. Nil for any other. A hint made from the value is
     /// only for `=`: `[board!=root]` is every shape but those on top, so the value's own form would
     /// ask the opposite.
     func peopleWord(_ test: AttributeTest, in compound: Compound) -> QueryError? {
