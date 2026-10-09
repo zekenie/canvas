@@ -27,7 +27,6 @@ import QueryLexicon
 import QueryTranslation
 import References
 import Reordering
-import Schemas
 import Selection
 import SlashCommands
 import Snapping
@@ -38,6 +37,7 @@ import TableOfContents
 import Titles
 import Topology
 import Transform
+import Types
 import Validation
 
 /// The static composition point: which plugins ship, in which order (the toolbar's order, and the
@@ -61,8 +61,8 @@ public enum ShippedPlugins {
             // commit before the services that read it (the table of contents', Mentions').
             TopologyPlugin(),
             // The kinds. Frames beside subboards, the two ways of grouping shapes (a region of this
-            // board, a board of its own), after notes: the toolbar's Note, Subboard, Frame, Schema, Reference.
-            ArrowsPlugin(), StickyNotesPlugin(), SubboardsPlugin(), FramesPlugin(), SchemasPlugin(), ReferencesPlugin(),
+            // board, a board of its own), after notes: the toolbar's Note, Subboard, Frame, Reference.
+            ArrowsPlugin(), StickyNotesPlugin(), SubboardsPlugin(), FramesPlugin(), ReferencesPlugin(),
             // After Validation: what's shown on shapes draws over its outline.
             ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
             // Slash commands: the list at a `/` in the text views Mentions hosts it in. Titles offers `/title`, Locking `/lock`.
@@ -75,7 +75,7 @@ public enum ShippedPlugins {
             // hit's ring draws over a title's pill, and Topology, whose walk of the file orders the hits.
             FindPlugin(),
             // What Find searches, from the plugins that draw it, each after Find and its owner: titles,
-            // mention text (a note's, a schema card's description), arrows' labels.
+            // mention text (a note's), arrows' labels.
             TitleFindPlugin(), MentionFindPlugin(), ArrowFindPlugin(),
             // Jump To (⌘K): goes to a shape by its title and where it is. After Titles, whose titles it
             // lists, and Boards, whose way of following a shape it takes. Its rows' symbols are tinted as
@@ -90,6 +90,10 @@ public enum ShippedPlugins {
             LockingPlugin(),
             // Public shapes, the ones another shape may stand for; its chip sits beside the lock's.
             PublishingPlugin(),
+            // Types: a note that holds a JSON Schema, its words and its schema kept in step by the model.
+            // After Publishing (`/type` makes a type public), Mentions, Titles and Validation, and after
+            // every plugin whose every-shape commands a note lists before `/type`; its rules and its panel.
+            TypesPlugin(), TypeValidationPlugin(), TypeDetailsPlugin(),
             // What a drag moves snaps to the shapes in view: their edges, their middles and the spaces
             // between them.
             SnappingPlugin(),
@@ -97,7 +101,7 @@ public enum ShippedPlugins {
             // above its adornments (the lock chip among them), and are found before them.
             PortsPlugin(), ArrowPortsPlugin(),
             LanguageModelsPlugin(model: model),
-            // What words say of what's lower level, asked of the model: a schema card's highlights.
+            // What words say of what's lower level, asked of the model: a type's highlights.
             ProseMapsPlugin(),
             // The command line's commands, and what `canvas draw` takes from the plugins that own a
             // concern: titles for names, ports' connections for edges, validity for its warnings, and

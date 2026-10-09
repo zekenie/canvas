@@ -14,7 +14,6 @@ import Geometry
 import LanguageModels
 import Locking
 import Mentions
-import Schemas
 import Selection
 import Snapping
 import StickyNotes
@@ -23,6 +22,7 @@ import TableOfContents
 import TestKit
 import Titles
 import Topology
+import Types
 import Validation
 
 // The persistence plan's budgets, for boards of generated shapes: saving and opening (Mentions'
@@ -41,7 +41,7 @@ import Validation
 // the board entered; a keystroke in the `@` picker (on the line of a command that takes few shapes
 // too) and a rename of a shape mentioned 100 times (the rows and validation after it too); the
 // panel of a subboard mentioned 100 times, read after a drag of another note and after renaming
-// one of its mentioners; completing a schema card's JSON as long
+// one of its mentioners; completing a type's JSON as long
 // as the model writes it; undo and redo, a drag's in a frame and a tenth of the board's moved or
 // deleted too, and deleting a subboard whose boards hold as many shapes, and its undo and redo; ten
 // subboards in view, each holding as many, their previews filling in; and a `canvas draw` whose
@@ -94,7 +94,7 @@ enum Budget {
     static let neighbors100 = 1.0
     /// A keystroke in the `@` picker, the `@` that opens it (recent picks and nearby shapes) included.
     static let pickerKeystroke = 2.0
-    /// Completing a schema card's JSON at the caret, in a schema as long as the model writes: a
+    /// Completing a type's JSON at the caret, in a schema as long as the model writes: a
     /// keystroke, as in the `@` picker.
     static let schemaCompletion = pickerKeystroke
     /// What renaming a shape mentioned 100 times adds to the commit, over renaming one mentioned
@@ -155,13 +155,13 @@ enum Budget {
     static let offscreenBoard = 1.0
 }
 
-/// Notes, subboards and schema cards in a grid, with an arrow from every fourth note to
+/// Notes, type notes and subboards in a grid, with an arrow from every fourth note to
 /// the note after it. Every other note has a title, so frames draw pills and boards save and open
 /// added values; every subboard has a title, which its card draws (a subboard shows no pill), and an empty board, which
 /// the file doesn't keep; every tenth shape is a locked note that mentions nothing, so frames draw lock chips (they're at the back
-/// of the board's order, so its first note is the first of the ones that mention); every schema card
-/// has a schema of its own, so frames read no card's schema again however many different ones there
-/// are; and three notes in ten mention two shapes, so frames draw pills: a subboard (the first 100
+/// of the board's order, so its first note is the first of the ones that mention); every tenth is a
+/// type (a titled note that holds a schema), each its schema of its own, so frames read no type's
+/// schema again however many different ones there are; and three notes in ten mention two shapes, so frames draw pills: a subboard (the first 100
 /// of them the first subboard, `mentionedSubboard`, the rest the subboard before them) and a shape
 /// that isn't on the board, which shows as missing.
 @MainActor func generatedBoard(shapes count: Int) -> CanvasDocument {
@@ -186,10 +186,11 @@ enum Budget {
             locked[LockedProperty.self] = true
             lockedNotes.append(locked)
         case 9:
-            var schema = SchemaCard(frame: CGRect(origin: origin, size: SchemaCard.defaultSize))
-            schema.schema.text = #"{"title": "Record \#(i)", "type": "object", "properties": {"name": {"type": "string"}, "count\#(i)": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["name"]}"#
-            schema.setPrompt(SchemaPromptText(plain: "Record \(i): its name, a count, and its tags"))
-            shapes.append(AnyShapeRecord(ShapeRecord(schema)))
+            var type = ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize),
+                                              text: MentionText(plain: "Note \(i): a record, its name, a count, and its tags")))
+            type[TitleProperty.self] = "Record \(i)"
+            type[TypeSchemaProperty.self] = SchemaText(#"{"type": "object", "properties": {"name": {"type": "string"}, "count\#(i)": {"type": "integer"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["name"]}"#)
+            shapes.append(AnyShapeRecord(type))
         default:
             var text = MentionText(plain: "Note \(i): something to do")
             if notes % 10 < 3, let firstSubboard, let lastSubboard {
@@ -618,7 +619,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         for size in sizes {
             // Each run a board of its own: new ids, so nothing the canvas keeps by what a shape says
-            // or by its id (Mentions' memo of mention text, the schema cards' readings) is another
+            // or by its id (Mentions' memo of mention text, types' readings) is another
             // run's. Opened and drawn at 100% at its top left (validation's first read done), then
             // zoomed out to fit it, where shapes are skeletons with no adornments; then zoomed in to
             // 35% on its middle, where shapes are drawn in full again and every text in view is laid
@@ -844,7 +845,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 h.move(to: dot + CGPoint(x: CGFloat(step % 7) - 3, y: 0))
             }
             // Pressed there and dragged round a circle over the rows in view: notes, which take the
-            // arrow, and subboards and schema cards, which don't.
+            // arrow, and subboards, which don't.
             let around = { (turn: Int) in
                 CGPoint(x: 700 + 300 * cos(CGFloat(turn) * .pi / 21), y: 450 + 300 * sin(CGFloat(turn) * .pi / 21))
             }
@@ -1027,7 +1028,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             }
         }
     },
-    test("completing a schema card's JSON near the end of a schema as long as the model writes costs a keystroke") {
+    test("completing a type's JSON near the end of a schema as long as the model writes costs a keystroke") {
         // Fields until the text is as long as the model may write; the caret near its end.
         var fields = #"{"title": "Everything", "type": "object", "properties": {"#
         var names: [String] = []
@@ -1047,13 +1048,13 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
         for (what, text, fromEnd, offered) in cases {
             let caret = (text as NSString).length + fromEnd
             var completions: JSONCompletions?
-            let time = median(runs: 21) { completions = SchemaCompletions.completions(in: text, at: caret) }
+            let time = median(runs: 21) { completions = TypeCompletions.completions(in: text, at: caret) }
             expect(completions?.items.contains { $0.label == offered } == true, what)
             times.append(String(format: "%@ %6.3f ms", what, time))
             if holdsToBudgets { expect(time < Budget.schemaCompletion, "completing \(what) in \(text.utf8.count) bytes took \(time) ms") }
         }
         let lengths = cases.map(\.text.utf8.count)
-        report(String(format: "a schema card's JSON of %d to %d bytes, %d fields: completing %@ (budget %.0f)",
+        report(String(format: "a type's JSON of %d to %d bytes, %d fields: completing %@ (budget %.0f)",
                       lengths.min() ?? 0, lengths.max() ?? 0, names.count + 1, times.joined(separator: ", "), Budget.schemaCompletion))
     },
     test("renaming a shape mentioned 100 times costs its commit, and reading the rows and validation after it, little more than renaming one mentioned by none") {
@@ -1558,16 +1559,17 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             expect(cards.paths < Budget.frame, "a frame of ten cards' previews as paths took \(cards.paths) ms")
         }
     },
-    test("a shape holding all the view, zoomed in to 800% on a 2× screen, costs a fill, not its shadow's blur: a subboard, a note and a schema card, each on its middle; an edge or a corner in view reported") {
+    test("a shape holding all the view, zoomed in to 800% on a 2× screen, costs a fill, not its shadow's blur: a subboard, a note and a type note, each on its middle; an edge or a corner in view reported") {
         let viewport = CGSize(width: 1200, height: 800)
         let context = try bitmapContext(viewport, scale: 2)
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let note = StickyNote(frame: CGRect(origin: .zero, size: StickyNote.defaultSize), text: MentionText(plain: "Note: something to do"))
-        var schema = SchemaCard(frame: CGRect(x: 0, y: 0, width: 320, height: 240))
-        // A card as tall as its description: six of these lines, some 140 world units at 320 wide.
-        schema.setPrompt(SchemaPromptText(plain: Array(repeating: "Record: its name, a count, and its tags.", count: 6).joined(separator: "\n")))
+        // A type's six lines of words, some 140 world units at 320 wide, its highlights asked for.
+        var schema = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+                                            text: MentionText(plain: Array(repeating: "Record: its name, a count, and its tags.", count: 6).joined(separator: "\n"))))
+        schema[TypeSchemaProperty.self] = SchemaText(#"{"type": "object", "properties": {"name": {"type": "string"}}}"#)
         let shapes = [("a subboard 2400 × 1600", AnyShapeRecord(ShapeRecord(Subboard(frame: CGRect(x: 0, y: 0, width: 2400, height: 1600))))),
-                      ("a note", AnyShapeRecord(ShapeRecord(note))), ("a schema card of six lines", AnyShapeRecord(ShapeRecord(schema)))]
+                      ("a note", AnyShapeRecord(ShapeRecord(note))), ("a type note of six lines", AnyShapeRecord(schema))]
         for (name, shape) in shapes {
             let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: [shape]), scheduler: $0) }
             h.editor.viewportDidResize(to: viewport)

@@ -262,7 +262,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         let examples = try skillExamples(in: "\(skillFolder)/reference/query.md")
         /// How `matches:` writes each of the story's shapes.
         let labels = ["P": #""Payments""#, "A": #""API gateway""#, "U": #""Auth""#, "N1": "(sticky-note)", "W": #""Warehouse""#,
-                      "S": #""Order""#, "V": "(schema-card)", "R1": "(arrow)", "R2": "(arrow)", "L": #""Ledger""#, "C": #""Checkout""#,
+                      "S": #""Order""#, "V": "(sticky-note)", "R1": "(arrow)", "R2": "(arrow)", "L": #""Ledger""#, "C": #""Checkout""#,
                       "F": #""Refunds""#, "N2": "(sticky-note)", "Y": #""Refund policy""#]
         for row in StoryQuery.table {
             let said = "row \(row.number), \(row.query)"

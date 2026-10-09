@@ -8,12 +8,12 @@ import Connections
 import CoreGraphics
 import LanguageModels
 import Mentions
-import Schemas
 import Selection
 import StickyNotes
 import TableOfContents
 import TestKit
 import Titles
+import Types
 
 /// The welcome board, its clipboard on a pasteboard of the test's own.
 @MainActor func welcomeBoard(_ pasteboard: NSPasteboard) -> EditorHarness {
@@ -140,38 +140,6 @@ import Titles
         expectEqual(Set(board.editor.shapes(since: before).compactMap(\.copiedFrom)), Set(notes.prefix(2)))
         expect(list.tryToPerform(#selector(BoardWindowController.cut(_:)), with: nil))
         expectEqual(board.editor.document.shapes.filter { before[$0.id] == nil }, [], "the pasted copies, selected, are cut")
-    },
-    test("a schema card copied with the card it refers to refers to that copy, in its schema and its description; copied alone, to the original") {
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        let h = welcomeBoard(pasteboard)
-        let address = AnyShapeRecord(ShapeRecord(SchemaCard(frame: CGRect(x: 400, y: 0, width: 240, height: 52),
-                                                            schema: #"{"title": "Address", "type": "object", "properties": {"city": {"type": "string"}}}"#)))
-        let uri = SchemaReferences.uri(of: address.id)
-        var props = SchemaCard(frame: CGRect(x: 0, y: 0, width: 240, height: 52),
-                               schema: SchemaText("{\"title\": \"House\", \"type\": \"object\", \"properties\": {\"address\": {\"$ref\": \"\(uri)\"}}}"))
-        props.setPrompt(SchemaPromptText([.text("A house at its "), .mention(address.id, label: "Address")]))
-        let house = AnyShapeRecord(ShapeRecord(props))
-        h.editor.transact {
-            $0.insert(address)
-            $0.insert(house)
-        }
-        h.editor.selectedShapeIDs = [address.id, house.id]
-        h.editor.perform(.copy)
-        let before = h.editor.document
-        h.editor.perform(.paste)
-        let byOriginal = Dictionary(uniqueKeysWithValues: h.editor.shapes(since: before).map { ($0.copiedFrom!, $0.id) })
-        let copyOfAddress = try require(byOriginal[address.id])
-        let copied = try require(h.editor.document[try require(byOriginal[house.id])]?.typed(as: SchemaCard.self)?.props)
-        expectEqual(SchemaReferences.refs(in: copied.schema.text).map(\.card), [copyOfAddress])
-        expectEqual(copied.prompt.mentioned, [copyOfAddress])
-        h.editor.selectedShapeIDs = [house.id]
-        h.editor.perform(.copy)
-        let again = h.editor.document
-        h.editor.perform(.paste)
-        let alone = try require(h.editor.shapes(since: again).first?.typed(as: SchemaCard.self)?.props)
-        expectEqual(SchemaReferences.refs(in: alone.schema.text).map(\.card), [address.id])
-        expectEqual(alone.prompt.mentioned, [address.id])
     },
     test("the menus send cut:, copy: and paste: with ⌘X, ⌘C and ⌘V") {
         let edit = try require(BoardMenus.make(appName: "Infinite Canvas").main.item(withTitle: "Edit")?.submenu)

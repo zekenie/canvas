@@ -39,7 +39,7 @@ public enum Style {
 
     // Skeletons: shapes as they show zoomed out (`CustomSkeleton`).
     /// Below this zoom a frame draws shapes as skeletons (`CanvasEditor.skeletonZoom`): a note's
-    /// 16-point text, and a schema card's description, set as a note's, are under 6 points on
+    /// 16-point text is under 6 points on
     /// screen, which reads as texture, not words. No hysteresis: the level is the zoom's.
     static let skeletonZoom: CGFloat = 0.35
     /// The default skeleton's fill (and an open one's line): a muted gray on the light canvas, and

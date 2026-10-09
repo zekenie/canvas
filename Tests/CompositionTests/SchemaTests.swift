@@ -121,6 +121,12 @@ private let stickyNoteSchema = #"""
       "type" : "boolean",
       "x-canvas-owner" : "publishing"
     },
+    "schema" : {
+      "contentMediaType" : "application/schema+json",
+      "description" : "A JSON Schema, as text, which makes the shape a type named by its title: its properties in the order written, kept as typed while it isn't JSON. A \"$ref\" to \"urn:uuid:\" and another type's id refers to that type.",
+      "type" : "string",
+      "x-canvas-owner" : "types"
+    },
     "text" : {
       "$ref" : "#/$defs/mentions.text",
       "default" : "",

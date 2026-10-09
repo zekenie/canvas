@@ -1,6 +1,6 @@
-# Schema card prompts: quick evals
+# Type prompts: quick evals
 
-Whether the two prompts that keep a schema card's description and its JSON Schema in step, and the
+Whether the two prompts that keep a type's words (a note's text) and its JSON Schema in step, and the
 one that links the description's words to the schema's parts (Highlights, below), basically do the
 job. Not a framework: a script, a CSV of cases, a CSV of results, read by eye.
 
@@ -9,9 +9,9 @@ job. Not a framework: a script, a CSV of cases, a CSV of results, read by eye.
 - `cases.csv` holds the cases (74: 47 prompt → schema, 27 schema → prompt), written by
   `gen_cases.py`, where they're readable. Edit `gen_cases.py`, then run it. Four chains (a hand edit
   surviving a prompt edit, a round trip, two both-ways edits) are in `evals.py` itself.
-- Ten of the cases (`s_ref_…`, `p_ref_…`) name other schema cards, as the app shows them to the
+- Ten of the cases (`s_ref_…`, `p_ref_…`) name other types, as the app shows them to the
   model: each `@` and a word (`@Address`), listed in `<schemas>` (the case's `schemas`), a mention
-  that word in the prompt and a `$ref` to the card that word in the schema. For those, and only
+  that word in the prompt and a `$ref` to the type that word in the schema. For those, and only
   those, the system prompt has what it says of other schemas after it (`toSchemaReferences`,
   `toPromptReferences`), as `SchemaPrompts.system` sends it; every `$ref` to an `@` word must be
   to one `<schemas>` lists, as the app reads them back. Added to every request, the same words
@@ -19,11 +19,11 @@ job. Not a framework: a script, a CSV of cases, a CSV of results, read by eye.
   trip's `required`), which is why they go only where there are other schemas.
 
 Nothing the app sends is copied here: `evals.py` reads the system prompts, each direction's
-`max_tokens`, what each says of other schemas, the model and its effort out of `Sources/Schemas/SchemaPrompts.swift`, and `gen_cases.py` a new card's schema out of
-`Sources/Schemas/SchemaCard.swift`, so the evals send exactly what the app does (a schema written
-from nothing is sent with the new card's schema as `previous_schema`, as `SchemaSync` sends it). Its
+`max_tokens`, what each says of other schemas, the model and its effort out of `Sources/Types/SchemaPrompts.swift`, and `gen_cases.py` a new type's schema out of
+`Sources/Types/TypeSchema.swift`, so the evals send exactly what the app does (a schema written
+from nothing is sent with the new type's schema as `previous_schema`, as `TypeSync` sends it). Its
 user message and parse rule copy `SchemaPrompts.toSchema`, `toPrompt` and `parse`; when to call and
-what's written is `SchemaSync`.
+what's written is `TypeSync`.
 
 ## Running it
 
@@ -55,12 +55,12 @@ The third request links a description's words to the parts of its schema they sa
 are a prose map (Sources/ProseMaps, asked for by `ProseMapService`), so the request is every
 target's frame (`ProseMapPrompt.frame`) with the schema's guide in it (`SchemaPrompts.highlightsGuide`,
 `SchemaTarget`), and `highlightsReferences` after it for a description that names other schema
-cards. `highlight_evals.py` puts it together as the app does, the frame, the model (Haiku 5.5),
+types. `highlight_evals.py` puts it together as the app does, the frame, the model (Haiku 5.5),
 effort and `max_tokens` read out of `ProseMapPrompt.swift` and the guide out of
 `SchemaPrompts.swift`, sends each of `highlight_cases.py`'s cases (28: the owner's Jira ticket,
 terse lists, sentences, nested objects, a shared definition, either-ors and conditions, other
 languages, typos, words the schema doesn't say, injection, twenty fields, and two that name other
-schema cards, each `@` word linked to what points to it), and scores the answer as the app reads it:
+types, each `@` word linked to what points to it), and scores the answer as the app reads it:
 each link's words found in the description in order, its address (a JSON Pointer) followed in the
 schema. A link is right (or right, wider or narrower), misattributed (its words are a listed link's,
 its pointer another's: the popover would show the wrong part), an extra (words no case lists,
@@ -79,7 +79,7 @@ Sonnet 5.5 at 753 of 760 links with the frame and the guide, none misattributed 
 1.8 s an answer and 1,500 tokens in, 155 out; the prompt it replaced at 749 of 760, none
 misattributed. Both miss the same few ("who has it" for an employee's id every time; "each cell" of a
 list of lists and "must have" for `required` now and then), and both sometimes link "shipped to" and
-"billed to" to the properties that point at another card as well as its `@` word (an extra). A rule
+"billed to" to the properties that point at another type as well as its `@` word (an extra). A rule
 telling the model to leave out words it can't place was tried in the frame and taken out: it found
 none misattributed either way and missed "each cell" more often. Before (26 cases, twice each),
 Sonnet 5.5 was at 356 of 358 and Haiku 4.5 at 91%, some linked to the wrong field, which is why the
@@ -99,5 +99,5 @@ some a tenth of Sonnet's cost an answer.
 ## The live smoke test
 
 `SCHEMA_LIVE=1 build/debug/SchemasTests/SchemasTests` (after `./test.sh` has built it) runs three
-cases, and a card that mentions another both ways, through the app's own path, `AnthropicModel` and `SchemaSync`, and prints what came back.
+cases, and a type that mentions another both ways, through the app's own path, `AnthropicModel` and `TypeSync`, and prints what came back.
 `./test.sh` never sets it.

@@ -7,14 +7,14 @@ import Connections
 import Find
 import LanguageModels
 import Mentions
-import Schemas
 import Selection
 import StickyNotes
 import Subboards
 import TestKit
+import Types
 
 // Find in the shipped app: Edit › Find's items, the inspector it shows, and what it finds in the
-// shipped kinds (a note's text, a schema card's description, an arrow's label, a title), on every
+// shipped kinds (a note's text, a type note's too, an arrow's label, a title), on every
 // board under the one shown.
 
 extension NestedWindow {
@@ -160,11 +160,11 @@ extension NestedWindow {
         w.window.settle()
         expect(!w.find.isActive, "showing it again doesn't reopen Find")
     },
-    test("a note's text, a schema card's description, an arrow's label and a title are found, and each highlighted where it's drawn") {
+    test("a note's text, a type note's, an arrow's label and a title are found, and each highlighted where it's drawn") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         h.editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
         let note = h.add(StickyNote(frame: CGRect(x: 40, y: 80, width: 200, height: 200), text: "Feed the walrus"))
-        let card = h.add(SchemaCard(frame: CGRect(x: 300, y: 80, width: 240, height: 120), prompt: "Walrus facts"))
+        let card = h.editor.addTypeNote(TypeSchemaProperty.starter, text: "Walrus facts", frame: CGRect(x: 300, y: 80, width: 200, height: 200))
         let arrow = h.add(Arrow(start: .free(CGPoint(x: 600, y: 200)), end: .free(CGPoint(x: 1000, y: 200)), text: "to the walrus"))
         let board = h.editor.add(Subboard(frame: CGRect(x: 40, y: 420, width: 240, height: 160)), title: "Walrus pen")
         let find = try require(h.editor.find)
@@ -182,7 +182,7 @@ extension NestedWindow {
         for (id, rect) in rects {
             // A ring is outside its pill; a mark or a wash over its text.
             let spot = id == board ? CGPoint(x: rect.midX, y: rect.minY - 2) : CGPoint(x: rect.minX + 1, y: rect.minY + 1)
-            expect(pixel(lit, at: spot) != pixel(plain, at: spot), "\(id == note ? "note" : id == card ? "card" : id == arrow ? "arrow" : "title"): highlighted")
+            expect(pixel(lit, at: spot) != pixel(plain, at: spot), "\(id == note ? "note" : id == card ? "type note" : id == arrow ? "arrow" : "title"): highlighted")
         }
     },
     test("Find's list is no table: the inspector's tables stay the panel's own") {
@@ -197,11 +197,11 @@ extension NestedWindow {
         w.window.settle()
         expectEqual(w.tables.count, 0)
     },
-    test("a hit reads on a note's yellow and a card's white, light and dark: an orange") {
+    test("a hit reads on a note's yellow, a type note's too, light and dark: an orange") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         h.editor.viewportDidResize(to: CGSize(width: 800, height: 400))
         let note = h.add(StickyNote(frame: CGRect(x: 40, y: 80, width: 200, height: 200), text: "walrus"))
-        let card = h.add(SchemaCard(frame: CGRect(x: 300, y: 80, width: 240, height: 120), prompt: "walrus"))
+        let card = h.editor.addTypeNote(TypeSchemaProperty.starter, text: "walrus", frame: CGRect(x: 300, y: 80, width: 200, height: 200))
         let find = try require(h.editor.find)
         find.open()
         find.query = "walrus"
@@ -219,7 +219,7 @@ extension NestedWindow {
                 let rect = try require(find.rects(of: result.first, in: id).first)
                 let spot = CGPoint(x: rect.minX + 1, y: rect.minY + 1)
                 let (on, off) = (pixel(lit, at: spot), pixel(plain, at: spot))
-                let name = "\(id == note ? "note" : "card") \(dark ? "dark" : "light")\(current ? ", current" : ""): \(off) → \(on)"
+                let name = "\(id == note ? "note" : "type note") \(dark ? "dark" : "light")\(current ? ", current" : ""): \(off) → \(on)"
                 expect(zip(on, off).prefix(3).map { abs($0 - $1) }.reduce(0, +) >= 90, "\(name): stands out")
                 expect(on[0] > on[1] && on[1] > on[2] && on[0] - on[2] >= 120, "\(name): orange")
             }

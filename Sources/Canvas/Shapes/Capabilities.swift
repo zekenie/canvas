@@ -142,7 +142,7 @@ public struct ShapeTranslation<Props: ShapeProps> {
 }
 
 /// Props that hold something following from the rest, which the kind's own setters keep in step
-/// (a schema card's height, which `setPrompt` fits to its description). A shape made from properties
+/// (a note's height, which its setters fit to its text). A shape made from properties
 /// written somewhere else, `Registry.shape(_:properties:)`, or given some of its own that way,
 /// `shape(_:setting:)` (the command line's `draw`), goes through `derive` before anything else is
 /// done with it, so it's in step as the setters would have left it, and so does one handed to

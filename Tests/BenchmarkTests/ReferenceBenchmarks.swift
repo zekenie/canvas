@@ -9,12 +9,12 @@ import Mentions
 import Publishing
 import Queries
 import References
-import Schemas
 import StickyNotes
 import Subboards
 import TestKit
 import Titles
 import Topology
+import Types
 
 // Pills in view: a board of a thousand of them, in a view at 40% (just over where shapes become
 // skeletons), half standing for notes on the board, half for notes on another board of the file, a
@@ -30,7 +30,7 @@ extension Budget {
 
 extension Budget {
     /// Twenty dynamic references answered after a commit, by title and by kind, on a board whose
-    /// schema cards' names are derived (asked of the main actor in slices), every card and note public:
+    /// types are titled notes, every note public:
     /// the main actor's time in all, from the wait for quiet firing to the answers landing: the batch's
     /// (reading and resolving the twenty, taking up the file once, the slices that read every name once,
     /// `referenceBatchMain`) and the landing's (one provide, the pills, rows and panels told). The
@@ -94,11 +94,11 @@ extension Budget {
             let document = generatedBoard(shapes: size)
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             h.editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
-            h.editor.makePublic(document.shapes.filter { $0.kind == SchemaCard.kind || $0.kind == StickyNote.kind }.map(\.id))
-            // As the batch benchmark asks: ten cards by title, five by kind and title, a note by its title, four by kind and a test.
+            h.editor.makePublic(document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id))
+            // As the batch benchmark asks: ten types by title, five by kind and title, a note by its title, four by kind and a test.
             let records = (0..<10).map { "Record \(9 + 10 * $0)" }
-            var texts = records.map { "\"\($0)\"" } + records.prefix(5).map { "schema-card\"\($0)\"" } + ["\"\(middleTitle(size))\""]
-            texts += ["schema-card", "subboard[title]", "sticky-note:not([title])", #"schema-card[title^="Record"]"#]
+            var texts = records.map { "\"\($0)\"" } + records.prefix(5).map { "sticky-note\"\($0)\"" } + ["\"\(middleTitle(size))\""]
+            texts += ["sticky-note[schema]", "subboard[title]", "sticky-note:not([title])", #"sticky-note[schema][title^="Record"]"#]
             var pills: [ShapeID] = []
             for (index, text) in texts.enumerated() {
                 var props = Reference(frame: CGRect(x: CGFloat(index) * 130, y: -200, width: 120, height: 32), all: index.isMultiple(of: 2))

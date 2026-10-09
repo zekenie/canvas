@@ -656,7 +656,7 @@ struct Drawing {
         if !settings.isEmpty || item.existing == nil { built = try record(built, setting: settings, item, vocabulary) }
         items[index].record = built
         try references(of: built, item)
-        // A size the kind works out from what was set (a note's or a schema card's height, from its text) is
+        // A size the kind works out from what was set (a note's height, from its text) is
         // the one it's placed at, unless the statement says one; with a width alone, the height it works
         // out at that width (any other kind's height as it was).
         if let widthAlone, let height = built.box?.height {
@@ -669,7 +669,7 @@ struct Drawing {
             var sized = items[index].record
             sized.box = CGRect(origin: box.origin, size: items[index].size)
             if vocabulary.namingProperty == nil {
-                // A title only worked out (a schema card's, from its schema) is renamed by changing
+                // A title only worked out (`title { … }`) is renamed by changing
                 // what it's worked out from: said as a rename, and held to what a rename is.
                 if let now = try renamed(sized, title, item) {
                     try claim(now, for: existing, statement, subject: subject)
@@ -882,7 +882,7 @@ struct Drawing {
         }
     }
 
-    /// The title a restated shape of a kind whose titles are only worked out (a schema card's, from
+    /// The title a restated shape of a kind whose titles are only worked out (`title { … }`, from
     /// its schema's "title") has once changed, if that's another; refused if it has none, as a
     /// script can't take a title away.
     private func renamed(_ record: AnyShapeRecord, _ title: String, _ item: ShapeItem) throws(AutomationError) -> String? {

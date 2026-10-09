@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Quick and dirty evals for the schema card's two prompts, as the app ships them: the system prompts
-are read out of Sources/Schemas/SchemaPrompts.swift, so there's one copy.
+"""Quick and dirty evals for a type's two prompts, as the app ships them: the system prompts
+are read out of Sources/Types/SchemaPrompts.swift, so there's one copy.
 
     python3 evals.py --check                # read the prompts and settings out of the Swift; no call
     python3 evals.py --round 1              # every case in cases.csv, and the chains
@@ -39,7 +39,7 @@ from gen_cases import fmt, STARTER, ORDER  # noqa: E402
 
 API_URL = "https://api.anthropic.com/v1/messages"
 SOURCES = os.path.normpath(os.path.join(HERE, "..", "..", "Sources"))
-SWIFT = os.path.join(SOURCES, "Schemas", "SchemaPrompts.swift")
+SWIFT = os.path.join(SOURCES, "Types", "SchemaPrompts.swift")
 # Each direction's system prompt and max_tokens (the Swift constants they're read from):
 # `swift_settings` fills in the values, and MODEL and EFFORT, from the Swift.
 CONFIG = {
@@ -688,7 +688,7 @@ def main():
     args = ap.parse_args()
 
     swift_settings()
-    print(f"model {MODEL}, effort {EFFORT}; a new card's schema {STARTER!r}")
+    print(f"model {MODEL}, effort {EFFORT}; a new type's schema {STARTER!r}")
     for d in CONFIG:
         text = system_prompt(d)
         print(f"{d}: {CONFIG[d]['system']}, {len(text)} characters, {len(text.splitlines())} lines, "

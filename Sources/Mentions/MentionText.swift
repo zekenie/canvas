@@ -162,7 +162,7 @@ public struct ScopedMentionText<Scope: MentionScope>: Sendable, ExpressibleByStr
     }
 
     /// What it reads as with each mention spelled as `spelling` says, given its shape and the label
-    /// it holds (Find's, its name; a schema card's model's, `@` and a word), and where each spelling
+    /// it holds (Find's, its name; a type's model's, `@` and a word), and where each spelling
     /// is against the mention's pill in the text as drawn.
     public func reading(spelling: (ShapeID, String) -> String) -> MentionReading {
         var text = "", mentions: [MentionReading.Mention] = []
