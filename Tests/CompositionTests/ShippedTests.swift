@@ -79,7 +79,7 @@ import Validation
         arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
         language-models      service LanguageModelState
         prose-maps           service ProseMapService · overlay ProseMapFrames
-        automation           command line draw · command line show · command line kinds
+        automation           command line draw · command line show · command line kinds · command line measure
         title-names          draw names
         port-edges           draw edges
         validation-checks    draw checks

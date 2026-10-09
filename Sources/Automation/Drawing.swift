@@ -153,6 +153,10 @@ struct Drawing {
     /// Each shape statement's title, folded, and its item.
     private(set) var itemByTitle: [String: Int] = [:]
     private(set) var edges: [EdgeItem] = []
+    /// The stand-ins the run has made for edges, in order, for `share:` (`DrawStandIns.swift`).
+    var madeStandIns: [MadeStandIn] = []
+    /// The board's direct stand-ins by what each stands for, once `share:` asks.
+    var boardStandInsByEnd: [ShapeID: [ShapeID]]?
     /// Each `delete edge`'s ends, for telling one written twice.
     private var edgeDeletes: [(from: ShapeID, to: ShapeID, eitherWay: Bool, line: Int)] = []
     /// The stand-ins a delete took an arrow from (`delete edge`'s, or X's, which `delete "X"` takes),
@@ -162,7 +166,7 @@ struct Drawing {
 
     /// Titles of statements that couldn't be resolved: whatever names them is left unresolved,
     /// without a second error.
-    private var unresolved: Set<String> = []
+    private(set) var unresolved: Set<String> = []
     /// What placing found to say: pushes, a shape resized over another.
     var notes: [DrawWarning] = []
     private var errors: [AutomationError] = []
@@ -245,7 +249,7 @@ struct Drawing {
 
     /// What a statement that depends on one that couldn't be resolved throws: no error of its own.
     static let skipped = "skipped"
-    private func skip() -> AutomationError { AutomationError("", reason: Self.skipped) }
+    func skip() -> AutomationError { AutomationError("", reason: Self.skipped) }
 
     /// Whether the run, placed, changes or deletes this shape (so an edit under way should end
     /// first): a shape restated as it is isn't changed, nor a connection whose statement writes

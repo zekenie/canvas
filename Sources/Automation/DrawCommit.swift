@@ -142,6 +142,8 @@ extension Drawing {
             let record = connected.record
             var row = DrawChange(line: edge.statement.line, did: connected.did, kind: record.kind.rawValue, from: edge.fromTitle, to: edge.toTitle)
             row.via = connected.via?.rawValue
+            if connected.shared { row.shared = true }
+            row.sharedWith = connected.sharedWith
             let properties = record.propertiesJSON ?? [:]
             for key in edging?.attributes ?? [] {
                 if let value = properties[key], value != .null { row.attributes[key] = JSON(value) }
@@ -237,6 +239,9 @@ extension Drawing {
         let did: DrawChange.Did
         let ends: (from: ShapeID, to: ShapeID)
         let via: ShapeKind?
+        /// It runs to a stand-in shared with another edge (`share:`), and beside whom, if it was named.
+        var shared = false
+        var sharedWith: String?
     }
 
     /// Draws one edge, or changes the one drawn (only what the statement names), or leaves it be. The
@@ -315,15 +320,17 @@ extension Drawing {
         }
         let through = (standIn(at: ends.0, in: document) ?? standIn(at: ends.1, in: document))?.kind
         let joined = reversed ? (from: ends.1, to: ends.0) : (from: ends.0, to: ends.1)
+        let sharing = sharing(of: edge, match: match, among: drawn)
         if let existing = match?.connection.record {
             guard made.id == existing.id else { throw AutomationError(statement, .internal, "\(written) came out another shape") }
-            if made == existing { return Connected(record: existing, did: .unchanged, ends: joined, via: through) }
+            if made == existing { return Connected(record: existing, did: .unchanged, ends: joined, via: through, shared: sharing.shared, sharedWith: sharing.with) }
             if transaction.isReadOnly(existing), transaction.isReadOnly(made) {
                 throw AutomationError(statement, .readOnly, "\(written) is read-only (locked, say), so it stays as it is",
                                       hint: "leave it out of the script, or ask the user to unlock it")
             }
             transaction.update(existing.id) { $0 = made }
-            return Connected(record: transaction.document[existing.id] ?? made, did: .reconnected, ends: joined, via: through)
+            return Connected(record: transaction.document[existing.id] ?? made, did: .reconnected, ends: joined, via: through,
+                             shared: sharing.shared, sharedWith: sharing.with)
         }
         guard isNew(made.id, in: transaction) else { throw AutomationError(statement, .internal, "\(written) came out a shape already drawn") }
         // A board that can't change (a locked subboard's, at any depth) takes no new edge.
@@ -333,7 +340,28 @@ extension Drawing {
         }
         transaction.insert(made)
         guard let inserted = transaction.document[made.id] else { throw AutomationError(statement, .internal, "\(written) couldn't go on the board") }
-        return Connected(record: inserted, did: .connected, ends: joined, via: through)
+        return Connected(record: inserted, did: .connected, ends: joined, via: through, shared: sharing.shared, sharedWith: sharing.with)
+    }
+
+    /// Whether an edge's arrow runs to a stand-in shared with another (`share:`), and beside whom, if the
+    /// edge named a host. A stand-in the run reused says so; for an edge drawn already (a run again) the
+    /// stand-in it is drawn to is shared when an arrow from another shape runs to it too, and beside the
+    /// host when the host's does.
+    private func sharing(of edge: EdgeItem, match: EdgeMatch?, among drawn: [BoardConnection]) -> (shared: Bool, with: String?) {
+        if let made = edge.standIn { return (made.shared, made.sharedWith) }
+        guard let share = edge.edge.share, let match, let pill = match.standIn?.id else { return (false, nil) }
+        let near = match.standIn?.place == .from ? edge.to : edge.from
+        let users = drawn.compactMap { connection -> ShapeID? in
+            guard connection.record.id != match.connection.record.id, connection.from == pill || connection.to == pill else { return nil }
+            return connection.from == pill ? connection.to : connection.from
+        }.filter { $0 != near }
+        switch share {
+        case .any:
+            return (!users.isEmpty, nil)
+        case .beside(let written):
+            guard let title = fold(written), boardShapes(called: title).contains(where: users.contains) else { return (false, nil) }
+            return (true, title)
+        }
     }
 
     /// The script's shapes in script order, but each after every script shape (new or restated)

@@ -90,18 +90,22 @@ public struct EdgeStatement: Sendable, Equatable {
     /// `via:`, the kind of shape it goes through, a word for the caller to find (the kind of
     /// stand-in that stands for its end, put beside the other: `via: reference`).
     public var via: String?
+    /// `share:`, which reference an edge through one goes to: any already beside the start's container
+    /// (`share: true`), or the one beside a named shape (`share: "A"`); nil to make its own.
+    public var share: EdgeShare?
     /// Every other attribute, for the caller to check (the channel it's on, from DrawLexicon's
     /// `PortEdgesPlugin`).
     public var attributes: [Attribute]
 
     public init(from: String, to: String, arrow: EdgeArrow = .forward, fromSide: EdgeSide? = nil, toSide: EdgeSide? = nil,
-                via: String? = nil, attributes: [Attribute] = []) {
+                via: String? = nil, share: EdgeShare? = nil, attributes: [Attribute] = []) {
         self.from = from
         self.to = to
         self.arrow = arrow
         self.fromSide = fromSide
         self.toSide = toSide
         self.via = via
+        self.share = share
         self.attributes = attributes
     }
 
@@ -112,6 +116,14 @@ public struct EdgeStatement: Sendable, Equatable {
     public var written: String {
         arrow == .backward ? "\(quote(to)) \(arrow.rawValue) \(quote(from))" : "\(quote(from)) \(arrow.rawValue) \(quote(to))"
     }
+}
+
+/// What `share:` says: which reference an edge that goes through one is drawn to.
+public enum EdgeShare: Sendable, Equatable {
+    /// `share: true`: one already there for the same end, in the start's container.
+    case any
+    /// `share: "A"`: the one beside the shape titled A (as written), whose own arrow goes into it.
+    case beside(String)
 }
 
 /// `delete "<title>"`, or `delete edge "<a>" -> "<b>"`.

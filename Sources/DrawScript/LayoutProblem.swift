@@ -235,6 +235,11 @@ public struct LayoutProblem {
     public static let verticalClearance: CGFloat = 64
     /// How far apart the spots tried for a drawing with nothing to hang on are, ring after ring.
     public static let ringStep: CGFloat = 40
+    /// How far a shape placed `inside` a box, or in a container (`in "F"`), sits from its edge: a `tight` gap.
+    public static let insideGap: CGFloat = GapName.tight.value
+    /// How far apart a placement holds two boxes when nothing says (`normal`): the gap of an edge's
+    /// reference from the shape it is beside.
+    public static let defaultGap: CGFloat = GapName.normal.value
     /// How many rings are tried before it goes right of the board.
     public static let rings = 100
     /// How clear of everything else a drawing with nothing to hang on lands (`normal`).

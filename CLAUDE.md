@@ -96,6 +96,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 **Languages** (what agents read and write)
 - [command line](.claude/rules/command-line.md): `canvas`, the wire, `CommandServer`, Automation's commands, `canvas draw`, the canvas skill.
 - [queries](.claude/rules/queries.md): the query language, what a query sees and where it runs, the lexicon's words, `canvas query` and `--ask`.
+- [digest](.claude/rules/digest.md): the canvas-digest skill: a large body of connected information laid out as boards by a tool outside the app (`digest`, jsc), measured with `canvas measure`, drawn with `canvas draw`; the digest format, the plan, what it makes public, the dry-run gate.
 
 **Verticals** (the kinds)
 - [schema cards](.claude/rules/schema-cards.md): a JSON Schema and its description, kept in step by the model; references, the panel's JSON and completions, highlights.

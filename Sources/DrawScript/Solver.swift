@@ -394,7 +394,7 @@ struct Solver {
             if case .fixed = holder.ref { boardTied[index] = true }
             exempt(index, target)
             for axis in Axis.allCases where speaks(index, axis) {
-                inside.append(Inside(box: index, written: holder.written, axis: axis, target: target, gap: GapName.tight.value))
+                inside.append(Inside(box: index, written: holder.written, axis: axis, target: target, gap: LayoutProblem.insideGap))
             }
         }
         // What goes with it is never in its way.
@@ -466,7 +466,7 @@ struct Solver {
     /// `gap:` and the target's; `normal`.
     func gap(_ box: Int, _ clause: LayoutProblem.ResolvedClause, _ target: LayoutProblem.ResolvedTarget, inside: Bool) -> CGFloat {
         if let gap = clause.gap { return gap.value }
-        if inside { return GapName.tight.value }
+        if inside { return LayoutProblem.insideGap }
         var stated: [CGFloat] = []
         if let gap = problem.free[box].gap { stated.append(gap.value) }
         switch target.ref {
@@ -474,7 +474,7 @@ struct Solver {
         case .fixed(let other): if let gap = problem.fixed[other].gap { stated.append(gap.value) }
         case .obstacle: break
         }
-        return stated.max() ?? GapName.normal.value
+        return stated.max() ?? LayoutProblem.defaultGap
     }
 
     /// Lines a box up with its targets on one axis: exactly, when they all move together (or stay

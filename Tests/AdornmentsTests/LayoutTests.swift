@@ -16,6 +16,18 @@ func count(_ width: CGFloat) -> Item { Item(.onTopRightCorner, width: width, isT
 func rect(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) -> CGRect { CGRect(x: x, y: y, width: width, height: height) }
 
 @MainActor let layoutTests = Suite("Laying out adornments", [
+    test("the extent is how far above the top edge what's shown reaches: the row 27, the corner 8, nothing 0, and text left out for want of room nothing") {
+        expectEqual(AdornmentLayout.extent(of: [], in: 200), 0)
+        expectEqual(AdornmentLayout.extent(of: [caption(60)], in: 200), 27)
+        expectEqual(AdornmentLayout.extent(of: [flag], in: 200), 27)
+        expectEqual(AdornmentLayout.extent(of: [count(40)], in: 200), 8)
+        expectEqual(AdornmentLayout.extent(of: [count(40), caption(60)], in: 200), 27, "the farthest")
+        expectEqual(AdornmentLayout.extent(of: [caption(60)], in: 20), 0, "no room for the text: nothing shown")
+        expectEqual(AdornmentLayout.extent(of: [caption(60), count(40)], in: 20), 8, "only the corner is")
+        expectEqual(AdornmentLayout.extent(of: [caption(60), flag], in: 20), 27)
+        expectEqual(AdornmentLayout.extent(of: [caption(60)], in: 200), AdornmentLayout.rowGap + AdornmentLayout.rowHeight)
+        expectEqual(AdornmentLayout.extent(of: [count(40)], in: 200), AdornmentLayout.cornerHeight / 2)
+    },
     test("a caption is at the left end of the row just above the shape, as wide as its text") {
         expectEqual(AdornmentLayout.frames(of: [caption(60)], width: 200), [rect(0, -27, 60, 18)])
     },

@@ -10,7 +10,7 @@ import Foundation
 /// language model), later (`runAsync:`), its output then written off the main actor. The app hands
 /// them to its command server (Composition's `ShippedPlugins.commands(in:)`, over
 /// `automationCommands` and `runAutomationCommand`), which does the talking: this plugin never sees
-/// a socket, and the core never sees a command. Its own are `draw` and `kinds` (Commands.swift);
+/// a socket, and the core never sees a command. Its own are `draw`, `show`, `kinds` and `measure` (Commands.swift, Measure.swift);
 /// `draw` takes what it doesn't own (names, edges, checks) from the points in DrawPoints.swift,
 /// which DrawLexicon fills (and AutomationTests with fixtures of their own).
 extension PluginID {

@@ -448,6 +448,31 @@ import TestKit
         expectEqual(parseError(#"edge "A" -> "B" via: "  ""#)?.reason, .invalidValue)
         expectEqual(parseError(#"edge "A" -> "B" via:"#)?.message, #"edge "A" -> "B": via: has no value"#)
     },
+    test("share: is true, or the title of the shape whose reference to take, once, and with via: and the rest; deleting takes none") {
+        guard case .edge(let plain) = try parse(#"edge "A" -> "B""#) else { throw RequireFailed() }
+        expectEqual(plain.share, nil)
+        guard case .edge(let any) = try parse(#"edge "A" -> "B" via: relay share: true from: right tone: wire"#) else { throw RequireFailed() }
+        expectEqual(any.share, .any)
+        expectEqual(any.via, "relay")
+        expectEqual(any.fromSide, .right)
+        expectEqual(any.attributes, [Attribute(key: "tone", value: .word("wire"))], "share is the language's: it isn't one of the caller's attributes")
+        guard case .edge(let host) = try parse(#"edge "A" <- "B" share: "Auth service""#) else { throw RequireFailed() }
+        expectEqual(host.share, .beside("Auth service"), "a title, as written")
+        expectEqual(host.from, "B")
+        guard case .edge(let literal) = try parse(#"edge "A" -> "B" share: "true""#) else { throw RequireFailed() }
+        expectEqual(literal.share, .beside("true"), "quoted, it is a shape called true")
+        expectEqual(parseError(#"delete edge "A" -> "B" share: true"#)?.message, #"edge "A" -> "B": deleting takes no attributes"#)
+    },
+    test("share: refuses false, a blank or other value, and says it twice") {
+        expectEqual(parseError(#"edge "A" -> "B" share: true share: "C""#)?.reason, .duplicate)
+        for written in ["false", "maybe", #""  ""#, "[1]", "2"] {
+            let error = parseError(#"edge "A" -> "B" share: \#(written)"#)
+            expectEqual(error?.reason, .invalidValue, written)
+            expectEqual(error?.message, #"edge "A" -> "B": share: \#(written) isn't true or the title of a shape"#)
+            expectEqual(error?.hint, #"write share: true to reuse a reference to the same end, or share: "A" for the one beside A; leave share: out to make its own"#)
+        }
+        expectEqual(parseError(#"edge "A" -> "B" share:"#)?.message, #"edge "A" -> "B": share: has no value"#)
+    },
     test("an edge takes no style, placement or third shape, and what it says is an attribute") {
         expectEqual(parseError(#"edge "A" -> "B" style: s"#)?.message, #"edge "A" -> "B": an edge can't take a style"#)
         expectEqual(parseError(#"edge "A" -> "B" right of "C""#)?.message, #"edge "A" -> "B": an edge goes where its ends are, so it takes no placement (right)"#)

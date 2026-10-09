@@ -1,0 +1,305 @@
+#!/bin/sh
+# digest: lay out a large body of connected information as boards in Infinite Canvas.
+# The only file here that runs `canvas`; tool/ (JavaScript, run by the system jsc, else node) reads and writes files and never runs it.
+#
+#   digest check   GRAPH [TARGET] [--into TITLE]     the digest against the rules, the app's kinds and the titles already in the file
+#   digest measure GRAPH                              how big the app makes each shape and pill (canvas measure)
+#   digest plan    GRAPH [TARGET] [PLAN FLAGS]        lay out every board, decide the promotions, write the draw scripts; draws nothing
+#   digest draw    GRAPH TARGET [--into TITLE]        each script a dry run first and held to the plan, then drawn for real
+#   digest verify  GRAPH TARGET                       what was drawn, against the plan and the file's titles
+#   digest all     GRAPH TARGET [PLAN FLAGS]          check, measure, plan, draw, verify; stops at the first that fails
+#
+#   TARGET      --board ID        a board that is open (`canvas boards`); needs --into TITLE, the new subboard the digest goes in
+#               --new-file PATH   a new board's file, made and opened (`canvas new`); the digest is its board
+#   PLAN FLAGS  --mess 0..1  --promote off  --prefer N  --cap 0..1  --margin PILLS  --into TITLE
+#   --out DIR   where the files go (default: GRAPH without .json, plus .out)
+#   --timeout S seconds canvas may take to answer one script (default 120)
+#
+# canvas is $CANVAS_CLI, else build/canvas in the repository, else the one on PATH. Exit status: 0 done; 1 refused or failed;
+# 2 the command line is wrong; 4 a dry run or the board is not the plan (nothing past that run is drawn). Every refusal and failure is
+# said on standard error, with the draws made so far and how to take them back.
+set -eu
+
+# fd 3 is the driver's own standard error: whatever a command's output is redirected to, a failure is said there.
+exec 3>&2
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+TOOL=$HERE/tool
+REPO=$(cd "$HERE/../../.." && pwd)
+JSC=${JSC:-/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc}
+
+die() { echo "digest: $*" >&3; exit 1; }
+usage() { sed -n '2,/^set -eu/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//' >&3; exit 2; }
+
+abspath() { case $1 in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$PWD" "$1" ;; esac; }
+
+# The tool: jsc cannot take relative paths from another folder, so every path handed to it is absolute. Its answer is on standard output.
+# If it fails, what it said goes to the driver's standard error (jsc says an error on its standard output too, which is dropped) and the status is not 0.
+tool() {
+  if [ -x "$JSC" ]; then
+    _tout=$OUT/.tool.out
+    if (cd "$TOOL" && "$JSC" main.js -- "$@") > "$_tout" 2>&3; then cat "$_tout"; else return 1; fi
+  elif command -v node >/dev/null 2>&1; then
+    node "$TOOL/main.js" "$@" 2>&3
+  else
+    die "no JavaScript engine: neither jsc ($JSC) nor node"
+  fi
+}
+
+# The tool, its answer into the file $1. A failure stops the driver (the tool has said why).
+tool_to() {
+  _tf=$1; shift
+  tool "$@" > "$_tf" || exit 1
+}
+
+# canvas is looked up here, by a name nothing of ours answers to (the functions below are run_canvas, canvas_try and canvas_to).
+find_canvas() {
+  if [ -n "${CANVAS_CLI:-}" ]; then CANVAS=$CANVAS_CLI
+  elif [ -x "$REPO/build/canvas" ]; then CANVAS=$REPO/build/canvas
+  elif [ -x "$PWD/build/canvas" ]; then CANVAS=$PWD/build/canvas
+  else CANVAS=$(command -v canvas || true)
+  fi
+  [ -n "$CANVAS" ] && [ -x "$CANVAS" ] || die "can't find canvas: set CANVAS_CLI, build it (./build.sh makes build/canvas), or put it on your PATH"
+  export CANVAS_FORMAT=json
+}
+
+# canvas, with the time one answer may take (a long script, or a measure of a big digest, is more than its 10 s).
+run_canvas() {
+  [ -n "${CANVAS:-}" ] || find_canvas
+  _cmd=$1; shift
+  "$CANVAS" "$_cmd" --timeout "$TIMEOUT" "$@"
+}
+
+# Run canvas, keeping its answer in $1 and its complaint in $1.err; the status is canvas's.
+canvas_try() {
+  _out=$1; shift
+  run_canvas "$@" > "$_out" 2> "$_out.err"
+}
+
+# Run canvas, keeping its answer in $1 and its complaint in $1.err; on a failure, say what it said and stop.
+canvas_to() {
+  _out=$1; shift
+  if ! canvas_try "$_out" "$@"; then
+    echo "digest: canvas $1 failed:" >&2
+    cat "$_out.err" >&2
+    exit 1
+  fi
+}
+
+# ---- arguments -----------------------------------------------------------------------------------------------
+
+[ $# -ge 2 ] || usage
+CMD=$1; GRAPH=$2; shift 2
+case $CMD in check|measure|plan|draw|verify|all) ;; *) usage ;; esac
+[ -f "$GRAPH" ] || die "no digest at $GRAPH"
+GRAPH=$(abspath "$GRAPH")
+BOARD=; NEWFILE=; INTO=; OUT=; MESS=; PROMOTE=; PREFER=; CAP=; MARGIN=; TIMEOUT=120
+while [ $# -gt 0 ]; do
+  [ $# -ge 2 ] || { echo "digest: $1 takes a value" >&2; usage; }
+  case $1 in
+    --board) BOARD=$2 ;;
+    --new-file) NEWFILE=$(abspath "$2") ;;
+    --into) INTO=$2 ;;
+    --out) OUT=$(abspath "$2") ;;
+    --timeout) TIMEOUT=$2 ;;
+    --mess) MESS=$2 ;;
+    --promote) PROMOTE=$2 ;;
+    --prefer) PREFER=$2 ;;
+    --cap) CAP=$2 ;;
+    --margin) MARGIN=$2 ;;
+    *) echo "digest: unknown option $1" >&2; usage ;;
+  esac
+  shift 2
+done
+[ -n "$OUT" ] || OUT=${GRAPH%.json}.out
+[ -z "$BOARD" ] || [ -z "$NEWFILE" ] || die "name a board (--board) or a new file (--new-file), not both"
+if [ -n "$BOARD" ] && [ -z "$INTO" ] && { [ "$CMD" = plan ] || [ "$CMD" = all ]; }; then
+  die "--board draws into a new subboard of that board: say its title with --into TITLE (or use --new-file PATH)"
+fi
+if [ -n "$NEWFILE" ] && [ -n "$INTO" ]; then die "--new-file makes the digest the file's board: leave out --into"; fi
+mkdir -p "$OUT/runs" "$OUT/results"
+STATE=$OUT/state.json
+# canvas is found now, and said if it is not. The one command that may need none is a plan from a measure already made, with no board to read.
+if [ "$CMD" != plan ] || [ -n "$BOARD" ] || [ ! -s "$OUT/measure.json" ]; then find_canvas; fi
+
+# ---- the steps -----------------------------------------------------------------------------------------------
+
+# The board a step works on: the one named, else the one `draw` made in a new file.
+target_id() {
+  if [ -n "$BOARD" ]; then printf '%s\n' "$BOARD"
+  elif [ -s "$OUT/target.id" ]; then cat "$OUT/target.id"
+  else return 1
+  fi
+}
+
+# The titles the file holds (every board's), as a JSON array in $OUT/titles.json. A file with more titles than one query lists is refused.
+file_titles() {
+  canvas_to "$OUT/titles.raw.json" query --board "$1" --brief --limit 10000 - <<'EOF'
+[title]
+EOF
+  tool_to "$OUT/titles.json" extract titles "$OUT/titles.raw.json"
+}
+
+# The digest against the rules and, with a board, the titles the file holds; the tool's answer is $OUT/check.json, which is what says whether
+# there are errors. Prints what it found (all of it, or with $1 = quiet only when something is wrong); returns 1 if there are errors.
+do_check() {
+  set -- "$1" check "$GRAPH"
+  _quiet=$1; shift
+  if [ -s "$OUT/kinds.json" ]; then set -- "$@" --kinds "$OUT/kinds.json"; fi
+  if [ -n "$BOARD" ]; then
+    file_titles "$BOARD"
+    set -- "$@" --existing "$OUT/titles.json"
+  fi
+  if [ -n "$INTO" ]; then set -- "$@" --into "$INTO"; fi
+  tool_to "$OUT/check.json" "$@"
+  _errors=$(tool extract errors "$OUT/check.json") || exit 1
+  _text=$(tool check-text "$OUT/check.json") || exit 1
+  if [ "$_errors" != 0 ] || [ "$_quiet" != quiet ]; then echo "$_text"; fi
+  [ "$_errors" = 0 ]
+}
+
+step_check() {
+  canvas_to "$OUT/kinds.raw.json" kinds
+  tool_to "$OUT/kinds.json" extract kinds "$OUT/kinds.raw.json"
+  do_check loud || { echo "digest: check found errors; fix the digest and run it again" >&2; exit 1; }
+}
+
+step_measure() {
+  tool_to "$OUT/measure.draw" measure-script "$GRAPH"
+  canvas_to "$OUT/measure.json" measure - < "$OUT/measure.draw"
+  echo "measure: $(wc -l < "$OUT/measure.draw" | tr -d ' ') statements measured by canvas measure"
+}
+
+step_plan() {
+  # the file's titles as they are now (`all` has just checked them)
+  if [ -n "$BOARD" ] && [ "$CMD" != all ]; then
+    do_check quiet || { echo "digest: check found errors; fix the digest and run it again" >&2; exit 1; }
+  fi
+  [ -s "$OUT/measure.json" ] || step_measure
+  rm -f "$OUT"/runs/*.draw "$OUT"/results/*.json "$OUT"/results/*.err "$STATE" "$OUT/target.id"
+  set -- plan "$GRAPH" "$OUT/measure.json" "$OUT"
+  if [ -n "$MESS" ]; then set -- "$@" --mess "$MESS"; fi
+  if [ -n "$PROMOTE" ]; then set -- "$@" --promote "$PROMOTE"; fi
+  if [ -n "$PREFER" ]; then set -- "$@" --prefer "$PREFER"; fi
+  if [ -n "$CAP" ]; then set -- "$@" --cap "$CAP"; fi
+  if [ -n "$MARGIN" ]; then set -- "$@" --margin "$MARGIN"; fi
+  if [ -n "$INTO" ]; then set -- "$@" --into "$INTO"; fi
+  _res=$(tool "$@") || exit 1
+  echo "$_res"
+  echo "files: $OUT/plan.json, $OUT/report.json, $(tool runs "$OUT/plan.json" | wc -l | tr -d ' ') scripts in $OUT/runs"
+}
+
+# How to take back a draw, for where it went.
+undo_advice() {
+  _into=$(tool into "$OUT/plan.json") || _into=
+  if [ -n "$NEWFILE" ]; then
+    echo "close the new file's window without saving and delete $NEWFILE"
+  elif [ -n "$_into" ]; then
+    echo "Edit > Undo Draw in the app takes back one script a time, or delete the subboard \"$_into\" (and what is in it)"
+  else
+    echo "Edit > Undo Draw in the app takes back one script a time"
+  fi
+}
+
+# Said when a draw stops: what is on the board, and how to take it back.
+leave_note() {
+  if [ -n "$_drawn" ]; then
+    echo "digest: drawn already, $_n script(s):$_drawn. To take them back: $(undo_advice)." >&2
+  elif [ -n "$NEWFILE" ] && [ -s "$OUT/target.id" ]; then
+    echo "digest: nothing was drawn, but the new file $NEWFILE was made and is open: $(undo_advice)." >&2
+  else
+    echo "digest: nothing was drawn." >&2
+  fi
+}
+
+step_draw() {
+  [ -s "$OUT/plan.json" ] || die "no plan at $OUT/plan.json: run plan first"
+  # D10: a digest only ever makes a new file's board or a new subboard, never shapes among the ones already on a board
+  if [ -n "$BOARD" ] && grep -q '"into": null' "$OUT/plan.json"; then
+    die "this plan draws on the root of the board, among its shapes. Plan again with --into TITLE, or draw into a new file with --new-file PATH"
+  fi
+  if [ -n "$NEWFILE" ] && ! grep -q '"into": null' "$OUT/plan.json"; then
+    die "this plan draws into a subboard (--into). Plan again without it, for a new file"
+  fi
+  _names=$(tool runs "$OUT/plan.json") || exit 1
+  [ -n "$_names" ] || die "the plan has no scripts"
+  # a plan is drawn once: a result saved for any of its scripts means it was (or was begun)
+  for _name in $_names; do
+    if [ -e "$OUT/results/${_name%.draw}.json" ]; then
+      die "already drawn: $OUT/results/${_name%.draw}.json is what drawing this plan before got. Take that drawing back, then plan again (which starts the results afresh) to draw it once more"
+    fi
+  done
+  if [ -n "$NEWFILE" ]; then
+    [ ! -s "$OUT/target.id" ] || die "$OUT/target.id says this plan was drawn already; plan again for a new file"
+  fi
+  # the titles of the file are file-wide: one the plan draws that is on a board already would make its arrows ambiguous
+  if [ -n "$BOARD" ]; then
+    file_titles "$BOARD"
+    _clash=$(tool clashes "$OUT/plan.json" "$OUT/titles.json") || exit 1
+    if [ -n "$_clash" ]; then
+      echo "$_clash" >&2
+      die "nothing was drawn: the file has titles this plan draws. Plan again from a digest checked against the file (digest check GRAPH --board ID --into TITLE)"
+    fi
+  fi
+  _n=0; _drawn=
+  if [ -n "$NEWFILE" ]; then
+    canvas_to "$OUT/new.json" new "$NEWFILE"
+    tool_to "$OUT/target.id" extract id "$OUT/new.json"
+    echo "draw: made $NEWFILE as board $(cat "$OUT/target.id")"
+  fi
+  id=$(target_id) || die "name the board: --board ID (with --into TITLE) or --new-file PATH"
+  echo '{}' > "$STATE"
+  for _name in $_names; do
+    _base=${_name%.draw}
+    _file=$OUT/runs/$_name
+    if [ ! -s "$_file" ]; then echo "digest: the plan names $_name, and it is not in $OUT/runs" >&2; leave_note; exit 1; fi
+    if ! canvas_try "$OUT/results/$_base.dry.json" draw --board "$id" --dry-run - < "$_file"; then
+      echo "digest: canvas refused the dry run of $_name:" >&2
+      cat "$OUT/results/$_base.dry.json.err" >&2
+      leave_note; exit 1
+    fi
+    _res=$(tool compare "$OUT/plan.json" "$OUT/results/$_base.dry.json" "$STATE" --name "$_base (dry run)" --text true) || { leave_note; exit 1; }
+    case $_res in
+      ok*) ;;
+      *) echo "$_res" >&2
+         echo "digest: stopped before drawing $_name: its dry run is not the plan." >&2
+         leave_note; exit 4 ;;
+    esac
+    if ! canvas_try "$OUT/results/$_base.json" draw --board "$id" - < "$_file"; then
+      rm -f "$OUT/results/$_base.json"
+      echo "digest: canvas refused $_name, and none of it was drawn:" >&2
+      cat "$OUT/results/$_base.json.err" >&2
+      leave_note; exit 1
+    fi
+    _n=$((_n + 1)); _drawn="$_drawn $_name"
+    _res=$(tool compare "$OUT/plan.json" "$OUT/results/$_base.json" "$STATE" --name "$_base" --save true --text true) || { leave_note; exit 1; }
+    case $_res in
+      ok*) echo "$_res" ;;
+      *) echo "$_res" >&2
+         echo "digest: stopped after drawing $_name: the board is not the plan." >&2
+         leave_note; exit 4 ;;
+    esac
+  done
+  echo "draw: $_n scripts drawn on board $id"
+}
+
+step_verify() {
+  [ -s "$OUT/plan.json" ] || die "no plan at $OUT/plan.json: run plan first"
+  set -- replay "$OUT/plan.json" "$OUT/results"
+  if id=$(target_id); then
+    file_titles "$id"
+    set -- "$@" --titles "$OUT/titles.json"
+  fi
+  _res=$(tool "$@") || exit 1
+  echo "$_res"
+  case $_res in "verify ok"*) ;; *) exit 4 ;; esac
+}
+
+case $CMD in
+  check)   step_check ;;
+  measure) step_measure ;;
+  plan)    step_plan ;;
+  draw)    step_draw ;;
+  verify)  step_verify ;;
+  all)     step_check; step_measure; step_plan; step_draw; step_verify ;;
+esac

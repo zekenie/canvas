@@ -18,7 +18,7 @@ import Topology
 // An edge to a shape on another board, as shipped, through `canvas` as built against the command
 // server: a note on the root joined to a public note two boards down goes through a reference to it
 // beside the note, the arrow into the pill (and `canvas query` reads it as into the original, with
-// its `via`); either way round; `via: reference` on one board; a run again; `delete edge`, and
+// its `via`); either way round; `share:` between several notes' edges to one; `via: reference` on one board; a run again; `delete edge`, and
 // `delete` of the note, which take the pill; a shape that isn't public, which can't be reached; and
 // the run undone, pill and arrow together.
 
@@ -148,6 +148,67 @@ extension CanvasEditor {
         expectEqual(pills.map(\.minY), [checkout.midY - 16, checkout.midY + 32], "the first where it was, the next 16 below it")
         expectEqual(pills.map(\.minX), [checkout.maxX + 80, checkout.maxX + 80])
         expectEqual(try JSON(text: later.output)["warnings"]?.arrayValue ?? [], [])
+    },
+
+    test("share: three notes joined to Auth have one reference between them, and a query reads each as into Auth; deleting an edge keeps it till the last") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let wharf = Wharf()
+        let board = wharf.board()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let editor = board.editor
+        let before = editor.file
+        // A host that has no reference yet is refused, naming it and the end, and nothing is drawn.
+        let early = try canvas(server, ["draw", "-"], input: """
+            edge "Docs" -> "Auth" share: "Ledger"
+            edge "Ledger" -> "Auth"
+            """)
+        expectEqual(early.status, 1)
+        let refusal = try JSON(text: early.error)["error"]
+        expectEqual(refusal?["reason"], "invalid_value")
+        expectEqual(refusal?["message"], #"edge "Docs" -> "Auth": share: "Ledger" has no reference to "Auth" beside it"#)
+        expectEqual(refusal?["line"], 1)
+        expectEqual(editor.file, before)
+        let result = try canvas(server, ["draw", "-"], input: """
+            edge "Checkout" -> "Auth"
+            edge "Ledger" -> "Auth" share: true
+            edge "Docs" -> "Auth" share: "Checkout"
+            """)
+        expectEqual(result.status, 0, result.error)
+        let json = try JSON(text: result.output)
+        let pill = try require(editor.references().first)
+        expectEqual(editor.references().count, 1)
+        expectEqual(editor.arrowEnds(), ["Checkout -> reference to Auth", "Ledger -> reference to Auth", "Docs -> reference to Auth"])
+        expectEqual(json["changes"]?.arrayValue?.map { $0["did"] }, ["created", "connected", "connected", "connected"])
+        expectEqual(json["changes"]?.arrayValue?.map { $0["shared"] }, [nil, nil, true, true])
+        expectEqual(json["changes"]?.arrayValue?.map { $0["sharedWith"] }, [nil, nil, nil, "Checkout"])
+        expectEqual(json["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue }, [])
+        let asked = try canvas(server, ["query", #"sticky-note:edge-to("Auth")"#, "--brief", "--board", "\(board.number)"])
+        expectEqual(Set(try require(JSON(text: asked.output)["rows"]?.arrayValue).compactMap { $0["title"]?.stringValue }), ["Checkout", "Ledger", "Docs"])
+        expectEqual(editor.topology?.standIns(for: wharf.auth), [pill.id])
+        // A run again: nothing changes, and each row says what it said.
+        let file = editor.file
+        let again = try canvas(server, ["draw", "-"], input: """
+            edge "Checkout" -> "Auth"
+            edge "Ledger" -> "Auth" share: true
+            edge "Docs" -> "Auth" share: "Checkout"
+            """)
+        expectEqual(try JSON(text: again.output)["changes"]?.arrayValue?.map { $0["did"] }, ["unchanged", "unchanged", "unchanged"])
+        expectEqual(try JSON(text: again.output)["changes"]?.arrayValue?.map { $0["shared"] }, [nil, true, true])
+        expectEqual(editor.file, file)
+        // The pill goes with the last arrow, not before.
+        _ = try canvas(server, ["draw", #"delete edge "Checkout" -> "Auth""#])
+        _ = try canvas(server, ["draw", #"delete "Ledger""#])
+        expectEqual(editor.references().count, 1)
+        expectEqual(editor.arrowEnds(), ["Docs -> reference to Auth"])
+        let last = try canvas(server, ["draw", #"delete edge "Docs" -> "Auth""#])
+        expectEqual(try JSON(text: last.output)["changes"]?.arrayValue?.map { $0["kind"] }, ["arrow", "reference"])
+        expectEqual(editor.references().count, 0)
+        editor.undo()
+        expectEqual(editor.references().count, 1)
     },
 
     test("the far note may be the start: the reference is left of the note, and the arrow runs out of it") {

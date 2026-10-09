@@ -78,6 +78,18 @@ public enum AdornmentLayout {
         placement == .onTopRightCorner ? cornerHeight : rowHeight
     }
 
+    /// How far above its top edge a shape `width` points wide reaches with these adornments, in view
+    /// points (so in world units at 100%, where adornments keep their size): what the row above holds
+    /// reaches `rowGap + rowHeight`, a chip on the corner `cornerHeight / 2`, nothing 0. Only what is
+    /// shown counts: text left out for want of room reaches nowhere.
+    public static func extent(of items: [Item], in width: CGFloat) -> CGFloat {
+        var reach: CGFloat = 0
+        for slot in slots(of: items, width: width) {
+            if let slot { reach = max(reach, -slot.frame.minY) }
+        }
+        return reach
+    }
+
     /// Each item's frame, in the order given (the order they're claimed), for a shape `width`
     /// points wide; nil for one left out.
     public static func frames(of items: [Item], width: CGFloat) -> [CGRect?] {

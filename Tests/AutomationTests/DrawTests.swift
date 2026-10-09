@@ -250,7 +250,7 @@ import TestKit
         expectEqual(try refused(#"edge "Hub" -> "Hub""#, on: editor).reason, "cannot_connect")
         let unknown = try refused(#"edge "Hub" -> "East" colour: red"#, on: editor)
         expectEqual(unknown.reason, "unknown_attribute")
-        expectEqual(unknown.hint, "an edge takes from:, to:, via:, tone:, caption:, heads:")
+        expectEqual(unknown.hint, "an edge takes from:, to:, via:, share:, tone:, caption:, heads:")
         expectEqual(try refused(#"edge "Hub" -> "Nope""#, on: editor).reason, "unknown_title")
         expectEqual(try refused(#"""
         edge "Hub" -> "East"

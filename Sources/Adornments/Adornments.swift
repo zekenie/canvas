@@ -343,6 +343,16 @@ extension CanvasEditor {
         return state.frames(of: record)
     }
 
+    /// How far above its top edge a shape reaches with the adornments it would show at 100%, in world
+    /// units (`AdornmentLayout.extent(of:in:)`): the row for a titled shape's pill. A shape that isn't on
+    /// the board is asked as it would be shown there, and nothing is kept for it; 0 for one with none, or
+    /// without a size, or where no plugin places adornments.
+    public func adornmentExtent(of record: AnyShapeRecord) -> CGFloat {
+        guard let state = adornmentState, let width = record.box?.width,
+              let laidOut = state.laidOut(record, keeping: false) else { return 0 }
+        return AdornmentLayout.extent(of: laidOut.items, in: width)
+    }
+
     /// What these shapes' adornments show changed other than through the document (an open lock
     /// fading): they're made again, the canvas redraws, and the select tool looks for a button
     /// under a still pointer (`canvasButtonsDidChange`).

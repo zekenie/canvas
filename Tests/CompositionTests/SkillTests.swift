@@ -3,6 +3,7 @@ import AppKit
 import CanvasRPC
 import CanvasUI
 import Composition
+import DrawScript
 import Foundation
 import LanguageModels
 import QueryLanguage
@@ -257,6 +258,29 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
             .dropFirst("description: ".count)
         expect(description.count <= 1_024, "\(description.count) characters")
         expect(description.contains("`canvas draw`") && description.contains("`canvas query`"), String(description))
+    },
+    test("the reference's table of an edge's keys has a row for each key the language keeps for edges, and its measure section names every member canvas measure answers") {
+        let reference = try String(contentsOfFile: "\(skillFolder)/reference/language.md", encoding: .utf8)
+        let skill = try String(contentsOfFile: "\(skillFolder)/SKILL.md", encoding: .utf8)
+        let edgeKeys = try require(markdownTables(in: reference).first { table in table.contains { backticked($0[0]) == ["from:"] } }, "the table of an edge's keys")
+        let written = Set(edgeKeys.dropFirst().compactMap { backticked($0[0]).first })
+        for key in EdgeKey.allCases { expect(written.contains("\(key.rawValue):"), "the reference's table of an edge's keys has \(key.rawValue):") }
+        expect(skill.contains("share: true") && skill.contains(#"share: "Checkout""#), "SKILL.md teaches share:")
+        expect(skill.contains("build/canvas measure -"), "SKILL.md points to measure")
+
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let commands = ShippedPlugins.commands(in: registry)
+        let script = "sticky-note \"A\" text: \"x\"\nsticky-note \"B\" public: true\nedge \"A\" -> \"B\" via: reference"
+        let answer = try awaitResult { try await commands.run("measure", ["script": .string(script)], nil) }
+        let start = try require(reference.range(of: "## Measuring a script")), end = try require(reference.range(of: "## Errors"))
+        let section = String(reference[start.lowerBound..<end.lowerBound])
+        var members = Set(answer.objectValue?.keys.map { $0 } ?? [])
+        for row in answer["shapes"]?.arrayValue ?? [] { members.formUnion(row.objectValue?.keys.map { $0 } ?? []) }
+        for row in answer["references"]?.arrayValue ?? [] { members.formUnion(row.objectValue?.keys.map { $0 } ?? []) }
+        members.formUnion(answer["constants"]?.objectValue?.keys.map { $0 } ?? [])
+        expect(members.count >= 15, "measure answers: \(members.sorted())")
+        for member in members.sorted() { expect(section.contains("`\(member)`"), "the reference's section on measure names \(member)") }
+        for name in GapName.allCases { expect(section.contains(name.rawValue), "...and the gap \(name.rawValue)") }
     },
     test("the query reference has every construct of the design's table as a block, answering or refused as the table says") {
         let examples = try skillExamples(in: "\(skillFolder)/reference/query.md")

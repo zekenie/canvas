@@ -211,7 +211,7 @@ extension SizeWord: ShapeProperty {
         expectEqual(draw.usage(), "canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]")
         expect(draw.arguments.first { $0.name == "script" }?.readsStandardInput == true)
         expectEqual(registry.automationCommands.first { $0.name == "kinds" }?.scope, .app)
-        expect(registry.report.contains("automation    command line draw · command line show · command line kinds"), registry.report)
+        expect(registry.report.contains("automation    command line draw · command line show · command line kinds · command line measure"), registry.report)
     },
     test("the registry refuses a command the command line couldn't type or spell, or two of one name") {
         let nothing: @MainActor (NoParams, AutomationContext) throws(AutomationError) -> String = { _, _ in "" }

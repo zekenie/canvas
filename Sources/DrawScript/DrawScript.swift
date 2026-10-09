@@ -48,6 +48,9 @@ public enum EdgeKey: String, Sendable, CaseIterable {
     case from, to
     /// `via: reference`: the kind of shape the edge goes through, which stands for its end.
     case via
+    /// `share: true` or `share: "A"`: an edge through a reference reuses one already beside its start's
+    /// container, or the one beside A, rather than make another.
+    case share
 }
 
 /// The side of a shape an edge's end aims at.

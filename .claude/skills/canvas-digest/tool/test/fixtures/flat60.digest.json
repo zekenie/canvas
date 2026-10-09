@@ -1,0 +1,1346 @@
+{
+ "title": "Flat modules",
+ "policy": {
+  "mess": 0.1
+ },
+ "nodes": [
+  {
+   "title": "Parse cursor",
+   "kind": "sticky-note",
+   "text": "The parse cursor."
+  },
+  {
+   "title": "Parse hook",
+   "kind": "sticky-note",
+   "text": "The parse hook."
+  },
+  {
+   "title": "Parse view",
+   "kind": "sticky-note",
+   "text": "The parse view."
+  },
+  {
+   "title": "Parse stream",
+   "kind": "sticky-note",
+   "text": "The parse stream."
+  },
+  {
+   "title": "Parse core",
+   "kind": "sticky-note",
+   "text": "The parse core."
+  },
+  {
+   "title": "Parse scan",
+   "kind": "sticky-note",
+   "text": "The parse scan."
+  },
+  {
+   "title": "Lex merge",
+   "kind": "sticky-note",
+   "text": "The lex merge."
+  },
+  {
+   "title": "Lex plan",
+   "kind": "sticky-note",
+   "text": "The lex plan."
+  },
+  {
+   "title": "Lex core",
+   "kind": "sticky-note",
+   "text": "The lex core."
+  },
+  {
+   "title": "Lex gate",
+   "kind": "sticky-note",
+   "text": "The lex gate."
+  },
+  {
+   "title": "Lex pool",
+   "kind": "sticky-note",
+   "text": "The lex pool."
+  },
+  {
+   "title": "Lex stream",
+   "kind": "sticky-note",
+   "text": "The lex stream."
+  },
+  {
+   "title": "Render merge",
+   "kind": "sticky-note",
+   "text": "The render merge."
+  },
+  {
+   "title": "Render plan",
+   "kind": "sticky-note",
+   "text": "The render plan."
+  },
+  {
+   "title": "Render scan",
+   "kind": "sticky-note",
+   "text": "The render scan."
+  },
+  {
+   "title": "Render stream",
+   "kind": "sticky-note",
+   "text": "The render stream."
+  },
+  {
+   "title": "Render pool",
+   "kind": "sticky-note",
+   "text": "The render pool."
+  },
+  {
+   "title": "Render hook",
+   "kind": "sticky-note",
+   "text": "The render hook."
+  },
+  {
+   "title": "Index plan",
+   "kind": "sticky-note",
+   "text": "The index plan."
+  },
+  {
+   "title": "Index core",
+   "kind": "sticky-note",
+   "text": "The index core."
+  },
+  {
+   "title": "Index guard",
+   "kind": "sticky-note",
+   "text": "The index guard."
+  },
+  {
+   "title": "Index scan",
+   "kind": "sticky-note",
+   "text": "The index scan."
+  },
+  {
+   "title": "Index hook",
+   "kind": "sticky-note",
+   "text": "The index hook."
+  },
+  {
+   "title": "Index pool",
+   "kind": "sticky-note",
+   "text": "The index pool."
+  },
+  {
+   "title": "Route scan",
+   "kind": "sticky-note",
+   "text": "The route scan."
+  },
+  {
+   "title": "Route gate",
+   "kind": "sticky-note",
+   "text": "The route gate."
+  },
+  {
+   "title": "Route pool",
+   "kind": "sticky-note",
+   "text": "The route pool."
+  },
+  {
+   "title": "Route batch",
+   "kind": "sticky-note",
+   "text": "The route batch."
+  },
+  {
+   "title": "Route merge",
+   "kind": "sticky-note",
+   "text": "The route merge."
+  },
+  {
+   "title": "Route cursor",
+   "kind": "sticky-note",
+   "text": "The route cursor."
+  },
+  {
+   "title": "Cache gate",
+   "kind": "sticky-note",
+   "text": "The cache gate."
+  },
+  {
+   "title": "Cache core",
+   "kind": "sticky-note",
+   "text": "The cache core."
+  },
+  {
+   "title": "Cache batch",
+   "kind": "sticky-note",
+   "text": "The cache batch."
+  },
+  {
+   "title": "Cache plan",
+   "kind": "sticky-note",
+   "text": "The cache plan."
+  },
+  {
+   "title": "Cache stream",
+   "kind": "sticky-note",
+   "text": "The cache stream."
+  },
+  {
+   "title": "Cache pool",
+   "kind": "sticky-note",
+   "text": "The cache pool."
+  },
+  {
+   "title": "Queue gate",
+   "kind": "sticky-note",
+   "text": "The queue gate."
+  },
+  {
+   "title": "Queue hook",
+   "kind": "sticky-note",
+   "text": "The queue hook."
+  },
+  {
+   "title": "Queue view",
+   "kind": "sticky-note",
+   "text": "The queue view."
+  },
+  {
+   "title": "Queue plan",
+   "kind": "sticky-note",
+   "text": "The queue plan."
+  },
+  {
+   "title": "Queue stream",
+   "kind": "sticky-note",
+   "text": "The queue stream."
+  },
+  {
+   "title": "Queue pool",
+   "kind": "sticky-note",
+   "text": "The queue pool."
+  },
+  {
+   "title": "Sync guard",
+   "kind": "sticky-note",
+   "text": "The sync guard."
+  },
+  {
+   "title": "Sync plan",
+   "kind": "sticky-note",
+   "text": "The sync plan."
+  },
+  {
+   "title": "Sync scan",
+   "kind": "sticky-note",
+   "text": "The sync scan."
+  },
+  {
+   "title": "Sync hook",
+   "kind": "sticky-note",
+   "text": "The sync hook."
+  },
+  {
+   "title": "Sync core",
+   "kind": "sticky-note",
+   "text": "The sync core."
+  },
+  {
+   "title": "Sync gate",
+   "kind": "sticky-note",
+   "text": "The sync gate."
+  },
+  {
+   "title": "Auth scan",
+   "kind": "sticky-note",
+   "text": "The auth scan."
+  },
+  {
+   "title": "Auth gate",
+   "kind": "sticky-note",
+   "text": "The auth gate."
+  },
+  {
+   "title": "Auth batch",
+   "kind": "sticky-note",
+   "text": "The auth batch."
+  },
+  {
+   "title": "Auth hook",
+   "kind": "sticky-note",
+   "text": "The auth hook."
+  },
+  {
+   "title": "Auth pool",
+   "kind": "sticky-note",
+   "text": "The auth pool."
+  },
+  {
+   "title": "Auth cursor",
+   "kind": "sticky-note",
+   "text": "The auth cursor."
+  },
+  {
+   "title": "Store hook",
+   "kind": "sticky-note",
+   "text": "The store hook."
+  },
+  {
+   "title": "Store cursor",
+   "kind": "sticky-note",
+   "text": "The store cursor."
+  },
+  {
+   "title": "Store batch",
+   "kind": "sticky-note",
+   "text": "The store batch."
+  },
+  {
+   "title": "Store core",
+   "kind": "sticky-note",
+   "text": "The store core."
+  },
+  {
+   "title": "Store view",
+   "kind": "sticky-note",
+   "text": "The store view."
+  },
+  {
+   "title": "Store stream",
+   "kind": "sticky-note",
+   "text": "The store stream."
+  }
+ ],
+ "edges": [
+  {
+   "from": "Parse cursor",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Parse cursor",
+   "to": "Lex plan"
+  },
+  {
+   "from": "Parse cursor",
+   "to": "Lex gate"
+  },
+  {
+   "from": "Parse cursor",
+   "to": "Store core"
+  },
+  {
+   "from": "Parse cursor",
+   "to": "Cache batch"
+  },
+  {
+   "from": "Parse hook",
+   "to": "Parse view"
+  },
+  {
+   "from": "Parse hook",
+   "to": "Lex merge"
+  },
+  {
+   "from": "Parse hook",
+   "to": "Lex plan"
+  },
+  {
+   "from": "Parse hook",
+   "to": "Index hook"
+  },
+  {
+   "from": "Parse hook",
+   "to": "Render hook"
+  },
+  {
+   "from": "Parse view",
+   "to": "Cache plan"
+  },
+  {
+   "from": "Parse view",
+   "to": "Route merge"
+  },
+  {
+   "from": "Parse stream",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Parse stream",
+   "to": "Parse view"
+  },
+  {
+   "from": "Parse stream",
+   "to": "Route cursor"
+  },
+  {
+   "from": "Parse stream",
+   "to": "Auth cursor"
+  },
+  {
+   "from": "Parse core",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Parse core",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Parse core",
+   "to": "Parse view"
+  },
+  {
+   "from": "Parse core",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Parse core",
+   "to": "Lex core"
+  },
+  {
+   "from": "Parse core",
+   "to": "Sync scan"
+  },
+  {
+   "from": "Parse core",
+   "to": "Cache pool"
+  },
+  {
+   "from": "Parse scan",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Parse scan",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Parse scan",
+   "to": "Cache core"
+  },
+  {
+   "from": "Parse scan",
+   "to": "Index pool"
+  },
+  {
+   "from": "Lex merge",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Lex merge",
+   "to": "Parse scan"
+  },
+  {
+   "from": "Lex merge",
+   "to": "Route merge"
+  },
+  {
+   "from": "Lex merge",
+   "to": "Index core"
+  },
+  {
+   "from": "Lex plan",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Lex plan",
+   "to": "Cache pool"
+  },
+  {
+   "from": "Lex plan",
+   "to": "Index core"
+  },
+  {
+   "from": "Lex core",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Lex core",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Lex core",
+   "to": "Sync hook"
+  },
+  {
+   "from": "Lex core",
+   "to": "Sync guard"
+  },
+  {
+   "from": "Lex gate",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Lex gate",
+   "to": "Queue pool"
+  },
+  {
+   "from": "Lex gate",
+   "to": "Route pool"
+  },
+  {
+   "from": "Lex pool",
+   "to": "Parse view"
+  },
+  {
+   "from": "Lex pool",
+   "to": "Lex merge"
+  },
+  {
+   "from": "Lex pool",
+   "to": "Queue plan"
+  },
+  {
+   "from": "Lex pool",
+   "to": "Route merge"
+  },
+  {
+   "from": "Lex stream",
+   "to": "Store hook"
+  },
+  {
+   "from": "Lex stream",
+   "to": "Queue view"
+  },
+  {
+   "from": "Render merge",
+   "to": "Parse core"
+  },
+  {
+   "from": "Render merge",
+   "to": "Store batch"
+  },
+  {
+   "from": "Render merge",
+   "to": "Queue gate"
+  },
+  {
+   "from": "Render plan",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Render plan",
+   "to": "Lex gate"
+  },
+  {
+   "from": "Render plan",
+   "to": "Index guard"
+  },
+  {
+   "from": "Render plan",
+   "to": "Sync gate"
+  },
+  {
+   "from": "Render scan",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Render scan",
+   "to": "Parse view"
+  },
+  {
+   "from": "Render scan",
+   "to": "Parse scan"
+  },
+  {
+   "from": "Render scan",
+   "to": "Lex core"
+  },
+  {
+   "from": "Render scan",
+   "to": "Cache gate"
+  },
+  {
+   "from": "Render scan",
+   "to": "Index scan"
+  },
+  {
+   "from": "Render stream",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Render stream",
+   "to": "Parse scan"
+  },
+  {
+   "from": "Render stream",
+   "to": "Route batch"
+  },
+  {
+   "from": "Render stream",
+   "to": "Queue gate"
+  },
+  {
+   "from": "Render pool",
+   "to": "Cache batch"
+  },
+  {
+   "from": "Render pool",
+   "to": "Index plan"
+  },
+  {
+   "from": "Render hook",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Render hook",
+   "to": "Parse core"
+  },
+  {
+   "from": "Render hook",
+   "to": "Cache batch"
+  },
+  {
+   "from": "Render hook",
+   "to": "Auth pool"
+  },
+  {
+   "from": "Index plan",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Index plan",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Index plan",
+   "to": "Parse core"
+  },
+  {
+   "from": "Index plan",
+   "to": "Route merge"
+  },
+  {
+   "from": "Index plan",
+   "to": "Queue stream"
+  },
+  {
+   "from": "Index core",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Index core",
+   "to": "Route cursor"
+  },
+  {
+   "from": "Index core",
+   "to": "Queue pool"
+  },
+  {
+   "from": "Index guard",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Index guard",
+   "to": "Parse view"
+  },
+  {
+   "from": "Index guard",
+   "to": "Lex merge"
+  },
+  {
+   "from": "Index guard",
+   "to": "Sync hook"
+  },
+  {
+   "from": "Index guard",
+   "to": "Route batch"
+  },
+  {
+   "from": "Index scan",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Index scan",
+   "to": "Parse view"
+  },
+  {
+   "from": "Index scan",
+   "to": "Auth scan"
+  },
+  {
+   "from": "Index scan",
+   "to": "Store core"
+  },
+  {
+   "from": "Index hook",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Index hook",
+   "to": "Parse view"
+  },
+  {
+   "from": "Index hook",
+   "to": "Lex plan"
+  },
+  {
+   "from": "Index hook",
+   "to": "Sync gate"
+  },
+  {
+   "from": "Index hook",
+   "to": "Index plan"
+  },
+  {
+   "from": "Index pool",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Index pool",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Index pool",
+   "to": "Lex merge"
+  },
+  {
+   "from": "Index pool",
+   "to": "Store cursor"
+  },
+  {
+   "from": "Index pool",
+   "to": "Auth batch"
+  },
+  {
+   "from": "Route scan",
+   "to": "Lex pool"
+  },
+  {
+   "from": "Route scan",
+   "to": "Store hook"
+  },
+  {
+   "from": "Route gate",
+   "to": "Queue hook"
+  },
+  {
+   "from": "Route gate",
+   "to": "Sync gate"
+  },
+  {
+   "from": "Route pool",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Route pool",
+   "to": "Parse core"
+  },
+  {
+   "from": "Route pool",
+   "to": "Parse scan"
+  },
+  {
+   "from": "Route pool",
+   "to": "Cache pool"
+  },
+  {
+   "from": "Route pool",
+   "to": "Store hook"
+  },
+  {
+   "from": "Route batch",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Route batch",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Route batch",
+   "to": "Parse view"
+  },
+  {
+   "from": "Route batch",
+   "to": "Parse scan"
+  },
+  {
+   "from": "Route batch",
+   "to": "Index scan"
+  },
+  {
+   "from": "Route batch",
+   "to": "Auth gate"
+  },
+  {
+   "from": "Route merge",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Route merge",
+   "to": "Parse view"
+  },
+  {
+   "from": "Route merge",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Route merge",
+   "to": "Cache pool"
+  },
+  {
+   "from": "Route merge",
+   "to": "Auth gate"
+  },
+  {
+   "from": "Route cursor",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Route cursor",
+   "to": "Parse view"
+  },
+  {
+   "from": "Route cursor",
+   "to": "Lex plan"
+  },
+  {
+   "from": "Route cursor",
+   "to": "Auth batch"
+  },
+  {
+   "from": "Route cursor",
+   "to": "Auth cursor"
+  },
+  {
+   "from": "Cache gate",
+   "to": "Route gate"
+  },
+  {
+   "from": "Cache gate",
+   "to": "Cache plan"
+  },
+  {
+   "from": "Cache core",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Cache core",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Cache core",
+   "to": "Parse view"
+  },
+  {
+   "from": "Cache core",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Cache core",
+   "to": "Lex merge"
+  },
+  {
+   "from": "Cache core",
+   "to": "Cache stream"
+  },
+  {
+   "from": "Cache core",
+   "to": "Queue plan"
+  },
+  {
+   "from": "Cache batch",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Cache batch",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Cache batch",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Cache batch",
+   "to": "Parse scan"
+  },
+  {
+   "from": "Cache batch",
+   "to": "Render hook"
+  },
+  {
+   "from": "Cache batch",
+   "to": "Render stream"
+  },
+  {
+   "from": "Cache plan",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Cache plan",
+   "to": "Cache stream"
+  },
+  {
+   "from": "Cache stream",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Cache stream",
+   "to": "Cache pool"
+  },
+  {
+   "from": "Cache stream",
+   "to": "Render scan"
+  },
+  {
+   "from": "Cache pool",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Cache pool",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Cache pool",
+   "to": "Parse view"
+  },
+  {
+   "from": "Cache pool",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Cache pool",
+   "to": "Lex plan"
+  },
+  {
+   "from": "Cache pool",
+   "to": "Auth gate"
+  },
+  {
+   "from": "Cache pool",
+   "to": "Queue hook"
+  },
+  {
+   "from": "Queue gate",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Queue gate",
+   "to": "Parse view"
+  },
+  {
+   "from": "Queue gate",
+   "to": "Parse core"
+  },
+  {
+   "from": "Queue gate",
+   "to": "Index guard"
+  },
+  {
+   "from": "Queue gate",
+   "to": "Store view"
+  },
+  {
+   "from": "Queue hook",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Queue hook",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Queue hook",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Queue hook",
+   "to": "Index core"
+  },
+  {
+   "from": "Queue hook",
+   "to": "Render hook"
+  },
+  {
+   "from": "Queue view",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Queue view",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Queue view",
+   "to": "Parse scan"
+  },
+  {
+   "from": "Queue view",
+   "to": "Store cursor"
+  },
+  {
+   "from": "Queue view",
+   "to": "Cache plan"
+  },
+  {
+   "from": "Queue plan",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Queue plan",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Queue plan",
+   "to": "Lex gate"
+  },
+  {
+   "from": "Queue plan",
+   "to": "Auth scan"
+  },
+  {
+   "from": "Queue plan",
+   "to": "Queue hook"
+  },
+  {
+   "from": "Queue stream",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Queue stream",
+   "to": "Lex merge"
+  },
+  {
+   "from": "Queue stream",
+   "to": "Render pool"
+  },
+  {
+   "from": "Queue stream",
+   "to": "Store cursor"
+  },
+  {
+   "from": "Queue pool",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Queue pool",
+   "to": "Parse core"
+  },
+  {
+   "from": "Queue pool",
+   "to": "Lex merge"
+  },
+  {
+   "from": "Queue pool",
+   "to": "Lex core"
+  },
+  {
+   "from": "Queue pool",
+   "to": "Queue gate"
+  },
+  {
+   "from": "Queue pool",
+   "to": "Queue view"
+  },
+  {
+   "from": "Sync guard",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Sync guard",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Sync guard",
+   "to": "Parse view"
+  },
+  {
+   "from": "Sync guard",
+   "to": "Parse core"
+  },
+  {
+   "from": "Sync guard",
+   "to": "Render pool"
+  },
+  {
+   "from": "Sync guard",
+   "to": "Render stream"
+  },
+  {
+   "from": "Sync plan",
+   "to": "Parse scan"
+  },
+  {
+   "from": "Sync plan",
+   "to": "Auth batch"
+  },
+  {
+   "from": "Sync plan",
+   "to": "Index plan"
+  },
+  {
+   "from": "Sync scan",
+   "to": "Parse view"
+  },
+  {
+   "from": "Sync scan",
+   "to": "Lex merge"
+  },
+  {
+   "from": "Sync scan",
+   "to": "Cache pool"
+  },
+  {
+   "from": "Sync scan",
+   "to": "Cache gate"
+  },
+  {
+   "from": "Sync hook",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Sync hook",
+   "to": "Store cursor"
+  },
+  {
+   "from": "Sync hook",
+   "to": "Index hook"
+  },
+  {
+   "from": "Sync core",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Sync core",
+   "to": "Lex plan"
+  },
+  {
+   "from": "Sync core",
+   "to": "Index plan"
+  },
+  {
+   "from": "Sync gate",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Sync gate",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Sync gate",
+   "to": "Parse core"
+  },
+  {
+   "from": "Sync gate",
+   "to": "Parse scan"
+  },
+  {
+   "from": "Sync gate",
+   "to": "Cache gate"
+  },
+  {
+   "from": "Sync gate",
+   "to": "Render scan"
+  },
+  {
+   "from": "Auth scan",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Auth scan",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Auth scan",
+   "to": "Parse core"
+  },
+  {
+   "from": "Auth scan",
+   "to": "Lex plan"
+  },
+  {
+   "from": "Auth scan",
+   "to": "Cache batch"
+  },
+  {
+   "from": "Auth scan",
+   "to": "Queue hook"
+  },
+  {
+   "from": "Auth gate",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Auth gate",
+   "to": "Lex plan"
+  },
+  {
+   "from": "Auth gate",
+   "to": "Store batch"
+  },
+  {
+   "from": "Auth gate",
+   "to": "Render pool"
+  },
+  {
+   "from": "Auth batch",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Auth batch",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Auth batch",
+   "to": "Auth scan"
+  },
+  {
+   "from": "Auth batch",
+   "to": "Queue hook"
+  },
+  {
+   "from": "Auth hook",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Auth hook",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Auth hook",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Auth hook",
+   "to": "Lex merge"
+  },
+  {
+   "from": "Auth hook",
+   "to": "Index pool"
+  },
+  {
+   "from": "Auth hook",
+   "to": "Lex pool"
+  },
+  {
+   "from": "Auth pool",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Auth pool",
+   "to": "Store view"
+  },
+  {
+   "from": "Auth pool",
+   "to": "Route gate"
+  },
+  {
+   "from": "Auth cursor",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Auth cursor",
+   "to": "Parse scan"
+  },
+  {
+   "from": "Auth cursor",
+   "to": "Cache stream"
+  },
+  {
+   "from": "Auth cursor",
+   "to": "Render merge"
+  },
+  {
+   "from": "Store hook",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Store hook",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Store hook",
+   "to": "Render stream"
+  },
+  {
+   "from": "Store hook",
+   "to": "Index hook"
+  },
+  {
+   "from": "Store cursor",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Store cursor",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Store cursor",
+   "to": "Parse core"
+  },
+  {
+   "from": "Store cursor",
+   "to": "Lex plan"
+  },
+  {
+   "from": "Store cursor",
+   "to": "Queue stream"
+  },
+  {
+   "from": "Store cursor",
+   "to": "Sync scan"
+  },
+  {
+   "from": "Store batch",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Store batch",
+   "to": "Sync gate"
+  },
+  {
+   "from": "Store batch",
+   "to": "Lex stream"
+  },
+  {
+   "from": "Store core",
+   "to": "Parse view"
+  },
+  {
+   "from": "Store core",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Store core",
+   "to": "Parse core"
+  },
+  {
+   "from": "Store core",
+   "to": "Lex pool"
+  },
+  {
+   "from": "Store core",
+   "to": "Route batch"
+  },
+  {
+   "from": "Store view",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Store view",
+   "to": "Parse view"
+  },
+  {
+   "from": "Store view",
+   "to": "Parse stream"
+  },
+  {
+   "from": "Store view",
+   "to": "Sync hook"
+  },
+  {
+   "from": "Store view",
+   "to": "Index pool"
+  },
+  {
+   "from": "Store stream",
+   "to": "Parse cursor"
+  },
+  {
+   "from": "Store stream",
+   "to": "Parse hook"
+  },
+  {
+   "from": "Store stream",
+   "to": "Parse view"
+  },
+  {
+   "from": "Store stream",
+   "to": "Sync plan"
+  },
+  {
+   "from": "Store stream",
+   "to": "Index pool"
+  }
+ ]
+}
