@@ -133,14 +133,15 @@ enum ContextMenuItems {
             : checks.allSatisfy { $0 == true } ? .on : checks.contains(true) ? .mixed : .off
         // Whatever the item does, over every shape, is one undo step, named by the item.
         return ResolvedEntry(title: entry.title, key: entry.key, content: .item(isEnabled: !enabled.isEmpty, state: state) {
-            editor.undoHistory.group(entry.title) { perform(enabled, in: editor) }
+            editor.undoHistory.group(entry.stepName ?? entry.title) { perform(enabled, in: editor) }
         })
     }
 
     /// The canvas's items for a menu's subject, each asked once: those shown, in order, and
-    /// submenus with something in them.
+    /// submenus with something in them. What an entry made when the menu opens (`MenuItems`) gives
+    /// stands in its place, asked once, and an entry whose key an earlier one at its level has is left out.
     static func resolve(_ entries: [MenuEntry<MenuSubject>], for subject: MenuSubject) -> [ResolvedEntry] {
-        entries.compactMap { entry in
+        expanded(entries, for: subject).compactMap { entry in
             guard entry.isShown(subject) else { return nil }
             let key = EntryKey(group: entry.group, id: entry.id)
             switch entry.content {
@@ -152,15 +153,27 @@ enum ContextMenuItems {
                     edit(&subject)
                 }
                 }
-                let title = entry.title, editor = subject.editor
+                let title = entry.stepName ?? entry.title, editor = subject.editor
                 let step: @MainActor () -> Void = { editor.undoHistory.group(title, run) }
                 let state: NSControl.StateValue? = isChecked.map { $0(subject) ? .on : .off }
                 return ResolvedEntry(title: entry.title, key: key, content: .item(isEnabled: isEnabled(subject), state: state, perform: step))
             case .submenu(let entries):
                 let items = resolve(entries, for: subject)
                 return items.isEmpty ? nil : ResolvedEntry(title: entry.title, key: key, content: .submenu(items))
+            case .dynamic:
+                return nil
             }
         }
+    }
+
+    /// The entries with each `MenuItems` replaced by what it makes (itself expanded), the first of
+    /// each key staying.
+    private static func expanded(_ entries: [MenuEntry<MenuSubject>], for subject: MenuSubject) -> [MenuEntry<MenuSubject>] {
+        var seen = Set<EntryKey>()
+        return entries.flatMap { entry -> [MenuEntry<MenuSubject>] in
+            guard case .dynamic(let make) = entry.content else { return [entry] }
+            return expanded(make(subject), for: subject)
+        }.filter { seen.insert(EntryKey(group: $0.group, id: $0.id)).inserted }
     }
 
     /// Every edit in one transaction, then each contribution's `perform` once, with its shapes.
