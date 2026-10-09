@@ -28,11 +28,16 @@ extension Pin: Adornment {
     static var order: Int { 300 }
 }
 extension Pin: ClickableAdornment {
-    static func click(on shape: ShapeID, in editor: CanvasEditor) { clicked.append(shape) }
+    static func click(_ click: AdornmentClick, in editor: CanvasEditor) {
+        clicked.append(click.shape)
+        clicks.append(click)
+    }
 }
 
 /// The shapes a pin was clicked on, in order.
 @MainActor var clicked: [ShapeID] = []
+/// What each of those clicks said.
+@MainActor var clicks: [AdornmentClick] = []
 
 /// Text on the top-right corner: a tally, "☑ 2/5".
 enum Count {}

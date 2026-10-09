@@ -15,7 +15,7 @@ extension Ghost: Adornment {
     static var placement: AdornmentPlacement { .aboveTopRight }
 }
 extension Ghost: ClickableAdornment {
-    static func click(on shape: ShapeID, in editor: CanvasEditor) {}
+    static func click(_ click: AdornmentClick, in editor: CanvasEditor) {}
 }
 
 /// A second chip, to show two on one shape fade apart.

@@ -165,7 +165,8 @@ final class AdornmentState {
     func click(_ button: AdornmentButton) {
         guard let record = editor.document[button.shape],
               let click = candidates(for: record.kind).first(where: { $0.adornment == button.adornment })?.click else { return }
-        click(button.shape, editor)
+        let rect = frames(of: record).first { $0.adornment == button.adornment }?.rect ?? .null
+        click(AdornmentClick(shape: button.shape, rect: rect), editor)
     }
 }
 

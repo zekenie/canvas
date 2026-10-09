@@ -46,7 +46,35 @@ extension Adornment {
 /// the pointing hand shows over it; a right-click on it is on its shape, as on any adornment. The
 /// lock chip: a click unlocks its shape.
 public protocol ClickableAdornment: Adornment {
-    @MainActor static func click(on shape: ShapeID, in editor: CanvasEditor)
+    @MainActor static func click(_ click: AdornmentClick, in editor: CanvasEditor)
+}
+
+/// Which of a group's labels a chip is: any plugin's own name for it (a type chip's is its type
+/// note's id), kept with the label so a click and a hover go by it, and a rename or a change in the
+/// others' places doesn't change which one the pointer's on.
+public struct AdornmentTag: Hashable, Sendable {
+    public let raw: String
+
+    public init(_ raw: String) { self.raw = raw }
+    public init(_ id: ShapeID) { raw = id.description }
+}
+
+/// A click on a clickable adornment: its shape, the label's tag (nil for an untagged label, and for
+/// a group's "+N" chip, `isOverflow`), and where the chip is now, in world units, where its shape
+/// is (not where a shake draws it): what a menu opened by the click goes below.
+public struct AdornmentClick: Equatable, Sendable {
+    public let shape: ShapeID
+    public let tag: AdornmentTag?
+    public let rect: CGRect
+    /// The click is on a group's "+N" chip, which stands for the labels the row had no room for.
+    public let isOverflow: Bool
+
+    public init(shape: ShapeID, tag: AdornmentTag? = nil, rect: CGRect, isOverflow: Bool = false) {
+        self.shape = shape
+        self.tag = tag
+        self.rect = rect
+        self.isOverflow = isOverflow
+    }
 }
 
 /// Where on its shape an adornment goes, from the shape's bounds (its geometry's, axis-aligned), in
@@ -268,7 +296,7 @@ public struct AdornmentContribution {
     let appliesTo: @MainActor (AdornableKind) -> Bool
     let label: @MainActor (AnyShapeRecord, AdornmentContext) -> AdornmentLabel?
     /// From the type's `ClickableAdornment` conformance, if it has one.
-    let click: (@MainActor (ShapeID, CanvasEditor) -> Void)?
+    let click: (@MainActor (AdornmentClick, CanvasEditor) -> Void)?
 
     init<A: Adornment>(_: A.Type, appliesTo: @escaping @MainActor (AdornableKind) -> Bool = { _ in true },
                        label: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> AdornmentLabel?) {
@@ -276,7 +304,7 @@ public struct AdornmentContribution {
         self.appliesTo = appliesTo
         self.label = label
         if let clickable = A.self as? any ClickableAdornment.Type {
-            click = { id, editor in clickable.click(on: id, in: editor) }
+            click = { click, editor in clickable.click(click, in: editor) }
         } else {
             click = nil
         }
