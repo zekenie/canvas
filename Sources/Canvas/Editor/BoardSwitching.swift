@@ -121,6 +121,11 @@ public struct BoardStash<State> {
         body(&kept[board]!.state)
     }
 
+    /// Changes what's kept for every board.
+    public mutating func modifyAll(_ body: (inout State) -> Void) {
+        for board in kept.keys { body(&kept[board]!.state) }
+    }
+
     /// Forgets what's kept for these boards.
     public mutating func forget(_ boards: some Sequence<BoardID>) {
         for board in boards where kept.removeValue(forKey: board) != nil { order.removeAll { $0 == board } }

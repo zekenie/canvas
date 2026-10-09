@@ -295,6 +295,17 @@ final class ShapeIndex {
         }
     }
 
+    /// Shapes whose geometry reads something no commit changed (`editor.shapesDidChangeLayout`): the
+    /// entries kept for them, and for shapes that looked them up, are let go, and where they were is
+    /// noted as a commit's damage is. Shapes with no entry kept have nothing to forget.
+    func layoutDidChange(_ ids: Set<ShapeID>) {
+        let known = ids.filter { entries[$0] != nil }
+        guard !known.isEmpty else { return }
+        generation += 1
+        let (touched, before) = forget(known)
+        noteDamage(before: before, ids: touched)
+    }
+
     func cameraDidChange() {
         generation += 1
         guard !cameraReaders.isEmpty else { return }
