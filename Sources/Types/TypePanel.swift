@@ -2,6 +2,7 @@ import Canvas
 import DetailPanel
 import Foundation
 import LanguageModels
+import Selection
 import SwiftUI
 import Validation
 
@@ -9,6 +10,14 @@ import Validation
 public enum TypeSchemaTab {}
 extension TypeSchemaTab: DetailTab {
     public static var title: String { "Schema" }
+}
+
+/// The Types tab of a shape that is some: each type it is, in the order of its list.
+public enum TypesTab {}
+extension TypesTab: DetailTab {
+    public static var title: String { "Types" }
+    /// A feature tab a horizontal adds to the kinds that opt into it.
+    public static var order: Int { 50 }
 }
 
 /// What the panel says about types.
@@ -36,6 +45,13 @@ enum TypePanelText {
 func registerTypePanel(into registrar: inout PluginRegistrar) {
     registrar.details(of: TypeSchemaProperty.self) {
         DetailSection("JSON", in: TypeSchemaTab.self) { $schema in TypeSchemaCode(schema: $schema) }
+    }
+    // Every shape that is some, whatever its kind: its types, in order, each a row that goes to the
+    // type, and a minus that takes the shape out of it. Going to a type changes nothing, so the rows
+    // work on a shape that can't change; the minus doesn't.
+    registrar.details(of: IsAProperty.self) {
+        DetailSection(in: TypesTab.self, id: "types") { $types in TypesList(types: $types) }
+            .enabledWhileReadOnly()
     }
 }
 
@@ -145,5 +161,45 @@ extension DetailCodeCompletions {
                                            selection: NSRange(location: item.selection.lowerBound, length: item.selection.count),
                                            reopens: item.reopens, isRelevant: item.isRelevant)
                   })
+    }
+}
+
+
+/// The types a shape is, one row each.
+struct TypesList: View {
+    @ShapeBinding var types: [TypeLink]
+
+    var body: some View {
+        let index = $types.service(TypeIndex.self), owner = $types.shapeID
+        ForEach(types, id: \.shape) { link in TypesRow(link: link, owner: owner, index: index) }
+    }
+}
+
+/// One type: its title, live (dimmed, with the last title it was known by, once it's gone), a click
+/// on it goes there, and the minus at its end takes the shape out of it (one step, Remove Type).
+struct TypesRow: View {
+    let link: TypeLink
+    let owner: ShapeID
+    let index: TypeIndex?
+
+    var body: some View {
+        let name = index?.name(of: link) ?? .missing(lastKnown: nil)
+        let editor = index?.editor
+        let isGone = editor?.file.record(link.shape) == nil, isMissing = if case .missing = name { true } else { false }
+        HStack(spacing: 2) {
+            Button {
+                let type = link.shape
+                _ = editor?.scheduler.schedule(after: .zero) { [weak editor] in editor?.goTo([type]) }
+            } label: {
+                DetailShapeRow(symbol: TypesStyle.typeRowSymbol, name: TypesStyle.menuName(name), dimmed: isMissing)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.primary)
+            .disabled(isGone)
+            Button { editor?.removeTypeLink(link.shape, from: owner) } label: { Image(systemName: "minus.circle") }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(TypesStyle.removeType)
+                .disabled(editor?.isReadOnly(inFile: owner) ?? true)
+        }
     }
 }

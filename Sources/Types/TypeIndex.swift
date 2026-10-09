@@ -1,15 +1,31 @@
+import Adornments
 import Canvas
 import Foundation
 import Mentions
 import Titles
+import Topology
+
+/// What a type is called where a shape's types are listed (`TypeIndex.name(of:)`).
+public enum TypeLinkName: Equatable, Sendable {
+    /// The type is there: its title, nil for a type with none.
+    case live(String?)
+    /// The type is gone (deleted, or no longer a type): the last title it was known by in this
+    /// session, if any. Undoing the delete brings it back.
+    case missing(lastKnown: String?)
+}
 
 /// The file's types, on every board: each shape that holds a schema (`TypeSchemaProperty`), its
 /// name (its title, Titles') and a revision that moves whenever its schema or its name changes, so
-/// what depends on a type (a `$ref`'s completion, a type's highlights, later its instances) can tell
-/// it changed without reading it. Read when the file opens, a scan of every board, then kept by
-/// each commit's `ChangeSet` alone (what it added, removed and changed, on the board shown and
-/// elsewhere, the kind checked first); a file put in place is read again. Nothing per frame.
+/// what depends on a type (a `$ref`'s completion, a type's highlights, an instance's chips) can tell
+/// it changed without reading it. And what is what: the types each shape is (`is`, `links(of:)`),
+/// the instances of each type (`instances(of:)`) and the chain a shape's types make
+/// (`lineage(of:)`). Read when the file opens, a scan of every board, then kept by each commit's
+/// `ChangeSet` alone (what it added, removed and changed, on the board shown and elsewhere, the kind
+/// checked first), a commit heard out of turn and a file put in place read again. Nothing per frame,
+/// and nothing for a shape that only moved. It never transacts; it tells Adornments to make the
+/// chips of the instances of a type again when the type is renamed, deleted or comes back.
 @MainActor
+@Observable
 public final class TypeIndex {
     private struct Entry {
         var schema: String
@@ -17,18 +33,42 @@ public final class TypeIndex {
         var revision: Int
     }
 
-    weak var editor: CanvasEditor?
-    private var entries: [ShapeID: Entry] = [:]
-    private var revisions = 0
+    @ObservationIgnored weak var editor: CanvasEditor?
+    @ObservationIgnored private var entries: [ShapeID: Entry] = [:]
+    @ObservationIgnored private var revisions = 0
     /// The kinds that can be types: every other shape is passed over at once.
-    private let kinds: Set<ShapeKind>
-    private var observers: [@MainActor (Set<ShapeID>) -> Void] = []
+    @ObservationIgnored private let kinds: Set<ShapeKind>
+    /// The kinds that can be instances of types.
+    @ObservationIgnored private let typeableKinds: Set<ShapeKind>
+    /// The kinds that stand in for other shapes (pills): never a type, whatever they stand for.
+    @ObservationIgnored private let standInKinds: Set<ShapeKind>
+    @ObservationIgnored private var observers: [@MainActor (Set<ShapeID>) -> Void] = []
+    /// Each shape's types, in the order of its list: only the shapes that are some.
+    @ObservationIgnored private var links: [ShapeID: [TypeLink]] = [:]
+    /// The shapes whose list names each shape.
+    @ObservationIgnored private var instancesByType: [ShapeID: Set<ShapeID>] = [:]
+    /// The last title each type was known by in this session.
+    @ObservationIgnored private var lastNames: [ShapeID: String] = [:]
+    /// How often a type's name, or whether it's there, has changed: what a reader of `name(of:)`
+    /// observes.
+    @ObservationIgnored private var nameVersions: [ShapeID: Int] = [:]
+    /// The revision of the editor it's up to date with.
+    @ObservationIgnored private var heardRevision: Int
+
+    #if DEBUG
+    /// How many records it has read (debug builds only): a shape that only moved is read by none, a
+    /// drag reads nothing.
+    @ObservationIgnored public private(set) var recordsRead = 0
+    #endif
 
     init(editor: CanvasEditor) {
         self.editor = editor
         let registry = editor.registry
         kinds = Set(registry.kinds.filter { registry.canBeType($0) })
-        readEveryType(in: editor)
+        typeableKinds = Set(registry.kinds.filter { registry.isTypeable($0) })
+        standInKinds = registry.standIns.kinds
+        heardRevision = editor.revision
+        readEveryShape(in: editor)
     }
 
     /// Whether the shape is a type: it holds a schema.
@@ -49,6 +89,69 @@ public final class TypeIndex {
         observers.append(body)
     }
 
+    // MARK: What is what
+
+    /// The types the shape is, in the order of its list (a later one wins); none for a shape that
+    /// isn't an instance of any, or isn't there. An entry may name a shape that's gone.
+    public func links(of id: ShapeID) -> [TypeLink] { links[id] ?? [] }
+
+    /// The shapes whose list names the shape: its instances, directly (not those of the types that
+    /// are instances of it).
+    public func instances(of type: ShapeID) -> Set<ShapeID> { instancesByType[type] ?? [] }
+
+    /// The shapes a shape is, level by level, nearest first: its own types, later first, then the
+    /// types of those, in the same order, and so on, each once, and never the shape itself, so the
+    /// chain of a shape that is its own ancestor stops where it comes back. This is the order a
+    /// shape's types are read in: the first to say a thing wins. A name that is gone is in it,
+    /// ending its branch; check `isType` before reading one. Custom shapes, later, add their
+    /// templates and what they build on at `parents(of:)`.
+    public func lineage(of id: ShapeID) -> [ShapeID] {
+        var seen: Set<ShapeID> = [id], chain: [ShapeID] = [], level = [id]
+        while !level.isEmpty {
+            var next: [ShapeID] = []
+            for shape in level {
+                for parent in parents(of: shape) where seen.insert(parent).inserted {
+                    chain.append(parent)
+                    next.append(parent)
+                }
+            }
+            level = next
+        }
+        return chain
+    }
+
+    /// The shapes whose types the shape leads to one step up: what `lineage` climbs by, the shape's
+    /// own types, later first. The one place a lineage's rule lives.
+    private func parents(of shape: ShapeID) -> [ShapeID] {
+        (links[shape] ?? []).reversed().map(\.shape)
+    }
+
+    /// The shapes that read through these: every instance of them, and every instance of those, and
+    /// so on, each once (the shapes themselves only where the chain comes back to them). What a
+    /// change to a type changes: its instances, near and far.
+    public func affected(by changed: Set<ShapeID>) -> Set<ShapeID> {
+        var reached: Set<ShapeID> = [], level = changed
+        while !level.isEmpty {
+            var next: Set<ShapeID> = []
+            for shape in level {
+                for instance in instancesByType[shape] ?? [] where reached.insert(instance).inserted { next.insert(instance) }
+            }
+            level = next
+        }
+        return reached
+    }
+
+    /// What a type is called where it's listed: its title while it's a type, else it's missing, with
+    /// the last title it was known by in this session. Observed per type, so a view of a list of
+    /// types draws again when one is renamed, deleted or brought back.
+    public func name(of link: TypeLink) -> TypeLinkName {
+        access(keyPath: \.[nameVersion: link.shape])
+        if let entry = entries[link.shape] { return .live(entry.name) }
+        return .missing(lastKnown: lastNames[link.shape])
+    }
+
+    private subscript(nameVersion id: ShapeID) -> Int { nameVersions[id] ?? 0 }
+
     /// The types a `$ref` in the schema of `id` can point to, as its JSON's completions offer them:
     /// every other titled type of the file, by its name (what its mentions show), its fields counted,
     /// in the order of their names.
@@ -66,25 +169,84 @@ public final class TypeIndex {
         return found.map { TypeCompletions.type($0.type, named: $0.name, detail: $0.detail) }
     }
 
+    // MARK: What may be what
+
+    /// Whether `/is-a` may make `owner` an instance of `target`: `target` is a type (a shape of a kind
+    /// that stands in for others, a pill, never is), not `owner` itself, not one `owner` is already,
+    /// and not one that is `owner` in turn, which would make a cycle (`lineage`). A shape on any
+    /// board of the file, asked of every shape the `@` picker ranks, so it costs a few lookups.
+    public func admits(_ target: ShapeID, for owner: ShapeID) -> Bool {
+        guard target != owner, mayBe(target, for: owner), !(links[owner] ?? []).contains(TypeLink(target)) else { return false }
+        return !lineage(of: target).contains(owner)
+    }
+
+    /// What a shape may be, by what the target is: a type. The one place that says so; the custom
+    /// shapes of a later slice join here, as what a shape of their kind may be besides.
+    private func mayBe(_ target: ShapeID, for owner: ShapeID) -> Bool {
+        guard entries[target] != nil, let record = editor?.shape(inFile: target), !record.isOpaque else { return false }
+        return !standInKinds.contains(record.kind)
+    }
+
     // MARK: Keeping it
 
     /// What the shape is now, if it's a type, and whether that differs from what's kept: kept, with
-    /// its revision moved, and true.
-    private func read(_ record: AnyShapeRecord, registry: Registry) -> Bool {
-        guard let schema = record[TypeSchemaProperty.self] else { return entries.removeValue(forKey: record.id) != nil }
+    /// its revision moved, and true. `renamed` gets the shape when its name, or whether it's a type,
+    /// is what changed.
+    private func read(_ record: AnyShapeRecord, registry: Registry, renamed: inout Set<ShapeID>) -> Bool {
+        #if DEBUG
+        recordsRead += 1
+        #endif
+        guard let schema = record[TypeSchemaProperty.self] else {
+            guard entries.removeValue(forKey: record.id) != nil else { return false }
+            renamed.insert(record.id)
+            return true
+        }
         let name = registry.title(of: record)
-        if let kept = entries[record.id], kept.schema == schema.text, kept.name == name { return false }
+        let kept = entries[record.id]
+        if let kept, kept.schema == schema.text, kept.name == name { return false }
+        if kept == nil || kept?.name != name { renamed.insert(record.id) }
+        if let name { lastNames[record.id] = name }
         revisions += 1
         entries[record.id] = Entry(schema: schema.text, name: name, revision: revisions)
         return true
     }
 
-    private func readEveryType(in editor: CanvasEditor) {
-        let registry = editor.registry, file = editor.file
-        for record in file.root.shapes where kinds.contains(record.kind) { _ = read(record, registry: registry) }
-        for board in file.children.values {
-            for record in board.shapes where kinds.contains(record.kind) { _ = read(record, registry: registry) }
+    /// What the shape's list is now, filed under the types it names. True if that changed.
+    @discardableResult
+    private func readLinks(_ record: AnyShapeRecord) -> Bool {
+        #if DEBUG
+        recordsRead += 1
+        #endif
+        let now = record[IsAProperty.self] ?? []
+        let before = links[record.id] ?? []
+        guard now != before else { return false }
+        for link in before { instancesByType[link.shape]?.remove(record.id) }
+        for link in before where instancesByType[link.shape]?.isEmpty == true { instancesByType[link.shape] = nil }
+        links[record.id] = now.isEmpty ? nil : now
+        for link in now { instancesByType[link.shape, default: []].insert(record.id) }
+        return true
+    }
+
+    /// A shape that's gone from the file holds no list.
+    private func forgetLinks(of id: ShapeID) {
+        guard let before = links.removeValue(forKey: id) else { return }
+        for link in before {
+            instancesByType[link.shape]?.remove(id)
+            if instancesByType[link.shape]?.isEmpty == true { instancesByType[link.shape] = nil }
         }
+    }
+
+    private func readEveryShape(in editor: CanvasEditor) {
+        let registry = editor.registry, file = editor.file
+        var renamed: Set<ShapeID> = []
+        func read(_ shapes: [AnyShapeRecord]) {
+            for record in shapes {
+                if kinds.contains(record.kind) { _ = self.read(record, registry: registry, renamed: &renamed) }
+                if typeableKinds.contains(record.kind) { readLinks(record) }
+            }
+        }
+        read(file.root.shapes)
+        for board in file.children.values { read(board.shapes) }
     }
 
     private func tell(_ ids: Set<ShapeID>) {
@@ -92,47 +254,88 @@ public final class TypeIndex {
         for observer in observers { observer(ids) }
     }
 
-    private func readAfresh(in editor: CanvasEditor) {
-        let before = Set(entries.keys)
+    /// A type's name, or whether it's there, changed: the readers of its name hear it, and the
+    /// chips of its instances are made again.
+    private func told(renamed: Set<ShapeID>, in editor: CanvasEditor) {
+        guard !renamed.isEmpty else { return }
+        var chips: Set<ShapeID> = []
+        for type in renamed {
+            withMutation(keyPath: \.[nameVersion: type]) { nameVersions[type, default: 0] += 1 }
+            chips.formUnion(instancesByType[type] ?? [])
+        }
+        if !chips.isEmpty { editor.adornmentsDidChange(for: chips) }
+    }
+
+    /// Everything read again. A file put in place forgets what its types were called (they are
+    /// another file's); a commit heard out of turn is the same file, so a type it deleted is still
+    /// known by the title it had.
+    private func readAfresh(in editor: CanvasEditor, sameFile: Bool) {
+        let before = Set(entries.keys), instances = Set(links.keys)
         entries = [:]
-        readEveryType(in: editor)
-        tell(before.union(entries.keys))
+        links = [:]
+        instancesByType = [:]
+        if !sameFile { lastNames = [:] }
+        readEveryShape(in: editor)
+        let now = Set(entries.keys)
+        tell(before.union(now))
+        // Every chip may name another type.
+        let moved = before.union(now)
+        for type in moved { withMutation(keyPath: \.[nameVersion: type]) { nameVersions[type, default: 0] += 1 } }
+        let chips = instances.union(links.keys)
+        if !chips.isEmpty { editor.adornmentsDidChange(for: chips) }
     }
 }
 
 extension TypeIndex: EditorService {
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        if changes.replacedDocument {
-            readAfresh(in: editor)
+        // Up to date already: a service committed while hearing an earlier commit, which this one
+        // heard the later one of first.
+        guard heardRevision != editor.revision else { return }
+        let outOfTurn = heardRevision < editor.revision - 1
+        heardRevision = editor.revision
+        if changes.replacedDocument || outOfTurn {
+            readAfresh(in: editor, sameFile: outOfTurn && !changes.replacedDocument)
             return
         }
         let registry = editor.registry, file = editor.file
-        var changed: Set<ShapeID> = []
-        for id in changes.removed where entries[id] != nil && file.record(id) == nil {
-            entries[id] = nil
-            changed.insert(id)
+        var changed: Set<ShapeID> = [], renamed: Set<ShapeID> = []
+        for id in changes.removed where file.record(id) == nil {
+            if entries[id] != nil {
+                entries[id] = nil
+                changed.insert(id)
+                renamed.insert(id)
+            }
+            forgetLinks(of: id)
         }
-        // A shape that only moved (a drag) has the schema and the name it had.
+        // A shape that only moved (a drag) has the schema, the name and the types it had.
         for id in changes.added.union(changes.changed) where !changes.moved.contains(id) {
-            guard let record = editor.document[id], kinds.contains(record.kind) else { continue }
-            if read(record, registry: registry) { changed.insert(id) }
+            guard let record = editor.document[id] else { continue }
+            if kinds.contains(record.kind), read(record, registry: registry, renamed: &renamed) { changed.insert(id) }
+            if typeableKinds.contains(record.kind) { readLinks(record) }
         }
         // A board taken or brought back holds thousands of shapes, and few are types: the kind first.
         for id in changes.elsewhere {
             guard let record = file.record(id) else {
-                if entries.removeValue(forKey: id) != nil { changed.insert(id) }
+                if entries.removeValue(forKey: id) != nil {
+                    changed.insert(id)
+                    renamed.insert(id)
+                }
+                forgetLinks(of: id)
                 continue
             }
-            guard kinds.contains(record.kind) else { continue }
-            if read(record, registry: registry) { changed.insert(id) }
+            if kinds.contains(record.kind), read(record, registry: registry, renamed: &renamed) { changed.insert(id) }
+            if typeableKinds.contains(record.kind) { readLinks(record) }
         }
         tell(changed)
+        told(renamed: renamed, in: editor)
     }
 
-    /// A whole file put in place with the board switch is read again.
+    /// A whole file put in place with the board switch is read again; a switch alone changes no type
+    /// (the index is the file's, whatever board is shown).
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        heardRevision = editor.revision
         guard change.isFileReplaced else { return }
-        readAfresh(in: editor)
+        readAfresh(in: editor, sameFile: false)
     }
 }
 

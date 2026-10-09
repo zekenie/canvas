@@ -27,8 +27,8 @@ final class TypePanelWindow {
     let canvas: CanvasView
     let hosting: NSView
 
-    init(document: CanvasDocument = CanvasDocument(), scheduler: any Scheduler = TaskScheduler()) throws {
-        editor = try typeEditor(scheduler: scheduler, model: model, document: document)
+    init(document: CanvasDocument = CanvasDocument(), scheduler: any Scheduler = TaskScheduler(), more: [any CanvasPlugin] = []) throws {
+        editor = try typeEditor(scheduler: scheduler, model: model, document: document, more: more)
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 1000 - DetailStyle.idealWidth, height: 800)
         // Weak: the window holds the panel, which holds this, and may call it after the test let go.

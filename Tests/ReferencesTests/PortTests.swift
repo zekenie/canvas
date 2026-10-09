@@ -8,6 +8,7 @@ import References
 import Selection
 import TestKit
 import Topology
+import Types
 
 // Ports at a pill: its dots and what may end on it are those of what it stands for (boxes take beams,
 // tiles take rails), on its own left and right; an arrow attached to it that what it stands for no
@@ -33,7 +34,7 @@ let channelsPlugin = Contributor(id: "pill-channels") { registrar in
 }
 
 @MainActor private func portHarness() throws -> EditorHarness {
-    try referenceHarness([ArrowsPlugin(), ArrowPortsPlugin(), channelsPlugin])
+    try referenceHarness([TypesPlugin(), ArrowsPlugin(), ArrowPortsPlugin(), channelsPlugin])
 }
 
 private let aMiddle = CGPoint(x: 175, y: 150)

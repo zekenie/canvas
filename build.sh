@@ -412,8 +412,9 @@ audit_sources() {
     # can't be told from it by its spelling, and every box's props write it: it's an ordinary word, as
     # a fixture's id is, and owns nothing. So is one spelled as a board's own member that records its
     # kinds' versions (`schema`, before format 3), as Types' property is, which every board written by
-    # hand in a test, and `canvas kinds --schema`'s answer, say.
-    ORDINARY_IDS=(frame schema)
+    # hand in a test, and `canvas kinds --schema`'s answer, say. And one that is an English word every
+    # message uses, as Types' `is` is ("a note is a", and the query engine's own "is" in its messages).
+    ORDINARY_IDS=(frame is schema)
     ID_DECL='((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey|ChannelID|EdgeTypeID)[[:space:]]*(=|\{)|=[[:space:]]*(ShapeKind|PluginID|ToolID|PropertyKey|ChannelID|EdgeTypeID)\((rawValue:)?)[[:space:]]*"[^"\\]+"'
     typeset -A ID_OWNERS
     for hit in ${(f)"$(matching $ID_DECL)"}; do

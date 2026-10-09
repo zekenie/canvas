@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
@@ -10,6 +11,7 @@ import SlashCommands
 import TableOfContents
 import TestKit
 import Titles
+import Types
 
 // An arrow's label is mention text: pills, drawn and edited as a note's are, `@` and slash commands
 // in its editor, a rename drawing the shapes it mentions as they are called now. Fixtures only: boxes
@@ -82,12 +84,15 @@ private func isClose(_ a: CGRect, _ b: CGRect, within tolerance: CGFloat) -> Boo
     let h: EditorHarness
     let arrow: ShapeID
     let groceries: ShapeID
+    /// A type called Person, on the board.
+    let person: ShapeID
     let window: NSWindow
     let textView: MentionTextView<AnyMentionable>
 
     init(_ text: MentionText = "") throws {
         h = try EditorHarness(plugins: labelPlugins())
         groceries = h.editor.addBox("Groceries", at: CGRect(x: 100, y: 300, width: 100, height: 80))
+        person = h.editor.addType("Person", at: CGRect(x: 300, y: 300, width: 100, height: 80))
         arrow = h.add(Arrow(start: .free(CGPoint(x: 100, y: 200)), end: .free(CGPoint(x: 500, y: 200)), text: text))
         h.editor.selection = arrow
         expect(h.editor.beginEditing(arrow))
@@ -289,6 +294,44 @@ private final class LabelCanvas: NSView {
         expectEqual(session.committed?.runs.first, .text("sees "))
         expect(try require(session.h.editor.editingFrame).width > before.width + 30, "grown with the pill")
         session.window.pressEscape()
+    },
+])
+
+@MainActor let labelTypeTests = Suite("Arrow labels: /is-a", [
+    test("an arrow offers /is-a, taking one type: the @ picker on its line lists the types, not the other shapes; Return picks one and runs the line") {
+        let session = try EditedLabel("keep")
+        let typing = try require(session.textView.slashCommands)
+        session.window.pressReturn()
+        session.window.type("/is")
+        expectEqual(typing.picker?.highlightedCommand?.name, "is-a")
+        session.window.press("\t", code: 48)
+        session.window.type("@")
+        let picker = try require(session.textView.picker, "the @ picker, on the line of a command that takes a type")
+        expectEqual(picker.rows.compactMap(\.candidate?.id), [session.person], "Groceries is no type")
+        session.window.pressReturn()
+        expect(session.textView.picker == nil)
+        expectEqual(session.committed?.mentioned, [session.person], "the pill is in the command's line")
+        session.window.pressReturn()
+        session.window.settle()
+        expectEqual(session.h.editor.document[session.arrow]?[IsAProperty.self]?.map(\.shape), [session.person], "the arrow is a Person")
+        expectEqual(session.committed, "keep\n", "the line is gone from the label, its line break is not")
+        expectEqual(session.h.editor.undoHistory.undoName, "Add Type")
+        session.h.editor.undo()
+        expectEqual(session.h.editor.document[session.arrow]?[IsAProperty.self], nil)
+        expectEqual(session.h.editor.undoHistory.undoName, "Typing")
+        session.window.pressEscape()
+    },
+    test("the arrow's chips sit above its label, in a row from its left: the title's pill's place, then one for each type") {
+        let session = try EditedLabel("keep")
+        session.window.pressEscape()
+        session.h.editor.addTypeLink(session.person, to: session.arrow)
+        let label = try require(session.h.editor.arrowLabelFrame(of: session.arrow))
+        let chip = try require(session.h.editor.adornmentFrames(of: session.arrow).first { $0.adornment == .of(TypeChips.self) })
+        expectEqual(chip.label.text, "Person")
+        expect(chip.rect.maxY < label.minY, "above the label: \(chip.rect) against \(label)")
+        expect(chip.rect.minX >= label.minX - 70 && chip.rect.minX <= label.maxX, "at the label, not at the body's bounds: \(chip.rect) against \(label)")
+        session.h.editor.transact("Rename") { $0.update(session.person) { $0[TitleProperty.self] = "Human" } }
+        expectEqual(session.h.editor.adornmentFrames(of: session.arrow).first { $0.adornment == .of(TypeChips.self) }?.label.text, "Human")
     },
 ])
 

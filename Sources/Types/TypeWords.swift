@@ -17,11 +17,13 @@ extension TypeWords: KeyedExtensionPoint {
     public static func uniqueKeys(of _: TypeWordsContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
     public static func summary(of _: TypeWordsContribution, for target: ShapeTarget) -> String { "type words → \(target)" }
 
-    /// A kind that can be a type says what it holds in words: `canBeType()` needs `typeWords`.
+    /// A kind that can be a type, or an instance of one, says what it holds in words: `canBeType()`
+    /// and `typeable()` need `typeWords`.
     public static func check(_ registry: Registry) throws(RegistryError) {
-        for kind in registry.kinds where registry.properties(for: kind).contains(TypeSchemaProperty.key) {
-            guard registry.contributions(to: TypeWords.self, for: kind).isEmpty else { continue }
-            throw .invalid(point: "TypeWords", reason: "\(kind) holds schema but has no typeWords")
+        for kind in registry.kinds where registry.contributions(to: TypeWords.self, for: kind).isEmpty {
+            let properties = registry.properties(for: kind)
+            if properties.contains(TypeSchemaProperty.key) { throw .invalid(point: "TypeWords", reason: "\(kind) holds schema but has no typeWords") }
+            if properties.contains(IsAProperty.key) { throw .invalid(point: "TypeWords", reason: "\(kind) holds is but has no typeWords") }
         }
     }
 }
@@ -31,16 +33,18 @@ extension TypeWords: KeyedExtensionPoint {
 public struct TypeWordsContribution {
     /// The shape's words; nil for a shape of another kind.
     public let words: @MainActor (AnyShapeRecord) -> MentionText?
-    /// Where the shape draws them, as its render draws them (nil: not drawn now).
-    public let placement: @MainActor (AnyShapeRecord) -> MentionTextPlacement?
+    /// Where the shape draws them, as its render draws them (nil: not drawn now). Given the context
+    /// the shape is in, for a kind whose words are placed against the shapes around it (an arrow's
+    /// label).
+    public let placement: @MainActor (AnyShapeRecord, ShapeContext) -> MentionTextPlacement?
     /// Writes the shape's words in a transaction, and fits the shape to them as the kind fits it.
     public let write: @MainActor (inout Transaction, ShapeID, MentionText) -> Void
 
     init<P: ShapeProps>(_: P.Type, words: WritableKeyPath<P, MentionText>,
-                        drawnIn: @escaping @MainActor (ShapeRecord<P>) -> MentionTextPlacement?,
+                        drawnIn: @escaping @MainActor (ShapeRecord<P>, ShapeContext) -> MentionTextPlacement?,
                         fitting: @escaping @MainActor (inout P) -> Void) {
         self.words = { $0.typed(as: P.self)?.props[keyPath: words] }
-        placement = { $0.typed(as: P.self).flatMap(drawnIn) }
+        placement = { record, context in record.typed(as: P.self).flatMap { drawnIn($0, context) } }
         write = { transaction, id, text in
             transaction.update(id, as: P.self) { shape in
                 shape.props[keyPath: words] = text
@@ -59,6 +63,16 @@ extension ShapeRegistrar {
     ///     note.typeWords(\.text, drawnIn: { $0.mentionTexts.first }, fitting: { StickyNoteDefinition().derive(&$0) })
     public mutating func typeWords(_ words: WritableKeyPath<Definition.Props, MentionText>,
                                    drawnIn: @escaping @MainActor (ShapeRecord<Definition.Props>) -> MentionTextPlacement?,
+                                   fitting: @escaping @MainActor (inout Definition.Props) -> Void = { _ in }) {
+        typeWords(words, drawnIn: { shape, _ in drawnIn(shape) }, fitting: fitting)
+    }
+
+    /// `typeWords` for a kind that draws its words against the shapes around it (an arrow's label,
+    /// on its body): `drawnIn` is given the context to ask for their geometry.
+    ///
+    ///     arrow.typeWords(\.text, drawnIn: { arrow, shapes in shapes.geometry(of: arrow.id)?.label.map { ArrowLabels.placement(of: arrow.props.text, in: $0) } })
+    public mutating func typeWords(_ words: WritableKeyPath<Definition.Props, MentionText>,
+                                   drawnIn: @escaping @MainActor (ShapeRecord<Definition.Props>, ShapeContext) -> MentionTextPlacement?,
                                    fitting: @escaping @MainActor (inout Definition.Props) -> Void = { _ in }) {
         contribute(TypeWordsContribution(Definition.Props.self, words: words, drawnIn: drawnIn, fitting: fitting), to: TypeWords.self)
     }
