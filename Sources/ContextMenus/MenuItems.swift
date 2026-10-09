@@ -64,14 +64,17 @@ public struct MenuItem<Value> {
 
     /// For what editing each shape can't do (reordering, deleting, selecting): `perform` gets the
     /// shapes it's for, in selection order, and the editor. It changes the document only through
-    /// `editor.transact`.
+    /// `editor.transact`. The undo step is named by the title unless `stepName` says otherwise (an item
+    /// in a submenu whose title only makes sense there: "Turn into" ▸ "Employee card" is the step "Turn
+    /// into Employee card").
     public init(_ title: String, in group: any MenuGroup.Type = ShapeMenuGroup.self, id: String? = nil,
                 when isShown: @escaping @MainActor (Value) -> Bool = { _ in true },
                 isEnabled: @escaping @MainActor (Value) -> Bool = { _ in true },
                 isChecked: (@MainActor (Value) -> Bool)? = nil,
+                stepName: String? = nil,
                 perform: @escaping @MainActor ([ShapeID], CanvasEditor) -> Void) {
         entry = MenuEntry(title: title, group: MenuGroupID(group), id: id ?? title, isShown: isShown,
-                          content: .item(isEnabled: isEnabled, isChecked: isChecked, action: .perform(perform)))
+                          content: .item(isEnabled: isEnabled, isChecked: isChecked, action: .perform(perform)), stepName: stepName)
     }
 }
 
@@ -87,6 +90,32 @@ public struct Submenu<Value> {
     }
 }
 
+/// Entries made when the menu opens, from what the menu is for (an item for the canvas: they come
+/// from the file, not from the registry). `make` is asked once per menu, with its `MenuSubject`,
+/// and what it returns is shown as if written out in place: items and submenus, in its order.
+/// Registered like any item, by `(group, id)`: two plugins claiming one are a `conflict`. The ids
+/// of what `make` returns are the menu's to deduplicate, the first of each key (in this level)
+/// staying. A kind's own item with the same group and id as one of them takes its place, as for any
+/// item for the canvas.
+///
+///     registrar.contextMenuForCanvas {
+///         MenuItems(in: TransformMenuGroup.self, id: "turn-offers") { subject in
+///             for offer in offers(for: subject.shapes) {
+///                 MenuItem("Turn into \(offer.label)", in: TransformMenuGroup.self, id: offer.id) { ids, editor in … }
+///             }
+///         }
+///     }
+public struct MenuItems<Value> {
+    let entry: MenuEntry<Value>
+}
+
+extension MenuItems where Value == MenuSubject {
+    public init(in group: any MenuGroup.Type, id: String,
+                @MenuBuilder<MenuSubject> make: @escaping @MainActor (MenuSubject) -> [MenuEntry<MenuSubject>]) {
+        entry = MenuEntry(title: id, group: MenuGroupID(group), id: id, isShown: { _ in true }, content: .dynamic(make))
+    }
+}
+
 /// An item or a submenu, as `MenuBuilder` collects them.
 public struct MenuEntry<Value> {
     let title: String
@@ -94,10 +123,14 @@ public struct MenuEntry<Value> {
     let id: String
     let isShown: @MainActor (Value) -> Bool
     let content: Content
+    /// What the undo step is called, if not the title.
+    var stepName: String?
 
     enum Content {
         case item(isEnabled: @MainActor (Value) -> Bool, isChecked: (@MainActor (Value) -> Bool)?, action: Action)
         case submenu([MenuEntry<Value>])
+        /// Entries made when the menu opens; only for the canvas's (`MenuItems`).
+        case dynamic(@MainActor (MenuSubject) -> [MenuEntry<MenuSubject>])
     }
 
     enum Action {
@@ -117,6 +150,7 @@ public struct MenuEntry<Value> {
 public enum MenuBuilder<Value> {
     public static func buildExpression(_ item: MenuItem<Value>) -> [MenuEntry<Value>] { [item.entry] }
     public static func buildExpression(_ submenu: Submenu<Value>) -> [MenuEntry<Value>] { [submenu.entry] }
+    public static func buildExpression(_ items: MenuItems<Value>) -> [MenuEntry<Value>] { [items.entry] }
     public static func buildBlock(_ parts: [MenuEntry<Value>]...) -> [MenuEntry<Value>] { parts.flatMap { $0 } }
     public static func buildOptional(_ part: [MenuEntry<Value>]?) -> [MenuEntry<Value>] { part ?? [] }
     public static func buildEither(first part: [MenuEntry<Value>]) -> [MenuEntry<Value>] { part }

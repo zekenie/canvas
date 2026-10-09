@@ -56,6 +56,7 @@ final class ErasedEntry {
     let key: EntryKey
     let isShown: @MainActor (AnyShapeRecord) -> Bool
     let content: Content
+    let stepName: String?
 
     enum Content {
         case item(isEnabled: @MainActor (AnyShapeRecord) -> Bool, isChecked: (@MainActor (AnyShapeRecord) -> Bool)?, action: Action)
@@ -72,6 +73,7 @@ final class ErasedEntry {
     init<Value>(_ entry: MenuEntry<Value>, read: @escaping @MainActor (AnyShapeRecord) -> Value?,
                 write: @escaping @MainActor (ShapeID, inout Transaction, (inout Value) -> Void) -> Void) {
         title = entry.title
+        stepName = entry.stepName
         key = EntryKey(group: entry.group, id: entry.id)
         let shown = entry.isShown
         isShown = { read($0).map(shown) ?? false }
@@ -86,6 +88,10 @@ final class ErasedEntry {
             content = .item(isEnabled: { read($0).map(isEnabled) ?? false }, isChecked: checked, action: erased)
         case .submenu(let entries):
             content = .submenu(entries.map { ErasedEntry($0, read: read, write: write) })
+        case .dynamic:
+            // Only items for the canvas are made when the menu opens (`MenuItems` over a `MenuSubject`),
+            // and a shape's items are never over one: nothing to show.
+            content = .submenu([])
         }
     }
 

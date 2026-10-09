@@ -41,7 +41,7 @@ extension OddKindDefinition: ShapeDefinition {
         let discs = try require(lines.first { $0.hasPrefix("disc-turning") })
         expect(discs.hasSuffix("offers channel box → box · takes channel box → disc · CanvasContextMenu · /turn-into-disc → every shape"), discs)
         let transform = try require(lines.first { $0.hasPrefix("transform") })
-        expect(transform.hasSuffix("service TransformState"), transform)
+        expect(transform.hasSuffix("service TransformState · CanvasContextMenu"), transform)
         expectEqual(r.contributions(to: TransformSources.self).count, 2)
         expectEqual(r.contributions(to: TransformTargets.self).count, 2)
     },
@@ -108,9 +108,10 @@ extension OddKindDefinition: ShapeDefinition {
                                        plugin("bridge") { $0.turnable(into: Pocket.self, through: ContainerChannel.self) { _, _ in } }])
         }
         expectThrows(RegistryError.unknownKind(Corral.kind, point: "TransformSources", contributor: "bridge")) {
-            _ = try Registry(plugins: [TransformPlugin(), plugin("bridge") { $0.turnable(Corral.self, through: ContainerChannel.self) }])
+            _ = try Registry(plugins: [ContextMenusPlugin(), TransformPlugin(), plugin("bridge") { $0.turnable(Corral.self, through: ContainerChannel.self) }])
         }
-        expectThrows(RegistryError.ownerNotInstalled(point: "CanvasContextMenu", owner: .contextMenus, contributor: "takes")) {
+        // Transform's own item for the canvas (the offers') needs the context menu, so it is the plugin that says so.
+        expectThrows(RegistryError.ownerNotInstalled(point: "CanvasContextMenu", owner: .contextMenus, contributor: "transform")) {
             _ = try Registry(plugins: [TransformPlugin(), SlashCommandsPlugin(), PocketsPlugin(),
                                        plugin("takes") { $0.turnable(into: Pocket.self, through: ContainerChannel.self) { _, _ in } }])
         }
@@ -118,8 +119,8 @@ extension OddKindDefinition: ShapeDefinition {
             _ = try Registry(plugins: [TransformPlugin(), ContextMenusPlugin(), PocketsPlugin(),
                                        plugin("takes") { $0.turnable(into: Pocket.self, through: ContainerChannel.self) { _, _ in } }])
         }
-        // A kind that offers a channel needs only Transform.
-        _ = try Registry(plugins: [TransformPlugin(), CorralsPlugin(), plugin("offers") { $0.turnable(Corral.self, through: ContainerChannel.self) }])
+        // A kind that offers a channel needs only Transform (and the context menu that Transform needs).
+        _ = try Registry(plugins: [ContextMenusPlugin(), TransformPlugin(), CorralsPlugin(), plugin("offers") { $0.turnable(Corral.self, through: ContainerChannel.self) }])
         let h = try EditorHarness(plugins: [FixturesPlugin()])
         expect(h.editor.transforms == nil, "no service without the plugin")
     },
@@ -134,9 +135,12 @@ extension OddKindDefinition: ShapeDefinition {
         }
     },
 
-    test("the plugin makes the service and contributes nothing else: an editor finds it, and a kind that offers no channel turns into nothing") {
-        let r = try Registry(plugins: [TransformPlugin()])
-        expectEqual(r.report.split(separator: "\n").last.map(String.init), "transform     service TransformState")
+    test("the plugin makes the service and one item for the canvas, the offers', and nothing else: an editor finds it, and a kind that offers no channel turns into nothing") {
+        let r = try Registry(plugins: [ContextMenusPlugin(), TransformPlugin()])
+        expectEqual(r.report.split(separator: "\n").last.map(String.init), "transform      service TransformState · CanvasContextMenu")
+        expectThrows(RegistryError.ownerNotInstalled(point: "CanvasContextMenu", owner: .contextMenus, contributor: "transform")) {
+            _ = try Registry(plugins: [TransformPlugin()])
+        }
         let h = try transformHarness()
         expect(h.editor.transforms != nil)
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
