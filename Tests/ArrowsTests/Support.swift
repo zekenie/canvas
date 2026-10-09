@@ -13,6 +13,7 @@ import SlashCommands
 import TableOfContents
 import Titles
 import Topology
+import Types
 
 // Two boxes where the POC's first two welcome notes are. Fixture shapes only: nothing here can
 // import a real vertical, which is the proof that arrows don't know concrete kinds.
@@ -26,7 +27,7 @@ let fast: CGFloat = 3, slow: CGFloat = 0.1
 @MainActor
 func arrowsPlugins(before: [any CanvasPlugin] = [], more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin()] + before
-        + [ArrowsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TitlesPlugin(), MentionsPlugin()] + more
+        + [ArrowsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin()] + more
 }
 
 /// What a label's mention text needs of the fixtures: boxes that are titled and mentioned (by their

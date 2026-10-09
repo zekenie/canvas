@@ -80,7 +80,7 @@ import Validation
         let words = try require(editor.registry.typeWords(of: Memo.kind))
         let record = try require(editor.document[id])
         expectEqual(words.words(record), "a pet")
-        expectEqual(words.placement(record)?.box, MemoStyle.textBox(of: try require(record.box)))
+        expectEqual(words.placement(record, editor.shapeContext)?.box, MemoStyle.textBox(of: try require(record.box)))
         let long = MentionText(plain: String(repeating: "a pet in my household, ", count: 12))
         editor.transact { words.write(&$0, id, long) }
         expectEqual(editor.words(id), long)

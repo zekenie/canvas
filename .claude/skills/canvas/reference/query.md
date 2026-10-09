@@ -654,11 +654,14 @@ The edge types this app has. A type takes in those under it.
 |---|---|---|
 | `stands-for` | — | from a shape to each shape it stands for |
 | `mention` | — | a mention in a shape's text, from that shape to the shape it names |
+| `is-a` | — | from a shape to each type it is, in the order of its list |
 | `arrow` | — | an arrow bound at both ends, from the shape it starts on to the shape it ends on, whatever its arrowheads |
 | `note-link` | `arrow` | an arrow drawn on the note-link channel |
 | `subboard-link` | `arrow` | an arrow drawn on the subboard-link channel |
 
 `stands-for` is the app's own, from a shape that stands for others to each of them. A `reference` that names a shape stands for it while it's public, so an arrow into the reference is an arrow into that shape ([references.md](references.md) runs on a file that has one).
+
+`is-a` is from an instance to each type its `is` names (a type may be one of types itself), so `:edge-to("Person", is-a)` finds the shapes that are a Person, directly.
 
 A type the app doesn't declare but the file has (a newer app's channel) is accepted as it's written; one the app doesn't declare and the file doesn't have is `unknown_edge_type`, with the type like it.
 

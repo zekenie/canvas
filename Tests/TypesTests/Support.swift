@@ -84,6 +84,7 @@ struct MemosPlugin: CanvasPlugin {
             memo.mentionable(untitled: { $0.props.text.firstLine })
             memo.typeWords(\.text, drawnIn: { $0.placement }, fitting: { MemoStyle.fit(&$0) })
             memo.canBeType()
+            memo.typeable()
         }
     }
 }
@@ -128,6 +129,15 @@ struct MemosPlugin: CanvasPlugin {
     return AnyShapeRecord(record)
 }
 
+/// A memo that is each of the types, in that order, titled `title` if given.
+@MainActor func instanceRecord(_ words: String = "", of types: [ShapeID], title: String? = nil, at origin: CGPoint = CGPoint(x: 40, y: 400),
+                               id: ShapeID = ShapeID()) -> AnyShapeRecord {
+    var record = ShapeRecord(id: id, memo(words, at: origin))
+    record[IsAProperty.self] = types.map(TypeLink.init)
+    if let title { record[TitleProperty.self] = title }
+    return AnyShapeRecord(record)
+}
+
 extension CanvasEditor {
     /// Adds a type: a memo with `schema`.
     @discardableResult
@@ -144,6 +154,17 @@ extension CanvasEditor {
         transact { $0.insert(record) }
         return record.id
     }
+
+    /// Adds a memo that is each of the types, in that order.
+    @discardableResult
+    func addInstance(_ words: String = "", of types: [ShapeID], title: String? = nil, at origin: CGPoint = CGPoint(x: 40, y: 400)) -> ShapeID {
+        let added = instanceRecord(words, of: types, title: title, at: origin)
+        transact { $0.insert(added) }
+        return added.id
+    }
+
+    /// The types a shape is, as its record says.
+    func typesOf(_ id: ShapeID) -> [ShapeID] { document[id]?[IsAProperty.self]?.map(\.shape) ?? [] }
 
     func memo(_ id: ShapeID) -> Memo? { document[id]?.typed(as: Memo.self)?.props }
     func schema(_ id: ShapeID) -> String? { document[id]?[TypeSchemaProperty.self]?.text }

@@ -4,6 +4,7 @@ import Geometry
 import Mentions
 import Publishing
 import Selection
+import Types
 
 /// Arrows as a shape kind: no box; handles; their own translation; painted just above the
 /// highest shape they're bound to. Each capability is its own extension.
@@ -347,6 +348,13 @@ public struct ArrowsPlugin: CanvasPlugin {
                 guard arrow.props.hasText, let label = shapes.geometry(of: arrow.id)?.label else { return [] }
                 return [ArrowLabels.placement(of: arrow.props.text, in: label)]
             }
+            // And types: its label says what it is (`/is-a`), where it's drawn, and fits to nothing but
+            // itself.
+            arrow.typeWords(\.text, drawnIn: { arrow, shapes in
+                guard arrow.props.hasText, let label = shapes.geometry(of: arrow.id)?.label else { return nil }
+                return ArrowLabels.placement(of: arrow.props.text, in: label)
+            })
+            arrow.typeable()
         }
         registrar.service { ArrowTargeting(editor: $0) }
         registrar.service { ArrowRowNesting(editor: $0) }

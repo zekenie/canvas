@@ -35,13 +35,13 @@ public enum TypeHighlights {
     /// The type's highlights as its words are drawn (`ProseHighlights.placed`), in their order: none
     /// for a shape that isn't a type, or whose words aren't drawn now.
     public static func placed(for record: AnyShapeRecord, in editor: CanvasEditor) -> [PlacedHighlight] {
-        guard let placement = editor.registry.typeWords(of: record.kind)?.placement(record) else { return [] }
+        guard let placement = editor.registry.typeWords(of: record.kind)?.placement(record, editor.shapeContext) else { return [] }
         return placed(for: record, words: placement.text, maps: editor.proseMaps, sync: editor.typeSync, types: editor.types)
     }
 
     /// Where the type's highlights (`placed(for:in:)`'s) are drawn, in world units: a rect a line.
     public static func lines(for record: AnyShapeRecord, in editor: CanvasEditor) -> [[CGRect]] {
-        guard let placement = editor.registry.typeWords(of: record.kind)?.placement(record) else { return [] }
+        guard let placement = editor.registry.typeWords(of: record.kind)?.placement(record, editor.shapeContext) else { return [] }
         let placed = placed(for: record, in: editor)
         return ProseHighlights.lines(SchemaTarget.self, of: record.id, placed: placed, in: placement) {
             editor.registry.mentionResolution(of: $0, lookup: { editor.shape(inFile: $0) })
@@ -53,7 +53,7 @@ public enum TypeHighlights {
     /// view's coordinates have the shape's frame at theirs); nil anywhere else, and on a shape that
     /// isn't a type.
     public static func popover(at point: CGPoint, on record: AnyShapeRecord, in editor: CanvasEditor, origin: CGPoint = .zero) -> CanvasPopover? {
-        guard record[TypeSchemaProperty.self] != nil, let placement = editor.registry.typeWords(of: record.kind)?.placement(record),
+        guard record[TypeSchemaProperty.self] != nil, let placement = editor.registry.typeWords(of: record.kind)?.placement(record, editor.shapeContext),
               placement.box.contains(point) else { return nil }
         let maps = editor.proseMaps
         let placed = placed(for: record, words: placement.text, maps: maps, sync: editor.typeSync, types: editor.types)

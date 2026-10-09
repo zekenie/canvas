@@ -13,6 +13,7 @@ import TableOfContents
 import TestKit
 import Titles
 import Topology
+import Types
 
 /// The examples' tests: each works on CanvasTesting's boxes, so none depends on a shipped kind.
 @MainActor let examplesTests = Suite("Examples", [
@@ -28,7 +29,7 @@ import Topology
     },
     test("Reordering: every kind but those painted by anchor gets Arrange; to front and to back keep the selection's order") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), ContextMenusPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(),
-                                            SlashCommandsPlugin(), TitlesPlugin(), MentionsPlugin(), FixturesPlugin(), ReorderingPlugin()])
+                                            SlashCommandsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(), FixturesPlugin(), ReorderingPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         let c = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))

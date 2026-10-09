@@ -3,6 +3,7 @@ import Canvas
 import DetailPanel
 import ProseMaps
 import Selection
+import Topology
 import Validation
 
 extension PluginID {
@@ -26,6 +27,10 @@ public struct TypesPlugin: CanvasPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.declare(TypeSchemaProperty.self)
+        // What a shape is: the types it names (`typeable()` kinds), and the edge each is.
+        registrar.declare(IsAProperty.self)
+        registrar.edgeType(IsAEdge.self)
+        registrar.edges(in: IsAProperty.self, as: IsAEdge.self)
         // The index first: the sync and what reads types hear each commit after it.
         registrar.service { TypeIndex(editor: $0) }
         registrar.service { TypeSync<TypeSchemaProperty>(editor: $0) }

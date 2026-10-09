@@ -11,6 +11,7 @@ import SlashCommands
 import TableOfContents
 import Titles
 import Topology
+import Types
 
 // Fixture shapes only, with channels of the tests' own, so nothing here imports a real vertical
 // (the arrows come with Connections): boxes take the wire channel, discs the pipe. Boxes A and B
@@ -60,7 +61,7 @@ struct PortBoard {
             registrar.ports(Disc.self, on: Pipe.self)
         }
         return [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin(),
-                AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TitlesPlugin(), MentionsPlugin(),
+                AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(),
                 PortsPlugin(), ArrowPortsPlugin(), channels] + more
     }
 

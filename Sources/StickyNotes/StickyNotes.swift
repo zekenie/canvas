@@ -66,6 +66,7 @@ public struct StickyNotesPlugin: CanvasPlugin {
             note.mentionable(untitled: { $0.props.text.firstLine }, tint: { _ in NoteStyle.tint })   // called by its title, else its first line
             note.typeWords(\.text, drawnIn: { $0.mentionTexts.first }, fitting: { StickyNoteDefinition().derive(&$0) })   // and types: its text says what one holds,
             note.canBeType()                                   // and `/type` makes it one
+            note.typeable()                                    // and `/is-a` makes it an instance of one
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
     }

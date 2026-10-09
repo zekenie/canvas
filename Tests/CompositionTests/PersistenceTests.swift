@@ -4,6 +4,7 @@ import Composition
 import Connections
 import CoreGraphics
 import Foundation
+import Frames
 import LanguageModels
 import Mentions
 import StickyNotes
@@ -85,6 +86,25 @@ import Types
         schema.forEachNamedShape { named.append($0) }
         expectEqual(named, [address], "a $ref names its type, as a mention does")
         expect(registry.properties(for: StickyNote.kind).contains(TypeSchemaProperty.key), "a note can be a type")
+    },
+    // The types a shape is, an ordered list of the types' ids (Types' added property): read back in the
+    // order written, each a name of its type, as a mention is.
+    test("a shape's types read as the ids' list they were, in order, each naming its type; notes and arrows can hold them") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        expectEqual(codec.version(ofProperty: IsAProperty.key), 0)
+        let data = try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/added/is.v0.json"))
+        let types = try JSONDecoder().decode([TypeLink].self, from: try codec.migrateValue(data, property: IsAProperty.key, version: 0))
+        let groceries = ShapeID(UUID(uuidString: "7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D")!)
+        let review = ShapeID(UUID(uuidString: "0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9")!)
+        expectEqual(types.map(\.shape), [groceries, review])
+        var named: [ShapeID] = []
+        types.forEachNamedShape { named.append($0) }
+        expectEqual(named, [groceries, review], "an entry names its type")
+        for kind in [StickyNote.kind, Arrow.kind] {
+            expect(registry.properties(for: kind).contains(IsAProperty.key), "\(kind) can be an instance of a type")
+        }
+        expect(!registry.properties(for: Frame.kind).contains(IsAProperty.key))
     },
     test("the welcome board, and a board of every shipped kind, read back as they were") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
