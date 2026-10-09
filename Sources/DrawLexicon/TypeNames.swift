@@ -27,6 +27,10 @@ public struct TypeNamesPlugin: CanvasPlugin {
             let found = try context.shape(called: text) { record, writing in
                 TypeIndex.canBeNamed(record, registry: registry, writing: writing) ? nil : "which isn't a type or a shape"
             }
+            // A shape isn't its own type (`/is-a` refuses it too).
+            guard found.id != context.owner else {
+                throw AutomationError("\"\(text)\" can't be its own type", reason: "invalid_value", hint: "name another type")
+            }
             return found.id.description
         }
         registrar.drawImplies { kind, before, settings, registry in

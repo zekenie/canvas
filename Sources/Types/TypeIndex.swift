@@ -105,7 +105,7 @@ public final class TypeIndex {
     /// chain of a shape that is its own ancestor stops where it comes back. This is the order a
     /// shape's types are read in: the first to say a thing wins. A name that is gone is in it,
     /// ending its branch; check `isType` before reading one. Custom shapes, later, add their
-    /// templates and what they build on at `parents(of:)`.
+    /// templates and what they build on in the graph's `shapeParents`.
     public func lineage(of id: ShapeID) -> [ShapeID] { kept.lineage(of: id) }
 
     /// The file's types as a value: every shape's types and what else it leads to, and the types'

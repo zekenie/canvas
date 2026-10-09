@@ -209,6 +209,9 @@ public struct DrawTextContext {
     /// `$ref` left unfollowed, so what's written beside the reference (an annotation a kind adds to
     /// a shared definition) is there to read.
     public let schema: JSONObject
+    /// The shape whose attribute the string is, if it is a shape's: a new one has its id already, so
+    /// a text that names a shape can refuse the shape itself (a type that is its own type).
+    public let owner: ShapeID?
     let lookup: DrawTextLookup
 
     /// The shape called `name`, as a title names one in the script, among those `admits` takes (nil:

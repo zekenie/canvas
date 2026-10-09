@@ -115,6 +115,33 @@ import Types
         expectEqual(editor.shape(called: "Ann")?[PublicProperty.self], nil)
     },
 
+    test("a plain memo restated with a schema and public: false is a private type, though it was private already") {
+        let editor = try typeNamesEditor()
+        _ = try drawn(#"memo "Plain""#, on: editor)
+        _ = try drawn(#"memo "Plain" schema: "{\"type\":\"object\"}" public: false"#, on: editor)
+        let plain = try require(editor.shape(called: "Plain"))
+        expect(plain[TypeSchemaProperty.self] != nil)
+        expect(plain[PublicProperty.self] != true, "said private, so it is not made public")
+    },
+
+    test("a type is not its own type; one drawn with its types in the same script is, and undo and redo keep the script whole") {
+        let editor = try typeNamesEditor()
+        let person = editor.addType("Person")
+        let error = try refused(#"memo "Ann" schema: "{\"type\":\"object\"}" is: "Ann""#, on: editor)
+        expectEqual(error["reason"], "invalid_value")
+        expect(error["message"]?.stringValue?.contains("can't be its own type") == true, "\(error["message"] ?? "")")
+        expect(editor.shape(called: "Ann") == nil, "nothing drawn")
+        _ = try drawn(#"memo "Ann" schema: "{\"type\":\"object\"}" is: "Person""#, on: editor)
+        let ann = try require(editor.shape(called: "Ann")).id
+        expectEqual(editor.document[ann]?[IsAProperty.self]?.map(\.shape), [person])
+        expectEqual(editor.document[ann]?[PublicProperty.self], true)
+        editor.undo()
+        expect(editor.shape(called: "Ann") == nil)
+        editor.redo()
+        expectEqual(editor.document[ann]?[IsAProperty.self]?.map(\.shape), [person], "redo brings back the list and the type together")
+        expectEqual(editor.document[ann]?[PublicProperty.self], true)
+    },
+
     test("without the plugin an `is:` of text is refused as a value that isn't a list of ids; canvas kinds says what is takes") {
         let editor = try typeNamesEditor(typeNames: false)
         editor.addType("Person")

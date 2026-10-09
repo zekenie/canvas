@@ -188,11 +188,11 @@ extension Drawing {
     /// (the value itself where no format writes any). A refusal is said on the statement's line, as
     /// `prefix` (`"Plan": text`) says what it's about, then `suffix`; one a statement it depends on
     /// leaves to that statement's own error (`Drawing.skipped`) is passed on as it is.
-    func writtenTexts(_ value: JSONValue, of key: String, _ vocabulary: KindVocabulary, prefix: String, suffix: String = "",
+    func writtenTexts(_ value: JSONValue, of key: String, _ vocabulary: KindVocabulary, owner: ShapeID? = nil, prefix: String, suffix: String = "",
                       _ statement: Statement) throws(AutomationError) -> JSONValue {
         guard let textWriter else { return value }
         do throws(AutomationError) {
-            return try textWriter.written(value, of: key, in: vocabulary)
+            return try textWriter.written(value, of: key, in: vocabulary, owner: owner)
         } catch {
             guard error.reason != Self.skipped else { throw error }
             throw AutomationError("\(prefix): \(error.message)\(suffix)", reason: error.reason, hint: error.hint,
@@ -214,24 +214,24 @@ struct DrawTextWriter {
     /// `additionalProperties`, `prefixItems` and `items`, `$ref`s followed). What isn't a string of
     /// such a schema is as it was. It throws what a format throws, as it's thrown; the caller says
     /// where.
-    func written(_ value: JSONValue, of key: String, in vocabulary: KindVocabulary) throws(AutomationError) -> JSONValue {
+    func written(_ value: JSONValue, of key: String, in vocabulary: KindVocabulary, owner: ShapeID?) throws(AutomationError) -> JSONValue {
         guard vocabulary.textKeys.contains(key), let declared = vocabulary.properties[key] else { return value }
-        return try written(value, declared: declared, in: vocabulary.schema)
+        return try written(value, declared: declared, in: vocabulary.schema, owner: owner)
     }
 
-    private func written(_ value: JSONValue, declared: JSONValue, in schema: KindSchema) throws(AutomationError) -> JSONValue {
+    private func written(_ value: JSONValue, declared: JSONValue, in schema: KindSchema, owner: ShapeID?) throws(AutomationError) -> JSONValue {
         let resolved = schema.resolved(declared)
         switch value {
         case .string(let text):
             guard let mediaType = resolved["contentMediaType"]?.stringValue, let format = formats[mediaType] else { return value }
-            return .string(try format.write(text, DrawTextContext(registry: registry, schema: declared.objectValue ?? [:], lookup: lookup)))
+            return .string(try format.write(text, DrawTextContext(registry: registry, schema: declared.objectValue ?? [:], owner: owner, lookup: lookup)))
         case .object(let members):
             var written = members
             for name in members.keys.sorted() {
                 guard let declared = resolved["properties"]?[name] ?? resolved["additionalProperties"].flatMap({ $0.objectValue == nil ? nil : $0 }) else {
                     continue
                 }
-                written[name] = try self.written(members[name]!, declared: declared, in: schema)
+                written[name] = try self.written(members[name]!, declared: declared, in: schema, owner: owner)
             }
             return .object(written)
         case .array(let items):
@@ -239,7 +239,7 @@ struct DrawTextWriter {
             let prefix = resolved["prefixItems"]?.arrayValue ?? []
             for index in items.indices {
                 guard let declared = prefix.indices.contains(index) ? prefix[index] : resolved["items"] else { continue }
-                written[index] = try self.written(items[index], declared: declared, in: schema)
+                written[index] = try self.written(items[index], declared: declared, in: schema, owner: owner)
             }
             return .array(written)
         default:
