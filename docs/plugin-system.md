@@ -622,7 +622,10 @@ is compiled by `./test.sh`, even before anything depends on it.
   drawn, `placement(size:minimumSize:props:)` (`Placement.minimumSize`, zero for none), the one place
   the kind says it: the tool that draws its rect keeps to it, the kind hands it to its resizing, and
   `canvas draw` refuses a `size:` under it ([draw](#draw)), so a frame is never under 96 × 64 however
-  it's drawn. Any tool or gesture can also insert a shape itself, with
+  it's drawn. A placement can be made into another: `.mapping { record in … }` changes what it
+  makes (a plugin that puts down a record it built, with values another plugin's data fills in; the
+  kind stays), `.sized(size)` makes shapes of another size, and `.setting(Property.self, to:)` sets
+  an added value. Any tool or gesture can also insert a shape itself, with
   `editor.transact { $0.insert(record) }`, as a port's drag does its arrow.
 
 What a real vertical adds on top ([StickyNotes](../Sources/StickyNotes/StickyNotes.swift)):
@@ -1563,6 +1566,9 @@ the record: a note is mentioned by its title, else its text's first line
   the board edited, and an insert is an edit anyway. `registry.fillingDefaults(document)` does the
   same to a document.
 - **Copies keep them**: `record.copy(as:)` takes the values along, as it does the metadata.
+- **One can be read by its key as JSON**, without its type: `record.addedJSON(for: key)` is the value
+  as a board would write it, nil if the shape holds none (`registry.properties(for: kind)` lists the
+  keys a kind opts into).
 - **A placement can set one** on what it places:
   `placement(size: size) { Patch() }.setting(TitleProperty.self, to: "Zone")` would name every
   patch its tool places "Zone".

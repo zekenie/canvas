@@ -275,6 +275,26 @@ public struct Placement {
         make(CGRect(center: point, size: size))
     }
 
+    /// The same placement, with every shape it places changed by `transform` after it is made, in a
+    /// frame of the placement's size centered where it lands: for a plugin that puts down a record it
+    /// built (a shape of a kind with extra values set, props another plugin's data fills in). The record
+    /// keeps its id, kind and frame unless `transform` changes them; a record of another kind is a
+    /// precondition failure (a placement is of one kind).
+    public func mapping(_ transform: @escaping @MainActor (AnyShapeRecord) -> AnyShapeRecord) -> Placement {
+        let make = make, kind = kind
+        return Placement(kind: kind, size: size, minimumSize: minimumSize, completion: completion) { frame in
+            let record = transform(make(frame))
+            precondition(record.kind == kind, "a placement of \(kind) shapes can't make \(record.kind) ones")
+            return record
+        }
+    }
+
+    /// The same placement, of shapes this size: what it makes is placed in a frame of `size` centered
+    /// where it lands (or in the rect it is given, `editor.place(_:in:)`). Its smallest size stays.
+    public func sized(_ size: CGSize) -> Placement {
+        Placement(kind: kind, size: size, minimumSize: minimumSize, completion: completion, make: make)
+    }
+
     /// The same placement, with an added property set on every shape it places:
     /// `note.placement(size: size) { StickyNote() }.setting(TitleProperty.self, to: "Zone")`. A
     /// value its kind doesn't opt into is dropped as the shape is placed.
