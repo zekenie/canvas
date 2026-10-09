@@ -188,7 +188,7 @@ public struct TurnOffer {
 /// The extension point: what the shapes of a context menu can be turned into, decided when the menu opens
 /// (`registrar.turnOffers`). A list, in plugin order. `TransformPlugin` renders what the providers offer: one
 /// offer as an item, "Turn into <label>", several as a "Turn into" submenu, in the order given, in the same
-/// band as a kind's own targets, which stay flat items after them.
+/// band as a kind's own targets, which stay flat items beside it, in plugin order.
 public enum TransformOffers {}
 
 extension TransformOffers: ExtensionPoint {
@@ -206,7 +206,7 @@ public struct TurnOfferProvider {
 
 /// What is about to be turned, as a veto sees it.
 public struct TurnRequest {
-    /// The shapes about to turn (each once, on the board shown, not kept aside), in the order given.
+    /// The shapes about to turn (each once, on the board shown, not kept aside), innermost first (the deepest in containers, then back to front).
     public let shapes: [ShapeID]
     /// What they turn into, as the menu says it: a target's label, an offer's.
     public let label: String
