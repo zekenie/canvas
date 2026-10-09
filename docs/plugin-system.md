@@ -5379,8 +5379,8 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
 }
 ```
 
-- **The style** (`MentionTextStyle`: a font, a color, a fixed line height, and its
-  `MentionSurface`) is shared by the render and the editor, as `NoteStyle.text`; its `attributes`
+- **The style** (`MentionTextStyle`: a font, a color, a fixed line height, its
+  `MentionSurface` and the lines' alignment, natural unless a kind says) is shared by the render and the editor, as `NoteStyle.text`; its `attributes`
   are what the editor types with. On a shape's surface a pill is monochrome, the text's own color
   at a few strengths (a yellow tint on a yellow note would vanish); on a neutral one (the picker),
   its symbol takes the kind's tint.
@@ -5412,8 +5412,11 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
 - **Where pills are.** `editor.mentionPills(of:)` is each pill's frame, in world units, with
   `isLive`, from the same placements, as string drawing puts them: a line that doesn't fit, or a
   pill the "…" of a cut-short last line covers, has none. The `MentionTexts` point (`x.mentionText`,
-  `registrar.mentionText(K.self)` for another plugin's kind, `registry.mentionTextPlacements(of:)`) is what the
-  faces read. A built text keeps its layout once asked (TextEditing's `StringDrawingLayout`, over
+  `registrar.mentionText(K.self)` for another plugin's kind, `registry.mentionTextPlacements(of:in:)`,
+  given the editor's `shapeContext`) is what the faces read. A kind whose text is where its geometry
+  says lists its placements from the context too (`x.mentionText { shape, shapes in … }`, reading
+  `shapes.geometry(of:)`, which is kept), and a placement drawn `overCanvas` (on the board's
+  background, not a surface) is washed by Find where a surface's is marked. A built text keeps its layout once asked (TextEditing's `StringDrawingLayout`, over
   the string with stand-ins of its pills' size, per width), so a pill's place, or a range's line
   rects, is a lookup.
 - **For [Find](#find)**, `MentionFindPlugin` (a plugin value of Mentions' own, after Find and
@@ -5421,7 +5424,8 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
   mention its target's live name, so a name is found where its pill is, and a hit in a name marks
   the whole pill (one character of the drawn text); its rects come from that kept layout. A rename
   changes what its mentioners read: those are what `rowsAffected(by:)` names, which Find asks before
-  it reads any text.
+  it reads any text. A placement `overCanvas` is read by a contribution of its own, whose look is
+  `.wash`.
 
 ### The service: `MentionState`
 
@@ -6340,7 +6344,7 @@ a list without Find leaves them out:
 | Contributor | Texts | Where |
 |---|---|---|
 | Titles' `TitleFindPlugin` | each title, named or derived (`registry.title(of:)`), on the kinds that hold `TitleProperty` or derive one | the pill's whole capsule, ringed (it may cut the title short); zoomed out, the cover |
-| Mentions' `MentionFindPlugin` | each `MentionTexts` placement's text (a note's, a schema card's description), each mention its live name | from the render's own layout, which Find's asking keeps with the drawn text (`MentionTextMemo`; drawing keeps none); a hit in a name is the whole pill; `affected`: `rowsAffected(by:)` |
+| Mentions' `MentionFindPlugin` | each `MentionTexts` placement's text (a note's, a schema card's description), each mention its live name | from the render's own layout, which Find's asking keeps with the drawn text (`MentionTextMemo`; drawing keeps none); a hit in a name is the whole pill; `affected`: `rowsAffected(by:)`. Two contributions, one a look: the placements on a shape's surface, marked, and those `overCanvas`, washed |
 | Connections' `ArrowFindPlugin` | an arrow's label | from the label's string-drawing layout, centered, washed |
 
 ### The index, and the search off the main actor
@@ -11453,7 +11457,7 @@ mentions             service MentionState · edge type mention · edges → ever
 board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
 find-in-boards       service FindState · overlay FindOverlay · command find · shortcut ⌘F → command find · command findNext · shortcut ⌘G → command findNext · command findPrevious · shortcut ⇧⌘G → command findPrevious
 title-find           findable title → every shape
-mention-find         findable mention text → every shape
+mention-find         findable mention text → every shape · findable mention text over the canvas → every shape
 arrow-find           findable label → arrow
 jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo
 transform            service TransformState

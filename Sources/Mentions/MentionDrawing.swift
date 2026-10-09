@@ -3,19 +3,25 @@ import Canvas
 import TextEditing
 
 /// Where a shape draws one mention text on the canvas: what it says, its box (world units), its
-/// style, and at most how many lines. Made from the shape alone: its props or its added values.
+/// style, and at most how many lines. Made from the shape alone (its props or its added values), or
+/// with what its geometry says of where it is (`ShapeContext`: an arrow's label sits on its body).
 @MainActor
 public struct MentionTextPlacement {
     public let text: MentionText
     public let box: CGRect
     public let style: MentionTextStyle
     public let lines: Int?
+    /// Whether the text is drawn over the canvas itself and not on the shape's own surface (an
+    /// arrow's label, on the board's background, whose color follows the appearance): Find washes a
+    /// hit in it, where on a surface it marks it as a highlighter does.
+    public let overCanvas: Bool
 
-    public init<S>(_ text: ScopedMentionText<S>, in box: CGRect, style: MentionTextStyle, lines: Int? = nil) {
+    public init<S>(_ text: ScopedMentionText<S>, in box: CGRect, style: MentionTextStyle, lines: Int? = nil, overCanvas: Bool = false) {
         self.text = MentionText(text)
         self.box = box
         self.style = style
         self.lines = lines
+        self.overCanvas = overCanvas
     }
 
     /// The box the text is laid out in: as tall as `lines` lines, if that's less than the box.
@@ -48,13 +54,17 @@ extension MentionTexts: KeyedExtensionPoint {
     public static func check(_ registry: Registry) throws { try MentionTextFormat.checkBounds(in: registry) }
 }
 
-/// What `MentionTexts` keeps for a kind: its placements, from a shape.
+/// What `MentionTexts` keeps for a kind: its placements, from a shape and the shapes around it.
 @MainActor
 public struct MentionTextContribution {
-    let place: @MainActor (AnyShapeRecord) -> [MentionTextPlacement]
+    let place: @MainActor (AnyShapeRecord, ShapeContext) -> [MentionTextPlacement]
 
     init<P: ShapeProps>(_: P.Type, _ place: @escaping @MainActor (ShapeRecord<P>) -> [MentionTextPlacement]) {
-        self.place = { $0.typed(as: P.self).map(place) ?? [] }
+        self.place = { record, _ in record.typed(as: P.self).map(place) ?? [] }
+    }
+
+    init<P: ShapeProps>(_: P.Type, _ place: @escaping @MainActor (ShapeRecord<P>, ShapeContext) -> [MentionTextPlacement]) {
+        self.place = { record, context in record.typed(as: P.self).map { place($0, context) } ?? [] }
     }
 }
 
@@ -68,6 +78,15 @@ extension ShapeRegistrar {
     public mutating func mentionText(_ place: @escaping @MainActor (ShapeRecord<Definition.Props>) -> [MentionTextPlacement]) {
         contribute(MentionTextContribution(Definition.Props.self, place), to: MentionTexts.self)
     }
+
+    /// Where this kind draws mention text, which depends on the shapes around it (an arrow's label
+    /// is on its body, between the shapes it joins): read through the context, as a geometry's
+    /// lookups are, and from the kept geometry (`context.geometry(of:)`), so it's worked out once.
+    ///
+    ///     arrow.mentionText { arrow, shapes in ArrowLabels.placements(of: arrow, in: shapes) }
+    public mutating func mentionText(_ place: @escaping @MainActor (ShapeRecord<Definition.Props>, ShapeContext) -> [MentionTextPlacement]) {
+        contribute(MentionTextContribution(Definition.Props.self, place), to: MentionTexts.self)
+    }
 }
 
 extension PluginRegistrar {
@@ -78,10 +97,11 @@ extension PluginRegistrar {
 }
 
 extension Registry {
-    /// Where a shape draws mention text: its kind's placements, none for a kind without.
-    public func mentionTextPlacements(of shape: AnyShapeRecord) -> [MentionTextPlacement] {
+    /// Where a shape draws mention text: its kind's placements, none for a kind without. `context`
+    /// is where the shape is (the editor's `shapeContext`).
+    public func mentionTextPlacements(of shape: AnyShapeRecord, in context: ShapeContext) -> [MentionTextPlacement] {
         guard !shape.isOpaque else { return [] }
-        return contributions(to: MentionTexts.self, for: shape.kind).first?.place(shape) ?? []
+        return contributions(to: MentionTexts.self, for: shape.kind).first?.place(shape, context) ?? []
     }
 }
 
@@ -138,7 +158,7 @@ extension CanvasEditor {
     /// shown, so they have none. Laid out only for the shape asked about, and kept with its text.
     public func mentionPills(of shape: ShapeID) -> [MentionPillFrame] {
         guard let record = document[shape] else { return [] }
-        let placements = registry.mentionTextPlacements(of: record)
+        let placements = registry.mentionTextPlacements(of: record, in: shapeContext)
         guard !placements.isEmpty else { return [] }
         var resolver = MentionResolver(registry: registry, lookup: { [unowned self] in self.shape(inFile: $0) })
         var frames: [MentionPillFrame] = []
@@ -206,6 +226,7 @@ final class MentionTextMemo {
         let color: NSColor
         let lineHeight: CGFloat?
         let surface: MentionSurface
+        let alignment: NSTextAlignment
         let width: CGFloat
     }
 
@@ -298,7 +319,7 @@ final class MentionTextMemo {
         }
         let style = placement.style
         let key = Key(stored: placement.text.stored, resolutions: resolutions, font: style.font, color: style.color,
-                      lineHeight: style.lineHeight, surface: style.surface, width: placement.box.width)
+                      lineHeight: style.lineHeight, surface: style.surface, alignment: style.alignment, width: placement.box.width)
         if let slot = index[key], let found = slots[slot] {
             touch(slot)
             if drawing { markDrawn(slot) }

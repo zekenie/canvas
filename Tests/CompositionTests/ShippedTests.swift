@@ -63,7 +63,7 @@ import Validation
         board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
         find-in-boards       service FindState · overlay FindOverlay · command find · shortcut ⌘F → command find · command findNext · shortcut ⌘G → command findNext · command findPrevious · shortcut ⇧⌘G → command findPrevious
         title-find           findable title → every shape
-        mention-find         findable mention text → every shape
+        mention-find         findable mention text → every shape · findable mention text over the canvas → every shape
         arrow-find           findable label → arrow
         jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo
         transform            service TransformState
