@@ -1670,6 +1670,23 @@ ends the string (ICU's also matches before a final line break), `.` and `\s` are
 `\w` and `\b` are ASCII. A pattern ICU can't read at all (a lookbehind of no fixed length) refuses
 the plugin list, as one that's no regular expression does.
 
+A `$ref` may also name a schema that isn't in this one, such as a type's `urn:uuid:…` kept in a file.
+`SchemaValidator(schema) { uri in … }` (the `resources:` parameter) asks its resolver for the schema
+filed under the part of the `$ref` before its first `#`, as written: no resolution against `$id`,
+which stays an annotation, so give each schema the URI its refs use. It asks once for each URI
+however many refs name it, then follows the fragment in that schema (`urn:uuid:…#/$defs/age`, or
+none for the whole), and that schema's own `#/…` refs are to itself, not to the schema that named
+it. A type that holds itself, or two that hold each other, through a property ends with the value as
+a local one does, and a loop that doesn't go into the value (`allOf` round two schemas) is marked as
+it is within one. A schema the resolver hasn't, or a place a schema hasn't, is a problem like a
+`$ref` to nowhere (`the $ref at #/properties/owner, urn:uuid:…, can't be found`), and a value that
+meets it breaks `$ref` ("can’t be checked: its schema refers to urn:uuid:…, which can’t be found").
+The resolver runs while the validator is made and isn't kept, so the validator stays `Sendable` and
+the resolver may read a snapshot taken on the main actor, so a validator can be made anywhere.
+`validator.resources` lists the URIs it asked for, found or not, in the order it met them: what a
+caller that keeps validators drops one on when a schema under one of them changes or appears. With no
+resolver (`SchemaValidator(schema)`) a `$ref` outside the schema is "isn't in the schema", as it was.
+
 **Validation turns each violation into a warning.** The rule is Validation's own, for every kind
 (`ValidationRules` on its line of the report), after the kind's own rules: the violation's message,
 about the property it's in (`ValidationIssue.field`). So a bound is a guideline a shape can
