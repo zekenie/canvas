@@ -3,6 +3,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Composition
+import Connections
 import CoreGraphics
 import Geometry
 import LanguageModels
@@ -49,6 +50,19 @@ private let onPill = CGPoint(x: 112, y: 82)
         h.editor.unlock([note])
         h.wait(2_000)                                                               // the open lock fades
         expectEqual(try h.editor.rect(of: TitlePill.self, on: note), CGRect(x: 100, y: 73, width: 200, height: 18), "unlocked, to the right edge")
+    },
+    test("a locked arrow's lock is above its label's words, or above the middle of an unlabelled one, 120 points wide at least") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, pasteboard: pasteboard, model: ScriptedLanguageModel()) }
+        let said = h.add(Arrow(start: .free(CGPoint(x: 100, y: 300)), end: .free(CGPoint(x: 500, y: 300)), text: "calls"))
+        let silent = h.add(Arrow(start: .free(CGPoint(x: 100, y: 500)), end: .free(CGPoint(x: 500, y: 500))))
+        h.editor.lock([said, silent])
+        let label = try require(h.editor.shapeContext.geometry(of: said)?.label, "an arrow with words has a label")
+        let lock = try h.editor.rect(of: LockChip.self, on: said)
+        expectEqual(lock.minY, label.minY - 27, "the row, above the words and not above the arrow's bounds")
+        expectEqual(lock.maxX, max(label.maxX, label.midX + 60), "at the right end of the label, widened to 120 about its middle")
+        expectEqual(try h.editor.rect(of: LockChip.self, on: silent), CGRect(x: 342, y: 473, width: 18, height: 18), "above its middle (300, 500), 60 either way")
     },
     test("a click on a note's pill selects the note, and a drag from it moves the note; a locked note's shakes instead") {
         let pasteboard = NSPasteboard.withUniqueName()
