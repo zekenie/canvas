@@ -179,32 +179,50 @@ private final class LabelCanvas: NSView {
         h.editor.undo()
         expectEqual(said(h, id), "calls")
     },
-    // The label is measured from the names its mentions hold, as its geometry has to be (a pure function
-    // of the arrow, kept until the arrow changes: nothing but a render reads another board), and drawn
-    // with the names the shapes have now. So a rename leaves the label's frame where it was: a shorter
-    // name fits in it with room to spare, and a longer one may not (a pill wraps to a line past the
-    // label's last and isn't shown) until the label is edited, which writes the names as they are.
-    test("a rename draws the label's pills as the shapes are called now, on the same board and on another, in the frame the names it holds made") {
-        let (h, id, groceries, _) = try mentionBoard { groceries, sam in
+    // The label is measured by the names its mentions show now: Mentions hands the arrow's geometry
+    // those that differ from the names the text holds (a layout input), and tells the editor when a
+    // rename, on any board, changes them, so the label is laid out again. Nothing is stored: no step,
+    // no edit, the text still holds the names it was written with.
+    test("a rename lays the label out by the names the pills show now, on the same board and on another, and undo takes it back") {
+        let (h, id, groceries, sam) = try mentionBoard { groceries, sam in
             MentionText([.text("asks "), .mention(groceries, label: "Groceries"), .text(" for "), .mention(sam, label: "Sam about the cake")])
         }
         let frame = try require(h.editor.arrowLabelFrame(of: id))
-        @MainActor func shown() -> [String] {
-            h.editor.mentionPills(of: id).compactMap { pill in h.editor.mentions?.resolve(pill.target).appearance?.label }
+        @MainActor func expectPillsInside(_ message: String) throws {
+            let label = try require(h.editor.arrowLabelFrame(of: id))
+            for pill in h.editor.mentionPills(of: id) {
+                expect(label.insetBy(dx: LabelMetrics.padding, dy: LabelMetrics.padding).contains(pill.frame), "\(message): \(pill.frame) is inside \(label)")
+            }
         }
-        expectEqual(shown(), ["Groceries", "Sam about the cake"])
+        let long = "Errands and every other thing on the long list of things to buy"
+        let held = said(h, id)
+        let steps = h.editor.undoHistory.undoName
         h.editor.rename(groceries, to: "Errands")
-        expectEqual(shown(), ["Errands", "Sam about the cake"], "the pills show the new name")
-        expectEqual(said(h, id)?.stored.contains("[Groceries]"), true, "the text still holds the name it was written with: a rename writes nothing")
-        expectEqual(h.editor.arrowLabelFrame(of: id), frame, "a rename leaves the label where it was")
-        for pill in h.editor.mentionPills(of: id) {
-            expect(frame.contains(pill.frame), "after a rename to a shorter name, \(pill.frame) is still inside \(frame)")
-        }
-        h.editor.rename(groceries, to: "Errands and every other thing on the long list")
-        expectEqual(h.editor.arrowLabelFrame(of: id), frame, "nor does a longer name move it")
-        expectEqual(h.editor.mentions?.resolve(groceries).appearance?.label, "Errands and every other thing on the long list")
+        expectEqual(said(h, id), held, "a rename writes nothing to the text")
+        let shorter = try require(h.editor.arrowLabelFrame(of: id))
+        expect(shorter.width < frame.width, "a shorter name: a narrower label, \(shorter) against \(frame)")
+        try expectPillsInside("after a rename to a shorter name")
 
-        // On another board.
+        h.editor.rename(groceries, to: long)
+        let longer = try require(h.editor.arrowLabelFrame(of: id))
+        expect(longer.width > frame.width || longer.height > frame.height, "a longer name: a bigger label, \(longer) against \(frame)")
+        try expectPillsInside("after a rename to a longer name, nothing wraps past the label")
+        expectEqual(said(h, id), held, "still nothing written")
+
+        h.editor.undo()
+        expectEqual(h.editor.arrowLabelFrame(of: id), shorter, "undoing the rename lays it out as it was")
+        h.editor.undo()
+        expectEqual(h.editor.arrowLabelFrame(of: id), frame, "and back")
+        expectEqual(h.editor.undoHistory.undoName, steps, "the layout was no step of its own")
+        h.editor.redo()
+        h.editor.redo()
+        expectEqual(h.editor.arrowLabelFrame(of: id), longer, "redo")
+        // An edit would write the names as they are now: the same label.
+        let edited = h.add(Arrow(start: .free(CGPoint(x: 100, y: 200)), end: .free(CGPoint(x: 500, y: 200)),
+                                 text: MentionText([.text("asks "), .mention(groceries, label: long), .text(" for "), .mention(sam, label: "Sam about the cake")])))
+        expectEqual(h.editor.arrowLabelFrame(of: edited), longer, "as an edit would have it")
+
+        // On another board, the arrow's board not shown.
         let a = ShapeRecord(Box(boxA)), pocket = ShapeRecord(Pocket(boxB))
         var inner = ShapeRecord(Box(boxA))
         inner[TitleProperty.self] = "Inside"
@@ -216,11 +234,29 @@ private final class LabelCanvas: NSView {
         let pillBefore = try require(across.editor.mentionPills(of: arrow).first)
         expect(pillBefore.isLive, "a pill for a shape on another board is live")
         let labelBefore = try require(across.editor.arrowLabelFrame(of: arrow))
+        across.editor.undoHistory.breakStep()
         across.editor.transact(on: BoardID(owner: pocket.id), "Rename") { $0.update(inner.id) { $0[TitleProperty.self] = "Out" } }
         expectEqual(across.editor.mentions?.resolve(inner.id).appearance?.label, "Out", "the name now, from the other board")
         let pillAfter = try require(across.editor.mentionPills(of: arrow).first)
         expect(pillAfter.frame.width < pillBefore.frame.width, "drawn by it: a pill narrower than it was, \(pillAfter.frame) against \(pillBefore.frame)")
-        expectEqual(across.editor.arrowLabelFrame(of: arrow), labelBefore, "in the frame the name it holds made")
+        let labelAfter = try require(across.editor.arrowLabelFrame(of: arrow))
+        expect(labelAfter.width < labelBefore.width, "and the label with it: \(labelAfter) against \(labelBefore)")
+        // The undo takes the rename back on the board it was made on, which it shows; the arrow's board comes back.
+        across.editor.undo()
+        expect(across.editor.showBoard(.root))
+        expectEqual(across.editor.arrowLabelFrame(of: arrow), labelBefore, "undone")
+    },
+    test("a paste or an undo of an arrow whose text holds an old name is laid out by the name now") {
+        let (h, id, groceries, _) = try mentionBoard { groceries, _ in MentionText([.text("asks "), .mention(groceries, label: "Groceries")]) }
+        let held = try require(h.editor.arrowLabelFrame(of: id))
+        h.editor.rename(groceries, to: "Errands")
+        let renamed = try require(h.editor.arrowLabelFrame(of: id))
+        expect(renamed.width < held.width)
+        // Deleted and brought back, the text still holds "Groceries".
+        h.editor.transact("Delete") { $0.delete([id]) }
+        expectEqual(h.editor.arrowLabelFrame(of: id), nil)
+        h.editor.undo()
+        expectEqual(h.editor.arrowLabelFrame(of: id), renamed, "laid out by the name now")
     },
     test("an arrow's row reads the names its label mentions now, and a rename remakes the row") {
         let (h, id, groceries, _) = try mentionBoard { groceries, _ in MentionText([.text("\n asks "), .mention(groceries, label: "Groceries"), .text(" \nthen more")]) }

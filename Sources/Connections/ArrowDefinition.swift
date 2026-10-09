@@ -24,7 +24,7 @@ extension ArrowDefinition: ShapeDefinition {
     /// edited, the editing view draws the text, over the cut, an empty label's too.
     func render(_ shape: ShapeRecord<Arrow>, in context: RenderContext) {
         let geometry = arrowGeometry(shape.props, in: context.shapes)
-        let label = ArrowLabels.frame(of: shape.props, on: geometry, editing: context.isEditing)
+        let label = ArrowLabels.frame(of: shape.props, on: geometry, names: context.shapes.mentionNames(of: shape.id), editing: context.isEditing)
         let cg = context.cg
         cg.saveGState()
         if let label { clip(cg, around: label, beside: geometry) }
@@ -52,7 +52,7 @@ extension ArrowDefinition: ShapeDefinition {
     func geometry(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> ShapeGeometry {
         let geometry = arrowGeometry(shape.props, in: context)
         var bounds = geometry.bodyPath.boundingBoxOfPath
-        let label = ArrowLabels.frame(of: shape.props, on: geometry)
+        let label = ArrowLabels.frame(of: shape.props, on: geometry, names: context.mentionNames(of: shape.id))
         if let label { bounds = bounds.union(label) }
         return ShapeGeometry(outline: [geometry.start, geometry.middle, geometry.end], bounds: bounds, isClosed: false, label: label)
     }
@@ -343,6 +343,8 @@ public struct ArrowsPlugin: CanvasPlugin {
             arrow.label("Arrow", systemImage: ArrowStyle.symbol)
             arrow.arrowRow()
             // Its label is mention text, centered on its body: pills, and the slash commands its editor hosts.
+            // Its frame is measured by the names its mentions show now: a rename lays it out again.
+            arrow.mentionLayout { $0.props.text }
             arrow.mentionText { arrow, shapes in
                 guard arrow.props.hasText, let label = shapes.geometry(of: arrow.id)?.label else { return [] }
                 return [ArrowLabels.placement(of: arrow.props.text, in: label)]

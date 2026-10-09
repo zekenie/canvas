@@ -599,6 +599,14 @@ is compiled by `./test.sh`, even before anything depends on it.
   `ShapeContext`: `shape(_:)`, `geometry(of:)` and `hitTest(_:shape:)` keep track. Reading all of
   `context.document`, or `context.camera`, while working out a geometry ties it to every change of
   them.
+- **What no commit changes comes as a layout input.** A geometry that depends on something outside
+  the records (the names a rename gave shapes on another board) reads it with
+  `context.layoutInput(key, for: id)` (a `LayoutInputKey<Value>`), and whoever owns the key sets it
+  with `editor.setLayoutInput(key, value, for: id)`, which has the editor work that shape's geometry
+  (and what looked it up) out again when the value changes; `editor.shapesDidChangeLayout(ids)` does
+  the same for any other reason. It is no transaction and no undo step, and nothing is stored or
+  marked edited. Mentions does this for an arrow's label (`x.mentionLayout { $0.props.text }`,
+  `context.mentionNames(of:)`).
 - **Conform in an extension**, as Patches does, for `ShapeDefinition` and its capabilities,
   `Tool`, `Session`, `EditorService`, and an extension point that implements `check`. Swift flags a
   member that *nearly* matches a defaulted requirement (a wrong label, a missing return type) only
@@ -5176,13 +5184,15 @@ and lends any plugin what follows, but for `beginArrow`, which is internal:
 - **An arrow's label is mention text** (`Arrow.text` is a `MentionText`: a migration escapes what a
   board from before had that reads as a mention, and `Fixtures/kinds/arrow.v2.json` holds it). It's
   drawn through Mentions (`context.drawMentionText(ArrowLabels.placement(of:in:))`, centered, 15
-  points on 18, over the canvas), measured from the names its pills hold, edited in a
+  points on 18, over the canvas), measured by the names its pills show now, edited in a
   `MentionTextView` (`@` and slash commands, `/lock` among them; Return on a command line runs it), its
   row reads the names live, `canvas draw`'s `text: "calls @[Cache]"` mentions by title, and
   [Find](#find) finds it, washed, as Mentions' text: arrows have no Find plugin. The arrow registers
   its one placement with `arrow.mentionText { arrow, shapes in … }`, from its kept geometry's label
-  (the placement that needs the shapes around it, through the `ShapeContext`). A rename leaves the
-  label's frame as the names it holds made it, which a longer name may overflow until the label is edited.
+  (the placement that needs the shapes around it, through the `ShapeContext`). A rename lays the
+  label's frame out again by the names its pills show now (`arrow.mentionLayout { $0.props.text }`:
+  Mentions sets a layout input on the arrows whose names differ from the text's, on any board), with
+  no transaction and nothing stored; the text keeps the names it was written with.
 
 ### Connecting without a drag
 

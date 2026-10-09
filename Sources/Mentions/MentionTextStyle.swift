@@ -91,13 +91,23 @@ public struct MentionTextStyle: @MainActor Hashable {
     /// each mention a live pill by the name it holds, which is as wide as the canvas draws it while
     /// its shape is called that, whatever its kind's symbol (a symbol has a slot of its own,
     /// `MentionStyle.symbolSlot`). One drawn missing or unavailable has no symbol, so it's narrower.
-    public func measuredString<S>(_ text: ScopedMentionText<S>, width: CGFloat?) -> NSAttributedString {
-        var labels = text.runs.lazy.compactMap { run -> String? in
+    ///
+    /// `names`, if given, are the names the mentions show now, one for each, in order
+    /// (`ShapeContext.mentionNames`: a layout input that follows a rename, which writes nothing to
+    /// the text), and measure in place of the names the text holds.
+    public func measuredString<S>(_ text: ScopedMentionText<S>, width: CGFloat?, names: [String]? = nil) -> NSAttributedString {
+        let held = text.runs.compactMap { run -> String? in
             if case .mention(_, let label) = run { label } else { nil }
-        }.makeIterator()
+        }
+        var next = 0
+        func label() -> String {
+            defer { next += 1 }
+            if let names, next < names.count { return names[next] }
+            return next < held.count ? held[next] : ""
+        }
         // Its symbol is drawn nowhere, so it names none: the slot is the same.
         return attributedString(text, width: width) { _ in
-            .live(MentionAppearance(label: labels.next() ?? "", systemImage: "", kindName: "", detail: ""))
+            .live(MentionAppearance(label: label(), systemImage: "", kindName: "", detail: ""))
         }
     }
 
