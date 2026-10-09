@@ -37,9 +37,38 @@ enum AdornmentStyle {
     private static let rowPlaceholderText = rowText.merging([.foregroundColor: placeholderWhite]) { $1 }
     private static let cornerPlaceholderText = cornerText.merging([.foregroundColor: placeholderWhite]) { $1 }
 
-    /// What a label's text is set in, in its place: the place's text, dimmed for a placeholder.
+    /// A chip that names what is gone (`AdornmentLabel.missing()`): no fill, a dashed stroke at this
+    /// strength of the canvas's label color, `missingStrokeWidth` wide, and its text in italic at
+    /// `missingTextStrength` of it, as a mention's pill says it (Mentions); the name is the only
+    /// record of what was there, so it reads, while the dashes and the italic say it's gone.
+    static let missingStroke: CGFloat = 0.35
+    static let missingStrokeWidth: CGFloat = 1
+    static let missingDash: [CGFloat] = [2, 2]
+    static let missingTextStrength: CGFloat = 0.65
+    /// Hovered and pressed, a faint fill of the same color, since it has none to lighten.
+    static let missingHoverFill: CGFloat = 0.1
+    static let missingPressedFill: CGFloat = 0.2
+    /// The text of a chip that is missing, in its place: the place's font, italic, in the canvas's
+    /// own (dynamic) label color.
+    static let missingText: [NSAttributedString.Key: Any] = missingAttributes(of: rowText)
+    private static let cornerMissingText = missingAttributes(of: cornerText)
+
+    private static func missingAttributes(of base: [NSAttributedString.Key: Any]) -> [NSAttributedString.Key: Any] {
+        var attributes = base
+        if let font = base[.font] as? NSFont { attributes[.font] = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
+        attributes[.foregroundColor] = NSColor.labelColor.withAlphaComponent(missingTextStrength)
+        return attributes
+    }
+
+    /// Between a group's chips that didn't all fit, the one chip that stands for them is "+" and
+    /// how many.
+    static let overflowPrefix = "+"
+
+    /// What a label's text is set in, in its place: the place's text, dimmed for a placeholder,
+    /// italic and in the canvas's colors where it's missing.
     private static func textAttributes(of label: AdornmentLabel, isCorner: Bool) -> [NSAttributedString.Key: Any] {
-        switch (isCorner, label.isPlaceholder) {
+        if label.isMissing { return isCorner ? cornerMissingText : missingText }
+        return switch (isCorner, label.isPlaceholder) {
         case (false, false): rowText
         case (false, true): rowPlaceholderText
         case (true, false): cornerText
@@ -62,7 +91,7 @@ enum AdornmentStyle {
     /// How far a label's text starts past its padding: its symbol's place and the gap after it, for
     /// text with a symbol; else nothing.
     static func lead(of label: AdornmentLabel, in placement: AdornmentPlacement) -> CGFloat {
-        guard label.text != nil, label.systemImage != nil else { return 0 }
+        guard label.text != nil, label.systemImage != nil, !label.isMissing else { return 0 }
         return (placement == .onTopRightCorner ? cornerSymbolPlace : rowSymbolPlace) + symbolGap
     }
 
@@ -115,13 +144,31 @@ enum AdornmentStyle {
     /// it has one, else its symbol in a disc.
     static func face(of label: AdornmentLabel, in placement: AdornmentPlacement) -> Face {
         let height = AdornmentLayout.height(of: placement)
-        guard let text = label.text else { return .symbol(label.systemImage.flatMap { symbol($0, height: height) }, width: height) }
+        guard let text = label.text else {
+            return .symbol(label.isMissing ? nil : label.systemImage.flatMap { symbol($0, height: height) }, width: height)
+        }
         let isCorner = placement == .onTopRightCorner
         let string = NSAttributedString(string: text, attributes: textAttributes(of: label, isCorner: isCorner))
         let size = string.size()
-        let mark = label.systemImage.map { (image: leadingSymbol($0, in: placement, bright: label.hasBrightSymbol), place: isCorner ? cornerSymbolPlace : rowSymbolPlace) }
+        let mark = label.isMissing ? nil : label.systemImage.map { (image: leadingSymbol($0, in: placement, bright: label.hasBrightSymbol), place: isCorner ? cornerSymbolPlace : rowSymbolPlace) }
         return .text(string, size: size, symbol: mark,
                      width: (size.width + lead(of: label, in: placement) + 2 * (isCorner ? cornerPadding : rowPadding)).rounded(.up))
+    }
+
+    /// A chip that is missing: no fill (a faint one hovered or pressed), a dashed stroke, in the
+    /// canvas's label color. `unit` is how many units of the context a point is.
+    private static func paintMissing(_ path: CGPath, unit: CGFloat, look: Look, in cg: CGContext) {
+        let ink = NSColor.labelColor
+        if look != .normal {
+            cg.addPath(path)
+            cg.setFillColor(ink.withAlphaComponent(look == .hovered ? missingHoverFill : missingPressedFill).cgColor)
+            cg.fillPath()
+        }
+        cg.addPath(path)
+        cg.setStrokeColor(ink.withAlphaComponent(missingStroke).cgColor)
+        cg.setLineWidth(missingStrokeWidth * unit)
+        cg.setLineDash(phase: 0, lengths: missingDash.map { $0 * unit })
+        cg.strokePath()
     }
 
     /// How a clickable adornment is drawn: hovered or pressed while the pointer's on it.
@@ -156,6 +203,12 @@ enum AdornmentStyle {
         cg.setFillColor(fill(for: label.tone, look: look).cgColor)
         switch face {
         case .symbol(let image, _):
+            if label.isMissing {
+                let disc = CGRect(x: corner.x + frame.minX * scale, y: corner.y + frame.minY * scale,
+                                  width: frame.width * scale, height: frame.height * scale)
+                paintMissing(CGPath(ellipseIn: disc, transform: nil), unit: scale, look: look, in: cg)
+                break
+            }
             // In world units, the symbol's image sized to match: an image drawn into a scaled
             // context comes out otherwise.
             let disc = CGRect(x: corner.x + frame.minX * scale, y: corner.y + frame.minY * scale,
@@ -171,8 +224,13 @@ enum AdornmentStyle {
             cg.translateBy(x: corner.x, y: corner.y)
             cg.scaleBy(x: scale, y: scale)
             let radius = min(frame.width, frame.height) / 2
-            cg.addPath(CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil))
-            cg.fillPath()
+            let capsule = CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil)
+            if label.isMissing {
+                paintMissing(capsule, unit: 1, look: look, in: cg)
+            } else {
+                cg.addPath(capsule)
+                cg.fillPath()
+            }
             let isCorner = placement == .onTopRightCorner
             let start = frame.minX + (isCorner ? cornerPadding : rowPadding)
             // Where the text starts, as its width was measured.
@@ -233,18 +291,18 @@ struct AdornmentOverlay: CanvasOverlay {
         }
         var slots: [AdornmentLayout.Slot?] = []
         for record in records {
-            guard let laidOut = state.laidOut(record), let bounds = AdornmentState.bounds(of: record.id, in: context.shapes) else { continue }
-            AdornmentLayout.slots(of: laidOut.items, width: bounds.width / scale, into: &slots)
+            guard let laidOut = state.laidOut(record), let anchor = AdornmentState.anchor(of: record.id, in: context.shapes, zoom: context.zoom) else { continue }
+            AdornmentLayout.slots(of: laidOut.items, width: anchor.width / scale, into: &slots)
             // Where the shape is drawn.
             let offset = context.worldDrawingOffset(of: record.id)
-            let drawn = bounds.offsetBy(dx: offset.x, dy: offset.y)
+            let drawn = anchor.offsetBy(dx: offset.x, dy: offset.y)
             for index in slots.indices {
                 guard let slot = slots[index] else { continue }
                 let adornment = laidOut.shown[index]
                 var look = AdornmentStyle.Look.normal
-                if adornment.isClickable, adornment.isButton(pressed, on: record.id) {
+                if adornment.isClickable, adornment.isButton(pressed, on: record.id, isOverflow: slot.isOverflow) {
                     look = .pressed
-                } else if adornment.isClickable, adornment.isButton(hovered, on: record.id) {
+                } else if adornment.isClickable, adornment.isButton(hovered, on: record.id, isOverflow: slot.isOverflow) {
                     look = .hovered
                 }
                 let (label, face) = laidOut.look(of: index, in: slot)

@@ -123,12 +123,25 @@ public struct AdornmentID: Hashable, Sendable, CustomStringConvertible {
 public struct AdornmentButton: Hashable, Sendable {
     public let adornment: AdornmentID
     public let shape: ShapeID
+    /// Which of a group's labels (nil for an untagged label, and for the "+N" chip).
+    public let tag: AdornmentTag?
+    /// The group's "+N" chip, which stands for the labels the row had no room for.
+    public let isOverflow: Bool
 
-    public init<A: ClickableAdornment>(_: A.Type, on shape: ShapeID) { self.init(.of(A.self), on: shape) }
+    public init<A: ClickableAdornment>(_: A.Type, on shape: ShapeID, tag: AdornmentTag? = nil) {
+        self.init(.of(A.self), on: shape, tag: tag)
+    }
 
-    init(_ adornment: AdornmentID, on shape: ShapeID) {
+    /// The "+N" chip of `A`'s group on a shape.
+    public static func overflow<A: ClickableAdornment>(of _: A.Type, on shape: ShapeID) -> AdornmentButton {
+        AdornmentButton(.of(A.self), on: shape, tag: nil, isOverflow: true)
+    }
+
+    init(_ adornment: AdornmentID, on shape: ShapeID, tag: AdornmentTag? = nil, isOverflow: Bool = false) {
         self.adornment = adornment
         self.shape = shape
+        self.tag = tag
+        self.isOverflow = isOverflow
     }
 }
 
@@ -161,6 +174,11 @@ public struct AdornmentLabel: Hashable, Sendable {
     /// Its text stands in for what isn't there (an untitled shape's pill, `init(placeholder:)`):
     /// drawn dimmed, as secondary text is.
     public let isPlaceholder: Bool
+    /// Which of its adornment's labels this is (`tagged(_:)`): a group's chips are told apart by it,
+    /// for hover, press and click.
+    public private(set) var tag: AdornmentTag?
+    /// What it names is gone (`missing()`): no fill, a dashed stroke, the text in italic.
+    public private(set) var isMissing: Bool
     /// The smaller face this label may be drawn in (`compact(_:)`): at most one, held in an array
     /// since a label can't hold itself.
     private var compactFaces: [AdornmentLabel]
@@ -183,6 +201,8 @@ public struct AdornmentLabel: Hashable, Sendable {
         opacity = 1
         hasBrightSymbol = false
         self.isPlaceholder = isPlaceholder
+        tag = nil
+        isMissing = false
         compactFaces = []
     }
 
@@ -193,6 +213,8 @@ public struct AdornmentLabel: Hashable, Sendable {
         opacity = 1
         hasBrightSymbol = false
         isPlaceholder = false
+        tag = nil
+        isMissing = false
         compactFaces = []
     }
 
@@ -201,6 +223,23 @@ public struct AdornmentLabel: Hashable, Sendable {
         var label = self
         label.opacity = min(1, max(0, opacity))
         if let face = compactFace { label = label.compact(face.opacity(opacity)) }
+        return label
+    }
+
+    /// The same label as the one `tag` names, among its adornment's: a click on it, and the hover and
+    /// press on it, say which.
+    public func tagged(_ tag: AdornmentTag) -> AdornmentLabel {
+        var label = self
+        label.tag = tag
+        return label
+    }
+
+    /// The same label drawn as naming what is gone, as a mention's pill does (Mentions): no fill, a
+    /// dashed stroke and its text in italic, in the canvas's own label colors; its symbol before the
+    /// text is left off, since it is white. Text, and a symbol alone in a dashed ring.
+    public func missing() -> AdornmentLabel {
+        var label = self
+        label.isMissing = true
         return label
     }
 
@@ -275,6 +314,14 @@ extension ShapeAdornments: KeyedExtensionPoint {
         [AdornmentKey(target: target, adornment: contribution.adornment)]
     }
 
+    /// Several labels are for the row's left end only: at the right end a run is cut where it
+    /// reaches `maxRun`, and everything after it with it (the lock), and the corner is a tally's.
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        for c in registry.contributions(to: ShapeAdornments.self) where c.value.isGroup && c.value.adornment.placement != .aboveTopLeft {
+            throw .invalid(point: "ShapeAdornments", reason: "\(c.value.adornment.name) (from \(c.pluginID)) shows several labels, which only aboveTopLeft allows, not \(c.value.adornment.placement)")
+        }
+    }
+
     /// "adornment TitlePill → every shape", "adornment Flag → box".
     public static func summary(of contribution: AdornmentContribution, for target: ShapeTarget) -> String {
         "adornment \(contribution.adornment) → \(target == .any ? "every shape" : "\(target)")"
@@ -294,15 +341,24 @@ public struct AdornmentContribution {
     let adornment: AdornmentID
     /// Every-shape ones: which kinds. Always true for a kind's own.
     let appliesTo: @MainActor (AdornableKind) -> Bool
-    let label: @MainActor (AnyShapeRecord, AdornmentContext) -> AdornmentLabel?
+    let labels: @MainActor (AnyShapeRecord, AdornmentContext) -> [AdornmentLabel]
+    /// Several labels, in order, each its own chip, each shown whole or folded into a "+N" chip:
+    /// only at `aboveTopLeft`.
+    let isGroup: Bool
     /// From the type's `ClickableAdornment` conformance, if it has one.
     let click: (@MainActor (AdornmentClick, CanvasEditor) -> Void)?
 
     init<A: Adornment>(_: A.Type, appliesTo: @escaping @MainActor (AdornableKind) -> Bool = { _ in true },
                        label: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> AdornmentLabel?) {
+        self.init(A.self, appliesTo: appliesTo, isGroup: false) { shape, context in label(shape, context).map { [$0] } ?? [] }
+    }
+
+    init<A: Adornment>(_: A.Type, appliesTo: @escaping @MainActor (AdornableKind) -> Bool = { _ in true }, isGroup: Bool,
+                       labels: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> [AdornmentLabel]) {
         adornment = .of(A.self)
         self.appliesTo = appliesTo
-        self.label = label
+        self.isGroup = isGroup
+        self.labels = labels
         if let clickable = A.self as? any ClickableAdornment.Type {
             click = { click, editor in clickable.click(click, in: editor) }
         } else {
@@ -325,7 +381,35 @@ extension ShapeRegistrar {
     }
 }
 
+extension ShapeRegistrar {
+    /// `A` on this kind's shapes as several chips, one per label, in order, each tagged
+    /// (`AdornmentLabel.tagged(_:)`): at `aboveTopLeft` only (the registry refuses it elsewhere). A
+    /// chip is shown whole or not at all: the first the row has no room for and those after it fold
+    /// into one "+N" chip, which is shown if it fits.
+    public mutating func adornments<A: Adornment>(_: A.Type, _ labels: @escaping @MainActor (ShapeRecord<Definition.Props>) -> [AdornmentLabel]) {
+        contribute(AdornmentContribution(A.self, isGroup: true) { shape, _ in shape.typed(as: Definition.Props.self).map(labels) ?? [] },
+                   to: ShapeAdornments.self)
+    }
+}
+
 extension PluginRegistrar {
+    /// `adornments` on the shapes of a kind another plugin registers.
+    public mutating func adornments<A: Adornment, P: ShapeProps>(_: A.Type, on _: P.Type,
+                                                                 _ labels: @escaping @MainActor (ShapeRecord<P>) -> [AdornmentLabel]) {
+        contribute(AdornmentContribution(A.self, isGroup: true) { shape, _ in shape.typed(as: P.self).map(labels) ?? [] },
+                   to: ShapeAdornments.self, for: .kind(P.kind))
+    }
+
+    /// `adornments` on every shape of the kinds `where` picks, as `adornmentForEveryShape` does for
+    /// one label.
+    public mutating func adornmentsForEveryShape<A: Adornment>(
+        _: A.Type,
+        where appliesTo: @escaping @MainActor (AdornableKind) -> Bool = { _ in true },
+        _ labels: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> [AdornmentLabel]
+    ) {
+        contribute(AdornmentContribution(A.self, appliesTo: appliesTo, isGroup: true, labels: labels), to: ShapeAdornments.self, for: .any)
+    }
+
     /// `A` on the shapes of a kind another plugin registers, as `adornment` does on a
     /// kind's own registrar.
     public mutating func adornment<A: Adornment, P: ShapeProps>(_: A.Type, on _: P.Type,
@@ -360,6 +444,11 @@ public struct AdornmentFrame: Equatable {
     /// In world units, at the current zoom, where the shape is (not where a shake draws it), as
     /// hit testing goes.
     public let rect: CGRect
+    /// It is a group's "+N" chip, its `label` the "+N" itself.
+    public let isOverflow: Bool
+
+    /// Which of its adornment's labels: nil for an untagged one, and for the "+N" chip.
+    public var tag: AdornmentTag? { isOverflow ? nil : label.tag }
 }
 
 extension CanvasEditor {

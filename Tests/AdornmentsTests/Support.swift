@@ -2,6 +2,7 @@ import Adornments
 import AppKit
 import Canvas
 import CanvasTesting
+import Geometry
 import Keyboard
 import Selection
 
@@ -125,4 +126,82 @@ struct SeededGenerator: RandomNumberGenerator {
         z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
         return z ^ (z >> 31)
     }
+}
+
+// Fixtures for several labels in one adornment (a group), and for an open shape with a label.
+
+/// A group of tagged chips at the row's left end, clickable, as a shape's type chips are.
+enum Chips {}
+extension Chips: Adornment {
+    static var placement: AdornmentPlacement { .aboveTopLeft }
+    static var order: Int { 60 }
+}
+extension Chips: ClickableAdornment {
+    static func click(_ click: AdornmentClick, in editor: CanvasEditor) {
+        clicked.append(click.shape)
+        clicks.append(click)
+    }
+}
+
+/// A group put where only one label goes: the registry refuses it.
+enum RightChips {}
+extension RightChips: Adornment {
+    static var placement: AdornmentPlacement { .aboveTopRight }
+}
+
+enum CornerChips {}
+extension CornerChips: Adornment {
+    static var placement: AdornmentPlacement { .onTopRightCorner }
+}
+
+/// A chip named `name`, tagged by it.
+func chip(_ name: String) -> AdornmentLabel { AdornmentLabel(name).tagged(AdornmentTag(name)) }
+
+/// A plugin that shows `names` as `Chips` on every shape.
+@MainActor func chipsPlugin(_ names: [String], id: PluginID = "chips") -> Contributor {
+    Contributor(id: id) { $0.adornmentsForEveryShape(Chips.self) { _, _ in names.map(chip) } }
+}
+
+/// An open shape from one point to another through a middle one, with a label's rect if it has one:
+/// as an arrow is. Its bounds hold all of them.
+struct Strand: ShapeProps {
+    static let kind: ShapeKind = "strand"
+    static let properties = Properties<Strand> {
+        Property("from", \.from)
+        Property("to", \.to)
+        Property("label", \.label)
+        Property("isLabelled", \.isLabelled)
+    }
+    var from: CGPoint
+    var to: CGPoint
+    var label: CGRect
+    var isLabelled: Bool
+
+    init(from: CGPoint, to: CGPoint, label: CGRect? = nil) {
+        self.from = from
+        self.to = to
+        self.label = label ?? .zero
+        isLabelled = label != nil
+    }
+}
+
+extension Strand {
+    init() { self.init(from: .zero, to: .zero) }
+}
+
+struct StrandDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Strand>, in context: RenderContext) {}
+
+    func geometry(of shape: ShapeRecord<Strand>, in context: ShapeContext) -> ShapeGeometry {
+        let props = shape.props
+        let middle = CGPoint(x: (props.from.x + props.to.x) / 2, y: (props.from.y + props.to.y) / 2)
+        let outline = [props.from, middle, props.to]
+        let label: CGRect? = props.isLabelled ? props.label : nil
+        return ShapeGeometry(outline: outline, bounds: label.map { CGRect(enclosing: outline).union($0) }, isClosed: false, label: label)
+    }
+}
+
+struct StrandsPlugin: CanvasPlugin {
+    var id: PluginID { "strands" }
+    func register(into registrar: inout PluginRegistrar) { registrar.shape(StrandDefinition()) }
 }

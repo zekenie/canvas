@@ -3954,7 +3954,7 @@ extension LockChip: Adornment {
 
 extension LockChip: ClickableAdornment {
     /// A locked shape's chip unlocks it; a just-unlocked one's locks it again.
-    public static func click(on shape: ShapeID, in editor: CanvasEditor) { editor.service(LockState.self)?.click(shape) }
+    public static func click(_ click: AdornmentClick, in editor: CanvasEditor) { editor.service(LockState.self)?.click(click.shape) }
 }
 
 // In LockingPlugin.register: on the kinds that can be locked, a lock while a shape is locked, and
@@ -3970,7 +3970,8 @@ registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty
 - **The label says what's shown on one shape**, or nil for nothing there, so a lock shows only on
   a locked shape. Locking a shape shows its chip because the label now says so; nothing is added.
 - **A `ClickableAdornment`** is one a click does something with: a [canvas button](#canvas-buttons)
-  whose `click(on:in:)` gets the shape it's on ([pointing](#pointing)).
+  whose `click(_:in:)` gets an `AdornmentClick`: the shape it's on, the label's tag and where the
+  chip is ([pointing](#pointing)).
 
 ### Placing one
 
@@ -3979,6 +3980,7 @@ registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty
 | `x.adornment(A.self) { shape in ... }` | This kind's shapes, inside `registrar.shape { x in ... }`, typed as its own (`ShapeRecord<Props>`). A horizontal's opt-in sugar may call it, so opting in brings its adornment. |
 | `registrar.adornment(A.self, on: Kind.self) { shape in ... }` | Another plugin's kind, typed as its own. |
 | `registrar.adornmentForEveryShape(A.self, where:) { shape, context in ... }` | Every shape of the kinds `where` picks (every kind by default), over `AnyShapeRecord`: what a horizontal places on shapes it doesn't define. |
+| `x.adornments(A.self) { shape in [...] }`, `registrar.adornments(A.self, on: Kind.self) { ... }`, `registrar.adornmentsForEveryShape(A.self, where:) { shape, context in [...] }` | The same three, for several labels in order: a [group](#several-labels-a-group), at `aboveTopLeft` only. |
 
 `where` sees each kind once, as an `AdornableKind`: the `kind`, its `definition` (so its
 capabilities: `{ $0.definition is any Editable }`), the `registry` (so what else it takes part in),
@@ -4006,9 +4008,12 @@ has them too), in view points:
 
 | `AdornmentPlacement` | Where | Shipped |
 |---|---|---|
-| `.aboveTopLeft` | The row just above the top edge, 18 points tall and 9 above it, from its left end rightward, in the room its right end leaves. Text gives way, ending in "…", and needs 30 points, and a symbol's place and gap before it more (`Item.lead`), so it's never a symbol alone: with less, it's left out, and so is what comes after it. | A title's pill |
+| `.aboveTopLeft` | The row just above the top edge, 18 points tall and 9 above it, from its left end rightward, in the room its right end leaves. Text gives way, ending in "…", and needs 30 points, and a symbol's place and gap before it more (`Item.lead`), so it's never a symbol alone: with less, it's left out, and so is what comes after it. The only place that takes [several labels](#several-labels-a-group) from one adornment. | A title's pill |
 | `.aboveTopRight` | The same row, from its right end (the shape's right edge) leftward, whole: on a shape too narrow for it, past the shape's left edge. | A lock |
 | `.onTopRightCorner` | The top-right corner: 16 points tall, centered on the top edge, from 6 points past the right edge leftward. | None (a tally, as above) |
+
+These are from a closed shape's bounds. An open shape (an arrow) has no top edge to sit on, so
+they go from its [anchor](#an-open-shapes-anchor) instead.
 
 In a place, adornments sit 4 points apart. They keep their size on screen down to 25% zoom, and
 shrink with the shapes below it (0.4× at 10%); below 35% a shape drawn as a skeleton shows none, but
@@ -4040,15 +4045,67 @@ go by):
   have to agree on a number.
 - **Text at the row's left end is never wider than its room**: it gives way, ending in "…", or,
   with under 30 points, isn't shown.
+- **A group's chips are whole, but the last** (see above), and a fold is the last thing of its group.
 - **Nothing reaches far**: the row's right end and the corner go no more than 200 points from
   where they start (what would is left out, with what comes after it), and the row's left end stays
   within the shape's width, so every adornment is within x `min(0, width − 200)` … `width + 6` and
-  y −27 … 8 of the shape's top-left corner, which culling and hit testing go by.
+  y −27 … 8 of the shape's top-left corner (its anchor's, for an open shape), which culling and hit
+  testing go by.
 
 Not guaranteed: two shapes' adornments may overlap, and stack as their shapes do; an adornment and
 another shape may overlap too, and the adornment is drawn over it (and takes presses there). On a
 shape narrower than them, the row's right end and the corner run past its
 left edge, whole: a lock on a vertical line spans −18 … 0.
+
+### An open shape's anchor
+
+A closed shape's adornments are placed from its bounds. A line has none worth the name, and its
+corner is far from anything it says, so an open shape (`geometry.isClosed == false`) uses an
+anchor, a rect the places measure from, in the same way:
+
+- its **label** (`geometry.label`, which an arrow's words give), so the chips sit above the
+  words; else
+- a point, **the middle of its outline** (`outline[count / 2]`: an arrow's arc middle).
+
+Either is widened about its center to at least `AdornmentLayout.minAnchorWidth`, 120 view points
+(240 world units at 50%), so a row of chips has room beside a short label or none. The row is 27
+points above the anchor's top, the right end is at its right edge, the left end at its left.
+Nothing about this is the arrow's: Adornments reads the geometry any shape has, so a plugin with a
+label on an open shape gets it as Connections' arrows do. A locked, labelled arrow's lock is above
+its label, and not at the corner of its bounds. Culling grows by the widening (the anchor reaches
+60 points past the label's center, and the corner 6 more), so a line just outside the view whose
+chips reach in is drawn and hit.
+
+### Several labels: a group
+
+An adornment may show several labels, in order, each its own chip: a type chip per type of a
+shape. The sugar takes a list, `x.adornments(TypeChip.self) { shape in names.map { AdornmentLabel($0.title).tagged($0.tag) } }`.
+
+- **Left end only.** A group is for `aboveTopLeft`: at the right end a run is cut where it reaches
+  200 points and everything after it with it (the lock), and the corner is a tally's. The registry
+  refuses a group anywhere else, `RegistryError.invalid` naming the adornment and its plugin.
+- **A tag** tells a group's labels apart: `AdornmentLabel(...).tagged(AdornmentTag(id))`, the
+  plugin's own name for the label (a type chip's is its type's id). A hover, a press and a click
+  go by it, so a chip keeps its look and its click through a rename and a change in the others'
+  places. `AdornmentTag` takes a string or a `ShapeID`.
+- **Whole or "+N".** A chip is shown whole or not at all, but for the group's last, which may be
+  cut short like any text (30 points at least). The first that doesn't fit whole, and those after
+  it, fold into one chip, "+N" (N the number it stands for), if that fits whole; with no room even
+  for that, nothing is shown. A last chip with under 30 points folds into "+1".
+- **A title doesn't hide the chips.** Text at the row's left end before a group (a title's pill)
+  leaves the group's "+N" its width, 4 points and the chip, so a long title is cut short and every
+  type is still reachable. The title keeps the 30 points it needs to be shown at all; below that
+  the chips go, as the title always has first claim on 30. The layout is pure
+  (`AdornmentLayout.Item.group`, `overflowWidth`), and a group's chips are not "title text": they
+  don't make the right end take its compact faces.
+- **Missing.** `AdornmentLabel.missing()` draws the chip as a mention's pill does for what is gone:
+  no fill, a dashed stroke and italic text in the canvas's own label colors (a symbol before its
+  text is left off, being white). Hovered or pressed, a faint fill of the same color.
+- **The "+N" is a button of its own**: `AdornmentButton.overflow(of: A.self, on: id)`, a click on it
+  with `tag` nil and `isOverflow` true, the plugin shows a menu of every label.
+
+A group reads, as any label does, only its shape and services that call `adornmentsDidChange`; it
+is made, kept and dropped as one shape's labels are, and zoomed out below 35% it is not made.
 
 ### Order
 
@@ -4107,7 +4164,10 @@ plugin's look alike, as `ContentsLabel` keeps rows alike:
   a figure), is made with the label (its face is counted in `adornmentFacesMade`), and is the
   label `adornmentFrames(of:)` reports where it's taken. Publishing's chip has one.
 
-A clickable one draws lighter hovered and darker pressed. A label can't draw itself (a sparkline):
+- **`tagged(_:)`** and **`missing()`**: which of a group's labels it is, and the look of a name
+  that is gone ([above](#several-labels-a-group)).
+
+A clickable one draws lighter hovered and darker pressed (a missing one, a faint fill). A label can't draw itself (a sparkline):
 that's [not built yet](#not-built-yet).
 
 **Zoomed out**, below 35%, each shape follows its own level (`editor.drawsSkeleton(of:)`). A shape
@@ -4129,11 +4189,12 @@ a contribution without Adornments is `ownerNotInstalled`:
 ```
 titles and captions both claim * Titles.TitlePill in ShapeAdornments
 titles contributes to ShapeAdornments, but adornments, which owns it, isn't installed
+ShapeAdornments: Tags.Flags (from tags) shows several labels, which only aboveTopLeft allows, not aboveTopRight
 ```
 
 A kind's own takes the place of an every-shape one of the same type, as a kind's own menu item
 does. So a shape shows each adornment once at most, by construction: a contribution names a type,
-never an instance, and there's no second one to attach. There's no `check`: places are a closed
+never an instance, and there's no second one to attach. Its one `check` refuses a group anywhere but `aboveTopLeft`: places are a closed
 set, and orders needn't be unique. Adornments builds on Selection (a clickable adornment is its
 canvas button), so a list with `AdornmentsPlugin` needs `SelectionPlugin` and `KeyboardPlugin` too.
 The report shows each on its placer's line: `adornment TitlePill → every shape`, or `adornment Flag
@@ -4215,7 +4276,7 @@ never stale, and nothing else is thrown away.
 
 | Adornment | What the pointer does |
 |---|---|
-| A `ClickableAdornment` (the lock) | It's a [canvas button](#canvas-buttons), through Adornments' own source: in the select tool, a press and a release on it click it (its type's `click(on:in:)`), before handles and shapes; dragged off, nothing, and Escape lets go. The pointing hand shows over it, and it draws lighter hovered and darker pressed. In other tools it's only drawn. |
+| A `ClickableAdornment` (the lock) | It's a [canvas button](#canvas-buttons), through Adornments' own source: in the select tool, a press and a release on it click it (its type's `click(_:in:)`), before handles and shapes; dragged off, nothing, and Escape lets go. The pointing hand shows over it, and it draws lighter hovered and darker pressed. In other tools it's only drawn. |
 | Any other adornment (a pill) | It's its shape's ([DecorationHits](#drawn-for-a-shape-decorationhits)): hover hovers the shape, a press selects it and a drag moves it, a double-click edits it, and a right-click opens its menu. A clickable one (the lock) is its shape's only for the right-click, which offers Unlock; everything else on it is the button's (a double-click is two clicks). |
 
 - **A hit** is within 3 points of the adornment's capsule, so a disc's is a circle, 12 points from
@@ -4227,9 +4288,14 @@ never stale, and nothing else is thrown away.
   unselectable shape's adornments are seen through, as it is, but a button isn't: a lock is clicked
   whatever its shape.
 - **`editor.hoveredButton`** and `editor.pressedButton` hold an `AdornmentButton` on a clickable
-  one: `AdornmentButton(LockChip.self, on: id)`, the type and the shape.
+  one: `AdornmentButton(LockChip.self, on: id)`, the type and the shape, and for a group's chip its
+  `tag: AdornmentTag(...)`; the "+N" chip is `AdornmentButton.overflow(of: A.self, on: id)`.
+- **A click** is an `AdornmentClick`: `shape`, the chip's `tag` (nil for an untagged label and for the
+  "+N", which `isOverflow` says) and `rect`, where the chip is in world units now, the place to put a
+  menu below.
 - **`editor.adornmentFrames(of: id)`** is where each of a shape's adornments is now: an
-  `AdornmentFrame` each (`adornment`, as `.of(TitlePill.self)`; its `label`; and its `rect`, in
+  `AdornmentFrame` each (`adornment`, as `.of(TitlePill.self)`; its `label`, with its `tag`; its
+  `isOverflow`, a group's "+N", its label the "+N" itself; and its `rect`, in
   world units at the current zoom, where the shape is), in the order they're
   claimed, leaving out those without room. It's empty for a shape with none, and for one drawn as
   a skeleton.
@@ -4487,7 +4553,7 @@ registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) {
 }
 
 extension LockChip: ClickableAdornment {                // a click on the chip
-    public static func click(on shape: ShapeID, in editor: CanvasEditor) { editor.service(LockState.self)?.click(shape) }
+    public static func click(_ click: AdornmentClick, in editor: CanvasEditor) { editor.service(LockState.self)?.click(click.shape) }
 }
 ```
 
