@@ -25,6 +25,16 @@ public final class CanvasView: NSView {
 
     private enum PointerPlace { case canvas, minimap, editingView, covered }
 
+    /// How a menu the editor queued (`popUpMenu`) is shown, given the menu and the point in this view it
+    /// opens at (the bottom-left of the rect it is below): AppKit's pop-up, which runs the menu's
+    /// tracking, unless a test puts in one that notes it (a menu's tracking runs in no unshown window).
+    @_spi(Host) public var menuPresenter: (@MainActor (NSMenu, CGPoint) -> Void)?
+
+    /// The sheet showing the editor's first question (`editor.question`), with the question it shows: it
+    /// is answered when the person chooses, and taken down unanswered when the editor replaced or
+    /// dropped the question.
+    private var questionSheet: (alert: NSAlert, question: CanvasQuestion)?
+
     /// Whether the minimap shows. Off unless the host turns it on (the app does, per board).
     public var showsMinimap = false {
         didSet {
@@ -41,6 +51,17 @@ public final class CanvasView: NSView {
             }
             layoutZoomIndicator()
         }
+    }
+
+    /// The alert a question is shown as: its message, its detail and its two buttons, the first (the
+    /// default, Return) saying yes and the second (Escape) no.
+    public static func makeAlert(for question: CanvasQuestion) -> NSAlert {
+        let alert = NSAlert()
+        alert.messageText = question.message
+        if let detail = question.detail { alert.informativeText = detail }
+        alert.addButton(withTitle: question.confirm)
+        alert.addButton(withTitle: question.cancel).keyEquivalent = "\u{1b}"
+        return alert
     }
 
     public init(editor: CanvasEditor) {
@@ -128,6 +149,7 @@ public final class CanvasView: NSView {
 
     public override func viewWillMove(toWindow newWindow: NSWindow?) {
         if let window {
+            NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: window)
             NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: window)
             NotificationCenter.default.removeObserver(self, name: NSMenu.didBeginTrackingNotification, object: nil)
         }
@@ -137,12 +159,18 @@ public final class CanvasView: NSView {
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let window {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowWillClose(_:)), name: NSWindow.willCloseNotification, object: window)
             NotificationCenter.default.addObserver(self, selector: #selector(windowDidResignKey(_:)), name: NSWindow.didResignKeyNotification, object: window)
             NotificationCenter.default.addObserver(self, selector: #selector(menuDidBeginTracking(_:)), name: NSMenu.didBeginTrackingNotification, object: nil)
             Self.watchCommandKeyUps()
         }
         window?.makeFirstResponder(self)
+        // A question that waited for a window to be shown on.
+        showQuestion()
     }
+
+    /// The window is closing: what the editor asked the person and has no answer to is answered no.
+    @objc private func windowWillClose(_ notification: Notification) { editor.cancelQuestions() }
 
     /// The window stopped being key: no key's release will reach the canvas, so every key held is
     /// let go (Space's pan).
@@ -476,6 +504,50 @@ extension CanvasView: NSMenuItemValidation {
             popoverBubble = view
         }
         layoutPopover()
+    }
+
+    /// Shows the editor's first question as a sheet on the window, in place of the one shown, or takes
+    /// the sheet down. With no window it waits, and is shown once the view has one.
+    public func editorQuestionDidChange(_ editor: CanvasEditor) { showQuestion() }
+
+    private func showQuestion() {
+        let question = editor.question
+        if let shown = questionSheet {
+            guard shown.question != question else { return }
+            // The editor dropped or replaced it: down without an answer.
+            questionSheet = nil
+            shown.alert.window.sheetParent?.endSheet(shown.alert.window, returnCode: .abort)
+        }
+        guard let question, let window else { return }
+        let alert = Self.makeAlert(for: question)
+        questionSheet = (alert, question)
+        alert.beginSheetModal(for: window) { [weak self] response in
+            MainActor.assumeIsolated {
+                guard let canvas = self, let shown = canvas.questionSheet, shown.alert === alert else { return }
+                canvas.questionSheet = nil
+                canvas.editor.answerQuestion(response == .alertFirstButtonReturn)
+            }
+        }
+    }
+
+    /// Pops up the menu the editor queued (`popUpMenu`) on the next turn of the run loop: the click
+    /// that asked is still inside its press's bookkeeping, and a menu's tracking loop there would run
+    /// inside it.
+    public func editorMenuToPopUpDidChange(_ editor: CanvasEditor) {
+        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.popUpWaitingMenu() } }
+    }
+
+    private func popUpWaitingMenu() {
+        // Dropped meanwhile (a press began), or already popped up for an earlier turn's request.
+        guard let waiting = editor.menuToPopUp else { return }
+        editor.menuDidPopUp()
+        let rect = editor.camera.toView(waiting.rect)
+        let point = CGPoint(x: rect.minX, y: rect.maxY)
+        if let menuPresenter {
+            menuPresenter(waiting.menu, point)
+        } else {
+            waiting.menu.popUp(positioning: nil, at: point, in: self)
+        }
     }
 
     /// Over a view the canvas hosts, that view's cursor stands.

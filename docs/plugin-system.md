@@ -823,6 +823,19 @@ The details:
   true) { … }`: like a kind's tool (`ShapeRegistrar.tool`, whose placement says it) it is dimmed, and
   its key does nothing, on a board that takes no shapes (`editor.isToolEnabled`), and one in use is left for the default
   tool when the board becomes read-only.
+- **Asking the person.** `editor.ask(CanvasQuestion(id:, message:, detail:, confirm:, cancel:)) { yes in
+  … }` puts a yes-or-no question for the host to show as a sheet on the board's window. Questions
+  wait first in, first out, one at a time; asking again with the id of one that waits replaces it
+  (its answer is never called); a file put in place (`replaceFile`) and the window closing answer all
+  of them no; headless, with no host, a question waits until the host API answers it
+  (`editor.question`, `answerQuestion(_:)`, `cancelQuestions()`), as a test does. The answer runs
+  outside any transaction. CanvasUI's `CanvasView` shows the sheet (`makeAlert(for:)` builds its
+  texts: the confirm button the default, Return; the cancel button Escape), and with no window leaves
+  the question waiting.
+- **A menu from a canvas button.** A button's click is inside its press's bookkeeping, so it asks
+  `editor.popUpMenu(menu, below: worldRect)`, and the host pops the `NSMenu` up on the next turn of
+  the run loop, at the rect's bottom-left (`menuToPopUp`, `menuDidPopUp()`); a press that begins
+  before that drops it, as does a file put in place. One waits at a time: a newer replaces it.
 - **Redrawing**: the core redraws whenever the document, camera, tool or session changes. A plugin
   whose drawn state changes some other way (its own state, a timer) calls `editor.setNeedsDisplay()`,
   as Selection does when the selection or hover changes; a tool whose cursor follows such state
@@ -11647,7 +11660,11 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   last checked, a separator, a dimmed line) and a tool `stamp` registered with `placesShapes`.
   CanvasTests' `ToolMenuTests` hold the registry's rules and the values, CanvasUITests'
   `ToolPickerTests` host the picker and read each segment's `NSMenu` (`menu.delegate?.menuNeedsUpdate`
-  opens it, `performActionForItem(at:)` chooses a line).
+  opens it, `performActionForItem(at:)` chooses a line). Questions are tested at the editor with a stub
+  `CanvasEditorDelegate`, or headless (`answerQuestion`), and the sheet through `CanvasView.makeAlert`
+  (a sheet doesn't run in an unshown window); a queued menu through `menuToPopUp`, and in a
+  `CanvasView` through its `menuPresenter` seam, which a test swaps for one that notes the menu (its
+  tracking runs in no unshown window).
 - **Boards in a file** without a real kind: `PocketsPlugin` (CanvasTesting) registers `Pocket`, a box
   whose definition is `BoardOwning`, with no tool. It's apart from `FixturesPlugin`, so the reports
   tests pin don't change. `EditorHarness(plugins:file:)` starts an editor on a file of several

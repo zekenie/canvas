@@ -30,6 +30,7 @@ extension CanvasEditor {
         }
         guard !currentTool.ignoresPress(pointer, in: self) else { return }
         dismissPopover()
+        menuWaiting = nil
         tracker.resetVelocity()
         stopCameraMotion()
         endGlides()
@@ -56,6 +57,7 @@ extension CanvasEditor {
     /// step that commits nothing, and editing goes on.
     private func beginPan(_ pointer: Pointer) {
         dismissPopover()
+        menuWaiting = nil
         tracker.resetVelocity()
         stopCameraMotion()
         endGlides()
