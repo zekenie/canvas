@@ -105,8 +105,10 @@ public struct PluginRegistrar {
 
     /// Runs inside the deleting transaction, before the shapes are removed. It may change other
     /// shapes, and delete more (their handlers run too), read-only ones included: what it does keeps
-    /// the board whole, which a lock doesn't stand in the way of. Each shape's handlers run once per
-    /// transaction, and every shape being deleted still exists while any handler runs.
+    /// the board whole, which a lock doesn't stand in the way of. It may change shapes on other boards
+    /// of the file too (`transaction.update(_:on:_:)`), read-only ones included, in the same undo
+    /// step: one undo brings back what it took back, on every board. Each shape's handlers run once
+    /// per transaction, and every shape being deleted still exists while any handler runs.
     public mutating func willDelete(_ handler: @escaping @MainActor (Set<ShapeID>, inout Transaction) -> Void) {
         contribute(handler, to: CorePoints.WillDelete.self)
     }

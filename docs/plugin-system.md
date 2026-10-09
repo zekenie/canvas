@@ -10270,7 +10270,8 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   ([Containers](#containers)), `move(_:to:)`, which takes shapes onto another board of the file,
   `move(_:toBoardOwnedBy:)` onto the board a shape on this one owns, `move(_:from:to:)` off any
   board onto any other, `translate(_:by:on:)`, which moves them there, and `move(_:above:on:)` and
-  `move(_:below:on:)`, which restack them there ([Boards in a file](#the-editor-and-the-file)), and for [containers](#containers), `setContainer(_:to:)` and
+  `move(_:below:on:)`, which restack them there, `update(_:on:_:)`, which changes a shape there, and
+  `board(containing:)`, which says where a shape is ([Boards in a file](#the-editor-and-the-file)), and for [containers](#containers), `setContainer(_:to:)` and
   `settle(_:)` (`settle(_:on:)` on another board). A record carries its props, the
   values of its [added properties](#added-properties) and its [metadata](#metadata), and
   `record.copy(as:)` is the same shape under another id.
@@ -10297,8 +10298,11 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   `editor.undo()` and `editor.redo()` put a step's records back exactly.
 - **`willDelete`** handlers run inside the deleting transaction, before anything is removed, and
   see every shape as it was, so a plugin can act on shapes about to disappear (delete what depends
-  on them). They may delete more, and change what they must, read-only shapes included; each
-  shape's handlers run once. Then every shape bound to one of them, and stays, lets go of it, as
+  on them). They may delete more, and change what they must, read-only shapes included, and not
+  only on the board of the delete: `tx.update(id, on: board) { … }` changes a shape on any board of
+  the file inside the same undo step, so a handler that takes back what a deleted shape gave to
+  shapes on other boards is undone, and redone, with the delete in one ⌘Z ([Boards in a
+  file](#the-editor-and-the-file)); each shape's handlers run once. Then every shape bound to one of them, and stays, lets go of it, as
   its kind's `ShapeReferencing` says (arrows bake their curve there). Names of them
   ([`ShapeNaming`](#values-that-name-shapes), a mention) are never looked at, and stay.
 - **Lookups.** `editor.shapeContext` looks up the editor's shapes (and keeps their geometry from
@@ -10725,7 +10729,7 @@ shown from `document`, and never list shapes from `file`. `editor.contents(of: b
 board's shapes, and `editor.owner(of:)` the shape that owns it, wherever it is.
 
 A transaction is on the board shown (`transaction.board`) and never holds the file: it reads it
-through the editor, so a commit, a drag's every event, costs what it changed, not the file. Three
+through the editor, so a commit, a drag's every event, costs what it changed, not the file. Four
 things reach past it, all in the one commit:
 
 - **Deleting a shape takes the board it owns, and every board under that** (the cascade), whatever
@@ -10780,6 +10784,26 @@ things reach past it, all in the one commit:
   along; a read-only shape that was there is refused). A commit writes every board it changed, its
   own among them, together (`CanvasFile.set` of several), each letting go of what leaves it before
   any takes in what comes, so a shape moved either way between two is on one at a time.
+
+- **And shapes can be written to on any board**, `transaction.update(id, on: board) { record in … }`
+  (typed, with `as:`; `update(inFile: id)` on whichever board the shape is on, which
+  `transaction.board(containing: id)` says, as the transaction leaves the file): as `update` changes
+  one on this board, on that board as the transaction leaves it, so a shape moved onto it, or in with
+  its owner, is found there. The change is part of this transaction's commit, so it is in the same
+  undo step as the rest, and undo and redo put every board back, and again, exactly. The board is
+  `boardsChanged` and the shape in `elsewhere`, so a service that follows a change set (the index,
+  the table of contents, validation, Mentions) hears the shapes it wrote to as it hears the rest. A
+  `willDelete` handler uses it to take back, on every board, what the deleted shape gave: one ⌘Z
+  brings everything back. Nothing happens for a shape that isn't on that board, a board the editor
+  couldn't show once the transaction commits, or one that goes with a shape the transaction deleted
+  (a handler's write on a board the same deletion takes leaves no trace, and undo brings the board
+  back as it was). Read-only shapes and boards are held as on this board (refused, noted in
+  `refusedShapes`, unless the change leaves a shape no longer read-only), except inside the
+  deletion keeping the board whole: a `willDelete` handler's writes go through a lock, on every
+  board, as its writes on this one do (a locked shape that depended on what is deleted is taken back
+  too). A transaction on a board that isn't shown (`transact(on:)`) may write to a third board the
+  same way, in its own step; one that would write to the board shown commits nothing, as when it
+  moves shapes onto it.
 
 Shape ids are unique across the file: an insert's must be on no board (unless the transaction
 deleted it from its own). An undo step holds the boards a commit takes out, brings in or changes,
@@ -11176,8 +11200,10 @@ shows its board, like any step made there.
 **A step is all it did to the file.** Besides its board's records, it holds every other board it
 reached, whole, as it was before the step and is after it (`DocumentDelta.boards`, copies that cost
 nothing, since a board is a value): the boards a deletion took with the shapes that owned them,
-every board under them; those a paste brought with its shapes (`insert(_:contents:)`); and those
-Delete Hidden Shapes deleted from, with the entries of the file it took that didn't read as boards
+every board under them; those a paste brought with its shapes (`insert(_:contents:)`); those a
+transaction moved shapes onto or wrote to (`update(_:on:_:)`, which a `willDelete` handler uses to
+take back, on every board, what the deleted shape gave, so one undo brings everything back); and
+those Delete Hidden Shapes deleted from, with the entries of the file it took that didn't read as boards
 (`unreadableBoards`). So undoing Delete of a shape that owns a board brings the shape back with
 everything under it, every id as it was, in one step, and redo takes it all again; undoing a paste
 takes its boards out with its shapes, leaving no board without its owner, and redo puts back the
