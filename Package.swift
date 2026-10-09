@@ -133,7 +133,7 @@ let package = Package(
         // Moving (`/move-to`, `/move-near`): a feature no kind opts into and nothing imports, as Jump To and Reordering are: two slash
         // commands that move a shape into a frame, onto a subboard's board or beside a shape, placed as `canvas draw` places one (DrawScript),
         // and the table of contents' drops that move shapes into a frame, onto a subboard's board or out of frames (`ContentsMoves`).
-        .target(name: "Moving", dependencies: ["Canvas", "DrawScript", "Placing", "SlashCommands", "TableOfContents"]), // layer: vertical
+        .target(name: "Moving", dependencies: ["Canvas", "Placing", "SlashCommands", "TableOfContents"]), // layer: vertical
         // Neighbors: a feature no kind opts into and nothing imports, as Jump To and Moving are: hovering a shape, on the canvas or by its row in
         // the table of contents (Selection's `hovered`, and `hoveredElsewhere` for a row of another board), outlines every shape connected to it in a
         // color for each way, through the core's tinted outlines. What counts as connected is a query, which Composition writes and Queries answers;

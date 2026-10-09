@@ -71,6 +71,13 @@ private let hundred = CGSize(width: 100, height: 100)
         expectEqual(Surroundings(on: .root, moving: hundred, in: h.editor)?.near(x)?.rect, at(400, 580))
     },
 
+    test("what the carried shapes hold goes with them: never in their way, and without `held` it is") {
+        let x = ShapeID(), k = ShapeID(), b = ShapeID()
+        let h = try harness(box(x, 400, 400), corral(k, at(580, 400)), box(b, 600, 420, size: 40, in: k))
+        expectEqual(Surroundings(on: .root, moving: hundred, carrying: [k], held: [b], in: h.editor)?.near(x)?.rect, at(580, 400))
+        expectEqual(Surroundings(on: .root, moving: hundred, carrying: [k], in: h.editor)?.near(x)?.rect, at(400, 580))
+    },
+
     test("beside a shape within a corral: kept in it, and raised above it") {
         let k = ShapeID(), x = ShapeID()
         let h = try harness(corral(k, at(0, 0, 800, 600)), box(x, 100, 100, in: k))

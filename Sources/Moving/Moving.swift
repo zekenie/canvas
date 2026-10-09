@@ -1,6 +1,5 @@
 import Canvas
 import CoreGraphics
-import DrawScript
 import SlashCommands
 import TableOfContents
 

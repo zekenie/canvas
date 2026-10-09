@@ -21,4 +21,4 @@ In the guide, `docs/plugin-system.md`: [Moving](../../docs/plugin-system.md#movi
 
 ## Testing
 
-- PlacingTests use CanvasTesting's boxes and corrals (`FixturesPlugin`, `CorralsPlugin`) and ask `Surroundings` directly, with no command: beside a shape (right when free, the next side when taken), beside a rect (a block), the shapes carried no obstacle on their own board, within a corral, inside a corral, anywhere, and no surroundings for a board that can't be shown or a size that isn't one. MovingTests hold the commands over it (the commits, the glide, the refusals).
+- PlacingTests use CanvasTesting's boxes and corrals (`FixturesPlugin`, `CorralsPlugin`) and ask `Surroundings` directly, with no command: beside a shape (right when free, the next side when taken), beside a rect (a block), the shapes carried no obstacle on their own board and what they hold carried with them, within a corral, inside a corral, anywhere, and no surroundings for a board that can't be shown or a size that isn't one. MovingTests hold the commands over it (the commits, the glide, the refusals).
