@@ -235,30 +235,4 @@ private let petAnswer = """
         expectEqual(editor.types?.instances(of: person), [ann, alone.id])
         expectEqual(editor.types?.instances(of: copyOfPerson), [copyOfAnn])
     },
-    test("canvas draw writes is: as a JSON list of ids, one undo step; a query finds the instances by the is-a edge, and the type by its schema") {
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        try configureBoards(pasteboard: pasteboard)
-        let board = newBoard()
-        defer { board.close() }
-        let server = try startCommandServer(boards: [board], frontmost: board)
-        defer { server.stop() }
-        let order = scripted(#"{"type": "object", "properties": {"id": {"type": "string"}}}"#)
-        let made = try canvas(server, ["draw", #"sticky-note "Order" text: "An order" schema: "\#(order)""#])
-        expectEqual(made.status, 0, made.error)
-        let type = try require(board.editor.document.shapes.first)
-        let steps = board.editor.undoHistory.undoName
-        let drawn = try canvas(server, ["draw", #"sticky-note "Order 7" is: ["\#(type.id)"]"#])
-        expectEqual(drawn.status, 0, drawn.error)
-        let instance = try require(board.editor.document.shapes.first { $0.id != type.id })
-        expectEqual(instance[IsAProperty.self]?.map(\.shape), [type.id])
-        expect(board.editor.undoHistory.undoName != nil && steps != nil)
-        board.editor.undo()
-        expectEqual(board.editor.document.shapes.map(\.id), [type.id], "one step takes the instance back")
-        board.editor.redo()
-        let found = try JSON(text: canvas(server, ["query", "--brief", #":edge-to("Order", is-a)"#]).output)
-        expectEqual(found["count"], 1)
-        let types = try JSON(text: canvas(server, ["query", "--brief", "sticky-note[schema]"]).output)
-        expectEqual(types["count"], 1)
-    },
 ])

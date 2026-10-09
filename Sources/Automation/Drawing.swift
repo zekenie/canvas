@@ -643,6 +643,10 @@ struct Drawing {
         if let existing = item.existing {
             settings = settings.filter { key, value in !Self.alreadyHas(existing, key, value, in: registry) }
         }
+        // What a change implies in the same step (a note given a schema is public), unless it's said.
+        if !settings.isEmpty {
+            settings.merge(registry.drawImplied(for: item.kind, before: item.existing, settings: settings)) { own, _ in own }
+        }
         // Every shape a script makes is built by the registry, as the kind's schema reads it. Given a
         // width alone (`size: 300x`), it's built at that width, and what the kind works out from the
         // rest (a note's height, from its text) is worked out there, whether anything's set or not.

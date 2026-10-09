@@ -493,7 +493,7 @@ Each target is one line, with its layer:
 
 ```swift
 .target(name: "StickyNotes", dependencies: ["Canvas", "Connections", "DetailPanel", "Keyboard", "Mentions", "Selection", "TableOfContents", "TextEditing", "Titles"]), // layer: vertical
-.target(name: "DrawLexicon", dependencies: ["Automation", "Canvas", "Connections", "Mentions", "Titles", "Validation"]), // layer: lexicon
+.target(name: "DrawLexicon", dependencies: ["Automation", "Canvas", "Connections", "Mentions", "Publishing", "Titles", "Types", "Validation"]), // layer: lexicon
 ```
 
 | Layer | May depend on | Modules |
@@ -1800,7 +1800,7 @@ that both binds and names.)
   added property's value, whatever kinds opt in. A leaf, a type coded by hand, implements
   `forEachNamedShape` (each id, repeats included) and `renamingShapes` (pure; nil keeps a name).
   Types' `TypeLink` is a shipped one: an entry of a shape's `is`, a wrapper of one `ShapeID` coded as the
-  bare uuid string. It wraps the id because `ShapeID` itself must not be `ShapeNaming` (an arrow's
+  bare uuid string, which `canvas draw` writes by the type's title and queries read as it. It wraps the id because `ShapeID` itself must not be `ShapeNaming` (an arrow's
   bindings are ids, and a binding is not a name).
 - **What the registry refuses.** A struct that holds names without adopting `ShapeNaming`, in a
   kind's props or an added property's value, since nothing could find its names and a copy would go
@@ -7371,7 +7371,7 @@ with words of their own). Without one, a query does without:
 |---|---|---|---|---|
 | `QueryNames` | `registrar.queryNames(attribute:source:named:derived:fold:)` | The attribute names are tested by; per kind, whether its shapes are named, derived or neither; a named shape's name, read anywhere; a derived one's, on the main actor; how a title a query writes is folded | No titles: a title head is `no_names`, and rows have none | TitleQueriesPlugin |
 | `QueryBoardNames` | `registrar.queryBoardNames(placeholder:)` | What an untitled owner's board is called, per kind | Its kind's label | BoardQueriesPlugin |
-| `QueryWords` | `registrar.queryPseudoClass(_:_:example:prepare:seeds:matches:onMain:)` (reads the editor; with `reads: .file` and a file-only `prepare`, no `onMain`), `querySelection(_:_:example:selected:)`, `queryRelation(_:_:example:types:direction:)`, `queryRelation(_:_:example:reads:transitive:namesTypes:prepare:seeds:related:)` | A word: a pseudo-class, the person's selection, a relation over edges of exactly some types, or a relation answered from a fact of the file | The word is `unknown_pseudo_class` | MentionQueriesPlugin, ValidationQueriesPlugin, SelectionQueriesPlugin |
+| `QueryWords` | `registrar.queryPseudoClass(_:_:example:prepare:seeds:matches:onMain:)` (reads the editor; with `reads: .file` and a file-only `prepare`, no `onMain`), `querySelection(_:_:example:selected:)`, `queryRelation(_:_:example:types:direction:)`, `queryRelation(_:_:example:reads:transitive:namesTypes:prepare:seeds:related:)` | A word: a pseudo-class, the person's selection, a relation over edges of exactly some types, or a relation answered from a fact of the file | The word is `unknown_pseudo_class` | MentionQueriesPlugin, ValidationQueriesPlugin, TypeQueriesPlugin, SelectionQueriesPlugin |
 | `QueryTextFormats` | `registrar.queryTextFormat(mediaType:describes:prepare:read:)` (and with `reads: .file`) | How strings of a `contentMediaType` read, anywhere | Text read as stored | MentionQueriesPlugin |
 | `QueryEngines` | none: `QueriesPlugin`'s mark, which only Queries makes | That the app answers queries (`registry.answersQueries`), for what has a registry and no editor | `canvas query` and `query-vocabulary` answer `no_queries` | QueriesPlugin |
 
@@ -7379,12 +7379,12 @@ with words of their own). Without one, a query does without:
 `QueryTextFormats` one a media type (their report lines: `query names`, `query board names`, `query
 word :mentions`, `query text text/x-canvas-mentions`; `query engine` on queries'). QueryLexicon's
 five registrations, whole (each plugin's words are its own nested `enum Word: String`, and
-`ValidationQueriesPlugin` registers each of its two in a helper, whose `has` is below)
+`ValidationQueriesPlugin` registers each of its two in a helper, whose `has` is below; `TypeQueriesPlugin` adds `:is-a(S)`, a transitive `namesTypes` relation over `TypeIndex.graph`, and reads a type where `is` is read as its title)
 ([TitleQueries.swift](../Sources/QueryLexicon/TitleQueries.swift),
 [BoardQueries.swift](../Sources/QueryLexicon/BoardQueries.swift),
 [MentionQueries.swift](../Sources/QueryLexicon/MentionQueries.swift),
 [ValidationQueries.swift](../Sources/QueryLexicon/ValidationQueries.swift),
-[SelectionQueries.swift](../Sources/QueryLexicon/SelectionQueries.swift)):
+[SelectionQueries.swift](../Sources/QueryLexicon/SelectionQueries.swift), and [TypeQueries.swift](../Sources/QueryLexicon/TypeQueries.swift)):
 
 ```swift
 // TitleQueriesPlugin: a shape is called what Titles calls it; a named title read off the record anywhere,
@@ -8965,7 +8965,7 @@ The modules, one job each:
 | JumpTo | vertical | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
 | Moving | vertical | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Placing's solver (DrawScript's, over `ObstacleGrid`) as `draw` places a shape; no kind opts into it, and nothing imports it. |
 | Neighbors | vertical | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)): its lights are colors and the queries that find their shapes, asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`); no kind opts into it, and nothing imports it. |
-| DrawLexicon | lexicon | What `draw` takes from Titles (names), Connections (edges), Validation (warnings) and Mentions (mention text): a plugin value for each concern (`TitleNamesPlugin`, `PortEdgesPlugin`, `ValidationChecksPlugin`, `MentionTextsPlugin`), joining Automation to the plugin that owns it. |
+| DrawLexicon | lexicon | What `draw` takes from Titles (names), Connections (edges), Validation (warnings), Mentions (mention text) and Types (a type named by its title): a plugin value for each concern (`TitleNamesPlugin`, `PortEdgesPlugin`, `ValidationChecksPlugin`, `MentionTextsPlugin`, `TypeNamesPlugin`), joining Automation to the plugin that owns it. |
 | QueryCommands | language | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
 | QueryLanguage | foundation | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
 | Placing | surface | Where a box of shapes lands on a board, beside a shape or a block of shapes, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)): `Surroundings`, `Landing`; Moving's solver, for any plugin that puts shapes down. |
@@ -9453,7 +9453,10 @@ concern it imports (AutomationTests make their own, over fixtures). Without one,
 | `DrawNames` | `registrar.drawNames(name:namingProperty:isDerived:fold:)` | What a shape is called; the property of its kind's schema a title is written to (nil: its shapes can't be named); whether the kind works names out itself; how a title a script writes is folded | No titles: a titled statement is `no_names` | TitleNamesPlugin |
 | `DrawEdges` | `registrar.drawEdges(kind:attributes:sides:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; what an edge may leave a kind on, by side (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdgesPlugin |
 | `DrawChecks` | `registrar.drawChecks { record, shapes in … }` | What's wrong with a shape made or changed, as the script leaves the board: `DrawIssue`s (a message, whether it's an error, the property it's about) | Each shape checked against its kind's schema (`registry.schemaViolations(of:)`) | ValidationChecksPlugin |
-| `DrawTextFormats` | `registrar.drawTextFormat(mediaType:describes:write:)` | Each string a script writes whose schema says `contentMediaType` of that media type, as `write` gets it (its string's escapes undone) with a `DrawTextContext` (the registry, the string's schema as its kind declares it, and `shape(called:admitting:)`, which finds the shape a title names as the script finds one): what to keep, or a refusal. `describes` is said after the attribute's type in `canvas kinds` | Text kept as written; `kinds` says nothing after its type | MentionTextsPlugin |
+| `DrawImplications` | `registrar.drawImplies { kind, before, settings, registry in … }` | Settings that go with the ones a script writes on a shape (given the kind, the shape before the script, nil if new, and what the script sets, by property key); the script's own say wins. A concern's rule that one change comes with another in the same step | Nothing implied | TypeNamesPlugin (a note given a `schema:` is public) |
+| `DrawTextFormats` | `registrar.drawTextFormat(mediaType:describes:write:)` | Each string a script writes whose schema says `contentMediaType` of that media type, as `write` gets it (its string's escapes undone) with a `DrawTextContext` (the registry, the string's schema as its kind declares it, and `shape(called:admitting:)`, which finds the shape a title names as the script finds one, `admitting` taking the record and the keys the script writes on it, for a shape drawn in the same run: what to keep, or a refusal. `describes` is said after the attribute's type in `canvas kinds` | Text kept as written; `kinds` says nothing after its type | MentionTextsPlugin, TypeNamesPlugin |
+
+`TypeNamesPlugin` ([TypeNames.swift](../Sources/DrawLexicon/TypeNames.swift)) writes `is: "Employee card"`, on a shape and on an edge, as the id of the type that title names (`TypeLink.mediaType`), admitting what `TypeIndex.canBeNamed(_:registry:writing:)` says, a pure function of the record and the registry (a type; the custom shapes join it), and refuses any other shape "which isn't a type or a shape"; a quoted value for a list of text is a list of that one item (Automation's, `KindVocabulary.value(of:)`), several are JSON. And a shape given a `schema:` is made public in the same step, as `/type` makes one, through `drawImplies`.
 
 DrawLexicon's four registrations, whole but for `PortEdgesPlugin`'s policy and the clauses `MentionTextsPlugin` says
 ([TitleNames.swift](../Sources/DrawLexicon/TitleNames.swift),
@@ -9923,7 +9926,9 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   same way: `links(of:)` (a shape's types, in order), `instances(of:)` (directly), `lineage(of:)` (what
   a shape's types lead to, level by level, later first, cycle-safe: the order a shape's types are read
   in), `affected(by:)` (their instances, near and far) and `name(of: TypeLink)` (the live title, or
-  missing with the last title known this session, observed per type); the chips of a renamed,
+  missing with the last title known this session, observed per type) and `graph`, a `TypeGraph` (links, names
+  and what else a shape leads to, copy on write: the fact queries take up in O(1) for `:is-a`, which follows the same
+  `lineage`); the chips of a renamed,
   deleted or restored type's instances are made again.
 - **Rules** (`TypeValidationPlugin`, `validateEveryShape`): text that isn't JSON is an error at its
   line and column ("Invalid JSON: expected a property name at line 6, column 34."), as is a root
@@ -11583,12 +11588,14 @@ title-names          draw names
 port-edges           draw edges
 validation-checks    draw checks
 mention-texts        draw text text/x-canvas-mentions
+type-names           draw text text/x-canvas-type · draw implies
 queries              service QueryState · query engine
 query-translation    service QueryTranslator
 title-queries        query names
 board-queries        query board names
 mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
 validation-queries   query word :invalid · query word :warned
+type-queries         query word :is-a · query text text/x-canvas-type
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
 neighbors            service NeighborState · outlines

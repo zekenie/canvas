@@ -106,11 +106,11 @@ public enum ShippedPlugins {
             // The command line's commands, and what `canvas draw` takes from the plugins that own a
             // concern: titles for names, ports' connections for edges, validity for its warnings, and
             // mentions for text (`@[Title]` in a note's text names the shape called that).
-            AutomationPlugin(), TitleNamesPlugin(), PortEdgesPlugin(), ValidationChecksPlugin(), MentionTextsPlugin(),
+            AutomationPlugin(), TitleNamesPlugin(), PortEdgesPlugin(), ValidationChecksPlugin(), MentionTextsPlugin(), TypeNamesPlugin(),
             // Reading the file: `canvas query`, and what queries take from the plugins that own a concern:
             // titles for names, boards' names, mentions for text and relations, validity and the selection
             // for their words.
-            QueriesPlugin(), QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule), TitleQueriesPlugin(), BoardQueriesPlugin(), MentionQueriesPlugin(), ValidationQueriesPlugin(),
+            QueriesPlugin(), QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule), TitleQueriesPlugin(), BoardQueriesPlugin(), MentionQueriesPlugin(), ValidationQueriesPlugin(), TypeQueriesPlugin(),
             SelectionQueriesPlugin(),
             QueryCommandsPlugin(),
             // Hover a shape, on the canvas or by its row in the table of contents, and what it connects to is outlined by how (NeighborLights): after the

@@ -85,12 +85,14 @@ import Validation
         port-edges           draw edges
         validation-checks    draw checks
         mention-texts        draw text text/x-canvas-mentions
+        type-names           draw text text/x-canvas-type · draw implies
         queries              service QueryState · query engine
         query-translation    service QueryTranslator
         title-queries        query names
         board-queries        query board names
         mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
         validation-queries   query word :invalid · query word :warned
+        type-queries         query word :is-a · query text text/x-canvas-type
         selection-queries    query word :selected
         query-commands       command line query · command line query-vocabulary
         neighbors            service NeighborState · outlines

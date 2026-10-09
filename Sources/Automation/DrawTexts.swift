@@ -24,6 +24,8 @@ final class DrawTextLookup {
         let record: AnyShapeRecord
         /// What it's called once the script has run.
         let title: String
+        /// The properties the statement writes on it (by key), which its record doesn't have yet.
+        let writes: Set<String>
     }
 
     private let editor: CanvasEditor
@@ -65,11 +67,11 @@ final class DrawTextLookup {
         var own: [String: Own] = [:], titles: [String] = []
         for index in items.indices {
             guard let title = items[index].title, itemByTitle[title] == index else { continue }
-            own[title] = Own(id: items[index].record.id, record: items[index].record, title: renamed[index] ?? title)
+            own[title] = Own(id: items[index].record.id, record: items[index].record, title: renamed[index] ?? title, writes: Set(items[index].shape.attributes.map(\.key)))
             titles.append(title)
         }
         for (index, new) in renamed.sorted(by: { $0.key < $1.key }) where own[new] == nil {
-            own[new] = Own(id: items[index].record.id, record: items[index].record, title: new)
+            own[new] = Own(id: items[index].record.id, record: items[index].record, title: new, writes: Set(items[index].shape.attributes.map(\.key)))
             titles.append(new)
         }
         self.own = own
@@ -78,7 +80,7 @@ final class DrawTextLookup {
 
     // MARK: Asking
 
-    func shape(called written: String, admitting admits: @MainActor (AnyShapeRecord) -> String?) throws(AutomationError) -> DrawTextShape {
+    func shape(called written: String, admitting admits: @MainActor (AnyShapeRecord, Set<String>) -> String?) throws(AutomationError) -> DrawTextShape {
         guard let naming else {
             throw AutomationError("titles name shapes, and nothing here gives shapes names", reason: ScriptError.Reason.noNames.rawValue,
                                   hint: "leave titles out: without a plugin that names shapes, no shape can be named or found by name")
@@ -89,7 +91,7 @@ final class DrawTextLookup {
         // What's called that and isn't admitted: the first of them, by where it is, and why not.
         var refused: (kind: ShapeKind, why: String)?
         if let entry = own[title] {
-            guard let why = admits(entry.record) else { return DrawTextShape(id: entry.id, title: entry.title) }
+            guard let why = admits(entry.record, entry.writes) else { return DrawTextShape(id: entry.id, title: entry.title) }
             refused = (entry.record.kind, why)
         } else if unresolved.contains(title) {
             throw AutomationError("", reason: Drawing.skipped)
@@ -101,7 +103,7 @@ final class DrawTextLookup {
         func admitted(_ places: [Place]) -> [Place] {
             places.filter { place in
                 guard let record = file.record(place.id) else { return false }
-                guard let why = admits(record) else { return true }
+                guard let why = admits(record, []) else { return true }
                 if refused == nil { refused = (record.kind, why) }
                 return false
             }
@@ -167,15 +169,15 @@ final class DrawTextLookup {
 
     /// The titles a text may name, as "did you mean" picks from: the file's, in the order it lists
     /// them, then those the script draws.
-    private func admittedTitles(_ admits: @MainActor (AnyShapeRecord) -> String?, taken: Set<BoardID>) -> [String] {
+    private func admittedTitles(_ admits: @MainActor (AnyShapeRecord, Set<String>) -> String?, taken: Set<BoardID>) -> [String] {
         let file = editor.file
         let names = names()
         let inFile = (names?.titles ?? []).filter { title in
             names?.places[title]?.contains { place in
-                !deleted.contains(place.id) && !taken.contains(place.board) && file.record(place.id).map { admits($0) == nil } == true
+                !deleted.contains(place.id) && !taken.contains(place.board) && file.record(place.id).map { admits($0, []) == nil } == true
             } == true
         }
-        return inFile + ownTitles.filter { title in own[title].map { admits($0.record) == nil } == true }
+        return inFile + ownTitles.filter { title in own[title].map { admits($0.record, $0.writes) == nil } == true }
     }
 }
 
