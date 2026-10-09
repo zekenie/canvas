@@ -231,4 +231,20 @@ extension Chaser: EditorService {
         expectEqual(types.instances(of: person), [target])
         try expectIndexMatchesFile(editor)
     },
+    test("a commit heard out of turn that deleted a type leaves it known by the title it had") {
+        let person = ShapeID(), watcher = ShapeID(), target = ShapeID()
+        let document = CanvasDocument(shapes: [typeRecord(TypeSchemaProperty.starter, title: "Person", id: person),
+                                               AnyShapeRecord(ShapeRecord(id: watcher, memo("quiet"))),
+                                               instanceRecord("Target", of: [], at: CGPoint(x: 400, y: 400), id: target)])
+        let registry = try Registry(plugins: [ChaserPlugin(target: target, type: person)] + typePlugins())
+        let editor = CanvasEditor(registry: registry, file: CanvasFile(root: document), scheduler: ManualScheduler())
+        let types = try require(editor.types)
+        editor.transact("Go") {
+            $0.update(watcher, as: Memo.self) { $0.props.text = "go" }
+            $0.delete([person])
+        }
+        expectEqual(types.links(of: target), [TypeLink(person)])
+        expectEqual(types.name(of: TypeLink(person)), .missing(lastKnown: "Person"), "the title it had, though the commit that deleted it was heard late")
+        try expectIndexMatchesFile(editor)
+    },
 ])

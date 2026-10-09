@@ -266,12 +266,15 @@ public final class TypeIndex {
         if !chips.isEmpty { editor.adornmentsDidChange(for: chips) }
     }
 
-    private func readAfresh(in editor: CanvasEditor) {
+    /// Everything read again. A file put in place forgets what its types were called (they are
+    /// another file's); a commit heard out of turn is the same file, so a type it deleted is still
+    /// known by the title it had.
+    private func readAfresh(in editor: CanvasEditor, sameFile: Bool) {
         let before = Set(entries.keys), instances = Set(links.keys)
         entries = [:]
         links = [:]
         instancesByType = [:]
-        lastNames = [:]
+        if !sameFile { lastNames = [:] }
         readEveryShape(in: editor)
         let now = Set(entries.keys)
         tell(before.union(now))
@@ -291,7 +294,7 @@ extension TypeIndex: EditorService {
         let outOfTurn = heardRevision < editor.revision - 1
         heardRevision = editor.revision
         if changes.replacedDocument || outOfTurn {
-            readAfresh(in: editor)
+            readAfresh(in: editor, sameFile: outOfTurn && !changes.replacedDocument)
             return
         }
         let registry = editor.registry, file = editor.file
@@ -332,7 +335,7 @@ extension TypeIndex: EditorService {
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         heardRevision = editor.revision
         guard change.isFileReplaced else { return }
-        readAfresh(in: editor)
+        readAfresh(in: editor, sameFile: false)
     }
 }
 
