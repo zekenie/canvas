@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Composition
+import Connections
 import CoreGraphics
 import LanguageModels
 import Locking
@@ -82,6 +83,40 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         expect(editing.string.hasSuffix("/lock now\n"))
         window.pressEscape()
         editor.undo()
+    },
+
+    test("/lock typed on a new line of an arrow's label and entered locks the arrow: the label is mention text, so it hosts commands as a note's text does; Return on any other line is a new line") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let (window, _) = windowed(editor)
+        let arrow = editor.add(Arrow(start: .free(CGPoint(x: 100, y: 300)), end: .free(CGPoint(x: 500, y: 300)), text: "keep"))
+        @MainActor func text() -> String? { editor.document[arrow]?.typed(as: Arrow.self)?.props.text.plainText() }
+        @MainActor func view() throws -> MentionTextView<AnyMentionable> {
+            try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the label's editor has the keyboard")
+        }
+        editor.selection = arrow
+        expect(editor.beginEditing(arrow))
+        let editing = try view()
+        expect(editing.slashCommands != nil, "the label's editor hosts slash commands")
+        editing.setSelectedRange(NSRange(location: 4, length: 0))
+        window.pressReturn()
+        expectEqual(text(), "keep\n", "Return is a new line")
+        window.type("/")
+        let picker = try require(editing.slashCommands?.picker, "the list is open")
+        expectEqual(picker.listed.map(\.name), ["lock"], "what an arrow offers: no title, nothing public, and Moving leaves it alone")
+        window.type("lo")
+        expectEqual(picker.highlightedCommand?.name, "lock")
+        window.settle()
+        window.pressReturn()
+        window.settle()
+        expect(editor.isLocked(arrow), "locked")
+        expectEqual(editor.editingShapeID, nil, "editing has ended")
+        expectEqual(text(), "keep\n", "the line is gone from the label, its line break is not")
+        expectEqual(editor.undoHistory.undoName, "Lock")
+        editor.undo()
+        expect(!editor.isLocked(arrow), "Undo Lock unlocks it")
+        expectEqual(editor.undoHistory.undoName, "Typing")
     },
 
     test("/title Groceries typed on a new line of a note and entered names it: editing goes on, the line is gone from its text, Undo is Undo Title, and the step before is the typing; /title alone is a new line") {

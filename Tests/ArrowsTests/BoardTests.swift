@@ -29,7 +29,7 @@ import TestKit
 @MainActor let arrowBoardTests = Suite("Arrows across boards", [
     test("an arrow binds to a shape that owns a board, as to any closed shape") {
         let (file, a, pocket, _) = pocketFile()
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PocketsPlugin(), ArrowsPlugin(), TableOfContentsPlugin()], file: file)
+        let h = try EditorHarness(plugins: arrowsPlugins(before: [PocketsPlugin()]), file: file)
         let arrow = pressFreeEnd(in: h, from: a)
         h.drag(to: boxB.center, speed: fast)
         h.release()
@@ -39,7 +39,7 @@ import TestKit
     },
     test("a file put in place mid-drag stops the aim: nothing hinted, and the precise timer doesn't run on") {
         let (file, a, pocket, _) = pocketFile()
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), PocketsPlugin(), ArrowsPlugin(), TableOfContentsPlugin()], file: file)
+        let h = try EditorHarness(plugins: arrowsPlugins(before: [PocketsPlugin()]), file: file)
         _ = pressFreeEnd(in: h, from: a)
         h.drag(to: boxB.center, speed: fast)                         // onto the pocket, fast: imprecise, the timer runs
         expectEqual(h.editor.hintedShapeID, pocket)

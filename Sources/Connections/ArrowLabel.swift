@@ -1,5 +1,6 @@
 import AppKit
 import Geometry
+import Mentions
 
 // An arrow's label: its text, set on its body, which gives way to it. A port of tldraw's
 // `arrowLabel.ts`: the label is measured (squeezed to the body's width on a body wider than it's
@@ -119,21 +120,20 @@ extension ArrowStyle {
     /// `labelCenterSnapDistance`).
     static let labelSnapDistance: CGFloat = 10
 
-    /// The text's attributes, in the render and the editor alike: centered, on fixed lines.
-    static let labelAttributes: [NSAttributedString.Key: Any] = {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.minimumLineHeight = labelLineHeight
-        paragraph.maximumLineHeight = labelLineHeight
-        return [.font: labelFont, .foregroundColor: color, .paragraphStyle: paragraph.copy()]
-    }()
+    /// The text's style, in the render, the editor and the measure alike: centered, on fixed lines,
+    /// each mention a pill in the arrow's own color (`MentionSurface.shape`: over the canvas, whose
+    /// color follows the appearance, as the line does).
+    static let labelText = MentionTextStyle(font: labelFont, color: color, lineHeight: labelLineHeight, alignment: .center)
 }
 
 /// An arrow's label measured and placed: its text's size kept by what it says and how wide it may
-/// be, since an arrow's geometry is worked out again and again (each frame, each hit test).
+/// be, since an arrow's geometry is worked out again and again (each frame, each hit test). Each
+/// mention is measured as a live pill by the name the text holds (`MentionTextStyle.measuredString`),
+/// as a note's height is: a pure function of the arrow, as its geometry has to be.
 @MainActor
 enum ArrowLabels {
     private struct Key: Hashable {
+        /// As the arrow stores it.
         let text: String
         /// Whole points; nil for no limit.
         let width: CGFloat?
@@ -151,7 +151,7 @@ enum ArrowLabels {
     static func frame(of arrow: Arrow, on geometry: ArrowGeometry, editing: Bool = false) -> CGRect? {
         guard editing || arrow.hasText else { return nil }
         let body = geometry.body
-        let size = self.size(of: arrow.text.isEmpty ? "i" : arrow.text, bodyBounds: geometry.bodyPath.boundingBoxOfPath)
+        let size = self.size(of: arrow.text.stored.isEmpty ? "i" : arrow.text, bodyBounds: geometry.bodyPath.boundingBoxOfPath)
         let position = arrow.hasText ? arrow.labelPosition : ArrowLabelLayout.defaultPosition
         var frame = ArrowLabelLayout.frame(size: size, at: position, on: body, clearance: ArrowStyle.labelClearance,
                                            clearsStart: arrow.startArrowhead || arrow.start.binding != nil,
@@ -163,7 +163,7 @@ enum ArrowLabels {
     /// The text's box, padding and all (tldraw's `getArrowLabelSize`): as wide as its widest line,
     /// but on a body wider than it's tall no wider than the body less a margin (and no narrower than
     /// the margin), else no wider than sixteen ems, where it wraps.
-    static func size(of text: String, bodyBounds: CGRect) -> CGSize {
+    static func size(of text: MentionText, bodyBounds: CGRect) -> CGSize {
         let free = measure(text, width: nil)
         let limit: CGFloat
         if bodyBounds.width > bodyBounds.height {
@@ -188,10 +188,10 @@ enum ArrowLabels {
     /// width a point wider than its widest line, rounded up, so the editor's text, laid out by
     /// TextKit, wraps where it does; its height its lines, a last empty one too (where the caret is
     /// after a Return).
-    static func measure(_ text: String, width: CGFloat?) -> CGSize {
-        let key = Key(text: text, width: width)
+    static func measure(_ text: MentionText, width: CGFloat?) -> CGSize {
+        let key = Key(text: text.stored, width: width)
         if let size = measured[key] { return size }
-        let string = NSAttributedString(string: text, attributes: ArrowStyle.labelAttributes)
+        let string = ArrowStyle.labelText.measuredString(text, width: width)
         let bounds = string.boundingRect(with: CGSize(width: width ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude),
                                          options: [.usesLineFragmentOrigin])
         let size = CGSize(width: bounds.width.rounded(.up) + 1, height: bounds.height.rounded(.up))
@@ -205,9 +205,10 @@ enum ArrowLabels {
         CGPath(roundedRect: frame, cornerWidth: ArrowStyle.labelCornerRadius, cornerHeight: ArrowStyle.labelCornerRadius, transform: nil)
     }
 
-    /// Draws the text in its frame: centered within it, its padding in from its edges.
-    static func drawText(_ text: String, in frame: CGRect) {
-        let box = frame.insetBy(dx: ArrowStyle.labelPadding, dy: ArrowStyle.labelPadding)
-        NSAttributedString(string: text, attributes: ArrowStyle.labelAttributes).draw(with: box, options: [.usesLineFragmentOrigin])
+    /// Where the text is drawn in its frame (`drawMentionText`, the render's, and the faces' and
+    /// Find's): centered within it, its padding in from its edges, over the canvas.
+    static func placement(of text: MentionText, in frame: CGRect) -> MentionTextPlacement {
+        MentionTextPlacement(text, in: frame.insetBy(dx: ArrowStyle.labelPadding, dy: ArrowStyle.labelPadding), style: ArrowStyle.labelText,
+                             overCanvas: true)
     }
 }

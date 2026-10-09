@@ -1,6 +1,7 @@
 import Canvas
 import CanvasTesting
 import Composition
+import Connections
 import CoreGraphics
 import Foundation
 import LanguageModels
@@ -47,6 +48,27 @@ import Titles
             .mention(groceries, label: "Plans"),
         ])
         expectEqual(MentionText(note.props.text.runs), note.props.text, "written as a note's editor writes it")
+    },
+    // Since its third version an arrow's text may mention shapes: what it said before reads as it did.
+    test("an arrow's text from before mentions reads as the text it was; today's fixture holds mentions, and a look-alike that's text") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        let directory = "Tests/CompositionTests/Fixtures/kinds"
+        expectEqual(codec.version(of: Arrow.kind), 2)
+        let before = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/arrow.v1.json"))
+        let old = try require(codec.decodeRecord(props: before, kind: Arrow.kind, version: 1).typed(as: Arrow.self))
+        expectEqual(old.props.text.runs, [.text("Calls")])
+        let data = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/arrow.v2.json"))
+        let arrow = try require(codec.decodeRecord(props: data, kind: Arrow.kind, version: 2).typed(as: Arrow.self))
+        let groceries = ShapeID(UUID(uuidString: "7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D")!)
+        expectEqual(arrow.props.text.runs, [.text("Calls "), .mention(groceries, label: "Groceries"), .text(", not @[Q2](shape:11111111-2222-4333-8444-555555555555)")])
+        expectEqual(MentionText(arrow.props.text.runs), arrow.props.text, "written as an arrow's editor writes it")
+        // A label from before that reads as a mention (a look-alike or a whole one) is the text it was.
+        var looks = try require(JSONValue.object(["start": .object(["free": .array([0, 0])]), "end": .object(["free": .array([1, 1])]),
+                                                    "text": "see @[x](shape:1234)"]).objectValue)
+        looks["bend"] = 0
+        let escaped = try require(codec.decodeRecord(props: try JSONEncoder().encode(JSONValue.object(looks)), kind: Arrow.kind, version: 1).typed(as: Arrow.self))
+        expectEqual(escaped.props.text.runs, [.text("see @[x](shape:1234)")])
     },
     // Since its second version a schema card's description may mention other schema cards, which its
     // schema refers to: what it said before reads as it did.

@@ -19,11 +19,12 @@ import Titles
 
 /// A file of three boards, each inside the last: the root, subboard S's ("Plans"), and, inside
 /// that, untitled subboard T's; on each, two notes and an arrow bound from one to the other. The
-/// ids are fixed, so it's the file `Fixtures/files/nested-mentions.v4.json` was written from, once
-/// notes' text could hold mentions (`sticky-note` 3), though none of its notes mentions anything,
-/// and `nested.v4.json`, from before. With `acrossBoards`, the root's first note mentions T's first
-/// (by the name "Old inside") and T's second mentions the root's second ("Old root"), two boards
-/// apart each way: `Fixtures/files/nested-mentions-across.v4.json`.
+/// ids are fixed, so it's the file `Fixtures/files/nested-arrows-mention.v4.json` was written from,
+/// once arrows' text could hold mentions too (`arrow` 2), though none of its notes or arrows mentions
+/// anything, and `nested-mentions.v4.json` (`sticky-note` 3, `arrow` 1) and `nested.v4.json`, from
+/// before. With `acrossBoards`, the root's first note mentions T's first (by the name "Old inside")
+/// and T's second mentions the root's second ("Old root"), two boards apart each way:
+/// `Fixtures/files/nested-arrows-mention-across.v4.json`, and `nested-mentions-across.v4.json` from before.
 struct NestedFile {
     var acrossBoards = false
 
@@ -65,11 +66,21 @@ struct NestedFile {
 
     /// The fixture: the file as this app wrote it.
     static var fixture: Data {
-        get throws { try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/files/nested-mentions.v4.json")) }
+        get throws { try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/files/nested-arrows-mention.v4.json")) }
     }
 
     /// The file with mentions across its boards, as this app wrote it.
     static var acrossFixture: Data {
+        get throws { try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/files/nested-arrows-mention-across.v4.json")) }
+    }
+
+    /// The file as it was written before arrows' text could hold mentions (`arrow` 1).
+    static var beforeArrowsFixture: Data {
+        get throws { try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/files/nested-mentions.v4.json")) }
+    }
+
+    /// The file with mentions across its boards, from before arrows' text could hold mentions.
+    static var acrossBeforeArrowsFixture: Data {
         get throws { try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/files/nested-mentions-across.v4.json")) }
     }
 
@@ -150,6 +161,17 @@ struct NestedFile {
         expectEqual(loaded.file, registry.fillingDefaults(NestedFile().file))
         expect(loaded.report.isEmpty, "\(loaded.report)")
         expectEqual(try codec.encode(loaded.file), try NestedFile.fixture)
+    },
+    test("the nested files from before arrows held mentions read, each board's arrows brought up to date") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        for (older, today, nest) in [(try NestedFile.beforeArrowsFixture, try NestedFile.fixture, NestedFile()),
+                                     (try NestedFile.acrossBeforeArrowsFixture, try NestedFile.acrossFixture, NestedFile(acrossBoards: true))] {
+            let loaded = try codec.decode(older)
+            expectEqual(loaded.file, registry.fillingDefaults(nest.file))
+            expect(loaded.report.isEmpty, "\(loaded.report)")
+            expectEqual(try codec.encode(loaded.file), today)
+        }
     },
     test("saving writes every board, as they are, the one shown or not") {
         try configureBoards()

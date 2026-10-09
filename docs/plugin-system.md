@@ -2448,8 +2448,8 @@ and CanvasTesting alone. What a list ranks typed text with isn't here but in [Fu
 give, which a plugin subclasses for text of its own: Mentions' `MentionTextView` is one (a note's
 editor on the canvas, a schema card's description's, and the panel's `MentionTextArea`'s), and so
 is every view the panel's boxes adopt `DetailTextContent` on ([Text of a plugin's own:
-`DetailTextBox`](#text-of-a-plugins-own-detailtextbox)). An arrow's label is typed into one as it
-is.
+`DetailTextBox`](#text-of-a-plugins-own-detailtextbox)). So is an arrow's label's: it's mention
+text, typed into a `MentionTextView` with the arrow as its owner.
 
 - **What it adds does nothing until it's set**, so the same class with none of it set is a plain
   text view (a note's editor on the canvas is a `MentionTextView` with only `onCommit` set, which
@@ -2570,7 +2570,7 @@ wide as a selection of it would be (`enumerateEnclosingRects`: `boundingRect(for
 misplaces part of a centered line with that typesetter), as tall as the line, none past the box. It
 lays out once, as it's made, so one kept per text and width makes a range's rects a lookup: what
 [Find](#find)'s highlights are drawn from (Mentions keeps one with each built text, with its pills'
-stand-ins in it, Connections one per label).
+stand-ins in it, an arrow's label's too: it's mention text).
 
 ## FuzzyMatching
 
@@ -4810,7 +4810,8 @@ and a schema card to a schema card, never one to the other, while a subboard tak
 so anything with ports links to one, and one to anything with ports. They belong to Connections
 ([`Sources/Connections`](../Sources/Connections)), a horizontal any kind opts into, built on
 Selection, whose [canvas buttons](#canvas-buttons) the dots are (and on TableOfContents and
-TextEditing, for the arrow's row and its label's editor). It holds ports, channels and the arrow, in
+TextEditing, for the arrow's row and its label's spelling) and on [Mentions](#mentions), which draws,
+edits and finds an arrow's label, mention text. It holds ports, channels and the arrow, in
 three plugin values, `PortsPlugin`, `ArrowsPlugin` and `ArrowPortsPlugin`, so a list can have arrows
 without ports, or ports with a connector of its own. The core has never heard of a port, the ports
 code has never heard of an arrow, nor the arrow code of a channel: `ArrowPortsPlugin`
@@ -5187,9 +5188,16 @@ and lends any plugin what follows, but for `beginArrow`, which is internal:
   finishes it.
 - **`BindingHintsOverlay`** draws the hints of the arrow being dragged, else the selected arrow's,
   so an arrow drawn from a port, which leaves the selection alone, hints as a re-aimed one does.
-- **For [Find](#find)**, `ArrowFindPlugin` (Connections', after Find) gives an arrow's label,
-  washed where it's drawn (over the canvas), from the label's own string-drawing layout, centered,
-  kept by text and width (`ArrowLabels.layout(of:width:)`).
+- **An arrow's label is mention text** (`Arrow.text` is a `MentionText`: a migration escapes what a
+  board from before had that reads as a mention, and `Fixtures/kinds/arrow.v2.json` holds it). It's
+  drawn through Mentions (`context.drawMentionText(ArrowLabels.placement(of:in:))`, centered, 15
+  points on 18, over the canvas), measured from the names its pills hold, edited in a
+  `MentionTextView` (`@` and slash commands, `/lock` among them; Return on a command line runs it), its
+  row reads the names live, `canvas draw`'s `text: "calls @[Cache]"` mentions by title, and
+  [Find](#find) finds it, washed, as Mentions' text: arrows have no Find plugin. The arrow registers
+  its one placement with `arrow.mentionText { arrow, shapes in … }`, from its kept geometry's label
+  (the placement that needs the shapes around it, through the `ShapeContext`). A rename leaves the
+  label's frame as the names it holds made it, which a longer name may overflow until the label is edited.
 
 ### Connecting without a drag
 
@@ -5350,7 +5358,9 @@ list), [FuzzyMatching](#fuzzymatching) (what ranks the picker's names), [SlashCo
 file's graph) and Validation (for [the warnings](#warnings-mentions-that-cant-work) it adds), and three kinds opt
 in: sticky notes, whose text holds mentions and which can be mentioned, subboards, which can
 be mentioned (following a mention of one enters it), and schema cards, whose descriptions mention
-each other, each mention a `$ref` in the card's schema ([References between cards](#references-between-cards)). A mentioned shape's panel lists what mentions
+each other, each mention a `$ref` in the card's schema ([References between cards](#references-between-cards)).
+An arrow's label holds mentions too (Connections is a concern on Mentions, and the arrow, which
+can't itself be mentioned, draws its label, edits it and has it found as a note's text is). A mentioned shape's panel lists what mentions
 it, and its context menu goes to what does. The core knows no mention; what Mentions needs of it
 is generic: [names](#values-that-name-shapes) of shapes that may outlive them,
 [faces](#faces-clickable-parts-of-a-shape), [going to shapes](#selection),
@@ -5365,6 +5375,12 @@ registrar.shape(StickyNoteDefinition()) { note in
     note.noteRow()                                               // its row reads its mention text (below)
     note.mentionText { $0.mentionTexts }                         // where its text, with pills, is drawn
     note.mentionable(untitled: { $0.props.text.firstLine }, tint: { _ in NoteStyle.tint })   // by its title, else its first line; yellow
+}
+
+// In ArrowsPlugin.register: a placement that needs the shapes around it, through the ShapeContext
+arrow.mentionText { arrow, shapes in
+    guard arrow.props.hasText, let label = shapes.geometry(of: arrow.id)?.label else { return [] }
+    return [ArrowLabels.placement(of: arrow.props.text, in: label)]   // centered, over the canvas (`overCanvas`: Find washes a hit)
 }
 
 // In SubboardsPlugin.register:
@@ -5520,8 +5536,9 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
 }
 ```
 
-- **The style** (`MentionTextStyle`: a font, a color, a fixed line height, and its
-  `MentionSurface`) is shared by the render and the editor, as `NoteStyle.text`; its `attributes`
+- **The style** (`MentionTextStyle`: a font, a color, a fixed line height, its
+  `MentionSurface` and the lines' alignment, natural unless a kind says: an arrow's label is
+  centered) is shared by the render and the editor, as `NoteStyle.text`; its `attributes`
   are what the editor types with. On a shape's surface a pill is monochrome, the text's own color
   at a few strengths (a yellow tint on a yellow note would vanish); on a neutral one (the picker),
   its symbol takes the kind's tint.
@@ -5553,8 +5570,12 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
 - **Where pills are.** `editor.mentionPills(of:)` is each pill's frame, in world units, with
   `isLive`, from the same placements, as string drawing puts them: a line that doesn't fit, or a
   pill the "…" of a cut-short last line covers, has none. The `MentionTexts` point (`x.mentionText`,
-  `registrar.mentionText(K.self)` for another plugin's kind, `registry.mentionTextPlacements(of:)`) is what the
-  faces read. A built text keeps its layout once asked (TextEditing's `StringDrawingLayout`, over
+  `registrar.mentionText(K.self)` for another plugin's kind, `registry.mentionTextPlacements(of:in:)`,
+  given the editor's `shapeContext`) is what the faces read. A kind whose text is where its geometry
+  says (an arrow's label, on its body) lists its placements from the context too
+  (`x.mentionText { shape, shapes in … }`, reading `shapes.geometry(of:)`, which is kept), and a
+  placement drawn `overCanvas` (on the board's background, not a surface) is washed by Find where a
+  surface's is marked. A built text keeps its layout once asked (TextEditing's `StringDrawingLayout`, over
   the string with stand-ins of its pills' size, per width), so a pill's place, or a range's line
   rects, is a lookup.
 - **For [Find](#find)**, `MentionFindPlugin` (a plugin value of Mentions' own, after Find and
@@ -5562,7 +5583,8 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
   mention its target's live name, so a name is found where its pill is, and a hit in a name marks
   the whole pill (one character of the drawn text); its rects come from that kept layout. A rename
   changes what its mentioners read: those are what `rowsAffected(by:)` names, which Find asks before
-  it reads any text.
+  it reads any text. A placement `overCanvas` is read by a contribution of its own, whose look is
+  `.wash`.
 
 ### The service: `MentionState`
 
@@ -5686,7 +5708,7 @@ Faces are Selection's, so a plugin list with Mentions needs `SelectionPlugin()` 
 
 ### Editing: `MentionTextView`
 
-The note's editor is a `MentionTextView<AnyMentionable>`, an `EditingTextView` ([TextEditing's](#the-text-view),
+The note's editor (an arrow's label's is the same, centered) is a `MentionTextView<AnyMentionable>`, an `EditingTextView` ([TextEditing's](#the-text-view),
 so the panel's boxes take it too: [In the panel](#in-the-panel-mentiontextarea)) on TextKit 2,
 with the note's style, its shape as `owner` (the picker may offer it: a shape can mention itself) and the service. On
 the canvas nothing of the panel's is set, so it's the text view it always was:
@@ -6004,7 +6026,7 @@ the shipped notes in a subboard (rows across switches, renames there and their u
 deleted, a locked note's pill double-clicked, a subboard copied with the notes inside it and beside
 it, one cut and pasted with every id kept, a note cut inside one and pasted on the root, and
 `canvas draw` naming a note two boards down); `SubboardFileTests` a saved file whose
-notes mention each other two boards apart (`nested-mentions-across.v4.json`).
+notes mention each other two boards apart (`nested-arrows-mention-across.v4.json`).
 
 ## Slash commands
 
@@ -6481,8 +6503,7 @@ a list without Find leaves them out:
 | Contributor | Texts | Where |
 |---|---|---|
 | Titles' `TitleFindPlugin` | each title, named or derived (`registry.title(of:)`), on the kinds that hold `TitleProperty` or derive one | the pill's whole capsule, ringed (it may cut the title short); zoomed out, the cover |
-| Mentions' `MentionFindPlugin` | each `MentionTexts` placement's text (a note's, a schema card's description), each mention its live name | from the render's own layout, which Find's asking keeps with the drawn text (`MentionTextMemo`; drawing keeps none); a hit in a name is the whole pill; `affected`: `rowsAffected(by:)` |
-| Connections' `ArrowFindPlugin` | an arrow's label | from the label's string-drawing layout, centered, washed |
+| Mentions' `MentionFindPlugin` | each `MentionTexts` placement's text (a note's, a schema card's description, an arrow's label), each mention its live name | from the render's own layout, which Find's asking keeps with the drawn text (`MentionTextMemo`; drawing keeps none); a hit in a name is the whole pill; `affected`: `rowsAffected(by:)`. Two contributions, one a look: the placements on a shape's surface, marked, and those `overCanvas` (an arrow's label), washed |
 
 ### The index, and the search off the main actor
 
@@ -7952,11 +7973,13 @@ as SwiftUI sugar is, and the channel and the ports in `SubboardLinks.swift`.)
 It ships after the sticky note (the toolbar's Subboard, B), with Boards after Titles, and its props
 have a fixture (`Fixtures/kinds/subboard.v0.json`) as every shipped kind's do; a whole file of
 boards nested two deep, with notes and a bound arrow on each, is
-`Fixtures/files/nested-mentions.v4.json`, read and written back byte for byte (written once notes'
-text could hold mentions, though its notes mention nothing); `nested.v4.json` is the same file from
-before sticky notes held mentions, read with each board's notes brought up to date; and
-`nested-mentions-across.v4.json` is the same file with a note on the root and one two boards down
-mentioning each other, read, shown live opened on either board, and written back byte for byte
+`Fixtures/files/nested-arrows-mention.v4.json`, read and written back byte for byte (written once
+notes' and arrows' text could hold mentions, though none says anything that mentions);
+`nested-mentions.v4.json` is the same file from before arrows' text could, and `nested.v4.json` from
+before sticky notes' could, each read with each board's notes and arrows brought up to date; and
+`nested-arrows-mention-across.v4.json` is the same file with a note on the root and one two boards
+down mentioning each other (`nested-mentions-across.v4.json` from before arrows', brought up to date),
+read, shown live opened on either board, and written back byte for byte
 ([Mentions across boards](#mentions-across-boards)).
 
 ### The core's part: board previews
@@ -11704,7 +11727,7 @@ core                 tool hand · command undo · command redo · command zoomIn
 keyboard             service KeyboardState · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
-arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
+arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention text → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
 framing              shape frame · tool frame · shortcut F → tool frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
@@ -11721,8 +11744,7 @@ mentions             service MentionState · edge type mention · edges → ever
 board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
 find-in-boards       service FindState · overlay FindOverlay · command find · shortcut ⌘F → command find · command findNext · shortcut ⌘G → command findNext · command findPrevious · shortcut ⇧⌘G → command findPrevious
 title-find           findable title → every shape
-mention-find         findable mention text → every shape
-arrow-find           findable label → arrow
+mention-find         findable mention text → every shape · findable mention text over the canvas → every shape
 jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo
 transform            service TransformState · CanvasContextMenu
 validation-details   DetailStatuses in Issues
@@ -11894,7 +11916,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   all, with Boards, Titles, the panel and the table of contents installed: the card's pixels (the
   title or its placeholder, the count, no pill), and its header typed into beside a `CanvasView`
   in an unshown window. In the app's window, CompositionTests' `NestedWindow` opens a file of
-  subboards (`NestedFile`, `Fixtures/files/nested-mentions.v4.json`) in a `BoardDocument`'s own
+  subboards (`NestedFile`, `Fixtures/files/nested-arrows-mention.v4.json`) in a `BoardDocument`'s own
   window, as the app wires it: `crumbs` are the path's buttons over the canvas, `hit(_:)` what a
   click would land on, and `goItems()` the app's menus with Go's items sent to its controller (an
   unshown window isn't the key window); `SubboardFileTests` hold saving, reopening on the board
@@ -12686,9 +12708,9 @@ Each of these adds to the design without changing what plugins are written again
   saying why a command line doesn't run (a Return that isn't a
   command's is a new line and the text stays, so a misspelled name, a command not offered or
   arguments it doesn't accept leave `/lcok` in the note without a word; a row in the list or a
-  line under the text would say which); plain-text surfaces (an arrow's label, a field in the panel
-  that isn't mention text: only Mentions' text view hosts the typing today, so a plain
-  `EditingTextView` has none); ⌘Z right after a command undoing the command (the text's undo is
+  line under the text would say which); plain-text surfaces (a field in the panel that isn't
+  mention text: only Mentions' text view hosts the typing today, so a plain `EditingTextView` has
+  none; an arrow's label is mention text, so it hosts it); ⌘Z right after a command undoing the command (the text's undo is
   the text's: it brings the line back and leaves the command done, and the board's Undo, once
   editing is over, undoes the command); and a schema card's sync waiting while a command line is
   typed (it takes the description as done when editing ends or 3 s after the last change, and a

@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasUI
+import Connections
 import CoreGraphics
 import Foundation
 import Mentions
@@ -233,6 +234,39 @@ extension CanvasEditor {
         expectEqual(wider.height, try fitted("Wide", width: 480))
         editor.undo()
         expectEqual(editor.shapeInFile(titled: "Wide")?.box?.size, wide)
+    },
+
+    test("an edge's text mentions a shape by its title, as a note's does: the arrow's label holds its pill, live; kinds says the arrow's text takes them") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let f = DeepFile()
+        let board = f.board()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let script = """
+            sticky-note "Web"
+            sticky-note "API" right of "Web"
+            edge "Web" -> "API" text: "calls @[Overview], \\\\@[not this]"
+            """
+        let result = try canvas(server, ["draw", "-"], input: script)
+        expectEqual(result.status, 0, result.error)
+        let editor = board.editor
+        let arrow = try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first)
+        expectEqual(arrow.props.text.stored, "calls @[Overview](shape:\(f.overview)), \\@[not this]")
+        expectEqual(editor.mentionPills(of: arrow.id).map(\.isLive), [true], "its pill is live")
+        expectEqual(editor.mentions?.mentioners(of: f.overview), [arrow.id])
+        // Run again, nothing changes: the text it makes is the text the arrow has.
+        let before = editor.document
+        let again = try canvas(server, ["draw", "-"], input: script)
+        expectEqual(try JSON(text: again.output)["changes"]?.arrayValue?.map { $0["did"] }, ["unchanged", "unchanged", "unchanged"])
+        expectEqual(editor.document, before)
+        let typo = try canvas(server, ["draw", #"edge "Web" -> "API" text: "see @[Nowhere]""#])
+        expectEqual(typo.status, 1)
+        expectEqual(try JSON(text: typo.error)["error"]?["reason"], "unknown_title")
+        let kinds = try JSON(text: canvas(server, ["kinds"]).output).arrayValue ?? []
+        expectEqual(kinds.first { $0["kind"]?.stringValue == "arrow" }?["attributes"]?["text"], "text (@[Title] mentions)")
     },
 
     test("kinds says a note's text and a schema card's prompt take @[Title], after their type") {

@@ -19,19 +19,26 @@ public struct MentionTextStyle: @MainActor Hashable {
     /// Every line this tall, in string drawing and TextKit 2 alike; nil for the font's own.
     public let lineHeight: CGFloat?
     public let surface: MentionSurface
+    /// How its lines are set across the box: the writing direction's own unless a kind says (an
+    /// arrow's label is centered).
+    public let alignment: NSTextAlignment
     /// What `attributes` returns, made once.
     private let madeAttributes: [NSAttributedString.Key: Any]
 
-    public init(font: NSFont, color: NSColor, lineHeight: CGFloat? = nil, surface: MentionSurface = .shape) {
+    public init(font: NSFont, color: NSColor, lineHeight: CGFloat? = nil, surface: MentionSurface = .shape, alignment: NSTextAlignment = .natural) {
         self.font = font
         self.color = color
         self.lineHeight = lineHeight
         self.surface = surface
+        self.alignment = alignment
         var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
-        if let lineHeight {
+        if lineHeight != nil || alignment != .natural {
             let paragraph = NSMutableParagraphStyle()
-            paragraph.minimumLineHeight = lineHeight
-            paragraph.maximumLineHeight = lineHeight
+            if let lineHeight {
+                paragraph.minimumLineHeight = lineHeight
+                paragraph.maximumLineHeight = lineHeight
+            }
+            paragraph.alignment = alignment
             attributes[.paragraphStyle] = paragraph.copy()
         }
         madeAttributes = attributes
@@ -42,7 +49,7 @@ public struct MentionTextStyle: @MainActor Hashable {
     public var attributes: [NSAttributedString.Key: Any] { madeAttributes }
 
     public static func == (a: MentionTextStyle, b: MentionTextStyle) -> Bool {
-        a.font == b.font && a.color == b.color && a.lineHeight == b.lineHeight && a.surface == b.surface
+        a.font == b.font && a.color == b.color && a.lineHeight == b.lineHeight && a.surface == b.surface && a.alignment == b.alignment
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -50,6 +57,7 @@ public struct MentionTextStyle: @MainActor Hashable {
         hasher.combine(color)
         hasher.combine(lineHeight)
         hasher.combine(surface)
+        hasher.combine(alignment)
     }
 
     /// The text as it's drawn and edited: its text runs with `attributes`, and each mention one
