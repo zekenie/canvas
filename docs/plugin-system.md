@@ -1791,6 +1791,9 @@ that both binds and names.)
   (renaming rebuilds the set) and dictionaries keyed by strings of names are names, and so is an
   added property's value, whatever kinds opt in. A leaf, a type coded by hand, implements
   `forEachNamedShape` (each id, repeats included) and `renamingShapes` (pure; nil keeps a name).
+  Types' `TypeLink` is a shipped one: an entry of a shape's `is`, a wrapper of one `ShapeID` coded as the
+  bare uuid string. It wraps the id because `ShapeID` itself must not be `ShapeNaming` (an arrow's
+  bindings are ids, and a binding is not a name).
 - **What the registry refuses.** A struct that holds names without adopting `ShapeNaming`, in a
   kind's props or an added property's value, since nothing could find its names and a copy would go
   on naming the originals:

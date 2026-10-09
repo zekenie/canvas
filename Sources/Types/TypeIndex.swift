@@ -103,7 +103,7 @@ public final class TypeIndex {
     /// types of those, in the same order, and so on, each once, and never the shape itself, so the
     /// chain of a shape that is its own ancestor stops where it comes back. This is the order a
     /// shape's types are read in: the first to say a thing wins. A name that is gone is in it,
-    /// ending its branch; check `isType` before reading one. Customs shapes, later, add their
+    /// ending its branch; check `isType` before reading one. Custom shapes, later, add their
     /// templates and what they build on at `parents(of:)`.
     public func lineage(of id: ShapeID) -> [ShapeID] {
         var seen: Set<ShapeID> = [id], chain: [ShapeID] = [], level = [id]
