@@ -30,14 +30,42 @@ func arrowsPlugins(before: [any CanvasPlugin] = [], more: [any CanvasPlugin] = [
         + [ArrowsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin()] + more
 }
 
+/// A box of words that can be a type (`canBeType()`), for an arrow to be an instance of: titled and
+/// mentioned by its title.
+struct Gloss: BoxShapeProps {
+    static let kind: ShapeKind = "gloss"
+    static let properties = Properties<Gloss>(title: "Gloss") {
+        Property("frame", \.frame).required()
+        Property("text", \.text)
+    }
+    var frame: CGRect
+    var text: MentionText
+    init(_ frame: CGRect = CGRect(x: 0, y: 0, width: 200, height: 60), text: MentionText = "") {
+        self.frame = frame
+        self.text = text
+    }
+    init() { self.init(CGRect(x: 0, y: 0, width: 200, height: 60)) }
+}
+
+@MainActor struct GlossDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Gloss>, in context: RenderContext) {}
+}
+
 /// What a label's mention text needs of the fixtures: boxes that are titled and mentioned (by their
-/// titles), and a command arrows offer, `head`, which toggles the arrowhead at the end.
+/// titles), a box of words that can be a type, and a command arrows offer, `head`, which toggles the
+/// arrowhead at the end.
 struct LabelFixturesPlugin: CanvasPlugin {
     var id: PluginID { "label-fixtures" }
 
     func register(into registrar: inout PluginRegistrar) {
         registrar.title(Box.self)
         registrar.mentionable(Box.self)
+        registrar.shape(GlossDefinition()) { gloss in
+            gloss.title()
+            gloss.mentionable(untitled: { $0.props.text.firstLine })
+            gloss.typeWords(\.text, drawnIn: { _ in nil })
+            gloss.canBeType()
+        }
         registrar.slashCommands(Arrow.self) {
             SlashCommand("head", edit: { arrow, _ in arrow.endArrowhead.toggle() })
         }
@@ -59,6 +87,16 @@ extension CanvasEditor {
         box[TitleProperty.self] = title
         transact { $0.insert(box) }
         return box.id
+    }
+
+    /// A type called `title`: a gloss with a schema, on the board shown.
+    @discardableResult
+    func addType(_ title: String, at frame: CGRect) -> ShapeID {
+        var type = ShapeRecord(Gloss(frame))
+        type[TitleProperty.self] = title
+        type[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter)
+        transact { $0.insert(type) }
+        return type.id
     }
 
     func rename(_ id: ShapeID, to title: String) {

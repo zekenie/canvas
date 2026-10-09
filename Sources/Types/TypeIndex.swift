@@ -3,6 +3,7 @@ import Canvas
 import Foundation
 import Mentions
 import Titles
+import Topology
 
 /// What a type is called where a shape's types are listed (`TypeIndex.name(of:)`).
 public enum TypeLinkName: Equatable, Sendable {
@@ -39,6 +40,8 @@ public final class TypeIndex {
     @ObservationIgnored private let kinds: Set<ShapeKind>
     /// The kinds that can be instances of types.
     @ObservationIgnored private let typeableKinds: Set<ShapeKind>
+    /// The kinds that stand in for other shapes (pills): never a type, whatever they stand for.
+    @ObservationIgnored private let standInKinds: Set<ShapeKind>
     @ObservationIgnored private var observers: [@MainActor (Set<ShapeID>) -> Void] = []
     /// Each shape's types, in the order of its list: only the shapes that are some.
     @ObservationIgnored private var links: [ShapeID: [TypeLink]] = [:]
@@ -63,6 +66,7 @@ public final class TypeIndex {
         let registry = editor.registry
         kinds = Set(registry.kinds.filter { registry.canBeType($0) })
         typeableKinds = Set(registry.kinds.filter { registry.isTypeable($0) })
+        standInKinds = registry.standIns.kinds
         heardRevision = editor.revision
         readEveryShape(in: editor)
     }
@@ -163,6 +167,24 @@ public final class TypeIndex {
             return order == .orderedSame ? a.type.description < b.type.description : order == .orderedAscending
         }
         return found.map { TypeCompletions.type($0.type, named: $0.name, detail: $0.detail) }
+    }
+
+    // MARK: What may be what
+
+    /// Whether `/is-a` may make `owner` an instance of `target`: `target` is a type (a shape of a kind
+    /// that stands in for others, a pill, never is), not `owner` itself, not one `owner` is already,
+    /// and not one that is `owner` in turn, which would make a cycle (`lineage`). A shape on any
+    /// board of the file, asked of every shape the `@` picker ranks, so it costs a few lookups.
+    public func admits(_ target: ShapeID, for owner: ShapeID) -> Bool {
+        guard target != owner, mayBe(target, for: owner), !(links[owner] ?? []).contains(TypeLink(target)) else { return false }
+        return !lineage(of: target).contains(owner)
+    }
+
+    /// What a shape may be, by what the target is: a type. The one place that says so; the custom
+    /// shapes of a later slice join here, as what a shape of their kind may be besides.
+    private func mayBe(_ target: ShapeID, for owner: ShapeID) -> Bool {
+        guard entries[target] != nil, let record = editor?.shape(inFile: target), !record.isOpaque else { return false }
+        return !standInKinds.contains(record.kind)
     }
 
     // MARK: Keeping it

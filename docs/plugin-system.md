@@ -4143,6 +4143,8 @@ chips reach in is drawn and hit.
 
 An adornment may show several labels, in order, each its own chip: a type chip per type of a
 shape. The sugar takes a list, `x.adornments(TypeChip.self) { shape in names.map { AdornmentLabel($0.title).tagged($0.tag) } }`.
+Types' `TypeChips` is the shipped one, on every kind that holds `is` or a schema (`registrar.adornmentsForEveryShape`), with a
+click (`ClickableAdornment`) that pops a menu up below the chip with `editor.popUpMenu`.
 
 - **Left end only.** A group is for `aboveTopLeft`: at the right end a run is cut where it reaches
   200 points and everything after it with it (the lock), and the corner is a tally's. The registry
@@ -6020,7 +6022,7 @@ command offered `when` the shape says so, and a text view that hosts it is where
 Mentions' `MentionTextView` does, so every text where mentions are typed (a note's editor, the panel's [`MentionTextArea`](#in-the-panel-mentiontextarea)) takes
 slash commands. The core has never heard of a command, and SlashCommands has never heard of a
 mention: a command's arguments are runs of text and shapes, and a pill is a shape only because the
-text view that reads the line says so. Titles' `/title`, Locking's `/lock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, and [Moving](#moving)'s `/move-to` and `/move-near` are the commands that ship.
+text view that reads the line says so. Titles' `/title`, Locking's `/lock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, [Types](#types-shapes-that-hold-a-schema)' `/type` and `/is-a` (the one-shape form: `/is-a @Person`, in a note's text or an arrow's label), and [Moving](#moving)'s `/move-to` and `/move-near` are the commands that ship.
 
 ```swift
 // In LockingPlugin.register:
@@ -6662,7 +6664,8 @@ kept aside (`record.isOpaque`) carries none, nor does a shape on a board the edi
 - **Shipped:** `stands-for` (`StandingEdge`, Topology's own, declared by `TopologyPlugin`: a
   [stand-in](#stand-ins-forwarding)'s edge to each shape it stands for), a root, so every
   vocabulary lists it first; `arrow` (`ArrowEdge`, Connections'), a plain arrow's type, and under it
-  each channel's, `note-link` and `subboard-link`; and `mention` (`MentionEdge`, Mentions'), a root. A channel is an
+  each channel's, `note-link` and `subboard-link`; `mention` (`MentionEdge`, Mentions'), a root; and `is-a` (`IsAEdge`, Types'), a root, from a shape to each
+  type its `is` names, derived with the property rule below. A channel is an
   edge type of the same name, which `registrar.channel(C.self)` declares with it
   ([Channels](#channels)), under the family the connector names (`connects(_:edgeType:…)`), so its
   parent follows from the registry as built: `registrar.edgeType(_:parent:)` is that form, the
@@ -6674,8 +6677,8 @@ kept aside (`record.isOpaque`) carries none, nor does a shape on a board the edi
   nil by default, is passed on by `registrar.channel(C.self)` to the type it declares). Shipped:
   `arrow`, "an arrow bound at both ends, from the shape it starts on to the shape it ends on, whatever
   its arrowheads"; `note-link`, "an arrow drawn on the note-link channel", and `subboard-link` likewise;
-  `mention`, "a mention in a shape's text, from that shape to the shape it names"; `stands-for`,
-  "from a shape to each shape it stands for".
+  `mention`, "a mention in a shape's text, from that shape to the shape it names"; `is-a`, "from a shape
+  to each type it is, in the order of its list"; `stands-for`, "from a shape to each shape it stands for".
 - **An edge reports its most specific type**, and a query names types with an `EdgeTypeFilter`:
   `.all`; `.within(t, …)`, those types and every type under them (`.within(ArrowEdge.id)` is every
   arrow, plain or on a channel); `.only(t, …)`, exactly those (`.only(ArrowEdge.id)` is plain
@@ -6722,7 +6725,9 @@ registrar.edges(in: BlockedByProperty.self, as: BlockedByEdge.self)
   value names shapes (`P.Value: ShapeNaming`), is for a relation nobody draws or writes in text
   (what a task is blocked by): every shape a value of `P` names is an edge of type `T` from the
   shape that holds it, in the slot `P`'s key names, on every kind that opts into `P`. It doesn't
-  declare `T`: `edgeType` does. Nothing shipped uses it yet.
+  declare `T`: `edgeType` does. Types uses it for `is`: `registrar.edgeType(IsAEdge.self)` and
+  `registrar.edges(in: IsAProperty.self, as: IsAEdge.self)`, so every note and arrow that is a type's
+  instance has an `is-a` edge to it, in the slot `is`.
 - **`registry.edges(of: record)`** is what one record carries, as its kind's sources say, pure: for
   code that holds a record the index doesn't (a transaction's), and for tests.
 
@@ -9875,11 +9880,38 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   `editor.removeType(_:)` takes it back, one step, "Remove Type": the schema goes, the words, title
   and public stay, and undo brings the schema back. An agent makes a type with `canvas draw`'s
   `schema:` (an added property's attribute, as every one is): `sticky-note "Order" schema: "…"`.
+- **What a shape is**: `is`, an added property (`IsAProperty`, an ordered list of `TypeLink`s, none
+  twice, empty is none) on the kinds that call `typeable()` (it needs `typeWords` too): a note, and
+  an arrow, whose label is its words (`arrow.typeWords(\.text, drawnIn: { arrow, shapes in … })`, the
+  overload whose `drawnIn` is given the `ShapeContext`, since a label is placed against the shapes
+  around it). `TypeLink` is a one-field wrapper of a `ShapeID`, a name (`ShapeNaming`) coded as the
+  bare uuid string, so a copy of an instance copied with its type is an instance of the copy and a
+  type that is deleted leaves its name behind until the delete is undone; `ShapeID` itself is not
+  `ShapeNaming` (an arrow's bindings are ids). Types declares the `is-a` edge (a root) and derives it
+  with [the property rule](#sources). `Fixtures/added/is.v0.json` is its fixture.
+- **`/is-a @Type`** is a slash command with the one-shape argument on every kind that holds `is`:
+  the `@` picker on its line lists the types of the file (`kinds`: the kinds that can be types), and
+  its rule (`TypeIndex.admits`) refuses the shape itself, a type it is already, a type that is it in
+  turn (no cycles) and a pill. It appends (a later line wins) in one step, "Add Type"
+  (`editor.addTypeLink(_:to:)`; `removeTypeLink(_:from:)` takes one away, "Remove Type", and is the
+  one way an entry goes). It works in a note's text and in an arrow's label.
+- **Chips**: `TypeChips` (an `Adornment`, aboveTopLeft, a [group](#adornments)) shows a "Type" chip
+  on a type and one chip for each type a shape is, in order, each its type's live title, dashed
+  (`.missing()`) once the type is gone, the ones that don't fit folded into "+N". A click pops up a
+  small menu below the chip (`editor.popUpMenu`): Go to “Person” and Remove “Person” (Remove left
+  out on a read-only shape); the Type chip's is Remove Type; "+N"'s lists every type. On an arrow
+  the chips sit above its label. The panel's Types tab lists the same, a row that goes to the type
+  and a minus that removes it.
 - **The file's types**: `TypeIndex` (`editor.types`) reads every board's types as the file opens,
   then keeps them by each commit's `ChangeSet` alone (what it added, removed and changed, on the
   board shown and `elsewhere`, the kind checked first; a whole file put in place read again), never
   per frame: `isType(_:)`, `types`, `name(of:)`, a `revision(of:)` that moves whenever a type's
-  schema or name does, and `onChange(_:)` for what depends on a type.
+  schema or name does, and `onChange(_:)` for what depends on a type. It also keeps what is what, the
+  same way: `links(of:)` (a shape's types, in order), `instances(of:)` (directly), `lineage(of:)` (what
+  a shape's types lead to, level by level, later first, cycle-safe: the order a shape's types are read
+  in), `affected(by:)` (their instances, near and far) and `name(of: TypeLink)` (the live title, or
+  missing with the last title known this session, observed per type); the chips of a renamed,
+  deleted or restored type's instances are made again.
 - **Rules** (`TypeValidationPlugin`, `validateEveryShape`): text that isn't JSON is an error at its
   line and column ("Invalid JSON: expected a property name at line 6, column 34."), as is a root
   that isn't an object; `required` naming a property its object doesn't have, a `type` that isn't
@@ -11525,9 +11557,9 @@ title-validation     service TitleIndex · ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
-types                property schema · property is · edge type is-a · edges → every shape · service TypeIndex · service TypeSync<TypeSchemaProperty> · ShapePopovers · /type → every shape
+types                property schema · property is · edge type is-a · edges → every shape · service TypeIndex · service TypeSync<TypeSchemaProperty> · ShapePopovers · /type → every shape · /is-a → every shape · adornment TypeChips → every shape
 type-validation      ValidationRules
-type-details         ShapeDetails
+type-details         ShapeDetails · ShapeDetails
 snapping             service SnapState · translation adjuster
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
 arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules

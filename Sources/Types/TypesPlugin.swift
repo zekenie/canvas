@@ -41,6 +41,8 @@ public struct TypesPlugin: CanvasPlugin {
             return TypeHighlights.popover(at: point, on: record, in: editor)
         }
         registerTypeCommands(into: &registrar)
+        registerIsACommand(into: &registrar)
+        registerTypeChips(into: &registrar)
     }
 
     #if DEBUG
@@ -82,6 +84,27 @@ public enum TypesStyle {
     /// The steps.
     public static let makeType = "Make Type"
     public static let removeType = "Remove Type"
+    /// The step `/is-a` takes, and what the chips' and the panel's Remove take back with Remove Type's.
+    public static let addType = "Add Type"
+    /// What `/is-a` takes, beside its name in the list.
+    static let isAArgument = "@type"
+    /// The chips: the mark of a type, and what a type that has no title, or is gone and was never
+    /// known by one, is called.
+    static let typeChip = "Type"
+    static let untitledType = "Untitled"
+    static let deletedType = "Deleted"
+    /// A chip's menu: `Go to “Person”`, `Remove “Person”`, as a mention's pill's menu says it.
+    static func goTo(_ name: String) -> String { "Go to “\(name)”" }
+    static func remove(_ name: String) -> String { "Remove “\(name)”" }
+    /// How a type is named in those: its title, else what an untitled or gone one is called.
+    static func menuName(_ name: TypeLinkName) -> String {
+        switch name {
+        case .live(let title): title ?? untitledType
+        case .missing(let lastKnown): lastKnown ?? deletedType
+        }
+    }
+    /// The panel's Types rows.
+    static let typeRowSymbol = "tag"
     /// Behind the words a highlight links to the schema: a field's pale blue, a rule's pale amber,
     /// light enough on a note's yellow, and on white, that the text stays the text's gray.
     static let fieldHighlight = NSColor(srgbRed: 0.20, green: 0.47, blue: 0.96, alpha: 0.16).cgColor

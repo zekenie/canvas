@@ -39,7 +39,7 @@ private struct ScrapsPlugin: CanvasPlugin {
 }
 
 /// A box that stands for the shapes it cites (its record names them).
-private struct Echo: BoxShapeProps {
+struct Echo: BoxShapeProps {
     static let kind: ShapeKind = "echo"
     static let properties = Properties<Echo>(title: "Echo") {
         Property("frame", \.frame).required()
@@ -54,11 +54,11 @@ private struct Echo: BoxShapeProps {
     init() { self.init(stands: []) }
 }
 
-@MainActor private struct EchoDefinition: ShapeDefinition {
+@MainActor struct EchoDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Echo>, in context: RenderContext) {}
 }
 
-private struct EchoesPlugin: CanvasPlugin {
+struct EchoesPlugin: CanvasPlugin {
     var id: PluginID { "echoes" }
     func register(into registrar: inout PluginRegistrar) {
         registrar.shape(EchoDefinition()) { echo in

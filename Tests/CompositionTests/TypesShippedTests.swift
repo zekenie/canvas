@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
@@ -5,6 +6,7 @@ import CanvasTesting
 import CanvasUI
 import Clipboard
 import Composition
+import Connections
 import CoreGraphics
 import DetailPanel
 import Foundation
@@ -147,5 +149,116 @@ private let petAnswer = """
         expectEqual(warned.status, 0, warned.error)
         let warnings = try JSON(text: warned.output)["warnings"]?.arrayValue ?? []
         expect(warnings.contains { $0["attribute"] == "schema" && $0["message"]?.stringValue?.contains(gone.description) == true }, warned.output)
+    },
+
+    test("/is-a typed on a line of a note and a type picked make it an instance in one step, Add Type, editing going on and the line gone; its chip sits above it, and the arrow's label does the same") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let (window, _) = windowed(editor)
+        let person = editor.addTypeNote(TypeSchemaProperty.starter, title: "Person", frame: CGRect(x: 500, y: 100, width: 200, height: 200))
+        let zeke = editor.add(StickyNote(frame: CGRect(x: 500, y: 400, width: 200, height: 200), text: "Owner"), title: "Zeke")
+        let ann = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Ann"))
+        @MainActor func view() throws -> MentionTextView<AnyMentionable> {
+            try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the editor has the keyboard")
+        }
+        editor.selection = ann
+        expect(editor.beginEditing(ann))
+        let editing = try view()
+        editing.setSelectedRange(NSRange(location: editing.textStorage?.length ?? 0, length: 0))
+        window.pressReturn()
+        window.type("/is")
+        expectEqual(editing.slashCommands?.picker?.highlightedCommand?.name, "is-a")
+        window.press("\t", code: 48)
+        window.type("@")
+        let picker = try require(editing.picker, "the @ picker, on the line of a command that takes a type")
+        expectEqual(picker.rows.compactMap(\.candidate?.id), [person], "a type, not Zeke or the note itself")
+        window.pressReturn()
+        window.pressReturn()
+        window.settle()
+        expectEqual(editor.document[ann]?[IsAProperty.self]?.map(\.shape), [person])
+        expectEqual(editor.editingShapeID, ann, "editing goes on")
+        expectEqual(editor.document[ann]?.typed(as: StickyNote.self)?.props.text.plainText(), "Ann\n", "the line is gone from its text, the line break is not")
+        expectEqual(editor.undoHistory.undoName, "Add Type")
+        expectEqual(editor.types?.instances(of: person), [ann])
+        window.pressEscape()
+        let chips = editor.adornmentFrames(of: ann).filter { $0.adornment == .of(TypeChips.self) }
+        expectEqual(chips.map { $0.label.text ?? "" }, ["Person"])
+        expect(chips[0].rect.maxY <= 100, "above the note")
+        editor.undo()
+        expectEqual(editor.document[ann]?[IsAProperty.self], nil)
+        expect(zeke != person)
+
+        // The arrow's label: the same command, the same step, the chip above the label.
+        let arrow = editor.add(Arrow(start: .free(CGPoint(x: 100, y: 700)), end: .free(CGPoint(x: 500, y: 700)), text: "keep"))
+        editor.selection = arrow
+        expect(editor.beginEditing(arrow))
+        let label = try view()
+        label.setSelectedRange(NSRange(location: 4, length: 0))
+        window.pressReturn()
+        window.type("/is-a ")
+        window.type("@")
+        expectEqual(try require(label.picker).rows.compactMap(\.candidate?.id), [person])
+        window.pressReturn()
+        window.pressReturn()
+        window.settle()
+        expectEqual(editor.document[arrow]?[IsAProperty.self]?.map(\.shape), [person])
+        expectEqual(editor.document[arrow]?.typed(as: Arrow.self)?.props.text.plainText(), "keep\n")
+        expectEqual(editor.undoHistory.undoName, "Add Type")
+        window.pressEscape()
+        let labelFrame = try require(editor.arrowLabelFrame(of: arrow))
+        let arrowChips = editor.adornmentFrames(of: arrow).filter { $0.adornment == .of(TypeChips.self) }
+        expectEqual(arrowChips.map { $0.label.text ?? "" }, ["Person"])
+        expect(arrowChips[0].rect.maxY <= labelFrame.minY, "above the label")
+    },
+    test("a copy of an instance copied with its type is an instance of the copy, copied alone of the original; the is-a edge and the index follow, and a query finds the instances by their edge") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let person = editor.addTypeNote(TypeSchemaProperty.starter, title: "Person", frame: CGRect(x: 400, y: 0, width: 200, height: 200))
+        let ann = editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Ann"))
+        editor.addTypeLink(person, to: ann)
+        expectEqual(editor.types?.instances(of: person), [ann])
+        editor.selectedShapeIDs = [person, ann]
+        editor.perform(.copy)
+        let before = editor.document
+        editor.perform(.paste)
+        let byOriginal = Dictionary(uniqueKeysWithValues: editor.shapes(since: before).map { ($0.copiedFrom!, $0.id) })
+        let copyOfPerson = try require(byOriginal[person]), copyOfAnn = try require(byOriginal[ann])
+        expectEqual(editor.document[copyOfAnn]?[IsAProperty.self]?.map(\.shape), [copyOfPerson])
+        editor.selectedShapeIDs = [ann]
+        editor.perform(.copy)
+        let again = editor.document
+        editor.perform(.paste)
+        let alone = try require(editor.shapes(since: again).first)
+        expectEqual(alone[IsAProperty.self]?.map(\.shape), [person])
+        expectEqual(editor.types?.instances(of: person), [ann, alone.id])
+        expectEqual(editor.types?.instances(of: copyOfPerson), [copyOfAnn])
+    },
+    test("canvas draw writes is: as a JSON list of ids, one undo step; a query finds the instances by the is-a edge, and the type by its schema") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let order = scripted(#"{"type": "object", "properties": {"id": {"type": "string"}}}"#)
+        let made = try canvas(server, ["draw", #"sticky-note "Order" text: "An order" schema: "\#(order)""#])
+        expectEqual(made.status, 0, made.error)
+        let type = try require(board.editor.document.shapes.first)
+        let steps = board.editor.undoHistory.undoName
+        let drawn = try canvas(server, ["draw", #"sticky-note "Order 7" is: ["\#(type.id)"]"#])
+        expectEqual(drawn.status, 0, drawn.error)
+        let instance = try require(board.editor.document.shapes.first { $0.id != type.id })
+        expectEqual(instance[IsAProperty.self]?.map(\.shape), [type.id])
+        expect(board.editor.undoHistory.undoName != nil && steps != nil)
+        board.editor.undo()
+        expectEqual(board.editor.document.shapes.map(\.id), [type.id], "one step takes the instance back")
+        board.editor.redo()
+        let found = try JSON(text: canvas(server, ["query", "--brief", #":edge-to("Order", is-a)"#]).output)
+        expectEqual(found["count"], 1)
+        let types = try JSON(text: canvas(server, ["query", "--brief", "sticky-note[schema]"]).output)
+        expectEqual(types["count"], 1)
     },
 ])
