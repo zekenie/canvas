@@ -98,6 +98,6 @@ some a tenth of Sonnet's cost an answer.
 
 ## The live smoke test
 
-`SCHEMA_LIVE=1 build/debug/SchemasTests/SchemasTests` (after `./test.sh` has built it) runs three
+`SCHEMA_LIVE=1 build/debug/TypesTests/TypesTests` (after `./test.sh` has built it) runs three
 cases, and a type that mentions another both ways, through the app's own path, `AnthropicModel` and `TypeSync`, and prints what came back.
 `./test.sh` never sets it.

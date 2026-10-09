@@ -583,7 +583,8 @@ extension TypeSync: EditorService {
             guard let record = editor.document[id], kinds.contains(record.kind) else { continue }
             came(record, changes)
         }
-        for id in changes.changed {
+        // A shape that only moved (a drag of thousands of notes) has the words and the schema it had.
+        for id in changes.changed where !changes.moved.contains(id) {
             guard let record = editor.document[id], kinds.contains(record.kind) else { continue }
             changed(record, changes)
         }

@@ -112,7 +112,8 @@ extension TypeIndex: EditorService {
             entries[id] = nil
             changed.insert(id)
         }
-        for id in changes.added.union(changes.changed) {
+        // A shape that only moved (a drag) has the schema and the name it had.
+        for id in changes.added.union(changes.changed) where !changes.moved.contains(id) {
             guard let record = editor.document[id], kinds.contains(record.kind) else { continue }
             if read(record, registry: registry) { changed.insert(id) }
         }

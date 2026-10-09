@@ -53,7 +53,9 @@ public struct TypeValidationPlugin: CanvasPlugin {
     public var id: PluginID { "type-validation" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.validateEveryShape { shape, _ in SchemaReadings.reading(of: shape)?.issues ?? [] }
+        // Only the schema's text matters, never where the shape is: a drag of a thousand notes
+        // checks none of them again for this.
+        registrar.validateEveryShape(ignoringMoves: true) { shape, _ in SchemaReadings.reading(of: shape)?.issues ?? [] }
     }
 }
 
