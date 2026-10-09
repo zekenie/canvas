@@ -12,6 +12,7 @@ extension TypedTest {
     /// Whether a property's value passes: `value` as the shape has it, its text read through its
     /// format (nil when the shape has none), and `shape` what the property's schema says it is.
     func holds(_ value: JSONValue?, shape: KindSchema.PropertyShape) -> Bool {
+        if case .path(let path) = comparison { return path.holds(value) }
         let value = value == .null ? nil : value
         if case .boolean(let fallback) = shape {
             let actual = value?.boolValue ?? fallback
@@ -38,6 +39,8 @@ extension TypedTest {
         case .prefix, .suffix, .substring, .word, .dash:
             guard let text = value.stringValue else { return false }
             return holds(text: text)
+        case .path:
+            return false
         }
     }
 

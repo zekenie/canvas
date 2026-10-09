@@ -137,6 +137,8 @@ final class Evaluation {
     private var looked: [ShapeID: Entry?] = [:]
     /// What each node and list matched among every shape.
     private var sets: [PlanNodeID: Set<ShapeID>] = [:]
+    /// Each file relation's shapes by those they're related to (`reversed`), by word.
+    private var reversedRelations: [String: [ShapeID: [ShapeID]]] = [:]
     /// Names read, named or derived: nil for none.
     private var names: [ShapeID: String?] = [:]
     /// Every name in the query's range, once read all at once, by place in file order.
@@ -783,6 +785,9 @@ final class Evaluation {
         case .relation(_, let anchor, let types, let direction):
             let anchors = try await matches(anchor, among: .all)
             return try adjacent(direction, to: anchors, types: types, among: candidates)
+        case .fileRelation(let word, let anchor):
+            let anchors = try await matches(anchor, among: .all)
+            return try related(word, to: anchors, among: candidates)
         case .dangling(let types):
             return try dangling(types, among: candidates)
         case .pseudo(let word):
@@ -829,7 +834,7 @@ final class Evaluation {
             let anchor: PlanList
             switch node.op {
             case .edges(let word, let list, _, _) where Self.oneStep.contains(word): anchor = list
-            case .relation(_, let list, _, _): anchor = list
+            case .relation(_, let list, _, _), .fileRelation(_, let list): anchor = list
             default: continue
             }
             let anchors = try await matches(anchor, among: .all)
@@ -1201,6 +1206,40 @@ final class Evaluation {
         return found
     }
 
+    /// The shapes related to an anchor by a relation answered from a fact of the file (`:is-a(S)`):
+    /// those the plugin's `related` lists the anchor among, and, when the relation is transitive,
+    /// those related to any of those, however far. Worked backward from the anchors over the
+    /// relation read forward once, breadth first, each shape once: a cycle ends where it began,
+    /// and a shape in one is related to itself.
+    private func related(_ word: String, to anchors: Set<ShapeID>, among candidates: Candidates) throws(QueryError) -> Set<ShapeID> {
+        guard case .fileRelation(let relation)? = vocabulary.contributedWords[word]?.meaning, let prepared = snapshot.words[word] else { return [] }
+        let back = try reversed(word, relation, prepared)
+        var found: Set<ShapeID> = []
+        var level = Array(anchors)
+        while !level.isEmpty {
+            var next: [ShapeID] = []
+            for shape in level {
+                try tick()
+                for before in back[shape] ?? [] where found.insert(before).inserted { next.append(before) }
+            }
+            level = relation.transitive ? next : []
+        }
+        return restrict(found.filter { entry($0) != nil }, to: candidates)
+    }
+
+    /// A file relation read forward for every shape that has any, as each shape's relatives
+    /// reversed: for a shape, those related to it directly. Once per query and word.
+    private func reversed(_ word: String, _ relation: ContributedFileRelation, _ prepared: any Sendable) throws(QueryError) -> [ShapeID: [ShapeID]] {
+        if let known = reversedRelations[word] { return known }
+        var back: [ShapeID: [ShapeID]] = [:]
+        for shape in relation.seeds(prepared) {
+            try tick()
+            for other in relation.related(shape, prepared) { back[other, default: []].append(shape) }
+        }
+        reversedRelations[word] = back
+        return back
+    }
+
     /// What a path of one edge or more, each followed as `direction` says, reaches from the
     /// anchors: an anchor only if such a path leads back to it. Breadth first, each shape once.
     private func reached(_ direction: EdgeDirection, from anchors: Set<ShapeID>, types: PlanEdgeTypes) throws(QueryError) -> Set<ShapeID> {
@@ -1481,7 +1520,7 @@ extension PlanNode {
         case .edges(_, let anchor, let second, _):
             anchor.forEachNode(body)
             second?.forEachNode(body)
-        case .relation(_, let anchor, _, _):
+        case .relation(_, let anchor, _, _), .fileRelation(_, let anchor):
             anchor.forEachNode(body)
         case .and(let nodes):
             for node in nodes { node.forEachNode(body) }

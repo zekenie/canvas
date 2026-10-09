@@ -6925,9 +6925,10 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   knows its place in the text (`QuerySpan`, in characters of the query as sent), and `canonical`,
   the one form it prints (its own words in lowercase, titles in double quotes, one space around `>`,
   no comments), which is what an answer says ran. It refuses what the text alone shows
-  (`empty_query`, `syntax`, `stray_space`, `too_long`, `too_complex`, `unsupported`, `not_built`
-  for `.Class` and `[a.b]`, `not_an_id`, and `bad_argument` for its own words), stopping at the
-  first, and knows only its own words (`Word`: `:not`,
+  (`empty_query`, `syntax`, `stray_space`, `too_long`, `too_complex`, `unsupported` (also `.Name`,
+  hinted toward a plugin's word through a `HintPremise` claim, `typeWord`), `not_built` for the
+  words people invent that are planned, `not_an_id`, and `bad_argument` for its own words),
+  stopping at the first, and knows only its own words (`Word`: `:not`,
   `:is`, `:where`, `:has`, `:inside`, `:top-level`, `:current-board`, the edge words, `:dangling`,
   `:contains`); another's argument it keeps as text for the engine to read as shapes
   (`SelectorList(argumentOf:)`, its spans in the whole query), or to refuse with the rewrite for a
@@ -6939,7 +6940,8 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   it (`unknown_kind`, `unknown_attribute`, `unknown_pseudo_class`, `unknown_edge_type`,
   `invalid_value`, `unsupported_operator`, `cannot_contain`, `no_names`; `not_built` for an
   attribute that holds a place and `=` on an object; and the words people write in brackets,
-  `[kind=…]`, `[id=…]`, `[board=…]`, with what to write), every problem that doesn't hang on another
+  `[kind=…]`, `[id=…]`, `[board=…]`, with what to write, and `[class=…]`, `unsupported` as `.Name`
+  is), every problem that doesn't hang on another
   at once, in the query's order; and answers it, refusing a title or an id no shape has
   (`unknown_title`, `unknown_id`) rather than answering none. Nothing unknown is passed over: a
   query that runs asked what it says, and a hint is most often the query to write instead. A hint
@@ -6999,8 +7001,23 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   untitled notes, since a blank title is none; `arrow[channel=""]` a plain arrow), and elsewhere
   `""` is what it always was; `[a!=v]` is `:not([a=v])`; and any other test of an absent value is
   false. With no kind named, a test applies to the kinds that have the attribute, each reading the
-  literal its own way. `[a.b]` and `=` on an object are `not_built`, and a shape's metadata
-  (`ShapeMeta`) is never an attribute.
+  literal its own way. `=` on an object is `not_built`, and a shape's metadata (`ShapeMeta`) is
+  never an attribute.
+- **Members inside an attribute: `[a.b.c]`.** `AttributeTest.path` holds the identifier members
+  after the attribute's name (a letter or `_`, then letters, digits, `-` and `_`; a quoted name has
+  none), and the printer writes them bare, `[meta.owner=Ann i]`. Only an attribute whose schema is an
+  object or any JSON has members (any other is `unknown_attribute`: "note is text, so it has no
+  members"), and the test is **untyped**: an object's members are whatever the shape holds, so each
+  test is typed by the JSON value found at the path, shape by shape (`PathTest`, a `.path`
+  comparison). A string takes the text operators, `=` and `i`, and `~=` as a word; a number takes `=`
+  and the orderings when the literal reads as a decimal number (`[a.b="30"]` is `[a.b=30]`; an
+  ordering with a literal that isn't one is `invalid_value`, and the `i` flag on it
+  `unsupported_operator`); a boolean takes `true` or `false`; an array takes `~=` for an item; any
+  other sort of value matches nothing (`[a.b^=3]` on a number). A member that is missing, null, or
+  inside something that isn't an object is no value: `[a.b]` is false, `[a.b=""]` true, and `!=`
+  is the `:not` of the test, as everywhere. Typing by the schemas of a shape's types is left for
+  later: it would make the vocabulary depend on the file, which today is built once from the
+  registry and is `Sendable`.
 - **Text as a person reads it.** A string whose schema names a media type a text format reads
   (`contentMediaType`) is tested and shown as that format makes it: mention text as plain text, each
   mention `@` and the name its target has now, or the name it holds while its target is gone, never
@@ -7211,7 +7228,7 @@ with words of their own). Without one, a query does without:
 |---|---|---|---|---|
 | `QueryNames` | `registrar.queryNames(attribute:source:named:derived:fold:)` | The attribute names are tested by; per kind, whether its shapes are named, derived or neither; a named shape's name, read anywhere; a derived one's, on the main actor; how a title a query writes is folded | No titles: a title head is `no_names`, and rows have none | TitleQueriesPlugin |
 | `QueryBoardNames` | `registrar.queryBoardNames(placeholder:)` | What an untitled owner's board is called, per kind | Its kind's label | BoardQueriesPlugin |
-| `QueryWords` | `registrar.queryPseudoClass(_:_:example:prepare:seeds:matches:onMain:)` (reads the editor; with `reads: .file` and a file-only `prepare`, no `onMain`), `querySelection(_:_:example:selected:)`, `queryRelation(_:_:example:types:direction:)` | A word: a pseudo-class, the person's selection, or a relation over edges of exactly some types | The word is `unknown_pseudo_class` | MentionQueriesPlugin, ValidationQueriesPlugin, SelectionQueriesPlugin |
+| `QueryWords` | `registrar.queryPseudoClass(_:_:example:prepare:seeds:matches:onMain:)` (reads the editor; with `reads: .file` and a file-only `prepare`, no `onMain`), `querySelection(_:_:example:selected:)`, `queryRelation(_:_:example:types:direction:)`, `queryRelation(_:_:example:reads:transitive:namesTypes:prepare:seeds:related:)` | A word: a pseudo-class, the person's selection, a relation over edges of exactly some types, or a relation answered from a fact of the file | The word is `unknown_pseudo_class` | MentionQueriesPlugin, ValidationQueriesPlugin, SelectionQueriesPlugin |
 | `QueryTextFormats` | `registrar.queryTextFormat(mediaType:describes:prepare:read:)` (and with `reads: .file`) | How strings of a `contentMediaType` read, anywhere | Text read as stored | MentionQueriesPlugin |
 | `QueryEngines` | none: `QueriesPlugin`'s mark, which only Queries makes | That the app answers queries (`registry.answersQueries`), for what has a registry and no editor | `canvas query` and `query-vocabulary` answer `no_queries` | QueriesPlugin |
 
@@ -7294,6 +7311,20 @@ registrar.querySelection(Word.selected.rawValue, "the person has it selected", e
   a shape S matches has one to the result. Its types must be ones an installed plugin declares.
   `MentionQueriesPlugin`'s follow `MentionEdge.id` alone, so a shape that mentions itself counts (Mentions'
   `isMentioned` leaves it out).
+- **A relation from a fact of the file** (`queryRelation(…, reads: .file, transitive:, namesTypes:,
+  prepare:, seeds:, related:)`) is for what a plugin keeps and edges don't say. `prepare` takes the
+  fact (`file.fact(Facts.self)`, a `QueryFileFact`, O(1)); `related(shape, fact)` lists the shapes a
+  shape is related to directly, and `seeds(fact)` every shape that has any (the only shapes that can
+  match). `:word(S)` matches the shapes related to one S matches; `transitive` also those related
+  through other shapes, however many. The engine reads `related` forward once per query and word,
+  then works backward from the anchors, breadth first, each shape once: a cycle ends where it
+  began, and a shape in one is related to itself. It reads only the file (`readsOnlyTheFile`), waits
+  for answers still arriving as an edge word does (`readsEdges`: the fact may rest on edges), and
+  with few anchors starts a compound as a one-step edge word does. A relation declared
+  `namesTypes: true` (at most one) is the word `.Name` is refused toward: `unsupported`, hinted
+  `:word("Name")` once a shape is titled so (the claim `HintPremise.Claim.typeWord`, settled with
+  the titles), else the plain `:contains("Name")` hint, and a refusal that never says "class" or
+  "schemas". `[class=Name]` is refused the same way.
 - **A text format** makes a stored string what a person reads, anywhere (`read`), with what `prepare`
   took; `describes` says so in the vocabulary, beside the attribute (`text (mentions read as
   @Name)`). Mention text reads through [`MentionState.labels`](#the-service-mentionstate), taken as
@@ -7385,8 +7416,8 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
   `:within`, and attributes that hold a place, are `not_built`), and inside is containment's (boards
   and containers on them): what's drawn within a shape's bounds isn't inside it unless it's in it
   (`cannot_contain`, for a container side that can only be kinds whose shapes hold no shapes).
-- **Shapes typed by schema cards** (`.Task`, `not_built`), attributes inside attributes (`[a.b]`),
-  and `=` on an object.
+- **`.Task` as a selector** (`unsupported`: a type is found by the word a plugin gives it) and `=` on
+  a whole object (`[a.b]` tests a member).
 - **Edges as answers.** A query lists shapes: a connection is asked for as its arrow
   (`arrow:starts-at("A"):ends-at("B")`, whose row's `connection` says where it runs), the shapes it
   runs from and to as `:start-of(arrow…)` and `:end-of(arrow…)` (the source and the target of each
@@ -12207,7 +12238,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 | `module.json` + ESLint DAG + barrel `index.ts` | `Package.swift` with layers + `build.sh audit` + the compiler; `public` is the barrel. |
 | `plugins.config.ts` | `ShippedPlugins.plugins(pasteboard:model:)` in Composition. |
 | The query DSL's `#kebab-title` | A title in double quotes, `"Checkout"`, the whole title folded, case and all, as `draw` matches it; `#` takes a shape's id alone (`#Checkout` is `not_an_id`, hinted `"Checkout"` where a shape has that title). |
-| `.Class` (`node.`, `edge.`) | Refused: `.Task` is `not_built` (shapes typed by schema cards may be one day); a kind is its id, `sticky-note`. |
+| `.Class` (`node.`, `edge.`) | Refused: `.Task` is `unsupported`, hinted toward the plugin's word that finds a type's shapes when the app has one (a relation declared `namesTypes`), else `:contains("Task")`; a kind is its id, `sticky-note`. |
 | `:source-of`, `:target-of` | `:edge-to`, `:edge-from`, the words data-canvas moved to (#87), kept with `:downstream-of` and `:upstream-of`, over Topology's typed edges; the old words are refused with the word to write. |
 | `:connected-to`, one edge until 8a4d798d, any number after it (with no message) | Picked on purpose, from the first rounds of `--ask`'s evaluation: `:connected-to(S)` is one edge either way, as "connected to" reads (Haiku 4.5 wrote it for "what's connected to Checkout?" even beside the prompt's example of `:neighbor-of`, this language's word until then, now refused with `:connected-to`), and any number of them is `:component-of(S)`, the anchor's connected component. |
 | `:has(S)`: an edge to a shape S matches | CSS's `:has`, containment: S inside it at any depth, `:has(> S)` directly inside it. The one word whose meaning moved; an edge either way is `:connected-to(S)`. |
@@ -12398,8 +12429,8 @@ Each of these adds to the design without changing what plugins are written again
   that hold a place, which are `not_built`; inside is containment's, boards and containers on them),
   and positions in rows; a word for a shape's board as rows say it (`>` is directly inside, so a
   shape in a frame on a subboard's board isn't a `>` child of the subboard, nor is one in a frame on
-  the top board `:top-level`); shapes typed by schema cards (`.Task`); attributes inside attributes
-  (`[a.b]`) and `=` on an object; ranked or
+  the top board `:top-level`); `.Task` as sugar for a plugin's type word; `=` on a whole object; typing a path by the
+  schemas of a shape's types; ranked or
   semantic search, a horizontal of its own; `--select` and `--reveal` on a query, to show the person
   what it found; a query box in the app, and saved queries; the warm cache that's the next step
   should queries asked again and again miss their budgets (a title index and attributes kept by a

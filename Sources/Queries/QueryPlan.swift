@@ -110,6 +110,9 @@ indirect enum PlanOp: Sendable {
     /// One of the language's edge words (`:edge-to` … `:between`): its anchors (`second` only for
     /// `:between`) and the edge types it follows.
     case edges(word: Word, anchor: PlanList, second: PlanList?, types: PlanEdgeTypes)
+    /// A plugin's relation answered from a fact of the file (`:is-a(S)`): the result is related to a
+    /// shape the anchor matches, as the plugin's `related` says, however far when it's transitive.
+    case fileRelation(word: String, anchor: PlanList)
     /// A plugin's relation (`:mentions(S)`): the result → S (`.outgoing`) or S → the result.
     case relation(word: String, anchor: PlanList, types: PlanEdgeTypes, direction: EdgeDirection)
     /// Carries an edge of these types whose far end isn't a shape the query ranges over.
@@ -163,6 +166,9 @@ struct TypedTest: Sendable, Equatable {
         case less(PlanValue), lessOrEqual(PlanValue), greater(PlanValue), greaterOrEqual(PlanValue)
         /// `~=` on a list: an item equals this.
         case hasItem(PlanValue)
+        /// `[a.b]` and the rest: what's at the members inside the attribute's object, typed by the
+        /// value found there (`PathTest`).
+        case path(PathTest)
     }
 
     let comparison: Comparison
@@ -273,6 +279,8 @@ extension QueryPlan: CustomStringConvertible {
             case .id(let id): lines.append(indent + "id " + id.description)
             case .attribute(let name, let readers):
                 for reader in readers {
+                    var name = name
+                    if case .path(let path) = reader.test.comparison { name += "." + path.members.joined(separator: ".") }
                     lines.append(indent + "[\(name)] of \(reader.kinds.map(\.rawValue).sorted().joined(separator: "|"))"
                                  + " \(reader.source.planDescription): \(reader.test.planDescription)")
                 }
@@ -310,6 +318,9 @@ extension QueryPlan: CustomStringConvertible {
                 if let second { list(second, depth + 1) }
             case .relation(let word, let anchor, let types, let direction):
                 lines.append(indent + "\(word) \(direction == .incoming ? "from" : "to") \(types.planDescription)")
+                list(anchor, depth + 1)
+            case .fileRelation(let word, let anchor):
+                lines.append(indent + "\(word) of the file")
                 list(anchor, depth + 1)
             case .dangling(let types): lines.append(indent + "dangling \(types.planDescription)")
             case .pseudo(let word): lines.append(indent + ":" + word)
@@ -363,6 +374,7 @@ extension TypedTest {
         case .greater(let value): "> \(value.planDescription)"
         case .greaterOrEqual(let value): ">= \(value.planDescription)"
         case .hasItem(let value): "has the item \(value.planDescription)\(flag)"
+        case .path(let path): path.planDescription
         }
     }
 }
