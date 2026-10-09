@@ -85,6 +85,10 @@ struct DrawChange: Sendable {
     /// The kind of stand-in an edge's arrow goes through, when it does: it runs into (or out of) one
     /// that stands for the end it's written to, whichever way it came to.
     var via: String?
+    /// The arrow runs to a stand-in that was there, or another edge of the run made (`share:`), and, for
+    /// `share: "A"`, the title of the shape it is beside.
+    var shared: Bool?
+    var sharedWith: String?
     /// An edge's attributes as it has them now (those DrawEdges declares), by key.
     var attributes: [String: JSON] = [:]
 }
@@ -93,7 +97,7 @@ extension DrawChange: Encodable {
     /// A row's own members, which an edge's attributes (written beside them) can't be named
     /// (`DrawEdges.check`).
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case line, did, kind, title, was, at, inView, pushedPast, from, to, via
+        case line, did, kind, title, was, at, inView, pushedPast, from, to, via, shared, sharedWith
     }
 
     private struct AttributeKey: CodingKey {
@@ -116,6 +120,8 @@ extension DrawChange: Encodable {
         try container.encodeIfPresent(from, forKey: .from)
         try container.encodeIfPresent(to, forKey: .to)
         try container.encodeIfPresent(via, forKey: .via)
+        try container.encodeIfPresent(shared, forKey: .shared)
+        try container.encodeIfPresent(sharedWith, forKey: .sharedWith)
         guard !attributes.isEmpty else { return }
         var more = encoder.container(keyedBy: AttributeKey.self)
         for (key, value) in attributes.sorted(by: { $0.key < $1.key }) { try more.encode(value, forKey: AttributeKey(stringValue: key)) }

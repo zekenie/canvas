@@ -52,11 +52,11 @@ final class AdornmentState {
     /// The adornments a shape shows, in claim order (its kind's candidates whose labels say
     /// something: text that isn't blank, or a symbol), each with its face; nil for none, and on a
     /// shape kept aside. Callers go by `editor.drawsSkeleton(of:)` first: a skeleton shows none.
-    func laidOut(_ record: AnyShapeRecord) -> LaidOutAdornments? {
+    func laidOut(_ record: AnyShapeRecord, keeping: Bool = true) -> LaidOutAdornments? {
         guard !isEmpty, !record.isOpaque else { return nil }
         let candidates = candidates(for: record.kind)
         guard !candidates.isEmpty else { return nil }
-        let isHeard = heardRevision == editor.revision
+        let isHeard = keeping && heardRevision == editor.revision
         if isHeard, let known = kept[record.id] { return known.shown.isEmpty ? nil : known }
         let context = AdornmentContext(editor: editor)
         let shown = candidates.compactMap { candidate in

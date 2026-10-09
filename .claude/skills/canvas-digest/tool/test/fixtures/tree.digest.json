@@ -1,0 +1,410 @@
+{
+ "title": "Shop platform",
+ "policy": {
+  "mess": 0.1
+ },
+ "nodes": [
+  {
+   "title": "Backend",
+   "kind": "subboard",
+   "text": "The services and the stores behind them."
+  },
+  {
+   "title": "Services",
+   "kind": "frame",
+   "in": "Backend"
+  },
+  {
+   "title": "Auth",
+   "kind": "frame",
+   "in": "Services"
+  },
+  {
+   "title": "Stores",
+   "kind": "frame",
+   "in": "Backend"
+  },
+  {
+   "title": "Login",
+   "kind": "sticky-note",
+   "in": "Auth",
+   "text": "Checks a password and starts a session."
+  },
+  {
+   "title": "Sessions",
+   "kind": "sticky-note",
+   "in": "Auth",
+   "text": "Holds who is signed in."
+  },
+  {
+   "title": "Tokens",
+   "kind": "sticky-note",
+   "in": "Auth",
+   "text": "Signs and verifies access tokens."
+  },
+  {
+   "title": "Passwords",
+   "kind": "sticky-note",
+   "in": "Auth",
+   "text": "Hashes and checks passwords."
+  },
+  {
+   "title": "Orders",
+   "kind": "sticky-note",
+   "in": "Services",
+   "text": "The orders service."
+  },
+  {
+   "title": "Billing",
+   "kind": "sticky-note",
+   "in": "Services",
+   "text": "The billing service."
+  },
+  {
+   "title": "Catalog",
+   "kind": "sticky-note",
+   "in": "Services",
+   "text": "The catalog service."
+  },
+  {
+   "title": "Search",
+   "kind": "sticky-note",
+   "in": "Services",
+   "text": "The search service."
+  },
+  {
+   "title": "Notifications",
+   "kind": "sticky-note",
+   "in": "Services",
+   "text": "The notifications service."
+  },
+  {
+   "title": "Orders DB",
+   "kind": "sticky-note",
+   "in": "Stores",
+   "text": "Where orders db keeps its data."
+  },
+  {
+   "title": "Catalog DB",
+   "kind": "sticky-note",
+   "in": "Stores",
+   "text": "Where catalog db keeps its data."
+  },
+  {
+   "title": "Search index",
+   "kind": "sticky-note",
+   "in": "Stores",
+   "text": "Where search index keeps its data."
+  },
+  {
+   "title": "Cache",
+   "kind": "sticky-note",
+   "in": "Stores",
+   "text": "Where cache keeps its data."
+  },
+  {
+   "title": "Clients",
+   "kind": "frame"
+  },
+  {
+   "title": "Web app",
+   "kind": "sticky-note",
+   "in": "Clients",
+   "text": "A client of the API."
+  },
+  {
+   "title": "Mobile app",
+   "kind": "sticky-note",
+   "in": "Clients",
+   "text": "A client of the API."
+  },
+  {
+   "title": "Admin console",
+   "kind": "sticky-note",
+   "in": "Clients",
+   "text": "A client of the API."
+  },
+  {
+   "title": "Gateway",
+   "kind": "sticky-note",
+   "text": "Every client call comes through here."
+  },
+  {
+   "title": "Monitoring",
+   "kind": "frame"
+  },
+  {
+   "title": "Metrics",
+   "kind": "sticky-note",
+   "in": "Monitoring",
+   "text": "The metrics side."
+  },
+  {
+   "title": "Alerts",
+   "kind": "sticky-note",
+   "in": "Monitoring",
+   "text": "The alerts side."
+  },
+  {
+   "title": "Dashboards",
+   "kind": "sticky-note",
+   "in": "Monitoring",
+   "text": "The dashboards side."
+  },
+  {
+   "title": "Logs",
+   "kind": "sticky-note",
+   "in": "Monitoring",
+   "text": "The logs side."
+  },
+  {
+   "title": "Runbook",
+   "kind": "sticky-note",
+   "text": "What to do when an alert fires."
+  }
+ ],
+ "edges": [
+  {
+   "from": "Web app",
+   "to": "Gateway",
+   "text": "calls"
+  },
+  {
+   "from": "Mobile app",
+   "to": "Gateway",
+   "text": "calls"
+  },
+  {
+   "from": "Admin console",
+   "to": "Gateway",
+   "text": "calls"
+  },
+  {
+   "from": "Gateway",
+   "to": "Orders",
+   "text": "routes to"
+  },
+  {
+   "from": "Gateway",
+   "to": "Billing",
+   "text": "routes to"
+  },
+  {
+   "from": "Gateway",
+   "to": "Catalog",
+   "text": "routes to"
+  },
+  {
+   "from": "Gateway",
+   "to": "Search",
+   "text": "routes to"
+  },
+  {
+   "from": "Gateway",
+   "to": "Notifications",
+   "text": "routes to"
+  },
+  {
+   "from": "Orders",
+   "to": "Login",
+   "text": "needs a session"
+  },
+  {
+   "from": "Billing",
+   "to": "Login",
+   "text": "needs a session"
+  },
+  {
+   "from": "Catalog",
+   "to": "Login",
+   "text": "needs a session"
+  },
+  {
+   "from": "Search",
+   "to": "Login",
+   "text": "needs a session"
+  },
+  {
+   "from": "Notifications",
+   "to": "Login",
+   "text": "needs a session"
+  },
+  {
+   "from": "Gateway",
+   "to": "Login",
+   "text": "needs a session"
+  },
+  {
+   "from": "Login",
+   "to": "Sessions"
+  },
+  {
+   "from": "Login",
+   "to": "Passwords"
+  },
+  {
+   "from": "Login",
+   "to": "Tokens"
+  },
+  {
+   "from": "Sessions",
+   "to": "Tokens"
+  },
+  {
+   "from": "Orders",
+   "to": "Orders DB"
+  },
+  {
+   "from": "Catalog",
+   "to": "Catalog DB"
+  },
+  {
+   "from": "Search",
+   "to": "Search index"
+  },
+  {
+   "from": "Search",
+   "to": "Catalog DB"
+  },
+  {
+   "from": "Orders",
+   "to": "Cache"
+  },
+  {
+   "from": "Catalog",
+   "to": "Cache"
+  },
+  {
+   "from": "Billing",
+   "to": "Orders"
+  },
+  {
+   "from": "Orders",
+   "to": "Metrics"
+  },
+  {
+   "from": "Billing",
+   "to": "Metrics"
+  },
+  {
+   "from": "Catalog",
+   "to": "Metrics"
+  },
+  {
+   "from": "Search",
+   "to": "Metrics"
+  },
+  {
+   "from": "Notifications",
+   "to": "Metrics"
+  },
+  {
+   "from": "Gateway",
+   "to": "Metrics"
+  },
+  {
+   "from": "Login",
+   "to": "Metrics"
+  },
+  {
+   "from": "Metrics",
+   "to": "Alerts"
+  },
+  {
+   "from": "Alerts",
+   "to": "Dashboards"
+  },
+  {
+   "from": "Alerts",
+   "to": "Runbook"
+  },
+  {
+   "from": "Logs",
+   "to": "Dashboards"
+  },
+  {
+   "from": "Gateway",
+   "to": "Logs"
+  },
+  {
+   "from": "Billing",
+   "to": "Cache",
+   "text": "caches in"
+  },
+  {
+   "from": "Search",
+   "to": "Cache",
+   "text": "caches in"
+  },
+  {
+   "from": "Notifications",
+   "to": "Cache",
+   "text": "caches in"
+  },
+  {
+   "from": "Login",
+   "to": "Cache",
+   "text": "caches in"
+  },
+  {
+   "from": "Sessions",
+   "to": "Cache",
+   "text": "caches in"
+  },
+  {
+   "from": "Tokens",
+   "to": "Cache",
+   "text": "caches in"
+  },
+  {
+   "from": "Orders DB",
+   "to": "Cache",
+   "text": "caches in"
+  },
+  {
+   "from": "Catalog DB",
+   "to": "Cache",
+   "text": "caches in"
+  },
+  {
+   "from": "Search index",
+   "to": "Cache",
+   "text": "caches in"
+  },
+  {
+   "from": "Orders",
+   "to": "Tokens",
+   "text": "signs with"
+  },
+  {
+   "from": "Billing",
+   "to": "Tokens",
+   "text": "signs with"
+  },
+  {
+   "from": "Catalog",
+   "to": "Tokens",
+   "text": "signs with"
+  },
+  {
+   "from": "Notifications",
+   "to": "Tokens",
+   "text": "signs with"
+  },
+  {
+   "from": "Passwords",
+   "to": "Tokens",
+   "text": "signs with"
+  },
+  {
+   "from": "Search index",
+   "to": "Tokens",
+   "text": "signs with"
+  },
+  {
+   "from": "Cache",
+   "to": "Tokens",
+   "text": "signs with"
+  }
+ ]
+}

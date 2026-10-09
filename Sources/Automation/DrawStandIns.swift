@@ -53,6 +53,19 @@ struct NewStandIn {
     let id: ShapeID
     let place: EdgePlace
     let kind: ShapeKind
+    /// The edge reuses a stand-in that was there, or an earlier edge of the run made (`share:`), and
+    /// the title of the shape it is beside, when the edge named it (`share: "A"`).
+    var shared = false
+    var sharedWith: String?
+}
+
+/// A stand-in the run made for an edge, for `share:` to find: the shape it stands for, the container
+/// the edge's other end was in when it was made, and its kind.
+struct MadeStandIn {
+    let id: ShapeID
+    let stoodFor: ShapeID
+    let container: ShapeID?
+    let kind: ShapeKind
 }
 
 /// An end of an edge, as the decision whether the edge goes through a stand-in reads it.
@@ -93,6 +106,12 @@ extension Drawing {
 
     /// The kind `via:` names, if it's one that can be made to stand for a shape.
     func standInKind(named word: String, _ statement: Statement, written: String) throws(AutomationError) -> ShapeKind {
+        try Self.standInKind(named: word, among: standIns, statement, written: written)
+    }
+
+    /// The same for whoever has the registry's stand-ins and no run (`canvas measure`).
+    static func standInKind(named word: String, among standIns: StandIns?, _ statement: Statement,
+                            written: String) throws(AutomationError) -> ShapeKind {
         let makers = standIns?.makers ?? []
         guard let kind = makers.first(where: { $0.rawValue == word }) else {
             let key = EdgeKey.via.rawValue
@@ -234,7 +253,20 @@ extension Drawing {
         case (.here, .away):
             stoodFor = .to
         case (.here, .here):
-            guard via != nil else { return nil }
+            guard via != nil else {
+                // Nothing here sends it through a stand-in, so there is none to share: but an edge drawn
+                // through one already is the edge, and a run again says so (`connect`).
+                if edge.share != nil {
+                    let drawn = boardConnections().filter { !deleted.contains($0.record.id) }
+                    guard edgeMatches(from: from.id, to: to.id, bothHeads: edge.bothHeads, among: drawn, in: target.document).contains(where: { $0.standIn != nil }) else {
+                        let key = EdgeKey.share.rawValue, kind = standInKinds.first
+                        throw AutomationError(statement, .invalidValue,
+                                              "\(written): \(key): is for an edge that goes through \(kind.map(indefinite) ?? "a stand-in"), and this one is drawn straight",
+                                              hint: (kind.map { "write \(EdgeKey.via.rawValue): \($0) to put one beside its start, or " } ?? "") + "leave \(key): out")
+                    }
+                }
+                return nil
+            }
             stoodFor = .to
         }
 
@@ -292,11 +324,115 @@ extension Drawing {
         // Drawn straight already, which `via:` has asked to be through one: left as it is (`connect` says).
         guard matches.isEmpty else { return nil }
 
+        // `share:` reuses a stand-in for the same end rather than make another; a named host that has none
+        // is refused, never silently given a stand-in of its own. Said by the edge's row (`shared`).
+        let container = containerOfEnd(nearID, item: nearItem)
+        if let share = edge.share,
+           let found = try sharedStandIn(share, for: standEnd.record, kind: kind, near: (nearID, nearItem), container: container,
+                                         written: written, standTitle: standTitle, nearTitle: nearTitle, statement) {
+            return NewStandIn(id: found.id, place: stoodFor, kind: kind, shared: true, sharedWith: found.host)
+        }
+
         // Said by the edge's row alone (`via`), with `via:` or without: a warning for each edge between
         // boards would bury the warnings that need reading.
         let id = try addStandIn(kind, for: standEnd.record, called: standTitle, beside: nearID, item: nearItem, title: nearTitle,
                                 nearIs: nearPlace, side: nearPlace == .from ? edge.fromSide : edge.toSide, statement)
+        madeStandIns.append(MadeStandIn(id: id, stoodFor: standEnd.record.id, container: container, kind: kind))
         return NewStandIn(id: id, place: stoodFor, kind: kind)
+    }
+
+    // MARK: Sharing a stand-in
+
+    /// The kinds that can be made to stand for a shape, by name, for a message.
+    private var standInKinds: [String] { (standIns?.makers ?? []).map(\.rawValue) }
+
+    /// The innermost container of an end that stays on the board, a shape of the board or of the run: the
+    /// frame it is in (a shape the script draws `in` one, else where a shape restated sits), nil for the
+    /// board outside frames. Where a shape the script places lands by its placements isn't known here.
+    private func containerOfEnd(_ id: ShapeID, item: Int?) -> ShapeID? {
+        let kinds = registry.containingKinds
+        guard !kinds.isEmpty else { return nil }
+        if let item {
+            if let holder = items[item].holder { return holder.id }
+            return items[item].existing.flatMap { target.document.container(of: $0.id, containingKinds: kinds) }
+        }
+        return target.document.container(of: id, containingKinds: kinds)
+    }
+
+    /// The shape a stand-in stands for: one this run made, or one the board has (a direct one, standing
+    /// for exactly one shape).
+    private func standingFor(_ id: ShapeID) -> ShapeID? {
+        if let made = madeStandIns.first(where: { $0.id == id }) { return made.stoodFor }
+        let end = Self.effective(id, in: target.document, standIns)
+        return end.standIn == nil ? nil : end.id
+    }
+
+    /// The board's direct stand-ins by the shape each stands for, in document order: found in one pass
+    /// the first time `share` asks.
+    private mutating func boardStandIns(for stoodFor: ShapeID) -> [ShapeID] {
+        if boardStandInsByEnd == nil {
+            var found: [ShapeID: [ShapeID]] = [:]
+            for record in target.document.shapes {
+                let end = Self.effective(record.id, in: target.document, standIns)
+                if end.standIn != nil { found[end.id, default: []].append(record.id) }
+            }
+            boardStandInsByEnd = found
+        }
+        return boardStandInsByEnd?[stoodFor] ?? []
+    }
+
+    /// The stand-in `share` names, if there is one: for `share: true`, a direct stand-in of `kind` for the
+    /// same end, in the same container as the end that stays, which the board has (the first) or an
+    /// earlier edge of the run made; for `share: "A"`, the one A's own arrow goes into, A being in that
+    /// container. Nil for `share: true` with none; a named host with none is refused.
+    private mutating func sharedStandIn(_ share: EdgeShare, for end: AnyShapeRecord, kind: ShapeKind, near: (id: ShapeID, item: Int?),
+                                        container: ShapeID?, written: String, standTitle: String, nearTitle: String,
+                                        _ statement: Statement) throws(AutomationError) -> (id: ShapeID, host: String?)? {
+        let key = EdgeKey.share.rawValue
+        let kinds = registry.containingKinds
+        switch share {
+        case .any:
+            for pill in boardStandIns(for: end.id) where !deleted.contains(pill) {
+                guard let record = target.document[pill], record.kind == kind,
+                      (kinds.isEmpty ? nil : target.document.container(of: pill, containingKinds: kinds)) == container else { continue }
+                return (pill, nil)
+            }
+            if let made = madeStandIns.first(where: { $0.stoodFor == end.id && $0.kind == kind && $0.container == container }) {
+                return (made.id, nil)
+            }
+            return nil
+        case .beside(let host):
+            let title = try folded(host, statement)
+            var hostID: ShapeID?, hostItem: Int?
+            if let index = itemByTitle[title] {
+                hostID = items[index].record.id
+                hostItem = index
+            } else if unresolved.contains(title) {
+                throw skip()
+            } else if let record = try boardShape(called: title, statement) {
+                hostID = record.id
+            }
+            guard let hostID else { throw notFound(title, statement, for: "\(written): \(key): names", elsewhere: false) }
+            guard hostID != near.id else {
+                throw AutomationError(statement, .invalidValue, "\(written): \(key): \(quoted(title)) is the edge's own end",
+                                      hint: "name another shape whose arrow goes into the reference, or write \(key): true")
+            }
+            guard containerOfEnd(hostID, item: hostItem) == container else {
+                throw AutomationError(statement, .invalidValue, "\(written): \(key): \(quoted(title)) and \(quoted(nearTitle)) aren't in the same container",
+                                      hint: "a reference is shared by shapes in one frame, or none: put them in the same one, or leave \(key): out")
+            }
+            func stands(_ pill: ShapeID) -> Bool {
+                standingFor(pill) == end.id && (madeStandIns.first { $0.id == pill }?.kind ?? target.document[pill]?.kind) == kind
+            }
+            // The host's arrows: those of the run (a reference it made or shared), then the board's.
+            for other in edges {
+                guard let standIn = other.standIn, standIn.kind == kind, (standIn.place == .from ? other.to : other.from) == hostID, stands(standIn.id) else { continue }
+                return (standIn.id, title)
+            }
+            for pill in connected(to: hostID) where !deleted.contains(pill) && stands(pill) { return (pill, title) }
+            throw AutomationError(statement, .invalidValue, "\(written): \(key): \(quoted(title)) has no \(kind) to \(quoted(standTitle)) beside it",
+                                  hint: "draw an edge between \(quoted(title)) and \(quoted(standTitle)) above this line, in this run or an earlier one; or write \(key): true, or leave \(key): out")
+        }
     }
 
     /// Adds a stand-in for `target`, called `label`, as a new shape of the run beside the shape `near`

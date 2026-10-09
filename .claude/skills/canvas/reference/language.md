@@ -26,6 +26,7 @@ The examples on this page are one story. They run in order on one empty board: e
 - [References](#references)
 - [How a run is applied](#how-a-run-is-applied)
 - [The result](#the-result)
+- [Measuring a script](#measuring-a-script)
 - [Errors](#errors)
 - [What canvas kinds says](#what-canvas-kinds-says)
 - [What the language refuses](#what-the-language-refuses)
@@ -188,7 +189,7 @@ The shipped kinds' attributes:
 - **reference**: `query` (a query in the query language: the pill stands for what it finds, and one the app can't read is `invalid_value` with its message), `all` (`true` stands for every match, `false`, the default, for the first in file order), `locked`. What it names and the words typed into it are the user's, from picking a shape and typing: a script can't write them (`unknown_attribute`). A reference is never public, and has no title. A direct one, standing for the shape on the far side of an edge, is what an edge between boards draws for itself ([Through a reference](#through-a-reference)).
 - **A note's `text`** can mention shapes by title: `@[Title]` is a mention of the shape called Title, which the note shows as a live pill with that shape's name now ([A text that mentions shapes](#a-text-that-mentions-shapes)). Anything else in it is kept as written.
 - **`locked: true`** locks a shape, as the context menu's Lock does. A locked shape refuses every later change (`read_only`). Leave locking to the user.
-- **`public: true`** makes a shape public: one another shape may stand for, so what points at it needn't be an arrow from everywhere. `public: false` takes it back. It's the user's call, like locking: leave it be unless asked.
+- **`public: true`** makes a shape public: one another shape may stand for, so what points at it needn't be an arrow from everywhere. `public: false` takes it back. It's the user's call, like locking: leave it be unless asked. The exception is [canvas-digest](../../canvas-digest/SKILL.md), which makes public only the shapes it creates, in its own runs, and reports them.
 
 A value past a bound (a title over 80 characters, say) isn't refused. The shape is drawn and the bound comes back as a warning. A value of the wrong type is `invalid_value`, naming the attribute and what it takes. So is a word outside a set, which also gets a Did you mean. A key the kind doesn't have is `unknown_attribute`, which lists what the kind takes and names the kinds that do have the key, if any. A property that holds an object or a list (none of the shipped kinds has one) takes JSON on one line, which replaces the whole property, so write every member; a value of the wrong type anywhere inside it, or a member it doesn't have, is `invalid_value` too, never dropped.
 
@@ -523,13 +524,14 @@ Both ends are titles: shapes on the board, or shapes the same script draws; one 
 | `from:` | `top`, `right`, `bottom` or `left`: the side the start leaves from |
 | `to:` | `top`, `right`, `bottom` or `left`: the side the end arrives on |
 | `via:` | `reference`: the kind of shape the edge goes through ([Through a reference](#through-a-reference)) |
+| `share:` | `true`, or the title of a shape: the edge's reference is one that's there already ([Through a reference](#through-a-reference)) |
 | `channel:` | a channel's id, or `none` for a plain arrow |
 | `text:` | what the arrow says, quoted, set on its line (`text: "calls"`) |
 | `labelPosition:` | where its text sits along it: `0` at its start, `1` at its end, `0.5` (halfway) by default |
 | `bend:` | how far its middle is pushed off the straight line, in world units; `0` is straight |
 | `locked:` | `true` or `false` |
 
-Beside `from:`, `to:`, `via:` and `channel:`, an edge's attributes are the arrow's, as `build/canvas kinds arrow` lists them, written as a shape's are. Its heads aren't among them: the arrow you write (`->`, `<->`) says them, and `startArrowhead:` or `endArrowhead:` saying otherwise is `invalid_value`. Text goes after `text:`; a quoted string right after the edge is `syntax`. An edge takes no placement (it goes where its ends are) and no style. Chains (`edge "A" -> "B" -> "C"`) are refused: write each edge on a line of its own.
+Beside `from:`, `to:`, `via:`, `share:` and `channel:`, an edge's attributes are the arrow's, as `build/canvas kinds arrow` lists them, written as a shape's are. Its heads aren't among them: the arrow you write (`->`, `<->`) says them, and `startArrowhead:` or `endArrowhead:` saying otherwise is `invalid_value`. Text goes after `text:`; a quoted string right after the edge is `syntax`. An edge takes no placement (it goes where its ends are) and no style. Chains (`edge "A" -> "B" -> "C"`) are refused: write each edge on a line of its own.
 
 ### Sides
 
@@ -676,7 +678,31 @@ edge "Load" -> "Cutoff"
 edge "Load" -> "Cutoff" to: top
 ```
 
-**Deleting.** `delete edge "A" -> "B"` takes such an arrow, and `delete "A"` takes all of A's; either takes a reference like this one (standing for one shape) that it leaves with no arrow at all too, since a reference has no title for a script to delete it by ([Deleting](#deleting)). The reference and the arrow are one run and one step of undo, and a dry run says the same as the real one.
+**Sharing one.** Each edge through a reference makes a reference of its own, so five shapes that point at Cutoff have five. `share:` makes them one. It goes on an edge that goes through a reference (across two boards, or with `via:`), and takes two values:
+
+- **`share: true`** draws the arrow into a reference that's there already for the same end: one a line above in this run made, or one the board has (a person's, or an earlier run's), in the same container as the end of the edge that stays on the board: the same frame, or the board, when neither is in a frame. If there's none, it makes one beside the start, as without `share:`.
+- **`share: "A"`** draws the arrow into the reference A's own arrow goes into, for the same end. A must be in the same container as the edge's start, and its edge must be above this line, in this run or an earlier one. A that has no such reference is `invalid_value`, naming A and the end: a reference is never made behind the name of another's. Use it when a frame has several references for one end and the arrow should go to a particular one (the one beside A).
+
+Load's reference for Cutoff is there already, made beside Load by the run above, so Ingest and Clean join it rather than make two more:
+
+```draw
+edge "Ingest" -> "Cutoff" share: true
+edge "Clean" -> "Cutoff" share: "Load"
+```
+
+The arrows' rows say `shared: true` (a reference was reused), and, for `share: "Load"`, `sharedWith: "Load"`. The first edge of a group, the one that made the reference, says neither. A reference that nothing was reused for is made where it always was. A run again finds each arrow drawn and says `unchanged` with the same flags (`shared` is then true when an arrow from another shape runs to the same reference). A reference is shared only between shapes in one container, so `share:` never reaches into or out of a frame, and one edge that goes straight (both ends on the board, no `via:`) has none to share, which is `invalid_value`:
+
+```draw-error
+// reason: invalid_value
+edge "Draft" -> "Cutoff" share: "Retry"
+```
+
+```draw-error
+// reason: invalid_value
+edge "Draft" -> "Review" share: true
+```
+
+**Deleting.** `delete edge "A" -> "B"` takes such an arrow, and `delete "A"` takes all of A's; either takes a reference like this one (standing for one shape) that it leaves with no arrow at all too, since a reference has no title for a script to delete it by ([Deleting](#deleting)). A reference several arrows share stays until the last of them goes. The reference and the arrow are one run and one step of undo, and a dry run says the same as the real one.
 
 ## Styles
 
@@ -737,7 +763,7 @@ sticky-note "Nightly schedule" title: "Nightly run"
 `delete "X"` removes the shape and every connection with an end on it, each reported as its own `deleted` row: one to another shape with `from` and `to` (one into a reference that stands for one shape, as an edge's does, with `via: "reference"` and that shape as its end), and one whose other end is free (re-aimed off every shape) with neither. `delete edge "A" -> "B"` removes the connections from A to B, and `delete edge "A" <-> "B"` removes them either way round.
 
 - An unknown title is `unknown_title`. `delete edge` with nothing to delete is `nothing_to_delete`. A locked shape or connection is `read_only`.
-- **An edge drawn through a reference** is still the edge from A to B ([Through a reference](#through-a-reference)): `delete edge "A" -> "B"` removes the arrow between one end and a reference that stands for the other (its row has `via`), either way round for `<->`, and `delete "A"` removes A's arrows, those into references too; then each reference that stands for one shape (as an edge's does) and is left with no arrow at all goes, as a row of its own after the arrows'; one that still has an arrow stays, and so does one drawn by its `query:`. The shapes a reference stood for stay. A reference that's locked, or in a locked frame, is `read_only`, and nothing is deleted.
+- **An edge drawn through a reference** is still the edge from A to B ([Through a reference](#through-a-reference)): `delete edge "A" -> "B"` removes the arrow between one end and a reference that stands for the other (its row has `via`), either way round for `<->`, and `delete "A"` removes A's arrows, those into references too; then each reference that stands for one shape (as an edge's does) and is left with no arrow at all goes, as a row of its own after the arrows'; one that still has an arrow stays (a reference shared by several edges goes with the last), and so does one drawn by its `query:`. The shapes a reference stood for stay. A reference that's locked, or in a locked frame, is `read_only`, and nothing is deleted.
 - A shape that holds a board (a subboard) takes its board with it, and every board under that, with everything on them. That isn't refused: a warning says how much went (`"Payments" held a board, and 1 more under it: the 4 shapes on them are deleted with it`), and Undo brings it all back. One whose board, or a board under it, holds a locked shape isn't deleted (`read_only`: `"Payments" holds a read-only shape (locked, say) on its board, so it can't be deleted`).
 - `delete edge "A" -> "B"` after `delete "A"` asks for what the delete already does, and is fine, as it is the other way round: A's connections go with it, on the delete's row.
 - A shape the script deletes can't be a target in the same script, unless the script draws it again.
@@ -808,7 +834,7 @@ An illustration (not the board on this page):
 
 - **`board`**: the file it ran on, as `build/canvas boards` lists it: its `id` and `name`, and the board inside it the window shows, `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (from the root down).
 - **`on`**: the board the script drew on ([Which board](#which-board)): `board` (`"root"`, or the id of the shape that holds it), that shape's `title`, and whether the window `shown` it.
-- **`changes`**: a row for each thing done, with its `line`. `did` is `created`, `updated`, `moved`, `renamed`, `unchanged`, `deleted`, `connected` or `reconnected`. A shape's row has its `kind` and `title`, and `at`, its bounds as `[[x, y], [width, height]]` in world units (top-left first, y down). A connection's row has `from`, `to` and `channel` (if it's on one) instead, and `via: "reference"` when it goes through one ([Through a reference](#through-a-reference)). A reference an edge made has a row of its own on the edge's line, before the edge's: `created`, with `kind: "reference"` and `at`, and no title. One a delete took (`delete edge`, or `delete` of a shape whose arrows ran into it) is a `deleted` row with its kind alone, after the arrows'. No ids appear anywhere, because titles are the names.
+- **`changes`**: a row for each thing done, with its `line`. `did` is `created`, `updated`, `moved`, `renamed`, `unchanged`, `deleted`, `connected` or `reconnected`. A shape's row has its `kind` and `title`, and `at`, its bounds as `[[x, y], [width, height]]` in world units (top-left first, y down). A connection's row has `from`, `to` and `channel` (if it's on one) instead, and `via: "reference"` when it goes through one, with `shared: true` when its reference was one that was there already and `sharedWith` the title of the shape it was beside when the edge named one (`share:`) ([Through a reference](#through-a-reference)). A reference an edge made has a row of its own on the edge's line, before the edge's: `created`, with `kind: "reference"` and `at`, and no title. One a delete took (`delete edge`, or `delete` of a shape whose arrows ran into it) is a `deleted` row with its kind alone, after the arrows'. No ids appear anywhere, because titles are the names.
 - **`inView`**: whether the shape landed in the window (on a board the window doesn't show, in the part of it the window shows when it's opened).
 - **`pushedPast`**: what the shape was pushed past to keep clear ([Keeping clear](#keeping-clear)).
 - **`was`**: a renamed shape's old title.
@@ -829,6 +855,21 @@ The run succeeds with these **warnings**, each with its `severity`, the `line` o
 - a deleted subboard's board, and what was on it.
 
 As text, for a person at a terminal, each row leads with its line and what it did, and warnings are printed whole, their message last.
+
+## Measuring a script
+
+`build/canvas measure <script>|-` takes a script as `draw` does and says how big its shapes would be, without drawing anything. It is for a tool that lays shapes out before it draws them, and has nothing to do with writing a script by hand. It reads nothing on any board and changes none, opens no undo step, and takes no `--board`. Where shapes go is ignored: placements, `in` and `delete` do nothing, and a placement against a shape that isn't there isn't an error. A script `draw` can't read is refused with `draw`'s own messages. The answer is one JSON object:
+
+```json
+{"shapes": [{"line": 1, "title": "Checkout v2", "kind": "sticky-note", "size": [300, 200], "above": 27}],
+ "references": [{"line": 4, "for": "Hub", "size": [91, 32]}],
+ "constants": {"gaps": {"none": 0, "tight": 40, "normal": 80, "wide": 160}, "defaultGap": 80, "listStep": 64, "referenceStep": 16,
+               "horizontalClearance": 40, "verticalClearance": 64, "frameInset": 40, "smallest": {"frame": [96, 64]}}}
+```
+
+- **`shapes`**: a row for each shape statement, with its `line` and `kind`. `size` is `[width, height]` as `draw` would make it: the kind's own size or the one written, and a note's or a schema card's height from its text (a width alone, `size: 300x`, the height that follows). `title` is the one `draw` would report (a schema card's is its schema's); `above` is how far the shape's title row and chips reach above its top edge, in world units at 100% zoom (27 for a shape with a title: 9 clear, 18 tall; 0 for one with none, or too narrow to show it).
+- **`references`**: a row for each edge that says `via:`, with its `line`, `for`, the end the reference stands for, and `size`, the pill `draw` would make for that title (at most 280 wide). An edge without `via:` has none: whether it goes through a reference depends on the boards, which `measure` doesn't read.
+- **`constants`**: what placement is done with, read from the same source `draw` is. `gaps` are the named gaps (`gap: tight`); `defaultGap` how far apart a placement holds two boxes when nothing says (a reference from its start); `listStep` the step between the members of a list, and `referenceStep` between the references beside one shape; `horizontalClearance` and `verticalClearance` what two boxes pushed apart are left; `frameInset` how far `in "F"` puts what it holds from F's top-left corner; `smallest` the least size of each kind that has one, which a `size:` under is refused.
 
 ## Errors
 
@@ -851,7 +892,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `unknown_kind` | The first word isn't a kind the app has. `node "Web"`, with the drawable kinds listed, and the one like it named (`note`: `did you mean sticky-note?`) | Use a kind from `build/canvas kinds`. |
 | `not_placeable` | The kind exists but no tool places it, like an arrow. | Draw an arrow as `edge "A" -> "B"`. |
 | `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, locked:, public:, text:` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
-| `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on schema-link`) · a head its arrow doesn't say (`edge "A" -> "B": startArrowhead: true isn't what the edge as written says`) · a mention in a text of a shape it can't mention (`"Row": prompt: "Ingest" is a sticky-note, which this text can't mention: it mentions only schema-card shapes`), or `@[]` with no title (its hint, like `unknown_title`'s, says how to write the characters `@[`; the others' say how to mend the mention) · `via:` with a kind that stands for nothing (`edge "A" -> "B": via: tile isn't a kind of shape that stands for others`, the hint listing the kinds that do) or for a shape that can't be stood for (`edge "Ingest" -> "Clean": via: reference can't stand for "Clean": only a public shape can be stood for`) · `via:` over an edge drawn straight (`the edge "A" -> "B" is drawn straight to "B"`) or through a reference to the other end · a side named for a reference that has no port on it (`to: top: a reference has no ports on its top`) | Write a value of the kind the hint names. |
+| `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on schema-link`) · a head its arrow doesn't say (`edge "A" -> "B": startArrowhead: true isn't what the edge as written says`) · a mention in a text of a shape it can't mention (`"Row": prompt: "Ingest" is a sticky-note, which this text can't mention: it mentions only schema-card shapes`), or `@[]` with no title (its hint, like `unknown_title`'s, says how to write the characters `@[`; the others' say how to mend the mention) · `via:` with a kind that stands for nothing (`edge "A" -> "B": via: tile isn't a kind of shape that stands for others`, the hint listing the kinds that do) or for a shape that can't be stood for (`edge "Ingest" -> "Clean": via: reference can't stand for "Clean": only a public shape can be stood for`) · `via:` over an edge drawn straight (`the edge "A" -> "B" is drawn straight to "B"`) or through a reference to the other end · a side named for a reference that has no port on it (`to: top: a reference has no ports on its top`) · `share:` with a value that isn't `true` or a title (`share: false`), on an edge drawn straight (`edge "A" -> "B": share: is for an edge that goes through a reference, and this one is drawn straight`), naming the edge's own start, or a shape that has no reference for the end (`edge "Draft" -> "Cutoff": share: "Retry" has no reference to "Cutoff" beside it`) or isn't in the start's container | Write a value of the kind the hint names. For `share:`, draw the host's edge above the line, or write `share: true`, or leave `share:` out. |
 | `duplicate` | Something is written twice. `"locked" is written twice (true, false)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice | Keep one. |
 | `unknown_title` | No shape has that title. `right of "Injest"`, with up to 3 near titles · `board` on an empty board · a mention in a text, `"Plan": text: there's no shape called "Lod"` · a title only a shape the script deletes has, `"Plan": text: names "Old", which this script deletes` | Write the title exactly (`did you mean "Ingest"?`). On an empty board, leave one shape unplaced instead. If a text meant the characters `@[`, write `\\@[`. |
 | `ambiguous_title` | Two or more shapes have the title, each listed with its kind and where it is · the title is on two boards, neither the one the window shows: `"Retry" is on 2 boards: "Payments"'s board and "Billing"'s board` · a mention in a text of a title two shapes have where it's first found (`the board has 2 shapes called "Address": …`) | Ask the user to rename one. Titles only work as names while each is used once. For two boards, say which with `in "Payments"`. |

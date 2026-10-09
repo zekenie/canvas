@@ -87,6 +87,23 @@ public struct AutomationPlugin: CanvasPlugin {
         ) { params, context throws(AutomationError) in
             try kinds(params, in: context.registry)
         }
+        registrar.automationCommand(
+            "measure", "Say how big a draw script's shapes would be, and what they reach, without drawing it.",
+            discussion: """
+                Takes a script as `draw` does and answers for each shape statement the size draw would make it \
+                (a note as tall as its text at its width), how far its title's pill and chips reach above it, and, \
+                for each edge that says via:, the size of the reference draw would put beside its start; and the \
+                constants placement is done with (every named gap, the step between references, how far in a \
+                frame's content sits, the smallest sizes). Where shapes go is ignored. It reads nothing on a board, \
+                changes nothing and opens no undo step, so a tool can lay shapes out before it draws them.
+                """,
+            scope: .app, params: MeasureParams.self, positionals: ["script"],
+            examples: [
+                CommandExample("\(canvas) measure - < plan.txt", "Read the script from standard input, and say how big each shape would be."),
+            ]
+        ) { params, context throws(AutomationError) in
+            try measure(params, in: context)
+        }
     }
 }
 

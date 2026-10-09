@@ -4233,6 +4233,10 @@ never stale, and nothing else is thrown away.
   world units at the current zoom, where the shape is), in the order they're
   claimed, leaving out those without room. It's empty for a shape with none, and for one drawn as
   a skeleton.
+- **`editor.adornmentExtent(of: record)`** is how far above its top edge a shape reaches with the
+  adornments it would show at 100% zoom (`AdornmentLayout.extent(of:in:)`: the row above reaches 27, a
+  chip on the corner 8, none 0), in world units, for a record that need not be on any board (nothing is
+  kept for it): what a tool that lays shapes out clear of each other's titles needs (`canvas measure`).
 
 ### Something the user turns on
 
@@ -8682,6 +8686,7 @@ canvas new <file>                       a new board's file, made and opened
 canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]
                                         shapes, and the edges between them, made, changed or deleted by a script, all at once
 canvas kinds [<kind>] [--schema]        what a script can draw, and with what
+canvas measure <script>|-               how big a script's shapes would be, and what the placement is done with, drawing nothing
 canvas query <query>|- [--limit <number>] [--count] [--brief] [--fields <attribute>]… [--board <board>]
                                         the shapes of a file a query matches, on every board, in file order
 canvas query --ask <question>|- […]     the same, the query written by the app's language model
@@ -8696,7 +8701,7 @@ The modules, one job each:
 | CanvasRPC | wire | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener, which answers each request as a main-actor task of its own (one that waits holds up neither the main actor nor another connection), each connection's answers in the order its requests came, and cancels the requests still running (not notifications) once its client hangs up. Knows no canvas, plugin or AppKit. |
 | CanvasCLI | cli | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
 | CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
-| Automation | language | The commands plugins give the command line (`AutomationCommands`), its own two, `draw` and `kinds`, and the four points `draw` takes what it doesn't own from (on the query engine, Queries, a surface, to check a query a property holds). The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
+| Automation | language | The commands plugins give the command line (`AutomationCommands`), its own three, `draw`, `kinds` and `measure`, and the four points `draw` takes what it doesn't own from (on the query engine, Queries, a surface, to check a query a property holds). The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
 | DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
 | FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | vertical | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
@@ -8907,8 +8912,8 @@ steps, the first three against the board as the run starts:
 
 1. **Read.** DrawScript's `Script(parsing:)` cuts the script into statements, one a line: shapes
    (any first word but `edge`, `delete` and `style` is a kind word, left for Automation to
-   resolve), edges (`from:`, `to:` and `via:` are the language's own keys, `EdgeKey`; `via:`'s value
-   is a kind word, found by Automation), deletes, and styles, which it merges into the statements that
+   resolve), edges (`from:`, `to:`, `via:` and `share:` are the language's own keys, `EdgeKey`; `via:`'s value
+   is a kind word, found by Automation, and `share:`'s is `true` or a title, `EdgeShare`), deletes, and styles, which it merges into the statements that
    name them. An attribute that isn't the language's own is a key and a value, left for Automation to
    check against the kind. The language's own words are enums with implicit raw values (`Keyword`,
    `LanguageKey`, `EdgeKey`, `Direction`, …), never string literals, so the id audit never sees
@@ -9056,6 +9061,21 @@ can be made to stand for a shape (`makers`) and which shapes each admits (Topolo
   the edge's row says so (`via`), as where `via:` asked: a warning for each edge between boards would
   bury the warnings that need reading in a run of many. Where no kind admits it, the edge is `several_boards`, with a hint that only such a shape can be stood for and to
   ask the user (`Drawing.standInHint`); where nothing stands in at all, the hint is the old one.
+- **Sharing** (`share: true`, `share: "A"`; `sharedStandIn`). Each edge through a stand-in makes one of
+  its own, so a hub with many users has as many, and `share:` makes them one. `share: true` draws the
+  arrow into a direct stand-in of the kind for the same end that is already in the innermost container
+  of the end that stays (the frame it is in, or the board outside frames: `containerOfEnd`), the
+  board's first in document order (found in one pass, `boardStandIns(for:)`, deleted ones left out)
+  or one an earlier edge of the run made (`madeStandIns`); with none, it makes one, as without.
+  `share: "A"` takes the one A's own arrow goes into, A (a shape of the script or the board) being in
+  that container, from A's edges above it in the script and then the board's (`connected(to:)`), and
+  never makes one: A with none is `invalid_value`, naming A and the end, and so is A in another
+  container, or the edge's own end. On an edge that goes through none (both ends on the board, no
+  `via:`) it is `invalid_value` too, unless the edge is drawn through a stand-in already. The row of
+  an edge that reused one says `shared: true` and `sharedWith` (the title named); an edge drawn
+  already says `unchanged` with the same flags, `shared` then meaning that an arrow from another
+  shape runs to the same stand-in (`Connected.shared`, `sharing(of:match:among:)`). Nothing else
+  changes: a shared stand-in is deleted like any, once no arrow is on it.
 - **Which end.** The one off the board the run draws on; with `via:`, the arrow's end (however the
   edge is written, `<-` too), put beside the start. Either end may be the far one: a stand-in for the
   start, the arrow running out of it.
@@ -9124,7 +9144,7 @@ can be made to stand for a shape (`makers`) and which shapes each admits (Topolo
   included, goes too (`standInsEmptied`): it has no title for a script to name, and it stood for its
   shape for those arrows alone. One that's read-only is `read_only` (`the reference that delete "X"
   leaves with no arrow is read-only (locked, say)`), and nothing is deleted. A stand-in for X with
-  arrows from elsewhere stays.
+  arrows from elsewhere stays, which is what a stand-in several edges share does until the last of them goes.
 - **The result.** An edge's row has `via` (the stand-in's kind) whenever its arrow goes through one,
   `unchanged` and `deleted` rows too (a `delete "X"`'s among them, naming the shape a stand-in stands
   for, as an edge's row does); the stand-in has a row of its own on its statement's line: `created`,
@@ -9176,6 +9196,37 @@ can't show (by id, since the script wrote it: `"Plan": text names shapes that ar
 …; they show as missing`), or a deleted subboard's boards and what was on them. A dry run's
 result says `dryRun: true`. The result's `board` is the server's: the board the run worked on,
 read as it began.
+
+### measure
+
+`canvas measure <script>|-` is for a tool that lays shapes out before it draws them, and needs what
+only the app knows: the size `draw` would make each shape of a script (a note as tall as its text at
+its width, a schema card as tall as its description), how far its title row reaches above it, how wide
+a reference to a shape is for its title, and the constants placement is done with. It is an app
+command (no `--board`), [Measure.swift](../Sources/Automation/Measure.swift): it reads the script as
+`draw` does (the same messages), leaves out every placement, `in`, edge without `via:` and delete, and
+runs the shape statements through `Drawing` itself on a board of its own, made empty and thrown away
+(`CanvasEditor(registry:)`), so it reads no board of the file, changes none and opens no undo step, and
+the sizes are the ones a draw makes (`Drawing.complete`, then `registry.derived`). It answers
+
+```json
+{"shapes": [{"line": 1, "title": "Checkout v2", "kind": "sticky-note", "size": [300, 200], "above": 27}],
+ "references": [{"line": 4, "for": "Hub", "size": [91, 32]}],
+ "constants": {"gaps": {"none": 0, "tight": 40, "normal": 80, "wide": 160}, "defaultGap": 80, "listStep": 64,
+               "referenceStep": 16, "horizontalClearance": 40, "verticalClearance": 64, "frameInset": 40,
+               "smallest": {"frame": [96, 64]}}}
+```
+
+`above` is `editor.adornmentExtent(of:)` (Adornments, which Automation may use as a surface): how far
+the adornments the shape would show reach above its top edge at 100% zoom, where they keep their size
+in view points (`AdornmentLayout.extent(of:in:)`, pure over the layout, so text left out for want of
+room reaches nowhere); asked of a record that is not on any board, nothing is kept for it. A reference
+row is the size of `registry.standIns.make(kind, standingFor:, label:)` for the end's title, for each
+edge that says `via:` (the kind it names): Automation knows no kind of stand-in, and a bare edge's goes
+through one or not by the boards, which it does not read. The constants are read from the source and
+never copied: the gaps (`GapName`), the step between references (`LayoutProblem.impliedListStep`), the
+inset of what `in "F"` holds (`LayoutProblem.insideGap`), the default gap, the list step, the
+clearances, and each kind's least size (`Placement.minimumSize`).
 
 ### What draw takes from other plugins
 
@@ -11469,7 +11520,7 @@ ports                property channel · service PortState · overlay PortOverla
 arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
 language-models      service LanguageModelState
 prose-maps           service ProseMapService · overlay ProseMapFrames
-automation           command line draw · command line show · command line kinds
+automation           command line draw · command line show · command line kinds · command line measure
 title-names          draw names
 port-edges           draw edges
 validation-checks    draw checks
@@ -11525,7 +11576,7 @@ about mentions that can't work, and `title-validation`'s, over the file's titles
 Titles places its pill on every shape whose kind's title shows one (`adornment TitlePill → every shape`),
 and Locking its lock; `adornments` lends them their layout and drawing, a canvas button
 (`CanvasButtons`) and their hits (`DecorationHits`), and places none of its own. The automation
-line is its commands (`command line draw`, `command line show`, `command line kinds`), and the four after it are
+line is its commands (`command line draw`, `command line show`, `command line kinds`, `command line measure`), and the four after it are
 DrawLexicon's plugins, which fill Automation's draw points, one each (`draw text` is one a media type). `queries` is the query engine's service (`QueryState`,
 which hears no commit) and its mark (`query engine`, which `registry.answersQueries` reads); the
 five after it fill its points (names, boards' names, and words and a text format, each by what it
@@ -11886,7 +11937,14 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   and never asking the `ScriptedLanguageModel` anything); DrawStandInsTests' edge to a shape on another
   board, as shipped (a reference beside the note, either way round, two in a column 16 apart and a
   later run's joining it, `via:`, a run again, `delete edge` taking the pill, a private shape refused,
-  one undo); FramesShippedTests' frame refused under 96 × 64; AutomationTests' DrawStandInTests (a fixture
+  one undo, `share:` between three notes and a pill that stays till the last arrow goes) and
+  MeasureTests (each measured size held to a draw of the same script on a board, a note 300 wide with
+  text, a schema card, a subboard, a frame, a reference's width for three labels with the 280 clamp,
+  `above` to the drawn title row, the constants to the source and to what a draw does, the board
+  untouched, draw's messages for a script it can't read, and the answer whole as `canvas` prints it);
+  FramesShippedTests' frame refused under 96 × 64; AutomationTests' DrawShareTests (`share:` over the same fixtures and a pen: one relay and several
+  arrows, in one run and a later one, `share: "A"` and its refusals, containers, a run again, deletes, one
+  undo, either end the far one) and DrawStandInTests (a fixture
   `Relay` that stands for what it cites and is made for an open shape only, over a `Harbor` of shapes
   on the root and on subboards two deep: the decision and the board's hard and soft claims, the
   stand-in's place, a side named for it, its push, `via:` and its refusals, matching on a run again
@@ -11894,7 +11952,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   undo, a dry run; and, over a `Shoal`, the column: 16 apart, a written shape beside it left where it
   says while the column yields as one, a column meeting a wall moving as one, a later run's joining it
   on every side, and a shape the run moves leaving it), DrawContainerTests' `size:` under a placement's
-  smallest, DrawScriptTests' `via:`, an implied box yielding, implied lists apart and 16 apart, and a
+  smallest, DrawScriptTests' `via:` and `share:`, an implied box yielding, implied lists apart and 16 apart, and a
   list moving as one, and PortEdgesTests' channel and
   sides of a stand-in at an end; AutomationTests' undo steps, an agent's
   commit, and bindings and names across a file's boards (`DrawFileTests.swift`, with `Pin`, a

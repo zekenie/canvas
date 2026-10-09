@@ -295,6 +295,16 @@ struct LineParser {
                                     hint: "\(token.raw) takes the kind of shape the edge goes through, as \(token.raw) <kind>")
                     }
                     statement.via = kind.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+                case .share:
+                    switch value {
+                    case .word("true"):
+                        statement.share = .any
+                    case .quoted(let text) where text.contains(where: { !$0.isWhitespace }):
+                        statement.share = .beside(text)
+                    default:
+                        throw error(.invalidValue, "\(token.raw) \(value.written) isn't true or the title of a shape",
+                                    hint: "write \(token.raw) true to reuse a reference to the same end, or \(token.raw) \"A\" for the one beside A; leave \(token.raw) out to make its own")
+                    }
                 }
             } else {
                 statement.attributes.append(Attribute(key: token.text, value: value))
@@ -320,7 +330,7 @@ struct LineParser {
         if token.isWord(Keyword.edge.rawValue) {
             at += 1
             let edge = try edge()
-            guard edge.attributes.isEmpty, edge.fromSide == nil, edge.toSide == nil, edge.via == nil else {
+            guard edge.attributes.isEmpty, edge.fromSide == nil, edge.toSide == nil, edge.via == nil, edge.share == nil else {
                 throw error("deleting takes no attributes", hint: "write delete edge \(edge.written)")
             }
             subject = "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(edge.written)"
