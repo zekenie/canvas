@@ -75,8 +75,8 @@ public enum ShippedPlugins {
             // hit's ring draws over a title's pill, and Topology, whose walk of the file orders the hits.
             FindPlugin(),
             // What Find searches, from the plugins that draw it, each after Find and its owner: titles,
-            // mention text (a note's, a schema card's description), arrows' labels.
-            TitleFindPlugin(), MentionFindPlugin(), ArrowFindPlugin(),
+            // mention text (a note's, a schema card's description, an arrow's label).
+            TitleFindPlugin(), MentionFindPlugin(),
             // Jump To (⌘K): goes to a shape by its title and where it is. After Titles, whose titles it
             // lists, and Boards, whose way of following a shape it takes. Its rows' symbols are tinted as
             // a mention of the shape is (JumpTo doesn't import Mentions).

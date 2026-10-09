@@ -4,7 +4,7 @@ import CanvasTesting
 import Connections
 import CoreGraphics
 import Geometry
-import Keyboard
+import Mentions
 import Selection
 import TableOfContents
 import TestKit
@@ -14,8 +14,8 @@ import TextEditing
 // rules, edited in place, and dragged along the arrow.
 
 /// A free arrow from (100, 200) to (500, 200), its head at its end.
-@MainActor private func labelHarness(_ text: String, at position: CGFloat = 0.5, bend: CGFloat = 0) throws -> (EditorHarness, ShapeID) {
-    let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+@MainActor private func labelHarness(_ text: MentionText, at position: CGFloat = 0.5, bend: CGFloat = 0) throws -> (EditorHarness, ShapeID) {
+    let h = try EditorHarness(plugins: arrowsPlugins())
     let id = h.add(Arrow(start: .free(CGPoint(x: 100, y: 200)), end: .free(CGPoint(x: 500, y: 200)), bend: bend,
                          text: text, labelPosition: position))
     return (h, id)
@@ -68,7 +68,7 @@ private let size = CGSize(width: 40, height: 26)
         expectEqual(straight.fraction(nearest: CGPoint(x: -50, y: 0)), 0, "past its start, its start")
     },
     test("a label on a body wider than it's tall is squeezed to the body's width less 64, and wraps; on a tall one, to 16 ems") {
-        let long = "reads from the cache when it misses and the token is still fresh, then writes back"
+        let long: MentionText = "reads from the cache when it misses and the token is still fresh, then writes back"
         let (h, wide) = try labelHarness(long)
         let frame = try require(h.editor.arrowLabelFrame(of: wide))
         expect(frame.width <= 400 - 64 + 8.5, "\(frame)")
@@ -85,11 +85,11 @@ private let size = CGSize(width: 40, height: 26)
         expectEqual(shortFrame.origin, CGPoint(x: shortFrame.minX.rounded(), y: shortFrame.minY.rounded()))
     },
     test("no text is no label, nor is text that's all spaces and line breaks; its bounds are its body's") {
-        for text in ["", "  \n "] {
+        for text: MentionText in ["", "  \n "] {
             let (h, id) = try labelHarness(text)
-            expectEqual(h.editor.arrowLabelFrame(of: id), nil, "\(text.debugDescription)")
+            expectEqual(h.editor.arrowLabelFrame(of: id), nil, "\(text.stored.debugDescription)")
             let bounds = try require(h.editor.shapeContext.geometry(of: id)).bounds
-            expect(bounds.height < 20, "\(text.debugDescription): \(bounds)")
+            expect(bounds.height < 20, "\(text.stored.debugDescription): \(bounds)")
         }
     },
 ])
@@ -249,7 +249,7 @@ private let size = CGSize(width: 40, height: 26)
         h.release()
     },
     test("a locked arrow's label doesn't move: the drag is the selection's, refused") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), FreezingPlugin()])
+        let h = try EditorHarness(plugins: arrowsPlugins(more: [FreezingPlugin()]))
         var record = ShapeRecord(Arrow(start: .free(CGPoint(x: 100, y: 200)), end: .free(CGPoint(x: 500, y: 200)), text: "calls"))
         record[Frozen.self] = true
         h.editor.transact { $0.insert(record) }

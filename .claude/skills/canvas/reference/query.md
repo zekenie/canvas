@@ -243,7 +243,7 @@ The value after the operator is read as the attribute takes it, so `[bend=0]` an
 | the attribute is | `=` `!=` | `^=` `$=` `*=` `\|=` | `~=` | `<` `<=` `>` `>=` | the value |
 |---|---|---|---|---|---|
 | text | exactly; `i` in any case; `""`, no value | yes | a word | refused | any text |
-| text that mentions shapes (a note's `text`) | on the text as it reads: each mention `@` and its name now; `""`, no value | yes | a word | refused | any text |
+| text that mentions shapes (a note's or an arrow's `text`) | on the text as it reads: each mention `@` and its name now; `""`, no value | yes | a word | refused | any text |
 | a date | `YYYY-MM-DD` matches any time that day (UTC); a time, that instant; `""`, no date | refused | refused | a day: `<` before it starts, `<=` before it ends, `>` after it ends, `>=` from its start | `YYYY-MM-DD`, or ISO 8601 |
 | one of a few choices | the choice; `i` in any case; `""`, none | as text | as text | refused | one of them, with the one like it named when it isn't |
 | a number | the number | refused | refused | yes | a finite number |
@@ -255,7 +255,7 @@ The value after the operator is read as the attribute takes it, so `[bend=0]` an
 - **Not set is false.** A true-or-false attribute a shape hasn't set is its default, else false: `[locked=false]` matches every shape that isn't locked. `[locked]` is the same as `[locked=true]`.
 - **`""` is no value.** On text, a date or a choice, `[a=""]` matches a shape whose kind has `a` and that hasn't set it, or has it empty: `sticky-note[title=""]` is the notes with no title (a blank title is none), the same as `sticky-note:not([title])`, and `arrow[channel=""]` a plain arrow. `^=`, `$=` and `*=` with `""` match nothing, as in CSS.
 - **In a part with a kind**, the attribute must be that kind's (`unknown_attribute`, with its attributes listed). **In a part without one**, it must be some kind's, and the test applies to the kinds that have it: `[text*="x"]` is about notes.
-- **Text that mentions shapes is compared as it reads.** A note's `text` holds its mentions as ids, which never reach you: a query reads each as `@` and the name of the shape it mentions now, so a rename changes what matches. To follow a mention, use `:mentions(…)`.
+- **Text that mentions shapes is compared as it reads.** A note's or an arrow's `text` holds its mentions as ids, which never reach you: a query reads each as `@` and the name of the shape it mentions now, so a rename changes what matches. To follow a mention, use `:mentions(…)`.
 - **Where a shape is isn't an attribute** (`frame`, a line's `points`, an arrow's `start` and `end` are `not_built`), and neither is anything inside an attribute (`[a.b]`).
 
 ```query

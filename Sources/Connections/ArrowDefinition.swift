@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Geometry
+import Mentions
 import Publishing
 import Selection
 
@@ -35,7 +36,7 @@ extension ArrowDefinition: ShapeDefinition {
         cg.setLineJoin(.round)
         cg.strokePath()
         cg.restoreGState()
-        if let label, !context.isEditing { ArrowLabels.drawText(shape.props.text, in: label) }
+        if let label, !context.isEditing { context.drawMentionText(ArrowLabels.placement(of: shape.props.text, in: label)) }
     }
 
     /// Clips to everything around the label's cut: what the body and its heads reach, less the cut.
@@ -341,6 +342,11 @@ public struct ArrowsPlugin: CanvasPlugin {
             // No tool places one (a port's drag draws it, through `ArrowPortsPlugin`), so it names itself.
             arrow.label("Arrow", systemImage: ArrowStyle.symbol)
             arrow.arrowRow()
+            // Its label is mention text, centered on its body: pills, and the slash commands its editor hosts.
+            arrow.mentionText { arrow, shapes in
+                guard arrow.props.hasText, let label = shapes.geometry(of: arrow.id)?.label else { return [] }
+                return [ArrowLabels.placement(of: arrow.props.text, in: label)]
+            }
         }
         registrar.service { ArrowTargeting(editor: $0) }
         registrar.service { ArrowRowNesting(editor: $0) }

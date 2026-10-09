@@ -156,7 +156,7 @@ GROUPS.update({
             ("Binding and dragging", ["ArrowTargeting.swift", "ArrowConnecting.swift", "ArrowHandleDragSession.swift"], []),
             ("Arrow labels", ["ArrowLabel.swift", "ArrowLabelEditing.swift"], []),
         ]),
-        ("Arrows in other surfaces", ["ArrowPorts.swift", "ArrowRow.swift", "ArrowFind.swift"], []),
+        ("Arrows in other surfaces", ["ArrowPorts.swift", "ArrowRow.swift"], []),
     ],
     "DetailPanel": [
         ("The panel", ["DetailPanel.swift", "DetailPanelState.swift", "DetailPanelView.swift", "DetailPanelPlugin.swift"], []),

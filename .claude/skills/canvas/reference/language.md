@@ -205,10 +205,10 @@ sticky-note "Vendor contacts" left of "Row" size: 360x text: "Files: data-ops at
 
 ### A text that mentions shapes
 
-A note's `text` and a schema card's `prompt` are mention text, and `build/canvas kinds` says so after their type (`text (@[Title] mentions)`). In one, `@[Title]` mentions the shape called Title: the app shows a pill with that shape's name, live (renamed, it follows), and keeps the shape's id, which a script never writes or sees. Nightly schedule's text above mentions Load, which an earlier script drew. A mention is found by its title, exactly as every title in a script is (folded; case matters), with these rules:
+A note's `text`, an arrow's `text` (an edge's) and a schema card's `prompt` are mention text, and `build/canvas kinds` says so after their type (`text (@[Title] mentions)`). In one, `@[Title]` mentions the shape called Title: the app shows a pill with that shape's name, live (renamed, it follows), and keeps the shape's id, which a script never writes or sees. Nightly schedule's text above mentions Load, which an earlier script drew. A mention is found by its title, exactly as every title in a script is (folded; case matters), with these rules:
 
 - **Which shape.** Among the shapes the text may mention (below), the first of these that has one called that decides: a shape the script itself draws or restates with that title, or renames to it with `title:` (one drawn further down the script counts, so two notes can mention each other); the board the script draws on ([Which board](#which-board)); the board the window shows; any other board of the file the app can show. Two or more in that place are `ambiguous_title`, each listed with its kind and where it is (or, on several boards, the boards); none anywhere is `unknown_title`, with the titles it's like. A shape the script deletes, or the board it takes, counts for nothing: a title only such a shape has is `unknown_title` too (`names "Old", which this script deletes`).
-- **Which shapes a text may mention.** A note's text, any shape that can be mentioned: notes, subboards, frames and schema cards (not an arrow, nor a reference). A schema card's prompt, schema cards only, so `@[Address]` there is the card called Address, never a note called that. Shapes that can't are passed over, as if they weren't called that: if they're all that is, the text is refused (`invalid_value`) saying what the shape is and why (`"Ingest" is a sticky-note, which this text can't mention: it mentions only schema-card shapes`).
+- **Which shapes a text may mention.** A note's text, or an arrow's, any shape that can be mentioned: notes, subboards, frames and schema cards (not an arrow, nor a reference). A schema card's prompt, schema cards only, so `@[Address]` there is the card called Address, never a note called that. Shapes that can't are passed over, as if they weren't called that: if they're all that is, the text is refused (`invalid_value`) saying what the shape is and why (`"Ingest" is a sticky-note, which this text can't mention: it mentions only schema-card shapes`).
 - **No placement, no board.** A title in a text doesn't say where a shape goes or which board the script draws on, and a mention of a shape on another board, however deep, is no reason for `several_boards`: the pill finds the shape wherever it is. Only a statement's own titles and `in` put the run on a board.
 - **Written as the title it is.** The pill holds the shape's title as it is now (or will be, for a shape the script renames), whatever way the script wrote it (`@[  Load ]`). A title with a `]` or a backslash in it is written with a backslash before each, which a script's string spells twice: `@[a\\]b]` for a title `a]b`. `@[]`, with no title in it, is refused (`invalid_value`).
 - **The rest is text.** Everything else is kept as written, byte for byte: an `@` alone, an `@[` with no `]` before the line ends, a `]` closing nothing. To write the characters `@[` as text, write `\\@[` in a script's string: the text keeps `\@[`, whose backslash makes them plain.
@@ -524,12 +524,12 @@ Both ends are titles: shapes on the board, or shapes the same script draws; one 
 | `to:` | `top`, `right`, `bottom` or `left`: the side the end arrives on |
 | `via:` | `reference`: the kind of shape the edge goes through ([Through a reference](#through-a-reference)) |
 | `channel:` | a channel's id, or `none` for a plain arrow |
-| `text:` | what the arrow says, quoted, set on its line (`text: "calls"`) |
+| `text:` | what the arrow says, quoted, set on its line (`text: "calls"`); it may mention shapes by title (`text: "calls @[Cache]"`) |
 | `labelPosition:` | where its text sits along it: `0` at its start, `1` at its end, `0.5` (halfway) by default |
 | `bend:` | how far its middle is pushed off the straight line, in world units; `0` is straight |
 | `locked:` | `true` or `false` |
 
-Beside `from:`, `to:`, `via:` and `channel:`, an edge's attributes are the arrow's, as `build/canvas kinds arrow` lists them, written as a shape's are. Its heads aren't among them: the arrow you write (`->`, `<->`) says them, and `startArrowhead:` or `endArrowhead:` saying otherwise is `invalid_value`. Text goes after `text:`; a quoted string right after the edge is `syntax`. An edge takes no placement (it goes where its ends are) and no style. Chains (`edge "A" -> "B" -> "C"`) are refused: write each edge on a line of its own.
+Beside `from:`, `to:`, `via:` and `channel:`, an edge's attributes are the arrow's, as `build/canvas kinds arrow` lists them, written as a shape's are. Its heads aren't among them: the arrow you write (`->`, `<->`) says them, and `startArrowhead:` or `endArrowhead:` saying otherwise is `invalid_value`. Text goes after `text:`; a quoted string right after the edge is `syntax`. An arrow's text is mention text, as a note's is ([A text that mentions shapes](#a-text-that-mentions-shapes)): the label shows each `@[Title]` as a live pill. An edge takes no placement (it goes where its ends are) and no style. Chains (`edge "A" -> "B" -> "C"`) are refused: write each edge on a line of its own.
 
 ### Sides
 
@@ -576,6 +576,12 @@ edge "Nightly schedule" -> "Load" channel: none
 ```draw
 edge "Ingest" -> "Clean" text: "raw rows"
 edge "Clean" -> "Load" text: "deduplicated" labelPosition: 0.3
+```
+
+An edge's text mentions shapes as a note's does, and a run again says `unchanged`:
+
+```draw
+edge "Backfill" -> "Load" text: "after @[Nightly schedule]"
 ```
 
 ```draw-error
