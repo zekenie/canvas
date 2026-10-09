@@ -81,6 +81,12 @@ extension JSONSchema {
 /// equates "é" and "e\u{301}"). Patterns are ECMA-262's, as JSON Schema's are, run by ICU
 /// (`NSRegularExpression`) once what it reads otherwise is rewritten (`ICUPattern`); one ICU can't
 /// read at all is a problem of the schema's.
+///
+/// A `$ref` may also name a schema outside this one, `urn:uuid:…#/$defs/name`: `init(_:resources:)`
+/// asks its resolver for the schema filed under the part before the first `#`, verbatim (no RFC 3986
+/// resolution against `$id`, which stays an annotation), once per URI however many refs name it,
+/// then follows the fragment in that schema, whose own `#/…` refs are to itself. A `$ref` with no
+/// resolver to ask, or that the resolver has no schema for, is a problem like one to nowhere.
 public struct SchemaValidator: Sendable {
     private let nodes: [Node]
     /// What's wrong with the schema itself, each saying where it is: a `$ref` to a place the schema
@@ -89,13 +95,32 @@ public struct SchemaValidator: Sendable {
     /// Checking a value says each where the value meets it, as "can't be checked"; the registry
     /// refuses a kind whose schema has any.
     public let problems: [String]
+    /// The URIs outside the schema that its `$ref`s name, each once, in the order the compiler met
+    /// them, found or not: what a caller that keeps this validator drops it on when one of those
+    /// schemas changes (or appears). Empty without a resolver.
+    public let resources: [String]
 
     public init(_ schema: JSONSchema) {
-        var compiler = Compiler(root: .object(schema.json))
+        var compiler = Compiler(root: .object(schema.json), resolver: nil)
         _ = compiler.node(for: .object(schema.json), at: "#")
         compiler.markLoops()
         nodes = compiler.nodes
         problems = compiler.problems
+        resources = []
+    }
+
+    /// The schema compiled with `resources` to ask for the schemas its `$ref`s name outside it: the
+    /// URI is the `$ref`'s part before its first `#`, as written, and nil is a schema it doesn't
+    /// have. It runs while compiling and isn't kept, so a validator is as `Sendable` as ever: it may
+    /// close over state that isn't, or read a snapshot taken for the purpose.
+    public init(_ schema: JSONSchema, resources resolve: (_ uri: String) -> JSONSchema?) {
+        let compiled = withoutActuallyEscaping(resolve) { resolver in
+            var compiler = Compiler(root: .object(schema.json), resolver: resolver)
+            _ = compiler.node(for: .object(schema.json), at: "#")
+            compiler.markLoops()
+            return (compiler.nodes, compiler.problems, compiler.met)
+        }
+        (nodes, problems, resources) = compiled
     }
 
     /// Where `value` breaks the schema, in the order the schema lists what it checks; empty when it
@@ -122,7 +147,7 @@ public struct SchemaValidator: Sendable {
         func name() -> Naming { Naming(path: path, title: title(of: node)) }
         if node.allowsNothing { return found.report(path, "false", "\(name()) isn’t allowed here.") }
         if let unresolved = node.unresolvedRef {
-            return found.report(path, "$ref", "\(name()) can’t be checked: its schema refers to \(unresolved), which isn’t in it.")
+            return found.report(path, "$ref", "\(name()) can’t be checked: its schema refers to \(unresolved), which \(node.unresolvedWhole ? "can’t be found" : "isn’t in it").")
         }
         if node.loops {
             return found.report(path, "$ref", "\(name()) can’t be checked: its schema refers back to itself without end.")
@@ -671,8 +696,10 @@ private final class Node: @unchecked Sendable {
     var allowsNothing = false
     var title: String?
     var ref: Int?
-    /// A `$ref` to a place the schema doesn't have.
+    /// A `$ref` to a place the schema doesn't have, or (with `unresolvedWhole`) to a schema outside
+    /// it that the resolver didn't have: the URI.
     var unresolvedRef: String?
+    var unresolvedWhole = false
     /// A place its `$ref` leads back to before going into the value, where checking would go round
     /// forever: it stops there.
     var loops = false
@@ -732,15 +759,34 @@ private final class Node: @unchecked Sendable {
 
 private struct Compiler {
     let root: JSONValue
+    /// Asked for a schema outside the root, by its URI; nil when there is none to ask.
+    let resolver: ((String) -> JSONSchema?)?
     var nodes: [Node] = []
-    /// Where each node is, as a JSON Pointer from the root, for `problems`.
+    /// Where each node is, as its resource's URI (empty for the root) and a JSON Pointer from that
+    /// resource's root, for `problems`: `#/$defs/core.rect`, `urn:uuid:…#/properties/name`.
     var pointers: [String] = []
-    /// Each place compiled, by its JSON Pointer from the root (`#/$defs/core.rect`), so a `$ref` to
-    /// a place already compiled, or being compiled (a type that holds itself), finds its node.
+    /// Each place compiled, by those same names, so a `$ref` to a place already compiled, or being
+    /// compiled (a type that holds itself), finds its node.
     var byPointer: [String: Int] = [:]
     var problems: [String] = []
+    /// Each resource the resolver was asked for, nil if it had none; asked once.
+    private var resources: [String: JSONValue?] = [:]
+    /// Their URIs, in the order they were first asked for.
+    var met: [String] = []
 
-    init(root: JSONValue) { self.root = root }
+    init(root: JSONValue, resolver: ((String) -> JSONSchema?)?) {
+        self.root = root
+        self.resolver = resolver
+    }
+
+    /// The schema filed under `uri`, asking the resolver the first time only.
+    private mutating func resource(_ uri: String) -> JSONValue? {
+        if let known = resources[uri] { return known }
+        let found = resolver?(uri).map { JSONValue.object($0.json) }
+        resources[uri] = .some(found)
+        met.append(uri)
+        return found
+    }
 
     mutating func node(for schema: JSONValue, at pointer: String) -> Int {
         if let known = byPointer[pointer] { return known }
@@ -769,11 +815,32 @@ private struct Compiler {
 
         node.title = json["title"]?.stringValue
         if let reference = json["$ref"]?.stringValue {
-            if let target = Self.resolve(reference, in: root) {
-                node.ref = self.node(for: target, at: Self.normalized(reference))
-            } else {
+            // The resource the place is in: the root's, or one the resolver gave.
+            let here = String(pointer[..<(pointer.firstIndex(of: "#") ?? pointer.endIndex)])
+            let hash = reference.firstIndex(of: "#")
+            let base = String(reference[..<(hash ?? reference.endIndex)])
+            let fragment = hash.map { String(reference[$0...]) } ?? (base.isEmpty ? reference : "#")
+            if base.isEmpty || base == here {
+                if let target = Self.resolve(fragment, in: here.isEmpty ? root : resource(here) ?? root) {
+                    node.ref = self.node(for: target, at: here + Self.normalized(fragment))
+                } else {
+                    node.unresolvedRef = reference
+                    problems.append("the $ref at \(pointer), \(reference), isn't in the schema")
+                }
+            } else if resolver == nil {
                 node.unresolvedRef = reference
                 problems.append("the $ref at \(pointer), \(reference), isn't in the schema")
+            } else if let outside = resource(base) {
+                if let target = Self.resolve(fragment, in: outside) {
+                    node.ref = self.node(for: target, at: base + Self.normalized(fragment))
+                } else {
+                    node.unresolvedRef = reference
+                    problems.append("the $ref at \(pointer), \(reference), isn't in \(base)")
+                }
+            } else {
+                node.unresolvedRef = base
+                node.unresolvedWhole = true
+                problems.append("the $ref at \(pointer), \(base), can't be found")
             }
         }
         if let type = json["type"] {
@@ -856,8 +923,8 @@ private struct Compiler {
         problems += marked.map { "\(pointers[$0]) refers back to itself without going into the value, so checking one would never end" }
     }
 
-    /// The place a local `$ref` points to (`#`, `#/$defs/core.rect`), percent-decoded and unescaped
-    /// as a JSON Pointer; nil for one that isn't local, or isn't there.
+    /// The place a fragment points to in the resource whose root is `root` (`#`, `#/$defs/core.rect`),
+    /// percent-decoded and unescaped as a JSON Pointer; nil for one that isn't there.
     static func resolve(_ reference: String, in root: JSONValue) -> JSONValue? {
         guard reference.hasPrefix("#") else { return nil }
         let pointer = String(reference.dropFirst()).removingPercentEncoding ?? String(reference.dropFirst())
@@ -880,7 +947,7 @@ private struct Compiler {
         return value
     }
 
-    /// A `$ref` as the pointer the compiler files its place under.
+    /// A fragment as the pointer the compiler files its place under (after its resource's URI).
     static func normalized(_ reference: String) -> String {
         reference.removingPercentEncoding ?? reference
     }
