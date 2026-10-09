@@ -545,7 +545,8 @@ extension CanvasView: NSMenuItemValidation {
         let point = CGPoint(x: rect.minX, y: rect.maxY)
         if let menuPresenter {
             menuPresenter(waiting.menu, point)
-        } else {
+        } else if window != nil {
+            // A view taken off its window meanwhile has nowhere to open one: it's dropped.
             waiting.menu.popUp(positioning: nil, at: point, in: self)
         }
     }

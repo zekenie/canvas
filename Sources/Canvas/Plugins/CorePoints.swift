@@ -15,18 +15,9 @@ enum CorePoints {
     }
 
     /// The menus on tools' segments of the toolbar (`registrar.toolMenu`). One per tool, and the tool
-    /// must be registered.
-    enum ToolMenus: KeyedExtensionPoint {
-        typealias Contribution = ToolMenuRegistration
-        static var owner: PluginID { .core }
-        static func uniqueKeys(of c: ToolMenuRegistration, for _: ShapeTarget) -> [AnyHashable] { [ToolMenuKey(id: c.tool)] }
-        static func check(_ registry: Registry) throws {
-            let tools = Set(registry.tools.map(\.id))
-            for menu in registry.contributions(to: ToolMenus.self).map(\.value) where !tools.contains(menu.tool) {
-                throw RegistryError.invalid(point: "ToolMenus", reason: "no plugin registers tool \(menu.tool), which has a menu")
-            }
-        }
-    }
+    /// must be registered (conforming below, in an extension, as the compiler flags a near miss of
+    /// `check` only there).
+    enum ToolMenus {}
 
     /// What a kind is called, and its symbol (`ShapeRegistrar.label`). One per kind.
     enum KindLabels: KeyedExtensionPoint {
@@ -115,6 +106,19 @@ extension CorePoints.DefaultTool: KeyedExtensionPoint {
         let id = registry.defaultTool
         guard registry.tools.contains(where: { $0.id == id }) else {
             throw .invalid(point: "DefaultTool", reason: "no plugin registers tool \(id)")
+        }
+    }
+}
+
+extension CorePoints.ToolMenus: KeyedExtensionPoint {
+    typealias Contribution = ToolMenuRegistration
+    static var owner: PluginID { .core }
+    static func uniqueKeys(of c: ToolMenuRegistration, for _: ShapeTarget) -> [AnyHashable] { [ToolMenuKey(id: c.tool)] }
+    /// The tool a menu is on must exist.
+    static func check(_ registry: Registry) throws(RegistryError) {
+        let tools = Set(registry.tools.map(\.id))
+        for menu in registry.contributions(to: CorePoints.ToolMenus.self).map(\.value) where !tools.contains(menu.tool) {
+            throw .invalid(point: "ToolMenus", reason: "no plugin registers tool \(menu.tool), which has a menu")
         }
     }
 }
