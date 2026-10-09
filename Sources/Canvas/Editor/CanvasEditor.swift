@@ -224,9 +224,11 @@ public final class CanvasEditor {
     /// Each shape's geometry and extent, and the paint order, kept from frame to frame: the shown
     /// board's.
     @ObservationIgnored var shapeIndex = ShapeIndex()
+    /// What geometries read that no record holds (`setLayoutInput`).
+    @ObservationIgnored let layoutInputs = LayoutInputs()
     /// The indexes of the boards shown lately, for when they're shown again (while they haven't
     /// changed).
-    @ObservationIgnored private var warmIndexes = BoardStash<ShapeIndex>()
+    @ObservationIgnored var warmIndexes = BoardStash<ShapeIndex>()
     /// Where the camera was on each board shown this session, as it was left.
     @ObservationIgnored private var leftCameras: [BoardID: Camera] = [:]
     /// The boards left this session, in the order they were last left (`boardsLeft`).
@@ -373,7 +375,7 @@ public final class CanvasEditor {
     }
 
     var currentTool: any Tool { tools[currentToolID]! }
-    public var shapeContext: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera, index: shapeIndex) }
+    public var shapeContext: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera, index: shapeIndex, layout: layoutInputs) }
 
     /// Redraw. The core redraws for everything it owns (the document, camera, tool, sessions); a
     /// plugin whose drawn state changes some other way (its own state, a timer) calls this.
@@ -904,11 +906,11 @@ public final class CanvasEditor {
         let contents = file[target]
         let arrival = arrivalCamera(for: target) {
             let index = ShapeIndex()
-            return index.bounds(in: ShapeContext(document: contents, registry: registry, camera: Camera(), index: index))
+            return index.bounds(in: ShapeContext(document: contents, registry: registry, camera: Camera(), index: index, layout: layoutInputs))
         }
         let index = ShapeIndex(), clear = unobscuredViewport(on: target)
         return BoardReading(board: target, document: contents,
-                            shapes: ShapeContext(document: contents, registry: registry, camera: arrival, index: index), index: index,
+                            shapes: ShapeContext(document: contents, registry: registry, camera: arrival, index: index, layout: layoutInputs), index: index,
                             view: clear.isEmpty ? nil : arrival.toWorld(clear), isBoardReadOnly: isReadOnly(board: target))
     }
 

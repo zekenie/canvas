@@ -48,6 +48,8 @@ public struct ShapeContext {
     /// while they're still the editor's (`generation`).
     private let index: ShapeIndex?
     private let generation: Int
+    /// The editor's layout inputs, if this context is the editor's (`layoutInput`).
+    let layout: LayoutInputs?
 
     /// Lookups in a document of your own (shapes copied, say), whose geometry is worked out as it's
     /// asked for. The editor's is `editor.shapeContext`, and a transaction's `transaction.shapes`.
@@ -55,7 +57,8 @@ public struct ShapeContext {
         self.init(document: document, registry: registry, camera: camera, index: nil)
     }
 
-    init(document: CanvasDocument, registry: Registry, camera: Camera, index: ShapeIndex?) {
+    init(document: CanvasDocument, registry: Registry, camera: Camera, index: ShapeIndex?, layout: LayoutInputs? = nil) {
+        self.layout = layout
         storedDocument = document
         self.registry = registry
         storedCamera = camera
