@@ -3,14 +3,14 @@ import Canvas
 import Mentions
 
 /// Draw's mention text, in DrawLexicon: in any text a script writes whose schema says it's mention
-/// text (`MentionTextFormat.mediaType`: a note's `text:`, a schema card's `prompt:`, wherever one is
+/// text (`MentionTextFormat.mediaType`: a note's `text:`, wherever one is
 /// inside a value), `@[Title]` mentions the shape called Title, and the shape keeps the stored form
 /// with its id (`MentionTextFormat.resolvingNames`), so an agent never handles an id. Which shape a
 /// title names is draw's own lookup (`DrawTextContext.shape`: a shape the script draws, or the board
 /// it draws on, or the window's, or elsewhere in the file), among the shapes the text may mention:
 /// those whose kind can be mentioned and its scope admits (`registry.mentionAdmission`, read from
-/// what the schema says beside the text's reference, `x-canvas-mentions`), so a schema card's
-/// `prompt:` names the card called Address, not a note called that. A whole mention an agent writes
+/// what the schema says beside the text's reference, `x-canvas-mentions`), so a text that admits only plates
+/// names the plate called Address, not a note called that. A whole mention an agent writes
 /// (`@[label](shape:ID)`, from a query's rows) is kept as written, as it always was.
 public struct MentionTextsPlugin: CanvasPlugin {
     public init() {}

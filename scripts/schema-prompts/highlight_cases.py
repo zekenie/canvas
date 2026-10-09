@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The highlight evals' cases: a schema card's description and its schema, in step, and the links a
+"""The highlight evals' cases: a type's words and its schema, in step, and the links a
 person would draw between the description's words and the schema's parts. Authored here, readable;
 highlight_evals.py imports CASES.
 
@@ -624,7 +624,7 @@ case("emoji",
      "emoji around the words")
 
 
-# Other schema cards, as the app shows them to the model: a mention as @ and a word, and a "$ref"
+# Other types, as the app shows them to the model: a mention as @ and a word, and a "$ref"
 # to it as that word.
 
 case("house_refs",

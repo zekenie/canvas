@@ -8,11 +8,11 @@ import Frames
 import LanguageModels
 import Mentions
 import References
-import Schemas
 import Selection
 import StickyNotes
 import Subboards
 import TestKit
+import Types
 
 // Outlines as shipped: the selection's, a hover's and the hint stand off every closed shape's edge by
 // the same 4 view points, whatever its kind, its rounded corners growing with it; an arrow's is its
@@ -31,12 +31,11 @@ import TestKit
         defer { pasteboard.releaseGlobally() }
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
         expectEqual(editor.outlineGap, 4, "what ships")
-        // Each kind, with the radius its corners are rounded by (NoteStyle's, FrameStyle's, SchemaStyle's,
+        // Each kind, with the radius its corners are rounded by (NoteStyle's, FrameStyle's,
         // SubboardStyle's and a pill's, half its height).
         let kinds: [(name: String, id: ShapeID, radius: CGFloat)] = [
             ("note", editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk")), 4),
             ("frame", editor.add(Frame(frame: CGRect(x: 400, y: 100, width: 300, height: 200))), 12),
-            ("schema card", editor.add(SchemaCard(frame: CGRect(origin: CGPoint(x: 100, y: 400), size: SchemaCard.defaultSize))), 4),
             ("subboard", editor.add(Subboard(frame: CGRect(x: 400, y: 400, width: 240, height: 160))), 10),
             ("reference", editor.add(Reference(frame: CGRect(x: 700, y: 400, width: 160, height: 32))), 16),
         ]

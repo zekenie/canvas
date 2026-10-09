@@ -1,7 +1,7 @@
 import LanguageModels
 import TestKit
 
-// ModelAnswer.unwrapped: SchemasTests' SyncTests hold it through SchemaPrompts' parse; these are
+// ModelAnswer.unwrapped: TypesTests' SyncTests hold it through SchemaPrompts' parse; these are
 // the same cases, and a few of its own, read straight.
 
 @MainActor let unwrapTests = Suite("Unwrapping an answer", [

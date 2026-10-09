@@ -83,11 +83,12 @@ check before running it again). To run it as just `canvas`, put the link on your
 | Find a shape from the list | Click its row: it's selected and the canvas zooms to it. Pointing at a row outlines its shape faintly, and pointing at a shape tints its row |
 | Go back to the previous selection | The back button in the detail panel's header, or ⌘[ (Go › Back): what was selected before, and the view as it was then (from a row's details, the list) |
 | Name a note or a subboard | Select it and click its title in the detail panel's header; Return or Escape goes back to the canvas |
+| Make a note a type | Type /type on a line of its text and press Return: it holds a JSON Schema (its Schema tab), which Claude keeps saying what its words say, and its words say what the schema holds once you edit the JSON |
 | Turn a frame into a subboard | Right-click it and choose Turn into Subboard: the same shape, a subboard at its corner, with everything the frame held on its board; Undo brings the frame back |
 | Frame shapes | Select them, right-click and choose Create Frame: a frame around them that holds them, in the frame they're in; what it mostly covers comes in, what it barely touches moves out of its way |
 | Delete shapes or arrows | Select them and press Delete, or right-click and choose Delete |
 | Cut, copy and paste shapes | ⌘X, ⌘C and ⌘V (Edit menu, or right-click a shape; right-click empty space to paste). ⌘V lands a paste where the originals were if they're in view, else in the middle of the view; Paste from a right-click lands it centered where you clicked. Arrows copied with their shapes stay attached to the copies |
-| Link a note to a note, a schema card to a schema card, or either to a subboard | With the select tool, point at one: dots show just outside its four sides (zoomed out below 25%, none show). Drag from a dot to another of its kind, or to a subboard (a subboard's dots link to any of them): those it could link to are outlined faintly as you drag, and released anywhere else, nothing is drawn. The link is an arrow; there's no arrow tool. Arriving quickly aims at the shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
+| Link a note to a note or to a subboard | With the select tool, point at one: dots show just outside its four sides (zoomed out below 25%, none show). Drag from a dot to another note, or to a subboard (a subboard's dots link to any of them): those it could link to are outlined faintly as you drag, and released anywhere else, nothing is drawn. The link is an arrow; there's no arrow tool. Arriving quickly aims at the shape's center; arriving slowly, or pausing inside the shape, aims at that exact spot |
 | Aim into a shape | Hold ⌥ while linking or dragging an end: the arrow runs all the way to the spot |
 | Don't attach | Hold ⌘ while dragging an end |
 | Snap angle | Hold ⇧ while dragging an end (15° steps) |
@@ -95,7 +96,7 @@ check before running it again). To run it as just `canvas`, put the link on your
 | Bend | Select the arrow and drag its middle handle |
 | Toggle an arrowhead | Double-click an end handle |
 
-A shape with an issue (a schema card that isn't JSON, a title past 80 characters) gets an outline (the validation
+A shape with an issue (a type whose schema isn't JSON, a title past 80 characters) gets an outline (the validation
 plugin: red for an error, orange for a warning; none while it's being edited), says why in an Issues tab of the detail
 panel (the validation-details plugin), and gets a dot of the same color on its row in the table of contents (the
 validation-contents plugin).
@@ -103,9 +104,9 @@ A titled shape shows its title in a pill above its top-left corner (zoomed out b
 Name a note or a subboard in the detail panel's header. A title is
 part of its shape's schema, at most 80 characters: a longer one gets a warning, as does any value outside the
 bounds its schema sets (the validation plugin checks every shape against its kind's schema).
-A note's dots link it to another note or a subboard, and a schema card's to another schema card or a subboard: each kind has a
-channel of its own (Connections' ports), a subboard has ports on every channel too, its own first, so its dots link to a note, a
-schema card or another subboard, and the link is an arrow (`ArrowPortsPlugin`) that keeps to its channel when an end is re-aimed.
+A note's dots link it to another note or a subboard: each kind has a
+channel of its own (Connections' ports), a subboard has ports on every channel too, its own first, so its dots link to a note
+or another subboard, and the link is an arrow (`ArrowPortsPlugin`) that keeps to its channel when an end is re-aimed.
 
 ## Layout
 
@@ -124,8 +125,6 @@ Sources/
   Keyboard/             the keyboard horizontal: every shortcut, registered by the plugin whose key it is
   Selection/            the selection horizontal: the select tool, marquee, handles, Delete and ⌘A, the shake of a refused change
   StickyNotes/          sticky notes, with in-place editing
-  Schemas/              schema cards: a JSON Schema on the canvas, as a card that lists its fields, written in its
-                        panel in words or as JSON, the two kept in step by Claude
   Subboards/            subboards: a card that holds a board of its own, entered with a double-click
   Frames/               frames: a region of a board that holds shapes, which move and lock with it
   References/           references: a pill that stands for a public shape, so an arrow into it counts as an arrow
@@ -165,6 +164,8 @@ Sources/
                         spaces), with guides
   Transform/            a horizontal: turning a shape into another kind through channels (a frame into a
                         subboard: one kind offers a channel, another takes it), from its menu or /turn-into-…
+  Types/                a concern: a note that holds a JSON Schema is a type, named by its title (/type), its words
+                        and its schema kept in step by Claude, its words highlighted where they say a part of it
   DrawLexicon/          canvas draw's words for this app: shapes named by their titles, edges as the connector's
                         connections (on a channel both ends take), and warnings as validation finds them
   QueryLexicon/         canvas query's words for this app: titles, boards' names, mentions, validity and the
@@ -176,5 +177,5 @@ Examples/               the smallest plugin for each pattern
 Tests/                  test executables (the core, each plugin with logic of its own, the examples,
                         the shipped app) and their support libraries, on a small macro-free kit
 scripts/                re-records the proof of concept's behavior, which the tests hold the app to; schema-prompts/
-                        has the quick evals of what schema cards ask Claude
+                        has the quick evals of what types ask Claude
 ```

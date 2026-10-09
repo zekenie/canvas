@@ -27,7 +27,7 @@ Read `docs/plugin-system.md` first; it's the guide to the plugin system, with th
 - Changing how a kind's props encode, even adding a member with a default, needs a migration and a new fixture in `Tests/CompositionTests/Fixtures/kinds` (an added property's value has migrations of its own, and fixtures in `Fixtures/added`); never edit a fixture ([boards on disk](.claude/rules/boards-on-disk.md)).
 - A change to `canvas draw` or `canvas query`, their messages, the shipped kinds, the query words or edge types, or the `--ask` prompt changes the canvas skill (`.claude/skills/canvas`) too: SkillTests and QueryPromptTests hold them together ([command line](.claude/rules/command-line.md), [queries](.claude/rules/queries.md)).
 - Arrows mirror tldraw's arc arrows: check tldraw before changing arrow behavior and call out any intentional deviation, and never regenerate the proof-of-concept fixtures from the app to make a change pass ([arrows](.claude/rules/arrows.md)).
-- UI constants live in each module's `@MainActor` style enum (`Style`, `ArrowStyle`, `NoteStyle`, ...), a kind's skeleton's beside its full look's (`NoteStyle.skeletonFill`, `SubboardStyle.skeletonBorderWidth`, `SchemaStyle.skeletonEdge`, `ArrowStyle.skeletonLineWidth`). The core's are internal (`Style.skeletonZoom`, `Style.skeleton`, `Style.skeletonText`, `Style.drawingPad`): a plugin goes by `editor.drawsSkeletons`, never the number, and one that simplifies further farther out reads `context.zoom`. Pure geometry (Geometry, `ArrowGeometry`) is nonisolated, so its constants live on those types.
+- UI constants live in each module's `@MainActor` style enum (`Style`, `ArrowStyle`, `NoteStyle`, `TypesStyle`, ...), a kind's skeleton's beside its full look's (`NoteStyle.skeletonFill`, `SubboardStyle.skeletonBorderWidth`, `ReferenceStyle.skeletonFill`, `ArrowStyle.skeletonLineWidth`). The core's are internal (`Style.skeletonZoom`, `Style.skeleton`, `Style.skeletonText`, `Style.drawingPad`): a plugin goes by `editor.drawsSkeletons`, never the number, and one that simplifies further farther out reads `context.zoom`. Pure geometry (Geometry, `ArrowGeometry`) is nonisolated, so its constants live on those types.
 - Never print, log or write the Anthropic API key ([language models](.claude/rules/language-models.md)).
 
 ## Tests
@@ -77,7 +77,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text.
 - [topology](.claude/rules/topology.md): edges and edge types, their sources, stand-ins and the views through them, provided answers, the one delivery of every change (`follow`) and settling, containment as one tree, snapshots for other threads.
 - [language models](.claude/rules/language-models.md): the model plugins ask, the Anthropic key and Settings, `--ask`'s model.
-- [prose maps](.claude/rules/prose-maps.md): which words of a text say which part of a lower-level text (a schema card's highlights): targets, maps, asking the model, the request.
+- [prose maps](.claude/rules/prose-maps.md): which words of a text say which part of a lower-level text (a type's highlights): targets, maps, asking the model, the request.
 - [placing](.claude/rules/placing.md): where a box of shapes lands, beside a shape or a block, in a frame or anywhere, placed as `canvas draw` places one: `Surroundings`, `Landing`; Moving's solver, for any plugin that puts shapes down.
 - [find](.claude/rules/find.md): ⌘F: the `FindableTexts` point and its contributors, the index, the search off the main actor, scope and order, the highlights, the panel in the detail panel's place.
 
@@ -93,13 +93,13 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [boards](.claude/rules/boards.md): opening boards, Enclosing Board, the path's crumbs and their menus.
 - [snapping](.claude/rules/snapping.md): what a drag snaps to, and its guides.
 - [transform](.claude/rules/transform.md): turning a shape into another kind: channels, sources and targets, the menu item and the command, frame into subboard.
+- [types](.claude/rules/types.md): a note that holds a JSON Schema is a type, named by its title; `/type` and Remove Type, the file's types (`TypeIndex`), the words kept in step with the schema by the model (`TypeSync`), references, the Schema tab's JSON and completions, highlights.
 
 **Languages** (what agents read and write)
 - [command line](.claude/rules/command-line.md): `canvas`, the wire, `CommandServer`, Automation's commands, `canvas draw`, the canvas skill.
 - [queries](.claude/rules/queries.md): the query language, what a query sees and where it runs, the lexicon's words, `canvas query` and `--ask`.
 
 **Verticals** (the kinds)
-- [schema cards](.claude/rules/schema-cards.md): a JSON Schema and its description, kept in step by the model; references, the panel's JSON and completions, highlights.
 - [subboards](.claude/rules/subboards.md): a card that owns a board.
 - [frames](.claude/rules/frames.md): a region that holds shapes, the Frame tool, and Create Frame.
 - [jump to](.claude/rules/jump-to.md): ⌘K, a palette that goes to a shape by its title and where it is; the catalog, the ranking over the containment tree, the palette and its list, picks.

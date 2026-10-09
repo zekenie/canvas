@@ -11,12 +11,12 @@ import LanguageModels
 import Locking
 import Mentions
 import Queries
-import Schemas
 import Selection
 import StickyNotes
 import Subboards
 import TestKit
 import Titles
+import Types
 
 // The story file every query example runs on (the skill's, the prompt's, the evaluation's and these
 // tests'), "Roadmap", built with the shipped kinds and fixed ids, `00000000-0000-4000-8000-0000000000NN`
@@ -27,9 +27,9 @@ import Titles
 //       A  …02  sticky-note "API gateway"   text: Owns auth. See @Checkout    (mentions C)
 //       U  …03  sticky-note "Auth"          text: JWT, 15 min expiry
 //       N1 …04  sticky-note (untitled)      text: TODO: rate limits
-//       W  …05  schema-card                 {"title": "Warehouse", ...}
-//       S  …06  schema-card                 {"title": "Order", ...}, locked
-//       V  …07  schema-card                 {"type": "object" "title": "Invoice"}   (not JSON: untitled, an error)
+//       W  …05  sticky-note "Warehouse"     a type: schema {"type": "object", ...}, text: A warehouse: its id
+//       S  …06  sticky-note "Order"         a type: schema {"type": "object", ...}, text: An order: its id, locked
+//       V  …07  sticky-note (untitled)      a type: schema {"type": "object" "title": …}   (not JSON: an error), text: An invoice
 //       R1 …08  arrow A → U                 channel note-link
 //       R2 …09  arrow W → P                 no channel
 //       L  …0A  sticky-note "Ledger"        text: Moved to @Old ledger        (Old ledger, …FF, is gone)
@@ -76,15 +76,11 @@ enum QueryStory {
     /// Every shape, in file order: the top board back to front, each subboard followed by its board's.
     static let fileOrder = ids("P, C, F, Y, N2, A, U, N1, W, S, V, R1, R2, L")
 
-    /// Order's schema: an object with an id.
-    static let orderSchema = #"{"title": "Order", "type": "object", "properties": {"id": {"type": "string"}}}"#
+    /// Order's schema: an object with an id. (A type's name is its note's title, not its schema's.)
+    static let orderSchema = #"{"type": "object", "properties": {"id": {"type": "string"}}}"#
     /// Warehouse's: the same.
-    static let warehouseSchema = #"{"title": "Warehouse", "type": "object", "properties": {"id": {"type": "string"}}}"#
-    /// Invoice's: not JSON, a comma left out before its title, so it has none (a card whose text
-    /// isn't JSON is named by a title read before what's wrong). Untitled only while this process
-    /// hasn't read V's text as a JSON object: Schemas keeps each card's last object by id for the
-    /// whole process, and a card read later whose text isn't one shows it (`shown`). So a test that
-    /// mends V's JSON makes a story built after it name V: mend a copy (a new id), never V.
+    static let warehouseSchema = #"{"type": "object", "properties": {"id": {"type": "string"}}}"#
+    /// Invoice's: not JSON, a comma left out before a title, so it's invalid (an error).
     static let invoiceSchema = #"{"type": "object" "title": "Invoice"}"#
 
     /// The view a board of the story is shown in, as the skill's boards are.
@@ -104,21 +100,19 @@ enum QueryStory {
             subboard[TitleProperty.self] = title
             return AnyShapeRecord(subboard)
         }
-        func card(_ id: ShapeID, _ schema: String, at x: CGFloat, _ y: CGFloat, locked: Bool = false) -> AnyShapeRecord {
-            var props = SchemaCard(frame: CGRect(origin: CGPoint(x: x, y: y), size: SchemaCard.defaultSize), schema: "")
-            props.schema.text = schema
-            var card = ShapeRecord(id: id, props)
-            card[LockedProperty.self] = locked ? true : nil
-            return AnyShapeRecord(card)
+        func type(_ id: ShapeID, _ title: String?, _ schema: String, at x: CGFloat, _ y: CGFloat, _ text: String, locked: Bool = false) -> AnyShapeRecord {
+            var record = note(id, title, at: x, y, MentionText(plain: text), locked: locked)
+            record[TypeSchemaProperty.self] = SchemaText(schema)
+            return record
         }
         let top = [
             subboard(payments, "Payments", at: 80, 80),
             note(gateway, "API gateway", at: 400, 80, MentionText([.text("Owns auth. See "), .mention(checkout, label: "Checkout")])),
             note(auth, "Auth", at: 700, 80, MentionText(plain: "JWT, 15 min expiry")),
             note(todo, nil, at: 1000, 80, MentionText(plain: "TODO: rate limits")),
-            card(warehouse, warehouseSchema, at: 80, 420),
-            card(order, orderSchema, at: 400, 420, locked: true),
-            card(invoice, invoiceSchema, at: 700, 420),
+            type(warehouse, "Warehouse", warehouseSchema, at: 80, 420, "A warehouse: its id"),
+            type(order, "Order", orderSchema, at: 400, 420, "An order: its id", locked: true),
+            type(invoice, nil, invoiceSchema, at: 700, 420, "An invoice"),
         ]
         func connection(_ id: ShapeID, _ request: ConnectionRequest) -> AnyShapeRecord {
             guard let made = registry.connection(request, in: ShapeContext(document: CanvasDocument(shapes: top), registry: registry)) else {
@@ -185,7 +179,7 @@ enum QueryStory {
         expectEqual(all.count, 14)
         expectEqual(all.rows.map(\.id), QueryStory.fileOrder)
 
-        // What the rows say of it: titles (Order's derived, Invoice untitled), where each is, and
+        // What the rows say of it: titles (Order's its own, Invoice untitled), where each is, and
         // the arrows bound at both ends as the connector binds them.
         let rows = Dictionary(uniqueKeysWithValues: all.rows.map { ($0.id, $0) })
         expectEqual(rows[QueryStory.order]?.title, "Order")

@@ -12,12 +12,12 @@ import LanguageModels
 import Locking
 import Mentions
 import References
-import Schemas
 import Selection
 import StickyNotes
 import Subboards
 import TestKit
 import Titles
+import Types
 
 /// A board of the shipped plugins with nothing on it, its clipboard on a pasteboard of the test's own.
 @MainActor private func emptyBoard(_ pasteboard: NSPasteboard = .withUniqueName()) -> EditorHarness {
@@ -155,7 +155,7 @@ import Titles
         let n = LockedPlans()
         let h = try EditorHarness { try CanvasEditor(registry: ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel()), file: n.file, scheduler: $0) }
         let editor = h.editor
-        let placing = [StickyNote.kind, Subboard.kind, Frame.kind, SchemaCard.kind, Reference.kind].map { ToolID(placing: $0) }
+        let placing = [StickyNote.kind, Subboard.kind, Frame.kind, Reference.kind].map { ToolID(placing: $0) }
         let keys = try placing.map { try require(editor.registry.shortcut(forTool: $0)?.chord.key, "\($0) has a key") }
         editor.selection = n.outside
         editor.copySelection()

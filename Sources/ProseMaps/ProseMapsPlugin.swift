@@ -6,7 +6,7 @@ extension PluginID {
 
 /// Prose maps, as a plugin: every editor's `ProseMapService`, which says which words of a text in
 /// plain words say which part of a text in a lower language, for any plugin that keeps the two (a
-/// schema card's description and its schema), and the frame's end it asks from. Generic: it knows no
+/// type's words and its schema), and the frame's end it asks from. Generic: it knows no
 /// kind and no target; a target is a type of its plugin's (`ProseTarget`), and what's drawn of a map
 /// is its reader's. It asks the editor's model, so it does nothing without `LanguageModelsPlugin`.
 public struct ProseMapsPlugin: CanvasPlugin {

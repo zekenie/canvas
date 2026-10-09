@@ -148,7 +148,7 @@ public struct AdornmentButton: Hashable, Sendable {
 /// What an adornment shows on one shape. Adornments draws it, so every plugin's look alike (as
 /// `ContentsLabel` does for rows): a capsule in the title pill's dark gray (green for something
 /// done), white text on one line (dimmed for a placeholder's), a small symbol before it if it has
-/// one (a kind's mark: a schema card's title's `{}`), or a symbol alone in a disc. Its height, font
+/// one (a kind's mark: a subboard's title's `rectangle.stack`), or a symbol alone in a disc. Its height, font
 /// and padding are its place's: 18 points, 11-point text, 7 in, in the row; 16 points, 10-point
 /// semibold figures, 5 in, on the corner. On a shape drawn as a skeleton, zoomed out
 /// (`editor.drawsSkeleton(of:)`), it isn't drawn.
@@ -183,7 +183,7 @@ public struct AdornmentLabel: Hashable, Sendable {
     /// since a label can't hold itself.
     private var compactFaces: [AdornmentLabel]
 
-    /// Text, after a small symbol if `systemImage` names one (a kind's mark: a schema card's `{}`).
+    /// Text, after a small symbol if `systemImage` names one (a kind's mark: a subboard's `rectangle.stack`).
     public init(_ text: String, systemImage: String? = nil, tone: Tone = .neutral) {
         self.init(text: text, systemImage: systemImage, tone: tone, isPlaceholder: false)
     }

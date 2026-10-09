@@ -9,19 +9,20 @@ import LanguageModels
 import Locking
 import Mentions
 import Queries
-import Schemas
 import Selection
 import StickyNotes
 import Subboards
 import TestKit
 import Titles
+import Types
 
 // The live evaluation's larger file (scripts/query-prompts, QueryLiveTests), built with the shipped
 // kinds as the story file is, with fixed ids, `00000000-0000-4000-8000-0000000ENNNN`: 59 shapes on
 // six boards, three subboards on the top board and two more inside them; titles that look alike
-// ("Auth", "Auth service", "OAuth", "Auth proxy"; "Session" and "Sessions"); plain arrows, note
-// links and schema links; and a note mentioned from two boards away (Password reset, in Identity ›
-// Legacy auth, mentions Auth, on the top board).
+// ("Auth", "Auth service", "OAuth", "Auth proxy"; "Session" and "Sessions"); plain arrows and note
+// links; types (notes that hold a schema) for the records and the architecture's boxes; and a note
+// mentioned from two boards away (Password reset, in Identity › Legacy auth, mentions Auth, on the
+// top board).
 //
 //     Platform (the top board), back to front:
 //       subboard "Identity", subboard "Billing", subboard "Infra"
@@ -29,42 +30,42 @@ import Titles
 //       note "Roadmap Q4"           Ship @Identity first, then @Billing
 //       note (untitled, …E0006)     Ask legal about GDPR
 //       note "Launch checklist"     Docs, status page, on-call (locked)
-//       schema-card "Frontend" → schema-card "Backend" → schema-card "Database"   (plain arrows)
-//       schema-card "User" → schema-card "Account"                          (schema link)
+//       type "Frontend" → type "Backend" → type "Database"   (plain arrows)
+//       type "User" → type "Account"                                        (note link)
 //       Roadmap Q4 → Launch checklist                                       (note link)
 //     Identity's board:
 //       note "Auth service"         Issues JWTs; delegates to @OAuth
 //       note "OAuth"                Google and GitHub providers
 //       note "Sessions"             Redis, 24 h TTL
 //       note (untitled, …E0104)     TODO: rotate signing keys
-//       schema-card "Login page" → schema-card "Token store"                    (plain arrow)
+//       type "Login page" → type "Token store"                    (plain arrow)
 //       Auth service → Sessions, OAuth → Auth service                       (note links)
-//       schema-card "Session", subboard "Legacy auth"
+//       type "Session", subboard "Legacy auth"
 //     Legacy auth's board (inside Identity):
 //       note "LDAP bridge"          Deprecated; remove in 2027 (locked)
 //       note "Password reset"       Emails a link; signs in through @Auth
-//       schema-card "Old DB", Password reset → Old DB                          (plain arrow)
+//       type "Old DB", Password reset → Old DB                          (plain arrow)
 //     Billing's board:
 //       note "Payments API"         Stripe webhooks; refunds through @Refunds
 //       note "Refunds"              Manual over $500
 //       note "Pricing"              Three tiers
 //       note (untitled, …E0304)     Retry failed charges nightly
-//       schema-card "Invoice" → schema-card "Customer"                      (schema link)
-//       Payments API → Refunds (note link), Payments API → schema-card "Stripe" (plain arrow)
+//       type "Invoice" → type "Customer"                                    (note link)
+//       Payments API → Refunds (note link), Payments API → type "Stripe" (plain arrow)
 //       subboard "Invoices"
 //     Invoices' board (inside Billing):
 //       note "Invoice PDFs"         Rendered for @Payments API
 //       note "Dunning"              Three reminders, then suspend; checks @Auth service
 //       note "Tax"                  VAT by country (locked)
-//       schema-card "PDF renderer", Invoice PDFs → PDF renderer               (plain arrow)
+//       type "PDF renderer", Invoice PDFs → PDF renderer               (plain arrow)
 //     Infra's board:
-//       schema-card "Kubernetes" → schema-card "Postgres", Kubernetes → schema-card "Redis"   (plain arrows)
+//       type "Kubernetes" → type "Postgres", Kubernetes → type "Redis"   (plain arrows)
 //       note "Backups"              Nightly to S3
 //       Backups → On-call                                                   (note link)
 //       note "On-call"              PagerDuty rotation; see @Launch checklist
 //       note "Auth proxy"           Envoy in front of @Auth service
 //       note (untitled, …E0509)     Upgrade Postgres to 17
-//       schema-card "Metric", schema-card "Alert" (its required names no property: a warning)
+//       type "Metric", type "Alert" (its required names no property: a warning)
 //
 // Nothing is selected, and the top board is shown. No shape has an error; Alert alone has a warning.
 
@@ -121,12 +122,12 @@ enum QueryEvalBoard {
     }
 
     /// Alert's schema: its `required` names a property it doesn't have, which Validation warns about.
-    static let alertSchema = #"{"title": "Alert", "type": "object", "properties": {"level": {"type": "string"}}, "required": ["severity"]}"#
+    static let alertSchema = #"{"type": "object", "properties": {"level": {"type": "string"}}, "required": ["severity"]}"#
 
-    /// A schema that's an object titled `title`, with string properties `fields`.
-    static func schema(_ title: String, _ fields: [String]) -> String {
+    /// A schema that's an object with string properties `fields` (a type's name is its note's title).
+    static func schema(_ fields: [String]) -> String {
         let properties = fields.map { #""\#($0)": {"type": "string"}"# }.joined(separator: ", ")
-        return #"{"title": "\#(title)", "type": "object", "properties": {\#(properties)}}"#
+        return #"{"type": "object", "properties": {\#(properties)}}"#
     }
 
     /// The file, its arrows made by the shipped connector as a connection made by name is (both ends
@@ -149,16 +150,18 @@ enum QueryEvalBoard {
                 return AnyShapeRecord(subboard)
             }
         }
-        func card(_ id: ShapeID, _ schema: String) -> Placed {
+        /// A type: a note titled `title` that holds `schema`, saying nothing in words.
+        func type(_ id: ShapeID, _ title: String, _ schema: String) -> Placed {
             { origin in
-                var props = SchemaCard(frame: CGRect(origin: origin, size: SchemaCard.defaultSize), schema: "")
-                props.schema.text = schema
-                return AnyShapeRecord(ShapeRecord(id: id, props))
+                var note = ShapeRecord(id: id, StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize)))
+                note[TitleProperty.self] = title
+                note[TypeSchemaProperty.self] = SchemaText(schema)
+                return AnyShapeRecord(note)
             }
         }
-        /// A box of the file's architecture diagrams, joined by plain arrows: a card for a record of
+        /// A box of the file's architecture diagrams, joined by plain arrows: a type for a record of
         /// that name.
-        func box(_ id: ShapeID, _ title: String) -> Placed { card(id, schema(title, ["id"])) }
+        func box(_ id: ShapeID, _ title: String) -> Placed { type(id, title, schema(["id"])) }
         func text(_ runs: MentionRun...) -> MentionText { MentionText(runs) }
         /// A board: its shapes five to a row, and its arrows, each made against those shapes, in the
         /// order `boards` lists them.
@@ -186,11 +189,11 @@ enum QueryEvalBoard {
                 note(gdpr, nil, MentionText(plain: "Ask legal about GDPR")),
                 note(launch, "Launch checklist", MentionText(plain: "Docs, status page, on-call"), locked: true),
                 box(frontend, "Frontend"), box(backend, "Backend"), box(database, "Database"),
-                card(user, schema("User", ["id", "email"])), card(account, schema("Account", ["plan"])),
+                type(user, "User", schema(["id", "email"])), type(account, "Account", schema(["plan"])),
             ], arrows: [
                 (frontendToBackend, ConnectionRequest(from: frontend, to: backend)),
                 (backendToDatabase, ConnectionRequest(from: backend, to: database)),
-                (userToAccount, ConnectionRequest(from: user, to: account, channel: SchemaLink.id)),
+                (userToAccount, ConnectionRequest(from: user, to: account, channel: NoteLink.id)),
                 (roadmapToLaunch, ConnectionRequest(from: roadmap, to: launch, channel: NoteLink.id)),
             ]),
             children: [
@@ -200,7 +203,7 @@ enum QueryEvalBoard {
                     note(sessions, "Sessions", MentionText(plain: "Redis, 24 h TTL")),
                     note(rotateKeys, nil, MentionText(plain: "TODO: rotate signing keys")),
                     box(login, "Login page"), box(tokenStore, "Token store"),
-                    card(session, schema("Session", ["token", "expires"])), subboard(legacy, "Legacy auth"),
+                    type(session, "Session", schema(["token", "expires"])), subboard(legacy, "Legacy auth"),
                 ], arrows: [
                     (loginToTokenStore, ConnectionRequest(from: login, to: tokenStore)),
                     (authServiceToSessions, ConnectionRequest(from: authService, to: sessions, channel: NoteLink.id)),
@@ -216,10 +219,10 @@ enum QueryEvalBoard {
                     note(refunds, "Refunds", MentionText(plain: "Manual over $500")),
                     note(pricing, "Pricing", MentionText(plain: "Three tiers")),
                     note(retryCharges, nil, MentionText(plain: "Retry failed charges nightly")),
-                    card(invoice, schema("Invoice", ["number", "total"])), card(customer, schema("Customer", ["name", "email"])),
+                    type(invoice, "Invoice", schema(["number", "total"])), type(customer, "Customer", schema(["name", "email"])),
                     box(stripe, "Stripe"), subboard(invoices, "Invoices"),
                 ], arrows: [
-                    (invoiceToCustomer, ConnectionRequest(from: invoice, to: customer, channel: SchemaLink.id)),
+                    (invoiceToCustomer, ConnectionRequest(from: invoice, to: customer, channel: NoteLink.id)),
                     (paymentsToRefunds, ConnectionRequest(from: paymentsAPI, to: refunds, channel: NoteLink.id)),
                     (paymentsToStripe, ConnectionRequest(from: paymentsAPI, to: stripe)),
                 ]),
@@ -235,7 +238,7 @@ enum QueryEvalBoard {
                     note(onCall, "On-call", text(.text("PagerDuty rotation; see "), .mention(launch, label: "Launch checklist"))),
                     note(authProxy, "Auth proxy", text(.text("Envoy in front of "), .mention(authService, label: "Auth service"))),
                     note(upgrade, nil, MentionText(plain: "Upgrade Postgres to 17")),
-                    card(metric, schema("Metric", ["name", "value"])), card(alert, alertSchema),
+                    type(metric, "Metric", schema(["name", "value"])), type(alert, "Alert", alertSchema),
                 ], arrows: [
                     (kubernetesToPostgres, ConnectionRequest(from: kubernetes, to: postgres)),
                     (kubernetesToRedis, ConnectionRequest(from: kubernetes, to: redis)),
@@ -280,10 +283,10 @@ enum QueryEvalBoard {
         expectEqual(h.editor.mentions?.mentions(in: QueryEvalBoard.passwordReset), [QueryEvalBoard.auth])
         expectEqual(try ids(":dangling"), [], "every mention is of a shape in the file")
 
-        // Arrows: eight plain, five note links, two schema links, each bound at both ends.
+        // Arrows: eight plain, seven note links (two of them between types), each bound at both ends.
         expectEqual(try ids("arrow:not([channel])").count, 8)
-        expectEqual(try ids("arrow[channel=note-link]").count, 5)
-        expectEqual(try ids("arrow[channel=schema-link]"), [QueryEvalBoard.invoiceToCustomer, QueryEvalBoard.userToAccount])
+        expectEqual(try ids("arrow[channel=note-link]").count, 7)
+        expectEqual(try ids(#"sticky-note[schema]:connected-to("Customer", note-link)"#), [QueryEvalBoard.invoice])
         expectEqual(try ids(#":edge-from("Kubernetes")"#), [QueryEvalBoard.postgres, QueryEvalBoard.redis])
 
         // Alert's required names no property: its warning is the file's only issue.

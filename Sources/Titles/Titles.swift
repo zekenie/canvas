@@ -6,8 +6,7 @@ import TableOfContents
 
 /// Titles, as a plugin: what a shape is called, a trait any kind can opt into. A kind's title is
 /// kept by Titles, in the `title` property it adds to the kinds that opt in (`TitleProperty`), where
-/// someone names the shape (a note, a subboard); or derived from what the kind keeps itself (a
-/// schema card's, its schema's `"title"`). Any shape of a titled kind may have none. A titled shape shows its title in a
+/// someone names the shape (a note, a subboard); or derived from what the kind keeps itself (`title { … }`). Any shape of a titled kind may have none. A titled shape shows its title in a
 /// pill just outside its top-left corner (`TitlePill`, an adornment), an untitled one there its
 /// kind's placeholder, dimmed, where the kind gives one to grab, and its row in the table of
 /// contents is called by its title; `TitleHeader` renames it in the detail panel, and `/title` from
@@ -107,7 +106,7 @@ extension ShapeRegistrar {
     /// they're named), and its schema gains it, bounds and all, so a title too long draws a warning.
     /// A titled shape shows it in a pill above its top-left corner, unless `pill` is false (for a
     /// kind that draws its own), after the kind's symbol (`registry.label(of:)`) if `symbolInPill`
-    /// (for a kind whose look doesn't say what it is: a schema card's `{}`), and it names the
+    /// (for a kind whose look doesn't say what it is: a subboard's `rectangle.stack`), and it names the
     /// shape's row in the table of contents, unless `contents` is false (for a kind whose row says
     /// more). An untitled shape shows no pill, unless the kind gives one to grab:
     /// `placeholderInPill`, what the pill says there, dimmed ("Frame"), laid out as a title is. Zoomed
@@ -181,8 +180,7 @@ extension Registry {
         contributions(to: ShapeTitles.self, for: shape.kind).first?.title(shape)
     }
 
-    /// Whether a kind's titles are derived from what the kind keeps (`title { … }`: a schema card's,
-    /// from its schema), rather than only named by someone (`title()`); false for a kind without
+    /// Whether a kind's titles are derived from what the kind keeps (`title { … }`), rather than only named by someone (`title()`); false for a kind without
     /// titles. A kind whose shapes can be named opts into `TitleProperty` (`properties(for:)` has its
     /// key), and may be both: named, and derived for the shapes nobody named.
     public func titleIsDerived(_ kind: ShapeKind) -> Bool {
@@ -246,7 +244,7 @@ public struct TitlesPlugin: CanvasPlugin {
             context.registry.titlePill(of: shape)
         }
         // `/title Groceries` typed on a line of a shape's text: names the shape, on the kinds that can
-        // be named. A derived title (a schema card's) isn't Titles' to set, and is renamed where it's
+        // be named. A derived title isn't Titles' to set, and is renamed where it's
         // derived from; a pill in the line is its name, "@Label", as the argument's text reads it.
         registrar.slashCommandsForEveryShape(where: { $0.holds(TitleProperty.self) }) {
             SlashCommand("title", argument: "title") { shape, arguments in shape[TitleProperty.self] = arguments.text }

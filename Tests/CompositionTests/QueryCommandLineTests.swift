@@ -130,7 +130,7 @@ func rowIDs(_ output: String) throws -> [String] {
         let heredoc = try query("/* every note, */\nsticky-note,\n  /* and what's in Payments */\n  \"Payments\" *\n", on: board, server, ["--brief"])
         expectEqual(heredoc.status, 0, heredoc.error)
         expectEqual(try JSON(text: heredoc.output)["query"], #"sticky-note, "Payments" *"#)
-        expectEqual(try rowIDs(heredoc.output), storyIDs("C, F, Y, N2, A, U, N1, L"))
+        expectEqual(try rowIDs(heredoc.output), storyIDs("C, F, Y, N2, A, U, N1, W, S, V, L"))
     },
     test("canvas query answers as text for a person: the rows as a table, id, kind and title first, each one's attributes under it") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -165,17 +165,17 @@ func rowIDs(_ output: String) throws -> [String] {
         defer { server.stop() }
 
         let counted = try JSON(text: query("sticky-note", on: board, server, ["--count"]).output)
-        expectEqual(counted["count"], 7)
+        expectEqual(counted["count"], 10)
         expectEqual(counted["rows"], nil)
         expectEqual(counted["query"], "sticky-note")
 
         let limited = try query("sticky-note", on: board, server, ["--limit", "2", "--brief"])
         let two = try JSON(text: limited.output)
-        expectEqual(two["count"], 7, "count is of them all")
+        expectEqual(two["count"], 10, "count is of them all")
         expectEqual(try rowIDs(limited.output), storyIDs("C, Y"))
         expectEqual(two["rows"]?.arrayValue?.compactMap { $0["properties"] }, [], "--brief lists no attributes")
         expectEqual(two["warnings"]?.arrayValue?.map { $0["reason"] }, ["limited"])
-        expect(two["warnings"]?.arrayValue?.first?["message"]?.stringValue?.hasPrefix("2 of 7 listed.") == true, limited.output)
+        expect(two["warnings"]?.arrayValue?.first?["message"]?.stringValue?.hasPrefix("2 of 10 listed.") == true, limited.output)
 
         let fields = try JSON(text: query(#""Refund policy""#, on: board, server, ["--fields", "locked"]).output)
         expectEqual(fields["rows"]?.arrayValue?.first?["properties"], ["locked": true])
@@ -369,7 +369,7 @@ func rowIDs(_ output: String) throws -> [String] {
         let repaired = try canvas(server, ["query", "--ask", "Every note", "--count", "--board", "\(board.number)"])
         expectEqual(repaired.status, 0, repaired.error)
         let second = try JSON(text: repaired.output)
-        expectEqual(second["count"], 7)
+        expectEqual(second["count"], 10)
         expectEqual(second["warnings"]?.arrayValue?.map { $0["reason"] }, ["repaired"])
         let error = try require(model.lastRequest?.messages.last?.text)
         expect(error.contains("refused: unknown_kind"), error)
@@ -449,7 +449,7 @@ func rowIDs(_ output: String) throws -> [String] {
 
         let after = try query("sticky-note", on: board, server, ["--count"])
         expectEqual(after.status, 0, after.error)
-        expectEqual(try JSON(text: after.output)["count"], 7)
+        expectEqual(try JSON(text: after.output)["count"], 10)
     },
     test("the file closed while an --ask waits on the model is answered board_closed at once, and its editor goes once the call stops") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -497,11 +497,12 @@ func rowIDs(_ output: String) throws -> [String] {
         expectEqual(note["holdsShapes"], false)
         expectEqual(note["holdsBoard"], false)
         expectEqual(note["attributes"]?["text"], "text (mentions read as @Name)")
-        expectEqual(vocabulary["kinds"]?.arrayValue?.first { $0["kind"] == "schema-card" }?["naming"], "derived")
+        expect(vocabulary["kinds"]?.arrayValue?.contains { $0["naming"] == "derived" } == false, "no shipped kind's titles are worked out")
+        expectEqual(note["attributes"]?["schema"], "text")
         expectEqual(vocabulary["kinds"]?.arrayValue?.first { $0["kind"] == "subboard" }?["holdsShapes"], true)
         expectEqual(vocabulary["kinds"]?.arrayValue?.first { $0["kind"] == "subboard" }?["holdsBoard"], true)
-        expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["type"] }, ["stands-for", "mention", "arrow", "note-link", "subboard-link", "schema-link"])
-        expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["under"] ?? .null }, [.null, .null, .null, "arrow", "arrow", "arrow"])
+        expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["type"] }, ["stands-for", "mention", "arrow", "note-link", "subboard-link"])
+        expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["under"] ?? .null }, [.null, .null, .null, "arrow", "arrow"])
         let words = vocabulary["words"]?.arrayValue ?? []
         expectEqual(words.filter { $0["from"] != "queries" }.map { $0["word"] }, ["mentions", "mentioned-by", "invalid", "warned", "selected"])
         expectEqual(words.first { $0["word"] == "mentions" }?["takes"], "shapes")

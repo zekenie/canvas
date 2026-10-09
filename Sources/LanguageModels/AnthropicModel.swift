@@ -22,7 +22,7 @@ public struct AnthropicModel: LanguageModel {
     /// longer (`timeout(for:)`).
     public let timeout: TimeInterval
     /// Nil for `URLSession.shared`, taken at the first call: the app makes its model as it starts,
-    /// and the launch needn't make a session nothing uses until a schema card asks Claude something.
+    /// and the launch needn't make a session nothing uses until a type asks Claude something.
     let session: URLSession?
 
     /// `session` is for tests, which stub the network with a `URLProtocol`.

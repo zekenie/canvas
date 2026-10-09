@@ -293,7 +293,7 @@ extension ProseMapService: EditorService {
     }
 }
 
-/// What the model said of each pair of texts, process-wide, as a schema card's readings are kept:
+/// What the model said of each pair of texts, process-wide, as a type's readings are kept:
 /// by the target, the prose (trimmed), the target's text and the context, so undo, a copy or a file
 /// opened twice finds what it said.
 @MainActor

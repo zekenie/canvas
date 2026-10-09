@@ -2,7 +2,7 @@ import Canvas
 import CoreGraphics
 
 /// What part of a shape's content shows in a popover beside it while the pointer rests there (the
-/// core's `CanvasPopover`): a schema card's words, the part of its schema they say. Unlike a face, it
+/// core's `CanvasPopover`): a type's words, the part of its schema they say. Unlike a face, it
 /// answers no click: a press, a drag and a double-click there are the shape's, as anywhere on it. The
 /// select tool asks as the pointer moves, with nothing under way, over the shape it would press
 /// there, at a point on the shape itself (not on what's drawn for it outside, `DecorationHits`), when

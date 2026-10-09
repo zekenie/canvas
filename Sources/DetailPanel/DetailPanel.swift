@@ -171,7 +171,7 @@ public enum DetailSectionsBuilder<Value> {
 }
 
 /// Where a section is: which shapes, which tab, which section. The key a contribution claims, and
-/// what collapse is remembered by. Prints as "schema-card Schema/JSON" (or "* Arrange/Size").
+/// what collapse is remembered by. Prints as "sticky-note Schema/JSON" (or "* Arrange/Size").
 public struct DetailSectionKey: Hashable, Sendable, CustomStringConvertible {
     public let target: ShapeTarget
     public let tab: DetailTabID
@@ -340,8 +340,8 @@ extension ShapeRegistrar {
 
     /// This kind's header and sections, in one call:
     ///
-    ///     schema.details(header: { $card in schemaHeader($card) }) {
-    ///         DetailSection("JSON", in: SchemaTab.self) { $card in SchemaCode(card: $card) }
+    ///     note.details(header: { $note in TitleHeader($note) }) {
+    ///         DetailSection("Text", in: NoteTab.self) { $note in NoteText(note: $note) }
     ///     }
     ///
     /// The header is a view made from the shape's binding, as a section's content is: a

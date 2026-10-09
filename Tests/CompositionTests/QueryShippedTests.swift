@@ -34,18 +34,18 @@ struct StoryQuery {
 
     /// Every row; a row with several queries once for each.
     static let table: [StoryQuery] = [
-        StoryQuery(1, "sticky-note", .shapes("C, Y, N2, A, U, N1, L")),
+        StoryQuery(1, "sticky-note", .shapes("C, Y, N2, A, U, N1, W, S, V, L")),
         StoryQuery(2, "*", .shapes("P, C, F, Y, N2, A, U, N1, W, S, V, R1, R2, L")),
-        StoryQuery(3, "subboard, schema-card", .shapes("P, F, W, S, V")),
+        StoryQuery(3, "subboard, sticky-note[schema]", .shapes("P, F, W, S, V")),
         StoryQuery(4, #""Checkout""#, .shapes("C")),
         StoryQuery(4, #"sticky-note"Checkout""#, .shapes("C")),
         StoryQuery(5, #""Order""#, .shapes("S")),
-        StoryQuery(5, #"schema-card"Order""#, .shapes("S")),
+        StoryQuery(5, #"sticky-note"Order""#, .shapes("S")),
         StoryQuery(6, #"[title="checkout" i]"#, .shapes("C")),
         StoryQuery(7, #"[title^="API"]"#, .shapes("A")),
-        StoryQuery(8, "sticky-note[title]", .shapes("C, Y, A, U, L")),
-        StoryQuery(9, "sticky-note:not([title])", .shapes("N2, N1")),
-        StoryQuery(9, #"sticky-note[title=""]"#, .shapes("N2, N1")),
+        StoryQuery(8, "sticky-note[title]", .shapes("C, Y, A, U, W, S, L")),
+        StoryQuery(9, "sticky-note:not([title])", .shapes("N2, N1, V")),
+        StoryQuery(9, #"sticky-note[title=""]"#, .shapes("N2, N1, V")),
         StoryQuery(10, "#00000000-0000-4000-8000-000000000011", .shapes("C")),
         StoryQuery(11, "[locked]", .shapes("Y, S")),
         StoryQuery(12, "[locked=false]", .shapes("P, C, F, N2, A, U, N1, W, V, R1, R2, L")),
@@ -64,12 +64,12 @@ struct StoryQuery {
         StoryQuery(23, #"subboard:has("Refund policy")"#, .shapes("P, F")),
         StoryQuery(24, #":has(> "Refund policy")"#, .shapes("F")),
         StoryQuery(25, #""Payments":has(> "Refund policy")"#, .shapes("")),
-        StoryQuery(26, "sticky-note:top-level", .shapes("A, U, N1, L")),
+        StoryQuery(26, "sticky-note:top-level", .shapes("A, U, N1, W, S, V, L")),
         StoryQuery(27, ":current-board", .shapes("P, A, U, N1, W, S, V, R1, R2, L")),
         StoryQuery(28, #"sticky-note:mentions("API gateway")"#, .shapes("C")),
         StoryQuery(29, #""Checkout":mentioned-by("API gateway")"#, .shapes("C")),
         StoryQuery(30, ":mentioned-by(*)", .shapes("C, A")),
-        StoryQuery(31, "sticky-note:not(:mentions(*))", .shapes("Y, N2, U, N1, L")),
+        StoryQuery(31, "sticky-note:not(:mentions(*))", .shapes("Y, N2, U, N1, W, S, V, L")),
         StoryQuery(32, ":dangling", .shapes("L")),
         StoryQuery(32, "sticky-note:dangling(mention)", .shapes("L")),
         StoryQuery(33, #":edge-to("Auth")"#, .shapes("A")),
@@ -89,7 +89,7 @@ struct StoryQuery {
         StoryQuery(46, ":invalid", .shapes("V")),
         StoryQuery(46, ":warned", .shapes("")),
         StoryQuery(47, #""Payments" sticky-note[locked]"#, .shapes("Y")),
-        StoryQuery(48, ":is(subboard, schema-card):edge-from(*)", .shapes("P")),
+        StoryQuery(48, ":is(subboard, sticky-note[schema]):edge-from(*)", .shapes("P")),
         StoryQuery(49, "sticky-note:edge-to(*, note-link)", .shapes("A")),
         StoryQuery(50, #"[title="Chekout"]"#, .shapes("")),
         StoryQuery(51, "sticky-note :selected", .refused(.straySpace)),
@@ -186,7 +186,7 @@ struct StoryQuery {
         expectEqual(try refusal("subboard :selected")?.hint,
                     "Write them together for one shape: subboard:selected; for a shape inside it: subboard *:selected.")
         let spatial = try require(try refusal(#":inside("Warehouse")"#))
-        expect(spatial.message.hasPrefix("Warehouse is a schema-card, which holds no shapes"), "\(spatial)")
+        expect(spatial.message.hasPrefix("Warehouse is a sticky-note, which holds no shapes"), "\(spatial)")
         expectEqual(spatial.hint, "The kinds that hold shapes: subboard, frame.")
         // Beside the title like it, that mentions point at shapes that aren't there, which :dangling finds.
         let gone = try require(try refusal(#":mentions("Old ledger")"#))
@@ -223,9 +223,9 @@ struct StoryQuery {
         expectEqual(byID[QueryStory.ledger]?.properties, ["text": "Moved to @Old ledger"], "a mention of a shape that's gone reads as the name it holds")
 
         let order = try require(byID[QueryStory.order])
-        expectEqual(order.title, "Order", "a schema card's title is its schema's")
+        expectEqual(order.title, "Order", "a type's name is its note's title")
         expectEqual(order.properties?["schema"], .string(QueryStory.orderSchema))
-        expectEqual(byID[QueryStory.invoice]?.title, nil, "a card whose text isn't JSON has none")
+        expectEqual(byID[QueryStory.invoice]?.title, nil, "an untitled type has none")
         expectEqual(byID[QueryStory.todo]?.title, nil)
 
         let link = try require(byID[QueryStory.gatewayToAuth])

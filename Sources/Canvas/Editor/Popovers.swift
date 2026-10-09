@@ -2,7 +2,7 @@ import AppKit
 import CoreGraphics
 
 /// Text shown beside part of the board while the pointer rests there: what a plugin says of what the
-/// pointer is on (a schema card's words: the part of its schema they say). The host shows it over
+/// pointer is on (a type's words: the part of its schema they say). The host shows it over
 /// everything the canvas shows, the editing view too, below its anchor (above, where there's no room
 /// below), within the view, and it takes no clicks. One shows at a time (`CanvasEditor.popover`),
 /// `Style.popoverDelay` after the pointer comes to what it's about (`hoverPopover`), or at once

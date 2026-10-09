@@ -118,7 +118,7 @@ public struct Transaction {
     }
 
     /// Whether an agent makes the change (the command line's `draw`), not a person at the app: its
-    /// commit says so (`ChangeSet.byAgent`), so what acts on a person's edits (a schema card's sync)
+    /// commit says so (`ChangeSet.byAgent`), so what acts on a person's edits (a type's sync)
     /// takes what it changed as it is. Saying so changes nothing by itself.
     public var byAgent: Bool {
         get { changes.byAgent }

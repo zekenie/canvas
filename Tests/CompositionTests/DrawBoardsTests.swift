@@ -8,15 +8,15 @@ import Foundation
 import LanguageModels
 import Locking
 import Mentions
-import Schemas
 import StickyNotes
 import Subboards
 import TestKit
 import Titles
+import Types
 
 // `canvas draw` with what main's shipped kinds and boards bring: a run as one undo step, a subboard
-// deleted with its board, and schema cards, whose name is their schema's and whose sides an agent
-// writes without the model being asked.
+// deleted with its board, and type notes (a note drawn with `schema:`), whose sides an agent writes
+// without the model being asked.
 
 /// A schema's text as a script's string writes it: each quote escaped.
 func scripted(_ text: String) -> String { text.replacingOccurrences(of: "\"", with: "\\\"") }
@@ -44,7 +44,7 @@ func scripted(_ text: String) -> String { text.replacingOccurrences(of: "\"", wi
     }
 }
 
-@MainActor let drawBoardsTests = Suite("canvas draw with boards, undo and schema cards", [
+@MainActor let drawBoardsTests = Suite("canvas draw with boards, undo and types", [
     test("a draw is one undo step, Draw: the board is edited, and undone it isn't; a dry run makes none") {
         try configureBoards()
         let board = newBoard()
@@ -108,51 +108,45 @@ func scripted(_ text: String) -> String { text.replacingOccurrences(of: "\"", wi
         let renamed = try drawnInProcess(#"subboard "Payments" title: "Billing""#, on: editor)
         expectEqual(renamed["changes"]?.arrayValue?.first?["was"], "Payments")
     },
-    test("a schema card is named by its schema's title, and renamed by a schema of another; untitled, a statement can't name it") {
+    test("a type is a note drawn with schema:, named by its title as any note is; a root title in its schema names nothing") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
-        let person = #"{"title": "Person", "type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}}}"#
-        let named = try refusedInProcess(#"schema-card "Person" schema: "\#(scripted(person))""#, on: editor)
-        expectEqual(named.reason, "untitlable")
-        _ = try drawnInProcess(#"schema-card schema: "\#(scripted(person))""#, on: editor)
-        let card = try require(editor.document.shapes.first)
-        expectEqual(editor.registry.title(of: card), "Person")
-        expectEqual(card.box?.height, SchemaCard.defaultSize.height, "no description: a line's height, whatever its schema")
-        // Found by its title; a schema whose title is another renames it, as `title:` renames a note.
-        let human = person.replacingOccurrences(of: "Person", with: "Human")
-        let renamed = try drawnInProcess(#"schema-card "Person" schema: "\#(scripted(human))""#, on: editor)
-        let row = try require(renamed["changes"]?.arrayValue?.first)
-        expectEqual(row["did"], "renamed")
-        expectEqual(row["was"], "Person")
-        expectEqual(row["title"], "Human")
-        // One with no title left isn't: a script can't take a title away.
-        let untitled = try refusedInProcess(#"schema-card "Human" schema: "{\"type\": \"object\"}""#, on: editor)
-        expectEqual(untitled.reason, "renames")
-        expectEqual(untitled.message, #"this would leave "Human" without a title"#)
+        let person = #"{"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}}}"#
+        _ = try drawnInProcess(#"sticky-note "Person" schema: "\#(scripted(person))" text: "A person: name and email""#, on: editor)
+        let note = try require(editor.document.shapes.first)
+        expectEqual(editor.registry.title(of: note), "Person")
+        expectEqual(note[TypeSchemaProperty.self]?.text, person)
+        expect(editor.types?.isType(note.id) == true)
+        // Restated with another schema, it's the same type; a root "title" in it is the schema's own.
+        let titled = #"{"title": "Human", "type": "object", "properties": {"name": {"type": "string"}}}"#
+        let updated = try drawnInProcess(#"sticky-note "Person" schema: "\#(scripted(titled))""#, on: editor)
+        expectEqual(updated["changes"]?.arrayValue?.first?["did"], "updated")
+        expectEqual(editor.registry.title(of: try require(editor.document[note.id])), "Person")
+        expectEqual(editor.document[note.id]?[TypeSchemaProperty.self]?.text, titled)
     },
-    test("an agent writes a schema card's prompt and schema as they're written: the model isn't asked, where a person's edit asks it") {
+    test("an agent writes a type note's text and schema as they're written: the model isn't asked, where a person's edit asks it") {
         let model = ScriptedLanguageModel(), scheduler = ManualScheduler()
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler, model: model)
         editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
-        let person = #"{"title": "Person", "type": "object", "properties": {"name": {"type": "string"}}}"#
-        _ = try drawnInProcess(#"schema-card schema: "\#(scripted(person))" prompt: "A person""#, on: editor)
+        let person = #"{"type": "object", "properties": {"name": {"type": "string"}}}"#
+        _ = try drawnInProcess(#"sticky-note "Person" schema: "\#(scripted(person))" text: "A person""#, on: editor)
         let id = try require(editor.document.shapes.first?.id)
         @MainActor func settle() {
-            scheduler.advance(by: SchemaSync.idleDelay * 2)
+            scheduler.advance(by: TypeSync<TypeSchemaProperty>.idleDelay * 2)
             for _ in 0..<10 { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.002)) }
         }
         settle()
-        let updated = try drawnInProcess(#"schema-card "Person" prompt: "A person, and their email""#, on: editor)
+        let updated = try drawnInProcess(#"sticky-note "Person" text: "A person, and their email""#, on: editor)
         expectEqual(updated["changes"]?.arrayValue?.first?["did"], "updated")
         settle()
         let email = person.replacingOccurrences(of: #""name": {"type": "string"}"#, with: #""name": {"type": "string"}, "email": {"type": "string"}"#)
-        _ = try drawnInProcess(#"schema-card "Person" schema: "\#(scripted(email))""#, on: editor)
+        _ = try drawnInProcess(#"sticky-note "Person" schema: "\#(scripted(email))""#, on: editor)
         settle()
         expectEqual(model.requests.count, 0, "what an agent wrote is taken as in step")
-        expectEqual(editor.schemaSync?.status(of: id), .idle)
-        // The person edits the prompt: that asks the model for the schema.
-        editor.transact("Edit Description") { $0.update(id, as: SchemaCard.self) { $0.props.setPrompt("A person, their email and phone") } }
-        scheduler.advance(by: SchemaSync.idleDelay)
+        expectEqual(editor.typeSync?.status(of: id), .idle)
+        // The person edits the text: that asks the model for the schema.
+        editor.transact("Typing") { $0.update(id, as: StickyNote.self) { $0.props.text = "A person, their email and phone" } }
+        scheduler.advance(by: TypeSync<TypeSchemaProperty>.idleDelay)
         spinRunLoop(until: { model.requests.count == 1 })
     },
 ])
