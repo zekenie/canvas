@@ -622,7 +622,10 @@ is compiled by `./test.sh`, even before anything depends on it.
   drawn, `placement(size:minimumSize:props:)` (`Placement.minimumSize`, zero for none), the one place
   the kind says it: the tool that draws its rect keeps to it, the kind hands it to its resizing, and
   `canvas draw` refuses a `size:` under it ([draw](#draw)), so a frame is never under 96 × 64 however
-  it's drawn. Any tool or gesture can also insert a shape itself, with
+  it's drawn. A placement can be made into another: `.mapping { record in … }` changes what it
+  makes (a plugin that puts down a record it built, with values another plugin's data fills in; the
+  kind stays), `.sized(size)` makes shapes of another size, and `.setting(Property.self, to:)` sets
+  an added value. Any tool or gesture can also insert a shape itself, with
   `editor.transact { $0.insert(record) }`, as a port's drag does its arrow.
 
 What a real vertical adds on top ([StickyNotes](../Sources/StickyNotes/StickyNotes.swift)):
@@ -808,6 +811,34 @@ The details:
   it (Frames' F). A tool id used twice is a registry error, and so is a key.
 - **The toolbar** is the default tool, then the rest in plugin-list order, the core's Hand first. It
   follows `editor.currentToolID`, which is observable.
+- **Tool menus.** A tool may carry a menu on its segment of the toolbar:
+  `registrar.toolMenu(for: tool) { editor in [ToolMenuEntry] }`, one per tool, for a registered tool
+  (a second is a `conflict`, one for a tool nobody registers `invalid`; the report line is `tool menu
+  <id>`). The entries are values (`.item(ToolMenuItem("Person", systemImage:, isChecked:, isEnabled:)
+  { editor in … })`, `.separator`), made when the menu opens, never when the editor is made, so it
+  lists what the file holds at that moment; `editor.toolMenu(for:)` asks (nil for a tool with none,
+  `registry.hasToolMenu(for:)`) and `editor.choose(item)` runs an item (a dimmed one does nothing).
+  CanvasUI shows the menu's indicator on the segment and builds the `NSMenu` as it opens
+  (`menuNeedsUpdate`), so plugins never touch the control and a test reads the values. A plain click
+  on the segment still picks the tool; a tool that remembers a choice made in its menu keeps it in its
+  own service.
+- **A tool that places shapes of its own** registers with `registrar.tool(descriptor, placesShapes:
+  true) { … }`: like a kind's tool (`ShapeRegistrar.tool`, whose placement says it) it is dimmed, and
+  its key does nothing, on a board that takes no shapes (`editor.isToolEnabled`), and one in use is left for the default
+  tool when the board becomes read-only.
+- **Asking the person.** `editor.ask(CanvasQuestion(id:, message:, detail:, confirm:, cancel:)) { yes in
+  … }` puts a yes-or-no question for the host to show as a sheet on the board's window. Questions
+  wait first in, first out, one at a time; asking again with the id of one that waits replaces it
+  (its answer is never called); a file put in place (`replaceFile`) and the window closing answer all
+  of them no; headless, with no host, a question waits until the host API answers it
+  (`editor.question`, `answerQuestion(_:)`, `cancelQuestions()`), as a test does. The answer runs
+  outside any transaction. CanvasUI's `CanvasView` shows the sheet (`makeAlert(for:)` builds its
+  texts: the confirm button the default, Return; the cancel button Escape), and with no window leaves
+  the question waiting.
+- **A menu from a canvas button.** A button's click is inside its press's bookkeeping, so it asks
+  `editor.popUpMenu(menu, below: worldRect)`, and the host pops the `NSMenu` up on the next turn of
+  the run loop, at the rect's bottom-left (`menuToPopUp`, `menuDidPopUp()`); a press that begins
+  before that drops it, as does a file put in place. One waits at a time: a newer replaces it.
 - **Redrawing**: the core redraws whenever the document, camera, tool or session changes. A plugin
   whose drawn state changes some other way (its own state, a timer) calls `editor.setNeedsDisplay()`,
   as Selection does when the selection or hover changes; a tool whose cursor follows such state
@@ -1535,6 +1566,9 @@ the record: a note is mentioned by its title, else its text's first line
   the board edited, and an insert is an edit anyway. `registry.fillingDefaults(document)` does the
   same to a document.
 - **Copies keep them**: `record.copy(as:)` takes the values along, as it does the metadata.
+- **One can be read by its key as JSON**, without its type: `record.addedJSON(for: key)` is the value
+  as a board would write it, nil if the shape holds none (`registry.properties(for: kind)` lists the
+  keys a kind opts into).
 - **A placement can set one** on what it places:
   `placement(size: size) { Patch() }.setting(TitleProperty.self, to: "Zone")` would name every
   patch its tool places "Zone".
@@ -2366,7 +2400,10 @@ What the shipped app's keys do:
   AppKit segmented control, since SwiftUI's segmented `Picker` dims none of its segments: one a
   tool, selected as the tool is current, and dimmed while the editor doesn't take the tool
   (`editor.isToolEnabled`, observed, so it follows a board shown, or a lock that lands above it).
-  A click on a segment the editor refuses leaves the selection on the current tool.
+  A click on a segment the editor refuses leaves the selection on the current tool. A tool with a
+  menu ([tool menus](#tools-and-sessions)) shows the menu's indicator on its segment, and the
+  segment's `NSMenu` is made as it opens (`menuNeedsUpdate`, from `editor.toolMenu(for:)`); a plain
+  click still picks the tool, and a line chosen runs `editor.choose(item)`.
 - **The core's part** is one hook, like the secondary click's: at most one plugin claims key strokes
   (`registrar.keyStrokes { editor, stroke in ... }`, returning whether it took the key). `CanvasView`
   hands every key it gets to the editor (`editor.keyDown`, host API), as a `KeyStroke`: its
@@ -10324,7 +10361,8 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   ([Containers](#containers)), `move(_:to:)`, which takes shapes onto another board of the file,
   `move(_:toBoardOwnedBy:)` onto the board a shape on this one owns, `move(_:from:to:)` off any
   board onto any other, `translate(_:by:on:)`, which moves them there, and `move(_:above:on:)` and
-  `move(_:below:on:)`, which restack them there ([Boards in a file](#the-editor-and-the-file)), and for [containers](#containers), `setContainer(_:to:)` and
+  `move(_:below:on:)`, which restack them there, `update(_:on:_:)`, which changes a shape there, and
+  `board(containing:)`, which says where a shape is ([Boards in a file](#the-editor-and-the-file)), and for [containers](#containers), `setContainer(_:to:)` and
   `settle(_:)` (`settle(_:on:)` on another board). A record carries its props, the
   values of its [added properties](#added-properties) and its [metadata](#metadata), and
   `record.copy(as:)` is the same shape under another id.
@@ -10351,8 +10389,11 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   `editor.undo()` and `editor.redo()` put a step's records back exactly.
 - **`willDelete`** handlers run inside the deleting transaction, before anything is removed, and
   see every shape as it was, so a plugin can act on shapes about to disappear (delete what depends
-  on them). They may delete more, and change what they must, read-only shapes included; each
-  shape's handlers run once. Then every shape bound to one of them, and stays, lets go of it, as
+  on them). They may delete more, and change what they must, read-only shapes included, and not
+  only on the board of the delete: `tx.update(id, on: board) { … }` changes a shape on any board of
+  the file inside the same undo step, so a handler that takes back what a deleted shape gave to
+  shapes on other boards is undone, and redone, with the delete in one ⌘Z ([Boards in a
+  file](#the-editor-and-the-file)); each shape's handlers run once. Then every shape bound to one of them, and stays, lets go of it, as
   its kind's `ShapeReferencing` says (arrows bake their curve there). Names of them
   ([`ShapeNaming`](#values-that-name-shapes), a mention) are never looked at, and stay.
 - **Lookups.** `editor.shapeContext` looks up the editor's shapes (and keeps their geometry from
@@ -10779,7 +10820,7 @@ shown from `document`, and never list shapes from `file`. `editor.contents(of: b
 board's shapes, and `editor.owner(of:)` the shape that owns it, wherever it is.
 
 A transaction is on the board shown (`transaction.board`) and never holds the file: it reads it
-through the editor, so a commit, a drag's every event, costs what it changed, not the file. Three
+through the editor, so a commit, a drag's every event, costs what it changed, not the file. Four
 things reach past it, all in the one commit:
 
 - **Deleting a shape takes the board it owns, and every board under that** (the cascade), whatever
@@ -10834,6 +10875,26 @@ things reach past it, all in the one commit:
   along; a read-only shape that was there is refused). A commit writes every board it changed, its
   own among them, together (`CanvasFile.set` of several), each letting go of what leaves it before
   any takes in what comes, so a shape moved either way between two is on one at a time.
+
+- **And shapes can be written to on any board**, `transaction.update(id, on: board) { record in … }`
+  (typed, with `as:`; `update(inFile: id)` on whichever board the shape is on, which
+  `transaction.board(containing: id)` says, as the transaction leaves the file): as `update` changes
+  one on this board, on that board as the transaction leaves it, so a shape moved onto it, or in with
+  its owner, is found there. The change is part of this transaction's commit, so it is in the same
+  undo step as the rest, and undo and redo put every board back, and again, exactly. The board is
+  `boardsChanged` and the shape in `elsewhere`, so a service that follows a change set (the index,
+  the table of contents, validation, Mentions) hears the shapes it wrote to as it hears the rest. A
+  `willDelete` handler uses it to take back, on every board, what the deleted shape gave: one ⌘Z
+  brings everything back. Nothing happens for a shape that isn't on that board, a board the editor
+  couldn't show once the transaction commits, or one that goes with a shape the transaction deleted
+  (a handler's write on a board the same deletion takes leaves no trace, and undo brings the board
+  back as it was). Read-only shapes and boards are held as on this board (refused, noted in
+  `refusedShapes`, unless the change leaves a shape no longer read-only), except inside the
+  deletion keeping the board whole: a `willDelete` handler's writes go through a lock, on every
+  board, as its writes on this one do (a locked shape that depended on what is deleted is taken back
+  too). A transaction on a board that isn't shown (`transact(on:)`) may write to a third board the
+  same way, in its own step; one that would write to the board shown commits nothing, as when it
+  moves shapes onto it.
 
 Shape ids are unique across the file: an insert's must be on no board (unless the transaction
 deleted it from its own). An undo step holds the boards a commit takes out, brings in or changes,
@@ -11230,8 +11291,10 @@ shows its board, like any step made there.
 **A step is all it did to the file.** Besides its board's records, it holds every other board it
 reached, whole, as it was before the step and is after it (`DocumentDelta.boards`, copies that cost
 nothing, since a board is a value): the boards a deletion took with the shapes that owned them,
-every board under them; those a paste brought with its shapes (`insert(_:contents:)`); and those
-Delete Hidden Shapes deleted from, with the entries of the file it took that didn't read as boards
+every board under them; those a paste brought with its shapes (`insert(_:contents:)`); those a
+transaction moved shapes onto or wrote to (`update(_:on:_:)`, which a `willDelete` handler uses to
+take back, on every board, what the deleted shape gave, so one undo brings everything back); and
+those Delete Hidden Shapes deleted from, with the entries of the file it took that didn't read as boards
 (`unreadableBoards`). So undoing Delete of a shape that owns a board brings the shape back with
 everything under it, every id as it was, in one step, and redo takes it all again; undoing a paste
 takes its boards out with its shapes, leaving no board without its owner, and redo puts back the
@@ -11652,6 +11715,16 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   counts how often any is walked or renamed, so a test can show something never looks at names (a
   delete). AutomationTests' `Pin` does both too, and a tool places it, so `canvas draw` can write
   ids into it.
+- **Tools with menus** without a real kind: `PalettePlugin(palette)` (CanvasTesting) registers a
+  tool `palette` whose menu lists a `Palette`'s colors as they are when it opens (the one chosen
+  last checked, a separator, a dimmed line) and a tool `stamp` registered with `placesShapes`.
+  CanvasTests' `ToolMenuTests` hold the registry's rules and the values, CanvasUITests'
+  `ToolPickerTests` host the picker and read each segment's `NSMenu` (`menu.delegate?.menuNeedsUpdate`
+  opens it, `performActionForItem(at:)` chooses a line). Questions are tested at the editor with a stub
+  `CanvasEditorDelegate`, or headless (`answerQuestion`), and the sheet through `CanvasView.makeAlert`
+  (a sheet doesn't run in an unshown window); a queued menu through `menuToPopUp`, and in a
+  `CanvasView` through its `menuPresenter` seam, which a test swaps for one that notes the menu (its
+  tracking runs in no unshown window).
 - **Boards in a file** without a real kind: `PocketsPlugin` (CanvasTesting) registers `Pocket`, a box
   whose definition is `BoardOwning`, with no tool. It's apart from `FixturesPlugin`, so the reports
   tests pin don't change. `EditorHarness(plugins:file:)` starts an editor on a file of several

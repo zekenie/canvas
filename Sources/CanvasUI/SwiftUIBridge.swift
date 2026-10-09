@@ -65,7 +65,10 @@ public struct ToolPicker: View {
 
 /// `ToolPicker`'s control: a segment a tool, its symbol and tooltip, dimmed where `enabled` says, the
 /// current tool's selected; a click on one picks that tool (`editor.setTool`, which may refuse it, and
-/// then the selection goes back to the tool that's current).
+/// then the selection goes back to the tool that's current). A tool with a menu
+/// (`registrar.toolMenu`) shows the menu's indicator on its segment, and its menu is made as it opens,
+/// from `editor.toolMenu(for:)`: the file as it is then, a line a `ToolMenuItem`, chosen with
+/// `editor.choose`. A plain click still picks the tool.
 struct ToolSegments: NSViewRepresentable {
     let editor: CanvasEditor
     let tools: [ToolDescriptor]
@@ -86,6 +89,13 @@ struct ToolSegments: NSViewRepresentable {
         for (index, tool) in tools.enumerated() {
             control.setImage(NSImage(systemSymbolName: tool.systemImage, accessibilityDescription: tool.label), forSegment: index)
             control.setImageScaling(.scaleNone, forSegment: index)
+            if editor.registry.hasToolMenu(for: tool.id) {
+                let menu = NSMenu(title: tool.label)
+                menu.delegate = context.coordinator
+                context.coordinator.menus[ObjectIdentifier(menu)] = tool.id
+                control.setMenu(menu, forSegment: index)
+                control.setShowsMenuIndicator(true, forSegment: index)
+            }
         }
         return control
     }
@@ -101,15 +111,48 @@ struct ToolSegments: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, NSMenuDelegate {
         let editor: CanvasEditor
         var tools: [ToolID] = []
+        /// The tool each segment's menu belongs to.
+        var menus: [ObjectIdentifier: ToolID] = [:]
 
         init(editor: CanvasEditor) { self.editor = editor }
+
+        /// The menu's lines, made as it opens from the file as it is.
+        func menuNeedsUpdate(_ menu: NSMenu) {
+            menu.removeAllItems()
+            guard let tool = menus[ObjectIdentifier(menu)], let entries = editor.toolMenu(for: tool) else { return }
+            for entry in entries {
+                switch entry {
+                case .separator:
+                    menu.addItem(.separator())
+                case .item(let item):
+                    let line = NSMenuItem(title: item.title, action: #selector(choose(_:)), keyEquivalent: "")
+                    line.target = self
+                    line.isEnabled = item.isEnabled
+                    line.state = item.isChecked ? .on : .off
+                    if let symbol = item.systemImage { line.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
+                    line.representedObject = ChosenItem(item)
+                    menu.addItem(line)
+                }
+            }
+        }
+
+        @objc func choose(_ line: NSMenuItem) {
+            if let chosen = line.representedObject as? ChosenItem { editor.choose(chosen.item) }
+        }
 
         @objc func pick(_ control: NSSegmentedControl) {
             if tools.indices.contains(control.selectedSegment) { editor.setTool(tools[control.selectedSegment]) }
             control.selectedSegment = tools.firstIndex(of: editor.currentToolID) ?? -1
         }
     }
+}
+
+/// A menu line's item, for the line to carry.
+@MainActor
+private final class ChosenItem {
+    let item: ToolMenuItem
+    init(_ item: ToolMenuItem) { self.item = item }
 }
