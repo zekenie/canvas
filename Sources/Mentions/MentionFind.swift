@@ -13,10 +13,10 @@ extension PluginID {
 /// itself (`overCanvas`: an arrow's label) is washed, whose color follows the appearance, where one
 /// on the shape's surface is marked as a highlighter does; the two are contributions of their own,
 /// each asked for its own placements. Its rects come from the render's own layout, kept with the
-/// drawn text by text and width (`MentionTextMemo`), so a hit's rects are a glyph range looked up. A rename changes the texts of what mentions the shape renamed: those are what
-/// Mentions' rows name (`rowsAffected(by:)`), read before any text, so the names read are the
-/// commit's. A plugin value of its own, after Find and Mentions, so a list without Find leaves it
-/// out.
+/// drawn text by text and width (`MentionTextMemo`), so a hit's rects are a glyph range looked up.
+/// A rename changes the texts of what mentions the shape renamed: those are what Mentions' rows
+/// name (`rowsAffected(by:)`), read before any text, so the names read are the commit's. A plugin
+/// value of its own, after Find and Mentions, so a list without Find leaves it out.
 public struct MentionFindPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { .mentionFind }
