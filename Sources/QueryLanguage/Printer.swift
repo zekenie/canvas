@@ -72,7 +72,7 @@ enum Printer {
     }
 
     static func attribute(_ test: AttributeTest) -> String {
-        var out = "[" + name(test.name)
+        var out = "[" + name(test.name) + test.path.map { "." + $0 }.joined()
         if let op = test.op, let value = test.value {
             switch value {
             case .bare(let text): out += op.rawValue + text

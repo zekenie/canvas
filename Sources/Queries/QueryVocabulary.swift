@@ -242,7 +242,7 @@ extension QueryWordDeclaration {
     var form: String {
         switch meaning {
         case .pseudoClass: ":\(word)"
-        case .relation: ":\(word)(S)"
+        case .relation, .fileRelation: ":\(word)(S)"
         }
     }
 
@@ -250,7 +250,7 @@ extension QueryWordDeclaration {
     var takes: String {
         switch meaning {
         case .pseudoClass: Word.Signature.none.takes
-        case .relation: Word.Signature.selectors.takes
+        case .relation, .fileRelation: Word.Signature.selectors.takes
         }
     }
 }

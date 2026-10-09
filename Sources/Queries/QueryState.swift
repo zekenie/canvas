@@ -351,10 +351,16 @@ public final class QueryState {
         let preparation = QueryPreparation(editor: editor, file: QueryFilePreparation(snapshot: graph, registry: registry, editor: editor))
         var prepared: [String: any Sendable] = [:], verdicts: [String: MainFacts.Verdict] = [:]
         for word in words.sorted() {
-            guard case .pseudoClass(let behavior)? = vocabulary.contributedWords[word]?.meaning else { continue }
-            let value = behavior.prepare(preparation)
-            prepared[word] = value
-            if let onMain = behavior.onMain { verdicts[word] = MainFacts.Verdict(ask: onMain, prepared: value) }
+            switch vocabulary.contributedWords[word]?.meaning {
+            case .pseudoClass(let behavior)?:
+                let value = behavior.prepare(preparation)
+                prepared[word] = value
+                if let onMain = behavior.onMain { verdicts[word] = MainFacts.Verdict(ask: onMain, prepared: value) }
+            case .fileRelation(let relation)?:
+                prepared[word] = relation.prepare(preparation.file)
+            case .relation?, nil:
+                continue
+            }
         }
         var read: [String: any Sendable] = [:]
         for mediaType in formats.sorted() {

@@ -124,7 +124,8 @@ public struct QueryError: Error, Sendable, Equatable, CustomStringConvertible {
 /// container goes can hold shapes (a stray space's form for a shape inside, a combinator in `:has()`
 /// written as a `:has` of its own, a word people invent for `:inside`), that a shape is titled so (a
 /// word that isn't a kind, which may be a title without its quotes; `#` or `@` before a word), or
-/// that a kind's shapes can have titles (a kind and a title written the other way round). A hint
+/// that a kind's shapes can have titles (a kind and a title written the other way round), or that the
+/// app has a word for a type's shapes (`.Task`). A hint
 /// that is a query is never one the app would refuse for a reason the query it mends didn't have,
 /// so one that could be waits for the caller's word (`QueryError.settled(by:)`).
 public struct HintPremise: Sendable, Equatable {
@@ -138,6 +139,11 @@ public struct HintPremise: Sendable, Equatable {
         /// The shapes of the kind named so can have titles (a word that isn't a kind is the query's
         /// own, and its refusal the query's).
         case namedKind(String)
+        /// The word, as written after a dot (`.Task`), names a type: the app declares a word that
+        /// finds the shapes of a type (a relation declared `namesTypes`), so the hint is that word
+        /// with the name as its argument. The premise's `hint` is nil: the caller writes it, since
+        /// only it knows the word.
+        case typeWord(String)
     }
 
     public var claim: Claim

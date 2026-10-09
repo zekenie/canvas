@@ -85,7 +85,8 @@ import TestKit
             Refused("pocket[label]", .unknownAttribute, "pocket has no attribute label.", hint: "Its attributes: caption.", at: 6, 7),
             Refused("chore[frame]", .notBuilt, "frame is where the shape is; where shapes are isn't in the language yet.", at: 5, 7),
             Refused("[frame]", .notBuilt, "frame is where the shape is; where shapes are isn't in the language yet.", at: 0, 7),
-            Refused(#"["meta.owner"=x]"#, .notBuilt, "meta.owner is an attribute inside an attribute, which a query can't read yet.", at: 0, 16),
+            Refused(#"["meta.owner"=x]"#, .unknownAttribute, "No attribute is called meta.owner.",
+                    hint: "A member inside an attribute is written without quotes: [meta.owner=x].", at: 0, 16),
         ], on: h)
     },
     test("words people put in brackets for what's written otherwise") {
@@ -105,7 +106,7 @@ import TestKit
                     "page isn't an attribute: what's on a board is written after the shape that owns it.", at: 5, 13),
             Refused("chore[board=root]", .unknownAttribute, "board isn't an attribute: what's on a board is written after the shape that owns it.",
                     hint: "chore:top-level", at: 5, 12),
-            Refused("[class=Task]", .notBuilt, "Shapes aren't typed by schemas yet, so class names nothing.",
+            Refused("[class=Task]", .unsupported, "A type isn't an attribute: a shape is found by its kind, its title, its id, an attribute or a word.",
                     hint: #"Name a kind, or find the word: :contains("Task")."#, at: 0, 12),
             // The hint is a query that reads: a kind by its id, and a head after the space.
             Refused("[kind=task]", .unknownAttribute, "kind isn't an attribute: a shape's kind starts its part of the query.", hint: "chore", at: 0, 11),
@@ -435,7 +436,7 @@ import TestKit
             Refused(#"chore[tags^="ur gent"]"#, .unsupportedOperator, "^= compares text; tags is a list.",
                     hint: #"Use ~=: [tags~="ur gent"] finds a list that holds it."#, at: 5, 17),
             Refused("chore[meta=x]", .notBuilt, "meta is an object: comparing a whole object isn't in the language yet.",
-                    hint: "[meta] asks whether it says anything.", at: 5, 8),
+                    hint: "[meta] asks whether it says anything; [meta.member] tests what is inside it.", at: 5, 8),
             Refused("chore[meta^=x]", .unsupportedOperator, "^= compares text; meta is an object.", at: 5, 9),
         ], on: h)
         _ = try plan("chore[meta]", on: h)

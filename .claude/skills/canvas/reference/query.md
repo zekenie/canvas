@@ -250,13 +250,14 @@ The value after the operator is read as the attribute takes it, so `[bend=0]` an
 | a whole number | the number (a fraction is refused) | refused | refused | yes | a finite number |
 | true or false | as set, and false when not set | refused | refused | refused | `true` or `false` |
 | a list | refused: use `~=` | refused | an item equals | refused | what an item takes |
-| an object | refused (not built) | refused | refused | refused | — |
+| an object | refused (not built); `[a.b]` tests what is inside it | refused | refused | refused | — |
 
 - **Not set is false.** A true-or-false attribute a shape hasn't set is its default, else false: `[locked=false]` matches every shape that isn't locked. `[locked]` is the same as `[locked=true]`.
 - **`""` is no value.** On text, a date or a choice, `[a=""]` matches a shape whose kind has `a` and that hasn't set it, or has it empty: `sticky-note[title=""]` is the notes with no title (a blank title is none), the same as `sticky-note:not([title])`, and `arrow[channel=""]` a plain arrow. `^=`, `$=` and `*=` with `""` match nothing, as in CSS.
 - **In a part with a kind**, the attribute must be that kind's (`unknown_attribute`, with its attributes listed). **In a part without one**, it must be some kind's, and the test applies to the kinds that have it: `[text*="x"]` is about notes.
 - **Text that mentions shapes is compared as it reads.** A note's `text` holds its mentions as ids, which never reach you: a query reads each as `@` and the name of the shape it mentions now, so a rename changes what matches. To follow a mention, use `:mentions(…)`.
-- **Where a shape is isn't an attribute** (`frame`, a line's `points`, an arrow's `start` and `end` are `not_built`), and neither is anything inside an attribute (`[a.b]`).
+- **Where a shape is isn't an attribute** (`frame`, a line's `points`, an arrow's `start` and `end` are `not_built`).
+- **`[a.b.c]` tests what is inside an attribute that holds an object**, at the members it names (a letter or `_`, then letters, digits, `-` and `_`; no quotes). Each test is read by the value found there, shape by shape: on a string, the text operators, `=` and `i`; on a number, `=`, `<`, `<=`, `>` and `>=` when the value after the operator is a number (`[a.b>=3]`; `"3"` reads the same); on `true` or `false`, `[a.b=true]`; on a list, `~=` for an item. A value of another sort doesn't match (`[a.b^=3]` on a number matches nothing). `[a.b]` says something is there, and `[a.b=""]` that nothing is: a member that is missing, null, empty, or inside something that isn't an object, matches `[a.b=""]` and not `[a.b]`. An attribute that isn't an object has no members (`unknown_attribute`).
 
 ```query
 /* matches: "Checkout" */
@@ -710,8 +711,8 @@ The messages are examples. The wording can differ, but the reason doesn't.
 | `syntax` | The query can't be read: `[text*="x"` isn't closed, a comma at the end, two heads in one part (`"Checkout"sticky-note`). | The hint, usually the query mended: `[text*="x"]`, `sticky-note"Checkout"`. |
 | `stray_space` | A space before a test: `sticky-note :selected` asks for shapes inside notes. | No space for one shape (`sticky-note:selected`); for a shape inside a subboard, a `*` after the space (`subboard *:selected`), which the hint offers only where what's before the space can hold shapes. |
 | `too_long`, `too_complex` | Over 8192 characters, 32 levels of brackets, or 256 parts. | Several shorter queries. |
-| `unsupported` | CSS with no meaning here: `+` and `~` (shapes have no siblings), `\|\|`, `::before`, namespaces, `:nth-child` and the like, `:root`, `:empty`, `:hover`, a space or `>` inside `:has()`. | The hint's form, if it has one: `:top-level` for `:root`. |
-| `not_built` | Planned, not built: `.Task` (shapes typed by schema cards), where shapes sit (`:near`, `:left-of`, `:within`, …), `frame` and the other attributes that say where a shape is, `[a.b]`, `=` on an object. | `:contains("Task")`, a kind, or what the hint names. |
+| `unsupported` | CSS with no meaning here: `+` and `~` (shapes have no siblings), `\|\|`, `::before`, namespaces, `:nth-child` and the like, `:root`, `:empty`, `:hover`, a space or `>` inside `:has()`; `.Task` and `[class=Task]`, which name a type with no selector of their own. | The hint's form, if it has one: `:top-level` for `:root`; for `.Task`, the word that finds a type's shapes when the app has one, else `:contains("Task")` or a kind. |
+| `not_built` | Planned, not built: where shapes sit (`:near`, `:left-of`, `:within`, …), `frame` and the other attributes that say where a shape is, `=` on an object. | `:contains("Task")`, a kind, or what the hint names. |
 | `unknown_kind` | No kind has that id: `note`; a title without its quotes, `:mentions(Checkout)`. | The kind like it: `sticky-note`; the title in quotes, `"Checkout"`, when a shape has it. |
 | `unknown_attribute` | Not the kind's attribute, nor any kind's: `sticky-note[txt*="x"]`; `[kind=…]`, `[id=…]`, `[name=…]`; `title` on a kind without titles, `arrow"Auth"` too; `--fields` naming one no kind has. | The attribute like it, from the kind's list in the hint; the kind itself, `#id`, or `[title=…]`. |
 | `unknown_pseudo_class` | Not the language's, nor a plugin's: `:mention(…)`; `:parent-of(…)` and the other invented words; `:locked`. | The word like it, or the form the hint writes: `:has(> …)`, `[locked]`. |
@@ -760,8 +761,13 @@ sticky-note + sticky-note
 ```
 
 ```query-error
-/* reason: not_built */
+/* reason: unsupported */
 .Task
+```
+
+```query-error
+/* reason: not_built */
+sticky-note[frame]
 ```
 
 ```query-error
@@ -846,8 +852,7 @@ These are left out on purpose. What they protect is that a query means one thing
 ## Not built yet
 
 - **Where shapes sit**: `:near`, `:left-of`, `:right-of`, `:above`, `:below`, `:overlaps`, `:within`, and attributes that say where a shape is.
-- **Shapes typed by schema cards** (`.Task`).
-- **Attributes inside attributes** (`[a.b]`), and `=` on an object.
+- **`=` on a whole object**: test a member, `[a.b=…]`, or whether it says anything, `[a]`.
 - **Edges as answers.** A query lists shapes; an arrow is a shape, so ask for arrows (`arrow:starts-at("A"):ends-at("B")`), and for the shapes at their ends with `:start-of` and `:end-of`.
 - **Search**: ranking, stemming, words that mean the same. `:contains` is a filter.
 - **Selecting or revealing what a query found**, and a query box in the app.
