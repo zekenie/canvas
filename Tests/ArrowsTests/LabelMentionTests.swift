@@ -222,7 +222,7 @@ private final class LabelCanvas: NSView {
                                  text: MentionText([.text("asks "), .mention(groceries, label: long), .text(" for "), .mention(sam, label: "Sam about the cake")])))
         expectEqual(h.editor.arrowLabelFrame(of: edited), longer, "as an edit would have it")
 
-        // On another board, the arrow's board not shown.
+        // On another board.
         let a = ShapeRecord(Box(boxA)), pocket = ShapeRecord(Pocket(boxB))
         var inner = ShapeRecord(Box(boxA))
         inner[TitleProperty.self] = "Inside"
@@ -245,6 +245,29 @@ private final class LabelCanvas: NSView {
         across.editor.undo()
         expect(across.editor.showBoard(.root))
         expectEqual(across.editor.arrowLabelFrame(of: arrow), labelBefore, "undone")
+    },
+    // The arrow's board is left, kept ready by the editor with its geometry; a rename made on the board
+    // shown meanwhile must reach what's kept, or the board comes back with the label as it was.
+    test("a rename made while the arrow's board is away lays its label out when the board is shown again") {
+        let a = ShapeRecord(Box(boxA)), pocket = ShapeRecord(Pocket(boxB))
+        var inner = ShapeRecord(Box(boxA))
+        inner[TitleProperty.self] = "Inside the pocket of the long name"
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(a), AnyShapeRecord(pocket)]),
+                              children: [pocket.id: CanvasDocument(shapes: [AnyShapeRecord(inner)])])
+        let h = try EditorHarness(plugins: labelPlugins(before: [PocketsPlugin()]), file: file)
+        let arrow = h.add(Arrow(start: .free(CGPoint(x: 100, y: 500)), end: .free(CGPoint(x: 500, y: 500)),
+                                text: MentionText([.text("sees "), .mention(inner.id, label: "Inside the pocket of the long name")])))
+        let before = try require(h.editor.arrowLabelFrame(of: arrow))
+        let inside = BoardID(owner: pocket.id)
+        expect(h.editor.showBoard(inside))
+        h.editor.rename(inner.id, to: "Out")
+        expect(h.editor.showBoard(.root))
+        let after = try require(h.editor.arrowLabelFrame(of: arrow))
+        expect(after.width < before.width, "the label on the board kept ready is laid out by the name now: \(after) against \(before)")
+        expect(h.editor.showBoard(inside))
+        h.editor.undo()
+        expect(h.editor.showBoard(.root))
+        expectEqual(h.editor.arrowLabelFrame(of: arrow), before, "undone")
     },
     test("a paste or an undo of an arrow whose text holds an old name is laid out by the name now") {
         let (h, id, groceries, _) = try mentionBoard { groceries, _ in MentionText([.text("asks "), .mention(groceries, label: "Groceries")]) }
