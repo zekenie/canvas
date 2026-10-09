@@ -46,6 +46,9 @@ Roadmap (the top board), back to front:
   arrow                       from API gateway to Auth, on the note-link channel
   arrow                       from Warehouse to Payments, on no channel
   sticky-note "Ledger"        text: Moved to @Old ledger            (Old ledger was deleted)
+  sticky-note "Person"        a type (a schema of an object with a name): text: A person: their name
+  sticky-note "Employee card" a type, and a Person (is: Person): text: A person at work: their desk
+  sticky-note "Ann"           an Employee card (is: Employee card): text: Ann, on the platform team
 Payments' board:
   sticky-note "Checkout"      text: Calls @API gateway for tokens   (a mention of API gateway)
   subboard "Refunds"
@@ -54,7 +57,7 @@ Refunds' board:
   sticky-note "Refund policy" text: 30 days; locked
 ```
 
-Its file order, the order of every answer: Payments, Checkout, Refunds, Refund policy, Payments' untitled note, API gateway, Auth, the top board's untitled note, Warehouse, Order, the untitled type, the two arrows, Ledger.
+Its file order, the order of every answer: Payments, Checkout, Refunds, Refund policy, Payments' untitled note, API gateway, Auth, the top board's untitled note, Warehouse, Order, the untitled type, the two arrows, Ledger, Person, Employee card, Ann.
 
 ## Running a query
 
@@ -146,12 +149,12 @@ A part of a query (a compound) starts with at most one of these, then any number
 A kind is its id, as `build/canvas query-vocabulary` writes it: `sticky-note`, never its label, "Note". Titles are in double quotes (single quotes work too), and match as `draw` matches them: the whole title, folded (runs of spaces and new lines as one space), case and all. A title can name several shapes across a file, and names them all. A kind and a title together, with no space between, is the shapes of that kind with that title: `sticky-note"Checkout"` finds what `sticky-note[title="Checkout"]` finds, but a title no shape has is refused, as `"Checkout"` alone is. A title some shape has, but none of that kind, matches nothing. With a space between, it's a title inside the kind's shapes ([Inside](#inside)), which a note can't have.
 
 ```query
-/* matches: "Checkout", "Refund policy", (sticky-note), "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), "Ledger" */
+/* matches: "Checkout", "Refund policy", (sticky-note), "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), "Ledger", "Person", "Employee card", "Ann" */
 sticky-note
 ```
 
 ```query
-/* matches: "Payments", "Checkout", "Refunds", "Refund policy", (sticky-note), "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), (arrow), (arrow), "Ledger" */
+/* matches: "Payments", "Checkout", "Refunds", "Refund policy", (sticky-note), "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), (arrow), (arrow), "Ledger", "Person", "Employee card", "Ann" */
 *
 ```
 
@@ -208,7 +211,7 @@ note
 | `:is(S)`, `:where(S)` | matched by S, the same thing: a list where a single part is wanted, `:is("Auth", "Checkout")` |
 
 ```query
-/* matches: "Payments", "Refunds", "Warehouse", "Order", (sticky-note) */
+/* matches: "Payments", "Refunds", "Warehouse", "Order", (sticky-note), "Person", "Employee card" */
 subboard, sticky-note[schema]
 ```
 
@@ -218,7 +221,7 @@ subboard, sticky-note[schema]
 ```
 
 ```query
-/* matches: "Payments" */
+/* matches: "Payments", "Person", "Employee card" */
 :is(subboard, sticky-note[schema]):edge-from(*)
 ```
 
@@ -270,7 +273,7 @@ The value after the operator is read as the attribute takes it, so `[bend=0]` an
 ```
 
 ```query
-/* matches: "Checkout", "Refund policy", "API gateway", "Auth", "Warehouse", "Order", "Ledger" */
+/* matches: "Checkout", "Refund policy", "API gateway", "Auth", "Warehouse", "Order", "Ledger", "Person", "Employee card", "Ann" */
 sticky-note[title]
 ```
 
@@ -290,7 +293,7 @@ sticky-note[title=""]
 ```
 
 ```query
-/* count: 12 */
+/* count: 15 */
 [locked=false]
 ```
 
@@ -394,12 +397,12 @@ subboard:has("Refund policy")
 ```
 
 ```query
-/* matches: "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), "Ledger" */
+/* matches: "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), "Ledger", "Person", "Employee card", "Ann" */
 sticky-note:top-level
 ```
 
 ```query
-/* matches: "Payments", "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), (arrow), (arrow), "Ledger" */
+/* matches: "Payments", "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), (arrow), (arrow), "Ledger", "Person", "Employee card", "Ann" */
 :current-board
 ```
 
@@ -601,10 +604,13 @@ Words the app's plugins add, as this app has them. Without a plugin, its words a
 | `:mentioned-by(S)` | `mention-queries` | a shape S matches mentions it |
 | `:invalid` | `validation-queries` | it has an error |
 | `:warned` | `validation-queries` | it has a warning |
+| `:is-a(S)` | `type-queries` | it is, however far, a type or shape S matches: its types, theirs, and what a custom shape builds on |
 | `:selected` | `selection-queries` | the person has it selected |
 
 - `:mentions` and `:mentioned-by` follow mention edges: `:mentions(S)` is `:edge-to(S, only mention)`. A shape that mentions itself counts.
 - `:invalid` and `:warned` are what validation finds, on every board of the file, not only the one shown: an error outlines a shape in red, warnings alone in orange.
+- `:is-a(S)` follows `is` (and what a custom shape builds on) however far, so it is transitive and ends where a cycle comes back: Ann is a Person through Employee card, which is one. It is `:edge-to(S, is-a)` that stays direct, one step. Read where a shape lists its types, a type is its title: `[is~="Person"]` finds the shapes that say Person themselves, and a row's `is` lists titles.
+- `.Person` is refused (`unsupported`) and its hint is this word, `:is-a("Person")`.
 - `:selected` is what the person had selected as the query started.
 
 ```query
@@ -625,8 +631,40 @@ sticky-note:mentions("API gateway")
 Ledger's mention is of a shape that's gone, so it mentions nothing a query sees:
 
 ```query
-/* matches: "Refund policy", (sticky-note), "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), "Ledger" */
+/* matches: "Refund policy", (sticky-note), "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), "Ledger", "Person", "Employee card", "Ann" */
 sticky-note:not(:mentions(*))
+```
+
+```query
+/* matches: "Employee card", "Ann" */
+:is-a("Person")
+```
+
+```query
+/* matches: "Ann" */
+sticky-note:is-a("Employee card")
+```
+
+```query
+/* matches: "Employee card", "Ann" */
+sticky-note:is-a("Person")
+```
+
+Only the shapes that name Person themselves, by the title it reads as:
+
+```query
+/* matches: "Employee card" */
+[is~="Person"]
+```
+
+```query
+/* matches: "Ann" */
+[is~="Employee card"]
+```
+
+```query
+/* matches: "Employee card" */
+:edge-to("Person", is-a)
 ```
 
 ```query

@@ -33,6 +33,9 @@ import Types
 //       R1 …08  arrow A → U                 channel note-link
 //       R2 …09  arrow W → P                 no channel
 //       L  …0A  sticky-note "Ledger"        text: Moved to @Old ledger        (Old ledger, …FF, is gone)
+//       T1 …0B  sticky-note "Person"        a type: schema {"type": "object", ...}, text: A person: their name
+//       T2 …0C  sticky-note "Employee card" a type that is a Person (is: Person), text: A person at work: their desk
+//       I  …0D  sticky-note "Ann"           an Employee card (is: Employee card), text: Ann, on the platform team
 //     Payments' board (P):
 //       C  …11  sticky-note "Checkout"      text: Calls @API gateway for tokens    (mentions A)
 //       F  …12  subboard "Refunds"
@@ -41,7 +44,7 @@ import Types
 //       Y  …21  sticky-note "Refund policy" text: 30 days, locked
 //
 // Its window shows the top board, and Auth is selected. File order: P, C, F, Y, N2, A, U, N1, W,
-// S, V, R1, R2, L.
+// S, V, R1, R2, L, T1, T2, I.
 
 /// The story file: its shapes' ids, the file (`file(in:)`), and the file open as the app has it,
 /// in an editor (`harness`) or a board document (`document`).
@@ -54,6 +57,7 @@ enum QueryStory {
 
     static let payments = id(0x01), gateway = id(0x02), auth = id(0x03), todo = id(0x04), warehouse = id(0x05)
     static let order = id(0x06), invoice = id(0x07), gatewayToAuth = id(0x08), warehouseToPayments = id(0x09), ledger = id(0x0A)
+    static let person = id(0x0B), employeeCard = id(0x0C), ann = id(0x0D)
     static let checkout = id(0x11), refunds = id(0x12), retry = id(0x13), refundPolicy = id(0x21)
     /// "Old ledger", which Ledger mentions: in no board of the file.
     static let oldLedger = id(0xFF)
@@ -61,7 +65,7 @@ enum QueryStory {
     /// Each shape by the design's letter for it.
     static let letters: [String: ShapeID] = [
         "P": payments, "A": gateway, "U": auth, "N1": todo, "W": warehouse, "S": order, "V": invoice, "R1": gatewayToAuth,
-        "R2": warehouseToPayments, "L": ledger, "C": checkout, "F": refunds, "N2": retry, "Y": refundPolicy,
+        "R2": warehouseToPayments, "L": ledger, "T1": person, "T2": employeeCard, "I": ann, "C": checkout, "F": refunds, "N2": retry, "Y": refundPolicy,
     ]
 
     /// Shapes by their letters, as the design lists them: "C, Y, N2".
@@ -74,12 +78,15 @@ enum QueryStory {
     }
 
     /// Every shape, in file order: the top board back to front, each subboard followed by its board's.
-    static let fileOrder = ids("P, C, F, Y, N2, A, U, N1, W, S, V, R1, R2, L")
+    static let fileOrder = ids("P, C, F, Y, N2, A, U, N1, W, S, V, R1, R2, L, T1, T2, I")
 
     /// Order's schema: an object with an id. (A type's name is its note's title, not its schema's.)
     static let orderSchema = #"{"type": "object", "properties": {"id": {"type": "string"}}}"#
     /// Warehouse's: the same.
     static let warehouseSchema = #"{"type": "object", "properties": {"id": {"type": "string"}}}"#
+    /// Person's and Employee card's: an object with a name, and with a desk.
+    static let personSchema = #"{"type": "object", "properties": {"name": {"type": "string"}}}"#
+    static let employeeCardSchema = #"{"type": "object", "properties": {"desk": {"type": "string"}}}"#
     /// Invoice's: not JSON, a comma left out before a title, so it's invalid (an error).
     static let invoiceSchema = #"{"type": "object" "title": "Invoice"}"#
 
@@ -105,6 +112,11 @@ enum QueryStory {
             record[TypeSchemaProperty.self] = SchemaText(schema)
             return record
         }
+        func instance(_ id: ShapeID, _ title: String, of types: [ShapeID], at x: CGFloat, _ y: CGFloat, _ text: String) -> AnyShapeRecord {
+            var record = note(id, title, at: x, y, MentionText(plain: text))
+            record[IsAProperty.self] = types.map(TypeLink.init)
+            return record
+        }
         let top = [
             subboard(payments, "Payments", at: 80, 80),
             note(gateway, "API gateway", at: 400, 80, MentionText([.text("Owns auth. See "), .mention(checkout, label: "Checkout")])),
@@ -125,8 +137,17 @@ enum QueryStory {
             connection(warehouseToPayments, ConnectionRequest(from: warehouse, to: payments)),
         ]
         let last = note(ledger, "Ledger", at: 1000, 420, MentionText([.text("Moved to "), .mention(oldLedger, label: "Old ledger")]))
+        let people = [
+            type(person, "Person", personSchema, at: 80, 760, "A person: their name"),
+            {
+                var card = type(employeeCard, "Employee card", employeeCardSchema, at: 400, 760, "A person at work: their desk")
+                card[IsAProperty.self] = [TypeLink(person)]
+                return card
+            }(),
+            instance(ann, "Ann", of: [employeeCard], at: 700, 760, "Ann, on the platform team"),
+        ]
         return CanvasFile(
-            root: CanvasDocument(shapes: top + arrows + [last]),
+            root: CanvasDocument(shapes: top + arrows + [last] + people),
             children: [
                 payments: CanvasDocument(shapes: [
                     note(checkout, "Checkout", at: 80, 80, MentionText([.text("Calls "), .mention(gateway, label: "API gateway"), .text(" for tokens")])),
@@ -166,17 +187,17 @@ enum QueryStory {
 }
 
 @MainActor let queryStoryTests = Suite("Query story", [
-    test("the story file: * answers its 14 shapes in file order, as an editor and a board document have it") {
+    test("the story file: * answers its 17 shapes in file order, as an editor and a board document have it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = try QueryStory.harness(pasteboard: pasteboard)
         expectEqual(h.editor.board, .root)
         expectEqual(h.editor.selectedShapeIDs, [QueryStory.auth])
-        expectEqual(h.file.root.shapes.count, 10)
+        expectEqual(h.file.root.shapes.count, 13)
         expectEqual(h.file.children.count, 2, "Payments' board and Refunds'")
         let queries = try require(h.editor.queries)
         let all = try awaitResult { try await queries.run(QueryRequest("*", limit: QueryBudget.maxRows, properties: .none)) }
-        expectEqual(all.count, 14)
+        expectEqual(all.count, 17)
         expectEqual(all.rows.map(\.id), QueryStory.fileOrder)
 
         // What the rows say of it: titles (Order's its own, Invoice untitled), where each is, and
@@ -213,7 +234,7 @@ enum QueryStory {
         let asked = try canvas(server, ["query", "*", "--brief", "--board", "\(board.number)"])
         expectEqual(asked.status, 0, asked.error)
         let answer = try JSON(text: asked.output)
-        expectEqual(answer["count"], 14)
+        expectEqual(answer["count"], 17)
         expectEqual(answer["rows"]?.arrayValue?.map { $0["id"] }, QueryStory.fileOrder.map { .string($0.description) })
         expect(!board.isDocumentEdited, "a query changes nothing")
     },

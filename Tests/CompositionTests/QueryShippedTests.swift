@@ -34,21 +34,21 @@ struct StoryQuery {
 
     /// Every row; a row with several queries once for each.
     static let table: [StoryQuery] = [
-        StoryQuery(1, "sticky-note", .shapes("C, Y, N2, A, U, N1, W, S, V, L")),
-        StoryQuery(2, "*", .shapes("P, C, F, Y, N2, A, U, N1, W, S, V, R1, R2, L")),
-        StoryQuery(3, "subboard, sticky-note[schema]", .shapes("P, F, W, S, V")),
+        StoryQuery(1, "sticky-note", .shapes("C, Y, N2, A, U, N1, W, S, V, L, T1, T2, I")),
+        StoryQuery(2, "*", .shapes("P, C, F, Y, N2, A, U, N1, W, S, V, R1, R2, L, T1, T2, I")),
+        StoryQuery(3, "subboard, sticky-note[schema]", .shapes("P, F, W, S, V, T1, T2")),
         StoryQuery(4, #""Checkout""#, .shapes("C")),
         StoryQuery(4, #"sticky-note"Checkout""#, .shapes("C")),
         StoryQuery(5, #""Order""#, .shapes("S")),
         StoryQuery(5, #"sticky-note"Order""#, .shapes("S")),
         StoryQuery(6, #"[title="checkout" i]"#, .shapes("C")),
         StoryQuery(7, #"[title^="API"]"#, .shapes("A")),
-        StoryQuery(8, "sticky-note[title]", .shapes("C, Y, A, U, W, S, L")),
+        StoryQuery(8, "sticky-note[title]", .shapes("C, Y, A, U, W, S, L, T1, T2, I")),
         StoryQuery(9, "sticky-note:not([title])", .shapes("N2, N1, V")),
         StoryQuery(9, #"sticky-note[title=""]"#, .shapes("N2, N1, V")),
         StoryQuery(10, "#00000000-0000-4000-8000-000000000011", .shapes("C")),
         StoryQuery(11, "[locked]", .shapes("Y, S")),
-        StoryQuery(12, "[locked=false]", .shapes("P, C, F, N2, A, U, N1, W, V, R1, R2, L")),
+        StoryQuery(12, "[locked=false]", .shapes("P, C, F, N2, A, U, N1, W, V, R1, R2, L, T1, T2, I")),
         StoryQuery(13, #"sticky-note[text*="TODO"]"#, .shapes("N1")),
         StoryQuery(14, #"sticky-note[text*="@API gateway"]"#, .shapes("C")),
         StoryQuery(15, "arrow[channel]", .shapes("R1")),
@@ -64,12 +64,12 @@ struct StoryQuery {
         StoryQuery(23, #"subboard:has("Refund policy")"#, .shapes("P, F")),
         StoryQuery(24, #":has(> "Refund policy")"#, .shapes("F")),
         StoryQuery(25, #""Payments":has(> "Refund policy")"#, .shapes("")),
-        StoryQuery(26, "sticky-note:top-level", .shapes("A, U, N1, W, S, V, L")),
-        StoryQuery(27, ":current-board", .shapes("P, A, U, N1, W, S, V, R1, R2, L")),
+        StoryQuery(26, "sticky-note:top-level", .shapes("A, U, N1, W, S, V, L, T1, T2, I")),
+        StoryQuery(27, ":current-board", .shapes("P, A, U, N1, W, S, V, R1, R2, L, T1, T2, I")),
         StoryQuery(28, #"sticky-note:mentions("API gateway")"#, .shapes("C")),
         StoryQuery(29, #""Checkout":mentioned-by("API gateway")"#, .shapes("C")),
         StoryQuery(30, ":mentioned-by(*)", .shapes("C, A")),
-        StoryQuery(31, "sticky-note:not(:mentions(*))", .shapes("Y, N2, U, N1, W, S, V, L")),
+        StoryQuery(31, "sticky-note:not(:mentions(*))", .shapes("Y, N2, U, N1, W, S, V, L, T1, T2, I")),
         StoryQuery(32, ":dangling", .shapes("L")),
         StoryQuery(32, "sticky-note:dangling(mention)", .shapes("L")),
         StoryQuery(33, #":edge-to("Auth")"#, .shapes("A")),
@@ -89,7 +89,7 @@ struct StoryQuery {
         StoryQuery(46, ":invalid", .shapes("V")),
         StoryQuery(46, ":warned", .shapes("")),
         StoryQuery(47, #""Payments" sticky-note[locked]"#, .shapes("Y")),
-        StoryQuery(48, ":is(subboard, sticky-note[schema]):edge-from(*)", .shapes("P")),
+        StoryQuery(48, ":is(subboard, sticky-note[schema]):edge-from(*)", .shapes("P, T1, T2")),
         StoryQuery(49, "sticky-note:edge-to(*, note-link)", .shapes("A")),
         StoryQuery(50, #"[title="Chekout"]"#, .shapes("")),
         StoryQuery(51, "sticky-note :selected", .refused(.straySpace)),
@@ -97,6 +97,11 @@ struct StoryQuery {
         StoryQuery(53, #":mentions("Old ledger")"#, .refused(.unknownTitle)),
         StoryQuery(54, "note", .refused(.unknownKind)),
         StoryQuery(55, #":end-of(arrow:starts-at("Warehouse"))"#, .shapes("P")),
+        StoryQuery(56, #":is-a("Person")"#, .shapes("T2, I")),
+        StoryQuery(56, #"sticky-note:is-a("Employee card")"#, .shapes("I")),
+        StoryQuery(56, #":edge-to("Person", is-a)"#, .shapes("T2")),
+        StoryQuery(56, #"[is~="Person"]"#, .shapes("T2")),
+        StoryQuery(56, #"[is~="Employee card"]"#, .shapes("I")),
         StoryQuery(55, #":start-of(arrow:ends-at("Auth"))"#, .shapes("A")),
     ]
 }
@@ -125,7 +130,7 @@ struct StoryQuery {
         let h = try QueryStory.harness(pasteboard: pasteboard)
         let queries = try require(h.editor.queries)
         let before = h.file
-        expectEqual(Set(StoryQuery.table.map(\.number)), Set(1...55), "every row of the table")
+        expectEqual(Set(StoryQuery.table.map(\.number)), Set(1...56), "every row of the table")
         for row in StoryQuery.table {
             let said = "row \(row.number), \(row.query)"
             switch (row.answer, try storyAnswer(row.query, on: queries)) {
