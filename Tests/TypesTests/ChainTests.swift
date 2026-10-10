@@ -127,6 +127,14 @@ private struct Random {
         expect(long.holdsItself)
         expectEqual(long.schema["type"]?.string, nil, "the end of it was never reached")
     },
+    test("definitions that each refer to the next eight times are not written out branching^depth times: it stops, saying it holds itself") {
+        var defs = (0..<12).map { n in
+            "\"d\(n)\": {\"allOf\": [\((0..<8).map { _ in "{\"$ref\": \"#/$defs/d\(n + 1)\"}" }.joined(separator: ","))]}"
+        }
+        defs.append("\"d12\": {\"type\": \"string\"}")
+        let fan = try only("{\"properties\": {\"f\": {\"$ref\": \"#/$defs/d0\"}}, \"$defs\": {\(defs.joined(separator: ","))}}")
+        expect(fan.holdsItself)
+    },
     test("`$defs`, `definitions`, `$id`, `$schema` and `$anchor` are left out of what is written, a property of that name is not") {
         let field = try only("""
         {"properties": {"g": {"$id": "x", "$schema": "s", "$anchor": "a", "type": "object", "$defs": {"d": {}}, "definitions": {"e": {}},

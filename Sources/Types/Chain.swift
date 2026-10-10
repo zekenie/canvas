@@ -229,8 +229,8 @@ public enum Chain {
 
 /// A schema with each `#` reference written out: replaced by the schema it leads to, the siblings of the
 /// `$ref` laid over it (they win, in the target's order, new keys after), followed up to `depth` deep and
-/// never into one it is already in; a reference that leads nowhere is dropped, and so says nothing; one
-/// that leads back into itself, or too deep, is dropped and `holdsItself` set. A reference that doesn't
+/// never into one it is already in, and at most `follows` in all; a reference that leads nowhere is dropped, and so says nothing; one
+/// that leads back into itself, too deep or past that count, is dropped and `holdsItself` set. A reference that doesn't
 /// start with `#` (`urn:uuid:…`, a type) is kept as written. Only places that hold a schema are walked
 /// (`SchemaPositions`): `enum`, `const`, `default`, `examples`, `contentSchema` and every keyword that
 /// isn't a schema are copied. The definitions, and `$schema`, `$id` and `$anchor`, are left out of what
@@ -240,6 +240,10 @@ private struct SchemaInliner {
     private(set) var holdsItself = false
     /// How deep a reference is followed before it is taken to lead back to itself.
     private static let depth = 6
+    /// How many references one field's writing follows in all. The depth stops a loop, not a fan-out:
+    /// definitions that each refer to several others would be written out branching^depth times.
+    private static let follows = 2_000
+    private var followed = 0
     private static let dropped: Set<String> = ["$defs", "definitions", "$schema", "$id", "$anchor"]
 
     init(root: JSONNode) { self.root = root }
@@ -276,7 +280,8 @@ private struct SchemaInliner {
             }
         }
         guard let ref else { return .object(out) }
-        guard depth < Self.depth, !visiting.contains(ref) else {
+        followed += 1
+        guard depth < Self.depth, followed <= Self.follows, !visiting.contains(ref) else {
             holdsItself = true
             return .object(out)
         }
