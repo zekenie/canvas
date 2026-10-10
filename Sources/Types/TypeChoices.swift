@@ -31,11 +31,14 @@ enum TypeChoices {
     static func rows(for owner: ShapeID, in editor: CanvasEditor) -> [SlashChoice] {
         var rows: [SlashChoice] = []
         if let record = editor.document[owner], record[TypeSchemaProperty.self] == nil, editor.registry.canBeType(record.kind) {
-            rows.append(SlashChoice(TypeChoice.typeID, title: TypesStyle.typeChoice, symbol: TypesStyle.typeSymbol, group: 0, step: TypesStyle.makeType))
+            rows.append(SlashChoice(TypeChoice.typeID, title: TypesStyle.typeChoice, symbol: TypesStyle.typeSymbol, group: 0, step: TypesStyle.makeType,
+                                    chip: TypesStyle.grayChip))
         }
         for (index, type) in (editor.types?.choices(for: owner) ?? []).enumerated() {
+            // A type's color, `Untitled` gray: what its pill and the chips of its instances are.
             rows.append(SlashChoice(type.type.rawValue.uuidString, title: type.name ?? TypesStyle.untitledType, symbol: TypesStyle.typeSymbol,
-                                    group: 1, step: TypesStyle.addType, isPreferred: index == 0))
+                                    group: 1, step: TypesStyle.addType, isPreferred: index == 0,
+                                    chip: type.name == nil ? TypesStyle.grayChip : TypeColors.base(type.type)))
         }
         return rows
     }

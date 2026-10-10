@@ -18,9 +18,12 @@ public struct SlashChoice: Equatable {
     public var step: String?
     /// With nothing typed, the first preferred row is highlighted; none: the first row.
     public var isPreferred: Bool
+    /// The color of a capsule the row's symbol and title are drawn in (`CaretListItem.chip`); nil for a
+    /// row drawn as every other is.
+    public var chip: NSColor?
 
     public init(_ id: String, title: String, symbol: String? = nil, detail: String? = nil, group: Int = 0, step: String? = nil,
-                isPreferred: Bool = false) {
+                isPreferred: Bool = false, chip: NSColor? = nil) {
         self.id = id
         self.title = title
         self.symbol = symbol
@@ -28,6 +31,7 @@ public struct SlashChoice: Equatable {
         self.group = group
         self.step = step
         self.isPreferred = isPreferred
+        self.chip = chip
     }
 }
 
@@ -108,7 +112,7 @@ public final class SlashChoicePicker {
             : found.map { choice, matched in
                 defer { previous = choice.group }
                 return .item(CaretListItem(choice.title, matched: matched, symbol: choice.symbol, detail: choice.detail,
-                                           separated: previous.map { $0 != choice.group } ?? false))
+                                           separated: previous.map { $0 != choice.group } ?? false, chip: choice.chip))
             }
         list.setRows(rows)
         if query.isEmpty, let preferred = listed.firstIndex(where: \.isPreferred) { list.highlight(row: preferred) }

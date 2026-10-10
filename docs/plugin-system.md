@@ -2525,7 +2525,7 @@ semibold (in the item's `font`, if it has one), a symbol in its tint before it, 
 `trailingSymbol` after it (a read-only shape's lock), a `detail` at the trailing end (its
 `detailMatched` characters in semibold too, as a title's, and its `detailDimmed` ones fainter: Jump To's path), and what
 VoiceOver says, the title and detail unless it says otherwise (matched characters aren't said), and `separated`, a line one point
-thick across the top of its row (the words row under the shapes a pill's list offers). Its size is its owner's
+thick across the top of its row (the words row under the shapes a pill's list offers), and a `chip`, a color: the row's symbol and title are then drawn in a capsule of that color, white on it (`TextEditingStyle`'s chip constants: 20 points, less 4 in a row it doesn't fit, 12-point text, matched characters semibold), and its highlight is the accent at 15% behind the capsule instead of the accent with white text (a type's color, in `/is-a`'s list); a row without one is drawn as ever. Its size is its owner's
 (`CaretListMetrics`: width, row height, rows shown, the offset below the anchor), its look
 `TextEditingStyle`'s. `CaretListWindow(list, accessibilityLabel:over:anchor:pick:close:post:)` shows
 it: a borderless child of the text's window that never takes the keyboard (not deferred, so a
@@ -6340,7 +6340,7 @@ SlashCommand("is-a", argument: "type",
 
 A `SlashChoice` is an `id` (opaque to the module), a `title` (matched and shown), an optional
 `symbol` and `detail`, a `group` (a line sets off a row whose group differs from the row above), a
-`step` and `isPreferred` (with nothing typed the first preferred row is highlighted, else the first).
+`step`, `isPreferred` (with nothing typed the first preferred row is highlighted, else the first) and `chip` (a color, passed to the row: [a list at the caret](#a-list-at-the-caret)).
 The command never runs with `SlashArguments`, so Return in the names' list completes it. With the
 list closed, Return on the line typed whole runs the first row whose title is the typed text; the
 rows are asked for once, then. The list is `SlashChoicePicker`, and `SlashCommandTyping.listsChoices(at:)`

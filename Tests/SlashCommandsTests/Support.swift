@@ -84,6 +84,9 @@ struct ChoicePlugin: CanvasPlugin {
                 typed == "nope" ? nil : SlashChoice("else:\(typed)", title: "Else \(typed)", step: "Make Else")
             }, perform: widen)
             SlashCommand("pick-none", argument: "item", choices: { _, _ in [] }, perform: widen)
+            SlashCommand("pick-chips", argument: "item", choices: { _, _ in
+                [SlashChoice("red", title: "Red", symbol: "star", chip: .systemRed), SlashChoice("plain", title: "Plain", symbol: "star")]
+            }, perform: widen)
             SlashCommand("pick-wide", argument: "item", when: { $0.frame.width >= 110 }, choices: { _, _ in
                 [SlashChoice("wide", title: "Wide")]
             }, perform: widen)

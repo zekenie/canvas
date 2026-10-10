@@ -338,4 +338,13 @@ import TextEditing
         s.set("/pick-wide @")
         expect(!commands.listsChoices(at: 11), "one the shape isn't offered")
     },
+
+    test("a choice's chip reaches its row, and a row with none has none") {
+        let s = try session()
+        s.type("/pick-chips ")
+        let rows = try require(s.choiceList).rows.compactMap(\.item)
+        expectEqual(rows.map(\.chip), [.systemRed, nil])
+        expectEqual(rows.map(\.symbol), ["star", "star"])
+        expectEqual(rows.map(\.spoken), ["Red", "Plain"], "said as their titles")
+    },
 ])

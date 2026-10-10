@@ -1,3 +1,4 @@
+import Adornments
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
@@ -101,6 +102,18 @@ private struct ChitsPlugin: CanvasPlugin {
         expect(try titles(editor, on: manager).contains("Person"), "the other way is only a shorter chain")
         expect(try !titles(editor, on: manager).contains("Manager"))
         _ = zed
+    },
+    test("the rows are chips: a type's color, Type and an untitled type gray") {
+        let editor = try typeEditor()
+        let person = editor.addType(TypeSchemaProperty.starter, title: "Person"), untitled = editor.addType(TypeSchemaProperty.starter)
+        let ann = editor.addInstance("Ann", of: [])
+        let rows = try isA(editor, on: ann).choices()
+        expectEqual(rows.map(\.title), ["Type", "Person", "Untitled"])
+        expectEqual(rows[0].chip, TypesStyle.grayChip)
+        expectEqual(rows[1].chip, TypeColors.base(person))
+        expectEqual(rows[2].chip, TypesStyle.grayChip)
+        expectEqual(rows[1].chip, TypeColors.solid(person).color, "the pill's color")
+        _ = untitled
     },
     test("a shape of a kind that cannot be a type is offered no Type; with no types in the file the list is empty") {
         let editor = try typeEditor(more: [ChitsPlugin()])
