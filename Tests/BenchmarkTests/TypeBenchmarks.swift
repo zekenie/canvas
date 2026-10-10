@@ -305,6 +305,17 @@ extension Budget {
             }
         }
     },
+    test("showing 10,000 stored dates, and reading 1,000 typed ones, is reported (rows draw them every frame in view)") {
+        let us = Locale(identifier: "en_US")
+        var days: [JSONValue] = []
+        for n in 0..<10_000 { days.append(.string(String(format: "%04d-%02d-%02d", 2000 + n % 40, 1 + n % 12, 1 + n % 28))) }
+        var typed: [String] = []
+        for n in 0..<1_000 { typed.append("Mar \(n % 28 + 1), \(2000 + n % 40)") }
+        _ = FieldText.shown(days[0], as: .date, locale: us)
+        let shown = median(runs: 11, onThread: true) { for day in days { _ = FieldText.shown(day, as: .date, locale: us) } }
+        let read = median(runs: 11, onThread: true) { for text in typed { _ = FieldText.value(from: text, as: .date, locale: us) } }
+        report(String(format: "10,000 shown(.date) %6.2f ms; 1,000 typed written dates read %6.2f ms", shown, read))
+    },
     test("10,000 type notes zoomed out to fit the board, white paper and covers, fit in a frame: the first and each after") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

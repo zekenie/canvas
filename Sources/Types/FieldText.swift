@@ -14,6 +14,7 @@ public enum FieldText {
     ///   the text typed (`02134`, `1e3`, `1.`, `-`, a 17-digit id).
     /// - date: a full date as `2026-03-03` (however it is usually written), else the text typed (a part
     ///   of a date, `Jan 2024`, included).
+    /// - date-time: a full date as UTC midnight, `2026-03-03T00:00:00Z`, which a date-time format accepts.
     /// - yes or no: a `Bool`; a choice: the option's value.
     public static func value(from typed: String, as kind: PlainKind, locale: Locale = .autoupdatingCurrent) -> JSONValue? {
         guard !typed.isEmpty else { return nil }
@@ -27,7 +28,7 @@ public enum FieldText {
         switch (kind, value) {
         case (.yesNo, .bool(let bool)): return bool ? "yes" : "no"
         case (.choice(let options), _): return options.first { $0.value == value }?.label ?? generic(value)
-        case (.date, .string(let text)): return shownDate(text, locale: locale) ?? generic(value)
+        case (.date, .string(let text)), (.dateTime, .string(let text)): return shownDate(text, locale: locale) ?? generic(value)
         default: return generic(value)
         }
     }
@@ -37,7 +38,7 @@ public enum FieldText {
     /// two-digit year is 2000 to 2099).
     public static func date(from typed: String, locale: Locale = .autoupdatingCurrent) -> String? {
         let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return nil }
+        guard !text.isEmpty, text.count <= 40, text.contains(where: \.isNumber) else { return nil }
         if let found = isoDay(text) ?? written(text, locale: locale) ?? numeric(text, locale: locale) {
             return String(format: "%04d-%02d-%02d", found.year, found.month, found.day)
         }
@@ -78,6 +79,7 @@ public enum FieldText {
         case .text: return .string(typed)
         case .number: return number(typed).map { .number($0) }
         case .date: return date(from: typed, locale: locale).map { .string($0) }
+        case .dateTime: return dateTime(from: typed, locale: locale).map { .string($0) }
         case .yesNo:
             switch typed.trimmingCharacters(in: .whitespaces).lowercased() {
             case "true": return .bool(true)
@@ -92,7 +94,7 @@ public enum FieldText {
     private static func fits(_ value: JSONValue, _ kind: PlainKind, locale: Locale) -> Bool {
         switch (kind, value) {
         case (.number, .number), (.yesNo, .bool), (.text, .string): true
-        case (.date, .string(let text)): date(from: text, locale: locale) != nil
+        case (.date, .string(let text)), (.dateTime, .string(let text)): storedDay(text) != nil || date(from: text, locale: locale) != nil
         case (.choice(let options), _): options.contains { $0.value == value }
         default: false
         }
@@ -161,21 +163,50 @@ public enum FieldText {
         return Self.day(year, month, day)
     }
 
+    /// What is built once per locale: the formatters that read a written date, the order a numeric one
+    /// is in, and the one that shows a stored day. Building a `DateFormatter` costs far more than using one.
+    private final class Formats: @unchecked Sendable {
+        let written: [DateFormatter]
+        let order: [Character]
+        let shown: DateFormatter
+
+        init(locale: Locale) {
+            func formatter(_ set: (DateFormatter) -> Void) -> DateFormatter {
+                let formatter = DateFormatter()
+                formatter.locale = locale
+                formatter.calendar = FieldText.calendar
+                formatter.timeZone = FieldText.calendar.timeZone
+                formatter.isLenient = false
+                set(formatter)
+                return formatter
+            }
+            written = [
+                formatter { $0.dateStyle = .medium; $0.timeStyle = .none },
+                formatter { $0.dateStyle = .long; $0.timeStyle = .none },
+                formatter { $0.dateFormat = "d MMM yyyy" },
+                formatter { $0.dateFormat = "d MMMM yyyy" },
+            ]
+            let pattern = DateFormatter.dateFormat(fromTemplate: "yMd", options: 0, locale: locale) ?? "M/d/y"
+            order = pattern.filter { "yMd".contains($0) }.reduce(into: [Character]()) { if !$0.contains($1) { $0.append($1) } }
+            shown = formatter { $0.dateStyle = .medium; $0.timeStyle = .none }
+        }
+    }
+
+    private static let formatsLock = NSLock()
+    nonisolated(unsafe) private static var formatsByLocale: [String: Formats] = [:]
+
+    private static func formats(for locale: Locale) -> Formats {
+        formatsLock.lock()
+        defer { formatsLock.unlock() }
+        if let kept = formatsByLocale[locale.identifier] { return kept }
+        let made = Formats(locale: locale)
+        formatsByLocale[locale.identifier] = made
+        return made
+    }
+
     /// A date written with the month's name: the locale's medium and long styles, and `d MMM yyyy`.
     private static func written(_ text: String, locale: Locale) -> Day? {
-        for format in [DateFormatterSpec.style(.medium), .style(.long), .pattern("d MMM yyyy"), .pattern("d MMMM yyyy")] {
-            let formatter = DateFormatter()
-            formatter.locale = locale
-            formatter.calendar = calendar
-            formatter.timeZone = calendar.timeZone
-            formatter.isLenient = false
-            switch format {
-            case .style(let style):
-                formatter.dateStyle = style
-                formatter.timeStyle = .none
-            case .pattern(let pattern):
-                formatter.dateFormat = pattern
-            }
+        for formatter in formats(for: locale).written {
             if let date = formatter.date(from: text) {
                 let parts = calendar.dateComponents([.year, .month, .day], from: date)
                 if let year = parts.year, let month = parts.month, let day = parts.day { return Self.day(year, month, day) }
@@ -184,17 +215,11 @@ public enum FieldText {
         return nil
     }
 
-    private enum DateFormatterSpec {
-        case style(DateFormatter.Style)
-        case pattern(String)
-    }
-
     /// `3/3/26`, `3.3.2026`: three numbers, in the order the locale writes them.
     private static func numeric(_ text: String, locale: Locale) -> Day? {
         let parts = text.split(whereSeparator: { "/.-".contains($0) }).map(String.init)
         guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber } }) else { return nil }
-        let pattern = DateFormatter.dateFormat(fromTemplate: "yMd", options: 0, locale: locale) ?? "M/d/y"
-        let order = pattern.filter { "yMd".contains($0) }.reduce(into: [Character]()) { if !$0.contains($1) { $0.append($1) } }
+        let order = formats(for: locale).order
         guard order.count == 3 else { return nil }
         var found: [Character: String] = [:]
         for (letter, part) in zip(order, parts) { found[letter] = part }
@@ -205,9 +230,9 @@ public enum FieldText {
         return Self.day(year, month, day)
     }
 
-    /// A stored date as the row shows it, `Mar 3, 2026`: a stored `yyyy-MM-dd` or UTC midnight; any other
-    /// text (a time of day included) as stored.
-    private static func shownDate(_ stored: String, locale: Locale) -> String? {
+    /// The day of a stored date: a stored `yyyy-MM-dd` or UTC midnight; nil for any other text (a time
+    /// of day included).
+    private static func storedDay(_ stored: String) -> Day? {
         var text = stored
         if text.count > 10 {
             let tail = text.dropFirst(10)
@@ -216,8 +241,13 @@ public enum FieldText {
             guard fraction.isEmpty || (fraction.hasPrefix(".") && fraction.dropFirst().allSatisfy { $0 == "0" }) else { return nil }
             text = String(text.prefix(10))
         }
-        guard let found = isoDay(text), let date = calendar.date(from: DateComponents(year: found.year, month: found.month, day: found.day)) else { return nil }
-        return date.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, locale: locale, calendar: calendar, timeZone: calendar.timeZone))
+        return isoDay(text)
+    }
+
+    /// A stored date as the row shows it, `Mar 3, 2026`; any other text as stored.
+    private static func shownDate(_ stored: String, locale: Locale) -> String? {
+        guard let found = storedDay(stored), let date = calendar.date(from: DateComponents(year: found.year, month: found.month, day: found.day)) else { return nil }
+        return formats(for: locale).shown.string(from: date)
     }
 
     // MARK: Showing

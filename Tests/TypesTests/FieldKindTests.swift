@@ -41,7 +41,7 @@ private let rows: [Row] = [
     Row(schema: #"{"type": "number"}"#, kind: .plain(.number(integer: false)), label: "Number", hasMore: false, opensOnType: false),
     Row(schema: #"{"type": "integer", "minimum": 1}"#, kind: .plain(.number(integer: true)), label: "Number", hasMore: false, opensOnType: false),
     Row(schema: #"{"type": "string", "format": "date"}"#, kind: .plain(.date), label: "Date", hasMore: false, opensOnType: false),
-    Row(schema: #"{"type": "string", "format": "date-time"}"#, kind: .plain(.date), label: "Date", hasMore: false, opensOnType: false),
+    Row(schema: #"{"type": "string", "format": "date-time"}"#, kind: .plain(.dateTime), label: "Date", hasMore: false, opensOnType: false),
     Row(schema: #"{"type": "boolean"}"#, kind: .plain(.yesNo), label: "Yes or no", hasMore: false, opensOnType: false),
     Row(schema: #"{"type": "string", "format": "email"}"#, kind: .plain(.text), label: "Text", hasMore: false, opensOnType: false),
     Row(schema: #"{"enum": ["draft", "paid", "shipped"]}"#, kind: .plain(.choice(choices("draft", "paid", "shipped"))), label: "Choice", hasMore: false, opensOnType: false),

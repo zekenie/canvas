@@ -57,6 +57,18 @@ private func number(_ typed: String) -> JSONValue? { FieldText.value(from: typed
         expectEqual(FieldText.shown("2026-03-03T14:30:00Z", as: .date, locale: us), "2026-03-03T14:30:00Z", "a time of day is shown as stored")
         expectEqual(FieldText.shown("2026-03-03T00:00:00+02:00", as: .date, locale: us), "2026-03-03T00:00:00+02:00")
     },
+    test("a typed date in a date-time field is stored as a date-time, and shows as the day") {
+        for typed in ["Mar 3, 2026", "2026-03-03", "3/3/26"] {
+            expectEqual(FieldText.value(from: typed, as: .dateTime, locale: us), "2026-03-03T00:00:00Z", typed)
+        }
+        expectEqual(FieldText.value(from: "Jan 2024", as: .dateTime, locale: us), "Jan 2024", "a part of a date is kept as typed")
+        expectEqual(FieldText.shown("2026-03-03T00:00:00Z", as: .dateTime, locale: us), "Mar 3, 2026")
+        expectEqual(FieldText.shown("2026-03-03", as: .dateTime, locale: us), "Mar 3, 2026", "the older form shows too")
+        expectEqual(FieldText.value(from: "Mar 3, 2026", asOneOf: [.dateTime, .text], locale: us), "2026-03-03T00:00:00Z")
+        expectEqual(FieldText.shown("2026-03-03T00:00:00Z", asOneOf: [.dateTime, .text], locale: us), "Mar 3, 2026")
+        let stored = try require(FieldText.value(from: "Mar 3, 2026", as: .dateTime, locale: us)?.stringValue)
+        expect(ISO8601DateFormatter().date(from: stored) != nil, "a date-time format check (RFC 3339: a date, a T and a time) accepts it")
+    },
     test("yes or no is a Bool and a choice is the option's value") {
         expectEqual(FieldText.value(from: "true", as: .yesNo, locale: us), true)
         expectEqual(FieldText.value(from: "False", as: .yesNo, locale: us), false)

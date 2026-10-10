@@ -21,6 +21,8 @@ public struct FieldOption: Equatable, Sendable {
 /// What is filled in the row itself.
 public enum PlainKind: Equatable, Sendable {
     case text, date, yesNo
+    /// A string of `format: date-time`: a typed full date is stored as UTC midnight.
+    case dateTime
     case number(integer: Bool)
     /// An `enum`; a `const` is a choice of one.
     case choice([FieldOption])
@@ -115,7 +117,7 @@ extension PlainKind {
         switch self {
         case .text: "Text"
         case .number: "Number"
-        case .date: "Date"
+        case .date, .dateTime: "Date"
         case .yesNo: "Yes or no"
         case .choice: "Choice"
         }
@@ -226,7 +228,7 @@ enum FieldKindReader {
         case ["number"]: return .number(integer: false)
         case ["string"]:
             let format = schema["format"]?.string
-            return format == "date" || format == "date-time" ? .date : .text
+            return format == "date" ? .date : format == "date-time" ? .dateTime : .text
         default: return nil
         }
     }
