@@ -1,5 +1,6 @@
 import Canvas
 import Foundation
+import HostSlots
 import LanguageModels
 import TestKit
 
@@ -68,6 +69,14 @@ import TestKit
         core             tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
         language-models  service LanguageModelState
         """)
+    },
+    test("the Anthropic model brings the Settings pane that keeps its key; a model that needs none brings no pane") {
+        try withTemporaryStore { keys in
+            let registry = try Registry(plugins: [LanguageModelsPlugin(model: AnthropicModel(keys: keys))])
+            expectEqual(registry.settingsPanes.map(\.title), ["Anthropic"])
+            expect(registry.report.hasSuffix("service LanguageModelState · settings pane Anthropic"), registry.report)
+        }
+        expectEqual(try Registry(plugins: [LanguageModelsPlugin(model: ScriptedLanguageModel())]).settingsPanes.count, 0)
     },
     test("the app's model is Claude Haiku 4.5, with the app's key") {
         let model = AnthropicModel()

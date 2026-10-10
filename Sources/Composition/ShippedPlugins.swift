@@ -33,7 +33,6 @@ import SlashCommands
 import Snapping
 import StickyNotes
 import Subboards
-import SwiftUI
 import TableOfContents
 import Titles
 import Topology
@@ -41,7 +40,10 @@ import Transform
 import Validation
 
 /// The static composition point: which plugins ship, in which order (the toolbar's order, and the
-/// order overlays draw in). Tests import this, so they check exactly what ships.
+/// order overlays draw in). Tests import this, so they check exactly what ships. It joins no two
+/// plugins: what one needs of another is a point the one declares and the other fills, and what a
+/// window places around its canvas is the plugins' own, in the host's slots (HostSlots), which the
+/// window (CanvasUI) reads from the registry.
 @MainActor
 public enum ShippedPlugins {
     /// The model the app ships: Claude Haiku 4.5, over the network, with the key saved in Settings
@@ -135,47 +137,6 @@ public enum ShippedPlugins {
         } catch {
             fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
         }
-    }
-
-    /// The Settings window's content, for the app to host (Infinite Canvas › Settings…, ⌘,): the
-    /// Anthropic API key, saved where `anthropicModel` reads it.
-    public static func settings() -> some View {
-        AnthropicSettingsView(keys: .standard)
-    }
-
-    /// The detail panel, for the app to place beside the canvas, with `onExit` giving the keyboard
-    /// back to the canvas. What it shows is the plugins' to say: one shape's details, the table of
-    /// contents where it has no one shape to show (`ContentsOverviewPlugin`), Find's panel while Find
-    /// is open (`FindPanelPlugin`), and each named as Boards names a board (`BoardContentsPlugin`,
-    /// `BoardFindPlugin`).
-    public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
-        DetailPanelView(editor: editor, onExit: onExit)
-    }
-
-    /// Where the board shown is in its file (Boards' `BoardPath`), for the app to place over the top
-    /// middle of the canvas (`.overlay(alignment: .top)`): a pill of crumbs, the root's named as the
-    /// file is (`editor.rootName`, the window's to say), nothing on the root. Only the pill takes clicks.
-    public static func boardPath(editor: CanvasEditor) -> some View {
-        BoardPath(editor: editor)
-    }
-
-    /// How far down over the canvas `boardPath` reaches on a board, for the app to tell the editor
-    /// (`BoardConfiguration.coveredTop`): a fit leaves the path's pill clear.
-    public static func coveredTop(on board: BoardID) -> CGFloat {
-        BoardPath.coveredHeight(on: board)
-    }
-
-    /// What the board shown is called, for its window's subtitle (`BoardConfiguration.boardName`):
-    /// its crumb's title, as the path and the list's heading name it; nil on the root, which the
-    /// window's title, the file's name, names.
-    public static func boardName(of editor: CanvasEditor) -> String? {
-        editor.boardCrumbs?.crumbs.last?.title
-    }
-
-    /// A toolbar tool's tooltip, for the app's tool picker: its label, and the key that switches to
-    /// it ("Note (N)").
-    public static func help(for tool: ToolDescriptor, in registry: Registry) -> String {
-        registry.help(for: tool)
     }
 
     /// The commands the plugins give the command line (Automation's), for the app's command server:

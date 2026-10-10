@@ -206,7 +206,7 @@ extension AlertsTab: DetailTab {
         expectEqual(registry.report, """
         core          tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
         fixtures      shape box · shape disc · shape tag
-        detail-panel  service DetailPanelState
+        detail-panel  service DetailPanelState · host inspector
         p             DetailStatuses · DetailStatuses in Alerts
         """)
     },
@@ -221,7 +221,7 @@ extension AlertsTab: DetailTab {
         expectEqual(registry.report, """
         core          tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
         fixtures      shape box · shape disc · shape tag
-        detail-panel  service DetailPanelState
+        detail-panel  service DetailPanelState · host inspector
         p             ShapeDetails → box
         """)
     },

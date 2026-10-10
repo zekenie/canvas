@@ -6,6 +6,7 @@ import Composition
 import CoreGraphics
 import Frames
 import Geometry
+import HostSlots
 import JumpTo
 import Mentions
 import Selection
@@ -168,7 +169,7 @@ extension NestedWindow {
         w.window.spin { w.paletteHasKeyboard }
         let field = try require(w.paletteField)
         let frame = w.onCanvas(field)
-        let covered = ShippedPlugins.coveredTop(on: w.nest.sBoard)
+        let covered = w.editor.registry.hostCoveredTop(on: w.nest.sBoard)
         expectClose(w.canvas.isFlipped ? frame.minY : w.canvas.bounds.height - frame.maxY, covered + 12, within: 1.5)
         expect(covered > 30, "the path's pill is there")
         let state = try require(w.editor.jumpTo)

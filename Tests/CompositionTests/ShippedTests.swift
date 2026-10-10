@@ -1,4 +1,5 @@
 import AppKit
+import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
@@ -7,6 +8,7 @@ import Connections
 import CoreGraphics
 import DetailPanel
 import Geometry
+import HostSlots
 import LanguageModels
 import Mentions
 import References
@@ -26,8 +28,24 @@ import Validation
     },
     test("the toolbar is Select V, Hand H, Note N, Subboard B, Frame F, Schema S, Reference R: arrows are drawn from ports") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        expectEqual(registry.tools.map { ShippedPlugins.help(for: $0, in: registry) },
+        expectEqual(registry.tools.map { registry.toolTip(for: $0) },
                     ["Select (V)", "Hand (H)", "Note (N)", "Subboard (B)", "Frame (F)", "Schema (S)", "Reference (R)"])
+    },
+    test("what the window puts around the canvas is the plugins': the path, then the palette over it, the panel as the inspector, the board's name as the subtitle, and the key's pane in Settings") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        expectEqual(registry.hostOverlays.map(\.alignment), [.top, .center], "Boards' path at the top, Jump To's palette over the whole canvas")
+        let inside = BoardID(owner: ShapeID())
+        expectEqual(registry.hostCoveredTop(on: inside), BoardPath.coveredHeight(on: inside), "a fit leaves the path's pill clear")
+        expectEqual(registry.hostCoveredTop(on: .root), 0)
+        expect(registry.hostInspector != nil, "the detail panel")
+        let nest = NestedFile()
+        let editor = CanvasEditor(registry: registry, file: nest.file, scheduler: ManualScheduler())
+        expectEqual(registry.windowSubtitle(for: editor), nil, "the root is the window's title's to name")
+        expect(editor.showBoard(nest.sBoard))
+        expectEqual(registry.windowSubtitle(for: editor), "Plans", "Boards' name for the board shown")
+        expectEqual(registry.settingsPanes.count, 0, "a scripted model needs no key")
+        // The app's model brings the key's pane (made only when Settings opens: nothing reads the key here).
+        expectEqual(try Registry(plugins: [LanguageModelsPlugin(model: ShippedPlugins.anthropicModel)]).settingsPanes.map(\.title), ["Anthropic"])
     },
     test("a plugin that needs the key asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
@@ -43,7 +61,7 @@ import Validation
     test("the registry report: who contributes what") {
         expectEqual(try ShippedPlugins.registry(model: ScriptedLanguageModel()).report, """
         core                 tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
-        keyboard             service KeyboardState · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
+        keyboard             service KeyboardState · tool tips · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
         selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
         topology             service TopologyIndex · edge type stands-for
         arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
@@ -54,14 +72,14 @@ import Validation
         references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         adornments           service AdornmentState · service ChipFade · overlay AdornmentOverlay · CanvasButtons · DecorationHits
-        detail-panel         service DetailPanelState
+        detail-panel         service DetailPanelState · host inspector
         context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
         slash-commands       service SlashCommandState
         table-of-contents    service ContentsState
         contents-overview    detail overview
         titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
         mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
-        board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
+        board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard · host overlay · window subtitle
         board-contents       contents heading
         find-in-boards       service FindState · overlay FindOverlay · command find · shortcut ⌘F → command find · command findNext · shortcut ⌘G → command findNext · command findPrevious · shortcut ⇧⌘G → command findPrevious
         find-panel           detail takeover
@@ -69,7 +87,7 @@ import Validation
         title-find           findable title → every shape
         mention-find         findable mention text → every shape
         arrow-find           findable label → arrow
-        jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo
+        jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo · host overlay
         transform            service TransformState
         validation-details   DetailStatuses in Issues
         validation-contents  ContentsMarks

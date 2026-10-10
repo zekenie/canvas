@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import CanvasTesting
 import DetailPanel
+import HostSlots
 import Keyboard
 import Observation
 import Selection
@@ -89,6 +90,22 @@ private struct TakeoverField: View {
         expectEqual(second.log, [], "the one that isn't shown hears nothing")
         first.active = false
         panel.window.spin { panel.fields.map(\.placeholderString) == ["Second"] }
+    },
+    test("the panel is the window's inspector: wanted while a takeover is active, and dismissed as Escape escapes it") {
+        let model = TakeoverModel()
+        let editor = try gadgetEditor([TakeoverPlugin(model: model)])
+        let inspector = try require(editor.registry.hostInspector)
+        expect(!inspector.isRequested(editor), "the person's to show or hide")
+        model.active = true
+        expect(inspector.isRequested(editor))
+        inspector.onDismiss(editor)
+        expectEqual(model.log, ["escape"], "the takeover's own escape")
+        model.active = false
+        inspector.onDismiss(editor)
+        expectEqual(model.log, ["escape"], "nothing to escape")
+        let lines = editor.registry.report.split(separator: "\n")
+        expect(lines.contains { $0.hasPrefix("detail-panel ") && $0.hasSuffix(" host inspector") }, editor.registry.report)
+        expect(try Registry(plugins: [KeyboardPlugin(), SelectionPlugin()]).hostInspector == nil, "no panel, no inspector")
     },
     test("typing goes to the takeover's field; Escape in it runs onEscape, then onExit, and hands the keyboard to the canvas") {
         let model = TakeoverModel()

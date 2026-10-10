@@ -27,6 +27,7 @@ maps one onto the other.
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [TextEditing](#textediting)
 - [FuzzyMatching](#fuzzymatching)
+- [Host slots](#host-slots)
 - [The detail panel](#the-detail-panel)
 - [Context menus](#context-menus)
 - [The table of contents](#the-table-of-contents)
@@ -290,6 +291,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Make a double-click, Return or ⌘↓ on a kind's shape do something other than edit it (show its board) | `x.opens("Open") { shape, editor in ... }` (Selection's `ShapeOpening`) | [Selection](#selection) |
 | Make a kind's shapes open onto the boards they own: Open in its menu and panel, ⌘↑ back up, and a name on the path | `x.opensBoard(placeholder:systemImage:)` (Boards), on a `BoardOwning` kind | [Boards](#boards) |
 | Show where you are in a file's boards, and go up | `BoardPath(editor:)`, over the canvas; `editor.goUp(to:)`, `editor.name(of:)` | [Boards](#boards) |
+| Put a view of yours over the window's canvas, beside it as the inspector, a pane in Settings, or words in the window's subtitle or a tool's tip | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }`, `hostInspector`, `settingsPane`, `windowSubtitle`, `toolTips` | [Host slots](#host-slots) |
 | Show a view of yours in the detail panel where it has no one shape to show, or in its place while something of yours is open | `registrar.detailOverview { editor, onExit in … }`; `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }` | [The detail panel](#the-overview-and-takeovers) |
 | Say what a board is called over another plugin's list of it | `registrar.contentsHeading { editor in … }` (the table of contents'), `registrar.findHeading { board, editor in … }` (Find's) | [Boards](#boards) |
 | Put a board inside the board | `SubboardsPlugin`: the Subboard tool (B) places a card that opens onto a board of its own | [Subboards](#subboards) |
@@ -503,8 +505,8 @@ Each target is one line, with its layer:
 | Layer | May depend on | Modules |
 |---|---|---|
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
-| foundation | foundation | Geometry, Canvas (the core), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on) and FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) |
-| ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
+| foundation | foundation | Geometry, Canvas (the core), HostSlots ([what a window puts around its canvas](#host-slots), said by plugins and placed by the window: the one that imports SwiftUI), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on) and FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) |
+| ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, the chrome around the canvas, `CanvasFocus`, the Settings window, and the command line's server) |
 | surface | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, ProseMaps, Topology, Find, Queries, QueryTranslation, Neighbors |
 | concern | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Publishing, Connections, Mentions, Boards, Snapping, Transform |
 | language | foundation, surface, language, wire | Automation, QueryCommands |
@@ -2352,8 +2354,9 @@ What the shipped app's keys do:
   up the responder chain.
 - **Tooltips.** `registry.help(for: tool)` is a tool's label and its key, "Note (N)", and
   `registry.help("Enclosing Board", forCommand: .enclosingBoard)` a button's that runs a command,
-  "Enclosing Board (⌘↑)" (the list's way up, through Composition). The toolbar (CanvasUI) can't see
-  Keyboard, so the app hands it `ShippedPlugins.help(for:in:)`. Its picker (`ToolPicker`) is an
+  "Enclosing Board (⌘↑)" (the list's way up, Boards'). The toolbar (CanvasUI) can't see
+  Keyboard, so Keyboard gives the tips to [the host's slot for them](#host-slots)
+  (`registrar.toolTips`), which the toolbar reads (`registry.toolTip(for:)`). Its picker (`ToolPicker`) is an
   AppKit segmented control, since SwiftUI's segmented `Picker` dims none of its segments: one a
   tool, selected as the tool is current, and dimmed while the editor doesn't take the tool
   (`editor.isToolEnabled`, observed, so it follows a board shown, or a lock that lands above it).
@@ -2591,6 +2594,67 @@ thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on Test
   `leafScore(after:label:)` from its parent container's row, which costs one match of each group of
   its label, a few for a few pieces. A one-piece query has no path in it: that's `FuzzyMatcher` over
   the leaves.
+
+## Host slots
+
+A board's window puts things around its canvas that are plugins': the path of crumbs over its top,
+a palette, the inspector beside it, the window's subtitle, the panes of the Settings window, the
+toolbar's tips. A plugin can't import the window (CanvasUI), and the window can't import a plugin
+(the app and CanvasUI may use only the foundation and the wire). So what passes between them is
+declared beneath both, in a foundation library, [`Sources/HostSlots`](../Sources/HostSlots): five
+extension points a plugin contributes to and the window reads. It's the one foundation module that
+imports SwiftUI, since its slots hold views; it knows no plugin and no window.
+
+Every point is the core's (`owner` is `.core`), so it's always installed: a plugin contributes from
+its own `register`, with no plugin value of its own for it, and a list without the plugin is a
+window without its piece. Composition lists plugins and places nothing.
+
+| Slot | A plugin says | The window reads | Shipped |
+|---|---|---|---|
+| Views over the canvas (`HostOverlays`, a list in plugin order, a later one over an earlier) | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }` | `registry.hostOverlays`, `registry.hostCoveredTop(on:)` | Boards' path (`.top`, covering its pill's height off the root), Jump To's palette |
+| The inspector (`HostInspectors`, at most one) | `registrar.hostInspector(isRequested:onDismiss:) { editor, onExit in … }` | `registry.hostInspector` | the detail panel |
+| The window's subtitle (`WindowSubtitles`, at most one) | `registrar.windowSubtitle { editor in … }` | `registry.windowSubtitle(for:)` | Boards: the board shown's name, none on the root |
+| Settings panes (`SettingsPanes`, in plugin order, a title once) | `registrar.settingsPane("Anthropic") { … }` | `registry.settingsPanes` | the Anthropic key's, when the model is Anthropic's |
+| Tool tips (`ToolTips`, at most one) | `registrar.toolTips { tool, registry in … }` | `registry.toolTip(for:)`, the tool's label without one | Keyboard: "Note (N)" |
+
+A view a plugin gives is made for a window's canvas: it's handed that board's editor and `onExit`,
+which gives the keyboard back to the canvas (`CanvasFocus.take`), and follows the editor by itself.
+A view over the canvas is over the whole of it at its `alignment`, and takes clicks only where it
+draws. Not a `CanvasOverlay`, which the canvas draws into itself, in the world: these are the
+window's views.
+
+The window's side is CanvasUI's, and knows no plugin:
+
+- **`BoardChrome(editor:showsInspector:onExit:)`**, a view modifier the app applies to its canvas
+  (`CanvasRepresentable`, after its frame and toolbar): each registered view over the canvas, in
+  plugin order, then the registered inspector in an `.inspector`, with the toolbar button that
+  shows and hides it (Inspector; its tooltip "Show Inspector" or "Hide Inspector", as View › Show
+  Inspector is titled). A registry with no inspector gets none.
+- **The inspector follows what wants it.** An inspector may say it's wanted whether or not the
+  person has it shown (`isRequested`, read in a view's body, so on observable state), and what
+  hiding it meanwhile does (`onDismiss`). The window keeps the rule, for whatever is wanted: wanted
+  while hidden, it's shown; no longer wanted, it's hidden again if that's what showed it, and left
+  as the person had it otherwise; hidden by the person while wanted, what wanted it is dismissed
+  and the keyboard goes back to the canvas. The detail panel is wanted while [a takeover](#the-overview-and-takeovers)
+  is active and dismissing escapes it, so ⌘F shows a hidden inspector, closing Find hides it again,
+  and hiding the inspector closes Find, though the window has never heard of Find.
+- **What the canvas covers.** A view over the canvas says how far down it reaches on a board
+  (`coveredTop`: the path's pill, about 35 points inside a subboard). The window tells each board's
+  editor the most any says (`BoardDocument` sets `editor.coveredTop` from
+  `registry.hostCoveredTop(on:)`), so a fit leaves it clear. A headless editor is told nothing, and
+  covers nothing.
+- **The subtitle** is read observed by `BoardWindowController`, so it follows a switch of board or
+  a rename.
+- **`SettingsWindow(registry:)`** hosts the panes, one under another in plugin order, each made
+  afresh as the window opens; a pane says what it is itself, so none is headed.
+- **`ToolPicker(editor:)`** reads each tool's tip.
+
+Tests: HostSlotsTests hold the points with contributors of their own (order, the most covered, one
+inspector, one subtitle, a pane's title once, a tip's default); CanvasUITests' `chromeTests` the
+chrome over a real canvas in an unshown window (each view where it says, the inspector's rule with
+a fixture that's wanted while a model says) and `toolPickerTests` the tips; each plugin's own tests
+what it gives; and CompositionTests the shipped five (ShippedTests) and the window's behavior with
+Find (`findShippedTests`).
 
 ## The detail panel
 
@@ -3204,29 +3268,27 @@ The panel can't give the keyboard to the canvas itself (it can't import CanvasUI
 passes `onExit`. `CanvasFocus` (CanvasUI) is the handle: `CanvasRepresentable(editor:focus:)` fills
 it, and `take()` makes the canvas its window's first responder.
 
-The app places the panel; the core and CanvasUI know nothing of it. Composition, which decides what
-ships, hands the app the view, which is one call: what the panel shows is the plugins' to say.
+The window places the panel, and knows nothing of it: the panel's plugin gives it as the window's
+inspector, [the host's slot for one](#host-slots), and says when it's wanted whether or not the
+person has it shown (while a takeover is active, below) and what hiding it meanwhile does (escapes
+that takeover):
 
 ```swift
-/// The detail panel, for the app to place beside the canvas, with `onExit` giving the keyboard
-/// back to the canvas.
-public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
+registrar.hostInspector(isRequested: { $0.registry.activeDetailTakeover(in: $0) != nil },
+                        onDismiss: { $0.registry.activeDetailTakeover(in: $0)?.onEscape($0) }) { editor, onExit in
     DetailPanelView(editor: editor, onExit: onExit)
 }
 ```
 
-and [the app](../Sources/InfiniteCanvas/InfiniteCanvasApp.swift) puts it in an `.inspector`, which
-brings resizing, collapsing in narrow windows, and View › Show Inspector (⌃⌘I) with
-`InspectorCommands`:
+and [the app](../Sources/InfiniteCanvas/InfiniteCanvasApp.swift) applies CanvasUI's `BoardChrome` to
+its canvas, which puts the registered inspector in an `.inspector` (resizing, collapsing in narrow
+windows, and View › Show Inspector, ⌃⌘I) with its toolbar button, and the views plugins gave over
+the canvas (the path, [Jump To's](#jump-to) palette):
 
 ```swift
 CanvasRepresentable(editor: editor, focus: canvasFocus)
-    .focusedSceneValue(\.canvasFocus, canvasFocus)
-    .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: $showsDetails, onExit: canvasFocus.take))
+    .modifier(BoardChrome(editor: editor, showsInspector: $showsDetails, onExit: canvasFocus.take))
 ```
-
-where `boardChrome` (Composition) adds the path, [Jump To's](#jump-to) palette (an overlay, drawing
-nothing until it's open) and the `.inspector` that holds `detailPanel`.
 
 ### The overview and takeovers
 
@@ -3908,12 +3970,12 @@ ContentsOutline(editor: editor, board: board, highlighted: next, maxHeight: 348)
 
 ### Hosting
 
-(The app's window wraps the canvas in `ShippedPlugins.boardChrome(editor:showsDetails:onExit:)`, a
-view modifier in Composition that adds the path, Jump To's palette (`JumpToPalette`, over the canvas,
-given `onExit` to give the keyboard back),
-the inspector with this panel and its toolbar button, and a hook that shows the inspector on
-request (each of Find's ⌘F, `FindState.focusRequest`, with the inspector hidden; and hides it again
-as Find closes, if it showed it: `revealedInspector`); it takes bindings and closures, never a CanvasUI type, and CompositionTests'
+(The app's window wraps the canvas in CanvasUI's `BoardChrome(editor:showsInspector:onExit:)`, a
+view modifier that places what the plugins gave [the host's slots](#host-slots): the path, Jump To's
+palette (`JumpToPalette`, over the canvas, given `onExit` to give the keyboard back),
+the inspector with this panel and its toolbar button, and the rule that shows the inspector while
+it's wanted (a takeover is active: Find, open, with the inspector hidden; and hides it again
+as Find closes, if that's what showed it); CompositionTests'
 `InspectorHost` applies the same modifier. The toolbar and the frame stay the app's.)
 
 The detail panel has [an overview](#the-overview-and-takeovers), a view it shows where it has no
@@ -6475,9 +6537,10 @@ it, so Find never learns what names a board: Boards' `BoardFindPlugin` gives the
 `FindPanelPlugin` (id `find-panel`), a plugin value of Find's own after `FindPlugin` and
 `DetailPanelPlugin`, gives the panel as the detail panel's [takeover](#the-overview-and-takeovers) while
 `editor.find?.isActive`, with `onEscape` closing Find (a list without the detail panel leaves it
-out, and keeps Find's state, highlights and commands), and Composition's `boardChrome` shows a hidden inspector
-when `focusRequest` changes (and hides it again as Find closes, if it showed it,
-`revealedInspector`); hiding the inspector while Find is open closes Find. `FindState` (`editor.find`, `@Observable`) is what views read: `isActive`,
+out, and keeps Find's state, highlights and commands), and so the window shows a hidden inspector
+while Find is open (and hides it again as Find closes, if that's what showed it), and
+hiding the inspector while Find is open closes Find: the window's rule for any takeover
+([Host slots](#host-slots)), which Find knows nothing of. `FindState` (`editor.find`, `@Observable`) is what views read: `isActive`,
 `query`, `results`, `total`, `current`, `currentNumber`, `focusRequest`, `isIndexing`.
 
 ### What it costs
@@ -7612,11 +7675,12 @@ registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .c
   window and the path's root crumb have it, else "Board". `BoardFindPlugin` (id `board-find`)
   heads each board's rows in [Find](#find)'s list (its `FindHeadings` point) with the board's name
   and symbol. Boards imports TableOfContents and Find for them.
-- **In the app** (Composition and the app's window): the window's subtitle names the board
-  shown, nothing on the root, where the title is the file's name (`BoardConfiguration.boardName`,
-  which the app fills with `ShippedPlugins.boardName(of:)`, the last crumb's title, and the window
+- **In the window** ([the host's slots](#host-slots), which `BoardsPlugin` fills): the window's subtitle names the board
+  shown, nothing on the root, where the title is the file's name (`registrar.windowSubtitle`,
+  the last crumb's title, which the window
   controller reads observed, so it follows a switch or a rename);
-  the path is over the canvas (`ShippedPlugins.boardPath(editor:)`, the root's crumb the
+  the path is over the top of the canvas (`registrar.hostOverlay(alignment: .top, coveredTop:)`
+  with `BoardPath(editor:)`, the root's crumb the
   file's display name, which `BoardWindowController.synchronizeWindowTitleWithDocumentName` tells
   the editor); and the Go menu has Back (⌘[), Enclosing Board
   (⌘↑) and Open Selection (⌘↓), sent to the board's window controller wherever the keyboard is, and dimmed
@@ -7632,8 +7696,9 @@ crumbs over the top middle of the canvas, root first, the board shown last, in a
 points below the canvas's top edge (`BoardsStyle`). The host places it over the whole canvas, with
 `.overlay(alignment: .top)`, so a crumb's menu can stay inside it; only the pill and the menu take
 clicks. It shows nothing on the root. `BoardPath.coveredHeight(on:)` is how far down it reaches on
-a board (to the pill's bottom, about 35 points; none on the root), which the app tells the editor
-(`BoardConfiguration.coveredTop`, the editor's `coveredTop`), so a board's first visit, Zoom to
+a board (to the pill's bottom, about 35 points; none on the root), which the window tells the editor
+(the path's overlay says it, `coveredTop`, and the window hands the most any view over the canvas
+says to the editor's `coveredTop`), so a board's first visit, Zoom to
 Fit and `reveal` fit shapes below it, where their titles' pills aren't under it.
 
 ```
@@ -8259,8 +8324,9 @@ untinted.
   the file's order.
 - **An empty query** lists "Recent" (up to five of this window's picks) and "Nearby" (up to five
   titled shapes in view on the board shown, nearest the middle of the view).
-- **The palette** is `JumpToPalette(editor:onExit:)`, which Composition's `boardChrome` places over
-  the canvas: closed it's nothing; open, a scrim (a clear button, so a click lands on it, closes the
+- **The palette** is `JumpToPalette(editor:onExit:)`, which the window places over
+  the canvas (`JumpToPlugin` gives it to [the host's slot](#host-slots) for views over the canvas,
+  after Boards', so it's over the path): closed it's nothing; open, a scrim (a clear button, so a click lands on it, closes the
   palette and isn't the canvas's), and a capsule below the part of the canvas the host leaves clear,
   taken as it opened (so below the path over a subboard), with an `EditingTextView` in one line. Its
   list is the app's one caret list (`CaretList` in a `CaretListWindow` made with `anchorRect:`,
@@ -8786,6 +8852,7 @@ The modules, one job each:
 | CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
 | Automation | language | The commands plugins give the command line (`AutomationCommands`), its own three, `draw`, `kinds` and `measure`, and the four points `draw` takes what it doesn't own from (on the query engine, Queries, a surface, to check a query a property holds). The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
 | DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
+| HostSlots | foundation | What a window puts around its canvas ([Host slots](#host-slots)): views over the canvas, the inspector, the subtitle, settings panes and tool tips, each a point of the core's that a plugin fills and the window (CanvasUI) reads, since neither may import the other. |
 | FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | vertical | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
 | Moving | vertical | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with DrawScript's solver and `ObstacleGrid` as `draw` places a shape; no kind opts into it, and nothing imports it. |
@@ -10127,7 +10194,10 @@ do throws(LanguageModelError) {
   saved and whose tooltip says where; Save, Remove, and Test, a five-token call; a status only for
   a test and for what failed, a symbol in its tone then the words, as the panel's status lines are,
   a failure in the warning's tone, as the panel shows the same failures; and a link, "Get a key"),
-  which Composition hands the app as `ShippedPlugins.settings()`, in its `SettingsWindow`: made
+  which the plugin gives as a pane of the Settings window ([the host's slot](#host-slots) for
+  panes, `registrar.settingsPane`) when the model it was handed is the Anthropic one, over that
+  model's key store, so the pane and the model read one key and a list given another model (a
+  test's) has no pane; the app's `SettingsWindow(registry:)` (CanvasUI) hosts the panes: made
   afresh each time the window opens, and sized before it goes in, so the window opens where it was
   left. A test that can't save the key typed stops there, a test's outcome reads again whether a
   key is saved (its file may have gone meanwhile), and Remove waits for a test to finish. A plugin that finds no key offers to
@@ -10512,7 +10582,7 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   `editor.viewportSize` is the view's size in view points, zero until it has one, and
   `editor.unobscuredViewport` the part of it nothing the host puts over the canvas covers (the view
   less `coveredTop`, host API, how far down the host's views reach on a board: the path's pill
-  inside a subboard, `BoardPath.coveredHeight(on:)`, which the app hands `BoardConfiguration`), what
+  inside a subboard, `BoardPath.coveredHeight(on:)`, which a board's window tells it from [the host's slots](#host-slots)), what
   a fit fits shapes into: a board's first visit, Zoom to Fit, Selection's `reveal`, and `canvas
   draw`'s `--reveal`, whose `view` is that part of it too.
 - **Zooming** is the core's commands, which View's items run (through
@@ -11568,7 +11638,7 @@ and a test checks it registers.
 
 ```
 core                 tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
-keyboard             service KeyboardState · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
+keyboard             service KeyboardState · tool tips · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
@@ -11579,14 +11649,14 @@ schemas              service SchemaSync · ShapePopovers · shape schema-card v1
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · service ChipFade · overlay AdornmentOverlay · CanvasButtons · DecorationHits
-detail-panel         service DetailPanelState
+detail-panel         service DetailPanelState · host inspector
 context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
 slash-commands       service SlashCommandState
 table-of-contents    service ContentsState
 contents-overview    detail overview
 titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
 mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
-board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
+board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard · host overlay · window subtitle
 board-contents       contents heading
 find-in-boards       service FindState · overlay FindOverlay · command find · shortcut ⌘F → command find · command findNext · shortcut ⌘G → command findNext · command findPrevious · shortcut ⇧⌘G → command findPrevious
 find-panel           detail takeover
@@ -11594,7 +11664,7 @@ board-find           find heading
 title-find           findable title → every shape
 mention-find         findable mention text → every shape
 arrow-find           findable label → arrow
-jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo
+jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo · host overlay
 transform            service TransformState
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
@@ -11850,7 +11920,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   `editor.propertyBinding(id, P.self)` are the bindings a section gets: write through them and check
   the document. For the view, host `DetailPanelView` in an `NSHostingView` in an unshown `NSWindow`,
   beside a `CanvasView` when focus matters (DetailPanelTests; CompositionTests' InspectorTests use
-  the app's wiring, `CanvasRepresentable` and `ShippedPlugins.detailPanel`). Give the editor the
+  the app's wiring, `CanvasRepresentable` and CanvasUI's `BoardChrome`). Give the editor the
   real `TaskScheduler`. SwiftUI's updates land on the main run loop, so wait for the state you
   expect with `window.spin { condition }` (CanvasTesting; it fails the test after 2 s), and use
   `window.settle()`, a few turns of the loop, where there's nothing to wait for or the point is

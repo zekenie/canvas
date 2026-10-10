@@ -1,13 +1,15 @@
 import AppKit
 import Canvas
+import HostSlots
 import Keyboard
+import SwiftUI
 
 /// Jump To (⌘K): a palette that goes to a shape by what it's called and where it is, as VS Code's file
 /// switcher goes to a file: name a subboard, skip one, name another two levels down, then the shape,
 /// and the list narrows. It looks at titles and the containment tree alone, never at contents (Find's
 /// job). A feature no kind opts into, and nothing imports (as Examples/Reordering): a shape is listed
 /// when it has a title (Titles), and a pick follows it as the path's crumb menus do (Boards).
-/// Composition places the palette over the canvas (`JumpToPalette`).
+/// The window places the palette over the canvas (`JumpToPalette`, in one of the host's slots).
 extension PluginID {
     /// Not "jumpTo": that's the command's string.
     public static let jumpTo: PluginID = "jump-to"
@@ -26,6 +28,9 @@ public struct JumpToPlugin: CanvasPlugin {
             editor.endEditing()
             editor.jumpTo?.open()
         }
+        // The palette, over the whole canvas and whatever else is over it (the path): nothing until
+        // it's open. After Boards in a list, so it's over the path.
+        registrar.hostOverlay { editor, onExit in JumpToPalette(editor: editor, onExit: onExit) }
     }
 }
 
