@@ -6,7 +6,8 @@
 #   dogfood/model/ingest [REPO] [--new-file PATH | --board ID] [--scip INDEX] [--mess 0..1] [--skip-read]
 #
 #   REPO          the repository (default: this one). PROJECT (default: this folder) holds model.json, spec.py, and what a run
-#                 writes: digest.json, digest.out/ (the plan, the scripts, what the app said) and .index/ (Swift's index store)
+#                 writes: digest.json, digest.out/ (the plan, the scripts, what the app said) and .index/ (Swift's index, a
+#                 store a module, kept from run to run: only the modules that changed are type-checked again)
 #   the board     the board in front (default): drawn as that board when it's empty, or in place of the last ingestion when it holds
 #                 that and nothing else (taken back first, one undo step); --board ID names another open board; --new-file PATH
 #                 makes a new board file and draws it there
@@ -73,8 +74,9 @@ elif [ -n "$SCIP" ]; then
 elif [ -f "$REPO/Package.swift" ]; then
   step "reading the Swift package's files and declarations"
   python3 "$HERE/swift_analyze.py" "$REPO" "$NEW"
-  step "type-checking every module for its index (about a minute and a half here)"
+  step "type-checking the modules that changed, for their index"
   python3 "$HERE/swift_index_build.py" "$REPO" "$PROJECT/.index" > "$PROJECT/.index.log" 2>&1 || { tail -30 "$PROJECT/.index.log" >&2; die "the index build failed (all of it: $PROJECT/.index.log)"; }
+  echo "ingest: $(tail -1 "$PROJECT/.index.log")"
   step "reading which file uses which from the index"
   python3 "$HERE/swift_index_read.py" "$PROJECT/.index/store" "$NEW"
   mv "$NEW" "$MODEL"
