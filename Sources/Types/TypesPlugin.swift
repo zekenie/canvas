@@ -94,6 +94,10 @@ public enum TypesStyle {
     public static let removeType = "Remove Type"
     /// The step `/is-a` takes, and what the chips' and the panel's Remove take back with Remove Type's.
     public static let addType = "Add Type"
+    /// The step a new type is made in: the note and the link.
+    public static let newType = "New Type"
+    /// The row where nothing matches: `New type “Company”`.
+    static func newTypeRow(_ name: String) -> String { "New type “\(name)”" }
     /// What `/is-a` takes, beside its name in the list.
     static let isAArgument = "type"
     /// `/is-a`'s rows: `Type`, which makes the shape one, and the mark each has.

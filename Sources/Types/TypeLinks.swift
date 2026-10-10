@@ -1,5 +1,7 @@
 import Canvas
+import Placing
 import SlashCommands
+import Titles
 
 /// What a shape is, and what makes a shape a type, in the calls every way in goes through (`/is-a`,
 /// a chip's menu, the panel's Types, a shape's menu), so what a later slice settles when a type is
@@ -93,6 +95,38 @@ extension CanvasEditor {
     }
 }
 
+extension CanvasEditor {
+    /// A new type titled `name`, put down beside `owner` as `/move-near` puts a shape beside another
+    /// (`Surroundings.near`), with the starter schema and no words, and `owner` made an instance of
+    /// it: one step, "New Type", which stays open while the new note is edited, as a placed note's
+    /// does. Nil, with nothing changed, when nothing could be put down: `owner` is not on the board
+    /// shown, no kind can be a type or has a tool to place it, `owner` has no box, or the board or
+    /// the container it lands in is read-only (the core refuses it, and it shakes).
+    @discardableResult
+    public func newType(named name: String, besides owner: ShapeID) -> ShapeID? {
+        guard file.board(containing: owner) == board, let kind = newTypeKind(for: owner), let base = registry.placement(for: kind) else { return nil }
+        // Told which shape it made by the transform each record goes through.
+        final class Made { var id: ShapeID? }
+        let made = Made()
+        let placement = base.setting(TitleProperty.self, to: name)
+            .setting(TypeSchemaProperty.self, to: SchemaText(TypeSchemaProperty.starter))
+            .mapping { record in made.id = record.id; return record }
+        guard let landing = Surroundings(on: board, moving: placement.size, in: self)?.near(owner) else { return nil }
+        return undoHistory.group(TypesStyle.newType) {
+            place(placement, in: landing.rect)
+            guard let id = made.id, document[id] != nil else { return nil }
+            addTypeLink(id, to: [owner])
+            return id
+        }
+    }
+
+    /// The kind a new type beside `owner` is: the owner's, if it can be a type, else the first that can.
+    func newTypeKind(for owner: ShapeID) -> ShapeKind? {
+        if let record = document[owner], registry.canBeType(record.kind) { return record.kind }
+        return registry.kinds.first { registry.canBeType($0) && registry.placement(for: $0) != nil }
+    }
+}
+
 /// `/is-a`: typed on a line of a shape's words, lists `Type` (while the shape can be one and isn't)
 /// and the types it may be (`TypeIndex.choices(for:)`: of the kinds that can be types, across the
 /// file, never the shape itself, a type it is already, one that is it in turn, or a pill), and a
@@ -103,11 +137,13 @@ func registerIsACommand(into registrar: inout PluginRegistrar) {
     registrar.slashCommandsForEveryShape(where: { $0.holds(IsAProperty.self) }) {
         SlashCommand("is-a", argument: TypesStyle.isAArgument,
                      choices: { owner, editor in TypeChoices.rows(for: owner, in: editor) },
+                     otherwise: { typed, owner, editor in TypeChoices.newRow(typed: typed, owner: owner, editor: editor) },
                      step: TypesStyle.addType) { owner, choice, editor in
             // Asked again: the line was run as it was found.
             switch TypeChoice(choice) {
             case .type: editor.makeType(owner)
             case .existing(let type): editor.addTypeLink(type, to: owner)
+            case .new(let name): editor.newType(named: name, besides: owner)
             case .none: break
             }
         }

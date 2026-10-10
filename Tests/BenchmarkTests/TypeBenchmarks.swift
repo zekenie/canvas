@@ -35,6 +35,10 @@ extension Budget {
     /// types the note may be, asked of the index once and sorted by name, then kept while the list is open: some 3.5 ms
     /// (3.1, 3.5, 3.6 in three runs alone, load average 6), about three times that.
     static let isAListOpen = 10.0
+    /// Picking `New type “X”` from `/is-a`'s list on a plain note of a 10,000-shape file (the thread's CPU, release): the board
+    /// read once for the landing (every shape an obstacle, as `/move-near` reads it), the note put down, the link made; held
+    /// to a frame.
+    static let newTypePick = 16.0
     /// What white paper adds to a frame of 10,000 type notes zoomed out to fit, over the same frame of plain notes
     /// (the thread's CPU, release; 0.2, 0.3, 0.3 in three runs alone, load average 8): the paper resolved once for the appearance drawn, not per note (a dynamic
     /// color resolved per note added 8 ms).
@@ -151,6 +155,34 @@ extension Budget {
             if holdsToBudgets {
                 expect(opening < Budget.isAListOpen, "opening /is-a's list over \(size) shapes took \(opening) ms")
             }
+        }
+    },
+
+    test("picking New type beside a note of a 10,000-shape file takes under a frame: the board read once, the note placed, the link made") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        for size in sizes {
+            let (document, _, _, _) = typedBoard(shapes: size)
+            let editor = CanvasEditor(registry: try Registry(plugins: shippedPlugins(pasteboard)), document: document, scheduler: ManualScheduler())
+            let owner = try require(document.shapes.first { (record: AnyShapeRecord) -> Bool in
+                record.kind == StickyNote.kind && record[TypeSchemaProperty.self] == nil && record[IsAProperty.self] == nil
+            }).id
+            let command = try require(editor.slashCommands?.command(named: "is-a", for: owner))
+            let row = try require(command.choice(otherwise: "Company"), "the New type row")
+            var picks = 0
+            let state = try require(editor.slashCommands)
+            let pick = { @MainActor () -> Void in
+                picks += 1
+                expect(state.run(command, on: owner, choosing: row))
+            }
+            let first = median(runs: 1, onThread: true, pick)
+            let opening = median(runs: 7, prepare: {
+                editor.endEditing()
+                editor.undo()
+            }, onThread: true, pick)
+            expect(editor.document.shapes.count == document.shapes.count + 1, "one note placed by the last pick")
+            report(String(format: "%6d shapes, picking New type: the first %6.3f ms, then %6.3f ms (budget %.0f)", size, first, opening, Budget.newTypePick))
+            if holdsToBudgets { expect(opening < Budget.newTypePick, "picking New type over \(size) shapes took \(opening) ms") }
         }
     },
 

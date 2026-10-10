@@ -75,9 +75,16 @@ struct MemoDefinition: ShapeDefinition {
 }
 
 struct MemosPlugin: CanvasPlugin {
+    /// Whether a tool places a memo (`registry.placement(for:)` reads placements from the tools): a memo
+    /// isn't `Editable`, so placing one doesn't edit it.
+    var placing = true
     var id: PluginID { "memos" }
     func register(into registrar: inout PluginRegistrar) {
+        let placing = placing
         registrar.shape(MemoDefinition()) { memo in
+            if placing {
+                memo.tool(label: "Memo", systemImage: "note.text", placing: memo.placement(size: CGSize(width: 240, height: 52)) { Memo() })
+            }
             memo.title()
             memo.mentionText { [$0.placement] }
             memo.mentionable(untitled: { $0.props.text.firstLine })

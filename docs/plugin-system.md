@@ -9979,6 +9979,16 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   one way an entry goes). With nothing typed the first type is highlighted, `Type` when there is
   none. It works in a note's text and in an arrow's label (no `Type` row there). `@` on its line is
   a letter.
+- **New type**: where nothing matches what was typed (`/is-a company`), the list offers the one row
+  `New type “Company”` (the name capitalized, spaces folded, at most 80 characters, and only while a kind
+  can be a type and has a tool to place it). A pick, `editor.newType(named:besides:)`, is one step, "New
+  Type": a note of the shape's kind (else the first kind that can be a type) titled with the name and
+  holding the starter schema is put down beside the shape where Placing's `Surroundings.near` lands
+  it (`/move-near`'s place: right if free, then below, left, above), and the shape is made an instance
+  of it. The new note is selected and edited like any placed note, so the step stays open while it is,
+  and words typed into it are in the step; a read-only board or a container that won't take it puts
+  nothing down, and shakes. The new type is not public and has no words, so the sync reads nothing
+  until the person writes.
 - **A type's note is white paper**: StickyNotes draws a note that holds a schema in white (the
   dark appearance: 0.92), not its yellow, in full and zoomed out (the skeleton resolves the dynamic
   color once for the appearance drawn), and gives its cover's ink the paper to read on
