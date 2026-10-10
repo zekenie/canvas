@@ -50,6 +50,16 @@ import Types
         expectEqual(b.words(id), "")
         expectEqual(b.schema(id), weighed)
     },
+    test("words that begin like a preamble are rewritten all the same: the answer that begins so too is the words, not an unusable one") {
+        let b = try SyncBench(document: CanvasDocument())
+        let id = b.editor.addType(petSchema, words: "Here are the fields: name, species, birth year.")
+        let weighed = petSchema.replacingOccurrences(of: "\"birthYear\"", with: "\"weight\"")
+        b.typeSchema(id, weighed)
+        b.sync(id, answer: "Here are the fields: name, species, weight.")
+        expectEqual(b.status(id), .idle)
+        expectEqual(b.words(id), "Here are the fields: name, species, weight.")
+        expectEqual(b.editor.undoHistory.undoName, "Update Text")
+    },
     test("undo while a call is out drops the call: its answer isn't written, and redo asks nothing either") {
         let b = try SyncBench()
         let id = b.place()

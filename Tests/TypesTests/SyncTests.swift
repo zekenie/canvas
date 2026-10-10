@@ -872,6 +872,14 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
             expectEqual(parse(answer, .toPrompt), .failure("Unusable answer"), answer)
         }
         expectEqual(parse("Heretic saints: name, feast day", .toPrompt), .text("Heretic saints: name, feast day"))
+        // Words that read so themselves are words, and so is their rewrite (a note that begins "Here are the fields").
+        func parsing(_ answer: String, words: String) -> SchemaPrompts.Answer {
+            SchemaPrompts.parse(ModelResponse(text: answer, stopReason: .endTurn), .toPrompt, words: words)
+        }
+        expectEqual(parsing("Here are the fields: name, email, role, phone.", words: "Here are the fields: name, email, role."),
+                    .text("Here are the fields: name, email, role, phone."))
+        expectEqual(parsing("Prompt: a pet, ```json for its fields```", words: "Prompt: a pet"), .text("Prompt: a pet, ```json for its fields```"))
+        expectEqual(parsing("Sure! Here is a pet", words: "a pet in my household"), .failure("Unusable answer"), "ordinary words still refuse a preamble")
         expectEqual(parse("```json\n{\"type\": \"object\"}\n```"), .text("{\"type\": \"object\"}"))
         expectEqual(parse("```\n{\"type\": \"object\"}"), .text("{\"type\": \"object\"}"))
         expectEqual(parse("{\"type\": \"object\"}\n```"), .text("{\"type\": \"object\"}"))

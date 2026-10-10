@@ -102,7 +102,9 @@ public enum SchemaPrompts {
     /// change, whatever follows it (a period, a reason), and so is one whose last line is (the
     /// prompt said again, then `NO_CHANGE`). A schema must be a JSON object, from its first
     /// character to its last; anything else is a failure. A prompt must not be empty, loses one pair
-    /// of quotes around it, and mustn't read as something other than the prompt (`isNotAPrompt`).
+    /// of quotes around it, and mustn't read as something other than the prompt (`isNotAPrompt`), unless
+    /// `words`, the prompt it replaces, read so themselves: words that begin "Here are the fields" are
+    /// words, and so is their rewrite (as `FieldPrompts.parseWords` holds).
     /// The text is as it came back, never laid out again: its order is the model's, which keeps the
     /// person's.
     ///
@@ -110,7 +112,7 @@ public enum SchemaPrompts {
     /// too long to rewrite (`TypeSyncFailure.tooLongMessage`: the person edits it by hand); a refusal is
     /// Claude declining; anything else (cut off, stopped early, empty, not what was asked) is an
     /// unusable answer, in the words of one that couldn't be read (`malformedResponse`).
-    public static func parse(_ response: ModelResponse, _ direction: Direction) -> Answer {
+    public static func parse(_ response: ModelResponse, _ direction: Direction, words: String = "") -> Answer {
         let unusable = Answer.failure(LanguageModelError.malformedResponse.message)
         switch response.stopReason {
         case .endTurn: break
@@ -126,7 +128,7 @@ public enum SchemaPrompts {
             return .text(text)
         case .toPrompt:
             let prompt = unquoted(text)
-            guard !prompt.isEmpty, !isNotAPrompt(prompt) else { return unusable }
+            guard !prompt.isEmpty, !isNotAPrompt(prompt) || isNotAPrompt(words) else { return unusable }
             return .text(prompt)
         }
     }

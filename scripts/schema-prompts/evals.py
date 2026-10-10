@@ -119,8 +119,9 @@ def is_not_a_prompt(t):
     return NO_CHANGE in t or "```" in t or t.lower().startswith(PREAMBLES)
 
 
-def parse(direction, text, stop_reason):
-    """The parse rule, as the Swift side does it. Returns (kind, value): ("nochange", None),
+def parse(direction, text, stop_reason, words=""):
+    """The parse rule, as the Swift side does it (`words` is the prompt as it was: an answer that reads like a
+    preamble is a prompt when the prompt it replaces read so itself). Returns (kind, value): ("nochange", None),
     ("schema", text), ("prompt", text) or ("error", why)."""
     if stop_reason != "end_turn":
         return "error", f"stop_reason={stop_reason}"
@@ -140,7 +141,7 @@ def parse(direction, text, stop_reason):
     t = unquoted(t)
     if not t:
         return "error", "empty"
-    if is_not_a_prompt(t):
+    if is_not_a_prompt(t) and not is_not_a_prompt(words):
         return "error", "not a prompt"
     return "prompt", t
 
@@ -341,14 +342,14 @@ def refs_in(node):
             yield from refs_in(v)
 
 
-def auto_prompt_checks(text):
+def auto_prompt_checks(text, words=""):
     failed = []
     low = text.lower()
     if text.startswith(('"', "'", "“")) and text.endswith(('"', "'", "”")):
         failed.append("quoted")
-    if "```" in text or low.startswith(("here", "updated prompt", "prompt:", "sure")):
+    if ("```" in text or low.startswith(("here", "updated prompt", "prompt:", "sure"))) and not is_not_a_prompt(words):
         failed.append("preamble")
-    if NO_CHANGE in text:
+    if NO_CHANGE in text and not is_not_a_prompt(words):
         failed.append("no-change-inside-text")
     return failed
 
@@ -473,7 +474,7 @@ def run_check(check, direction, kind, out_text, out_obj, case):
 
 def evaluate(case, result):
     direction = case["direction"]
-    kind, value = parse(direction, result["text"], result["stop_reason"])
+    kind, value = parse(direction, result["text"], result["stop_reason"], case.get("prompt", "") if direction == "to_prompt" else "")
     failed, warn = [], []
     out_obj = None
     if direction == "to_schema" and result["text"].lstrip().startswith("```"):
@@ -491,7 +492,7 @@ def evaluate(case, result):
             if ref.startswith("@") and ref.split("#")[0] not in listed:
                 failed.append(f"unlisted-ref:{ref}")
     elif kind == "prompt":
-        failed += auto_prompt_checks(value)
+        failed += auto_prompt_checks(value, case.get("prompt", ""))
     if kind != "error":
         for check in [c for c in case["checks"].split("\n") if c.strip()]:
             why = run_check(check, direction, kind, value or "", out_obj, case)

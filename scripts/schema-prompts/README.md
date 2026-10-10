@@ -101,3 +101,9 @@ some a tenth of Sonnet's cost an answer.
 `SCHEMA_LIVE=1 build/debug/TypesTests/TypesTests` (after `./test.sh` has built it) runs three
 cases, and a type that mentions another both ways, through the app's own path, `AnthropicModel` and `TypeSync`, and prints what came back.
 `./test.sh` never sets it.
+
+## Words that read like a preamble (2026-10-09)
+
+`SchemaPrompts.parse` takes the words it replaces (`words:`): a rewrite that begins "Here are", `prompt:` and so
+on, or holds a fence or `NO_CHANGE`, is unusable unless those words read so themselves. `evals.py`'s `parse` and
+`auto_prompt_checks` mirror it. No prompt text changed, so no live round was run for it.

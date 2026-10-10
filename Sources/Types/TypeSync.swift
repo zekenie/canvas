@@ -427,7 +427,7 @@ public final class TypeSync<Schema: SyncedSchema> {
         guard let editor, let record = editor.file.record(id), let now = sides(of: record), !editor.isReadOnly(inFile: id) else { return .idle }
         // The side it writes changed while it was out: the answer is to a question no longer asked.
         guard now[call.writes] == call.sent[call.writes] else { return .idle }
-        switch SchemaPrompts.parse(response, call.direction) {
+        switch SchemaPrompts.parse(response, call.direction, words: call.direction == .toPrompt ? call.names.modelText(of: call.sent.words).text : "") {
         case let .failure(reason):
             // A schema cut off would be cut off again, and a refusal refused again: the person edits
             // instead (rewording the words, say), and the next commit syncs. Only an unusable answer
