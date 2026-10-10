@@ -114,6 +114,33 @@ enum FieldLines {
     }
 }
 
+/// A failed read's one row: the reason, cut to leave its action room, and the action's words 8 points after it.
+/// The render draws it and a click finds the words by it.
+@MainActor
+struct FailureLayout {
+    let reason: FieldLines.Line
+    let action: FieldLines.Line?
+    /// Where the action's words start.
+    let actionX: CGFloat
+    private let row: CGRect
+
+    init(_ reason: String, action kind: RowSpot.Action?, in row: CGRect) {
+        self.row = row
+        if let kind {
+            let words = FieldLines.line(kind == .retry ? FieldWords.retry : FieldWords.settings, .link)
+            let line = FieldLines.line(reason, .kind, cutTo: max(0, row.width - words.width - TypesStyle.actionGap))
+            (self.reason, action, actionX) = (line, words, row.minX + line.width + TypesStyle.actionGap)
+        } else {
+            (self.reason, action, actionX) = (FieldLines.line(reason, .kind, cutTo: row.width), nil, row.minX)
+        }
+    }
+
+    /// The action's words, a whole row tall: what a click on them is.
+    var actionRect: CGRect? {
+        action.map { CGRect(x: actionX, y: row.minY, width: $0.width, height: row.height) }
+    }
+}
+
 extension RenderContext {
     /// Draws the shape's rows (or what its rows' spot says) in `block`, the rect its kind gives them
     /// (`typeRows(drawnIn:)`). Drawn while the shape is edited too: the editor has no background.
@@ -167,16 +194,9 @@ extension RowBook {
 
     private func drawFailure(_ reason: String, action: RowSpot.Action?, in geometry: RowGeometry, to cg: CGContext) {
         let rect = geometry.rect(0)
-        var room = rect.width
-        if let action {
-            let words = FieldLines.line(action == .retry ? FieldWords.retry : FieldWords.settings, .link)
-            room -= words.width + TypesStyle.actionGap
-            let reasonLine = FieldLines.line(reason, .kind, cutTo: max(0, room))
-            FieldLines.draw(reasonLine, at: rect.minX, midY: rect.midY, in: cg)
-            FieldLines.draw(words, at: rect.minX + reasonLine.width + TypesStyle.actionGap, midY: rect.midY, in: cg)
-        } else {
-            FieldLines.draw(FieldLines.line(reason, .kind, cutTo: room), at: rect.minX, midY: rect.midY, in: cg)
-        }
+        let layout = FailureLayout(reason, action: action, in: rect)
+        FieldLines.draw(layout.reason, at: rect.minX, midY: rect.midY, in: cg)
+        if let words = layout.action { FieldLines.draw(words, at: layout.actionX, midY: rect.midY, in: cg) }
     }
 
     private func drawRows(of template: RowTemplate, subject: RowSubject, in geometry: RowGeometry, to cg: CGContext) {

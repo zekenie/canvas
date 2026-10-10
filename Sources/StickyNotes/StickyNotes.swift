@@ -211,6 +211,8 @@ final class NoteEditor: NSView, NSTextViewDelegate {
     private let context: EditContext<StickyNote>
     private weak var sync: TypeSync<TypeSchemaProperty>?
     private weak var types: TypeIndex?
+    /// Over the note's rows: a press there is the rows', not the text's (Types').
+    private var rows: RowsView?
     /// The text as this view last wrote or showed it: a note that says otherwise was written from
     /// outside (the model's answer).
     private var known: MentionText
@@ -248,6 +250,14 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         textView.onPointer = { [weak self] point in self?.hover(at: point) }
         clipsToBounds = true
         addSubview(textView)
+        // The rows, if the note has any, are under the words and over the text view: a press on them is theirs.
+        let context = self.context
+        let host = RowsHost(origin: { context.frame?.origin }, end: { context.end() }, keepInView: { context.keepInView($0) },
+                            focusWords: { [weak self] in self?.focusWords() })
+        if let view = context.service(RowBook.self)?.makeRowsView(for: context.shapeID, host: host) {
+            rows = view
+            addSubview(view)
+        }
         // A note too short for its text (saved before notes grew with it, or drawn with a `size:`)
         // grows to it as editing begins, as typing would grow it, so what was cut off can be read and
         // edited; the write joins the editing session's step. Never shorter than it is: a note drawn
@@ -284,6 +294,7 @@ final class NoteEditor: NSView, NSTextViewDelegate {
             note.text = text
             note.frame.size.height = NoteStyle.fittedHeight(of: shown, width: note.frame.width, keeping: note.frame.height)
         }
+        rows?.reposition()
         context.hoverPopover(nil)
         keepCaretInView()
     }
@@ -309,6 +320,13 @@ final class NoteEditor: NSView, NSTextViewDelegate {
     override func setBoundsSize(_ newSize: NSSize) {
         super.setBoundsSize(newSize)
         if textView.frame.size != newSize { textView.setFrameSize(newSize) }
+        rows?.reposition()
+    }
+
+    /// The caret back in the words, at their end.
+    private func focusWords() {
+        window?.makeFirstResponder(textView)
+        textView.setSelectedRange(NSRange(location: textView.textStorage?.length ?? 0, length: 0))
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {

@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import CanvasUI
 import Foundation
 import Geometry
 import LanguageModels
@@ -113,6 +114,32 @@ private let amber = [245, 158, 10], personBlue = [44, 114, 219]
 
 /// The right part of a row, where its kind is.
 private func kindRect(_ row: ShownRow) -> CGRect { CGRect(x: row.valueRect.maxX - 90, y: row.rect.minY, width: 90, height: row.rect.height) }
+
+/// A canvas view over `editor` in an unshown window, as the app puts one: enough for an editing view, first
+/// responders and the views a press lands in.
+@MainActor private func windowedCanvas(_ editor: CanvasEditor) -> (NSWindow, CanvasView) {
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+    let canvas = CanvasView(editor: editor)
+    window.contentView = canvas
+    editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+    return (window, canvas)
+}
+
+/// The view a press at a world point lands in (the camera is at its origin, zoom 1): the deepest under it.
+@MainActor private func viewUnder(_ canvas: CanvasView, at point: CGPoint) throws -> NSView {
+    try require(canvas.hitTest(canvas.convert(point, to: canvas.superview)), "a view under \(point)")
+}
+
+/// A press delivered to the rows' view under a point, as the window would. (A text view's own mouse down
+/// tracks the pointer until the button is up, so a press on the words is only found, not sent.)
+@MainActor private func press(_ window: NSWindow, _ canvas: CanvasView, at point: CGPoint, time: TimeInterval = 1) throws -> NSView {
+    let hit = try viewUnder(canvas, at: point)
+    guard hit is RowsView else { return hit }
+    hit.mouseDown(with: window.mouse(.leftMouseDown, at: point, time: time))
+    return hit
+}
+
+private let petFields = #"{"type": "object", "properties": {"name": {"type": "string"}, "species": {"type": "string"}, "venue": {"type": "object", "properties": {"city": {"type": "string"}}}}}"#
 
 @MainActor let noteRowsTests = Suite("Note rows", [
     test("a type's note draws ink in the name and the kind of each of its rows, and none below them") {
@@ -291,6 +318,62 @@ private func kindRect(_ row: ShownRow) -> CGRect { CGRect(x: row.valueRect.maxX 
             _ = inView
             b.editor.endEditing()
         }
+    },
+    test("a press on Retry in the editing view reads again and leaves the caret where it was") {
+        let model = ScriptedLanguageModel()
+        let editor = CanvasEditor(registry: try Registry(plugins: notePlugins + [LanguageModelsPlugin(model: model)]), scheduler: ManualScheduler())
+        var note = ShapeRecord(StickyNote(frame: CGRect(x: 40, y: 40, width: 200, height: 200), text: MentionText(plain: "a pet in my household")))
+        note[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter)
+        let id = note.id
+        editor.transact { $0.insert(AnyShapeRecord(note)) }
+        let book = try require(editor.rowBook), sync = try require(editor.typeSync)
+        model.queue(.overloaded)
+        sync.commit(id)
+        spinRunLoop(until: { sync.status(of: id) != .updating(.schema) })
+        guard case .failed(_, .retry?)? = book.spot(of: id) else { throw Failure("a reason with Retry") }
+        let (window, canvas) = windowedCanvas(editor)
+        expect(editor.beginEditing(id))
+        let text = try require(window.firstResponder as? NSTextView)
+        text.setSelectedRange(NSRange(location: 3, length: 0))
+        let retry = try require(book.actionRect(of: id))
+        model.queue(petFields)
+        let hit = try press(window, canvas, at: CGPoint(x: retry.midX, y: retry.midY))
+        expect(hit is RowsView, "the rows' view takes the press, not the text under it: \(type(of: hit))")
+        spinRunLoop(until: { sync.status(of: id) == .idle })
+        expectEqual(model.requests.count, 2, "read again")
+        expectEqual(book.spot(of: id), .rows)
+        expectEqual(editor.editingShapeID, id, "still editing")
+        expectEqual(text.selectedRange(), NSRange(location: 3, length: 0), "the caret where it was")
+        expect(window.firstResponder === text)
+    },
+    test("while the words are edited a press on a plain row moves no caret, one on a row with `›` asks for its card, and one on the words is the text's") {
+        let b = try Bench()
+        let id = b.add((ShapeID(), "Pet", "A pet in my household.", petFields), at: CGPoint(x: 40, y: 40))
+        let (window, canvas) = windowedCanvas(b.editor)
+        expect(b.editor.beginEditing(id))
+        let text = try require(window.firstResponder as? NSTextView)
+        text.setSelectedRange(NSRange(location: 3, length: 0))
+        let rows = b.book.rows(of: id)
+        let name = try require(rows.first { $0.name == "name" }), venue = try require(rows.first { $0.name == "venue" })
+        expect(try press(window, canvas, at: CGPoint(x: name.rect.midX, y: name.rect.midY)) is RowsView)
+        expectEqual(text.selectedRange(), NSRange(location: 3, length: 0), "a plain row: no caret moved")
+        expect(b.book.opened.isEmpty)
+        let lead = try require(b.book.rowsRect(of: id))
+        expect(try press(window, canvas, at: CGPoint(x: lead.midX, y: lead.minY + 3)) is RowsView)
+        expectEqual(text.selectedRange(), NSRange(location: 3, length: 0), "the lead under the hairline: none either")
+        expect(try press(window, canvas, at: CGPoint(x: venue.rect.midX, y: venue.rect.midY)) is RowsView)
+        expectEqual(b.book.opened.map(\.target), [.field(FieldPath(field: "venue"))], "the card is asked for")
+        expectEqual(b.book.opened.first?.isReadOnly, true)
+        expectEqual(text.selectedRange(), NSRange(location: 3, length: 0))
+        let words = try require(b.editor.registry.mentionTextPlacements(of: try require(b.editor.document[id]), in: b.editor.shapeContext).first?.box)
+        let hit = try viewUnder(canvas, at: CGPoint(x: words.minX + 6, y: words.minY + 6))
+        expect(hit === text, "the words are the text view's: \(type(of: hit))")
+        // The view follows the rows: another field makes the note taller and the view with it.
+        let before = try require(canvas.descendants(RowsView.self).first).frame
+        b.editor.transact { $0.update(id) { $0[TypeSchemaProperty.self] = SchemaText(petFields.replacingOccurrences(of: #""species""#, with: #""kind": {"type": "string"}, "species""#)) } }
+        let after = try require(canvas.descendants(RowsView.self).first).frame
+        expectEqual(after.height, before.height + TypesStyle.rowHeight, "one more row, one more row of view")
+        expect(b.editor.rowBook?.rowsRect(of: id)?.height == after.height)
     },
     test("light and dark give the same rows, chips and a gone type's dashed chip: the paper's ink is fixed") {
         let b = try Bench([FieldFixtures.address, FieldFixtures.order])

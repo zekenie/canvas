@@ -10157,6 +10157,13 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   or the type's chip (Adornments draws it as the chip above a note: `AdornmentLabel.draw(at:in:)`), a needed
   field's amber dot, and `›` where a read-only card would have something to show. An inherited row is faint and
   ticked in its type's color in the paper's left padding.
+- **Clicks.** Nothing in a type's rows is edited. Types registers one `shapeFaces` (Selection): a row with `›`
+  and a fold ask `editor.rowBook?.openCard` for a read-only card, a `Choice` or `Choices` value lists its
+  options (every item disabled), `Retry` reads again (a read-only type shakes instead) and `Settings…` opens
+  Settings; anywhere else a press is the note's. Its `doubleClick` does the same for the first two, so the
+  second press of a fast pair does not begin an edit. While the words are edited a kind's editing view lays
+  Types' `RowsView` over its rows (`context.service(RowBook.self)?.makeRowsView(for:host:)`, as
+  `NoteEditor` does) and a press there is the rows': the same clicks, and no caret moved.
 - **Announcements.** A type's change, which moves what a list resolves to, has the type, its instances near and
   far, and the instances the same commit added laid out again (`editor.shapesDidChangeLayout`): no commit, no
   step. A rename moves no size and only redraws. The sync's status or wait changing for a type with no rows has
@@ -11783,7 +11790,7 @@ title-validation     service TitleIndex · ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
-types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · service RowBook · layout input type-rows · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
+types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · service RowBook · layout input type-rows · ShapeFaces · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
 type-validation      ValidationRules
 type-details         ShapeDetails · ShapeDetails
 snapping             service SnapState · translation adjuster

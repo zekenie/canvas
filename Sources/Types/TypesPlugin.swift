@@ -48,6 +48,8 @@ public struct TypesPlugin: CanvasPlugin {
         // hears each commit after the index, the field book and the sync.
         registrar.service { RowBook(editor: $0) }
         registrar.layoutInput(TypeRows.extent) { record, reading in RowBook.provide(record, reading) }
+        // A click on a row that answers a click, on the canvas and under the editor.
+        registerRowFaces(into: &registrar)
         // Resting the pointer on a highlight's words shows the part of the schema they say; in the
         // editor, its own view asks (`TypeIndex.popover(at:on:)`).
         registrar.shapePopovers { editor, record, point in

@@ -109,7 +109,12 @@ public final class RowBook {
     public private(set) var templatesMade = 0
     /// How many shapes' rows have been built (`rows(of:)`): a drag builds none.
     public private(set) var rowsShown = 0
+    /// What `openCard` asked `FieldCards` to open (debug builds): one service type takes one registration, so
+    /// no double can stand in for it.
+    public internal(set) var opened: [FieldCardRequest] = []
     #endif
+    /// The one view over the rows of the shape being edited, if any.
+    weak var rowsView: RowsView?
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -306,7 +311,11 @@ public final class RowBook {
 
     /// Where the shape's rows are drawn on the board shown (its kind's `typeRows(drawnIn:)`), world units.
     public func rowsRect(of id: ShapeID) -> CGRect? {
-        guard let editor, let record = editor.document[id] else { return nil }
+        editor?.document[id].flatMap { rowsRect(of: $0) }
+    }
+
+    func rowsRect(of record: AnyShapeRecord) -> CGRect? {
+        guard let editor else { return nil }
         return editor.registry.typeRows(of: record.kind)?.place(record, editor.shapeContext)
     }
 
@@ -347,6 +356,7 @@ public final class RowBook {
         if index.chainRevision != seenChain {
             dropTemplates(to: index.chainRevision)
             editor.shapesDidChangeLayout(changed.union(index.affected(by: changed)))
+            rowsChanged()
         } else {
             renames += 1
             editor.setNeedsDisplay()
@@ -360,6 +370,7 @@ public final class RowBook {
         guard let editor, let record = editor.shape(inFile: id), kinds.contains(record.kind), record[TypeSchemaProperty.self] != nil else { return }
         guard template(RowSubject(list: [id], isType: true)).items.isEmpty else { return }
         editor.shapesDidChangeLayout([id])
+        rowsChanged()
     }
 }
 
@@ -367,6 +378,8 @@ extension RowBook: EditorService {
     /// A file put in place: every table goes. (Everything else is told by the index and the sync.)
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         if changes.replacedDocument { dropEverything() }
+        // The shape being edited may have grown, or its rows changed: the view over them follows.
+        rowsChanged()
     }
 
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
