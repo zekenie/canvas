@@ -4535,10 +4535,10 @@ giving a shape back the id it had.
   paste takes the shapes out and frees their ids (a paste after it moves them again), redoing it
   puts them back under them, and undoing the cut too puts the file back as it was, showing the
   board the cut was made on.
-- **In the context menu**, Cut, Copy and Paste are items for the canvas
+- **In the context menu**, Cut, Copy, Duplicate and Paste are items for the canvas
   (`registrar.contextMenuForCanvas`), in `ClipboardMenuGroup` (order 100, before Arrange), asked
-  once per menu. Cut and Copy show when some of the menu's shapes can be copied, and act on those;
-  Paste shows when something would paste, on shapes and on empty canvas, and lands where the menu
+  once per menu. Cut, Copy and Duplicate (⌘D's, beside the shapes) show when some of the menu's shapes can
+  be copied, and act on those; Paste shows when something would paste, on shapes and on empty canvas, and lands where the menu
   was asked for.
 
 **Opting out.** Every kind is copyable unless it says otherwise, for all its shapes or for some, as

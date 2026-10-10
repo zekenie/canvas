@@ -624,7 +624,7 @@ struct NotePill: Hashable, Sendable {
         expect(canvas.menu(for: window.mouse(.leftMouseDown, at: card, modifiers: .control, time: 4)) != nil)
         // An arrow's menu is the clipboard's (nothing to paste yet), Lock and Delete: Arrange leaves
         // out what's painted by anchor.
-        expectEqual(try require(canvas.menu(for: window.mouse(.rightMouseDown, at: arrow, time: 5))).outline, ["Cut", "Copy", "—", "Lock", "—", "Delete"])
+        expectEqual(try require(canvas.menu(for: window.mouse(.rightMouseDown, at: arrow, time: 5))).outline, ["Cut", "Copy", "Duplicate", "—", "Lock", "—", "Delete"])
         // Asked with some other event (the accessibility Show Menu action), there's no click to go by.
         let key = try require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 5, windowNumber: window.windowNumber,
                                                context: nil, characters: "m", charactersIgnoringModifiers: "m", isARepeat: false, keyCode: 46))

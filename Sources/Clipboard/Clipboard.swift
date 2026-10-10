@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import ContextMenus
+import Geometry
 import Keyboard
 import Selection
 
@@ -79,7 +80,7 @@ public enum ClipboardStyle {
 
 // MARK: The context menu
 
-/// Cut, Copy and Paste, items for the canvas: after a kind's own items and a feature's, before
+/// Cut, Copy, Duplicate and Paste, items for the canvas: after a kind's own items and a feature's, before
 /// Arrange.
 public enum ClipboardMenuGroup {}
 extension ClipboardMenuGroup: MenuGroup {
@@ -118,6 +119,11 @@ public struct ClipboardPlugin: CanvasPlugin {
             }
             MenuItem("Copy", in: ClipboardMenuGroup.self, when: { $0.shapes.contains(where: $0.editor.isCopyable) }) { ids, editor in
                 editor.copy(ids)
+            }
+            MenuItem("Duplicate", in: ClipboardMenuGroup.self,
+                     when: { !$0.editor.isBoardReadOnly && $0.shapes.contains(where: $0.editor.isCopyable) }) { ids, editor in
+                let step = ClipboardStyle.duplicateOffset / editor.camera.zoom
+                editor.duplicate(ids, offsetBy: CGPoint(x: step, y: step))
             }
             MenuItem("Paste", in: ClipboardMenuGroup.self, when: { $0.editor.canPaste }) { subject in   // handed the subject: its point
                 subject.editor.paste(centeredAt: subject.point)
