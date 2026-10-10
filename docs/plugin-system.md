@@ -10026,7 +10026,8 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   nothing matches; with matches the best stays highlighted, so `/is-a co` lists Company and then
   `New type “Co”`, and Return picks Company). The name is capitalized, spaces folded, at most 80
   characters, and offered only while a kind can be a type and has a tool to place it; with nothing typed
-  there is no such row. A pick, `editor.newType(named:besides:)`, is one step, "New
+  there is no such row, nor for the list's own word (`/is-a type` on a shape that is a type already
+  offers nothing). A pick, `editor.newType(named:besides:)`, is one step, "New
   Type": a note of the shape's kind (else the first kind that can be a type) titled with the name and
   holding the starter schema is put down beside the shape where Placing's `Surroundings.near` lands
   it (`/move-near`'s place: right if free, then below, left, above), and the shape is made an instance

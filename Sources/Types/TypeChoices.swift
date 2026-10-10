@@ -58,9 +58,11 @@ enum TypeChoices {
     }
 
     /// What the typed text names a new type: trimmed, its spaces folded, the first letter a capital,
-    /// the rest as typed. Nil for none, or over a title's limit.
+    /// the rest as typed. Nil for none, over a title's limit, or the list's own word (`Type`, case
+    /// aside): `/is-a type` makes a shape a type, and on one that is a type already it makes nothing.
     static func newTypeName(_ typed: String) -> String? {
-        guard let name = TitleProperty.folded(typed), let first = name.first, name.unicodeScalars.count <= TitleProperty.maxLength else { return nil }
+        guard let name = TitleProperty.folded(typed), let first = name.first, name.unicodeScalars.count <= TitleProperty.maxLength,
+              name.caseInsensitiveCompare(TypesStyle.typeChoice) != .orderedSame else { return nil }
         return first.uppercased() + name.dropFirst()
     }
 }
