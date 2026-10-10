@@ -6,11 +6,11 @@ import Mentions
 // be, counted from its characters rather than laid out.
 
 extension StickyNoteDefinition: CustomSkeleton {
-    /// Its frame in its yellow, square (its 4-point corners are under a point and a half on screen
-    /// here) and with no shadow, and its text greeked (`SkeletonTextBars`, each mention as wide as
+    /// Its laid-out frame in its yellow, square (its 4-point corners are under a point and a half on
+    /// screen here) and with no shadow, and its text greeked (`SkeletonTextBars`, each mention as wide as
     /// its pill): two fills, whatever it says. Its outline is its frame's, as the core draws it.
     func renderSkeleton(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
-        let frame = shape.frame
+        let frame = context.shapes.frame(of: shape)
         context.cg.setFillColor(NoteStyle.skeletonFill)
         context.cg.fill(frame)
         let box = frame.insetBy(dx: NoteStyle.padding, dy: NoteStyle.padding)

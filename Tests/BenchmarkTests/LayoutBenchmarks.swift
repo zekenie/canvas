@@ -4,12 +4,16 @@ import CanvasTesting
 import CoreGraphics
 import Foundation
 import Geometry
+import Mentions
 import Selection
+import StickyNotes
 import TestKit
+import Types
 
 // Laying shapes out larger than they store (`LaidOutBox`, `LayoutBenchmarks.swift`): stretches that
 // name gauges, standing in for typed notes. The first frame asks each shape's kind once and keeps the
-// size, a changed gauge has them laid out again at the next frame, and a drag asks nobody.
+// size, a changed gauge has them laid out again at the next frame, and a drag asks nobody. And notes
+// with rows (a test provider standing in for Types'), reported.
 
 extension Budget {
     /// What 10,000 stretches laid out by a hundred gauges add to their board's first frame, over the
@@ -53,6 +57,32 @@ private let viewport = CGSize(width: 1200, height: 800)
 private func fit(_ document: CanvasDocument) -> Camera {
     let bounds = document.shapes.compactMap(\.box).reduce(CGRect.null) { $0.union($1) }
     return Camera(fitting: bounds, in: viewport, inset: 0)
+}
+
+/// Gives rows to the notes it is told of, as Types will to the notes that are instances: the same
+/// extent for each, until it is changed.
+@MainActor private final class BenchRows {
+    var ids: Set<ShapeID> = []
+    var extent = RowsExtent(minimumWidth: 320, height: 96)
+}
+
+private struct BenchRowsPlugin: CanvasPlugin {
+    let rows: BenchRows
+    var id: PluginID { "bench-note-rows" }
+    func register(into registrar: inout PluginRegistrar) {
+        let rows = rows
+        registrar.layoutInput(TypeRows.extent) { record, _ in rows.ids.contains(record.id) ? rows.extent : nil }
+    }
+}
+
+/// The generated board with a token ahead of every note's words, so no words were measured before in
+/// this process: a board first shown measures every typed note's words.
+@MainActor private func notesBoard(_ count: Int, token: String) -> CanvasDocument {
+    CanvasDocument(shapes: generatedBoard(shapes: count).shapes.map { record in
+        guard var note = record.typed(as: StickyNote.self) else { return record }
+        note.props.text = MentionText([.text("\(token) ")] + note.props.text.runs)
+        return AnyShapeRecord(note)
+    })
 }
 
 @MainActor let layoutBenchmarks = Suite("Layout benchmarks", [
@@ -174,6 +204,49 @@ private func fit(_ document: CanvasDocument) -> Camera {
             expect(results[0].input < Budget.layoutDragInput, "a drag event of \(count) grown stretches took \(results[0].input) ms")
             expect(results[0].input < 1.5 * results[1].input + Budget.dragInputSlack, "a drag event of grown stretches took \(results[0].input) ms, of the same with no gauge named \(results[1].input)")
             expect(results[0].frame < Budget.frame, "the frame after a drag event of \(count) grown stretches took \(results[0].frame) ms")
+        }
+    },
+    test("notes with rows, through a test provider: the board first shown, and the frame after the rows of all of them change (reported)") {
+        let context = try bitmapContext(viewport)
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        for size in sizes {
+            // Every sixth note, every note (the worst case), and none (the control): each run a board of
+            // its own, with words nobody has measured, zoomed to fit it, where it is skeletons and every
+            // shape's geometry is worked out, the notes' with their words measured.
+            var results: [(name: String, first: Double, change: Double, remeasured: Double)] = []
+            for (name, every) in [("no note", 0), ("every sixth note", 6), ("every note", 1)] {
+                var firsts: [Double] = [], changes: [Double] = [], remeasures: [Double] = []
+                for run in 0..<5 {
+                    let rows = BenchRows()
+                    let document = notesBoard(size, token: "\(name) \(run) \(UUID().uuidString.prefix(8))")
+                    let notes = document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id)
+                    if every > 0 { rows.ids = Set(notes.enumerated().filter { $0.offset % every == 0 }.map(\.element)) }
+                    let registry = try Registry(plugins: shippedPlugins(pasteboard) + [BenchRowsPlugin(rows: rows)])
+                    let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
+                    h.editor.viewportDidResize(to: viewport)
+                    h.editor.camera = fit(document)
+                    firsts.append(threadCPUTime { draw(h.editor, into: context, size: viewport) }.milliseconds)
+                    if every > 0 { expect(h.editor.shapeContext.frame(of: rows.ids.first!)?.width ?? 0 >= 320, "laid out with its rows") }
+                    // A type edit reaches them all: their rows are another height (the words kept), then
+                    // another width (the words measured again).
+                    rows.extent = RowsExtent(minimumWidth: 320, height: 144)
+                    changes.append(threadCPUTime {
+                        h.editor.shapesDidChangeLayout(rows.ids)
+                        draw(h.editor, into: context, size: viewport)
+                    }.milliseconds)
+                    rows.extent = RowsExtent(minimumWidth: 360, height: 144)
+                    remeasures.append(threadCPUTime {
+                        h.editor.shapesDidChangeLayout(rows.ids)
+                        draw(h.editor, into: context, size: viewport)
+                    }.milliseconds)
+                }
+                results.append((name, firsts.sorted()[2], changes.sorted()[2], remeasures.sorted()[2]))
+            }
+            for result in results {
+                report(String(format: "%6d shapes, rows on %@: the first frame %6.1f ms (%+6.1f over no rows), the frame after their rows change %6.1f, after their width changes %6.1f (reported)",
+                              size, result.name, result.first, result.first - results[0].first, result.change, result.remeasured))
+            }
         }
     },
 ])

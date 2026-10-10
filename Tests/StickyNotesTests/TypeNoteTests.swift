@@ -72,12 +72,12 @@ final class TypeNoteBench {
     var scheduler: ManualScheduler { harness.scheduler }
     var answer: Result<ModelResponse, LanguageModelError> = .success(ModelResponse(text: jiraAnswer))
 
-    init() throws {
+    init(plugins extra: [any CanvasPlugin] = []) throws {
         ProseMapService.forgetEveryAnswer()
         ProseHighlights.forgetEverything()
         let model = model
         harness = try EditorHarness { scheduler in
-            CanvasEditor(registry: try Registry(plugins: notePlugins + [LanguageModelsPlugin(model: model), ProseMapsPlugin()]), scheduler: scheduler)
+            CanvasEditor(registry: try Registry(plugins: notePlugins + [LanguageModelsPlugin(model: model), ProseMapsPlugin()] + extra), scheduler: scheduler)
         }
         model.fallback = { [unowned self] request in
             request.messages.first?.text.hasPrefix("<prose>") == true ? self.answer : .failure(.server(status: 0, message: "no answer queued"))

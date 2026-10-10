@@ -39,10 +39,15 @@ public struct StickyNote: BoxShapeProps {
 }
 
 extension ShapeRecord where Props == StickyNote {
-    /// Where the note draws its text: in its frame, inset by the padding. The render draws exactly
-    /// this, and Mentions finds the note's pills through it.
-    @MainActor var mentionTexts: [MentionTextPlacement] {
-        [MentionTextPlacement(props.text, in: props.frame.insetBy(dx: NoteStyle.padding, dy: NoteStyle.padding), style: NoteStyle.text)]
+    /// Where the note draws its text: in the box its layout gives its words (its frame, inset by the
+    /// padding, while it has no rows). The render draws exactly this, and Mentions finds the note's
+    /// pills through it.
+    @MainActor func mentionTexts(in context: ShapeContext) -> [MentionTextPlacement] {
+        mentionTexts(placedIn: NoteLayout(self, in: context).words)
+    }
+
+    @MainActor func mentionTexts(placedIn words: CGRect) -> [MentionTextPlacement] {
+        [MentionTextPlacement(props.text, in: words, style: NoteStyle.text)]
     }
 }
 
@@ -63,9 +68,9 @@ public struct StickyNotesPlugin: CanvasPlugin {
             note.noteHeader()                                  // renamed in the detail panel's header
             note.noteRow()                                     // and the table of contents
             note.noteLinks()                                   // and ports: arrows from a note to a note
-            note.mentionText { $0.mentionTexts }               // and mentions: its text shows pills,
+            note.mentionText { $0.mentionTexts(in: $1) }          // and mentions: its text shows pills,
             note.mentionable(untitled: { $0.props.text.firstLine })   // called by its title, else its first line
-            note.typeWords(\.text, drawnIn: { $0.mentionTexts.first }, fitting: { StickyNoteDefinition().derive(&$0) })   // and types: its text says what one holds,
+            note.typeWords(\.text, drawnIn: { $0.mentionTexts(in: $1).first }, fitting: { StickyNoteDefinition().derive(&$0) })   // and types: its text says what one holds,
             note.canBeType()                                   // and `/type` makes it one
             note.typeable()                                    // and `/is-a` makes it an instance of one
         }
@@ -77,8 +82,9 @@ struct StickyNoteDefinition {}
 
 extension StickyNoteDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
-        context.fillWithShadow(NoteStyle.path(shape.frame), NoteStyle.color)
-        let placements = shape.mentionTexts
+        let layout = NoteLayout(shape, in: context.shapes)
+        context.fillWithShadow(NoteStyle.path(layout.frame), NoteStyle.color)
+        let placements = shape.mentionTexts(placedIn: layout.words)
         // A type's highlights behind its words, under its editor too, whose text lays out as this
         // does (a note that isn't a type costs one lookup).
         if let words = placements.first { context.fillTypeHighlights(of: shape, in: words) }
@@ -88,7 +94,16 @@ extension StickyNoteDefinition: ShapeDefinition {
     }
 
     func indicatorPath(of shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> CGPath {
-        NoteStyle.path(shape.frame)
+        NoteStyle.path(context.frame(of: shape))
+    }
+}
+
+/// A note is laid out by its words and what goes under them (`NoteLayout`): as big as it stores
+/// while it has no rows, and, with them, wide enough to read them and tall enough for the words and
+/// the rows. The size is never stored; the stored box is the note as it is with no rows.
+extension StickyNoteDefinition: LaidOutBox {
+    func laidOutSize(of shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> CGSize {
+        NoteLayout.size(of: shape.props, rows: context.layoutInput(TypeRows.extent, of: shape))
     }
 }
 
@@ -105,7 +120,7 @@ extension StickyNoteDefinition: DerivedProps {
 
 extension StickyNoteDefinition: Editable {
     func makeEditingView(for shape: ShapeRecord<StickyNote>, context: EditContext<StickyNote>) -> EditingView {
-        let editor = NoteEditor(text: shape.props.text, frame: shape.frame, context: context)
+        let editor = NoteEditor(text: shape.props.text, stored: shape.frame, frame: context.frame ?? shape.frame, context: context)
         return EditingView(view: editor, firstResponder: editor.textView)
     }
 }
@@ -115,6 +130,8 @@ enum NoteStyle {
     static let size = StickyNote.defaultSize
     static let cornerRadius: CGFloat = 4
     static let padding: CGFloat = 16
+    /// Between a note's words and the rows under them, when it has words.
+    static let blockGap: CGFloat = 12
     static let color = NSColor(srgbRed: 1.0, green: 0.87, blue: 0.45, alpha: 1)
     /// Every line of a note's text is this tall, in the render and the editor alike. It's string
     /// drawing's own pitch for the font, so the render is as it was; TextKit 2, which lays out the
@@ -140,8 +157,14 @@ enum NoteStyle {
     static func fittedHeight(of text: NSAttributedString, width: CGFloat, keeping height: CGFloat) -> CGFloat {
         let inner = width - padding * 2
         guard inner > 0 else { return height }
+        return max(size.height, linesHeight(of: text, inner: inner) + padding * 2)
+    }
+
+    /// How tall `text`'s lines are `inner` wide, with half a point spare so string drawing never cuts
+    /// the last line: a note's words, and what `fittedHeight` fits it to.
+    static func linesHeight(of text: NSAttributedString, inner: CGFloat) -> CGFloat {
         let lines = text.boundingRect(with: CGSize(width: inner, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin]).height
-        return max(size.height, (lines + 0.5).rounded(.up) + padding * 2)
+        return (lines + 0.5).rounded(.up)
     }
 }
 
@@ -166,7 +189,10 @@ final class NoteEditor: NSView, NSTextViewDelegate {
     /// Text written from outside is being shown: its caret moved, not the person's.
     private var isShowing = false
 
-    init(text: MentionText, frame: CGRect, context: EditContext<StickyNote>) {
+    /// `stored` is the note's frame as it is kept, `frame` the one it is laid out in (the same, until
+    /// it has rows): the text view is as big as the paper, so its text wraps where the render's does,
+    /// while the note is fitted to its words as it stores it, at the width it stores.
+    init(text: MentionText, stored: CGRect, frame: CGRect, context: EditContext<StickyNote>) {
         self.context = context
         sync = context.service(TypeSync<TypeSchemaProperty>.self)
         types = context.service(TypeIndex.self)
@@ -198,10 +224,10 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         // grows to it as editing begins, as typing would grow it, so what was cut off can be read and
         // edited; the write joins the editing session's step. Never shorter than it is: a note drawn
         // taller keeps its height until it's typed into.
-        let fitted = NoteStyle.fittedHeight(of: textView.attributedString(), width: frame.width, keeping: frame.height)
-        if fitted > frame.height {
+        let fitted = NoteStyle.fittedHeight(of: textView.attributedString(), width: stored.width, keeping: stored.height)
+        if fitted > stored.height {
             context.update { $0.frame.size.height = max($0.frame.size.height, fitted) }
-            textView.setFrameSize(CGSize(width: frame.width, height: fitted))
+            textView.setFrameSize(CGSize(width: frame.width, height: max(fitted, frame.height)))
         }
         // Begun from a press, the selection goes where it was, as a click in the text puts it: on a
         // pill, the pill; elsewhere the caret, or for a double-click the word. The view's bounds,
