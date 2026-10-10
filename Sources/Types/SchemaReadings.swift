@@ -144,7 +144,7 @@ final class SchemaReadings {
                 issues.append(.warning("“\(name)” is required, but isn’t a property\(place).", field: "schema"))
             }
         }
-        for violation in metaValidator.violations(of: json(root)) where issues.count < maxWarnings {
+        for violation in metaValidator.violations(of: SchemaValue(root).json) where issues.count < maxWarnings {
             // A type's name is the rule above's, said once.
             guard violation.path.last != .member("type") else { continue }
             issues.append(.warning(violation.message, field: "schema"))
@@ -154,22 +154,9 @@ final class SchemaReadings {
 
     /// The meta-schema compiled by the core's validator, once.
     private static let metaValidator: SchemaValidator = {
-        guard case .object(let schema) = json(MetaSchema.root) else { preconditionFailure("the meta-schema's root isn't an object") }
+        guard case .object(let schema) = SchemaValue(MetaSchema.root).json else { preconditionFailure("the meta-schema's root isn't an object") }
         return SchemaValidator(JSONSchema(schema))
     }()
-
-    /// A reading as the core's JSON, which its validator checks: an object's duplicate members as
-    /// the last.
-    private static func json(_ node: JSONNode) -> JSONValue {
-        switch node.value {
-        case .object(let members): .object(Dictionary(members.map { ($0.key, json($0.value)) }, uniquingKeysWith: { _, last in last }))
-        case .array(let elements): .array(elements.map(json))
-        case .string(let string): .string(string)
-        case .number(let literal): .number(Double(literal) ?? .nan)
-        case .bool(let bool): .bool(bool)
-        case .null: .null
-        }
-    }
 
     /// The names a schema's `type` gives that aren't JSON Schema's (`"ninteger"`), each once.
     private static func unknownTypes(of schema: JSONNode) -> [String] {
@@ -183,6 +170,21 @@ final class SchemaReadings {
     static let maxWarnings = 20
 }
 
+/// Where a schema holds a schema: the keywords whose value is one, or an object of them, or a list. What
+/// walks a schema (`SchemaWalk`) and what rewrites one (`Chain`'s reading of a level) go by this one
+/// list, so they agree on where a schema is.
+enum SchemaPositions {
+    /// Objects whose members are the schemas of names.
+    static let named = ["properties", "patternProperties", "dependentSchemas"]
+    /// Objects whose members are schemas kept to be referred to.
+    static let definitions = ["$defs", "definitions"]
+    /// A keyword whose value is a schema.
+    static let single = ["items", "additionalProperties", "not", "if", "then", "else", "contains", "propertyNames",
+                         "unevaluatedProperties", "unevaluatedItems", "additionalItems"]
+    /// A keyword whose value is a list of schemas.
+    static let lists = ["allOf", "anyOf", "oneOf", "prefixItems", "items"]
+}
+
 /// Goes through every place in a schema that holds a schema, with a path a person can read
 /// (`customer`, `items[]`, `$defs/money`): what validation checks.
 enum SchemaWalk {
@@ -190,26 +192,21 @@ enum SchemaWalk {
         walk(root, path: "", depth: 0, visit)
     }
 
-    private static let byName = ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"]
-    private static let single = ["items", "additionalProperties", "not", "if", "then", "else", "contains", "propertyNames",
-                                 "unevaluatedProperties", "unevaluatedItems", "additionalItems"]
-    private static let lists = ["allOf", "anyOf", "oneOf", "prefixItems", "items"]
-
     private static func walk(_ schema: JSONNode, path: String, depth: Int, _ visit: (JSONNode, String) -> Void) {
         guard schema.isObject, depth < JSONReader.maxDepth else { return }
         visit(schema, path)
         func joined(_ name: String) -> String { path.isEmpty ? name : "\(path).\(name)" }
-        for key in byName {
+        for key in SchemaPositions.named + SchemaPositions.definitions {
             for member in schema[key]?.members ?? [] {
                 let name = key == "properties" ? member.key : key == "patternProperties" ? "/\(member.key)/" : "\(key)/\(member.key)"
                 walk(member.value, path: key.hasPrefix("$") || key == "definitions" ? name : joined(name), depth: depth + 1, visit)
             }
         }
-        for key in single {
+        for key in SchemaPositions.single {
             guard let sub = schema[key], sub.isObject else { continue }
             walk(sub, path: key == "items" ? path + "[]" : path, depth: depth + 1, visit)
         }
-        for key in lists {
+        for key in SchemaPositions.lists {
             for sub in schema[key]?.elements ?? [] {
                 walk(sub, path: key == "prefixItems" || key == "items" ? path + "[]" : path, depth: depth + 1, visit)
             }
