@@ -1,0 +1,90 @@
+#!/bin/sh
+# ingest: a codebase drawn as boards, in one command. Its code is read into model.json, made a digest (to_digest.py) and drawn by
+# the canvas-digest skill (`digest all`): measured in the app, laid out, drawn script by script, verified. Nothing is written by hand
+# for a codebase: the board is what its code says (a project may keep a spec.py of overrides, and this one has none).
+#
+#   dogfood/model/ingest [REPO] [--new-file PATH | --board ID] [--scip INDEX] [--mess 0..1] [--skip-read]
+#
+#   REPO          the repository (default: this one). PROJECT (default: this folder) holds model.json, spec.py, and what a run
+#                 writes: digest.json, digest.out/ (the plan, the scripts, what the app said) and .index/ (Swift's index store)
+#   the board     the board in front (default): drawn as that board when it's empty, or in place of the last ingestion when it holds
+#                 that and nothing else (taken back first, one undo step); --board ID names another open board; --new-file PATH
+#                 makes a new board file and draws it there
+#   --scip INDEX  read a SCIP index (TypeScript, Python, Ruby: README.md says how to make one) instead of a Swift package
+#   --mess N      the digest's dial, 0 tidy to 1 loose (default 0.1)
+#   --skip-read   draw from the model.json there is, without reading the code again
+#
+# canvas is $CANVAS_CLI, else the repository's build/canvas, else the one on PATH (the skill's driver finds it).
+set -eu
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$HERE/../.." && pwd)
+DIGEST=$ROOT/.claude/skills/canvas-digest/digest
+PROJECT=$(cd "${PROJECT:-$HERE}" && pwd)
+export PROJECT
+
+die() { echo "ingest: $*" >&2; exit 1; }
+usage() { sed -n '2,/^set -eu/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//' >&2; exit 2; }
+now() { date +%s; }
+T0=$(now)
+step() { echo "ingest: $1 ($(($(now) - T0)) s)"; }
+
+REPO=; SCIP=; SKIP=0; NEWFILE=; BOARD=; MESS=
+while [ $# -gt 0 ]; do
+  case $1 in
+    --skip-read) SKIP=1; shift; continue ;;
+    --new-file|--board|--scip|--mess) [ $# -ge 2 ] || usage ;;
+    -h|--help) usage ;;
+    -*) echo "ingest: unknown option $1" >&2; usage ;;
+    *) [ -z "$REPO" ] || usage; REPO=$1; shift; continue ;;
+  esac
+  case $1 in
+    --new-file) NEWFILE=$2 ;;
+    --board) BOARD=$2 ;;
+    --scip) SCIP=$2 ;;
+    --mess) MESS=$2 ;;
+  esac
+  shift 2
+done
+REPO=$(cd "${REPO:-$ROOT}" && pwd) || die "no repository there"
+[ -z "$NEWFILE" ] || [ -z "$BOARD" ] || die "name a board (--board) or a new file (--new-file), not both"
+MODEL=$PROJECT/model.json
+
+# where it draws: the board in front (or the one named), in place of the last ingestion if that's what it holds; or a new file.
+# Asked of the app before anything slow: that it is running, and that the board can take the drawing
+if [ -n "$NEWFILE" ]; then set -- --new-file "$NEWFILE"; else set -- --board "${BOARD:-front}" --replace; fi
+if ! "$DIGEST" ready "$PROJECT/digest.json" "$@" --out "$PROJECT/digest.out"; then
+  # the driver's words are for its own options: what they come to here
+  echo "ingest: nothing was read or drawn. If it is the board that can't take the drawing: bring an empty board to the front (File > New) and run this again, or name a new board's file (ingest --new-file PATH). ingest draws in place of its own last drawing without being asked, and has no --into or --replace." >&2
+  exit 1
+fi
+if [ -n "$MESS" ]; then set -- "$@" --mess "$MESS"; fi
+
+# The readers write the model beside the last one, and it takes its place only when it is whole: a read that stops part way (the
+# index build failing, say) leaves the last model as it was, never one with its files and none of their uses.
+NEW=$MODEL.reading
+rm -f "$NEW"
+if [ "$SKIP" = 1 ]; then
+  [ -s "$MODEL" ] || die "--skip-read, but there is no $MODEL to draw from"
+elif [ -n "$SCIP" ]; then
+  step "reading the SCIP index $SCIP"
+  python3 "$HERE/scip_read.py" "$SCIP" "$REPO" "$NEW"
+  mv "$NEW" "$MODEL"
+elif [ -f "$REPO/Package.swift" ]; then
+  step "reading the Swift package's files and declarations"
+  python3 "$HERE/swift_analyze.py" "$REPO" "$NEW"
+  step "type-checking every module for its index (about a minute and a half here)"
+  python3 "$HERE/swift_index_build.py" "$REPO" "$PROJECT/.index" > "$PROJECT/.index.log" 2>&1 || { tail -30 "$PROJECT/.index.log" >&2; die "the index build failed (all of it: $PROJECT/.index.log)"; }
+  step "reading which file uses which from the index"
+  python3 "$HERE/swift_index_read.py" "$PROJECT/.index/store" "$NEW"
+  mv "$NEW" "$MODEL"
+else
+  die "$REPO has no Package.swift: for another language, make a SCIP index and pass it with --scip (README.md says how)"
+fi
+
+step "making the digest"
+python3 "$HERE/to_digest.py" "$PROJECT/digest.json"
+
+step "measuring, laying out and drawing it (canvas-digest)"
+"$DIGEST" all "$PROJECT/digest.json" "$@" --out "$PROJECT/digest.out"
+step "done"

@@ -1,4 +1,8 @@
-# made by the steps in README.md
+# made by ingest (README.md)
 model.json
-runs/
+digest.json
+digest.out/
+.index/
+.index.log
 __pycache__/
+model.json.reading

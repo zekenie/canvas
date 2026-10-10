@@ -55,9 +55,11 @@ export function extract(what, json) {
     if (json.count != null && json.count > rows.length) throw new Error(`the file holds ${json.count} titled shapes and one query lists only ${rows.length}, so a title the digest shares with one of them could be missed: use a smaller file, or a new file (--new-file)`);
     return rows.map((r) => r.title).filter((t) => typeof t === 'string');
   }
+  // the titles on the file's root board (each row of a query says its board)
+  if (what === 'root-titles') return (json.rows || []).filter((r) => r.board === 'root').map((r) => r.title).filter((t) => typeof t === 'string');
   if (what === 'errors') return (json.errors || []).length;
   if (what === 'kinds') return (Array.isArray(json) ? json : []).map((k) => k.kind).filter((k) => typeof k === 'string');
   if (what === 'id') { if (json.id == null) throw new Error('no id in the answer'); return json.id; }
   if (what === 'count') return json.count == null ? (json.rows || []).length : json.count;
-  throw new Error(`extract: ${what} is not titles, kinds, id, count or errors`);
+  throw new Error(`extract: ${what} is not titles, root-titles, kinds, id, count or errors`);
 }

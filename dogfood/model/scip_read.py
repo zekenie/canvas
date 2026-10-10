@@ -344,7 +344,7 @@ def main(index_path, repo, out):
         modules.append(dict(name=m, path=module_path[m], deps=sorted(deps[m]), test=False, layer=None,
                             files=[f['rel'] for f in fs], lines=sum(f['lines'] for f in fs), doc=doc,
                             folders={x: folder_doc(os.path.join(module_path[m], x)) for x in sub}))
-    json.dump(dict(language=lang, modules=modules, files=files, uses=edges), open(out, 'w'), indent=1)
+    json.dump(dict(language=lang, name=os.path.basename(os.path.abspath(repo)), modules=modules, files=files, uses=edges), open(out, 'w'), indent=1)
     print(f"{ix['tool']}: modules {len(modules)}, files {len(files)}, uses {len(edges)}")
 
 if __name__ == '__main__':

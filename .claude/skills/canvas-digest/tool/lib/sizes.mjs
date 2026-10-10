@@ -14,7 +14,10 @@ export function noteWidth(title) {
   return Math.max(NOTE_W, Math.ceil(need / 20) * 20);
 }
 
+/** What a board's header note says: the digest's `text` for the first board, its subboard's for another; else what it is of. */
 export function headerText(model, board) {
+  const own = board === 'root' ? model.text : model.node(board).text;
+  if (own) return own;
   const where = board === 'root' ? model.title : board;
   return `${where}. Drawn by canvas-digest.`;
 }

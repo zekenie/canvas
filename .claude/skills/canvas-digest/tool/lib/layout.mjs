@@ -7,6 +7,7 @@ import { warmStress } from './stress.mjs';
 import { arrowBetween, segLength } from './geom.mjs';
 import { ownCost } from './cost.mjs';
 import { DEFAULT_CONSTANTS, TITLE_PILL } from './sizes.mjs';
+import { fansOut } from './moves.mjs';
 
 // draw's numbers (a pill's height, step and gap, how far `in` puts a shape from a frame's edge, a frame's least size) come from `canvas measure`: sizes.constants
 /** What a container's empty room costs against its arrows, when it chooses between packed layouts: more where the dial is looser (the big picture over the tidy arrow). */
@@ -55,20 +56,22 @@ export class Layouter {
   chain(title) { const n = this.m.node(title); return [this.rootCid].concat(n.frames.map((f) => 'f:' + f)); }
 
   /**
-   * Which edges are pills and which arrows, and which pills are shared. state: {promoted, hosts, splits}.
+   * Which edges are pills and which arrows, and which pills are shared. state: {promoted, fanned, apart, hosts, splits}: an edge into a
+   * promoted node, or out of a fanned-out one (moves.mjs), is a pill; one set apart is a pill of its own beside its start, shared with none.
    * A group is the edges of one target from one innermost container; two or more of them share a pill , in the column of the host (state.hosts, else the first title); the others' arrows run to that pill.
    */
   pillPlan(state) {
     const { m } = this;
     const direct = [], pilled = [], groupMap = new Map();
     for (const e of this.out) {
-      let pill = e.cross || !!e.via;
-      if (!pill && !e.direct && state.promoted.has(e.to)) {
+      const apart = !!state.apart && state.apart.has(e.from + SEP + e.to);
+      let pill = e.cross || !!e.via || apart;
+      if (!pill && !e.direct && (state.promoted.has(e.to) || (state.fanned && state.fanned.has(e.from) && fansOut(m, e)))) {
         pill = true;
       }
       if (!pill) { direct.push(e); continue; }
       pilled.push(e);
-      const key = e.to + SEP + m.node(e.from).container;
+      const key = e.to + SEP + m.node(e.from).container + (apart ? SEP + e.from : '');
       let g = groupMap.get(key);
       if (!g) groupMap.set(key, g = { key, target: e.to, container: m.node(e.from).container, edges: [] });
       g.edges.push(e);
@@ -200,6 +203,11 @@ export class Layouter {
     const algo = algos.get(cid);
     const index = new Map(items.map((it, i) => [it.id, i]));
     const edges = (lifted.get(cid) || []).map((e) => ({ a: index.get(e.a), b: index.get(e.b), w: e.w, n: e.n }));
+    const ranks = items.map((it) => this.m.node(it.id).rank);
+    if (ranks.some((x) => x != null)) {   // ranked children are rows, the lowest rank on top, whatever their arrows ask
+      const r = this.ranked(items, ranks, res);
+      return this.settle(cid, items, r, edges, res, info);
+    }
     const anchor = this.anchors.get(cid);
     const canWarm = !!anchor && items.every((it) => anchor.pos.has(it.id));
     const warm = this.warm && canWarm && (algo === 'layered' || algo === 'stress');
@@ -254,6 +262,12 @@ export class Layouter {
         this.cache.set(key, r);
       }
     }
+    this.settle(cid, items, r, edges, res, info);
+  }
+
+  /** A container's laid-out children, kept: its size (a frame's with its inset, never under the least frame or its title) and their places in it. */
+  settle(cid, items, r, edges, res, info) {
+    const isFrame = cid[0] === 'f';
     info.set(cid, { algorithm: r.algo, warm: !!r.warm, children: items.length, arrows: edges.reduce((s, e) => s + e.n, 0), costs: r.costs || null });
     const pad = isFrame ? this.k.frameInset : 0;
     const title = isFrame ? cid.slice(2) : '';
@@ -261,6 +275,36 @@ export class Layouter {
     const h = isFrame ? Math.max(r.h + 2 * pad, this.k.frameMin.h) : r.h;
     const pos = new Map(items.map((it, i) => [it.id, { x: r.pos[i].x + pad, y: r.pos[i].y + pad }]));
     res.set(cid, { w, h, pos, algo: r.algo, raw: new Map(items.map((it, i) => [it.id, (r.raw || r.pos)[i]])), warm: !!r.warm });
+  }
+
+  /**
+   * Children with ranks, as rows: a row a rank, the lowest on top (a child with none goes in a row below them all), each row's children left
+   * to right in title order, PACK_GAP between them. A row of one frame is as wide as the widest row, what it holds centred in it: bands.
+   */
+  ranked(items, ranks, res) {
+    const known = ranks.filter((x) => x != null);
+    const last = Math.max(...known) + 1;
+    const rows = new Map();
+    items.forEach((it, i) => { const k = ranks[i] == null ? last : ranks[i]; if (!rows.has(k)) rows.set(k, []); rows.get(k).push(i); });
+    const order = [...rows.keys()].sort((a, b) => a - b).map((k) => rows.get(k));
+    const rowW = (row) => row.reduce((s, i) => s + items[i].w, 0) + PACK_GAP * (row.length - 1);
+    const W = Math.max(...order.map(rowW));
+    for (const row of order) {
+      if (row.length !== 1 || this.m.node(items[row[0]].id).kind !== 'frame') continue;
+      const fr = res.get('f:' + items[row[0]].id), extra = W - fr.w;
+      if (extra <= 0) continue;
+      const dx = Math.floor(extra / 2);
+      fr.pos = new Map([...fr.pos].map(([id, p]) => [id, { x: p.x + dx, y: p.y }]));
+      fr.w = W; items[row[0]].w = W;
+    }
+    const pos = new Array(items.length);
+    let y = 0;
+    for (const row of order) {
+      let x = 0;
+      for (const i of row) { pos[i] = { x, y }; x += items[i].w + PACK_GAP; }
+      y += Math.max(...row.map((i) => items[i].h)) + PACK_GAP;
+    }
+    return { pos, w: W, h: y - PACK_GAP, algo: 'ranked' };
   }
 
   /** A container laid out again from its anchor: a stress layout is relaxed from there, any other is kept and only pushed apart where boxes now overlap. */

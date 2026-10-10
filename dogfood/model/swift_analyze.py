@@ -53,6 +53,12 @@ def _closing(code, i, open_, close):
         i += 1
     return i
 
+def package_name(repo):
+    """What the package calls itself, `Package(name: "X"`, else its folder's name."""
+    code = blank_comments(open(os.path.join(repo, 'Package.swift')).read())
+    m = re.search(r'\bPackage\(\s*name:\s*"([^"]+)"', code)
+    return m.group(1) if m else os.path.basename(os.path.abspath(repo))
+
 def parse_package(repo):
     """Every target in Package.swift: name, deps (targets and products, by name), path, kind, and its layer tag,
     a `// layer: <name>` comment after it, as this repo writes (`test of X` reads as test). A target written twice
@@ -239,7 +245,7 @@ def neutral_file(raw):
                        for d in raw['decls']])
 
 def main(repo, out):
-    model = dict(language='swift', modules=[], files=[], uses=[])
+    model = dict(language='swift', name=package_name(repo), modules=[], files=[], uses=[])
     for t in parse_package(repo):
         root = os.path.join(repo, t['path'])
         fl = []

@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
-"""The model every layout reads, each note's text, and the runner.
+"""The model the digest is made from, and each note's text.
 
 A project is a directory (PROJECT, else this one) holding model.json, which a reader writes (README.md has its
-format), and, where the code doesn't say enough, spec.py: what isn't there is worked out (defaults.py). The
-runner dry-runs every script first, and a refusal, or a warning outside EXPECTED, stops it before the real run."""
-import importlib.util, json, os, subprocess, sys, collections
+format), and, where the code doesn't say enough, spec.py: what isn't there, or names what the code no longer has,
+is worked out (defaults.py) and said in WARNINGS."""
+import importlib.util, json, os, re, sys, collections
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 PROJECT = os.path.abspath(os.path.expanduser(os.environ.get('PROJECT', HERE)))
-CLI = os.environ.get('CANVAS_CLI', '/Users/zekenie/code/native-canvas/build/canvas')
-BOARD = os.environ.get('CANVAS_BOARD', '2')
-RUNS = os.path.join(PROJECT, 'runs')
-os.makedirs(RUNS, exist_ok=True)
 
 model = json.load(open(os.path.join(PROJECT, 'model.json')))
 MODS = {m['name']: m for m in model['modules']}
@@ -37,9 +33,10 @@ def load_spec():
     return mod
 
 import defaults         # noqa: E402
-SPEC = defaults.complete(load_spec(), model, PROD, MODS, FILES, USES)
-BANDS, PURPOSES, FOLDER_BOARDS, FOLDER_PURPOSES, GROUPS, BY_MODULE, LAYER_PHRASE = (
-    SPEC.BANDS, SPEC.PURPOSES, SPEC.FOLDER_BOARDS, SPEC.FOLDER_PURPOSES, SPEC.GROUPS, SPEC.BY_MODULE, SPEC.LAYER_PHRASE)
+SPEC = defaults.complete(load_spec(), model, PROD, MODS, FILES, USES, PROJECT)
+BANDS, PURPOSES, FOLDER_BOARDS, FOLDER_PURPOSES, GROUPS, BY_MODULE, LAYER_PHRASE, TITLE = (
+    SPEC.BANDS, SPEC.PURPOSES, SPEC.FOLDER_BOARDS, SPEC.FOLDER_PURPOSES, SPEC.GROUPS, SPEC.BY_MODULE, SPEC.LAYER_PHRASE, SPEC.TITLE)
+WARNINGS = SPEC.WARNINGS
 
 # ---- names --------------------------------------------------------------------------------------
 
@@ -63,18 +60,6 @@ _TITLES = _file_titles()
 def ftitle(key):
     return _TITLES[key]
 
-SOURCE_EXTS = ('.swift', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rb')
-
-def _strip(title):
-    return next((title[:-len(x)] for x in SOURCE_EXTS if title.endswith(x)), title)
-
-_stripped = collections.Counter(_strip(t) for t in _TITLES.values())
-
-def bare(title):
-    """A file's title without its extension, unless another file's would read the same (`foo.ts` beside `foo.js`)."""
-    b = _strip(title)
-    return b if b == title or _stripped[b] == 1 else title
-
 # ---- boards -------------------------------------------------------------------------------------
 # A module's board holds its files, or, for a module in FOLDER_BOARDS, a card for each of those folders (each
 # a board of its own, titled "<module>/<folder>") and the files outside them.
@@ -97,58 +82,30 @@ for k in sorted(FILES):
 def board_files(board):
     return list(_on_board.get(board, []))
 
-def folder_boards(m):
-    """The boards of a module's folders, in FOLDER_BOARDS' order."""
-    return [f"{m}/{folder}" for folder in FOLDER_BOARDS.get(m, [])]
-
-def boards_for(mods):
-    """The boards of these modules' files: a module's own, or its folders'."""
-    out = []
-    for m in mods:
-        out += folder_boards(m) if m in FOLDER_BOARDS else [m]
-    return out
-
 def key_in(board, name):
-    """A file of a board by its name in the spec: its path inside the board's folder (or module)."""
+    """A file of a board by its name in the spec: its path inside the board's folder (or module). None, and a
+    warning, when the board has no such file."""
     m, folder = BOARDS[board]
     k = (m, f"{folder}/{name}" if folder else name)
     if k not in FILES:
-        raise SystemExit(f"spec names {name} on {board}, which has no such file")
+        WARNINGS.append(f"spec.py names {name} on {board}, which has no such file: left out")
+        return None
+    if board_of(k) != board:
+        WARNINGS.append(f"spec.py names {name} on {board}, but it is on {board_of(k)}'s board: left out of that frame")
+        return None
     return k
 
-def q(s):
-    return '"' + s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n') + '"'
+def as_text(s):
+    """Text a note shows as it is: every @[ in it written so draw reads it as the two characters, not a mention (a run of
+    backslashes before it doubled, then one more)."""
+    return re.sub(r'(\\*)@\[', lambda m: m.group(1) * 2 + '\\@[', s)
 
-def plain(s):
-    """Text with no mentions in it: an @[ is written as text."""
-    return s.replace('@[', '\x00')
+def mention(title):
+    """A mention of the shape with that title, as draw reads one: its spaces folded as a title's are (a label ends at
+    a line break), and in it a backslash and a ] each behind a backslash, so a title like [locale] names its shape."""
+    return '@[' + ' '.join(title.split()).replace('\\', '\\\\').replace(']', '\\]') + ']'
 
-def text_lit(s):
-    return q(s).replace('\x00', '\\\\@[')
-
-# ---- what's drawn -------------------------------------------------------------------------------
-
-def edges_between(drawn):
-    """File uses among drawn modules: same-board targets and other-board targets, per file."""
-    same = collections.defaultdict(list)
-    other = collections.defaultdict(list)
-    for a, b, _ in USES:
-        if a not in FILES or b not in FILES or a[0] not in drawn or b[0] not in drawn:
-            continue
-        if board_of(a) == board_of(b):
-            same[a].append(b)
-        else:
-            other[a].append(b)
-    for a in other:
-        other[a].sort(key=lambda b: (board_of(b), ftitle(b)))
-    return same, other
-
-def is_public(key, other_all):
-    """Whether a file's note is public: it declares what another module may use, or a file on another
-    board uses it (a pill can stand only for a public shape)."""
-    if FILES[key]['api']:
-        return True
-    return any(key in targets for targets in other_all.values())
+# ---- what a note says ---------------------------------------------------------------------------
 
 # How a note says what its file declares, in its language's words: its types by visibility, its public functions.
 WORDS = {
@@ -179,12 +136,11 @@ def file_text(key):
     if exts: lines.append(f"{W['extension']} " + names(exts, 6))
     lines.append(f"{f['lines']} lines")
     parts.append('\n'.join(lines))
-    return plain('\n\n'.join(parts))
+    return '\n\n'.join(parts)
 
-def about_title(board):
-    return 'About ' + board
-
-def about_text(board):
+def about_text(board, title=lambda b: b):
+    """A board's header note: what it is, and the boards it uses, each mentioned by the title its card was given
+    (`title`: a board to its card's title, which is the board's name unless another shape had it)."""
     m, folder = BOARDS[board]
     if folder:
         files = board_files(board)
@@ -193,64 +149,17 @@ def about_text(board):
             if a[0] == m and b[0] == m and a in FILES and b in FILES and board_of(a) == board and board_of(b) != board:
                 uses[board_of(b)] += 1
         n = sum(FILES[k]['lines'] for k in files)
-        t = f"{board}: a folder of @[{m}]\n{FOLDER_PURPOSES.get(board, '')}\n\n" + (
-            'Uses ' + ' '.join(f'@[{u}]' for u in sorted(uses)) if uses else 'Uses nothing else of its module')
+        t = f"{as_text(board)}: a folder of {mention(title(m))}\n{as_text(FOLDER_PURPOSES.get(board, ''))}\n\n" + (
+            'Uses ' + ' '.join(mention(title(u)) for u in sorted(uses)) if uses else 'Uses nothing else of its module')
         return t + f"\n{len(files)} files, {n:,} lines"
     mod = MODS[board]
-    t = f"{board}: {LAYER_PHRASE[board]}\n{PURPOSES.get(board, '')}\n\n"
-    t += ('Imports ' + ' '.join(f'@[{d}]' for d in mod['deps'])) if mod['deps'] else 'Imports no module of its own'
+    t = f"{as_text(board)}: {as_text(LAYER_PHRASE[board])}\n{as_text(PURPOSES.get(board, ''))}\n\n"
+    t += ('Imports ' + ' '.join(mention(title(d)) for d in mod['deps'])) if mod['deps'] else 'Imports no module of its own'
     users = [x for x in PROD if board in MODS[x]['deps']]
     if users:
-        t += '\nImported by ' + (' '.join(f'@[{u}]' for u in users) if len(users) <= 12 else f'{len(users)} modules')
+        t += '\nImported by ' + (' '.join(mention(title(u)) for u in users) if len(users) <= 12 else f'{len(users)} modules')
     files = [k for k in FILES if k[0] == board]
     t += f"\n{len(files)} files, {mod['lines']:,} lines"
     if board in FOLDER_BOARDS:
         t += '\nIts folders are subboards here.'
     return t
-
-# ---- running scripts ----------------------------------------------------------------------------
-
-EXPECTED = ('goes into a reference', 'comes from', 'write its title exactly', 'landed outside the view', 'held a board')
-
-TIMEOUT = '240'     # canvas gives up after 10 s by default, while the app goes on drawing
-
-def canvas(*args):
-    """A canvas command's result (boards, query, show), or a SystemExit with what went wrong."""
-    p = subprocess.run([CLI, '--timeout', TIMEOUT, *args], capture_output=True, text=True, timeout=600)
-    if p.returncode:
-        raise SystemExit(f"canvas {args[0]}: {(p.stderr.strip() or p.stdout.strip())[:400]}")
-    return json.loads(p.stdout) if p.stdout.strip() else {}
-
-def cli(script, dry):
-    args = [CLI, '--timeout', TIMEOUT, 'draw', '--board', BOARD] + (['--dry-run'] if dry else []) + ['-']
-    p = subprocess.run(args, input=script, capture_output=True, text=True, timeout=600)
-    out = p.stdout.strip() or p.stderr.strip()
-    try:
-        return p.returncode, json.loads(out)
-    except json.JSONDecodeError:
-        return p.returncode, {'error': {'message': out}}
-
-def draw(label, script, real=True):
-    open(os.path.join(RUNS, label + '.draw'), 'w').write(script)
-    rc, r = cli(script, dry=True)
-    json.dump(r, open(os.path.join(RUNS, label + '.dry.json'), 'w'), indent=1)
-    if 'error' in r:
-        print(f"[{label}] refused: {json.dumps(r['error'])[:1500]}")
-        sys.exit(1)
-    odd = [w for w in r.get('warnings', []) if not any(x in w['message'] for x in EXPECTED)]
-    if odd:
-        print(f"[{label}] dry run warns:")
-        for w in odd[:30]:
-            print('   ', w.get('line'), w['message'][:300])
-        sys.exit(1)
-    if not real:
-        return r
-    rc, r = cli(script, dry=False)
-    json.dump(r, open(os.path.join(RUNS, label + '.json'), 'w'), indent=1)
-    if 'error' in r:
-        print(f"[{label}] refused on the real run: {json.dumps(r['error'])[:1500]}")
-        sys.exit(1)
-    kinds = collections.Counter((c.get('kind'), c['did']) for c in r['changes'])
-    print(f"[{label}] on {r.get('on', {}).get('title') or r.get('on', {}).get('board')}: " +
-          ', '.join(f'{n} {k} {d}' for (k, d), n in sorted(kinds.items(), key=lambda x: str(x))))
-    return r

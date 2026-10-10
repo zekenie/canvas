@@ -2,13 +2,23 @@
 // for the board itself), frames at their final size, shapes made public one run before the edges through them.
 import { q, lit, byTitle, slug, pad2, fold } from './util.mjs';
 import { headerText, HEADER_W } from './sizes.mjs';
+import { fanTargets } from './moves.mjs';
+
+/** What the plan makes public by its moves: the promoted nodes, and what the fanned-out nodes' pills stand for. */
+export function madePublic(model, results) {
+  const made = new Map();   // title -> why
+  for (const r of results.values()) {
+    for (const t of r.report.promoted) if (!made.has(t)) made.set(t, 'promoted: its users reach it through pills');
+    for (const v of r.report.fanned || []) for (const t of fanTargets(model, v)) if (!made.has(t)) made.set(t, `${v} uses it, and points at so many shapes that its uses are pills beside it (fanned out)`);
+    for (const x of r.report.long || []) if (!made.has(x.to)) made.set(x.to, `an arrow to it would run ${x.length} units, longer than the dial allows, so it is a pill`);
+  }
+  return made;
+}
 
 const at = (anchor, x, y) => `right of ${q(anchor)} left (gap: ${x}) below ${q(anchor)} top (gap: ${y})`;
 
 export function buildPlan(model, sizes, results, opts) {
-  const promotedAll = new Set();
-  for (const r of results.values()) for (const t of r.report.promoted) promotedAll.add(t);
-  const publicSet = new Set([...model.forcedPublic, ...promotedAll]);
+  const publicSet = new Set([...model.forcedPublic, ...madePublic(model, results).keys()]);
   const into = opts.into ? fold(opts.into) : null;   // the subboard the whole digest goes in: its card is the first run, and the root board's shapes are `in` it
   const plan = { title: model.title, options: opts, into, boards: [], promotions: [], stop: {}, cost: {}, public: [...publicSet].sort(byTitle) };
   const runs = [];
@@ -96,9 +106,10 @@ export function buildReport(model, results, timings) {
   for (const r of results.values()) for (const p of r.report.promotions) flat.push(p);
   const total = { pills: 0, arrows: 0, sharedArrows: 0 };
   for (const r of results.values()) { total.pills += r.report.end.pills; total.arrows += r.report.end.arrows; total.sharedArrows += r.report.end.sharedArrows; }
-  const pub = [...new Set([...model.forcedPublic, ...flat.map((p) => p.node)])].sort(byTitle);
+  const made = madePublic(model, results);
+  const pub = [...new Set([...model.forcedPublic, ...made.keys()])].sort(byTitle);
   const why = {};
-  for (const t of pub) why[t] = model.publicWhy.get(t) || 'promoted: its users reach it through pills';
+  for (const t of pub) why[t] = model.publicWhy.get(t) || made.get(t);
   // D11: the tool makes public only shapes it creates, and these are all of them
   return { title: model.title, public: pub, publicWhy: why, promotions: flat, boards, totals: total, timings, warnings: model.warnings };
 }

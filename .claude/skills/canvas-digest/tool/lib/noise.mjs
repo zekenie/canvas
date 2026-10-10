@@ -3,6 +3,7 @@
 // with their boxes' widths nudged by 4 to 20 units (a promotion's pill column changes a box's width by 100 to 300, so this is a
 // small change); the rest of the board is as it was. The spread of the change in C is the layout's reshuffling noise.
 import { evaluate } from './cost.mjs';
+import { withMove, moveGroups } from './moves.mjs';
 
 export const NOISE_SIGMAS = 3, MIN_MARGIN_PILLS = 2;   // the floor at mess 0.5; the dial sets it (model.dial.marginPills)
 
@@ -15,8 +16,8 @@ export async function measureNoise(model, layouter, state, cur, ev, cands, mu, e
   const was = { warm: layouter.warm, phase: layouter.phase };
   layouter.warm = true; layouter.phase = 'noise';
   for (const c of cands.slice(0, nC)) {
-    const trial = ext(state, { promoted: new Set(state.promoted).add(c.node), order: state.order.concat([c.node]) });
-    const keys = new Set(layouter.pillPlan(trial).groups.filter((g) => g.target === c.node).map((g) => g.key));
+    const trial = withMove(state, c);
+    const keys = moveGroups(layouter, trial, c);
     trial.hosts = layouter.assignHosts(trial, cur, keys);
     layouter.missLog = [];
     await layouter.layout(trial);

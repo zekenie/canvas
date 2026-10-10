@@ -9,10 +9,15 @@ the spec has it, and worked out otherwise:
                     than BIG files gives one to each of its top folders, when it has two or more.
     FOLDER_PURPOSES a folder board's purpose: what the reader found for the folder.
     GROUPS          {board: [(title, [file], [subgroup])]}, frames: a board's files by their folders, two deep,
-                    titled by the folder's path in its module (the board's own files in one titled "<board>/").
+                    each titled by the shortest end of its folder's path that no other frame, module or board takes
+                    (the board's own files in one titled "<board>/").
     BY_MODULE       files whose pills stand for modules, not files: none.
+    TITLE           what the whole is called, the root's header: the name its reader found (the package's own, a
+                    repository's folder), else the project directory's name.
 
-LAYER_PHRASE, the first line of a module's About note, follows from the bands."""
+A spec is overrides, never a list the code must match: a module its BANDS leave out goes in the band of its layer
+tag, else a band of its own at the bottom; one it names that the code lacks is passed over. Each is said in WARNINGS,
+and nothing stops the run. LAYER_PHRASE, the first line of a module's About note, follows from the bands."""
 import collections, os
 
 BIG = 50
@@ -20,18 +25,30 @@ BIG = 50
 class Spec:
     pass
 
-def complete(spec, model, prod, mods, files, uses):
+def complete(spec, model, prod, mods, files, uses, project):
     s = Spec()
+    s.WARNINGS = []
     have = lambda name: spec is not None and hasattr(spec, name)
+    s.TITLE = spec.TITLE if have('TITLE') else model.get('name') or os.path.basename(os.path.abspath(project))
     s.LAYER_NAMES = spec.LAYER_NAMES if have('LAYER_NAMES') else {}
     s.FOLDER_BOARDS = spec.FOLDER_BOARDS if have('FOLDER_BOARDS') else folder_boards(prod, files)
+    unknown = [m for m in s.FOLDER_BOARDS if m not in prod]
+    if unknown:
+        s.WARNINGS.append(f"spec.py's FOLDER_BOARDS name modules the code lacks, passed over: {', '.join(unknown)}")
+        s.FOLDER_BOARDS = {m: fs for m, fs in s.FOLDER_BOARDS.items() if m in prod}
+    # a folder's board is called "<module>/<folder>": where a module has that very name, the folder gets no board of
+    # its own (its files stay on its module's board), so the two are never one board
+    for m, fs in list(s.FOLDER_BOARDS.items()):
+        named = [f for f in fs if f"{m}/{f}" in prod]
+        if named:
+            s.WARNINGS.append(f"{', '.join(f'{m}/{f}' for f in named)}: a module has that name, so the folder gets no board "
+                              f"of its own and its files stay on {m}'s")
+            s.FOLDER_BOARDS = {**s.FOLDER_BOARDS, m: [f for f in fs if f not in named]}
     s.BANDS = spec.BANDS if have('BANDS') else bands(prod, mods, s.LAYER_NAMES)
-    unknown = [m for m in s.FOLDER_BOARDS if m not in prod] + [m for _, ms in s.BANDS for m in ms if m not in prod]
-    missing = [m for m in prod if m not in {x for _, ms in s.BANDS for x in ms}]
-    if unknown or missing:
-        raise SystemExit(f"spec.py: {'names modules the model lacks: ' + ', '.join(unknown) if unknown else ''}"
-                         f"{'; ' if unknown and missing else ''}{'its BANDS leave out ' + ', '.join(missing) if missing else ''}")
+    s.BANDS = settle_bands(s.BANDS, prod, mods, s.LAYER_NAMES, s.WARNINGS)
     s.PURPOSES = spec.PURPOSES if have('PURPOSES') else {m: mods[m].get('doc') or '' for m in prod}
+    for folder_key in [k for k in (spec.PURPOSES if have('PURPOSES') else {}) if k not in prod]:
+        s.WARNINGS.append(f"spec.py's PURPOSES name a module the code lacks, passed over: {folder_key}")
     s.FOLDER_PURPOSES = spec.FOLDER_PURPOSES if have('FOLDER_PURPOSES') else {
         f"{m}/{folder}": (mods[m].get('folders') or {}).get(folder) or '' for m, fs in s.FOLDER_BOARDS.items() for folder in fs}
     s.GROUPS = spec.GROUPS if have('GROUPS') else groups(prod, files, s.FOLDER_BOARDS)
@@ -40,6 +57,38 @@ def complete(spec, model, prod, mods, files, uses):
     s.LAYER_PHRASE = {m: f"{s.LAYER_NAMES.get(mods[m]['layer'], mods[m]['layer'])} layer" if mods[m].get('layer')
                       else band_of[m][0].lower() + band_of[m][1:] for m in prod}
     return s
+
+def settle_bands(given, prod, mods, names, warnings):
+    """The spec's bands with every module the code has: one it lacks is passed over, and one it leaves out goes in
+    the band whose modules share its layer tag, else in a band of its own at the bottom ("Other modules")."""
+    unknown = [m for _, ms in given for m in ms if m not in prod]
+    if unknown:
+        warnings.append(f"spec.py's BANDS name modules the code lacks, passed over: {', '.join(unknown)}")
+    out, placed = [], set()
+    for t, ms in given:
+        band = []
+        for m in ms:
+            if m not in prod:
+                continue
+            if m in placed:
+                warnings.append(f"spec.py's BANDS put {m} in two bands: it stays in the first")
+                continue
+            placed.add(m)
+            band.append(m)
+        out.append((t, band))
+    for m in prod:
+        if m in placed:
+            continue
+        tag = mods[m].get('layer')
+        home = next((b for b in out if tag and any(mods[x].get('layer') == tag for x in b[1])), None)
+        if home is None:
+            home = next((b for b in out if b[0] == 'Other modules'), None)
+            if home is None:
+                home = ('Other modules', [])
+                out.append(home)
+        home[1].append(m)
+        warnings.append(f"spec.py's BANDS leave out {m}: it goes in \"{home[0]}\"")
+    return [b for b in out if b[1]]
 
 def folder_boards(prod, files):
     out = {}

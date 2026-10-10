@@ -22,7 +22,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   function digest(nodes, edges, extra) { return Object.assign({ title: 'T', nodes: nodes, edges: edges }, extra || {}); }
   var fixture = function (name) { return JSON.parse(io.readText(base + '/test/fixtures/' + name + '.digest.json')); };
   var sizesOf = function (d) { var m = model.buildModel(d); return sizes.sizesFrom(m, helpers.estimateMeasure(m)); };
-  async function planOf(d, opts) { return planm.planDigest(d, sizesOf(d), opts || {}, elk); }
+  var planOf = async function (d, opts) { return planm.planDigest(d, sizesOf(d), opts || {}, elk); };
   // a plan must be self-consistent: nothing overlaps, shapes inside their frames 40 clear, pills inside their start's frame
   function checkPlan(plan) {
     plan.boards.forEach(function (b) {
@@ -170,21 +170,24 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   async function layouterOf(d, opts) {
     var m = model.buildModel(d), sz = sizesOf(d);
     var L = new layoutm.Layouter(m, 'root', sz, opts || {}, elk);
-    var state = { promoted: new Set(), order: [], hosts: new Map(), splits: new Map() };
+    var state = { promoted: new Set(), order: [], fanned: new Set(), fans: [], apart: new Set(), hosts: new Map(), splits: new Map() };
     var layout = await L.layout(state);
     return { m: m, L: L, state: state, layout: layout, ev: costm.evaluate(m, layout, m.mu) };
   }
 
-  await test('the gain rule is absolute: a promotion is accepted when it cuts C by more than the margin, and not otherwise', async function () {
+  await test('the gain rule is absolute: a node that is not popular is promoted when that cuts C by more than the margin, and not otherwise', async function () {
     var fx = hubFixture(4, 5);
     var d = digest(fx.nodes, fx.edges, { policy: { mess: 0.5 } });   // a pill costs 4 at 0.5, as the arithmetic below assumes
+    var planOf0 = planOf;
+    planOf = function (dd, opts) { return planOf0(dd, Object.assign({ popular: 100000 }, opts || {})); };   // no node is popular here: every move is a judgment call
+    try {
     var r = await planOf(d);
     var rep = r.report.boards.root, mu = 4;
     assert(rep.noise && rep.noise.n > 0, 'the margin was measured: ' + JSON.stringify(rep.noise));
     eq(rep.margin, rep.noise.margin, 'the margin is the measured one');
     assert(rep.margin >= 2 * mu && rep.margin % mu === 0, 'a whole number of pills, at least two: ' + rep.margin);
     assert(r.report.promotions.length >= 1, 'something is promoted');
-    r.report.promotions.forEach(function (p) { assert(p.gainC > rep.margin, p.node + ' gained ' + p.gainC + ', not over the margin ' + rep.margin); });
+    r.report.promotions.forEach(function (p) { assert(!p.popular, p.node + ' is under the dial\'s popular'); assert(p.gainC > rep.margin, p.node + ' gained ' + p.gainC + ', not over the margin ' + rep.margin); });
     var g1 = r.report.promotions[0].gainC;
     // a margin over the best gain: nothing is promoted, and the report says what the best candidate gained
     var tight = await planOf(d, { marginPills: Math.ceil(g1 / mu) + 1 });
@@ -196,6 +199,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var loose = await planOf(d, { marginPills: 0 });
     assert(loose.report.promotions.length >= r.report.promotions.length, 'a margin of 0 promotes at least as much');
     loose.report.promotions.forEach(function (p) { assert(p.gainC > 0, p.node + ' gained ' + p.gainC); });
+    } finally { planOf = planOf0; }
   });
 
   await test('candidates: a node with two users, or one user in another container; not one user beside it, nor none', async function () {
@@ -334,19 +338,21 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   });
 
   await test('the safety cap: 25% of the leaves, and the report calls it out when it, not the board, ends the loop', async function () {
-    var nodes = [{ title: 'Hubs', kind: 'frame' }], edges = [], hubs = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8'];
+    // seven hubs of eight users each, and users of eight uses each: none popular at mess 0.5 (9 arrows), so each move is a judgment call
+    var nodes = [{ title: 'Hubs', kind: 'frame' }], edges = [], hubs = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7'];
     hubs.forEach(function (h) { nodes.push(note(h, 'Hubs')); });
     for (var f = 1; f <= 2; f++) {
       nodes.push({ title: 'Team ' + f, kind: 'frame' });
-      var t = []; for (var i = 1; i <= 5; i++) { t.push('u' + f + i); nodes.push(note('u' + f + i, 'Team ' + f)); }
-      t.forEach(function (u, j) { edges.push({ from: u, to: t[(j + 1) % 5] }); hubs.forEach(function (h) { edges.push({ from: u, to: h }); }); });
+      var t = []; for (var i = 1; i <= 4; i++) { t.push('u' + f + i); nodes.push(note('u' + f + i, 'Team ' + f)); }
+      t.forEach(function (u, j) { edges.push({ from: u, to: t[(j + 1) % 4] }); hubs.forEach(function (h) { edges.push({ from: u, to: h }); }); });
     }
     var r = await planOf(digest(nodes, edges), { marginPills: 2, mess: 0.5 });   // the margin given, so the layout's noise does not stop the loop before the cap
     var b = r.report.boards.root;
-    eq(b.budget.cap, 4, '25% of 18 leaves, rounded down (the dial at 0.5)');
-    var capped = await planOf(digest(nodes, edges), { marginPills: 2, mess: 0.5, cap: 0.1 });   // the cap given: one promotion, which still pays
+    eq(b.budget.cap, 3, '25% of 15 leaves, rounded down (the dial at 0.5)');
+    assert(r.report.promotions.every(function (p) { return !p.popular; }), 'no node here is popular');
+    var capped = await planOf(digest(nodes, edges), { marginPills: 2, mess: 0.5, cap: 0.1 });   // the cap given: one move, which still pays
     b = capped.report.boards.root;
-    eq(b.budget.cap, 1, '10% of 18 leaves');
+    eq(b.budget.cap, 1, '10% of 15 leaves');
     eq(capped.report.promotions.length, 1, 'one promotion, the cap');
     eq(b.stop, 'safety-cap', 'stopped by the cap');
     assert(b.safetyCap.hit === true && /SAFETY CAP/.test(b.safetyCap.note) && b.safetyCap.wouldHaveGained >= 0.02, 'the report calls it out: ' + JSON.stringify(b.safetyCap));
@@ -428,19 +434,22 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     }
   });
 
-  await test('the order is the same at every mess, and the dial says how far down it the loop goes: Acme at 0.1 goes further than at 0.5, and at 0.5 further than at 0.8', async function () {
+  await test('the dial says how far down the loop goes: the popular moves at a higher mess are the first of a lower mess\'s, a judgment call beats the margin, and Acme at 0.1 goes further than at 0.5, and at 0.5 further than at 0.8', async function () {
     var inputs = [['acme', fixture('acme')]], by = {};
     for (var k = 0; k < inputs.length; k++) {
       var orders = [];
       for (var mess of [0, 0.1, 0.2, 0.5, 0.8, 1]) {
         var r = await planOf(inputs[k][1], { mess: mess });
-        orders.push(r.report.promotions.map(function (p) { return p.node; }));
+        // the popular moves, in the order they were made: the same list at every mess, cut where the dial's `popular` says
+        orders.push(r.report.promotions.filter(function (p) { return p.popular; }).map(function (p) { return p.mode + ' ' + p.node; }));
         by[inputs[k][0] + mess] = r;
         assert(r.report.boards.root.end.aspect <= dialm.dial(mess).good.aspect, inputs[k][0] + ' ' + mess + ': the board is ' + r.report.boards.root.end.aspect + ' times as long as it is wide');
-        r.report.promotions.forEach(function (p) { assert(p.gainAtDial >= r.report.boards.root.marginKept - 1e-6, inputs[k][0] + ' ' + mess + ': ' + p.node + ' was accepted at ' + p.gainAtDial + ' against ' + r.report.boards.root.marginKept); });
+        r.report.promotions.forEach(function (p) {
+          if (p.popular) assert(p.arrows >= dialm.dial(mess).popular, inputs[k][0] + ' ' + mess + ': ' + p.node + ' was moved as popular with ' + p.arrows + ' arrows');
+          else assert(p.gainAtDial >= r.report.boards.root.marginKept - 1e-6, inputs[k][0] + ' ' + mess + ': ' + p.node + ' was accepted at ' + p.gainAtDial + ' against ' + r.report.boards.root.marginKept);
+        });
       }
-      for (var i = 1; i < orders.length; i++) eq(orders[i], orders[i - 1].slice(0, orders[i].length), inputs[k][0] + ': the promotions at a higher mess are the first of a lower mess\'s');
-      for (var i = 1; i < orders.length; i++) assert(orders[i].length <= orders[i - 1].length, inputs[k][0] + ' counts ' + JSON.stringify(orders.map(function (o) { return o.length; })));
+      for (var i = 1; i < orders.length; i++) eq(orders[i], orders[i - 1].slice(0, orders[i].length), inputs[k][0] + ': the popular moves at a higher mess are the first of a lower mess\'s');
     }
     var n = function (key) { return by[key].report.promotions.length; };
     assert(n('acme0.1') > n('acme0.5'), 'acme: 0.1 promotes ' + n('acme0.1') + ', 0.5 promotes ' + n('acme0.5'));
@@ -620,7 +629,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var text = r.runs.filter(function (x) { return !/-edges\.draw$/.test(x.name); }).map(function (x) { return x.text; }).join('');
     var made = (text.match(/ public: true/g) || []).length;
     eq(made, pub.length, 'every public shape is made public in a shape run, and nothing else is');
-    r.report.promotions.forEach(function (p) { assert(p.before > p.after, p.node + ' cut the cost'); });
+    r.report.promotions.forEach(function (p) { assert(p.popular || p.before > p.after, p.node + ' cut the cost, or was popular'); });
     checkPlan(r.plan);
   });
 
@@ -754,7 +763,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(ex('id', { id: 4, name: 'Plans' }), 4);
     eq(ex('count', { count: 7, rows: [] }), 7);
     var threw = ''; try { ex('nope', {}); } catch (e) { threw = e.message; }
-    assert(/not titles, kinds, id, count or errors/.test(threw), threw);
+    assert(/not titles, root-titles, kinds, id, count or errors/.test(threw), threw);
   });
 
   // ---- what reviewing 9716c09f and 4840572f found ----------------------------------------------------------------
@@ -847,6 +856,224 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     await clim.run(['into', '/plan.json'], mio); eq(out, ['Acme map']); out.length = 0;
     files['/plan2.json'] = JSON.stringify((await planOf(fixture('acme'), {})).plan);
     await clim.run(['into', '/plan2.json'], mio); eq(out, [], 'a new file has none');
+  });
+
+  // ---- popular nodes, fanning out, and the longest arrow ----
+  await test('a popular node is promoted whatever the layout measures: the most arrows first, by the dial\'s count, never at mess 1', async function () {
+    var fx = hubFixture(4, 5);   // 20 users point at Hub
+    var d = digest(fx.nodes, fx.edges);
+    eq([dialm.dial(0).popular, dialm.dial(0.1).popular, dialm.dial(0.5).popular, dialm.dial(1).popular], [4, 5, 9, 14], 'the dial\'s popular');
+    var r = await planOf(d, { marginPills: 100000 });   // a margin no measured gain beats
+    eq(r.report.promotions.map(function (p) { return [p.mode, p.node, !!p.popular, p.arrows]; }), [['in', 'Hub', true, 20]], 'the hub, as popular, with its 20 arrows');
+    eq(r.plan.boards[0].edges.filter(function (e) { return !e.via && e.to === 'Hub'; }).length, 0, 'no plain arrow into it is left');
+    assert(r.report.public.indexOf('Hub') >= 0, 'and it is public');
+    // under the count, it is a judgment call again: with that margin, nothing
+    var few = hubFixture(2, 2);   // 4 users, under the 5 of mess 0.1
+    eq((await planOf(digest(few.nodes, few.edges), { marginPills: 100000 })).report.promotions.length, 0, 'four arrows are not popular at 0.1');
+    eq((await planOf(digest(few.nodes, few.edges), { marginPills: 100000, mess: 0 })).report.promotions.map(function (p) { return p.node; }), ['Hub'], 'and are at mess 0');
+    eq((await planOf(d, { mess: 1 })).report.promotions.length, 0, 'at mess 1 nothing moves');
+    eq((await planOf(d, { promote: false })).report.promotions.length, 0, 'nor with promotion off');
+    // the most arrows first
+    var two = digest([note('Big'), note('Small')].concat(['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(function (t) { return note(t); })),
+      ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(function (t) { return { from: t, to: 'Big' }; }).concat(['a', 'b', 'c', 'd', 'e'].map(function (t) { return { from: t, to: 'Small' }; })));
+    eq((await planOf(two, { marginPills: 100000 })).report.promotions.map(function (p) { return p.node + ' ' + p.arrows; }), ['Big 7', 'Small 5'], 'by arrows');
+    // pills are for a mess: a star of eight lays out with nothing crossing, good enough as it is, and is left with its arrows, popular hub or not
+    var star = digest([note('Hub')].concat(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(function (x) { return note(x); })), ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(function (x) { return { from: x, to: 'Hub' }; }));
+    var left = await planOf(star, {});
+    eq([left.report.promotions.length, left.report.boards.root.stop, left.report.boards.root.end.good], [0, 'good-enough', true], 'a board good enough as it is: ' + JSON.stringify(left.report.boards.root.goodTerms));
+    eq(left.plan.boards[0].edges.filter(function (e) { return !e.via; }).length, 8, 'its eight arrows stay arrows');
+    // on a tie, the first node by title, whichever way its move goes: A (or Z) points at B and four more, and four more point at B
+    var ties = [];
+    for (var k = 0; k < 2; k++) {
+      var src = ['A', 'Z'][k];
+      var tie = digest([note(src), note('B')].concat(['t1', 't2', 't3', 't4', 'u1', 'u2', 'u3', 'u4'].map(function (x) { return note(x); })),
+        [{ from: src, to: 'B' }].concat(['t1', 't2', 't3', 't4'].map(function (x) { return { from: src, to: x }; })).concat(['u1', 'u2', 'u3', 'u4'].map(function (x) { return { from: x, to: 'B' }; })));
+      var first = (await planOf(tie, { marginPills: 100000 })).report.promotions[0];
+      ties.push([first.mode, first.node, first.arrows]);
+    }
+    eq(ties, [['out', 'A', 5], ['in', 'B', 5]], 'five point at B and five leave the other: the first by title is moved first');
+    checkPlan(r.plan);
+  });
+
+  await test('the summary names the moves the plan keeps: one the loop took back is not said to be promoted or fanned out', async function () {
+    var rep = { totals: { pills: 0, sharedArrows: 0, arrows: 0 }, public: [], publicWhy: {}, warnings: [],
+      promotions: [{ board: 'root', mode: 'in', node: 'Kept' }, { board: 'root', mode: 'in', node: 'Back' }, { board: 'Part', mode: 'out', node: 'Fan' }, { board: 'Part', mode: 'out', node: 'Fan back' }, { board: 'Part', mode: 'in', node: 'Back' }],
+      boards: { root: { stop: 'little-gain', demotions: [{ board: 'root', mode: 'in', node: 'Back' }] }, Part: { stop: 'good-enough', demotions: [{ board: 'Part', mode: 'out', node: 'Fan back' }] } } };
+    var text = clim.summarize({ report: rep, plan: { boards: [] }, runs: [], model: { dial: { mess: 0.1, longest: 1300 } } });
+    assert(/promoted 2: Kept, Back;/.test(text), 'the promotion taken back on the root is left out; the one of that name on another board stays: ' + text);
+    assert(/fanned out 1: Fan$/m.test(text), 'and so is the fan-out taken back: ' + text);
+  });
+
+  await test('a node that points at many is fanned out: each of its uses a pill beside it, what they stand for public; never to a shape that is never public, nor an edge that is never a pill', async function () {
+    var targets = ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8'];
+    var nodes = [note('Joiner')].concat(targets.map(function (t) { return note(t); })).concat([{ title: 'Private', kind: 'sticky-note', text: 'x', public: false }, note('Plain')]);
+    var edges = targets.map(function (t) { return { from: 'Joiner', to: t }; }).concat([{ from: 'Joiner', to: 'Private' }, { from: 'Joiner', to: 'Plain', direct: true }]);
+    var r = await planOf(digest(nodes, edges), { marginPills: 100000 });
+    eq(r.report.promotions.map(function (p) { return [p.mode, p.node, !!p.popular, p.arrows]; }), [['out', 'Joiner', true, 8]], 'the joiner, fanned out, for its 8 uses that may be pills');
+    eq(r.report.boards.root.fanned, ['Joiner']); eq(r.report.boards.root.promoted, [], 'nothing is promoted');
+    var out = r.plan.boards[0].edges.filter(function (e) { return e.from === 'Joiner'; });
+    eq(out.filter(function (e) { return e.via; }).map(function (e) { return e.to; }).sort(), targets, 'each use is an edge through a reference');
+    eq(out.filter(function (e) { return !e.via; }).map(function (e) { return e.to; }).sort(), ['Plain', 'Private'], 'the direct edge and the one to a shape that is never public stay arrows');
+    eq(r.plan.boards[0].pills.filter(function (p) { return p.start === 'Joiner'; }).length, 8, 'eight pills beside it');
+    eq(r.report.public.slice().sort(), targets, 'what the pills stand for is public, and the joiner is not');
+    assert(/fanned out/.test(r.report.publicWhy.t1), 'and the report says why: ' + r.report.publicWhy.t1);
+    var text = r.runs.map(function (x) { return x.text; }).join('\n');
+    assert(/edge "Joiner" -> "t1" via: reference/.test(text) && /sticky-note "t1".*public: true/.test(text), 'drawn that way');
+    assert(/fanned out 1: Joiner/.test(clim.summarize(r)), 'the summary says so');
+    // the same node, pointed at by many, is promoted instead: the two ways round are counted apart
+    var both = digest(nodes, targets.map(function (t) { return { from: t, to: 'Joiner' }; }));
+    eq((await planOf(both, { marginPills: 100000 })).report.promotions.map(function (p) { return p.mode + ' ' + p.node; }), ['in Joiner']);
+    checkPlan(r.plan);
+  });
+
+  await test('no arrow runs longer than the dial allows: it becomes a pill of its own beside its start, unless the digest says it never is one', async function () {
+    eq([dialm.dial(0).longest, dialm.dial(0.1).longest, dialm.dial(0.5).longest, dialm.dial(1).longest], [1000, 1300, 2500, 4000], 'the dial\'s longest');
+    // seven bands, a note in each: the top one points at the bottom one, six bands away
+    var nodes = [], bands = [0, 1, 2, 3, 4, 5, 6];
+    bands.forEach(function (i) { nodes.push({ title: 'Band ' + i, kind: 'frame', rank: i }); nodes.push(note('n' + i, 'Band ' + i, 'a note\nof three\nlines')); });
+    var d = digest(nodes, [{ from: 'n0', to: 'n6' }, { from: 'n0', to: 'n1' }]);
+    var r = await planOf(d, { marginPills: 100000 });
+    var b = r.report.boards.root;
+    eq(b.long.map(function (x) { return x.from + '>' + x.to; }), ['n0>n6'], 'the long one');
+    assert(b.long[0].length > 1300 && b.longLeft === 0, JSON.stringify(b.long));
+    eq(r.plan.boards[0].edges.map(function (e) { return e.from + '>' + e.to + (e.via ? ' via' : ''); }).sort(), ['n0>n1', 'n0>n6 via'], 'the long arrow is a pill, the short one an arrow');
+    assert(r.report.public.indexOf('n6') >= 0 && /longer than the dial allows/.test(r.report.publicWhy.n6), 'n6 is public, and the report says why');
+    assert(/long arrows: 1 made pills/.test(clim.summarize(r)), 'the summary says so');
+    // an edge the digest says is never a pill stays an arrow, however long
+    var keep = digest(nodes, [{ from: 'n0', to: 'n6', direct: true }]);
+    var k = await planOf(keep, { marginPills: 100000 });
+    eq(k.report.boards.root.long, []); eq(k.plan.boards[0].edges.map(function (e) { return !!e.via; }), [false], 'direct stays');
+    // loose enough, and it is an arrow again
+    eq((await planOf(d, { marginPills: 100000, mess: 0.8 })).report.boards.root.long, [], 'at 0.8 an arrow may run 3400');
+    checkPlan(r.plan);
+  });
+
+  await test('an edge set apart is a pill of its own: it leaves the pill its container shares', async function () {
+    var fx = hubFixture(1, 4);
+    var m = model.buildModel(digest(fx.nodes, fx.edges)), sz = sizesOf(digest(fx.nodes, fx.edges));
+    var L = new layoutm.Layouter(m, 'root', sz, {}, elk);
+    var state = { promoted: new Set(['Hub']), order: ['Hub'], fanned: new Set(), fans: [], apart: new Set(), hosts: new Map(), splits: new Map() };
+    var shared = L.pillPlan(state);
+    eq(shared.groups.filter(function (g) { return g.target === 'Hub'; }).map(function (g) { return g.edges.length; }), [4], 'four users, one pill');
+    state.apart = new Set(['u1-2' + '\u0000' + 'Hub']);
+    var apart = L.pillPlan(state);
+    eq(apart.groups.filter(function (g) { return g.target === 'Hub'; }).map(function (g) { return g.edges.length; }).sort(), [1, 3], 'one of its own, three still sharing');
+    eq(apart.members.filter(function (x) { return x.e.from === 'u1-2'; }).length, 0, 'and its arrow runs to no one else\'s pill');
+    assert((apart.byStart.get('u1-2') || []).some(function (en) { return en.e.to === 'Hub' && !en.shared; }), 'its pill is in its own column');
+  });
+
+  await test('a board\'s header is never another\'s: a subboard called what the digest is keeps its own, and the digest\'s gives way', async function () {
+    var d = digest([{ title: 'T', kind: 'subboard' }, note('In T', 'T', 'x'), note('About T (digest)', null, 'taken too')], []);
+    var m = model.buildModel(d);
+    eq(m.headers.get('T'), 'About T'); eq(m.headers.get('root'), 'About T (digest) (digest)', 'past the subboard\'s header and the note');
+    var r = await planOf(d, { promote: false });
+    var all = r.plan.boards.reduce(function (a, b) { return a.concat(b.shapes.map(function (x) { return x.title; })); }, []);
+    eq(all.length, new Set(all).size, 'no title twice in the plan');
+  });
+
+  // ---- ranks, headers, and drawing again in place ----
+  await test('ranked frames are rows in rank order, each as wide as the widest, what they hold centred; an unranked shape goes below them', async function () {
+    var nodes = [{ title: 'Low', kind: 'frame', rank: 2 }, { title: 'Top', kind: 'frame', rank: 0 }, { title: 'Mid', kind: 'frame', rank: 1 }, note('Loose', null, 'no rank')];
+    ['A', 'B', 'C', 'D'].forEach(function (x) { nodes.push(note('Top ' + x, 'Top', 'x')); });
+    nodes.push(note('Mid A', 'Mid', 'x'), note('Low A', 'Low', 'x'), note('Low B', 'Low', 'x'));
+    // arrows that point up the ranks: a layered layout would put Low above Top; the ranks win
+    var edges = [{ from: 'Low A', to: 'Top A' }, { from: 'Low B', to: 'Mid A' }, { from: 'Mid A', to: 'Top B' }];
+    var r = await planOf(digest(nodes, edges), { promote: false });
+    var by = {}; rootOf(r.plan).shapes.forEach(function (s) { by[s.title] = s; });
+    assert(by.Top.y + by.Top.h < by.Mid.y && by.Mid.y + by.Mid.h < by.Low.y, 'top, mid, low: ' + [by.Top.y, by.Mid.y, by.Low.y]);
+    assert(by.Low.y + by.Low.h < by.Loose.y, 'the unranked note is below the bands');
+    eq([by.Mid.w, by.Low.w], [by.Top.w, by.Top.w], 'every band as wide as the widest');
+    eq([by.Mid.x, by.Low.x], [by.Top.x, by.Top.x], 'the bands are flush');
+    var mid = by['Mid A'];
+    assert(Math.abs((mid.x + mid.w / 2) - (by.Mid.x + by.Mid.w / 2)) <= 1, 'a narrow band\'s note is centred in it');
+    checkPlan(r.plan);
+  });
+
+  await test('a board\'s header says the digest\'s text (the first board) or its subboard\'s; without one it says what it is of', async function () {
+    var d = digest([{ title: 'Part', kind: 'subboard', text: 'What the part is.' }, note('In part', 'Part', 'x'), { title: 'Bare', kind: 'subboard' }, note('In bare', 'Bare', 'y')], [], { text: 'The whole, said once.' });
+    var m = model.buildModel(d);
+    eq(sizes.headerText(m, 'root'), 'The whole, said once.');
+    eq(sizes.headerText(m, 'Part'), 'What the part is.');
+    eq(sizes.headerText(m, 'Bare'), 'Bare. Drawn by canvas-digest.');
+    var r = await planOf(d, { promote: false });
+    var all = r.runs.map(function (x) { return x.text; }).join('\n');
+    assert(all.indexOf('sticky-note "About T"') >= 0 && all.indexOf('text: "The whole, said once."') >= 0, 'the root header');
+    assert(/sticky-note "About Part" in "Part" .*text: "What the part is\."/.test(all), 'the part\'s header');
+    assert(!/subboard "Part"[^\n]*text:/.test(all), 'a subboard\'s card has no text');
+    var mm = sizes.measureScript(m);
+    assert(mm.indexOf('"About Part"') >= 0 && mm.indexOf('What the part is.') >= 0, 'the header is measured with its text');
+  });
+
+  await test('drawing again in place: what a drawing makes, whether it is in a board\'s file, what is clear of it, and the script that takes it back', async function () {
+    var rd = await import('../lib/redraw.mjs');
+    var r = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('In part', 'Part', 'x'), note('Root note', null, 'y')], []), { promote: false });
+    var d = rd.drawnRecord(r.plan, '/f.canvasboard', 7, 12);
+    eq(d.into, null); eq(d.path, '/f.canvasboard'); eq(d.board, '7'); eq(d.header, 'About T'); eq(d.shapes, 12);
+    eq(rd.drawnRecord(r.plan, '/f.canvasboard', 7).shapes, null, 'while it is drawn, the count is not known');
+    eq(d.root.slice().sort(), ['About T', 'Part', 'Root note'], 'the root board\'s shapes');
+    assert(d.titles.indexOf('In part') >= 0 && d.titles.indexOf('About Part') >= 0, 'every title');
+    assert(rd.sameFile(d, '/f.canvasboard', 9) && !rd.sameFile(d, '/g.canvasboard', 7) && !rd.sameFile(d, '', 7), 'by path, when there is one');
+    var unsaved = rd.drawnRecord(r.plan, '', 4);
+    assert(rd.sameFile(unsaved, '', 4, ['About T', 'Part']) && !rd.sameFile(unsaved, '', 5, ['About T']), 'by id, for a board with no file');
+    assert(!rd.sameFile(unsaved, '', 4, ['Part']) && !rd.sameFile(unsaved, '', 4), 'and only while the drawing\'s header is in it: a later board may get the id');
+    assert(rd.sameFile(unsaved, '/f.canvasboard', 4, ['About T']) && !rd.sameFile(unsaved, '/f.canvasboard', 4, ['Part']) && !rd.sameFile(unsaved, '/f.canvasboard', 5, ['About T']), 'a board saved since it was drawn on is still told by its id and the header');
+    assert(rd.sameFile(rd.drawnRecord(r.plan, '/private/tmp/f.canvasboard', 7), '/tmp/f.canvasboard', 7) && !rd.sameFile(d, '/g.canvasboard', 7, ['About T']), 'a path is the file\'s own (/tmp is /private/tmp); two paths that differ are two files, whatever the id');
+    eq(rd.minus(['Root  note', 'Mine', 'root note'], d), ['Mine', 'root note'], 'the file less the drawing (spaces folded, case kept: "root note" is another shape)');
+    eq([rd.beyond(d, 12), rd.beyond(d, 13), rd.beyond(d, 9), rd.beyond(rd.drawnRecord(r.plan, '/f', 7), 40)], [0, 1, 0, 0], 'shapes beyond the drawing: one added; fewer is fine; unknown counts none');
+    eq(rd.foreign(['About T', 'Part'], d), [], 'nothing foreign');
+    eq(rd.replaceScript(d, ['About T', 'Part', 'In part']), 'delete "About T"\ndelete "Part"', 'the root\'s shapes the file still holds; a subboard takes what is on its board');
+    eq(rd.replaceScript(d, []), '', 'nothing left to take back');
+    var into = await planOf(digest([note('A', null, 'x')], []), { promote: false, into: 'Map' });
+    var di = rd.drawnRecord(into.plan, '/f.canvasboard', 7);
+    eq(rd.replaceScript(di, ['Map', 'A', 'About T']), 'delete "Map"', 'into a subboard: the subboard alone');
+    // a drawing made in place of the last one, until it is whole: the record is of both, since an undo or two may bring the last one back
+    var next = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('New note', null, 'z')], []), { promote: false });
+    var both = rd.drawnRecord(next.plan, '/f.canvasboard', 7, 3, d, 12);   // it stopped with 3 shapes in the file, which held 12 before the take-back
+    eq([both.shapes, both.was], [3, 12], 'how many shapes the file holds as it stopped, and held before the last drawing was taken back');
+    eq(both.takes.slice().sort(), ['About T', 'New note', 'Part', 'Root note'], 'what takes either back');
+    assert(both.titles.indexOf('In part') >= 0 && both.titles.indexOf('New note') >= 0, 'the titles of both');
+    eq(rd.foreign(['About T', 'Part', 'In part', 'Root note'], both), [], 'the last drawing, undone back, is not foreign');
+    eq([rd.beyond(both, 3), rd.beyond(both, 0), rd.beyond(both, 12)], [0, 0, 0], 'part of the new drawing, none of it, or the last one whole: nothing added');
+    eq([rd.beyond(both, 14), rd.beyond(both, 5), rd.beyond(both, 11)], [2, 2, 8], 'an arrow and a note added to either are counted, so the take-back is refused; a count that is neither drawing\'s is too');
+    var early = rd.drawnRecord(next.plan, '/f.canvasboard', 7, null, d, 12);   // stopped before a count was taken
+    eq([early.shapes, rd.beyond(early, 9), rd.beyond(early, 12), rd.beyond(early, 13)], [null, 0, 0, 1], 'with no count of its own, up to the last drawing\'s may be part of this one');
+    eq(rd.replaceScript(both, ['About T', 'Part', 'Root note', 'In part'], ['About T', 'Part', 'Root note']), 'delete "About T"\ndelete "Part"\ndelete "Root note"', 'the last drawing is taken back by its own shapes');
+    eq(rd.replaceScript(both, ['About T', 'New note'], ['About T', 'New note']), 'delete "About T"\ndelete "New note"', 'and as much of the new one as was drawn by its');
+    eq(rd.replaceScript({ into: null, root: ['A', 'B'] }, ['B']), 'delete "B"', 'a record made before `takes` reads the same');
+    // a shape the last drawing had on the root that this one holds inside a subboard goes with its subboard: one `delete` of it there
+    // would put the script on two boards, which draw refuses
+    var movedIn = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('Root note', 'Part', 'y')], []), { promote: false });
+    var mv = rd.drawnRecord(movedIn.plan, '/f.canvasboard', 7, 2, d, 12);
+    eq(rd.replaceScript(mv, ['About T', 'Part', 'Root note', 'About Part'], ['About T', 'Part']), 'delete "About T"\ndelete "Part"', 'only what is on the root board');
+    eq(rd.replaceScript(mv, ['About T', 'Part', 'Root note', 'In part'], ['About T', 'Part', 'Root note']), 'delete "About T"\ndelete "Part"\ndelete "Root note"', 'and the last drawing, undone back, by all three');
+    // the last one drawn as the board, this one into a subboard of it (or the other way round): the subboard where the file holds it, the root's shapes where they are on the root
+    var intoB = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('In part', 'Part', 'x'), note('Root note', null, 'y')], []), { promote: false, into: 'B' });
+    var mixed = rd.drawnRecord(intoB.plan, '/f.canvasboard', 7, 5, d, 12);
+    eq([mixed.was, mixed.intos, rd.beyond(mixed, 99)], [null, ['B'], 0], 'a drawing into a subboard counts nothing of the file');
+    eq(rd.replaceScript(mixed, ['B', 'About T', 'Part', 'Root note', 'In part'], ['B']), 'delete "B"', 'the new subboard, with the same titles inside it');
+    eq(rd.replaceScript(mixed, ['About T', 'Part', 'Root note', 'In part'], ['About T', 'Part', 'Root note']), 'delete "About T"\ndelete "Part"\ndelete "Root note"', 'the last drawing, back on the root');
+    // the other way round: the last one into a subboard, this one as the board, which is drawn only on a file the take-back left empty,
+    // so the count before it is the last drawing's own
+    var back = rd.drawnRecord(next.plan, '/f.canvasboard', 7, 2, rd.drawnRecord(intoB.plan, '/f.canvasboard', 7, 9), 9);
+    eq([back.was, rd.beyond(back, 9), rd.beyond(back, 10), rd.beyond(back, 2)], [9, 0, 1, 0], 'the subboard\'s drawing, undone back, is not counted as shapes added');
+    eq(rd.replaceScript(back, ['B', 'About T', 'Part', 'Root note', 'In part'], ['B']), 'delete "B"', 'and is taken back by its subboard');
+    var intoUnsaved = rd.drawnRecord(intoB.plan, '', 4);
+    assert(rd.sameFile(intoUnsaved, '', 4, ['B', 'Mine']) && !rd.sameFile(intoUnsaved, '', 4, ['Mine']), 'a drawing into a subboard that stopped after its first script is told by the subboard: its header is not drawn yet');
+    var rp = await import('../lib/replay.mjs');
+    eq(rp.extract('root-titles', { rows: [{ board: 'root', title: 'A' }, { board: 'X', title: 'B' }, { board: 'root' }] }), ['A'], 'the titles on the root board');
+    var renamed = rd.drawnRecord((await planOf(Object.assign(digest([note('A', null, 'x')], []), { title: 'U' }), { promote: false })).plan, '', 4, null, unsaved);
+    assert(rd.sameFile(renamed, '', 4, ['About T']) && rd.sameFile(renamed, '', 4, ['About U']), 'either drawing\'s header tells the board');
+    eq([rd.hasTitle(['Root  note'], 'root note'), rd.hasTitle(['Root note'], 'Root')], [true, false], 'a title the file holds, spaces folded and case aside');
+    var boards = [{ id: 2, path: '/a', fileShapes: 5, frontmost: false }, { id: 3, path: null, fileShapes: 0, frontmost: true }];
+    boards[0].name = 'Plans'; boards[1].shows = 'root';
+    eq([rd.boardField(boards, 'front', 'id'), rd.boardField(boards, '2', 'path'), rd.boardField(boards, 'front', 'path'), rd.boardField(boards, 'front', 'fileShapes'), rd.boardField(boards, 'Plans', 'id'), rd.boardField(boards, '/a', 'id'), rd.boardField(boards, 'front', 'shows')], [3, '/a', '', 0, 2, 2, 'root'], 'by id, file or name');
+    var threw = ''; try { rd.boardField([], 'front', 'id'); } catch (e) { threw = e.message; }
+    assert(/no board is open/.test(threw), threw);
+    var twins = [{ id: 1, name: 'Plans', path: '/private/tmp/a/Plans.canvasboard' }, { id: 2, name: 'Plans', path: '/b/Plans.canvasboard' }];
+    threw = ''; try { rd.boardField(twins, 'Plans', 'id'); } catch (e) { threw = e.message; }
+    assert(/2 open boards are Plans \(boards 1, 2\)/.test(threw), 'a name two boards have is refused, with their ids: ' + threw);
+    eq([rd.boardField(twins, '/tmp/a/Plans.canvasboard', 'id'), rd.boardField(twins, '/b/Plans.canvasboard', 'id'), rd.boardField(twins, '2', 'id')], [1, 2, 2], 'a file by its own path (/tmp is /private/tmp), and an id before a name');
+    eq([rd.boardField(twins, '/link/Plans.canvasboard', 'id', '/b/Plans.canvasboard'), rd.boardField(twins, '/b/Plans.canvasboard', 'id', '/Volumes/D/Plans.canvasboard')], [2, 2], 'by the path as given or with its links resolved: the app lists the one the board was saved by');
   });
 
   await test('the tool\'s usage lists what is used: no svg, no --split, no verify; the svg command is gone', async function () {
