@@ -296,7 +296,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Let a kind's shapes be turned into another kind's (a frame into a subboard), from their menu and as a command, without either kind naming the other | `x.turnable(through: ContainerChannel.self)` on the kind that offers it; `registrar.turnable(into: P.self, through: C.self) { source, transaction in … }` on the kind that takes it, turning with `transaction.turn` and `transaction.move` | [Transform](#transform) |
 | Say what a shape hands over when it turns into another kind (what its target is given) | A `TransformChannel`: `name`, `admits(_:)` and `source(of:in:)`; `ContainerChannel` is the one that ships | [Offering and taking a channel](#offering-and-taking-a-channel), [The container channel](#the-container-channel) |
 | Make a shape another kind under its id, so what binds or names it goes on doing so, and move shapes onto another board of the file, put down there | `transaction.turn(_:into:)`, and `transaction.move(_:to:)` (`move(_:toBoardOwnedBy:)` onto the board below, `move(_:from:to:)` off a board that isn't shown) with `transaction.translate(_:by:on:)`, `move(_:above:on:)` and `settle(_:on:)`, the core's | [Containers](#containers), [Boards in a file](#the-editor-and-the-file) |
-| Place a shape among others as `canvas draw` places one (beside a shape, in a frame, where the view is clear), from a plugin that isn't a language | Placing's `Surroundings` (`near`, `near(rect:)`, `inside`, `anywhere`: DrawScript's `LayoutProblem` and `ObstacleGrid`, over a board read in place and its solids) | [Moving](#moving) |
+| Place a shape among others as `canvas draw` places one (beside a shape, in a frame, where the view is clear), from a plugin that isn't a language | Placing's `Surroundings` (`near`, `inside`, `anywhere`: DrawScript's `LayoutProblem` and `ObstacleGrid`, over a board read in place and its solids) | [Moving](#moving) |
 | Show on a shape what the board it owns holds | `context.drawBoardPreview(ofBoardOwnedBy:in:)` in its render: a rough picture, false until it's built | [Board previews](#the-cores-part-board-previews) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
 | Go to shapes, as following a link does (select them, bring them into view, ⌘[ returns), or only bring them into view | Selection's `editor.goTo(_:)`, `editor.reveal(_:)` | [Selection](#selection) |
@@ -8422,9 +8422,9 @@ lands, since it places a shape as [`canvas draw`](#draw) places one (the same so
 obstacles, the same zones) and moves it with the core's own tools, as draw's commit does.
 Placing (`Sources/Placing`) is a surface of its own, the solver moved out of Moving, so any plugin
 that puts a shape down, not only Moving, places it the same way: `Surroundings(on:moving:in:)`, with
-`near(_:within:)` beside a shape, `near(rect:)` beside a block of shapes, `inside(_:)` in a frame and
-`anywhere()`, each answering a `Landing` (the board, the box, the shapes to raise it above); Moving
-keeps the glue for its `Block` and the commit.
+`near(_:within:)` beside a shape, `inside(_:)` in a frame and `anywhere()`, each answering a
+`Landing` (the board, the box, the shapes to raise it above); Moving keeps the glue for its `Block`
+and the commit.
 
 ```
 ┌──────────────────────────────┐
@@ -8928,7 +8928,7 @@ The modules, one job each:
 | DrawLexicon | lexicon | What `draw` takes from Titles (names), Connections (edges), Validation (warnings), Mentions (mention text) and Types (a type named by its title): a plugin value for each concern (`TitleNamesPlugin`, `PortEdgesPlugin`, `ValidationChecksPlugin`, `MentionTextsPlugin`, `TypeNamesPlugin`), joining Automation to the plugin that owns it. |
 | QueryCommands | language | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
 | QueryLanguage | foundation | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
-| Placing | surface | Where a box of shapes lands on a board, beside a shape or a block of shapes, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)): `Surroundings`, `Landing`; Moving's solver, for any plugin that puts shapes down. |
+| Placing | surface | Where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)): `Surroundings`, `Landing`; Moving's solver, for any plugin that puts shapes down. |
 | Queries | surface | The engine that answers a query about a file ([Queries](#queries)), and its points: a surface, so any plugin may run a query. |
 | QueryTranslation | surface | English into a query: `AskStyle`, `AskRequest`, `AskAnswer`, and the translator (`editor.queryTranslator`, `QueryTranslationPlugin(prompt:referenceRule:style:)`) that `--ask` and the app both ask, `ask` (run what it wrote) and `translate` (only check it, for a query stored to be run later); it declares no point (on Canvas, LanguageModels, Queries and QueryLanguage). |
 | QueryLexicon | lexicon | What queries take from Titles (names), Boards (boards' names), Mentions (`:mentions`, `:mentioned-by`, mention text as it reads), Validation (`:invalid`, `:warned`) and Selection (`:selected`): a plugin value for each concern (`TitleQueriesPlugin`, `BoardQueriesPlugin`, `MentionQueriesPlugin`, `ValidationQueriesPlugin`, `SelectionQueriesPlugin`), joining Queries to the plugin that owns it. |

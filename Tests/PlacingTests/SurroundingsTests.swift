@@ -46,24 +46,6 @@ private let hundred = CGSize(width: 100, height: 100)
         expectEqual(Surroundings(on: .root, moving: hundred, in: h.editor)?.near(ShapeID()), nil)
     },
 
-    test("beside a block of shapes, a rect: right of the whole of it, centered on it") {
-        let a = ShapeID(), b = ShapeID()
-        let h = try harness(box(a, 400, 400), box(b, 600, 400))
-        let landing = Surroundings(on: .root, moving: hundred, in: h.editor)?.near(rect: at(400, 400, 300, 100))
-        expectEqual(landing?.rect, at(780, 400))
-    },
-
-    test("beside a rect with its right taken: pushed to the next side that's free") {
-        let a = ShapeID(), y = ShapeID()
-        let h = try harness(box(a, 400, 400), box(y, 580, 400))
-        expectEqual(Surroundings(on: .root, moving: hundred, in: h.editor)?.near(rect: at(400, 400))?.rect, at(400, 580))
-    },
-
-    test("beside a rect of nothing: nil") {
-        let h = try harness(box(ShapeID(), 0, 0))
-        expectEqual(Surroundings(on: .root, moving: hundred, in: h.editor)?.near(rect: .null), nil)
-    },
-
     test("the shapes carried are no obstacle on their own board, and without them they are") {
         let x = ShapeID(), s = ShapeID()
         let h = try harness(box(x, 400, 400), box(s, 580, 400))

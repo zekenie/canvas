@@ -78,7 +78,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [topology](.claude/rules/topology.md): edges and edge types, their sources, stand-ins and the views through them, provided answers, the one delivery of every change (`follow`) and settling, containment as one tree, snapshots for other threads.
 - [language models](.claude/rules/language-models.md): the model plugins ask, the Anthropic key and Settings, `--ask`'s model.
 - [prose maps](.claude/rules/prose-maps.md): which words of a text say which part of a lower-level text (a type's highlights): targets, maps, asking the model, the request.
-- [placing](.claude/rules/placing.md): where a box of shapes lands, beside a shape or a block, in a frame or anywhere, placed as `canvas draw` places one: `Surroundings`, `Landing`; Moving's solver, for any plugin that puts shapes down.
+- [placing](.claude/rules/placing.md): where a box of shapes lands, beside a shape, in a frame or anywhere, placed as `canvas draw` places one: `Surroundings`, `Landing`; Moving's solver, for any plugin that puts shapes down.
 - [find](.claude/rules/find.md): ⌘F: the `FindableTexts` point and its contributors, the index, the search off the main actor, scope and order, the highlights, the panel in the detail panel's place.
 - [neighbors](.claude/rules/neighbors.md): hovering a shape, on the canvas or in the table of contents, outlines what's connected to it in a color for each way (the lights, each a color and a query, contributed by the plugin that owns the edges); the subject, asking and asking again, where a match is drawn, rings, and the core's tinted outlines it hands.
 

@@ -86,11 +86,6 @@ public struct Surroundings {
         return near(bounds, obstacle: obstacle(target), within: holder)
     }
 
-    /// Beside a block of shapes, the box around them: `near(_:within:)` for a `rect` that is no one shape,
-    /// so no obstacle of its own to ignore (the shapes inside it are in its way no further than the rect
-    /// is, as the sides start clear of it). Nil for a rect with nothing in it.
-    public func near(rect: CGRect) -> Landing? { near(rect, obstacle: nil, within: nil) }
-
     private func near(_ bounds: CGRect, obstacle targetObstacle: Int?, within holder: ShapeID?) -> Landing? {
         guard !bounds.isNull, bounds.isFinite else { return nil }
         var fixed = [LayoutProblem.Fixed(rect: bounds, obstacle: targetObstacle)]
