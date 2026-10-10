@@ -481,7 +481,7 @@ extension Drawing {
             targets = clauses.map { _ in [.shape(end)] }
         }
         var standIn = ShapeItem(statement: statement, shape: ShapeStatement(word: kind.rawValue, clauses: clauses), kind: kind, title: nil,
-                                existing: nil, record: record, size: size)
+                                existing: nil, record: record, size: size, room: size)
         standIn.targets = targets
         standIn.standsFor = label
         items.append(standIn)

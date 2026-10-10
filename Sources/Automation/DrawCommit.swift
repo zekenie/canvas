@@ -113,8 +113,12 @@ extension Drawing {
             guard let now = transaction.document[item.record.id] else {
                 throw AutomationError(item.statement, .internal, "\(subject(of: item)) isn't on the board after all")
             }
+            // Where it is and how much room it takes once the run has committed: its origin as the
+            // transaction leaves it, at the size the layout gave it (`ShapeItem.room`), which is what
+            // `canvas measure` says of the statement.
+            let at = now.box.map { CGRect(origin: $0.origin, size: item.room) }
             var row = DrawChange(line: item.statement.line, did: .created, kind: item.kind.rawValue,
-                                 title: naming?.name(now, registry), at: now.box)
+                                 title: naming?.name(now, registry), at: at)
             if let existing = item.existing {
                 if item.rename != nil {
                     row.did = .renamed
@@ -130,7 +134,7 @@ extension Drawing {
                 warnings.append(DrawWarning(line: item.statement.line,
                                             "created \(quoted(title)); the board has \(quoted(nearMiss)) — to change that one, write its title exactly"))
             }
-            if let view, let at = now.box {
+            if let view, let at {
                 row.inView = view.intersects(at)
                 if !view.intersects(at), item.free != nil, row.did != .unchanged { outside += 1 }
             }
@@ -202,7 +206,7 @@ extension Drawing {
                         warnings: inout [DrawWarning]) throws(AutomationError) {
         guard !registry.containingKinds.isEmpty else { return }
         let id = item.record.id
-        let before = transaction.document[id]?.box
+        let before = transaction.document[id]?.box.map { CGRect(origin: $0.origin, size: item.room) }
         switch transaction.settle([id]) {
         case .refused(let container):
             let named = transaction.document[container].map { self.named($0) } ?? "a container"
@@ -221,7 +225,7 @@ extension Drawing {
                 warnings.append(DrawWarning(line: item.statement.line,
                                             "\(others == 1 ? "a shape" : "\(others) shapes") over the edge of \(subject(of: item)) \(others == 1 ? "was" : "were") nudged wholly in or out of it"))
             }
-            guard let before, own != .zero, let after = transaction.document[id]?.box else { return }
+            guard let before, own != .zero, let after = transaction.document[id]?.box.map({ CGRect(origin: $0.origin, size: item.room) }) else { return }
             // Said of each container whose edge it was over as it was put down.
             for container in transaction.document.shapes where container.id != id && registry.isContainer(container) {
                 guard let edge = container.box, Self.overlaps(before, edge), !before.contains(edge), !edge.contains(before) else { continue }

@@ -28,6 +28,9 @@ struct ShapeItem {
     /// How big it is, once drawn: as written, else what setting its attributes left it (a schema
     /// card as tall as its description), else as it is, or as its tool places it.
     var size: CGSize
+    /// How much room it takes once drawn: its laid-out size, which is `size` for a kind laid out as it
+    /// stores. What the layout places and a row reports; `size` is what is written and compared.
+    var room: CGSize
     /// What each placement's targets are, placement by placement.
     var targets: [[Found]] = []
     /// Its place among the layout's free boxes, if it moves.
@@ -240,6 +243,21 @@ struct Drawing {
             do throws(AutomationError) { try check(style) } catch { keep(error) }
         }
         guard errors.isEmpty else { throw collected(errors) }
+        layOut()
+    }
+
+    /// Works out how much room each shape takes once drawn (`ShapeItem.room`): the frame its kind lays
+    /// it out in, with the script's own shapes read as the file's (a type and its instance drawn
+    /// together, a stretch and the gauge it names), and a board shape the script doesn't restate read as
+    /// it is. Only the size is kept: a shape is placed where the layout says, so its origin is its
+    /// own. What draw places and reports, and `canvas measure` answers with, so the two agree.
+    private mutating func layOut() {
+        let context = target.shapes.layingOut(with: items.map(\.record))
+        for index in items.indices {
+            var sized = items[index].record
+            sized.box = CGRect(origin: items[index].existing?.box?.origin ?? .zero, size: items[index].size)
+            items[index].room = context.frame(of: sized)?.size ?? items[index].size
+        }
     }
 
     /// Keeps a statement's error with the others (but one that only follows from another's).
@@ -515,7 +533,7 @@ struct Drawing {
         }
         if let title { itemByTitle[title] = items.count }
         items.append(ShapeItem(statement: statement, shape: shape, kind: kind, title: title, existing: existing, record: base, size: size,
-                               nearMiss: nearMiss))
+                               room: size, nearMiss: nearMiss))
     }
 
     /// The kind a statement's first word names, if its tool places it: a kind drawn by a gesture

@@ -125,7 +125,7 @@ struct FileNames {
     private func several(_ places: [Place], _ title: String, on board: String) -> String {
         let each = places.compactMap { place in
             editor.file.record(place.id).map { record in
-                "\(indefinite(record.kind)) at \(point(record.box.map { CGPoint(x: $0.midX, y: $0.midY) } ?? .zero))"
+                "\(indefinite(record.kind)) at \(point((editor.frame(inFile: place.id) ?? record.box).map { CGPoint(x: $0.midX, y: $0.midY) } ?? .zero))"
             }
         }
         return "\(board) has \(places.count) shapes called \(quoted(title)): \(listed(each))"

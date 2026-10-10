@@ -108,9 +108,9 @@ func measure(_ params: MeasureParams, in context: AutomationContext) throws(Auto
 
     let shapes = drawing.items.map { item in
         var record = item.record
-        record.box = CGRect(origin: .zero, size: item.size)
+        record.box = CGRect(origin: .zero, size: item.room)
         return MeasureResult.Shape(line: item.statement.line, title: drawing.naming?.name(item.record, registry), kind: item.kind.rawValue,
-                                   size: [item.size.width, item.size.height], above: scratch.adornmentExtent(of: record))
+                                   size: [item.room.width, item.room.height], above: scratch.adornmentExtent(of: record))
     }
 
     let standIns = registry.standIns

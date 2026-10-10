@@ -9126,6 +9126,10 @@ registrar.automationCommand("query", "Find the shapes of a file that a query mat
 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md), and the language isn't called that): each
 line says what a shape is, what it's called and where it sits against shapes already named, never
 at coordinates, and the app works out only the distances.
+A shape has two sizes in a run: the one it stores (what `size:` writes and what a run compares, so a
+shape grown by a type is not settled again) and the room it takes, the frame its kind lays it out in
+(`LaidOutBox`). The layout places the room, a row's `at` reports it, and the record is written at the
+size it stores.
 
 ```
 sticky-note "Web" text: "Browser app"
@@ -9455,6 +9459,11 @@ the sizes are the ones a draw makes (`Drawing.complete`, then `registry.derived`
                "referenceStep": 16, "horizontalClearance": 40, "verticalClearance": 64, "frameInset": 40,
                "smallest": {"frame": [96, 64]}}}
 ```
+
+The `size` of a shape is the room it takes once drawn: the frame its kind lays it out in
+(`LaidOutBox`, a note that shows rows no record holds), which is the size it stores for any other
+kind, and the same size `draw`'s `at` reports for the statement. It is worked out by one function
+(`Drawing.layOut()`) both share, with the script's own shapes read as the file's.
 
 `above` is `editor.adornmentExtent(of:)` (Adornments, which Automation may use as a surface): how far
 the adornments the shape would show reach above its top edge at 100% zoom, where they keep their size
