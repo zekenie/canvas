@@ -28,7 +28,7 @@ final class DrawTextLookup {
         let writes: Set<String>
     }
 
-    private let editor: CanvasEditor
+    let editor: CanvasEditor
     private let target: BoardReading
     private let naming: DrawNaming?
     /// By title, folded: each title of a shape statement, and each title a statement renames a

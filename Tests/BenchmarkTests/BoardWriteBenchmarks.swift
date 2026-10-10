@@ -8,13 +8,13 @@ import Locking
 import StickyNotes
 import TestKit
 
-// Writing to the shapes of another board (`Transaction.update(_:on:_:)`), as a service does in the step it joins
-// (a take-back, a restack of rows): each write is a transaction over that board, which must not copy the board
-// once for every shape written.
+// Writing to the shapes of another board (`Transaction.update(_:on:_:)`), as any transaction may for shapes on
+// boards not shown (`update(inFile:)`, which `/is-a` uses): each write is a transaction over that board, which
+// must not copy the board once for every shape written.
 
 extension Budget {
-    /// Writing the 7,800 shapes of another board that can be written (a generated board of 10,000, whose locked
-    /// notes refuse), in one step: the board is copied once, not once for each shape written. The thread's CPU: some
+    /// Writing the 7,800 boxed shapes of another board that aren't locked (of a generated board of 10,000), in
+    /// one step: the board is copied once, not once for each shape written. The thread's CPU: some
     /// 55 ms in release, against 1,650 when each write copied the board.
     static let writeOnAnotherBoard = 200.0
 }

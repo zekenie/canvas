@@ -104,7 +104,7 @@ public enum SchemaPrompts {
     /// character to its last; anything else is a failure. A prompt must not be empty, loses one pair
     /// of quotes around it, and mustn't read as something other than the prompt (`isNotAPrompt`), unless
     /// `words`, the prompt it replaces, read so themselves: words that begin "Here are the fields" are
-    /// words, and so is their rewrite (as `FieldPrompts.parseWords` holds).
+    /// words, and so is their rewrite.
     /// The text is as it came back, never laid out again: its order is the model's, which keeps the
     /// person's.
     ///

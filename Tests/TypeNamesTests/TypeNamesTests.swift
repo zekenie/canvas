@@ -124,6 +124,16 @@ import Types
         expectEqual(editor.document[ann]?[IsAProperty.self]?.map(\.shape), [person], "redo brings back the list and the type together")
     },
 
+    test("a type that another is built on is not named by it in turn: a cycle through shapes of the file is refused, as /is-a refuses it") {
+        let editor = try typeNamesEditor()
+        _ = (editor.addType("A"), editor.addType("B"))
+        _ = try drawn(#"memo "B" is: "A""#, on: editor)
+        let cycle = try refused(#"memo "A" is: "B""#, on: editor)
+        expectEqual(cycle["reason"], "invalid_value")
+        expect(cycle["message"]?.stringValue?.contains("would make a cycle") == true, "\(cycle)")
+        expect(editor.shape(called: "A")?[IsAProperty.self] == nil, "as it was")
+    },
+
     test("without the plugin an `is:` of text is refused as a value that isn't a list of ids; canvas kinds says what is takes") {
         let editor = try typeNamesEditor(typeNames: false)
         editor.addType("Person")

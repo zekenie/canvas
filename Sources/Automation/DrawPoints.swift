@@ -192,6 +192,10 @@ public struct DrawTextContext {
     public let owner: ShapeID?
     let lookup: DrawTextLookup
 
+    /// A service of the editor the script draws on (Types' index, say), for a text that must read what only a
+    /// service knows: nil without its plugin. Read-only use: a format writes nothing but its string.
+    public func service<S: EditorService>(_ type: S.Type) -> S? { lookup.editor.service(type) }
+
     /// The shape called `name`, as a title names one in the script, among those `admits` takes (nil:
     /// it does; a string says why it doesn't, as a clause that follows the kind: `which can't be
     /// named here`): a shape the script draws, restates or renames to it (also one drawn further
