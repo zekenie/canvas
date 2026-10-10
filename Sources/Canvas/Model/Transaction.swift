@@ -59,6 +59,9 @@ public struct Transaction {
     let keys: StackingKeyGenerator
     /// The rest of the file, read from the editor as it is.
     let file: FileAccess
+    /// What the editor lays shapes out with, which `shapes` reads this transaction's file through;
+    /// nil where there is no editor to ask (`discardKeptAside`).
+    private let layout: LayoutSource?
     /// Boards going in with the shapes inserted here that own them, and the boards under those: what
     /// the commit adds to the file. Also the boards shapes were moved onto here (`move(_:to:)`), moved
     /// on (`translate(_:by:on:)`) or settled on (`settle(_:on:)`), whole, with what the file holds
@@ -99,7 +102,8 @@ public struct Transaction {
     private var tops: [ShapeID: Int] = [:]
 
     init(document: CanvasDocument, board: BoardID, isBoardReadOnly: Bool, registry: Registry, camera: Camera, keys: StackingKeyGenerator,
-         file: FileAccess) {
+         file: FileAccess, layout: LayoutSource?) {
+        self.layout = layout
         self.document = document
         self.board = board
         self.isBoardReadOnly = isBoardReadOnly
@@ -125,8 +129,25 @@ public struct Transaction {
         set { changes.byAgent = newValue }
     }
 
-    /// Geometry lookups against the document as it is mid-transaction.
-    public var shapes: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera) }
+    /// Geometry lookups against the document as it is mid-transaction. Layout inputs are read through
+    /// it as the transaction leaves the file: a provider is handed what it inserted, changed and moved
+    /// (and nothing of what it deleted), and a value set for a shape (`editor.setLayoutInput`) is read
+    /// for one it hasn't changed. The context is a snapshot: read it, use it, and let it go before the
+    /// next change, or that change copies what it holds.
+    public var shapes: ShapeContext {
+        guard let layout else { return ShapeContext(document: document, registry: registry, camera: camera) }
+        let here = self
+        let source = LayoutSource(inputs: layout.inputs, lend: layout.lend, shape: { here.record(inFile: $0) }, isChanged: { id in
+            here.changes.added.contains(id) || (here.changes.changed.contains(id) && !here.changes.moved.contains(id))
+                || here.stagedIDs[id] != nil
+        })
+        return ShapeContext(document: document, registry: registry, camera: camera, index: nil, layout: source)
+    }
+
+    /// A shape on any board of the file as this transaction leaves it (`location(of:)`).
+    func record(inFile id: ShapeID) -> AnyShapeRecord? {
+        location(of: id).flatMap { contents(of: $0)[id] }
+    }
 
     public mutating func insert<P: ShapeProps>(_ shape: ShapeRecord<P>) { insert(AnyShapeRecord(shape)) }
 
@@ -1089,7 +1110,7 @@ public struct Transaction {
             access = FileAccess(locate: { here.location(of: $0) }, subtree: file.subtree, contents: { here.contents(of: $0) }, canShow: file.canShow)
         }
         var there = Transaction(document: contents(of: board), board: board, isBoardReadOnly: isReadOnly(board: board), registry: registry,
-                                camera: camera, keys: keys, file: access)
+                                camera: camera, keys: keys, file: access, layout: layout)
         for (id, on) in stagedIDs where on == board { there.changes.added.insert(id) }
         return there
     }

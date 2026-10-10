@@ -37,6 +37,9 @@ public struct Registry {
     /// Those drawn as a line (`StrokedShape`), found once: a tinted outline of an open shape is
     /// stroked to cover its line, and asks only these.
     let strokedShapes: [ShapeKind: any StrokedShape]
+    /// What provides each layout input (`registrar.layoutInput`), by the key's name, found once: a
+    /// shape laid out asks for its inputs.
+    let layoutProviders: [String: LayoutProvider]
     /// Every plugin's rule for which shapes can't change (`registrar.readOnlyShapes`), found once:
     /// a transaction asks them about every shape it changes.
     private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
@@ -84,6 +87,10 @@ public struct Registry {
         customSkeletons = definitions.compactMapValues { $0 as? any CustomSkeleton }
         skeletonOutlines = definitions.compactMapValues { $0 as? any CustomSkeletonOutline }
         strokedShapes = definitions.compactMapValues { $0 as? any StrokedShape }
+        layoutProviders = Dictionary((byPoint[ObjectIdentifier(CorePoints.LayoutProviders.self)] ?? []).map {
+            let provider = $0.value as! LayoutProvider
+            return (provider.name, provider)
+        }, uniquingKeysWith: { first, _ in first })
         readOnlyRules = (byPoint[ObjectIdentifier(CorePoints.ReadOnlyRules.self)] ?? []).map { $0.value as! CorePoints.ReadOnlyRules.Contribution }
         placingTools = Set((byPoint[ObjectIdentifier(CorePoints.Tools.self)] ?? []).compactMap {
             let tool = $0.value as! ToolRegistration
@@ -415,6 +422,7 @@ struct RawContribution {
         case let service as ServiceRegistration: "service \(service.name)"
         case let overlay as any CanvasOverlay: "overlay \(type(of: overlay))"
         case let command as CommandRegistration: "command \(command.command)"
+        case let provider as LayoutProvider: "layout input \(provider.name)"
         case let declaration as PropertyDeclaration:
             "property \(declaration.codec.key)" + (declaration.codec.version > 0 ? " v\(declaration.codec.version)" : "")
         case let optIn as PropertyOptIn: "property \(optIn.key) → \(target == .any ? "every shape" : "\(target)")"

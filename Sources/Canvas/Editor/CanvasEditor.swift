@@ -221,6 +221,13 @@ public final class CanvasEditor {
     @ObservationIgnored var shapeIndex = ShapeIndex()
     /// What geometries read that no record holds (`setLayoutInput`).
     @ObservationIgnored let layoutInputs = LayoutInputs()
+    /// What the editor's own contexts lay shapes out with: those inputs, its services and its file.
+    @ObservationIgnored lazy var layoutSource = LayoutSource(
+        inputs: layoutInputs, lend: { [unowned self] in resolveService($0) },
+        shape: { [unowned self] in storedDocument[$0] ?? Self.shape($0, inFile: storedFile, registry: registry) })
+    /// Moves whenever shapes were laid out again without a commit (`shapesDidChangeLayout`). What
+    /// keeps something worked out from geometry keys it by this beside `revision`.
+    @ObservationIgnored public internal(set) var layoutRevision = 0
     /// The indexes of the boards shown lately, for when they're shown again (while they haven't
     /// changed).
     @ObservationIgnored var warmIndexes = BoardStash<ShapeIndex>()
@@ -368,7 +375,7 @@ public final class CanvasEditor {
     }
 
     var currentTool: any Tool { tools[currentToolID]! }
-    public var shapeContext: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera, index: shapeIndex, layout: layoutInputs) }
+    public var shapeContext: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera, index: shapeIndex, layout: layoutSource) }
 
     /// Redraw. The core redraws for everything it owns (the document, camera, tool, sessions); a
     /// plugin whose drawn state changes some other way (its own state, a timer) calls this.
@@ -405,7 +412,7 @@ public final class CanvasEditor {
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
         isTransacting = true
         var transaction = Transaction(document: document, board: board, isBoardReadOnly: isBoardReadOnly, registry: registry, camera: camera,
-                                      keys: stackingKeys, file: fileAccess)
+                                      keys: stackingKeys, file: fileAccess, layout: layoutSource)
         let result: T
         do {
             defer { isTransacting = false }
@@ -445,7 +452,8 @@ public final class CanvasEditor {
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
         isTransacting = true
         var transaction = Transaction(document: storedFile[target], board: target, isBoardReadOnly: registry.isReadOnly(board: target, in: storedFile),
-                                      registry: registry, camera: leftCameras[target] ?? camera, keys: stackingKeys, file: fileAccess)
+                                      registry: registry, camera: leftCameras[target] ?? camera, keys: stackingKeys, file: fileAccess,
+                                      layout: layoutSource)
         let result: T
         do {
             defer { isTransacting = false }
@@ -632,7 +640,7 @@ public final class CanvasEditor {
         for (board, ids) in byBoard {
             // Refused by nothing: a read-only board's hidden shapes go too.
             var transaction = Transaction(document: old[board], board: board, isBoardReadOnly: false, registry: registry, camera: camera,
-                                          keys: stackingKeys, file: access)
+                                          keys: stackingKeys, file: access, layout: nil)
             transaction.discard(Set(ids))
             newFile.set(transaction.document, for: board, changes: transaction.changes)
             removed.formUnion(transaction.changes.boardsRemoved)
@@ -897,11 +905,11 @@ public final class CanvasEditor {
         let contents = file[target]
         let arrival = arrivalCamera(for: target) {
             let index = ShapeIndex()
-            return index.bounds(in: ShapeContext(document: contents, registry: registry, camera: Camera(), index: index, layout: layoutInputs))
+            return index.bounds(in: ShapeContext(document: contents, registry: registry, camera: Camera(), index: index, layout: layoutSource))
         }
         let index = ShapeIndex(), clear = unobscuredViewport(on: target)
         return BoardReading(board: target, document: contents,
-                            shapes: ShapeContext(document: contents, registry: registry, camera: arrival, index: index, layout: layoutInputs), index: index,
+                            shapes: ShapeContext(document: contents, registry: registry, camera: arrival, index: index, layout: layoutSource), index: index,
                             view: clear.isEmpty ? nil : arrival.toWorld(clear), isBoardReadOnly: isReadOnly(board: target))
     }
 

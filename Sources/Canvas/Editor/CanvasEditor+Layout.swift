@@ -9,6 +9,7 @@ extension CanvasEditor {
     public func shapesDidChangeLayout(_ ids: some Sequence<ShapeID>) {
         let ids = Set(ids)
         guard !ids.isEmpty else { return }
+        layoutRevision += 1
         shapeIndex.layoutDidChange(ids)
         warmIndexes.modifyAll { $0.layoutDidChange(ids) }
         setNeedsDisplay()
@@ -17,8 +18,10 @@ extension CanvasEditor {
     /// Sets what a shape's geometry reads under `key` (`ShapeContext.layoutInput`), nil to take it
     /// back, and, if that changes it, has the shape's geometry worked out again
     /// (`shapesDidChangeLayout`). Only the plugin that owns a key sets it, and keeps it up to date as
-    /// what it's made from changes; the editor keeps it for the session and writes it nowhere.
+    /// what it's made from changes; the editor keeps it for the session and writes it nowhere. A key
+    /// that has a provider (`registrar.layoutInput`) is asked for, never set.
     public func setLayoutInput<V>(_ key: LayoutInputKey<V>, _ value: V?, for id: ShapeID) {
+        precondition(registry.layoutProviders[key.name] == nil, "layout input \(key.name) has a provider, so it is asked for, never set")
         guard layoutInputs.set(key.name, value, for: id) else { return }
         shapesDidChangeLayout([id])
     }

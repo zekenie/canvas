@@ -113,6 +113,22 @@ public struct PluginRegistrar {
         contribute(handler, to: CorePoints.WillDelete.self)
     }
 
+    /// Provides a layout input: what `context.layoutInput(key, of:)` reads for a shape nothing set
+    /// one for. Asked when the core lays a shape out, of the editor's file and, mid-transaction, of
+    /// the file as the transaction leaves it, so a shape that isn't committed yet is laid out as
+    /// it will be. Answer from the record and the reading alone, and cheaply: a board first shown
+    /// asks for every shape of the kinds that read the key. Nil for a shape with none.
+    ///
+    /// Whoever provides a key says when its answer for a shape changes for a reason other than a
+    /// change to that shape's own record (`editor.shapesDidChangeLayout`): the core keeps what it
+    /// laid out until then. That holds for a shape the same commit added or changed too: a
+    /// service that hears the commit first may have asked for it already, and been answered from
+    /// what the provider's own service kept of the file before. One provider a key.
+    public mutating func layoutInput<V>(_ key: LayoutInputKey<V>,
+                                        _ provide: @escaping @MainActor (AnyShapeRecord, LayoutReading) -> V?) {
+        contribute(LayoutProvider(name: key.name) { record, reading in provide(record, reading) }, to: CorePoints.LayoutProviders.self)
+    }
+
     /// Shapes that can't change while `isReadOnly` says so of them (Locking's locked shapes): no
     /// transaction changes, restacks or deletes one, a drag leaves it where it is, and it isn't
     /// edited. Each such try is refused, and services hear which shapes it was

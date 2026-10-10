@@ -601,13 +601,19 @@ is compiled by `./test.sh`, even before anything depends on it.
   `context.document`, or `context.camera`, while working out a geometry ties it to every change of
   them.
 - **What no commit changes comes as a layout input.** A geometry that depends on something outside
-  the records (the names a rename gave shapes on another board) reads it with
-  `context.layoutInput(key, for: id)` (a `LayoutInputKey<Value>`), and whoever owns the key sets it
-  with `editor.setLayoutInput(key, value, for: id)`, which has the editor work that shape's geometry
-  (and what looked it up) out again when the value changes; `editor.shapesDidChangeLayout(ids)` does
-  the same for any other reason. It is no transaction and no undo step, and nothing is stored or
-  marked edited. Mentions does this for an arrow's label (`x.mentionLayout { $0.props.text }`,
-  `context.mentionNames(of:)`).
+  the records (the names a rename gave shapes on another board, what a type says of its instances)
+  reads it with `context.layoutInput(key, of: shape)` (a `LayoutInputKey<Value>`; `for: id` by id), and
+  the key is either set or provided. Whoever owns a set key sets it with
+  `editor.setLayoutInput(key, value, for: id)`, which has the editor work that shape's geometry
+  (and what looked it up) out again when the value changes. Whoever owns a provided key registers
+  `registrar.layoutInput(key) { record, reading in … }`, answered when the core lays a shape out, on
+  the editor's file and, mid-transaction, on the file as the transaction leaves it (`reading.shape(inFile:)`,
+  `reading.service(_:)`, `reading.isCommitted`), and says when an answer changes for a reason other
+  than the shape's own record with `editor.shapesDidChangeLayout(ids)`, naming the shapes the same
+  commit added or changed too, since a service that hears the commit first may have asked
+  already. `editor.shapesDidChangeLayout(ids)` does the same for a set value's other reasons. It
+  is no transaction and no undo step, and nothing is stored or marked edited. Mentions does this for
+  an arrow's label (`x.mentionLayout { $0.props.text }`, `context.mentionNames(of:)`).
 - **Conform in an extension**, as Patches does, for `ShapeDefinition` and its capabilities,
   `Tool`, `Session`, `EditorService`, and an extension point that implements `check`. Swift flags a
   member that *nearly* matches a defaulted requirement (a wrong label, a missing return type) only
