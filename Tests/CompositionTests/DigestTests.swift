@@ -823,7 +823,121 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
         expectEqual(checked.status, 0, checked.output + checked.error)
         expectEqual(try JSON(text: checked.output)["errors"], .array([]), "check finds nothing wrong: \(checked.output)")
     },
+
+    test("Swift's index is kept from run to run: a module is type-checked again only when its sources or the interfaces it reads changed, and its uses are read from a store a module") {
+        let folder = try scratchFolder("index")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        // the index where ingest keeps a project's: <PROJECT>/.index
+        let repo = folder.appendingPathComponent("repo"), project = folder.appendingPathComponent("project")
+        let scratch = project.appendingPathComponent(".index"), model = folder.appendingPathComponent("model.json")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        func write(_ path: String, _ text: String) throws {
+            let file = repo.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try text.write(to: file, atomically: true, encoding: .utf8)
+        }
+        // Kit uses Core, KitTests uses Kit, and Loose uses nothing and nothing uses it
+        let core = "public func core() -> Int {\n    let one = 1\n    return one\n}\n", kit = "import Core\n\npublic func kit() -> Int { core() + 1 }\n"
+        try write("Package.swift", tinyPackage(loose: true))
+        try write("Sources/Core/Core.swift", core)
+        try write("Sources/Kit/Kit.swift", kit)
+        try write("Sources/Loose/Loose.swift", "public func loose() {}\n")
+        try write("Tests/KitTests/KitTests.swift", "import Kit\n\nfunc twice() -> Int { kit() * 2 }\n")
+        let scripts = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("dogfood/model")
+        // the SDK build.sh chose for this build, so the index build needn't ask the compiler about one it rejects (ten seconds)
+        let sdk = (try? String(contentsOfFile: "build/.sdk", encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        @MainActor func python(_ script: String, _ arguments: [String]) throws -> ProcessOutput {
+            try run(URL(fileURLWithPath: "/usr/bin/env"), ["python3", scripts.appendingPathComponent(script).path] + arguments,
+                    environment: sdk.map { ["SDKROOT": $0] } ?? [:], timeout: 280)
+        }
+        /// What a build of the index says it made.
+        @MainActor func build() throws -> String {
+            let built = try python("swift_index_build.py", [repo.path, scratch.path])
+            expectEqual(built.status, 0, built.output + built.error)
+            return built.output
+        }
+        /// Which file uses which, as the readers write the model from the stores there are.
+        @MainActor func uses(store: String = "store") throws -> Set<String> {
+            let analyzed = try python("swift_analyze.py", [repo.path, model.path])
+            expectEqual(analyzed.status, 0, analyzed.output + analyzed.error)
+            let read = try python("swift_index_read.py", [scratch.appendingPathComponent(store).path, model.path])
+            expectEqual(read.status, 0, read.output + read.error)
+            func file(_ end: JSON?) -> String { (end?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: "/") }
+            return Set((try json(model)["uses"]?.arrayValue ?? []).map { "\(file($0["from"])) > \(file($0["to"]))" })
+        }
+        let both: Set = ["Kit/Kit.swift > Core/Core.swift", "KitTests/KitTests.swift > Kit/Kit.swift"]
+
+        var made = try build()
+        expect(made.contains("interfaces: made 2 of 2 (Core, Kit)\n") && made.contains("indexes: made 4 of 4 (Core, Kit, KitTests, Loose)\n"), made)
+        expectEqual(try uses(), both)
+        expectEqual(try uses(store: "store/Kit"), [], "one store is read as one (Xcode's, or swift build's): Kit's alone has no file that defines what Kit uses")
+        made = try build()
+        expect(made.contains("interfaces: made 0 of 2\n") && made.contains("indexes: made 0 of 4\n") && made.contains("no module changed"), "nothing changed, nothing compiled: \(made)")
+
+        // an edit inside a function: its module again and no other, since its interface comes out the same bytes
+        try write("Sources/Core/Core.swift", core.replacingOccurrences(of: "one = 1", with: "one = 2 - 1"))
+        made = try build()
+        expect(made.contains("interfaces: made 1 of 2 (Core)\n") && made.contains("indexes: made 1 of 4 (Core)\n"), made)
+
+        // an edit to what it declares: the modules that depend on it too, directly or through another, and none that doesn't
+        try write("Sources/Core/Core.swift", core + "\npublic func more() {}\n")
+        made = try build()
+        expect(made.contains("interfaces: made 2 of 2 (Core, Kit)\n") && made.contains("indexes: made 3 of 4 (Core, Kit, KitTests)\n"), made)
+
+        // a compile that fails is said and changes nothing: the index kept is still whole, and still what its sources make once
+        // they are back as they last compiled (the interface, which skips the body that was wrong, was made from each edit)
+        try write("Sources/Kit/Kit.swift", kit.replacingOccurrences(of: "+ 1", with: "+ \"one\""))
+        let failed = try python("swift_index_build.py", [repo.path, scratch.path])
+        expect(failed.status != 0 && failed.output.contains("index Kit: failed") && failed.error.contains("indexes failed: Kit"), failed.output + failed.error)
+        expectEqual(try uses(), both, "the last index that worked is what is read")
+        try write("Sources/Kit/Kit.swift", kit)
+        made = try build()
+        expect(made.contains("interfaces: made 1 of 2 (Kit)\n") && made.contains("indexes: made 0 of 4\n"), made)
+        expectEqual(try uses(), both)
+
+        // an import Package.swift doesn't declare fails, as it does in a build: a compile reads only the interfaces its mark
+        // covers, so no index is kept that an edit to an undeclared module would leave stale
+        try write("Sources/Loose/Loose.swift", "import Core\n\npublic func loose() -> Int { core() }\n")
+        let undeclared = try python("swift_index_build.py", [repo.path, scratch.path])
+        expect(undeclared.status != 0 && undeclared.output.contains("index Loose: failed") && undeclared.output.contains("no such module 'Core'"), undeclared.output + undeclared.error)
+
+        // a module that is gone leaves nothing behind: its store would be read as code that is there
+        try write("Package.swift", tinyPackage(loose: false))
+        try FileManager.default.removeItem(at: repo.appendingPathComponent("Sources/Loose"))
+        made = try build()
+        expect(made.contains("interfaces: made 0 of 2\n") && made.contains("indexes: made 0 of 3\n"), made)
+        let stores = try FileManager.default.contentsOfDirectory(atPath: scratch.appendingPathComponent("store").path).sorted()
+        expectEqual(stores, ["Core", "Kit", "KitTests"])
+        expectEqual(try uses(), both)
+
+        // and ingest, reading the package for itself: it type-checks nothing, the index being as the code is, and draws what it read
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        var environment = ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path, "PROJECT": project.path]
+        if let sdk { environment["SDKROOT"] = sdk }
+        let drawn = try run(scripts.appendingPathComponent("ingest"), [repo.path], environment: environment, timeout: 280)
+        expectEqual(drawn.status, 0, drawn.output + drawn.error)
+        expect(drawn.output.contains("ingest: no module changed: none of the 3 type-checked") && drawn.output.contains("verify ok"), drawn.output)
+        let titles = Set(board.editor.document.shapes.compactMap { board.editor.registry.title(of: $0) })
+        expect(titles.isSuperset(of: ["About Tiny", "Core", "Kit"]), "the package as the board in front: \(titles.sorted())")
+        let edges = try json(project.appendingPathComponent("digest.json"))["edges"]?.arrayValue ?? []
+        expect(edges.contains { $0["from"] == "Kit.swift" && $0["to"] == "Core.swift" }, "Kit.swift's use of Core.swift is an edge of the digest: \(edges)")
+    },
 ])
+
+/// A package of three modules and a test target, as `Package.swift` declares them: Kit depends on Core, KitTests on Kit, and Loose
+/// (when asked for) on nothing.
+private func tinyPackage(loose: Bool) -> String {
+    let targets = [#".target(name: "Core")"#, #".target(name: "Kit", dependencies: ["Core"])"#] + (loose ? [#".target(name: "Loose")"#] : [])
+        + [#".testTarget(name: "KitTests", dependencies: ["Kit"])"#]
+    return "// swift-tools-version: 5.9\nimport PackageDescription\n\nlet package = Package(name: \"Tiny\", targets: [\n"
+        + targets.map { "    \($0),\n" }.joined() + "])\n"
+}
 
 /// A codebase whose names are awkward, as a reader writes model.json: a module called what a band is ("Level 1"), ones with a
 /// bracket and a backslash in their names, one whose name is over 80 characters, files whose paths differ only by case, a file whose
