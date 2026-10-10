@@ -253,9 +253,18 @@ extension TypePanelWindow {
         expectEqual(FieldsPanelModel.problems(of: address, in: FieldCheck(problems: [own, deeper, elsewhere])), [own])
         expectEqual(FieldsPanelModel.problems(of: address, in: FieldCheck(problems: [deeper])), [])
     },
+    test("a yes or no in an either shows as true or false, which the box reads back; alone it is yes or no") {
+        expectEqual(FieldsPanelModel.shown(.bool(true), as: [.yesNo, .text]), "true")
+        expectEqual(FieldsPanelModel.shown(.bool(false), as: [.number(integer: false), .yesNo]), "false")
+        for kinds in [[PlainKind.yesNo, .text], [.number(integer: false), .yesNo]] {
+            expectEqual(FieldText.value(from: FieldsPanelModel.shown(.bool(true), as: kinds), asOneOf: kinds), .bool(true), "reads back")
+        }
+        expectEqual(FieldsPanelModel.shown(.bool(true), as: [.yesNo]), "yes")
+        expectEqual(FieldsPanelModel.shown(.number(2), as: [.number(integer: false), .text]), "2")
+    },
     test("the panel draws again for its shape's commits only: one keystroke once") {
         let panel = try TypePanelWindow()
-        let id = panel.instance(of: [FieldFixtures.kindsAID], extra: [FieldFixtures.everyKind.a])
+        _ = panel.instance(of: [FieldFixtures.kindsAID], extra: [FieldFixtures.everyKind.a])
         panel.window.spin { panel.boxes.count == 3 }
         let other = panel.editor.addInstance("Other", of: [], at: CGPoint(x: 600, y: 400))
         panel.window.settle()
@@ -268,7 +277,6 @@ extension TypePanelWindow {
         panel.window.type("a")
         panel.window.settle()
         expectEqual(state.panelsDrawn, drawn + 1, "a keystroke")
-        _ = id
     },
     test("with K0's check nothing is said under a field") {
         let panel = try TypePanelWindow()

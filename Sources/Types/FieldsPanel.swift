@@ -10,21 +10,23 @@ import SwiftUI
 // is. What a field with more in it looks like is `FieldForm`'s.
 
 extension TypesStyle {
-    public static let fieldsTitle = "Fields"
+    static let fieldsTitle = "Fields"
     /// Between a field's name and the form under it.
     static let formSpacing: CGFloat = 2
-    /// A number, a date or an either: one line, as the text view lays it out.
+    /// A number, a date or an either: one line, as the text view lays it out. Public for TypesTests alone
+    /// (a test target cannot `@testable import`, and the hosted panel gives it the height only as a number).
     public static let fieldLine: CGFloat = 22
     /// A value no field names.
     static let unnamedValueSymbol = "circle.dashed"
     /// `Remove Nickname`: the step of taking a value no field names out, and its minus's label.
-    public static func removeValue(_ key: String) -> String {
+    static func removeValue(_ key: String) -> String {
         let words = FieldName.words(of: ChainField(name: key, schema: .null)).split(whereSeparator: \.isWhitespace)
         return (["Remove"] + words.map { $0.prefix(1).uppercased() + $0.dropFirst() }).joined(separator: " ")
     }
 }
 
-/// One row of the section.
+/// One row of the section. Public, with `FieldsPanelModel`, for TypesTests alone: the audit refuses
+/// `@testable`, and a hosted panel does not say which control a field was given. Nothing else reads it.
 public enum FieldsPanelRow: Identifiable {
     /// A field a box, a checkbox or a menu suits: the kinds it takes (an either's two), and what it holds.
     case plain(Resolved.Field, [PlainKind], JSONValue?)
@@ -68,9 +70,12 @@ public enum FieldsPanelModel {
         check.problems(at: FieldPath(field: field.field.name))
     }
 
-    /// How a box shows what is stored: the kinds' own forms, except that a text keeps its line breaks.
+    /// How a box shows what is stored: the kinds' own forms, except that a text keeps its line breaks, and
+    /// a yes or no in an either shows as `true` or `false`, which is what the box reads back (`yes` would
+    /// become the text `yes` on the next edit).
     public static func shown(_ value: JSONValue?, as kinds: [PlainKind]) -> String {
         guard let value else { return "" }
+        if case .bool(let bool) = value, kinds.count > 1, kinds.contains(.yesNo) { return bool ? "true" : "false" }
         let shown = FieldText.shown(value, asOneOf: kinds)
         if case .string(let text) = value, text.contains(where: \.isNewline), shown == FieldText.shown(.string(text), asOneOf: []) { return text }
         return shown
