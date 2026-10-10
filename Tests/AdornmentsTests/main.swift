@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([layoutTests, compactLayoutTests, compactBoardTests, chipFadeTests, placementTests, registryTests, drawingTests, cacheTests, pointingTests, shapePointingTests, skeletonTests, groupLayoutTests, groupTests, missingTests, tintTests, anchorTests, laidOutAdornmentTests])
+runTests([layoutTests, compactLayoutTests, compactBoardTests, chipFadeTests, placementTests, registryTests, drawingTests, cacheTests, pointingTests, shapePointingTests, skeletonTests, groupLayoutTests, groupTests, missingTests, tintTests, anchorTests, laidOutAdornmentTests, contentLabelTests])
