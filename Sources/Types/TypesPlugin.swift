@@ -39,6 +39,11 @@ public struct TypesPlugin: CanvasPlugin {
         // What the types of a list give, resolved once and kept; it reads nothing as it is made.
         registrar.service { FieldBook(editor: $0) }
         registrar.service { TypeSync<TypeSchemaProperty>(editor: $0) }
+        // What changes a shape's field values (one writer for every surface), what is said of them (the check),
+        // and the card a row with more in it opens.
+        registrar.service { FieldWriter(editor: $0) }
+        registrar.service { FieldChecks(editor: $0) }
+        registrar.service { FieldCards(editor: $0) }
         // Resting the pointer on a highlight's words shows the part of the schema they say; in the
         // editor, its own view asks (`TypeIndex.popover(at:on:)`).
         registrar.shapePopovers { editor, record, point in

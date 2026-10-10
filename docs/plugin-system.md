@@ -10079,6 +10079,14 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   its members in the order written), with its `#` references written out and a `urn:uuid:` one (another
   type) kept; `members(of:)` and `item(of:)` give the fields inside a group, another type's fields and a
   list's items. The pure part, `Chain.resolve`, reads a catalog of values and needs no editor.
+- **What a field is as a row** (the vocabulary rows, cards and the panel share, all pure): a field's
+  `FieldKind` (`fieldBook.kind(of:)`: a plain value, one of a few, several, a list, a group, another
+  type's fields, a link to a note, pairs, either of two, or `other`, the first that fits), `FieldPath`
+  to a value, `FieldValues.value(at:)` and `setting(_:at:)`, `FieldText` (what typed text is stored as, a
+  number only when it reads back as typed, a date only when it is whole; and how a value shows),
+  `FieldSummary` (what a row with more in it reads), `FieldCheck` (the check's answer, a value), and
+  `RowList` (one row a field, folding past nine). `editor.fieldWriter` is the one writer of
+  `fieldValues`, `editor.fieldChecks` the check and `editor.fieldCards` the card a row opens.
 - **Rules** (`TypeValidationPlugin`, `validateEveryShape`): text that isn't JSON is an error at its
   line and column ("Invalid JSON: expected a property name at line 6, column 34."), as is a root
   that isn't an object; `required` naming a property its object doesn't have, a `type` that isn't
@@ -11737,7 +11745,7 @@ title-validation     service TitleIndex · ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
-types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
+types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
 type-validation      ValidationRules
 type-details         ShapeDetails · ShapeDetails
 snapping             service SnapState · translation adjuster
