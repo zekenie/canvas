@@ -1,3 +1,4 @@
+import AppKit
 import Canvas
 import CoreGraphics
 import Selection
@@ -145,6 +146,26 @@ public struct AdornmentButton: Hashable, Sendable {
     }
 }
 
+/// A color a label is drawn in, in place of its tone's: a type's, in Types. A fixed color, the same in
+/// both appearances, so Adornments makes its fills once. Solid, the capsule is the color and its text
+/// and symbol are white; light, the capsule is the color faint, with a thin line of it, and the text
+/// and symbol are its `ink`, which may follow the appearance (a color that reads on the canvas
+/// whichever it is).
+public struct AdornmentTint: Hashable, @unchecked Sendable {
+    public enum Style: Hashable, Sendable { case solid, light }
+
+    public let color: NSColor
+    public let ink: NSColor
+    public let style: Style
+
+    /// `ink` is the color itself by default.
+    public init(_ color: NSColor, ink: NSColor? = nil, style: Style) {
+        self.color = color
+        self.ink = ink ?? color
+        self.style = style
+    }
+}
+
 /// What an adornment shows on one shape. Adornments draws it, so every plugin's look alike (as
 /// `ContentsLabel` does for rows): a capsule in the title pill's dark gray (green for something
 /// done), white text on one line (dimmed for a placeholder's), a small symbol before it if it has
@@ -182,6 +203,9 @@ public struct AdornmentLabel: Hashable, Sendable {
     /// The smaller face this label may be drawn in (`compact(_:)`): at most one, held in an array
     /// since a label can't hold itself.
     private var compactFaces: [AdornmentLabel]
+    /// The color it is drawn in (`tinted(_:)`), in place of its tone's; nil for none. Part of what
+    /// makes two labels equal, so a shape whose tint changes is laid out again.
+    public private(set) var tint: AdornmentTint?
 
     /// Text, after a small symbol if `systemImage` names one (a kind's mark: a subboard's `rectangle.stack`).
     public init(_ text: String, systemImage: String? = nil, tone: Tone = .neutral) {
@@ -204,6 +228,7 @@ public struct AdornmentLabel: Hashable, Sendable {
         tag = nil
         isMissing = false
         compactFaces = []
+        tint = nil
     }
 
     public init(systemImage: String, tone: Tone = .neutral) {
@@ -216,6 +241,7 @@ public struct AdornmentLabel: Hashable, Sendable {
         tag = nil
         isMissing = false
         compactFaces = []
+        tint = nil
     }
 
     /// The same label, drawn this opaque (0 to 1), its compact face too.
@@ -231,6 +257,14 @@ public struct AdornmentLabel: Hashable, Sendable {
     public func tagged(_ tag: AdornmentTag) -> AdornmentLabel {
         var label = self
         label.tag = tag
+        return label
+    }
+
+    /// The same label drawn in `tint`'s color (a missing label ignores it, and keeps its dashes): a
+    /// tint wins over the tone. Its compact face is its own label, tinted if whoever made it did.
+    public func tinted(_ tint: AdornmentTint) -> AdornmentLabel {
+        var label = self
+        label.tint = tint
         return label
     }
 

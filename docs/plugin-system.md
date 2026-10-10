@@ -4228,6 +4228,17 @@ plugin's look alike, as `ContentsLabel` keeps rows alike:
 
 - **`tagged(_:)`** and **`missing()`**: which of a group's labels it is, and the look of a name
   that is gone ([above](#several-labels-a-group)).
+- **`tinted(_:)`**: `AdornmentLabel("Person").tinted(AdornmentTint(color, ink: ink, style: .light))`,
+  a color in place of the tone's (a type's, in Types). `color` is fixed, the same in both
+  appearances, so Adornments makes a tint's fills once; `ink` (the color by default) may follow the
+  appearance. Solid: the capsule is the color, lighter hovered (15% white) and darker pressed (20%
+  black), its text and symbol white. Light: the capsule is the color at 14% (22% hovered, 30%
+  pressed) with a 1-point line of it at 35% inside the edge, its text and symbol the ink (a
+  placeholder's at 60%); a light label's symbol is made again for the appearance drawn, since an
+  image made with a dynamic color is fixed when it is made. A tint wins over the tone; a missing
+  label ignores it; `opacity(_:)` and `tagged(_:)` keep it; a compact face is tinted only if its
+  maker tinted it; the tint is part of the label's equality, so a changed tint lays the row out
+  again; the group's "+N" is never tinted.
 
 A clickable one draws lighter hovered and darker pressed (a missing one, a faint fill). A label can't draw itself (a sparkline):
 that's [not built yet](#not-built-yet).
