@@ -163,6 +163,20 @@ for name in $ORDER; do
     CLOSURE[$name]="${acc[*]}"
 done
 
+# The product's text files (Shipped/*.txt): what the product says in a file, not in a module
+# (--ask's prompt, whose examples name the shipped kinds, which no module knows all of). Each is put
+# in every executable that is the product, as a section of its text segment named for the file
+# (`__`, then its name with `-` as `_`), where the core's ShippedText reads it back: no path to look
+# under, and no module that holds it. A section's name is at most 16 characters, so a file's is at
+# most 14.
+SHIPPED_TEXTS=(Shipped/*.txt(N))
+for shipped in $SHIPPED_TEXTS; do
+    [[ ${shipped:t:r} =~ '^[a-z][a-z0-9-]{0,13}$' ]] ||
+        die "$shipped: a shipped text's name is lowercase letters, digits and hyphens, at most 14 characters (it names a section of the binary)"
+done
+# The executables that are the product: those built on the shipped plugin list.
+is_product() { [[ $KIND[$1] != target && " $CLOSURE[$1] " == *" Composition "* ]] }
+
 # A test target named after a module (<M>Tests) tests M on its own: it may use M, what M uses,
 # and testsupport and ui modules, so that (say) SelectionTests can't lean on a shape kind. One named
 # after a plugin of M rather than M (TitleQueriesTests, of QueryLexicon) says so, `// layer: test
@@ -544,7 +558,8 @@ keep_changed() {
 #              library's are archived (lib<name>.a), in the order of its sources. In debug an
 #              executable's job emits its module too, which its link names for the debugger (as
 #              swiftc -g does when it compiles and links at once).
-#   link       an executable, from its objects and every library it depends on.
+#   link       an executable, from its objects and every library it depends on, and, for one that
+#              is the product, the product's text files (SHIPPED_TEXTS).
 # What comes out the same as before isn't replaced (keep_changed), so an edit that leaves a module's
 # interface as it was (inside a function) compiles none of the modules that depend on it, and one
 # that changes nothing it compiles to (a touch, a checkout) links nothing again either. Every
@@ -624,7 +639,15 @@ build_job() {
             libs+=(-Xlinker -force_load -Xlinker $OUT/$dep/lib$dep.a)
             INPUTS+=($OUT/$dep/lib$dep.a)
         done
-        local link=($SWIFTC $objects $libs $debugger $entry -o $dir/$name)
+        # The product's text files, each a section of the binary (above: SHIPPED_TEXTS).
+        local texts=() shipped
+        if is_product $name; then
+            for shipped in $SHIPPED_TEXTS; do
+                texts+=(-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __${${shipped:t:r}//-/_} -Xlinker $shipped)
+                INPUTS+=($shipped)
+            done
+        fi
+        local link=($SWIFTC $objects $libs $debugger $entry $texts -o $dir/$name)
         STAMP=$dir/.linked
         [[ -e $dir/$name ]] || rm -f -- $STAMP
         up_to_date $link && return 0

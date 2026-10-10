@@ -1,0 +1,1 @@
+This query will be stored and run later, with nobody looking: never use :selected, :current-board or any pseudo-class that reads what the person has selected or is looking at, and <board> names no selection. Write a query that finds the shapes the words mean wherever they are.

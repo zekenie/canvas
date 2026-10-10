@@ -107,8 +107,9 @@ public enum ShippedPlugins {
             AutomationPlugin(), TitleNamesPlugin(), PortEdgesPlugin(), ValidationChecksPlugin(), MentionTextsPlugin(),
             // Reading the file: `canvas query`, and what queries take from the plugins that own a concern:
             // titles for names, boards' names, mentions for text and relations, validity and the selection
-            // for their words.
-            QueriesPlugin(), QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule), TitleQueriesPlugin(), BoardQueriesPlugin(), MentionQueriesPlugin(), ValidationQueriesPlugin(),
+            // for their words. The translator of English into queries reads its prompt from the product's
+            // own files (Shipped/ask-prompt.txt, in the binary).
+            QueriesPlugin(), QueryTranslationPlugin(), TitleQueriesPlugin(), BoardQueriesPlugin(), MentionQueriesPlugin(), ValidationQueriesPlugin(),
             SelectionQueriesPlugin(),
             QueryCommandsPlugin(),
             // Hover a shape, on the canvas or by its row in the table of contents, and what it connects to is outlined by how: after the
