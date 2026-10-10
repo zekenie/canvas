@@ -74,7 +74,7 @@ import Validation
         publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
         types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
         type-validation      ValidationRules
-        type-details         ShapeDetails · ShapeDetails
+        type-details         ShapeDetails · ShapeDetails · ShapeDetails
         snapping             service SnapState · translation adjuster
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
         arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules

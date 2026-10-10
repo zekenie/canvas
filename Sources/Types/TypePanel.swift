@@ -40,7 +40,8 @@ enum TypePanelText {
 
 /// The Schema tab of every type (every shape that holds a schema, whatever its kind): its JSON,
 /// which `TypeSync` rewrites from the shape's words, and the words from, with its issues and the
-/// sync's status under it. The shape's header (its title, the type's name) is its kind's.
+/// sync's status under it. The shape's header (its title, the type's name) is its kind's. The Types
+/// tab holds the shape's types, then its Fields (`FieldsPanel.swift`).
 @MainActor
 func registerTypePanel(into registrar: inout PluginRegistrar) {
     registrar.details(of: TypeSchemaProperty.self) {
@@ -53,6 +54,8 @@ func registerTypePanel(into registrar: inout PluginRegistrar) {
         DetailSection(in: TypesTab.self, id: "types") { $types in TypesList(types: $types) }
             .enabledWhileReadOnly()
     }
+    // The Types rows' fields and values, after them.
+    registerFieldsPanel(into: &registrar)
 }
 
 // The section's commit holds the sync weakly: a text view that loses the keyboard as its window

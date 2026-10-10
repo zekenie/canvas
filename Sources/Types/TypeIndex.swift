@@ -145,6 +145,15 @@ public final class TypeIndex {
 
     private subscript(nameVersion id: ShapeID) -> Int { nameVersions[id] ?? 0 }
 
+    @ObservationIgnored private var changesTold = 0
+    /// A key path to observe.
+    private var changeCount: Int { changesTold }
+
+    /// Read in the body of a view that shows what types give a shape (the panel's Fields, a form): it
+    /// draws again after a commit that changed a type (one that came, went, or whose schema, name or own
+    /// types changed), which `chainRevision` alone does not tell a view.
+    func observeChanges() { access(keyPath: \.changeCount) }
+
     /// The types a `$ref` in the schema of `id` can point to, as its JSON's completions offer them:
     /// every other titled type of the file, by its name (what its mentions show), its fields counted,
     /// in the order of their names.
@@ -307,6 +316,7 @@ public final class TypeIndex {
 
     private func tell(_ ids: Set<ShapeID>) {
         guard !ids.isEmpty else { return }
+        withMutation(keyPath: \.changeCount) { changesTold &+= 1 }
         for observer in observers { observer(ids) }
     }
 

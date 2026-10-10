@@ -17,6 +17,7 @@ import Mentions
 import Publishing
 import Selection
 import SlashCommands
+import SwiftUI
 import StickyNotes
 import TestKit
 import Titles
@@ -150,6 +151,37 @@ private let petAnswer = """
         let locked = outline(at: CGPoint(x: 200, y: 200), 4)
         let unlock = try require(locked.firstIndex(of: "Unlock"))
         expectEqual(locked[unlock + 1], "Is a ▸", "\(locked)")
+    },
+    test("an arrow that is a Friendship takes values as a note does, and its panel has the Fields: a one-line box and a checkbox, a note's the same") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let friendship = editor.addTypeNote(#"{"type": "object", "properties": {"since": {"type": "number"}, "close": {"type": "boolean"}}}"#, title: "Friendship",
+                                            frame: CGRect(x: 500, y: 100, width: 200, height: 200))
+        let arrow = editor.add(Arrow(start: .free(CGPoint(x: 40, y: 500)), end: .free(CGPoint(x: 340, y: 500))))
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Ann and Bo"))
+        editor.addTypeLink(friendship, to: arrow)
+        editor.addTypeLink(friendship, to: note)
+        let writer = try require(editor.fieldWriter)
+        expect(writer.setTyped("2019", as: .number(integer: false), at: FieldPath(field: "since"), of: arrow))
+        expectEqual(editor.document[arrow]?[FieldValuesProperty.self]?["since"], 2019)
+        expectEqual(editor.undoHistory.undoName, "Change Since")
+        editor.undo()
+        expectEqual(editor.document[arrow]?[FieldValuesProperty.self], nil)
+        for shape in [arrow, note] {
+            let layout = try require(editor.detailPanel?.layout(for: try require(editor.document[shape])))
+            expectEqual(layout.sections(in: .of(TypesTab.self)).map(\.section), ["types", "fields"])
+        }
+        let host = NSHostingView(rootView: ShippedPlugins.detailPanel(editor: editor, onExit: {}))
+        host.frame = CGRect(x: 0, y: 0, width: DetailStyle.idealWidth, height: 700)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: true)
+        window.contentView = host
+        window.appearance = NSAppearance(named: .aqua)
+        editor.selection = arrow
+        window.spin { host.descendants(NSTextView.self).contains { !$0.isFieldEditor } }
+        let boxes = host.descendants(NSTextView.self).filter { !$0.isFieldEditor }
+        expectEqual(boxes.count, 1, "since")
+        expect(host.descendants(NSButton.self).contains { $0.className.contains("FocusRing") }, "close")
     },
     test("@ typed on /is-a's line is a letter: no picker, and the choice list stays") {
         let pasteboard = NSPasteboard.withUniqueName()

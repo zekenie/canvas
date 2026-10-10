@@ -79,13 +79,7 @@ public final class FieldWriter {
     /// names the key (its caller lists only the keys none does).
     @discardableResult
     public func removeUnnamed(_ key: String, of shape: ShapeID) -> Bool {
-        apply(shape, name: Self.removeName(of: key), key: nil) { $0 = $0.setting(nil, at: FieldPath(field: key)) }
-    }
-
-    /// `Remove Nickname`: the key's words, each with a capital, as the step of a named field is.
-    private static func removeName(of key: String) -> String {
-        let words = FieldName.words(of: ChainField(name: key, schema: .null)).split(whereSeparator: \.isWhitespace)
-        return (["Remove"] + words.map { $0.prefix(1).uppercased() + $0.dropFirst() }).joined(separator: " ")
+        apply(shape, name: TypesStyle.removeValue(key), key: nil) { $0 = $0.setting(nil, at: FieldPath(field: key)) }
     }
 
     private func apply(_ shape: ShapeID, field: String, step: FieldWriteStep, _ change: (inout FieldValues) -> Void) -> Bool {

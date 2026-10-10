@@ -10053,7 +10053,12 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   it builds on; there is no Type chip (Is a ▸ Type in the menu). A click pops up a small menu
   below the chip (`editor.popUpMenu`): Go to “Person” and Remove “Person” (Remove left out on a
   read-only shape); "+N"'s lists every type. On an arrow the chips sit above its label. The panel's
-  Types tab lists the same, a row that goes to the type and a minus that removes it.
+  Types tab lists the same, a row that goes to the type and a minus that removes it, and under them
+  its Fields: a row for each field the shape's types give it, in the chain's order, with the control its
+  kind suits (a box that takes what is typed as it is typed, one write a keystroke and one undo step a
+  field; a checkbox; a menu with None last); a field with more in it is a `FieldForm`, and a value no field
+  names is dimmed with a minus. Every write goes through `editor.fieldWriter`. A view that shows what
+  types give a shape reads `TypeIndex.observeChanges()`, so it draws again when a type changes.
 - **The file's types**: `TypeIndex` (`editor.types`) reads every board's types as the file opens,
   then keeps them by each commit's `ChangeSet` alone (what it added, removed and changed, on the
   board shown and `elsewhere`, the kind checked first; a whole file put in place read again), never
@@ -11749,7 +11754,7 @@ locking              property locked · property locked → every shape · read-
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
 types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
 type-validation      ValidationRules
-type-details         ShapeDetails · ShapeDetails
+type-details         ShapeDetails · ShapeDetails · ShapeDetails
 snapping             service SnapState · translation adjuster
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
 arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
