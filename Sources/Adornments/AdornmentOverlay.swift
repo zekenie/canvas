@@ -176,6 +176,13 @@ enum AdornmentStyle {
                      width: (size.width + lead(of: label, in: placement) + 2 * (isCorner ? cornerPadding : rowPadding)).rounded(.up))
     }
 
+    private static func resolvedMissing(_ text: NSAttributedString) -> NSAttributedString {
+        let resolved = NSMutableAttributedString(attributedString: text)
+        resolved.addAttribute(.foregroundColor, value: NSColor(cgColor: NSColor.labelColor.withAlphaComponent(missingTextStrength).cgColor) as Any,
+                              range: NSRange(location: 0, length: resolved.length))
+        return resolved
+    }
+
     /// A chip that is missing: no fill (a faint one hovered or pressed), a dashed stroke, in the
     /// canvas's label color. `unit` is how many units of the context a point is.
     private static func paintMissing(_ path: CGPath, unit: CGFloat, look: Look, in cg: CGContext) {
@@ -298,7 +305,10 @@ enum AdornmentStyle {
                                       width: size.width * glyphScale, height: size.height * glyphScale),
                            from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }
-        case .text(let text, let size, let symbol, _):
+        case .text(let laidOut, let size, let symbol, _):
+            // A missing chip's ink is the canvas's label color, which the face was made before the
+            // drawing's appearance was known: resolved now, as its dashes are.
+            let text = label.isMissing ? resolvedMissing(laidOut) : laidOut
             cg.translateBy(x: corner.x, y: corner.y)
             cg.scaleBy(x: scale, y: scale)
             let radius = min(frame.width, frame.height) / 2

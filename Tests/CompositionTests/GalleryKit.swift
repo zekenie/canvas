@@ -167,6 +167,10 @@ final class GalleryStage {
     func listRows(of view: MentionTextView<AnyMentionable>) -> (image: CGImage, size: CGSize)? {
         guard let list = view.slashCommands?.window, let rows = list.contentView?.descendants.first(where: { $0.accessibilityRole() == .list }),
               let rep = rows.bitmapImageRepForCachingDisplay(in: rows.bounds) else { return nil }
+        // The list's own appearance is the window's vibrant one, which draws a translucent line (the
+        // separator) as the material's blend and not as a color: set to the plain one, it is the line
+        // as it would sit on the panel drawn under it.
+        rows.appearance = appearance
         appearance.performAsCurrentDrawingAppearance { rows.cacheDisplay(in: rows.bounds, to: rep) }
         var visible = rows.visibleRect
         if visible.isEmpty { visible = rows.bounds }
