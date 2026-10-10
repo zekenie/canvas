@@ -1,12 +1,14 @@
 import Canvas
+import CanvasRPC
 import CanvasTesting
 import CoreGraphics
 import HostSlots
 import SwiftUI
 import TestKit
 
-// The host's slots, with contributors of the tests' own: what a plugin says, and what the window
-// reads back. No window here: CanvasUITests place them (`BoardChrome`, the tool picker, Settings).
+// The host's slots, with contributors of the tests' own: what a plugin says, and what the host
+// reads back. No window here: CanvasUITests place them (`BoardChrome`, the tool picker, Settings,
+// the command server's commands).
 
 /// What a view was handed as it was made, and what a test's contributors note and are told.
 @MainActor private final class Handed {
@@ -141,6 +143,62 @@ import TestKit
         let again = Contributor(id: "again") { $0.toolTips { tool, _ in tool.label } }
         expectThrows(RegistryError.conflict(point: "ToolTips", key: "tool tips", plugins: ["tips", "again"])) {
             _ = try Registry(plugins: [tips, again])
+        }
+    },
+    test("the welcome board is what one plugin makes, each time it's asked: none without one, and a second is a conflict") {
+        expect(try Registry(plugins: []).welcomeBoard == nil)
+        let handed = Handed()
+        let welcome = Contributor(id: "welcome") { registrar in
+            registrar.welcomeBoard { registry in
+                handed.made.append("board")
+                // One pocket for each kind the list has: it's handed the built registry.
+                return CanvasDocument(shapes: registry.kinds.map { _ in AnyShapeRecord(ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 100, height: 60)))) })
+            }
+        }
+        let registry = try Registry(plugins: [PocketsPlugin(), welcome])
+        let make = try require(registry.welcomeBoard)
+        expectEqual(handed.made, [], "not made until the app asks")
+        let first = make(), second = make()
+        expectEqual(handed.made, ["board", "board"])
+        expectEqual(first.shapes.count, registry.kinds.count, "it's handed the built registry")
+        expect(first.shapes[0].id != second.shapes[0].id, "each board opened has shapes of its own")
+        expectEqual(report(registry, of: "welcome"), "welcome board")
+        let again = Contributor(id: "again") { $0.welcomeBoard { _ in CanvasDocument() } }
+        expectThrows(RegistryError.conflict(point: "WelcomeBoards", key: "welcome board", plugins: ["welcome", "again"])) {
+            _ = try Registry(plugins: [welcome, again])
+        }
+    },
+    test("the commands the app's server runs are one plugin's, read off the built registry: none without one, and a second is a conflict") {
+        let none = try Registry(plugins: []).hostCommands
+        expectEqual(none.specs, [])
+        do {
+            _ = try awaitResult { try await none.run("count", [:], nil) }
+            expect(false, "a command nobody gives is unknown")
+        } catch let error as RPCError {
+            expectEqual(error.code, RPCError.methodNotFound)
+            expectEqual(error.reason, "unknown_command")
+        }
+        let handed = Handed()
+        let line = Contributor(id: "line") { registrar in
+            registrar.hostCommands(specs: { registry in
+                [CommandSpec(name: "count", summary: "Counts \(registry.tools.count) tools.", scope: .app)]
+            }) { _, name, params, editor async throws(RPCError) in
+                handed.editor = editor
+                return ["name": .string(name), "asked": params]
+            }
+        }
+        let registry = try Registry(plugins: [TilesPlugin(), line])
+        let commands = registry.hostCommands
+        expectEqual(commands.specs.map(\.name), ["count"])
+        expectEqual(commands.specs.first?.summary, "Counts \(registry.tools.count) tools.", "its specs are read off the built registry")
+        let editor = CanvasEditor(registry: registry, file: CanvasFile(), scheduler: ManualScheduler())
+        let answer = try awaitResult { try await commands.run("count", ["n": 2], editor) }
+        expectEqual(answer, ["name": "count", "asked": ["n": 2]])
+        expect(handed.editor === editor, "run on the board's editor it's handed")
+        expectEqual(report(registry, of: "line"), "host commands")
+        let again = Contributor(id: "again") { $0.hostCommands(specs: { _ in [] }) { _, _, _, _ async throws(RPCError) in .null } }
+        expectThrows(RegistryError.conflict(point: "HostCommands", key: "commands", plugins: ["line", "again"])) {
+            _ = try Registry(plugins: [line, again])
         }
     },
 ])

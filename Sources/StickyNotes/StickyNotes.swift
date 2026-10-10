@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Connections
+import HostSlots
 import Keyboard
 import Mentions
 import Selection
@@ -65,6 +66,8 @@ public struct StickyNotesPlugin: CanvasPlugin {
             note.mentionable(untitled: { $0.props.text.firstLine })   // called by its title, else its first line
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
+        // Six notes on how to use them, for the app's first board: linked where the list draws arrows.
+        registrar.welcomeBoard { registry in WelcomeBoard.document(linked: registry.kinds.contains(Arrow.kind)) }
     }
 }
 

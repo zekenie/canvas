@@ -7,6 +7,7 @@ import Connections
 import Foundation
 import Frames
 import Geometry
+import HostSlots
 import LanguageModels
 import Mentions
 import Queries
@@ -639,7 +640,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let registry = try Registry(plugins: shippedPlugins(pasteboard))
-        let commands = ShippedPlugins.commands(in: registry)
+        let commands = registry.hostCommands
         for size in sizes {
             let document = generatedBoard(shapes: size)
             let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())

@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import CanvasUI
 import Composition
+import HostSlots
 import SwiftUI
 
 /// A document app: each board is a file (`BoardDocument`), in its own window, with the shipped
@@ -20,11 +21,11 @@ enum InfiniteCanvasApp {
             registry = try ShippedPlugins.registry(model: ShippedPlugins.anthropicModel)
             BoardDocument.configuration = BoardConfiguration(registry: registry) { AnyView(ContentView(board: $0)) }
             delegate.settings = SettingsWindow(registry: registry)
+            delegate.welcomeBoard = registry.welcomeBoard
         } catch {
             fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
         }
-        let commands = ShippedPlugins.commands(in: registry)
-        let server = CommandServer(commands: CommandServer.Commands(specs: commands.specs, run: commands.run))
+        let server = CommandServer(commands: CommandServer.Commands(registry: registry))
         do {
             try server.start()
             commandServer = server
@@ -34,7 +35,8 @@ enum InfiniteCanvasApp {
         }
         let app = NSApplication.shared
         app.delegate = delegate
-        BoardMenus.install(appName: "Infinite Canvas", helpItems: [
+        // Help › Welcome Board, where a plugin gives one.
+        BoardMenus.install(appName: "Infinite Canvas", helpItems: delegate.welcomeBoard == nil ? [] : [
             NSMenuItem(title: "Welcome Board", action: #selector(AppDelegate.showWelcomeBoard(_:)), keyEquivalent: ""),
         ])
         app.run()
@@ -46,6 +48,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let hasShownWelcomeBoard = "hasShownWelcomeBoard"
     /// The Settings window, its panes the shipped plugins': set once the registry is made.
     var settings: SettingsWindow?
+    /// What makes the welcome board (the host's slot for it: the notes plugin's), nil for none: set
+    /// once the registry is made.
+    var welcomeBoard: (@MainActor () -> CanvasDocument)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -61,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let defaults = UserDefaults.standard
         let firstTime = !defaults.bool(forKey: Self.hasShownWelcomeBoard)
         defaults.set(true, forKey: Self.hasShownWelcomeBoard)
-        return openNewBoard(with: firstTime ? WelcomeBoard.document() : CanvasDocument())
+        return openNewBoard(with: firstTime ? welcomeBoard?() ?? CanvasDocument() : CanvasDocument())
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -77,7 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Help › Welcome Board: a new board with the welcome notes on it.
     @objc func showWelcomeBoard(_ sender: Any?) {
-        openNewBoard(with: WelcomeBoard.document())
+        if let welcomeBoard { openNewBoard(with: welcomeBoard()) }
     }
 
     @discardableResult

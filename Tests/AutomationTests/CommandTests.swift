@@ -5,6 +5,7 @@ import CanvasTesting
 import CoreGraphics
 import Foundation
 import Geometry
+import HostSlots
 import TestKit
 
 // The command line's own commands, run as the app's command server runs them, on an editor with
@@ -211,7 +212,22 @@ extension SizeWord: ShapeProperty {
         expectEqual(draw.usage(), "canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]")
         expect(draw.arguments.first { $0.name == "script" }?.readsStandardInput == true)
         expectEqual(registry.automationCommands.first { $0.name == "kinds" }?.scope, .app)
-        expect(registry.report.contains("automation    command line draw · command line show · command line kinds · command line measure"), registry.report)
+        expect(registry.report.contains("automation    command line draw · command line show · command line kinds · command line measure · host commands"), registry.report)
+    },
+    test("the app's command server is handed every command, the plugin's own and another's, and runs each by name") {
+        let more = Contributor(id: "more") { $0.automationCommand("ping", "Answers pong.", scope: .app, params: NoParams.self) { _, _ throws(AutomationError) in "pong" } }
+        let registry = try Registry(plugins: [AutomationPlugin(), more])
+        let commands = registry.hostCommands
+        expectEqual(commands.specs, registry.automationCommands)
+        expectEqual(commands.specs.map(\.name), ["draw", "show", "kinds", "measure", "ping"])
+        expectEqual(try awaitResult { try await commands.run("ping", [:], nil) }, "pong")
+        do {
+            _ = try awaitResult { try await commands.run("pang", [:], nil) }
+            expect(false, "no such command")
+        } catch let error as RPCError {
+            expectEqual(error.reason, "unknown_command")
+        }
+        expectEqual(try Registry(plugins: []).hostCommands.specs, [], "a list without the command line gives the server none")
     },
     test("the registry refuses a command the command line couldn't type or spell, or two of one name") {
         let nothing: @MainActor (NoParams, AutomationContext) throws(AutomationError) -> String = { _, _ in "" }

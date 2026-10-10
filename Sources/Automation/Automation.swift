@@ -7,10 +7,10 @@ import Foundation
 /// it, its params (a list of properties, `SchemaDefined`, whose schema `canvas` reads its arguments
 /// by), and what it does, on the main actor, through transactions, as anything else changes a
 /// board: at once (`run:`, as `draw` and `kinds` do) or, for one that waits on something (a
-/// language model), later (`runAsync:`), its output then written off the main actor. The app hands
-/// them to its command server (Composition's `ShippedPlugins.commands(in:)`, over
-/// `automationCommands` and `runAutomationCommand`), which does the talking: this plugin never sees
-/// a socket, and the core never sees a command. Its own are `draw`, `show`, `kinds` and `measure` (Commands.swift, Measure.swift);
+/// language model), later (`runAsync:`), its output then written off the main actor. The app's
+/// command server takes them from the host's slot for them (HostSlots' `registry.hostCommands`,
+/// which this plugin fills with `automationCommands` and `runAutomationCommand`), and does the
+/// talking: this plugin never sees a socket, and the core never sees a command. Its own are `draw`, `show`, `kinds` and `measure` (Commands.swift, Measure.swift);
 /// `draw` takes what it doesn't own (names, edges, checks) from the points in DrawPoints.swift,
 /// which DrawLexicon fills (and AutomationTests with fixtures of their own).
 extension PluginID {
@@ -255,7 +255,7 @@ private struct ParamsReading<Params: SchemaDefined> {
     }
 }
 
-// MARK: Reading them (what the app's command server uses)
+// MARK: Reading them (what the plugin hands the app's command server)
 
 extension Registry {
     /// Every command the command line runs, in plugin order, as the command line reads them.

@@ -8,6 +8,7 @@ import Composition
 import DrawScript
 import Foundation
 import Geometry
+import HostSlots
 import LanguageModels
 import StickyNotes
 import TestKit
@@ -27,7 +28,7 @@ import Titles
 
 /// `measure`, as the app's command server runs it (an app command: no board).
 @MainActor private func measured(_ script: String, in editor: CanvasEditor) -> Result<JSON, RPCError> {
-    let commands = ShippedPlugins.commands(in: editor.registry)
+    let commands = editor.registry.hostCommands
     let result = try? awaitResult { () async -> Result<JSON, RPCError> in
         do throws(RPCError) {
             return .success(try await commands.run("measure", ["script": .string(script)], nil))

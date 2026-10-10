@@ -5,6 +5,7 @@ import CanvasRPC
 import CanvasTesting
 import Clipboard
 import Composition
+import HostSlots
 import LanguageModels
 import Locking
 import Mentions
@@ -61,7 +62,7 @@ import TestKit
     },
     test("canvas draw: `public: true` makes a shape public, `public: false` takes it back, and the schema says so") {
         let h = emptyBoard()
-        let commands = ShippedPlugins.commands(in: h.editor.registry)
+        let commands = h.editor.registry.hostCommands
         let spec = try require(commands.specs.first { $0.name == "draw" })
         @MainActor func draw(_ script: String) throws {
             let params = try spec.params(from: ["-"], standardInput: { script })

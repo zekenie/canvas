@@ -4,6 +4,7 @@ import CanvasRPC
 import CanvasUI
 import Composition
 import Foundation
+import HostSlots
 import LanguageModels
 import Queries
 import Selection
@@ -28,7 +29,7 @@ import Titles
 /// The app's command server on a socket of the test's own, for `board` alone, which it holds
 /// weakly (as the app holds its documents' list): once the board is closed and let go of, it's gone.
 @MainActor func startQueryServer(for board: BoardDocument?) throws -> CommandServer {
-    let commands = ShippedPlugins.commands(in: try require(BoardDocument.configuration).registry)
+    let commands = try require(BoardDocument.configuration).registry.hostCommands
     let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
                                boards: { [weak board] in board.map { [$0] } ?? [] }, frontmost: { [weak board] in board })
     try server.start()

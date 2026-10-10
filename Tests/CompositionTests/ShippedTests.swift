@@ -1,6 +1,7 @@
 import AppKit
 import Boards
 @_spi(Host) import Canvas
+import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import Composition
@@ -47,6 +48,15 @@ import Validation
         // The app's model brings the key's pane (made only when Settings opens: nothing reads the key here).
         expectEqual(try Registry(plugins: [LanguageModelsPlugin(model: ShippedPlugins.anthropicModel)]).settingsPanes.map(\.title), ["Anthropic"])
     },
+    test("and what the app takes besides is the plugins' too: the notes' welcome board, linked by arrows, and every plugin's command for its server") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let make = try require(registry.welcomeBoard)
+        let welcome = make()
+        expectEqual(welcome.shapes.compactMap { $0.typed(as: StickyNote.self)?.props.text.stored }, WelcomeBoard.texts)
+        expectEqual(welcome.shapes.compactMap { $0.typed(as: Arrow.self) }.count, 3, "the shipped list draws arrows")
+        expect(Set(make().shapes.map(\.id)).isDisjoint(with: welcome.shapes.map(\.id)), "each board opened has shapes of its own")
+        expectEqual(registry.hostCommands.specs.map(\.name), ["draw", "show", "kinds", "measure", "query", "query-vocabulary"])
+    },
     test("a plugin that needs the key asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
     },
@@ -65,7 +75,7 @@ import Validation
         selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
         topology             service TopologyIndex · edge type stands-for
         arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
+        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link · welcome board
         subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
         framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
         schemas              service SchemaSync · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · tint → schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
@@ -101,7 +111,7 @@ import Validation
         arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
         language-models      service LanguageModelState
         prose-maps           service ProseMapService · overlay ProseMapFrames
-        automation           command line draw · command line show · command line kinds · command line measure
+        automation           command line draw · command line show · command line kinds · command line measure · host commands
         title-names          draw names
         port-edges           draw edges
         validation-checks    draw checks

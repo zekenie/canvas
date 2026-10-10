@@ -5,6 +5,7 @@ import CanvasTesting
 import Connections
 import ContextMenus
 import DetailPanel
+import HostSlots
 import Keyboard
 import Mentions
 import Selection
@@ -23,6 +24,21 @@ import Topology
 }
 
 @MainActor let stickyNotesTests = Suite("Sticky notes", [
+    test("it gives the app its welcome board: six notes on how to use them, three linked where the list draws arrows") {
+        let plain = try Registry(plugins: notePlugins)
+        let unlinked = try require(plain.welcomeBoard)()
+        expectEqual(unlinked.shapes.compactMap { $0.typed(as: StickyNote.self)?.props.text.stored }, WelcomeBoard.texts)
+        expectEqual(unlinked.shapes.count, 6, "no arrows on a list that can't draw them")
+        let registry = try Registry(plugins: notePlugins + [ArrowsPlugin()])
+        let make = try require(registry.welcomeBoard)
+        let board = make()
+        let notes = board.shapes.compactMap { $0.typed(as: StickyNote.self) }
+        let arrows = board.shapes.compactMap { $0.typed(as: Arrow.self) }
+        expectEqual(notes.map(\.props.text.stored), WelcomeBoard.texts)
+        expectEqual(arrows.count, 3)
+        expect(Set(make().shapes.map(\.id)).isDisjoint(with: board.shapes.map(\.id)), "each board opened has shapes of its own")
+        expect(registry.report.contains("welcome board"), registry.report)
+    },
     test("registers its kind, the N tool and the double-click claim") {
         let registry = try Registry(plugins: notePlugins)
         expectEqual(registry.kinds, [StickyNote.kind])

@@ -505,7 +505,7 @@ Each target is one line, with its layer:
 | Layer | May depend on | Modules |
 |---|---|---|
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
-| foundation | foundation | Geometry, Canvas (the core), HostSlots ([what a window puts around its canvas](#host-slots), said by plugins and placed by the window: the one that imports SwiftUI), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on) and FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) |
+| foundation | foundation, wire | Geometry, Canvas (the core), HostSlots ([what a window puts around its canvas](#host-slots), said by plugins and placed by the window: the one that imports SwiftUI, and the wire, for the commands the app's server runs), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on) and FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, the chrome around the canvas, `CanvasFocus`, the Settings window, and the command line's server) |
 | surface | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, ProseMaps, Topology, Find, Queries, QueryTranslation, Neighbors |
 | concern | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Publishing, Connections, Mentions, Boards, Snapping, Transform |
@@ -2599,23 +2599,28 @@ thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on Test
 
 A board's window puts things around its canvas that are plugins': the path of crumbs over its top,
 a palette, the inspector beside it, the window's subtitle, the panes of the Settings window, the
-toolbar's tips. A plugin can't import the window (CanvasUI), and the window can't import a plugin
-(the app and CanvasUI may use only the foundation and the wire). So what passes between them is
-declared beneath both, in a foundation library, [`Sources/HostSlots`](../Sources/HostSlots): five
-extension points a plugin contributes to and the window reads. It's the one foundation module that
-imports SwiftUI, since its slots hold views; it knows no plugin and no window.
+toolbar's tips. And the app takes two more things from them: the board a new person is welcomed
+with, and the commands its command server runs. A plugin can't import the window (CanvasUI) or the
+app, and neither can import a plugin (the app and CanvasUI may use only the foundation and the
+wire). So what passes between them is declared beneath both, in a foundation library,
+[`Sources/HostSlots`](../Sources/HostSlots): seven extension points a plugin contributes to and the
+host reads. It's the one foundation module that imports SwiftUI, since its slots hold views, and the
+one that imports the wire (CanvasRPC), for the types the commands are said in; it knows no plugin
+and no window.
 
 Every point is the core's (`owner` is `.core`), so it's always installed: a plugin contributes from
 its own `register`, with no plugin value of its own for it, and a list without the plugin is a
-window without its piece. Composition lists plugins and places nothing.
+host without its piece. Composition lists plugins and places nothing.
 
-| Slot | A plugin says | The window reads | Shipped |
+| Slot | A plugin says | The host reads | Shipped |
 |---|---|---|---|
 | Views over the canvas (`HostOverlays`, a list in plugin order, a later one over an earlier) | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }` | `registry.hostOverlays`, `registry.hostCoveredTop(on:)` | Boards' path (`.top`, covering its pill's height off the root), Jump To's palette |
 | The inspector (`HostInspectors`, at most one) | `registrar.hostInspector(isRequested:onDismiss:) { editor, onExit in … }` | `registry.hostInspector` | the detail panel |
 | The window's subtitle (`WindowSubtitles`, at most one) | `registrar.windowSubtitle { editor in … }` | `registry.windowSubtitle(for:)` | Boards: the board shown's name, none on the root |
 | Settings panes (`SettingsPanes`, in plugin order, a title once) | `registrar.settingsPane("Anthropic") { … }` | `registry.settingsPanes` | the Anthropic key's, when the model is Anthropic's |
 | Tool tips (`ToolTips`, at most one) | `registrar.toolTips { tool, registry in … }` | `registry.toolTip(for:)`, the tool's label without one | Keyboard: "Note (N)" |
+| The welcome board (`WelcomeBoards`, at most one) | `registrar.welcomeBoard { registry in … }`, a `CanvasDocument` made each time it's asked for | `registry.welcomeBoard`, what makes one, nil without | StickyNotes: six notes on how to use them, three linked where the list draws arrows |
+| The commands (`HostCommands`, at most one) | `registrar.hostCommands(specs:run:)`, both handed the built registry | `registry.hostCommands`: the specs, and how to run one by name | Automation: every plugin's command |
 
 A view a plugin gives is made for a window's canvas: it's handed that board's editor and `onExit`,
 which gives the keyboard back to the canvas (`CanvasFocus.take`), and follows the editor by itself.
@@ -2648,13 +2653,20 @@ The window's side is CanvasUI's, and knows no plugin:
 - **`SettingsWindow(registry:)`** hosts the panes, one under another in plugin order, each made
   afresh as the window opens; a pane says what it is itself, so none is headed.
 - **`ToolPicker(editor:)`** reads each tool's tip.
+- **`CommandServer.Commands(registry:)`** is the commands the server runs beyond its own
+  ([The command line](#the-command-line)): none where the list has no command line.
+
+The app's own side is two lines. It opens `registry.welcomeBoard`'s board the first time it's
+launched with nothing to open, and from Help › Welcome Board, an item it adds only where a plugin
+gives one; and it starts its command server on `CommandServer.Commands(registry:)`.
 
 Tests: HostSlotsTests hold the points with contributors of their own (order, the most covered, one
-inspector, one subtitle, a pane's title once, a tip's default); CanvasUITests' `chromeTests` the
-chrome over a real canvas in an unshown window (each view where it says, the inspector's rule with
-a fixture that's wanted while a model says) and `toolPickerTests` the tips; each plugin's own tests
-what it gives; and CompositionTests the shipped five (ShippedTests) and the window's behavior with
-Find (`findShippedTests`).
+inspector, one subtitle, a pane's title once, a tip's default, a welcome board made each time it's
+asked for and handed the registry, the commands read off the built registry and none without a
+contributor); CanvasUITests' `chromeTests` the chrome over a real canvas in an unshown window (each
+view where it says, the inspector's rule with a fixture that's wanted while a model says) and
+`toolPickerTests` the tips; each plugin's own tests what it gives; and CompositionTests the shipped
+seven (ShippedTests) and the window's behavior with Find (`findShippedTests`).
 
 ## The detail panel
 
@@ -8850,9 +8862,9 @@ The modules, one job each:
 | CanvasRPC | wire | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener, which answers each request as a main-actor task of its own (one that waits holds up neither the main actor nor another connection), each connection's answers in the order its requests came, and cancels the requests still running (not notifications) once its client hangs up. Knows no canvas, plugin or AppKit. |
 | CanvasCLI | cli | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
 | CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
-| Automation | language | The commands plugins give the command line (`AutomationCommands`), its own three, `draw`, `kinds` and `measure`, and the four points `draw` takes what it doesn't own from (on the query engine, Queries, a surface, to check a query a property holds). The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
+| Automation | language | The commands plugins give the command line (`AutomationCommands`), its own three, `draw`, `kinds` and `measure`, and the four points `draw` takes what it doesn't own from (on the query engine, Queries, a surface, to check a query a property holds). The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
 | DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
-| HostSlots | foundation | What a window puts around its canvas ([Host slots](#host-slots)): views over the canvas, the inspector, the subtitle, settings panes and tool tips, each a point of the core's that a plugin fills and the window (CanvasUI) reads, since neither may import the other. |
+| HostSlots | foundation | What a window puts around its canvas, and what the app takes from the plugins besides ([Host slots](#host-slots)): views over the canvas, the inspector, the subtitle, settings panes, tool tips, the welcome board and the commands the app's server runs, each a point of the core's that a plugin fills and the host (CanvasUI, the app) reads, since neither may import the other. On the wire (CanvasRPC), for the commands' types. |
 | FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | vertical | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
 | Moving | vertical | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with DrawScript's solver and `ObstacleGrid` as `draw` places a shape; no kind opts into it, and nothing imports it. |
@@ -9028,7 +9040,7 @@ registrar.automationCommand("query", "Find the shapes of a file that a query mat
   60 s), else 10 s, unless `--timeout` says ([above](#the-command-line)). The protocol stays 2: a
   param's `x-timeout`, and an error's `column` and `length`, are what an older `canvas` passes over
   (it waits 10 s, and says `timed_out`). `Registry.runAutomationCommand(_:params:editor:)` and
-  `ShippedPlugins.commands(in:)` are async, and a test awaits them with TestKit's `awaitResult`.
+  `registry.hostCommands`' `run` are async, and a test awaits them with TestKit's `awaitResult`.
 
 ### draw
 
@@ -11642,7 +11654,7 @@ keyboard             service KeyboardState · tool tips · key strokes · key re
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
+sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link · welcome board
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
 framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
 schemas              service SchemaSync · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · tint → schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
@@ -11678,7 +11690,7 @@ ports                property channel · service PortState · overlay PortOverla
 arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
 language-models      service LanguageModelState
 prose-maps           service ProseMapService · overlay ProseMapFrames
-automation           command line draw · command line show · command line kinds · command line measure
+automation           command line draw · command line show · command line kinds · command line measure · host commands
 title-names          draw names
 port-edges           draw edges
 validation-checks    draw checks

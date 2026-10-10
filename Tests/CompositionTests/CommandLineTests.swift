@@ -6,6 +6,7 @@ import CanvasUI
 import Composition
 import Connections
 import Foundation
+import HostSlots
 import LanguageModels
 import Mentions
 import Schemas
@@ -21,8 +22,8 @@ import Titles
 
 /// The app's command server on a socket of the test's own, for these boards.
 @MainActor func startCommandServer(boards: [BoardDocument], frontmost: BoardDocument?) throws -> CommandServer {
-    let commands = ShippedPlugins.commands(in: try require(BoardDocument.configuration).registry)
-    let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
+    // As the app makes it: the commands the plugins gave the host's slot for them.
+    let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(registry: try require(BoardDocument.configuration).registry),
                                boards: { boards }, frontmost: { frontmost })
     try server.start()
     return server
@@ -201,7 +202,7 @@ edge "API" -> "Cache" channel: none
         defer { try? FileManager.default.removeItem(at: folder) }
         let opened = Opened()
         defer { for board in opened.boards { board.close() } }
-        let commands = ShippedPlugins.commands(in: try require(BoardDocument.configuration).registry)
+        let commands = try require(BoardDocument.configuration).registry.hostCommands
         let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
                                    boards: { [first] + opened.boards }, frontmost: { opened.boards.last ?? first }, show: { opened.boards.append($0) })
         try server.start()
@@ -609,7 +610,7 @@ final class Lingering {
 
 /// `draw`, as the app's command server runs it, in this process, on `editor`.
 @MainActor func drawInProcess(_ script: String, on editor: CanvasEditor) -> Result<JSON, RPCError> {
-    let commands = ShippedPlugins.commands(in: editor.registry)
+    let commands = editor.registry.hostCommands
     let result = try? awaitResult { () async -> Result<JSON, RPCError> in
         do throws(RPCError) {
             return .success(try await commands.run("draw", ["script": .string(script)], editor))
