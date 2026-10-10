@@ -12,8 +12,8 @@ import Titles
 import Types
 
 // A shape's types as chips above its top-left corner, after its title's pill: one for each type, in
-// the order of its list, with its type's live title; "Type" on a type; "+N" for those that don't fit;
-// and what a click on one opens. Over memos, which are titled, in an editor with no view: the chips are
+// the order of its list, with its type's live title, light in its type's color; none on a type that
+// is none (its pill is Titles' own); "+N" for those that don't fit; and what a click on one opens. Over memos, which are titled, in an editor with no view: the chips are
 // laid out against the shape's bounds, in world units.
 
 /// The labels of a shape's adornments in the row, in order, as `adornmentFrames` lays them out.
@@ -44,13 +44,13 @@ import Types
 }
 
 @MainActor let chipTests = Suite("Type chips", [
-    test("a type has the Type chip, after its title; an instance a chip for each type, in the order of its list, with the type's title; a shape that is none has none") {
+    test("an instance has a chip for each type, in the order of its list, with the type's title, light in the type's color; a type that is none, and a shape that is none, have none") {
         let editor = try typeEditor()
         let person = editor.addType(TypeSchemaProperty.starter, title: "Person"), employee = editor.addType(TypeSchemaProperty.starter, title: "Employee")
         let ann = editor.addInstance("Ann", of: [employee, person], title: "Ann")
         let plain = editor.add(memo("plain", at: CGPoint(x: 600, y: 40)))
-        expectEqual(texts(editor, person), ["Type"])
-        expectEqual(editor.adornmentFrames(of: person).map { $0.label.text ?? "" }, ["Person", "Type"], "the title's pill, then the chip")
+        expectEqual(texts(editor, person), [], "no Type chip")
+        expectEqual(editor.adornmentFrames(of: person).map { $0.label.text ?? "" }, ["Person"], "the title's pill alone")
         expectEqual(editor.adornmentFrames(of: ann).map { $0.label.text ?? "" }, ["Ann", "Employee", "Person"])
         expectEqual(texts(editor, ann), ["Employee", "Person"])
         expectEqual(chips(editor, plain), [])
@@ -58,9 +58,13 @@ import Types
         let a = chips(editor, ann)
         expect(a[0].rect.maxX < a[1].rect.minX, "side by side: \(a.map(\.rect))")
         expectEqual(a.map(\.tag), [AdornmentTag(employee), AdornmentTag(person)], "told apart by the type they stand for")
-        // A type that is an instance: both.
+        expectEqual(a.map(\.label.tint), [TypeColors.light(employee), TypeColors.light(person)], "each in its type's color")
+        expect(a.allSatisfy { $0.label.tint?.style == .light }, "light")
+        // A type that is an instance: the pill, then the chips of the types it builds on.
         editor.addTypeLink(person, to: employee)
-        expectEqual(texts(editor, employee), ["Type", "Person"])
+        expectEqual(texts(editor, employee), ["Person"])
+        expectEqual(editor.adornmentFrames(of: employee).map { $0.label.text ?? "" }, ["Employee", "Person"], "its pill, then the chip")
+        expectEqual(editor.adornmentFrames(of: employee).first?.label.tint, TypeColors.solid(employee), "the pill is solid, in its own color")
     },
     test("a chip reads its type's live title: renamed, it changes; untitled, it says so; undone, it is back") {
         let editor = try typeEditor()
@@ -68,6 +72,8 @@ import Types
         let ann = editor.addInstance("Ann", of: [person, draft])
         expectEqual(texts(editor, ann), ["Person", "Untitled"])
         expect(chips(editor, ann)[1].label.isPlaceholder, "an untitled type reads as a placeholder")
+        expectEqual(chips(editor, ann)[1].label.tint, nil, "gray: no color")
+        expect(chips(editor, ann)[0].label.tint != nil)
         editor.transact("Rename") { $0.update(person) { $0[TitleProperty.self] = "Human" } }
         expectEqual(texts(editor, ann), ["Human", "Untitled"])
         editor.undo()
@@ -79,7 +85,7 @@ import Types
         let ann = editor.addInstance("Ann", of: [person, ShapeID()])
         editor.transact("Delete") { $0.delete([person]) }
         expectEqual(texts(editor, ann), ["Person", "Deleted"])
-        expect(chips(editor, ann).allSatisfy { $0.label.isMissing })
+        expect(chips(editor, ann).allSatisfy { $0.label.isMissing && $0.label.tint == nil }, "dashed, gray")
         editor.undo()
         expectEqual(texts(editor, ann).first, "Person")
         expectEqual(chips(editor, ann).map(\.label.isMissing), [false, true])
@@ -131,19 +137,6 @@ import Types
         editor.freeze([ann])
         expectEqual(items(poppedUp(editor, after: try click(editor, ann, "Person"))?.menu), ["Go to “Person”"])
         expect(poppedUp(editor, after: try click(editor, ann, "Gone")) == nil, "nothing to offer, nothing opens")
-    },
-    test("the Type chip's menu is Remove Type, which takes the schema away in one step; on a read-only type, no menu") {
-        let editor = try typeEditor(more: [FreezingPlugin()])
-        let person = editor.addType(TypeSchemaProperty.starter, words: "a person", title: "Person")
-        let menu = try require(poppedUp(editor, after: try click(editor, person, "Type"))?.menu)
-        expectEqual(items(menu), ["Remove Type"])
-        menu.performActionForItem(at: 0)
-        expect(editor.types?.isType(person) == false)
-        expectEqual(editor.undoHistory.undoName, "Remove Type")
-        expectEqual(texts(editor, person), [])
-        editor.undo()
-        editor.freeze([person])
-        expect(poppedUp(editor, after: try click(editor, person, "Type")) == nil)
     },
     test("the \"+N\" chip's menu lists every type the shape is, each with its Go to and Remove") {
         let editor = try typeEditor()

@@ -4152,7 +4152,7 @@ chips reach in is drawn and hit.
 
 An adornment may show several labels, in order, each its own chip: a type chip per type of a
 shape. The sugar takes a list, `x.adornments(TypeChip.self) { shape in names.map { AdornmentLabel($0.title).tagged($0.tag) } }`.
-Types' `TypeChips` is the shipped one, on every kind that holds `is` or a schema (`registrar.adornmentsForEveryShape`), with a
+Types' `TypeChips` is the shipped one, on every kind that holds `is` (`registrar.adornmentsForEveryShape`), with a
 click (`ClickableAdornment`) that pops a menu up below the chip with `editor.popUpMenu`.
 
 - **Left end only.** A group is for `aboveTopLeft`: at the right end a run is cut where it reaches
@@ -9979,13 +9979,18 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   one way an entry goes). With nothing typed the first type is highlighted, `Type` when there is
   none. It works in a note's text and in an arrow's label (no `Type` row there). `@` on its line is
   a letter.
-- **Chips**: `TypeChips` (an `Adornment`, aboveTopLeft, a [group](#adornments)) shows a "Type" chip
-  on a type and one chip for each type a shape is, in order, each its type's live title, dashed
-  (`.missing()`) once the type is gone, the ones that don't fit folded into "+N". A click pops up a
-  small menu below the chip (`editor.popUpMenu`): Go to “Person” and Remove “Person” (Remove left
-  out on a read-only shape); the Type chip's is Remove Type; "+N"'s lists every type. On an arrow
-  the chips sit above its label. The panel's Types tab lists the same, a row that goes to the type
-  and a minus that removes it.
+- **A type's color and pill**: a type's color (`TypeColors`) is one of eight by its id, never
+  stored (two types can share one); the table is `TypesStyle.colorTable`. A type's note shows a
+  pill, Titles' own (`registrar.titlePillLook(forShapesHolding: TypeSchemaProperty.self)`): its
+  title after `curlybraces`, solid in the type's color; untitled, a dimmed gray `Untitled`.
+- **Chips**: `TypeChips` (an `Adornment`, aboveTopLeft, a [group](#adornments)) shows one chip for
+  each type a shape is, in order, light in the type's color, with its type's live title (gray
+  and dimmed "Untitled" for a type with none), dashed gray (`.missing()`) once the type is gone, the
+  ones that don't fit folded into "+N". A type's note shows its pill and then the chips of the types
+  it builds on; there is no Type chip (Is a ▸ Type in the menu). A click pops up a small menu
+  below the chip (`editor.popUpMenu`): Go to “Person” and Remove “Person” (Remove left out on a
+  read-only shape); "+N"'s lists every type. On an arrow the chips sit above its label. The panel's
+  Types tab lists the same, a row that goes to the type and a minus that removes it.
 - **The file's types**: `TypeIndex` (`editor.types`) reads every board's types as the file opens,
   then keeps them by each commit's `ChangeSet` alone (what it added, removed and changed, on the
   board shown and `elsewhere`, the kind checked first; a whole file put in place read again), never
@@ -11644,7 +11649,7 @@ title-validation     service TitleIndex · ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
-types                property schema · property is · edge type is-a · edges → every shape · service TypeIndex · service TypeSync<TypeSchemaProperty> · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape
+types                property schema · property is · edge type is-a · edges → every shape · service TypeIndex · service TypeSync<TypeSchemaProperty> · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
 type-validation      ValidationRules
 type-details         ShapeDetails · ShapeDetails
 snapping             service SnapState · translation adjuster
