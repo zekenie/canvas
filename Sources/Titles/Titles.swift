@@ -269,17 +269,20 @@ extension TitlePill: Adornment {
     public static var order: Int { 50 }
 }
 
+private struct TitleKey: Hashable { let kind: ShapeKind }
+private struct PillLooksKey: Hashable { let kind: ShapeKind }
+
 extension Registry {
     /// Whether a kind's shapes show their title in a pill: it's titled, and not with `pill: false`.
     func showsTitlePill(_ kind: ShapeKind) -> Bool {
-        contributions(to: ShapeTitles.self, for: kind).first?.showsPill == true
+        titleContribution(for: kind)?.showsPill == true
     }
 
     /// What a shape's title pill says: its title, after its kind's symbol (`label(of:)`) where the
     /// kind asks for it (`symbolInPill`); on an untitled shape, the kind's placeholder, dimmed, where
     /// it gives one (`placeholderInPill`); else nothing.
     func titlePill(of shape: AnyShapeRecord) -> AdornmentLabel? {
-        guard let titles = contributions(to: ShapeTitles.self, for: shape.kind).first, titles.showsPill else { return nil }
+        guard let titles = titleContribution(for: shape.kind), titles.showsPill else { return nil }
         let title = titles.title(shape)
         let look = titlePillLook(of: shape, title: title)
         if look?.hidesPill == true { return nil }
@@ -296,16 +299,26 @@ extension Registry {
         return pill
     }
 
+    /// The contributions that give a kind's pill a look: its own and those of the concerns whose
+    /// property it holds, found once per kind, since a cover asks for every titled skeleton in view
+    /// on every frame.
+    private func titleContribution(for kind: ShapeKind) -> TitleContribution? {
+        memo(TitleKey(kind: kind)) { contributions(to: ShapeTitles.self, for: kind).first }
+    }
+
+    private func pillLooks(for kind: ShapeKind) -> [TitlePillLookContribution] {
+        memo(PillLooksKey(kind: kind)) {
+            let held = properties(for: kind)
+            return contributions(to: TitlePillLooks.self, for: kind).filter { $0.key.map(held.contains) ?? true }
+        }
+    }
+
     /// What the plugins that give a shape's pill a look say of it, merged: the first of each field
     /// in plugin order, a kind's own first; nil when none does. A concern's contribution is asked of
     /// the kinds that hold its property and no other.
     func titlePillLook(of shape: AnyShapeRecord, title: String?) -> TitlePillLook? {
-        let found = contributions(to: TitlePillLooks.self, for: shape.kind)
-        if found.isEmpty { return nil }
-        let held = properties(for: shape.kind)
         var merged: TitlePillLook?
-        for contribution in found {
-            if let key = contribution.key, !held.contains(key) { continue }
+        for contribution in pillLooks(for: shape.kind) {
             guard let look = contribution.look(shape, title) else { continue }
             guard var result = merged else { merged = look; continue }
             result.symbol = result.symbol ?? look.symbol
@@ -322,7 +335,7 @@ extension Registry {
     /// title, for a kind that shows one in a pill; nil for an untitled shape (a placeholder is its
     /// pill's alone), and a kind with no pill.
     func titleCover(of shape: AnyShapeRecord) -> (title: String, surface: NSColor?)? {
-        guard let titles = contributions(to: ShapeTitles.self, for: shape.kind).first, titles.showsPill,
+        guard let titles = titleContribution(for: shape.kind), titles.showsPill,
               let title = titles.title(shape) else { return nil }
         return (title, titlePillLook(of: shape, title: title)?.coverSurface ?? titles.coverSurface)
     }

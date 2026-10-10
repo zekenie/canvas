@@ -1256,7 +1256,9 @@ The mechanics:
 - **One per kind.** A point keyed by `[target]` (a rule, as Selection's `ShapeSelectability` and
   Clipboard's `ShapeCopyability` are) takes one contribution per kind plus one for every kind;
   `registry.contributionByKind(to:)` is each kind's (its own, else every kind's), which a service
-  keeps, since the registry never changes.
+  keeps, since the registry never changes. For anything else a per-shape or per-frame question would
+  work out again (a kind's contributions filtered), `registry.memo(key) { ... }` keeps the value once
+  per key: Titles keeps each kind's title and pill-look contributions so.
 - **Engines are services.** A horizontal with state (a cache, an index) registers an
   `EditorService`, made per editor, with `registrar.service { ValidationEngine(editor: $0) }`, and
   anyone finds it with `editor.service(ValidationEngine.self)`. Validation's engine recomputes when

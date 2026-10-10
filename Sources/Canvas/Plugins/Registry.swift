@@ -50,6 +50,9 @@ public struct Registry {
     /// The same, compiled to check its shapes against (`schemaViolations(of:)`).
     let schemaValidators: [ShapeKind: SchemaValidator]
 
+    /// What `memo(_:_:)` keeps.
+    private let memos = RegistryMemos()
+
     public init(plugins: [any CanvasPlugin]) throws(RegistryError) {
         let plugins: [any CanvasPlugin] = [CorePlugin()] + plugins
         var ids: [PluginID] = []
@@ -173,6 +176,18 @@ public struct Registry {
         let point = ObjectIdentifier(P.self)
         // A closure, not `\.value`: a key path in a generic function is built again on every call.
         return (forKind[point]?[kind] ?? forAnyKind[point] ?? []).map { $0.value as! P.Contribution }
+    }
+
+    /// A value a plugin works out of this registry once, per key, since the registry never changes:
+    /// what a per-shape or per-frame question would otherwise work out again each time (a kind's
+    /// contributions filtered, say). The key names the value and its kind: a plugin's own type and
+    /// the kind.
+    public func memo<Key: Hashable, Value>(_ key: Key, _ make: () -> Value) -> Value {
+        let key = AnyHashable(key)
+        if let known = memos.values[key] { return known as! Value }
+        let made = make()
+        memos.values[key] = made
+        return made
     }
 
     /// For a point that takes one contribution per kind, plus one for every kind (keyed by
@@ -438,4 +453,10 @@ struct RawContribution {
     private static func keys<K: KeyedExtensionPoint>(of value: Any, for target: ShapeTarget, claimedIn _: K.Type) -> [AnyHashable] {
         K.uniqueKeys(of: value as! K.Contribution, for: target)
     }
+}
+
+/// The values `Registry.memo(_:_:)` keeps: a class, so the registry's copies share them.
+@MainActor
+private final class RegistryMemos {
+    var values: [AnyHashable: Any] = [:]
 }
