@@ -118,6 +118,47 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [box])
         expectEqual(h.editor.undoHistory.undoName, step, "no step for it")
     },
+    test("a gauge and its stretch duplicated together: the copy of the stretch is laid out by the copy of the gauge, in one step") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard, [StretchesPlugin()])
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 1000, y: 0, width: 60, height: 40), width: 300, height: 100))
+        let stretch = h.add(Stretch(CGRect(x: 1000, y: 100, width: 100, height: 60), gauge: gauge))
+        h.editor.selectedShapeIDs = [gauge, stretch]
+        let before = h.editor.document
+        h.editor.duplicateSelection()
+        let made = h.editor.shapes(since: before)
+        let newGauge = try require(made.first { $0.kind == CanvasTesting.Gauge.kind })
+        let newStretch = try require(made.first { $0.kind == Stretch.kind })
+        expectEqual(newStretch.typed(as: Stretch.self)?.props.gauge?.shape, newGauge.id, "it names the gauge that came with it")
+        expectEqual(h.editor.shapeContext.frame(of: newStretch.id), CGRect(origin: try require(newStretch.box).origin, size: CGSize(width: 300, height: 100)))
+        expectEqual(newStretch.box?.size, CGSize(width: 100, height: 60), "and stores what it did")
+        expectEqual(h.editor.undoHistory.undoName, "Duplicate")
+        h.editor.undo()
+        expectEqual(h.editor.document, before)
+    },
+    test("a drag with ⌥ held over a corral's edge settles the copy of a stretch by its laid-out frame: stored inside, laid out mostly outside, it is nudged out") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard, [CorralsPlugin(), StretchesPlugin()])
+        let pen = h.add(Corral(CGRect(x: 100, y: 100, width: 400, height: 300)))
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 1000, y: 0, width: 60, height: 40), width: 300, height: 60))
+        let stretch = h.add(Stretch(CGRect(x: 700, y: 150, width: 100, height: 60), gauge: gauge))
+        h.editor.selection = stretch
+        h.hold(.option)
+        h.press(at: CGPoint(x: 750, y: 180))
+        h.drag(to: CGPoint(x: 600, y: 180), speed: 4)
+        h.drag(to: CGPoint(x: 430, y: 180), speed: 4)         // its box at 380…480, inside the corral; its frame to 680
+        h.release()
+        h.hold([])
+        let copy = try require(h.editor.selectedShapeIDs.first)
+        expect(copy != stretch)
+        expectEqual(h.editor.holder(of: copy), nil, "40% of its frame is in: out")
+        expectEqual(h.editor.document[copy]?.box?.origin, CGPoint(x: 380, y: 24), "nudged clear the shortest way for its frame: up, 16 above the corral")
+        expectEqual(h.editor.document[stretch]?.box?.origin, CGPoint(x: 700, y: 150))
+        expectEqual(h.editor.undoHistory.undoName, "Duplicate")
+        expect(!(h.editor.shapeContext.frame(of: copy) ?? .null).intersects(try require(h.editor.document[pen]?.box)), "its frame is clear of the corral")
+    },
     test("Escape in a drag with ⌥ held takes away a copied container and everything it holds") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }

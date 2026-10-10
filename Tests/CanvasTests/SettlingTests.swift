@@ -619,6 +619,27 @@ private func eased(_ t: CGFloat) -> CGFloat {
         expect(!h.editor.isGliding(a))
         expectEqual(h.editor.drawingOffset(of: a), .zero)
     },
+    test("a corral dropped settles its members by their laid-out frames: one grown past its edge is nudged in, one grown past what the corral can hold leaves, and the drag is one step") {
+        let h = try dropHarness(RefusalLog(), [StretchesPlugin()])
+        let held = h.add(Corral(pen))
+        let gauge = h.add(StretchGauge(CGRect(x: 900, y: 900, width: 60, height: 40), width: 250, height: 60))
+        let huge = h.add(StretchGauge(CGRect(x: 900, y: 950, width: 60, height: 40), width: 450, height: 60))
+        let grown = h.add(Stretch(CGRect(x: 350, y: 150, width: 100, height: 60), gauge: gauge))     // stored inside, laid out to x 600
+        let toobig = h.add(Stretch(CGRect(x: 150, y: 300, width: 100, height: 60), gauge: huge))     // wider than the corral
+        h.editor.put([grown, toobig], in: held)
+        h.press(at: CGPoint(x: 150, y: 120))
+        h.drag(to: CGPoint(x: 152, y: 120))
+        h.drag(to: CGPoint(x: 200, y: 120))                                                          // the corral 50 to the right
+        h.release()
+        expectEqual(h.editor.document[held]?.box?.origin, CGPoint(x: 150, y: 100))
+        expectEqual(h.editor.holder(of: grown), held, "nudged in, not left out")
+        expectEqual(h.origin(of: grown), CGPoint(x: 284, y: 150), "carried to 400, its frame 100 over the edge: back 100 and the gap")
+        expectEqual(h.editor.holder(of: toobig), nil, "wider than the corral, it can't be in it")
+        expectEqual(h.editor.undoHistory.undoName, "Move")
+        h.editor.undo()
+        expectEqual(h.editor.holder(of: toobig), held, "and the drag is one step")
+        expectEqual(h.origin(of: grown), CGPoint(x: 350, y: 150))
+    },
     test("the hint outlines the container the laid-out frame would go into, which the stored box wouldn't, and the drop puts it there") {
         let h = try dropHarness(RefusalLog(), [StretchesPlugin()])
         let held = h.add(Corral(pen))
