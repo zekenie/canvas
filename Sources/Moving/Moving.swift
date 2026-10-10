@@ -78,13 +78,13 @@ extension Destination {
     ///   subboard's, at any depth, `editor.isReadOnly(inFile:)`, the rule `move(_:to:)` refuses by): it
     ///   takes nothing;
     /// - where the shape is already: the frame it's directly in, the subboard whose board it's on;
-    /// - a frame too small to hold it (narrower or shorter than it).
+    /// - a frame too small to hold it (narrower or shorter than the frame it is laid out in).
     /// What it's asked of is the kinds the command names (frames and subboards), so it may cost what a
     /// target's depth in the file does.
     @MainActor
     init?(of shape: ShapeID, into target: ShapeID, in editor: CanvasEditor) {
         let registry = editor.registry, file = editor.file
-        guard target != shape, let moving = editor.document[shape], let box = moving.box,
+        guard target != shape, let moving = editor.document[shape], let box = editor.shapeContext.frame(of: moving),
               let found = editor.shape(inFile: target), !found.isOpaque, let board = file.board(containing: target),
               !editor.isReadOnly(inFile: target) else { return nil }
         // A subboard, as `canvas draw`'s `in` takes one: onto its board.

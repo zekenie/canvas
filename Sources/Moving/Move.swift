@@ -51,7 +51,8 @@ struct Block {
     let shapes: [AnyShapeRecord]
     /// The board they're on.
     let board: BoardID
-    /// The box around them all.
+    /// The box around them all: the frames they are laid out in (`editor.frame(inFile:)`, which a shape on
+    /// a board that isn't shown has too), so where they land makes room for what is drawn.
     let box: CGRect
     /// What the containers among them hold, at any depth, which goes with them.
     let carried: Set<ShapeID>
@@ -72,7 +73,7 @@ struct Block {
         self.editor = editor
         shapes = records
         self.board = board
-        box = records.compactMap(\.box).reduce(CGRect.null) { $0.union($1) }
+        box = records.compactMap { editor.frame(inFile: $0.id) ?? $0.box }.reduce(CGRect.null) { $0.union($1) }
         self.carried = carried
     }
 

@@ -34,6 +34,17 @@ private let xFrame = at(400, 400)
         try expectFile(h, before, "where it was")
     },
 
+    test("a shape laid out wider than it stores is placed by the frame it is laid out in: right is taken by what its stored box would clear, so below, centered by its frame") {
+        let x = ShapeID(), s = ShapeID(), g = ShapeID()
+        let records = [AnyShapeRecord(ShapeRecord(id: g, CanvasTesting.Gauge(at(3000, 3000), width: 300, height: 100))),
+                       AnyShapeRecord(ShapeRecord(id: s, Stretch(at(2000, 2000), gauge: g))), AnyShapeRecord(ShapeRecord(id: x, Box(xFrame))),
+                       AnyShapeRecord(ShapeRecord(Box(at(700, 400))))]
+        let h = try movingHarness(CanvasFile(root: CanvasDocument(shapes: records)), [StretchesPlugin()])
+        expect(h.run("move-near", on: s, with: x))
+        expectEqual(h.frame(of: s), at(300, 580), "its 300 centered on X's middle, and the same 100 it stores")
+        expectEqual(h.editor.shapeContext.frame(of: s), at(300, 580, 300, 100))
+    },
+
     test("each side in turn, the first that's free: right, then below, then left, then above") {
         let right = at(580, 400), below = at(400, 580), left = at(220, 400), above = at(400, 220)
         expectEqual(try landing(among: []), right)

@@ -25,8 +25,8 @@ import TestKit
 }
 
 /// The same, with the keyboard and the selection first, so several rows can be selected and dragged together.
-@MainActor func droppingHarness(_ file: CanvasFile = CanvasFile(), log: RefusalLog = RefusalLog()) throws -> EditorHarness {
-    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin()] + movingPlugins(log: log), file: file)
+@MainActor func droppingHarness(_ file: CanvasFile = CanvasFile(), log: RefusalLog = RefusalLog(), _ more: [any CanvasPlugin] = []) throws -> EditorHarness {
+    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin()] + movingPlugins(log: log, more), file: file)
 }
 
 // MARK: A pin
