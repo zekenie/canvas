@@ -90,12 +90,12 @@ import TextEditing
 
     },
 
-    test("rows of one group have no line between them, also narrowed") {
+    test("a line sets off a group in the list before anything is typed; a ranked list is one group, with none") {
         let s = try session()
         s.type("/pick ")
         expectEqual(s.choiceRows, ["Alpha", "Beta", "— Gamma"])
         s.type("a")
-        expectEqual(s.choiceRows, ["Alpha", "Beta", "— Gamma"], "the line stays where the group changes, as narrowed")
+        expectEqual(s.choiceRows, ["Alpha", "Beta", "Gamma"], "narrowed, no line")
     },
 
     test("the highlight starts on the first preferred row, else the first, and on the best match once something is typed") {

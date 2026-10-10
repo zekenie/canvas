@@ -12,7 +12,8 @@ public struct SlashChoice: Equatable {
     /// An SF Symbol before the title.
     public var symbol: String?
     public var detail: String?
-    /// A line sets off a row whose group differs from the row above it.
+    /// A line sets off a row whose group differs from the row above it, in the list before anything is
+    /// typed; a ranked list is one group.
     public var group: Int
     /// The undo step the pick makes; nil: the command's.
     public var step: String?
@@ -112,7 +113,7 @@ public final class SlashChoicePicker {
             : found.map { choice, matched in
                 defer { previous = choice.group }
                 return .item(CaretListItem(choice.title, matched: matched, symbol: choice.symbol, detail: choice.detail,
-                                           separated: previous.map { $0 != choice.group } ?? false, chip: choice.chip))
+                                           separated: query.isEmpty && previous.map { $0 != choice.group } ?? false, chip: choice.chip))
             }
         list.setRows(rows)
         if query.isEmpty, let preferred = listed.firstIndex(where: \.isPreferred) { list.highlight(row: preferred) }
