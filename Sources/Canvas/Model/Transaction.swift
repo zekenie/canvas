@@ -132,7 +132,8 @@ public struct Transaction {
     /// Geometry lookups against the document as it is mid-transaction. Layout inputs are read through
     /// it as the transaction leaves the file: a provider is handed what it inserted, changed and moved
     /// (and nothing of what it deleted), and a value set for a shape (`editor.setLayoutInput`) is read
-    /// for one it hasn't changed. The context is a snapshot: read it, use it, and let it go before the
+    /// for one it hasn't changed. A shape it didn't touch reads the size the editor has kept for it; one
+    /// with none kept is laid out against this transaction's file. The context is a snapshot: read it, use it, and let it go before the
     /// next change, or that change copies what it holds.
     public var shapes: ShapeContext {
         guard let layout else { return ShapeContext(document: document, registry: registry, camera: camera) }

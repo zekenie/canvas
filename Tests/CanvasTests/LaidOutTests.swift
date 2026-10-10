@@ -235,9 +235,15 @@ extension Transaction {
         h.editor.transact { $0.update(stretch, as: Stretch.self) { $0.frame.size.width = 120 } }
         expectEqual(size(), CGSize(width: 200, height: 90))
         expectEqual(log.sizes.count, 2, "a resize of the stored box asks once more")
+        h.editor.undo()
+        expectEqual(size(), CGSize(width: 200, height: 90))
+        expectEqual(log.sizes.count, 3, "its undo asks again")
+        h.editor.redo()
+        expectEqual(size(), CGSize(width: 200, height: 90))
+        expectEqual(log.sizes.count, 4, "and so does its redo")
         h.editor.transact { $0.update(stretch, as: Stretch.self) { $0.props.gauge = GaugeLink(other) } }
         expectEqual(size(), CGSize(width: 400, height: 120), "naming another gauge")
-        expectEqual(log.sizes.count, 3)
+        expectEqual(log.sizes.count, 5)
         #if DEBUG
         let kept = h.editor.laidOutSizeCount
         h.editor.transact { $0.delete([stretch]) }
@@ -268,6 +274,8 @@ extension Transaction {
         expect(h.editor.damage(since: mark).contains(CGRect(x: 10, y: 20, width: 500, height: 250)), "the minimap redraws where it grew")
         h.editor.undo()
         expectEqual(frame(named), CGRect(x: 10, y: 20, width: 200, height: 90), "undone with the gauge")
+        h.editor.redo()
+        expectEqual(frame(named), CGRect(x: 10, y: 20, width: 500, height: 250), "and redone with it")
     },
     test("a gauge on another board lays out the stretch that names it, and a transaction on that board is followed") {
         let log = StretchLog()
@@ -330,6 +338,21 @@ extension Transaction {
         expect(h.editor.shapeContext.geometry(of: stretch.id) == nil, "the editor's index worked out nothing for it")
         expectEqual(h.editor.document.shapes.count, 1)
     },
+    test("a context laying out from a transaction's shapes still asks afresh for what the transaction changed") {
+        let log = StretchLog()
+        let h = try stretchEditor(log)
+        let gauge = h.add(StretchGauge(.zero, width: 200, height: 90))
+        let stretch = h.add(Stretch(CGRect(x: 10, y: 20, width: 100, height: 60), gauge: gauge))
+        let still = h.add(Stretch(CGRect(x: 10, y: 200, width: 100, height: 60), gauge: gauge))
+        _ = (h.editor.shapeContext.frame(of: stretch), h.editor.shapeContext.frame(of: still))
+        var seen: [CGSize?] = []
+        h.editor.transact { transaction in
+            transaction.update(stretch, as: Stretch.self) { $0.frame.size.width = 300 }
+            let context = transaction.shapes.layingOut(with: [])
+            seen = [context.frame(of: stretch)?.size, context.frame(of: still)?.size]
+        }
+        expectEqual(seen, [CGSize(width: 300, height: 90), CGSize(width: 200, height: 90)], "the changed one at its new size, the other as kept")
+    },
     test("a plain context gives the stored box") {
         let log = StretchLog()
         let h = try stretchEditor(log)
@@ -391,6 +414,7 @@ extension Transaction {
             $0.insert(ShapeRecord(id: added, Stretch(CGRect(x: 0, y: 300, width: 100, height: 60), gauge: gauge)))
         }
         expectEqual(early.seen[old]?.size, CGSize(width: 200, height: 90), "it heard first: the old size")
+        expectEqual(early.seen[added]?.size, CGSize(width: 400, height: 150), "the one added had nothing kept, so asked early it is laid out by the file as committed, and what it kept holds after")
         for id in [old, added] {
             expectEqual(h.editor.shapeContext.frame(of: id)?.size, CGSize(width: 400, height: 150), "after the commit")
         }

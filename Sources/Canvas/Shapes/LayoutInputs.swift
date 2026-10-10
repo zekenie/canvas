@@ -215,14 +215,16 @@ extension ShapeContext {
 
     /// This context, for sizing shapes that aren't in the file yet: `records` are read by layout
     /// providers as shapes of the file, in place of any the file has under their ids, and are laid out
-    /// afresh whatever the editor keeps for those ids. It keeps no geometry and no size, and never
+    /// afresh whatever the editor keeps for those ids (and so is anything this context's own source
+    /// reads as changed: made from a transaction's `shapes`, a shape the transaction changed stays asked
+    /// afresh). It keeps no geometry and no size, and never
     /// touches what the editor keeps. Draw's, for a script's shapes. A context that lays nothing out
     /// (a plain one) gives one that lays nothing out.
     public func layingOut(with records: [AnyShapeRecord]) -> ShapeContext {
         guard let layout else { return ShapeContext(document: storedDocument, registry: registry, camera: storedCamera) }
         let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         let source = LayoutSource(inputs: layout.inputs, sizes: layout.sizes, lend: layout.lend,
-                                  shape: { byID[$0] ?? layout.shape($0) }, isChanged: { byID[$0] != nil })
+                                  shape: { byID[$0] ?? layout.shape($0) }, isChanged: { byID[$0] != nil || layout.isChanged?($0) == true })
         return ShapeContext(document: storedDocument, registry: registry, camera: storedCamera, index: nil, layout: source)
     }
 }
