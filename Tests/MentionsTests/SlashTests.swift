@@ -32,6 +32,9 @@ struct SlashFixturesPlugin: CanvasPlugin {
             SlashCommand("stack", shapes: { target, _, editor in editor.shape(inFile: target)?.kind == Plate.kind }) { _, arguments, _ in
                 log.runs.append("stack \(arguments.shapes.map { $0 == idA ? "A" : $0 == idB ? "B" : "?" }.joined()) \(arguments.text)")
             }
+            SlashCommand("choose", argument: "one", choices: { _, _ in [SlashChoice("x", title: "Xylo")] }) { _, choice, _ in
+                log.runs.append("choose \(choice.id)")
+            }
             SlashCommand("shelve", kinds: { _ in [Plate.kind, Token.kind] }, shapes: { target, _, _ in target != idB }) { _, arguments, _ in
                 log.runs.append("shelve \(arguments.shapes.map { $0 == idA ? "A" : $0 == idB ? "B" : $0 == idC ? "C" : "?" }.joined()) \(arguments.text)")
             }
@@ -51,7 +54,7 @@ struct SlashFixturesPlugin: CanvasPlugin {
         session.window.pressReturn()
         session.type("/")
         let picker = try require(typing.picker)
-        expectEqual(picker.listed.map(\.name), ["ping", "near", "stack", "shelve", "title"], "the jot's own, then Titles' for every shape that has a title")
+        expectEqual(picker.listed.map(\.name), ["ping", "near", "stack", "choose", "shelve", "title"], "the jot's own, then Titles' for every shape that has a title")
         expect(view.caretListWindow === typing.window, "the slash list is the view's list")
         expect(view.holdsKeys && view.picker == nil)
         session.type("pi")
@@ -143,6 +146,24 @@ struct SlashFixturesPlugin: CanvasPlugin {
         later.window.pressReturn()
         later.type("/stack @")
         expectEqual(later.pickerTargets, [idA, idB])
+    },
+
+    test("an @ typed on the line of a command that takes a choice is a letter: no picker, and the choices stay; on a plain line and a one-shape command's line it opens as ever") {
+        let log = SlashLog()
+        @MainActor func jot() throws -> EditedJot { try EditedJot("", plugins: [SlashFixturesPlugin(log: log)], board: addCoin) }
+        let choice = try jot()
+        choice.type("/choose ")
+        expect(choice.textView.slashCommands?.choices != nil)
+        choice.type("@")
+        expect(choice.textView.picker == nil, "no picker")
+        expectEqual(choice.textView.string, "/choose @")
+        expect(choice.textView.slashCommands?.choices != nil, "the choices are still open")
+        let plain = try jot()
+        plain.type("@")
+        expect(plain.textView.picker != nil)
+        let stack = try jot()
+        stack.type("/stack @")
+        expect(stack.textView.picker != nil)
     },
 
     test("what's recent on the command's line is what the command admits: the plate picked before, not the coin") {

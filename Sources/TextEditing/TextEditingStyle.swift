@@ -30,6 +30,14 @@ enum TextEditingStyle {
     static let caretListSeparatorHeight: CGFloat = 1
     static let caretListCornerRadius: CGFloat = 8
     static let caretListLabelSize: CGFloat = 13
+    /// A chip row (`CaretListItem.chip`): the capsule's height, its text, its symbol, and between its ends
+    /// and what is in it. The highlight behind it is the accent at this strength.
+    static let caretListChipHeight: CGFloat = 20
+    static let caretListChipTextSize: CGFloat = 12
+    static let caretListChipSymbolSize: CGFloat = 10
+    static let caretListChipPadding: CGFloat = 8
+    static let caretListChipSymbolGap: CGFloat = 3
+    static let caretListChipHighlightAlpha: CGFloat = 0.15
     static let caretListDetailSize: CGFloat = 11
     static let caretListHeaderSize: CGFloat = 11
     /// What of a row its detail keeps however long the title: the title comes first, and the

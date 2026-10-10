@@ -173,6 +173,36 @@ public final class TypeIndex {
         return !kept.reaches(owner, from: target)
     }
 
+    /// The types `owner` may be (`admits`), by name (case aside, the id the tie), an
+    /// untitled one last: what `/is-a`'s list shows. O(types) a time it is asked, which is when a
+    /// list opens.
+    public func choices(for owner: ShapeID) -> [(type: ShapeID, name: String?)] {
+        Self.sorted(entries.keys.filter { admits($0, for: owner) }.map { ($0, entries[$0]?.name) })
+    }
+
+    /// The types a menu for `shapes` lists: every type some shape is already or may be (`admits`), in
+    /// the order `choices(for:)` gives. O(types × shapes), once a menu opens.
+    public func menuChoices(for shapes: [ShapeID]) -> [(type: ShapeID, name: String?)] {
+        Self.sorted(entries.keys.filter { type in
+            shapes.contains { admits(type, for: $0) || (kept.links[$0] ?? []).contains(TypeLink(type)) }
+        }.map { ($0, entries[$0]?.name) })
+    }
+
+    /// Orders types by name, case aside, an untitled one last, the
+    /// id the tie. Each name is lowercased once and compared as plain text: Foundation's collation and
+    /// folding cost several times what the rest of opening a list does.
+    private static func sorted(_ types: [(ShapeID, String?)]) -> [(type: ShapeID, name: String?)] {
+        let keyed = types.map { (type: $0.0, name: $0.1, key: $0.1?.lowercased(), id: $0.0.rawValue.uuidString) }
+        return keyed.sorted { a, b in
+            switch (a.key, b.key) {
+            case (nil, nil): a.id < b.id
+            case (nil, _): false
+            case (_, nil): true
+            case (let x?, let y?): x == y ? a.id < b.id : x < y
+            }
+        }.map { (type: $0.type, name: $0.name) }
+    }
+
     /// What a shape may be, by what the target is: a type. The one place that says so; the custom
     /// shapes of a later slice join here, as what a shape of their kind may be besides.
     private func mayBe(_ target: ShapeID, for owner: ShapeID) -> Bool {

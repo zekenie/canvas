@@ -3,6 +3,7 @@ import Canvas
 import DetailPanel
 import ProseMaps
 import Selection
+import Titles
 import Topology
 import Validation
 
@@ -16,7 +17,7 @@ extension PluginID {
 /// its words are highlighted where they say a part of its schema (a prose map, `SchemaTarget`, which
 /// ProseMaps asks for: without `ProseMapsPlugin` there are none), each part shown in a popover on its
 /// words; a mention of another type in its words is a `$ref` to that type's schema
-/// (`SchemaReferences`). `/type` makes a shape one, and Remove Type
+/// (`SchemaReferences`). `/is-a type` makes a shape one, and Remove Type
 /// (`removeType`) one no longer. The file's types are `editor.types` (`TypeIndex`). Its rules
 /// (`TypeValidationPlugin`) and its panel (`TypeDetailsPlugin`) are plugin values of their own, so a
 /// list without Validation or the panel can install Types. It knows no kind: a kind hands it its
@@ -44,9 +45,16 @@ public struct TypesPlugin: CanvasPlugin {
             guard editor.editingShapeID != record.id else { return nil }
             return TypeHighlights.popover(at: point, on: record, in: editor)
         }
-        registerTypeCommands(into: &registrar)
         registerIsACommand(into: &registrar)
+        registerTypeMenus(into: &registrar)
         registerTypeChips(into: &registrar)
+        // A type's pill is its title in its color, after the mark of a type; untitled, gray and dimmed.
+        // Asked of the kinds that hold a schema, a note's, and a plain note's pill is as it was.
+        registrar.titlePillLook(forShapesHolding: TypeSchemaProperty.self) { record, title in
+            guard record[TypeSchemaProperty.self] != nil else { return nil }
+            return TitlePillLook(symbol: TypesStyle.typeSymbol, tint: title == nil ? nil : TypeColors.solid(record.id),
+                                 placeholder: TypesStyle.untitledType)
+        }
     }
 
     #if DEBUG
@@ -90,11 +98,16 @@ public enum TypesStyle {
     public static let removeType = "Remove Type"
     /// The step `/is-a` takes, and what the chips' and the panel's Remove take back with Remove Type's.
     public static let addType = "Add Type"
+    /// The step a new type is made in: the note and the link.
+    public static let newType = "New Type"
+    /// The row where nothing matches: `New type “Company”`.
+    static func newTypeRow(_ name: String) -> String { "New type “\(name)”" }
     /// What `/is-a` takes, beside its name in the list.
-    static let isAArgument = "@type"
-    /// The chips: the mark of a type, and what a type that has no title, or is gone and was never
-    /// known by one, is called.
-    static let typeChip = "Type"
+    static let isAArgument = "type"
+    /// `/is-a`'s rows: `Type`, which makes the shape one, and the mark each has.
+    static let typeChoice = "Type"
+    static let typeSymbol = "curlybraces"
+    /// The chips: what a type that has no title, or is gone and was never known by one, is called.
     static let untitledType = "Untitled"
     static let deletedType = "Deleted"
     /// A chip's menu: `Go to “Person”`, `Remove “Person”`, as a mention's pill's menu says it.
@@ -107,6 +120,24 @@ public enum TypesStyle {
         case .missing(let lastKnown): lastKnown ?? deletedType
         }
     }
+    /// A type's color is one of these eight, by its id (`TypeColors`): hues spread round the wheel,
+    /// none red (red is the invalid ring and the wrong value). `base` is the pill's, with white text
+    /// on it at 4.5:1 or more, and the same in both appearances; `lightInk` and `darkInk` are the
+    /// color's ink on a chip, over its own 14% tint on the light canvas and on the dark, 4.5:1 or
+    /// more each (TypeColorsTests holds all of it).
+    public typealias RGB = (CGFloat, CGFloat, CGFloat)
+    public static let colorTable: [(base: RGB, lightInk: RGB, darkInk: RGB)] = [
+        (base: (0.172, 0.447, 0.860), lightInk: (0.145, 0.377, 0.725), darkInk: (0.450, 0.670, 1.000)),   // blue
+        (base: (0.695, 0.373, 0.139), lightInk: (0.585, 0.314, 0.117), darkInk: (1.000, 0.681, 0.450)),   // orange
+        (base: (0.669, 0.220, 0.880), lightInk: (0.570, 0.187, 0.750), darkInk: (0.824, 0.450, 1.000)),   // purple
+        (base: (0.105, 0.525, 0.223), lightInk: (0.089, 0.445, 0.189), darkInk: (0.450, 1.000, 0.604)),   // green
+        (base: (0.102, 0.510, 0.510), lightInk: (0.086, 0.430, 0.430), darkInk: (0.450, 1.000, 1.000)),   // teal
+        (base: (0.830, 0.166, 0.564), lightInk: (0.690, 0.138, 0.469), darkInk: (1.000, 0.450, 0.780)),   // magenta
+        (base: (0.565, 0.438, 0.113), lightInk: (0.480, 0.372, 0.096), darkInk: (1.000, 0.846, 0.450)),   // gold
+        (base: (0.313, 0.264, 0.880), lightInk: (0.313, 0.264, 0.880), darkInk: (0.586, 0.550, 1.000)),   // indigo
+    ]
+    /// `Type` and an untitled type in `/is-a`'s list: no color of their own.
+    public static let grayChip = NSColor(white: 0.40, alpha: 1)
     /// The panel's Types rows.
     static let typeRowSymbol = "tag"
     /// Behind the words a highlight links to the schema: a field's pale blue, a rule's pale amber,

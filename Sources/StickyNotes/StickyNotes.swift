@@ -65,13 +65,16 @@ public struct StickyNotesPlugin: CanvasPlugin {
             note.tint(NoteStyle.tint)                          // its yellow, wherever it's listed by its kind
             note.createOnDoubleClick(place)                    // opts into the selection's double-click
             note.title(coverSurface: NoteStyle.color)          // and titles: a title, its pill, its cover, and its row's name
+            note.titlePillLook { shape, _ in                   // a type's note is white paper, so its cover's ink is chosen for that
+                shape[TypeSchemaProperty.self] != nil ? TitlePillLook(coverSurface: NoteStyle.typePaper) : nil
+            }
             note.noteHeader()                                  // renamed in the detail panel's header
             note.noteRow()                                     // and the table of contents
             note.noteLinks()                                   // and ports: arrows from a note to a note
             note.mentionText { $0.mentionTexts(in: $1) }          // and mentions: its text shows pills,
             note.mentionable(untitled: { $0.props.text.firstLine })   // called by its title, else its first line
             note.typeWords(\.text, drawnIn: { $0.mentionTexts(in: $1).first }, fitting: { StickyNoteDefinition().derive(&$0) })   // and types: its text says what one holds,
-            note.canBeType()                                   // and `/type` makes it one
+            note.canBeType()                                   // and `/is-a type` makes it one
             note.typeable()                                    // and `/is-a` makes it an instance of one
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
@@ -83,11 +86,12 @@ struct StickyNoteDefinition {}
 extension StickyNoteDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
         let layout = NoteLayout(shape, in: context.shapes)
-        context.fillWithShadow(NoteStyle.path(layout.frame), NoteStyle.color)
+        // A type's note is white paper, its highlights behind its words, under its editor too, whose text
+        // lays out as this does (a note that isn't a type costs one lookup).
+        let isType = shape[TypeSchemaProperty.self] != nil
+        context.fillWithShadow(NoteStyle.path(layout.frame), isType ? NoteStyle.typePaper : NoteStyle.color)
         let placements = shape.mentionTexts(placedIn: layout.words)
-        // A type's highlights behind its words, under its editor too, whose text lays out as this
-        // does (a note that isn't a type costs one lookup).
-        if let words = placements.first { context.fillTypeHighlights(of: shape, in: words) }
+        if isType, let words = placements.first { context.fillTypeHighlights(of: shape, in: words) }
         // While editing, the editing view draws the text instead.
         guard !context.isEditing else { return }
         for placement in placements { context.drawMentionText(placement) }
@@ -135,6 +139,25 @@ enum NoteStyle {
     /// How many heights of words `NoteWords` keeps; past it the lot is let go.
     static let wordsCacheCapacity = 16_384
     static let color = NSColor(srgbRed: 1.0, green: 0.87, blue: 0.45, alpha: 1)
+    /// A type's note is paper, not yellow: white, and in the dark appearance a light paper (0.92), not
+    /// the canvas's color, as the yellow note stays yellow there. Its text is the note's ink on both.
+    static let typePaper = NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? typePaperDark : .white }
+    static let typePaperDark = NSColor(white: 0.92, alpha: 1)
+
+    /// The paper as the appearance being drawn resolves it, for a skeleton, which draws thousands a
+    /// frame: a dynamic color costs half a microsecond to resolve, so it's resolved once for the
+    /// appearance last drawn in (a frame in the other appearance resolves it again, and so does one
+    /// whose appearance is another object).
+    static var typePaperCG: CGColor {
+        let appearance = NSAppearance.currentDrawing()
+        if appearance !== resolvedAppearance {
+            resolvedPaper = typePaper.cgColor
+            resolvedAppearance = appearance
+        }
+        return resolvedPaper
+    }
+    private static var resolvedAppearance: NSAppearance?
+    private static var resolvedPaper = CGColor(gray: 1, alpha: 1)
     /// Every line of a note's text is this tall, in the render and the editor alike. It's string
     /// drawing's own pitch for the font, so the render is as it was; TextKit 2, which lays out the
     /// editor, would set lines a point closer, so the text moved when editing started.

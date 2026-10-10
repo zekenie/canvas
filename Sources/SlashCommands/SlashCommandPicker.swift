@@ -137,6 +137,10 @@ enum SlashCommandStyle {
     static let offset: CGFloat = 4
     static let metrics = CaretListMetrics(width: listWidth, rowHeight: rowHeight, rowsShown: rowsShown, offset: offset)
     static let noMatches = "No matches"
+    /// A choice command's list: taller rows (chips), and what an empty one says.
+    static let choiceMetrics = CaretListMetrics(width: listWidth, rowHeight: 28, rowsShown: rowsShown, offset: offset)
+    static let noChoices = "None"
+    static let choicesAccessibilityLabel = "Choices"
     /// What VoiceOver calls the list.
     static let accessibilityLabel = "Commands"
     /// The longest name that's typed to list by, in characters.

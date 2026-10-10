@@ -41,12 +41,17 @@ public struct SlashCommand<Value> {
     /// For a command that takes one shape: the most kinds of shape it takes, given the registry; nil
     /// for one that names none (any kind) or takes no shape.
     let kinds: (@MainActor (Registry) -> Set<ShapeKind>)?
+    /// For a command that takes one choice: the rows, made when asked, and the one row to offer when
+    /// nothing matches what was typed; nil for the other forms.
+    let choices: (@MainActor (_ owner: ShapeID, CanvasEditor) -> [SlashChoice])?
+    let otherwise: (@MainActor (_ typed: String, _ owner: ShapeID, CanvasEditor) -> SlashChoice?)?
     let step: String?
     let action: Action
 
     enum Action {
         case edit(@MainActor (inout Value, SlashArguments) -> Void)
         case perform(@MainActor (ShapeID, SlashArguments, CanvasEditor) -> Void)
+        case choose(@MainActor (ShapeID, SlashChoice, CanvasEditor) -> Void)
     }
 
     /// Edits the shape the line is on: `edit` runs on its live value in one transaction. Setting what
@@ -62,6 +67,8 @@ public struct SlashCommand<Value> {
         self.accepts = accepts ?? Self.defaultAccepts(takesArgument: argument != nil)
         shapes = nil
         kinds = nil
+        choices = nil
+        otherwise = nil
         self.step = step
         action = .edit(edit)
     }
@@ -80,6 +87,8 @@ public struct SlashCommand<Value> {
         self.accepts = accepts ?? Self.defaultAccepts(takesArgument: argument != nil)
         shapes = nil
         kinds = nil
+        choices = nil
+        otherwise = nil
         self.step = step
         action = .perform(perform)
     }
@@ -118,8 +127,40 @@ public struct SlashCommand<Value> {
         accepts = { $0.isOneShape }
         shapes = admits
         self.kinds = kinds
+        choices = nil
+        otherwise = nil
         self.step = step
         action = .perform(perform)
+    }
+
+    /// A command that takes one choice from a list made when the line asks for it (`SlashChoice`):
+    /// the list opens when its name is done (Tab or a click on it in the names' list, or a space typed
+    /// after it), narrows as text is typed, and a pick runs `perform` at once, the whole line taken
+    /// out of the text. `choices` is asked once, when the list opens (and once more at a Return on a
+    /// closed line typed whole); `otherwise` is asked with what was typed when nothing matches, and
+    /// returns the one row to offer there, or nil. A pick's undo step is its row's `step`, else this
+    /// command's. `argument` is the hint beside the name. The command takes no arguments as such
+    /// (`accepts` is never true): the names' list's Return completes it rather than running it.
+    ///
+    ///     SlashCommand("is-a", argument: "type", choices: { owner, editor in rows(for: owner, in: editor) }) { owner, choice, editor in
+    ///         editor.makeIt(owner, as: choice.id)
+    ///     }
+    public init(_ name: String, argument: String,
+                when isOffered: @escaping @MainActor (Value) -> Bool = { _ in true },
+                choices: @escaping @MainActor (_ owner: ShapeID, CanvasEditor) -> [SlashChoice],
+                otherwise: (@MainActor (_ typed: String, _ owner: ShapeID, CanvasEditor) -> SlashChoice?)? = nil,
+                step: String? = nil,
+                perform: @escaping @MainActor (ShapeID, SlashChoice, CanvasEditor) -> Void) {
+        self.name = name
+        self.argument = argument
+        self.isOffered = isOffered
+        accepts = { _ in false }
+        shapes = nil
+        kinds = nil
+        self.choices = choices
+        self.otherwise = otherwise
+        self.step = step
+        action = .choose(perform)
     }
 
     private static func defaultAccepts(takesArgument: Bool) -> @MainActor (SlashArguments) -> Bool {
@@ -157,6 +198,10 @@ final class ErasedSlashCommand {
     private var kindsFound: Set<ShapeKind>?
     /// Runs it on a shape: the edit in one transaction, or the command's own `perform`.
     let run: @MainActor (ShapeID, SlashArguments, CanvasEditor) -> Void
+    /// For a command that takes a choice: its rows, the row for nothing matching, and running a pick.
+    let choices: (@MainActor (_ owner: ShapeID, CanvasEditor) -> [SlashChoice])?
+    let otherwise: (@MainActor (_ typed: String, _ owner: ShapeID, CanvasEditor) -> SlashChoice?)?
+    let runChoice: (@MainActor (ShapeID, SlashChoice, CanvasEditor) -> Void)?
 
     /// `read` gets the command's value from a record; `write` runs an edit on one shape's live
     /// value, in a transaction.
@@ -170,13 +215,20 @@ final class ErasedSlashCommand {
         shapes = command.shapes
         kindsOf = command.kinds
         step = command.step
+        choices = command.choices
+        otherwise = command.otherwise
         switch command.action {
         case .edit(let edit):
             run = { id, arguments, editor in
                 editor.transact { transaction in write(id, &transaction) { edit(&$0, arguments) } }
             }
+            runChoice = nil
         case .perform(let perform):
             run = perform
+            runChoice = nil
+        case .choose(let choose):
+            run = { _, _, _ in }
+            runChoice = choose
         }
     }
 

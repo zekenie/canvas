@@ -27,7 +27,7 @@ final class SyncBench {
         sync = try require(harness.editor.typeSync)
     }
 
-    /// A type as `/type` leaves one: the starter, no words, untitled.
+    /// A type as `/is-a type` leaves one: the starter, no words, untitled.
     func place() -> ShapeID {
         let record = typeRecord(TypeSchemaProperty.starter, at: .zero)
         editor.transact { $0.insert(record) }
@@ -756,7 +756,7 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         expectEqual(b.model.requests.count, 2, "a title typed in the JSON is no change of meaning")
     },
     // Becoming a type, and stopping.
-    test("a shape the person makes a type (/type) waits as an edit does: its words are ahead of the starter, and the commit asks for the schema") {
+    test("a shape the person makes a type (/is-a type) waits as an edit does: its words are ahead of the starter, and the commit asks for the schema") {
         let b = try SyncBench()
         let id = b.editor.add(memo("a pet in my household", at: .zero))
         b.editor.makeType(id)
@@ -770,6 +770,43 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         expectEqual(b.message(0), "<prompt>\na pet in my household\n</prompt>\n\n<schema>\n\(TypeSchemaProperty.starter)\n</schema>")
         expectEqual(b.schema(id), pet)
         expectEqual(b.title(id), "Pet")
+    },
+    test("words that are JSON made a type are the schema: nothing is asked at the make, and the commit asks for the words, with no schema ahead of them") {
+        let b = try SyncBench()
+        let id = b.editor.add(memo(pet, at: .zero))
+        b.editor.makeType(id)
+        expectEqual(b.schema(id), pet)
+        expectEqual(b.editor.undoHistory.undoName, "Make Type")
+        b.settle()
+        expectEqual(b.model.requests.count, 0, "nothing at the make")
+        b.model.queue("A pet: a name, a species and a birth year.")
+        b.sync.commit(id)
+        spinRunLoop(until: { b.model.requests.count == 1 && b.status(id) == .idle })
+        expectEqual(b.model.requests.count, 1)
+        let request = try require(b.model.lastRequest)
+        expectEqual(request.system, SchemaPrompts.toPromptSystem, "the direction of the words")
+        let message = try require(b.message(0))
+        expect(message.contains("<schema>\n\(pet)\n</schema>"), message)
+        expect(message.contains("<prompt>\n\(pet)\n</prompt>"), message)
+        expectEqual(b.words(id), "A pet: a name, a species and a birth year.")
+        expectEqual(b.schema(id), pet, "the schema is as the words said")
+        expectEqual(b.editor.undoHistory.undoName, "Update Text")
+        b.editor.undo()
+        expectEqual(b.words(id)?.stored, pet)
+        expectEqual(b.schema(id), pet)
+        b.editor.undo()
+        expectEqual(b.schema(id), nil, "undo of the make takes the schema back")
+    },
+    test("JSON words made a type with no model: the schema stays and nothing is asked; empty-object words ask nothing") {
+        let b = try SyncBench()
+        let id = b.editor.add(memo("{}", at: .zero))
+        b.editor.makeType(id)
+        expectEqual(b.schema(id), "{}")
+        b.sync.commit(id)
+        b.scheduler.advance(by: .seconds(5))
+        b.settle()
+        expectEqual(b.model.requests.count, 0)
+        expectEqual(b.schema(id), "{}")
     },
     test("a shape an agent makes a type (draw's schema:) is in step, and one undo or redo makes a type asks nothing") {
         let b = try SyncBench()

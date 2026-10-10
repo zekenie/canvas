@@ -540,7 +540,8 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         if !wasComposing, !hasMarkedText() { slashCommands?.didType(typed) }
         guard !wasComposing, !hasMarkedText(), typed.hasSuffix("@"), picker == nil, let storage = textStorage else { return }
         let at = selectedRange().location - 1
-        guard selectedRange().length == 0, MentionPicker.opens(in: storage.string as NSString, at: at) else { return }
+        guard selectedRange().length == 0, MentionPicker.opens(in: storage.string as NSString, at: at),
+              slashCommands?.listsChoices(at: at) != true else { return }
         openPicker(at: at)
     }
 

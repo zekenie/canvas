@@ -17,7 +17,7 @@ import Topology
 import Types
 import Validation
 
-// Becoming a type and stopping: `/type` on a line of a kind's words, Remove Type, and what the
+// Becoming a type and stopping: `/is-a type` on a line of a kind's words, Remove Type, and what the
 // registry asks of a list that installs Types.
 
 /// A box with words that can't be a type: it hands Types its words, and opts into nothing more.
@@ -49,41 +49,76 @@ private struct SlipsPlugin: CanvasPlugin {
     }
 }
 
+@MainActor private func isAOffersType(_ editor: CanvasEditor, on id: ShapeID) throws -> Bool {
+    try require(editor.slashCommands).command(named: "is-a", for: id)?.choices().contains { $0.title == "Type" } ?? false
+}
+
 @MainActor let commandTests = Suite("Making types", [
-    test("/type is offered on a shape that can be a type and isn't one; never on a type, nor on a kind that can't be one") {
-        let editor = try typeEditor()
-        let plain = editor.add(memo("a pet"))
-        let type = editor.addType(TypeSchemaProperty.starter, words: "a book", at: CGPoint(x: 400, y: 40))
-        let state = try require(editor.slashCommands)
-        expect(state.commands(for: plain).map(\.name).contains("type"))
-        expectEqual(state.commands(for: plain).first { $0.name == "type" }?.argument, nil, "it takes nothing")
-        expect(!state.commands(for: type).map(\.name).contains("type"))
-        let other = try typeEditor(more: [SlipsPlugin(words: true, canBeType: false)])
-        let slip = other.add(Slip())
-        expect(!(try require(other.slashCommands)).commands(for: slip).map(\.name).contains("type"))
-    },
-    test("/type makes the shape a type in one step, Make Type: the starter schema, its words as they were; undo takes it all back") {
+    test("makeType makes the shape a type in one step, Make Type: the starter schema, its words as they were, not public; undo takes it all back") {
         let editor = try typeEditor()
         let id = editor.add(memo("a pet in my household"))
-        expect(try require(editor.slashCommands).run("type", on: id, with: SlashArguments("")))
+        editor.makeType(id)
         expectEqual(editor.schema(id), TypeSchemaProperty.starter)
         expectEqual(editor.words(id), "a pet in my household")
         expectEqual(editor.undoHistory.undoName, "Make Type")
         expect(editor.types?.isType(id) == true)
+        let steps = editor.revision
+        editor.makeType(id)
+        expectEqual(editor.revision, steps, "nothing for a type")
         editor.undo()
         expectEqual(editor.schema(id), nil)
         expect(editor.types?.isType(id) == false)
+        let other = try typeEditor(more: [SlipsPlugin(words: true, canBeType: false)])
+        let slip = other.add(Slip())
+        let before = other.revision
+        other.makeType(slip)
+        expectEqual(other.revision, before, "nothing for a kind that cannot be one")
     },
-    test("/type takes no argument, and isn't run on a read-only shape") {
+    test("makeType on a read-only shape is refused by the core") {
         let editor = try typeEditor(more: [FreezingPlugin()])
         let id = editor.add(memo("a pet"))
-        let state = try require(editor.slashCommands)
-        expect(!state.run("type", on: id, with: SlashArguments("Pet")))
-        expectEqual(editor.schema(id), nil)
         editor.freeze([id])
-        expect(!state.run("type", on: id, with: SlashArguments("")))
         editor.makeType(id)
-        expectEqual(editor.schema(id), nil, "refused by the core")
+        expectEqual(editor.schema(id), nil)
+    },
+    test("words that are a JSON object become the schema as written, but for the whitespace around them") {
+        let editor = try typeEditor()
+        let json = "{\n  \"type\": \"object\",\n  \"properties\": {\"name\": {\"type\": \"string\"}}\n}"
+        let id = editor.add(memo("\n" + json + "\n  "))
+        editor.makeType(id)
+        expectEqual(editor.schema(id), json, "the inner layout and the key order are kept")
+        expectEqual(editor.words(id)?.stored, "\n" + json + "\n  ", "the words are not touched here: the sync writes them")
+        let empty = editor.add(memo("{}", at: CGPoint(x: 400, y: 40)))
+        editor.makeType(empty)
+        expectEqual(editor.schema(empty), "{}")
+    },
+    test("words that hold a mention, an array, a number, plain text or nothing get the starter") {
+        let editor = try typeEditor()
+        let target = editor.add(memo("Pet", at: CGPoint(x: 600, y: 400)))
+        let withMention = editor.add(Memo(frame: CGRect(x: 0, y: 0, width: 240, height: 60),
+                                          text: MentionText([.text("{\"title\": \""), .mention(target, label: "Pet"), .text("\"}")])))
+        var origin = 100.0
+        var ids: [ShapeID] = [withMention]
+        for words in ["[1, 2]", "42", "a pet in my household", "", "{\"type\": "] {
+            origin += 60
+            ids.append(editor.add(memo(words, at: CGPoint(x: origin, y: 40))))
+        }
+        for id in ids {
+            editor.makeType(id)
+            expectEqual(editor.schema(id), TypeSchemaProperty.starter, "\(editor.words(id)?.stored ?? "")")
+        }
+    },
+    test("makeTypes on several shapes is one step") {
+        let editor = try typeEditor()
+        let ids = (0..<3).map { editor.add(memo("n\($0)", at: CGPoint(x: Double($0) * 300, y: 40))) }
+        editor.makeTypes(ids)
+        expect(ids.allSatisfy { editor.schema($0) != nil })
+        expectEqual(editor.undoHistory.undoName, "Make Type")
+        editor.undo()
+        expect(ids.allSatisfy { editor.schema($0) == nil }, "one undo takes all three")
+        let steps = editor.revision
+        editor.makeTypes([])
+        expectEqual(editor.revision, steps)
     },
     test("Remove Type takes the schema away in one step, Remove Type; the words stay; undo brings the schema back") {
         let editor = try typeEditor()
@@ -94,7 +129,7 @@ private struct SlipsPlugin: CanvasPlugin {
         expectEqual(editor.title(id), "Pet")
         expectEqual(editor.undoHistory.undoName, "Remove Type")
         expect(editor.types?.isType(id) == false)
-        expect(try require(editor.slashCommands).commands(for: id).map(\.name).contains("type"), "it can be made one again")
+        expect(try isAOffersType(editor, on: id), "it can be made one again")
         editor.undo()
         expectEqual(editor.schema(id), pet)
         expect(editor.types?.isType(id) == true)

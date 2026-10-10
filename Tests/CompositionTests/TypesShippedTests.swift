@@ -10,7 +10,9 @@ import Connections
 import CoreGraphics
 import DetailPanel
 import Foundation
+import Frames
 import LanguageModels
+import Locking
 import Mentions
 import Publishing
 import Selection
@@ -20,7 +22,7 @@ import TestKit
 import Titles
 import Types
 
-// Types as shipped: a note made a type with `/type`, typed in its editor in the app's canvas view;
+// Types as shipped: a note made a type with `/is-a type`, typed in its editor in the app's canvas view;
 // its words and its schema kept in step by the model; a mention of another type, a `$ref` to it;
 // copied with the type it refers to; and drawn by an agent with `schema:`.
 
@@ -38,7 +40,7 @@ private let petAnswer = """
 """
 
 @MainActor let typesShippedTests = Suite("Types, as shipped", [
-    test("/type typed on a line of a note makes it a type in one step, Make Type, not public, editing going on; done with it, the model writes its schema and names it") {
+    test("/is-a type typed on a line of a note makes it a type in one step, Make Type, not public, editing going on; done with it, the model writes its schema and names it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let model = ScriptedLanguageModel(), scheduler = ManualScheduler()
@@ -50,8 +52,9 @@ private let petAnswer = """
         let view = try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the note's editor has the keyboard")
         view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
         window.pressReturn()
-        window.type("/ty")
-        expectEqual(view.slashCommands?.picker?.highlightedCommand?.name, "type")
+        window.type("/is-a ")
+        expectEqual(view.slashCommands?.choices?.listed.map(\.title), ["Type"], "no types in the file: only Type")
+        expectEqual(view.slashCommands?.choices?.highlightedChoice?.title, "Type")
         window.pressReturn()
         window.settle()
         expectEqual(editor.document[note]?[TypeSchemaProperty.self]?.text, TypeSchemaProperty.starter)
@@ -74,6 +77,33 @@ private let petAnswer = """
         let layout = try require(editor.detailPanel?.layout(for: try require(editor.document[note])))
         expect(layout.tabs.map(\.title).contains("Schema"))
     },
+    test("/is-a type typed on a note whose words are a JSON object: the schema is the words, the make asks the model nothing, and ending the editing asks once, for the words") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let model = ScriptedLanguageModel(), scheduler = ManualScheduler()
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler, pasteboard: pasteboard, model: model)
+        let (window, _) = windowed(editor)
+        let json = #"{"type": "object", "properties": {"name": {"type": "string"}}}"#
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: #"{"type": "object", "properties": {"name": {"type": "string"}}}"#))
+        editor.selection = note
+        expect(editor.beginEditing(note))
+        let view = try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the note's editor has the keyboard")
+        view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+        window.pressReturn()
+        window.type("/is-a ")
+        window.pressReturn()
+        window.settle()
+        // The view has committed the line's removal before the command read the words: else they would not parse.
+        expectEqual(editor.document[note]?[TypeSchemaProperty.self]?.text, json, "the words are the schema")
+        expectEqual(editor.undoHistory.undoName, "Make Type")
+        expect(editor.types?.isType(note) == true)
+        expectEqual(model.requests.count, 0, "the make asks nothing")
+        model.queue("a thing with a name")
+        editor.endEditing()
+        scheduler.advance(by: .zero)
+        spinRunLoop(until: { editor.typeSync?.status(of: note) == .idle && model.requests.count == 1 })
+        expectEqual(model.requests.count, 1, "one request, for the words")
+    },
     test("a type made public by hand is public, and a type still: /public on it, Remove Type leaves it public and undo brings the type back, /private takes public away") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -93,6 +123,48 @@ private let petAnswer = """
         expect(state.run("private", on: note, with: SlashArguments("")))
         expectEqual(editor.document[note]?[PublicProperty.self], nil)
         expect(editor.types?.isType(note) == true)
+    },
+    test("Is a ▸ sits in a shape's menu right after Lock, with no line between; an arrow's has it with the types and no Type, a frame's none; a locked note reads Unlock, Is a") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        _ = editor.addTypeNote(TypeSchemaProperty.starter, title: "Person", frame: CGRect(x: 500, y: 100, width: 200, height: 200))
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Ann"))
+        let arrow = editor.add(Arrow(start: .free(CGPoint(x: 40, y: 500)), end: .free(CGPoint(x: 340, y: 500))))
+        let frame = editor.add(Frame(frame: CGRect(x: 40, y: 560, width: 300, height: 200)), title: "Group")
+        @MainActor func outline(at point: CGPoint, _ time: TimeInterval) -> [String] {
+            canvas.menu(for: window.mouse(.rightMouseDown, at: point, time: time))?.outline ?? ["no menu"]
+        }
+        let noteMenu = outline(at: CGPoint(x: 200, y: 200), 1)
+        let lock = try require(noteMenu.firstIndex(of: "Lock"))
+        expectEqual(Array(noteMenu[lock...].prefix(6)), ["Lock", "Is a ▸", "  Type", "  —", "  Person", "—"], "\(noteMenu)")
+        let arrowMenu = outline(at: CGPoint(x: 190, y: 500), 2)
+        expect(arrowMenu.contains("Is a ▸") && arrowMenu.contains("  Person") && !arrowMenu.contains("  Type"), "\(arrowMenu)")
+        let frameMenu = outline(at: CGPoint(x: 200, y: 700), 3)
+        expect(!frameMenu.contains("Is a ▸"), "\(frameMenu)")
+        _ = (arrow, frame)
+        editor.lock([note])
+        let locked = outline(at: CGPoint(x: 200, y: 200), 4)
+        let unlock = try require(locked.firstIndex(of: "Unlock"))
+        expectEqual(locked[unlock + 1], "Is a ▸", "\(locked)")
+    },
+    test("@ typed on /is-a's line is a letter: no picker, and the choice list stays") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let (window, _) = windowed(editor)
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Ann"))
+        editor.selection = note
+        expect(editor.beginEditing(note))
+        let view = try require(window.firstResponder as? MentionTextView<AnyMentionable>)
+        view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+        window.pressReturn()
+        window.type("/is-a ")
+        window.type("@")
+        expect(view.picker == nil, "no mention picker")
+        expect(view.string.hasSuffix("/is-a @"))
+        expect(view.slashCommands?.choices != nil, "the choice list stays")
     },
     test("a mention of another type in a type's words is a $ref to it in the schema the model writes; a mention of a note that isn't a type stays words") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -187,15 +259,13 @@ private let petAnswer = """
         let editing = try view()
         editing.setSelectedRange(NSRange(location: editing.textStorage?.length ?? 0, length: 0))
         window.pressReturn()
-        window.type("/is")
-        expectEqual(editing.slashCommands?.picker?.highlightedCommand?.name, "is-a")
-        window.press("\t", code: 48)
-        window.type("@")
-        let picker = try require(editing.picker, "the @ picker, on the line of a command that takes a type")
-        expectEqual(picker.rows.compactMap(\.candidate?.id), [person], "a type, not Zeke or the note itself")
+        window.type("/is-a ")
+        let rows = try require(editing.slashCommands?.choices, "the choices")
+        expectEqual(rows.listed.map(\.title), ["Type", "Person"], "no Zeke (not a type), and not Ann herself")
+        expectEqual(rows.highlightedChoice?.title, "Person", "the first type")
+        window.type("per")
+        expectEqual(rows.listed.map(\.title), ["Person"])
         window.pressReturn()
-        window.pressReturn()
-        window.settle()
         expectEqual(editor.document[ann]?[IsAProperty.self]?.map(\.shape), [person])
         expectEqual(editor.editingShapeID, ann, "editing goes on")
         expectEqual(editor.document[ann]?.typed(as: StickyNote.self)?.props.text.plainText(), "Ann\n", "the line is gone from its text, the line break is not")
@@ -217,9 +287,7 @@ private let petAnswer = """
         label.setSelectedRange(NSRange(location: 4, length: 0))
         window.pressReturn()
         window.type("/is-a ")
-        window.type("@")
-        expectEqual(try require(label.picker).rows.compactMap(\.candidate?.id), [person])
-        window.pressReturn()
+        expectEqual(try require(label.slashCommands?.choices).listed.map(\.title), ["Person"], "no Type row on a label")
         window.pressReturn()
         window.settle()
         expectEqual(editor.document[arrow]?[IsAProperty.self]?.map(\.shape), [person])
@@ -230,6 +298,102 @@ private let petAnswer = """
         let arrowChips = editor.adornmentFrames(of: arrow).filter { $0.adornment == .of(TypeChips.self) }
         expectEqual(arrowChips.map { $0.label.text ?? "" }, ["Person"])
         expect(arrowChips[0].rect.maxY <= labelFrame.minY, "above the label")
+    },
+    test("/is-a company typed on a note offers New type “Company”; Return puts a white type note beside it, in editing, and links the note: one step, New Type; undo takes both, then the typing") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let model = ScriptedLanguageModel(), scheduler = ManualScheduler()
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler, pasteboard: pasteboard, model: model)
+        let (window, _) = windowed(editor)
+        let ann = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Ann"))
+        editor.selection = ann
+        expect(editor.beginEditing(ann))
+        let editing = try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the editor has the keyboard")
+        editing.setSelectedRange(NSRange(location: editing.textStorage?.length ?? 0, length: 0))
+        window.pressReturn()
+        window.type("/is-a company")
+        let rows = try require(editing.slashCommands?.choices, "the choices")
+        expectEqual(rows.listed.map(\.title), ["New type “Company”"], "nothing matches: the one row")
+        expectEqual(rows.highlightedChoice?.title, "New type “Company”")
+        window.pressReturn()
+        window.settle()
+        let made = try require(editor.document.shapes.map(\.id).first { $0 != ann }, "the new note")
+        expectEqual(editor.document[made]?[TitleProperty.self], "Company")
+        expectEqual(editor.document[made]?[TypeSchemaProperty.self]?.text, TypeSchemaProperty.starter)
+        expectEqual(editor.document[made]?[PublicProperty.self], nil, "not public")
+        expectEqual(editor.document[made]?.typed(as: StickyNote.self)?.props.text.plainText(), "", "no words yet")
+        expectEqual(editor.document[ann]?[IsAProperty.self]?.map(\.shape), [made])
+        expectEqual(editor.document[ann]?.typed(as: StickyNote.self)?.props.text.plainText(), "Ann\n", "the line is gone from its text")
+        expectEqual(editor.selectedShapeIDs, [made])
+        expectEqual(editor.editingShapeID, made, "the new note is edited, and the owner's editing has ended")
+        let beside = try require(editor.document[made]?.box), annBox = try require(editor.document[ann]?.box)
+        expect(beside.minX >= annBox.maxX && !beside.intersects(annBox), "right of it: \(beside) beside \(annBox)")
+        expectEqual(model.requests.count, 0, "an empty type asks nothing")
+        // The owner's chip is the type's.
+        let chips = editor.adornmentFrames(of: ann).filter { $0.adornment == .of(TypeChips.self) }
+        expectEqual(chips.map { $0.label.text ?? "" }, ["Company"])
+        // Words typed into the new note before its editing ends are in the one step.
+        window.type("a firm")
+        editor.endEditing()
+        expectEqual(editor.undoHistory.undoName, "New Type")
+        editor.undo()
+        expectEqual(editor.document[made], nil, "the note goes")
+        expectEqual(editor.document[ann]?[IsAProperty.self], nil, "and the link")
+        expectEqual(editor.undoHistory.undoName, "Typing", "then the owner's own editing")
+    },
+    test("New type from an arrow's label puts a note beside the arrow; in a frame the new note is in the frame") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let (window, _) = windowed(editor)
+        @MainActor func view() throws -> MentionTextView<AnyMentionable> {
+            try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the editor has the keyboard")
+        }
+        let arrow = editor.add(Arrow(start: .free(CGPoint(x: 100, y: 700)), end: .free(CGPoint(x: 500, y: 700)), text: "keep"))
+        editor.selection = arrow
+        expect(editor.beginEditing(arrow))
+        let label = try view()
+        label.setSelectedRange(NSRange(location: 4, length: 0))
+        window.pressReturn()
+        window.type("/is-a vendor")
+        expectEqual(try require(label.slashCommands?.choices).listed.map(\.title), ["New type “Vendor”"])
+        window.pressReturn()
+        window.settle()
+        let made = try require(editor.document.shapes.map(\.id).first { $0 != arrow })
+        expectEqual(editor.document[made]?.kind, StickyNote.kind, "a note")
+        expectEqual(editor.document[arrow]?[IsAProperty.self]?.map(\.shape), [made])
+        expect(editor.editingShapeID != arrow, "the label's editing has ended")
+        expectEqual(editor.undoHistory.undoName, "New Type")
+
+        // In a frame, where it falls inside.
+        let hold = editor.add(Frame(frame: CGRect(x: 1000, y: 100, width: 900, height: 500)), title: "Group")
+        let inner = editor.add(StickyNote(frame: CGRect(x: 1040, y: 160, width: 200, height: 200), text: "Eve"))
+        editor.put([inner], in: hold)
+        editor.selection = inner
+        expect(editor.beginEditing(inner))
+        let editing = try view()
+        editing.setSelectedRange(NSRange(location: editing.textStorage?.length ?? 0, length: 0))
+        window.pressReturn()
+        window.type("/is-a guest")
+        window.pressReturn()
+        window.settle()
+        let guest = try require(editor.document[inner]?[IsAProperty.self]?.first?.shape)
+        expectEqual(editor.file.record(guest)?.container, hold, "in the frame")
+    },
+    test("New type beside a note in a locked frame puts nothing down: no note, no link, no step") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let ann = editor.add(StickyNote(frame: CGRect(x: 140, y: 140, width: 200, height: 200), text: "Ann"))
+        let hold = editor.add(Frame(frame: CGRect(x: 100, y: 100, width: 900, height: 500)), title: "Locked")
+        editor.put([ann], in: hold)
+        editor.lock([hold])
+        let before = editor.document.shapes.count
+        let steps = editor.undoHistory.undoName
+        expectEqual(editor.newType(named: "Company", besides: ann), nil)
+        expectEqual(editor.document.shapes.count, before, "nothing placed")
+        expectEqual(editor.document[ann]?[IsAProperty.self], nil, "no link")
+        expectEqual(editor.undoHistory.undoName, steps, "no step")
     },
     test("a copy of an instance copied with its type is an instance of the copy, copied alone of the original; the is-a edge and the index follow, and a query finds the instances by their edge") {
         let pasteboard = NSPasteboard.withUniqueName()

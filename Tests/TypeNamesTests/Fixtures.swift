@@ -130,7 +130,7 @@ extension CanvasEditor {
         document.shapes.first { registry.title(of: $0) == title }
     }
 
-    /// A memo that is a type, titled, as a person would put it down (`/type` runs the same).
+    /// A memo that is a type, titled, as a person would put it down (`/is-a type` runs the same).
     @discardableResult
     func addType(_ title: String, schema: String = TypeSchemaProperty.starter) -> ShapeID {
         var record = AnyShapeRecord(ShapeRecord(Memo(frame: CGRect(x: 40, y: 40 + 80 * CGFloat(document.shapes.count), width: 240, height: 52))))

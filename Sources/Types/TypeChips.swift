@@ -4,14 +4,16 @@ import Canvas
 import Foundation
 import Selection
 
-/// A shape's types, as chips in the row above its top-left corner, after its title's pill: "Type" on
-/// a type, and one chip for each type it is, in the order of its list, each its type's live title (a
-/// dashed one, in italic, for a type that is gone, with the last title it was known by; a deleted
-/// type brought back by undo is whole again), and the ones that don't fit whole folded into one "+N"
-/// chip. A click on a chip opens a small menu below it: for a type it is, Go to it and Remove it
-/// (Remove left out while the shape can't change); for the Type chip, Remove Type; for "+N", the
-/// same for every type it is. On the kinds that hold `is` or a schema; on an arrow the row sits above
-/// its label (Adornments' anchor), and nothing is shown on a shape drawn as a skeleton.
+/// A shape's types, as chips in the row above its top-left corner, after its title's pill: one chip
+/// for each type it is, in the order of its list, each light, in its type's color, with its type's
+/// live title (gray and dimmed "Untitled" for a type with none; a dashed one, in italic, gray, for a
+/// type that is gone, with the last title it was known by; a deleted type brought back by undo is
+/// whole again), and the ones that don't fit whole folded into one "+N" chip. A type's note shows its
+/// own pill (Titles', solid in its color) and then the chips of the types it builds on. A click on a
+/// chip opens a small menu below it: for a type it is, Go to it and Remove it (Remove left out while
+/// the shape can't change); for "+N", the same for every type it is. On the kinds that hold `is`; on
+/// an arrow the row sits above its label (Adornments' anchor), and nothing is shown on a shape drawn
+/// as a skeleton.
 public enum TypeChips {}
 
 extension TypeChips: Adornment {
@@ -28,15 +30,12 @@ extension TypeChips: ClickableAdornment {
 }
 
 extension TypeChips {
-    /// The tag of the Type chip: no shape's id is this.
-    static let typeMark = AdornmentTag("type")
-
     /// The chip for one type a shape is.
     @MainActor
     static func label(for link: TypeLink, in types: TypeIndex) -> AdornmentLabel {
         let tag = AdornmentTag(link.shape)
         switch types.name(of: link) {
-        case .live(let title?): return AdornmentLabel(title).tagged(tag)
+        case .live(let title?): return AdornmentLabel(title).tagged(tag).tinted(TypeColors.light(link.shape))
         case .live(nil): return AdornmentLabel(placeholder: TypesStyle.untitledType).tagged(tag)
         case .missing(let lastKnown): return AdornmentLabel(lastKnown ?? TypesStyle.deletedType).missing().tagged(tag)
         }
@@ -45,12 +44,9 @@ extension TypeChips {
 
 @MainActor
 func registerTypeChips(into registrar: inout PluginRegistrar) {
-    registrar.adornmentsForEveryShape(TypeChips.self, where: { $0.holds(IsAProperty.self) || $0.holds(TypeSchemaProperty.self) }) { shape, context in
+    registrar.adornmentsForEveryShape(TypeChips.self, where: { $0.holds(IsAProperty.self) }) { shape, context in
         guard let types = context.service(TypeIndex.self) else { return [] }
-        var labels: [AdornmentLabel] = []
-        if shape[TypeSchemaProperty.self] != nil { labels.append(AdornmentLabel(TypesStyle.typeChip).tagged(TypeChips.typeMark)) }
-        for link in shape[IsAProperty.self] ?? [] { labels.append(TypeChips.label(for: link, in: types)) }
-        return labels
+        return (shape[IsAProperty.self] ?? []).map { TypeChips.label(for: $0, in: types) }
     }
 }
 
@@ -83,8 +79,6 @@ enum TypeChipMenus {
                 if !menu.items.isEmpty { menu.addItem(.separator()) }
                 items(for: link)
             }
-        } else if click.tag == TypeChips.typeMark {
-            if !readOnly { add(TypesStyle.removeType) { [weak editor] in editor?.removeType(owner) } }
         } else if let raw = click.tag.flatMap({ UUID(uuidString: $0.raw) }) {
             items(for: TypeLink(ShapeID(raw)))
         }

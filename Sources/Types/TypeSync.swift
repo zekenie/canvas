@@ -125,7 +125,7 @@ struct TypeSyncSides: Equatable, Sendable {
 ///   to anything but the two sides (a move, a lock, a rename), nor an agent's write
 ///   (`ChangeSet.byAgent`: the command line's `draw`), whose sides are taken as in step, as a shape
 ///   seen for the first time is (a call out, or an edit waiting, stops). A shape that becomes a type
-///   by the person's edit (`/type`) waits as an edit does: its words are ahead of its new schema. An
+///   by the person's edit (`/is-a type`) waits as an edit does: its words are ahead of its new schema. An
 ///   edit syncs when it's committed (`commit`: the words done, editing them ended however it ended,
 ///   Return, Escape and the keyboard going to the panel among them, `editingDidEnd`, which commits
 ///   only an edit still waiting; ⌘↩ in the panel's JSON, or the keyboard leaving it), else
@@ -623,8 +623,12 @@ extension TypeSync: EditorService {
             if changes.restoredStep {
                 restoring.insert(id)
             } else if !changes.byAgent, writing?.id != id {
-                // Made a type by the person (`/type`): its words are ahead, an edit waiting.
+                // Made a type by the person (`/is-a type`): its words are ahead, an edit waiting.
                 edited(id)
+                // Unless the words are the schema (JSON words taken whole): then the schema is ahead,
+                // and the sync takes the words from it. The last sync is said to have had the words
+                // and an empty schema, which also undoes `see`'s blanking of an empty one's words.
+                if Self.trimmed(now.words) == Self.trimmed(now.schema) { synced[id] = TypeSyncSides(words: now.words, schema: "{}") }
             }
             return
         }

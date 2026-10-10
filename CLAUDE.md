@@ -94,7 +94,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [boards](.claude/rules/boards.md): opening boards, Enclosing Board, the path's crumbs and their menus.
 - [snapping](.claude/rules/snapping.md): what a drag snaps to, and its guides.
 - [transform](.claude/rules/transform.md): turning a shape into another kind: channels, sources and targets, the menu item and the command, frame into subboard.
-- [types](.claude/rules/types.md): a note that holds a JSON Schema is a type, named by its title; `/type` and Remove Type, what a shape is (`is`, the `is-a` edge, `/is-a`, the type chips and the Types tab), the file's types and what is what (`TypeIndex`), the words kept in step with the schema by the model (`TypeSync`), references, the Schema tab's JSON and completions, highlights.
+- [types](.claude/rules/types.md): a note that holds a JSON Schema is a type, named by its title; `/is-a type` and Remove Type, New type from `/is-a`, what a shape is (`is`, the `is-a` edge, `/is-a`, the type chips and the Types tab), the file's types and what is what (`TypeIndex`), the words kept in step with the schema by the model (`TypeSync`), references, the Schema tab's JSON and completions, highlights.
 
 **Languages** (what agents read and write)
 - [command line](.claude/rules/command-line.md): `canvas`, the wire, `CommandServer`, Automation's commands, `canvas draw`, the canvas skill.

@@ -536,3 +536,110 @@ private final class ListingTextView: EditingTextView {
         expect(ink(row: 2) > ink(row: 1) * 1.1, "semibold: \(ink(row: 2)) against \(ink(row: 1))")
     },
 ])
+
+// MARK: Chip rows
+
+/// The color of a rows view's pixel at a point in its bounds, drawn in either appearance, in sRGB.
+@MainActor private func colors(of view: NSView, dark: Bool = false) throws -> (Int, Int) -> NSColor? {
+    let rep = try require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+    NSAppearance(named: dark ? .darkAqua : .aqua)!.performAsCurrentDrawingAppearance { view.cacheDisplay(in: view.bounds, to: rep) }
+    return { x, y in rep.colorAt(x: x * rep.pixelsWide / Int(view.bounds.width), y: y * rep.pixelsHigh / Int(view.bounds.height))?.usingColorSpace(.sRGB) }
+}
+
+private let chipBlue = NSColor(srgbRed: 0.172, green: 0.447, blue: 0.860, alpha: 1)
+
+/// A view filled with one color, drawn as the rows' view is: what a chip's color reads as in this window
+/// (its bitmap has its own color space), the rows' view drawn in the same capture.
+private final class SwatchView: NSView {
+    let color: NSColor
+    init(_ color: NSColor) {
+        self.color = color
+        super.init(frame: CGRect(x: 120, y: 0, width: 20, height: 20))
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+    override func draw(_ dirtyRect: NSRect) { color.setFill(); bounds.fill() }
+}
+
+/// Puts a swatch of `chipBlue` in a rows view, at (130, 10) in its bounds, past the rows' text.
+@MainActor private func addSwatch(to rows: NSView) { rows.addSubview(SwatchView(chipBlue)) }
+private let swatchSpot = (x: 130, y: 10)
+
+/// How white a color is: its darkest channel, 0 for none.
+private func whiteness(_ color: NSColor?) -> CGFloat {
+    guard let c = color?.usingColorSpace(.sRGB), c.alphaComponent > 0.95 else { return 0 }
+    return min(c.redComponent, c.greenComponent, c.blueComponent)
+}
+
+/// Whether a color is `expected`, opaque, to a few levels.
+private func isColor(_ color: NSColor?, _ expected: NSColor) -> Bool {
+    guard let c = color?.usingColorSpace(.sRGB), let e = expected.usingColorSpace(.sRGB), c.alphaComponent > 0.97 else { return false }
+    return abs(c.redComponent - e.redComponent) < 0.02 && abs(c.greenComponent - e.greenComponent) < 0.02 && abs(c.blueComponent - e.blueComponent) < 0.02
+}
+
+@MainActor let chipRowTests = Suite("Caret list chip rows", [
+    test("a chip row is its title in a capsule of its color, white text, and its symbol inside it; in both appearances") {
+        for dark in [false, true] {
+            let text = ListedText()
+            text.open([.item(CaretListItem("Person", symbol: "curlybraces", chip: chipBlue)), .item(CaretListItem("Company", chip: chipBlue)), .item(CaretListItem("plain"))])
+            let rows = try require(text.rowsView)
+            addSwatch(to: rows)
+            let color = try colors(of: rows, dark: dark)
+            // The capsule: its color left of the text, 16 points tall in a 20-point row; the row's far end isn't.
+            let blue = try require(color(swatchSpot.x, swatchSpot.y))
+            expect(isColor(color(16, 10), blue), "the capsule's color, dark \(dark): \(String(describing: color(16, 10)))")
+            expect(isColor(color(16, 22), blue), "and a chip with no symbol")
+            let column = (0..<20).filter { isColor(color(16, $0), blue) }
+            expectEqual(column.count, 16, "the capsule is the row less two points above and below, dark \(dark)")
+            expect(!isColor(color(200, 10), blue), "not the whole row")
+            // White text inside it.
+            let whites = (24..<80).reduce(0) { total, x in total + (0..<20).filter { y in whiteness(color(x, y)) > 0.95 }.count }
+            expect(whites > 15, "white text: \(whites)")
+        }
+    },
+
+    test("a chip row's symbol is inside the capsule: the capsule is wider by its place, and the symbol is white") {
+        let text = ListedText()
+        text.open([.item(CaretListItem("Person", symbol: "curlybraces", chip: chipBlue)), .item(CaretListItem("Person", chip: chipBlue))])
+        let rows = try require(text.rowsView)
+        addSwatch(to: rows)
+        let color = try colors(of: rows), blue = try require(try colors(of: rows)(swatchSpot.x, swatchSpot.y))
+        func end(row: Int) -> Int { (0..<115).last { isColor(color($0, row * 20 + 3), blue) || isColor(color($0, row * 20 + 10), blue) } ?? 0 }
+        expect(end(row: 0) - end(row: 1) >= 10, "wider by the symbol and its gap: \(end(row: 0)), \(end(row: 1))")
+        let symbolWhites = (20..<30).reduce(0) { total, x in total + (0..<20).filter { y in whiteness(color(x, y)) > 0.9 }.count }
+        expect(symbolWhites > 4, "the symbol is white: \(symbolWhites)")
+    },
+
+    test("a highlighted chip row is a pale fill behind its capsule, not the accent with white text; a row without a chip is filled as before") {
+        let text = ListedText()
+        text.open([.item(CaretListItem("Person", chip: chipBlue)), .item(CaretListItem("Company", chip: chipBlue)), .item(CaretListItem("plain"))])
+        let rows = try require(text.rowsView)
+        addSwatch(to: rows)
+        for dark in [false, true] {
+            let color = try colors(of: rows, dark: dark)
+            let pale = try require(color(200, 10)), none = color(200, 30)
+            expect(pale.alphaComponent > 0.05 && pale.alphaComponent < 0.3, "pale: \(pale.alphaComponent), dark \(dark)")
+            expect((none?.alphaComponent ?? 0) == 0, "the next chip row isn't")
+            expect(isColor(color(16, 10), try require(color(swatchSpot.x, swatchSpot.y))), "the capsule over it keeps its color")
+        }
+        text.list?.moveHighlight(by: -1)
+        let plain = try require(try colors(of: rows)(200, 50))
+        expect(plain.alphaComponent > 0.9, "a row without a chip is filled with the accent: \(plain.alphaComponent)")
+        text.list?.moveHighlight(by: 1)
+        expect((try colors(of: rows)(200, 50)?.alphaComponent ?? 0) == 0, "and not once it isn't highlighted")
+    },
+
+    test("a chip row is said as its title, its detail after; its matched letters are semibold in the capsule") {
+        let text = ListedText()
+        text.open([.item(CaretListItem("Person", symbol: "curlybraces", detail: "type", chip: chipBlue)), .item(CaretListItem("Person", matched: [0..<3], chip: chipBlue))])
+        let rows = try require(text.rowsView)
+        addSwatch(to: rows)
+        let spoken = (rows.accessibilityChildren() ?? []).compactMap { ($0 as? NSAccessibilityElement)?.accessibilityLabel() }
+        expectEqual(spoken, ["Person, type", "Person"])
+        text.open([.item(CaretListItem("Mmmmmm", chip: chipBlue)), .item(CaretListItem("Mmmmmm", matched: [0..<6], chip: chipBlue))])
+        let again = try require(text.rowsView)
+        addSwatch(to: again)
+        let color = try colors(of: again), blue = try require(color(swatchSpot.x, swatchSpot.y))
+        func end(row: Int) -> Int { (0..<115).last { isColor(color($0, row * 20 + 3), blue) || isColor(color($0, row * 20 + 10), blue) } ?? 0 }
+        expect(end(row: 1) > end(row: 0), "semibold is wider: \(end(row: 1)), \(end(row: 0))")
+    },
+])

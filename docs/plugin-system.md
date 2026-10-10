@@ -1216,6 +1216,20 @@ splits and joins none of them. What a title brings:
   mostly goes through has something to grab. It's never a title: `registry.title(of:)` is nil, the
   row is the kind's own, and a name takes its place. A kind that doesn't ask shows no pill on an
   untitled shape, and a blank placeholder is none.
+- **A look for the pill of some shapes**, from a plugin that is not the kind's (`TitlePillLooks`, an
+  extension point in Titles, so Titles knows no type): `registrar.titlePillLook(forShapesHolding:
+  TypeSchemaProperty.self) { shape, title in TitlePillLook(symbol: "curlybraces", tint: …,
+  placeholder: "Untitled") }`, asked of the shapes of every kind that holds the property (opted
+  into it) and of no other kind, and `x.titlePillLook { shape, title in … }` on a kind's own
+  registrar. A `TitlePillLook` has a `symbol` (first in the pill, in place of the kind's), a `tint`
+  (an `AdornmentTint`), a `placeholder` (what an untitled shape's pill says, dimmed; the pill then
+  shows where the kind gave none), a `coverSurface` (what the shape's skeleton is drawn on, for its
+  cover's ink, in place of the kind's) and `hidesPill`. Any number of plugins contribute, a kind's
+  own first; each field is the first non-nil in plugin order, `hidesPill` if any says so. It is
+  asked where the pill's label is made (when a commit names the shape; the label is then kept) and
+  for the cover of a titled skeleton in view, never per frame otherwise. The registry report
+  shows it as `title pill look → every shape` or `→ note`; a list with a look and no `TitlesPlugin`
+  is refused.
 - **Its row's name** in [the table of contents](#the-table-of-contents), through TableOfContents'
   `ContentsTitles`, which names a kind's rows without replacing them: a titled note is listed by
   its title; an untitled one by its text, as before. `contents: false`
@@ -1256,7 +1270,9 @@ The mechanics:
 - **One per kind.** A point keyed by `[target]` (a rule, as Selection's `ShapeSelectability` and
   Clipboard's `ShapeCopyability` are) takes one contribution per kind plus one for every kind;
   `registry.contributionByKind(to:)` is each kind's (its own, else every kind's), which a service
-  keeps, since the registry never changes.
+  keeps, since the registry never changes. For anything else a per-shape or per-frame question would
+  work out again (a kind's contributions filtered), `registry.memo(key) { ... }` keeps the value once
+  per key: Titles keeps each kind's title and pill-look contributions so.
 - **Engines are services.** A horizontal with state (a cache, an index) registers an
   `EditorService`, made per editor, with `registrar.service { ValidationEngine(editor: $0) }`, and
   anyone finds it with `editor.service(ValidationEngine.self)`. Validation's engine recomputes when
@@ -2525,7 +2541,7 @@ semibold (in the item's `font`, if it has one), a symbol in its tint before it, 
 `trailingSymbol` after it (a read-only shape's lock), a `detail` at the trailing end (its
 `detailMatched` characters in semibold too, as a title's, and its `detailDimmed` ones fainter: Jump To's path), and what
 VoiceOver says, the title and detail unless it says otherwise (matched characters aren't said), and `separated`, a line one point
-thick across the top of its row (the words row under the shapes a pill's list offers). Its size is its owner's
+thick across the top of its row (the words row under the shapes a pill's list offers), and a `chip`, a color: the row's symbol and title are then drawn in a capsule of that color, white on it (`TextEditingStyle`'s chip constants: 20 points, less 4 in a row it doesn't fit, 12-point text, matched characters semibold), and its highlight is the accent at 15% behind the capsule instead of the accent with white text (a type's color, in `/is-a`'s list); a row without one is drawn as ever. Its size is its owner's
 (`CaretListMetrics`: width, row height, rows shown, the offset below the anchor), its look
 `TextEditingStyle`'s. `CaretListWindow(list, accessibilityLabel:over:anchor:pick:close:post:)` shows
 it: a borderless child of the text's window that never takes the keyboard (not deferred, so a
@@ -3405,7 +3421,7 @@ contextMenu {
   | 50 | A horizontal's feature, on the kinds that opt in (a flag's `FlagMenuGroup`, [below](#something-the-user-turns-on)), or on the shapes it knows something of (`MentionsMenuGroup`) |
   | 60 | What a feature brings to the shapes it can act on, after the first band (Transform's Turn into …, `TransformMenuGroup`) |
   | 70 | What a vertical makes of the shapes it's for (Frames' Create Frame, `FramesMenuGroup`) |
-  | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200; `LockMenuGroup`, 300; `SelectionMenuGroup`, 400, ContextMenus' own Delete and Select All) |
+  | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200; `StateMenuGroup`, 300, ContextMenus' own, which Locking's Lock and Unlock and Types' Is a ▸ share with no line between; `SelectionMenuGroup`, 400, ContextMenus' own Delete and Select All) |
 
 - **Keyed.** Each item claims its target, group and `id` (the title by default), and an item in a
   submenu its path, so two plugins adding one item to a kind are a `conflict`
@@ -4152,7 +4168,7 @@ chips reach in is drawn and hit.
 
 An adornment may show several labels, in order, each its own chip: a type chip per type of a
 shape. The sugar takes a list, `x.adornments(TypeChip.self) { shape in names.map { AdornmentLabel($0.title).tagged($0.tag) } }`.
-Types' `TypeChips` is the shipped one, on every kind that holds `is` or a schema (`registrar.adornmentsForEveryShape`), with a
+Types' `TypeChips` is the shipped one, on every kind that holds `is` (`registrar.adornmentsForEveryShape`), with a
 click (`ClickableAdornment`) that pops a menu up below the chip with `editor.popUpMenu`.
 
 - **Left end only.** A group is for `aboveTopLeft`: at the right end a run is cut where it reaches
@@ -4242,6 +4258,17 @@ plugin's look alike, as `ContentsLabel` keeps rows alike:
 
 - **`tagged(_:)`** and **`missing()`**: which of a group's labels it is, and the look of a name
   that is gone ([above](#several-labels-a-group)).
+- **`tinted(_:)`**: `AdornmentLabel("Person").tinted(AdornmentTint(color, ink: ink, style: .light))`,
+  a color in place of the tone's (a type's, in Types). `color` is fixed, the same in both
+  appearances, so Adornments makes a tint's fills once; `ink` (the color by default) may follow the
+  appearance. Solid: the capsule is the color, lighter hovered (15% white) and darker pressed (20%
+  black), its text and symbol white. Light: the capsule is the color at 14% (22% hovered, 30%
+  pressed) with a 1-point line of it at 35% inside the edge, its text and symbol the ink (a
+  placeholder's at 60%); a light label's symbol is made again for the appearance drawn, since an
+  image made with a dynamic color is fixed when it is made. A tint wins over the tone; a missing
+  label ignores it; `opacity(_:)` and `tagged(_:)` keep it; a compact face is tinted only if its
+  maker tinted it; the tint is part of the label's equality, so a changed tint lays the row out
+  again; the group's "+N" is never tinted.
 
 A clickable one draws lighter hovered and darker pressed (a missing one, a faint fill). A label can't draw itself (a sparkline):
 that's [not built yet](#not-built-yet).
@@ -4549,10 +4576,10 @@ giving a shape back the id it had.
   paste takes the shapes out and frees their ids (a paste after it moves them again), redoing it
   puts them back under them, and undoing the cut too puts the file back as it was, showing the
   board the cut was made on.
-- **In the context menu**, Cut, Copy and Paste are items for the canvas
+- **In the context menu**, Cut, Copy, Duplicate and Paste are items for the canvas
   (`registrar.contextMenuForCanvas`), in `ClipboardMenuGroup` (order 100, before Arrange), asked
-  once per menu. Cut and Copy show when some of the menu's shapes can be copied, and act on those;
-  Paste shows when something would paste, on shapes and on empty canvas, and lands where the menu
+  once per menu. Cut, Copy and Duplicate (⌘D's, beside the shapes) show when some of the menu's shapes can
+  be copied, and act on those; Paste shows when something would paste, on shapes and on empty canvas, and lands where the menu
   was asked for.
 
 **Opting out.** Every kind is copyable unless it says otherwise, for all its shapes or for some, as
@@ -4622,10 +4649,10 @@ registrar.contentsMarkForEveryShape(where: { $0.holds(LockedProperty.self) }) { 
     shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
 }
 registrar.contextMenuForCanvas {                        // of the shapes whose own lock can change
-    MenuItem("Lock", in: LockMenuGroup.self, when: { !$0.lockable.isEmpty && !$0.allLocked }) { ids, editor in
+    MenuItem("Lock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && !$0.allLocked }) { ids, editor in
         editor.lock(ids.filter { !editor.isLockedByContainer($0) })
     }
-    MenuItem("Unlock", in: LockMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked }) { ids, editor in
+    MenuItem("Unlock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked }) { ids, editor in
         editor.unlock(ids.filter { !editor.isLockedByContainer($0) })
     }
 }
@@ -4643,7 +4670,7 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   and saved with the shape (`"added" : { "locked" : true }`). Its default is nil, so only locked
   shapes carry it, and unlocking takes it away. Read it with `record.isLocked`, and change it with
   `editor.lock(ids)` and `editor.unlock(ids)`, each one transaction.
-- **The menu** has one of two items, in `LockMenuGroup` (order 300, after every other group), as
+- **The menu** has one of two items, in `StateMenuGroup` (ContextMenus', order 300, after every other group; Types' Is a ▸ is in it too, right after), as
   tldraw's toggle: Unlock when every shape the menu is for is locked, and otherwise Lock, which locks
   the rest. They're items for the canvas, so a mix of locked and unlocked shapes gets one; on empty
   canvas, neither. There's no key: the menu and `/lock` are the ways to lock a shape. Both go by the shapes'
@@ -6048,7 +6075,7 @@ command offered `when` the shape says so, and a text view that hosts it is where
 Mentions' `MentionTextView` does, so every text where mentions are typed (a note's editor, the panel's [`MentionTextArea`](#in-the-panel-mentiontextarea)) takes
 slash commands. The core has never heard of a command, and SlashCommands has never heard of a
 mention: a command's arguments are runs of text and shapes, and a pill is a shape only because the
-text view that reads the line says so. Titles' `/title`, Locking's `/lock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, [Types](#types-shapes-that-hold-a-schema)' `/type` and `/is-a` (the one-shape form: `/is-a @Person`, in a note's text or an arrow's label), and [Moving](#moving)'s `/move-to` and `/move-near` are the commands that ship.
+text view that reads the line says so. Titles' `/title`, Locking's `/lock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, [Types](#types-shapes-that-hold-a-schema)' `/is-a` (the choice form: `/is-a Person` or `/is-a type`, in a note's text or an arrow's label), and [Moving](#moving)'s `/move-to` and `/move-near` are the commands that ship.
 
 ```swift
 // In LockingPlugin.register:
@@ -6309,6 +6336,32 @@ Two undo managers, as with every text: the board's steps and the text's own ([Un
 - **Editing ends where the core ends it.** A command that makes the shape read-only (`/lock`),
   deletes it or shows another board ends editing as any such change does, and the line's removal,
   written first, is already in the step.
+
+### A command that takes a choice
+
+`SlashCommand(_:argument:when:choices:otherwise:step:perform:)` takes one choice from rows it makes
+when asked, where the other forms take text or a shape. The list opens when the name is done (Tab,
+Return or a click on it in the names' list, or a space typed after it), narrows as text is typed
+(`FuzzyMatcher`), and a pick (Return, Tab or a click) takes the whole line out of the text and runs
+the command with the row at once, as one undo step named by the row or else the command.
+
+```swift
+SlashCommand("is-a", argument: "type",
+             choices: { owner, editor in rows(for: owner, in: editor) },         // asked once, when the list opens
+             otherwise: { typed, owner, editor in newRow(typed) },               // the one row when nothing matches; nil: "No matches"
+             step: "Add Type") { owner, choice, editor in                         // a SlashChoice's own `step` wins
+    editor.give(owner, choice.id)
+}
+```
+
+A `SlashChoice` is an `id` (opaque to the module), a `title` (matched and shown), an optional
+`symbol` and `detail`, a `group` (a line sets off a row whose group differs from the row above), a
+`step`, `isPreferred` (with nothing typed the first preferred row is highlighted, else the first) and `chip` (a color, passed to the row: [a list at the caret](#a-list-at-the-caret)).
+The command never runs with `SlashArguments`, so Return in the names' list completes it. With the
+list closed, Return on the line typed whole runs the first row whose title is the typed text; the
+rows are asked for once, then. The list is `SlashChoicePicker`, and `SlashCommandTyping.listsChoices(at:)`
+says a line is a choice command's, where an `@` is a letter (a host that opens a picker for `@`
+asks it).
 
 ### Hosting in a text view: `SlashCommandTyping`
 
@@ -9921,15 +9974,18 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   root `"title"`, so there's one place to say the name; one the person types in the JSON is kept as
   typed, and is never the name. The sync puts the name in for the model and takes the model's out
   (below), and the JSON's completions offer no `title` at the root.
-- **Making one**: `/type`, typed on a line of a shape's words, offered while it isn't one, takes
-  nothing and runs `editor.makeType(_:)`, one step, "Make Type": the starter schema
-  (`TypeSchemaProperty.starter`, an object with no properties), and nothing else: a type does not
-  start public (it is found by `/is-a` and by its title; `/public` is the person's to say, on a
-  type as on any shape). Its words are then ahead of its schema, and
-  the sync asks for the schema they say once the person is done with them, as for an edit.
-  `editor.removeType(_:)` takes it back, one step, "Remove Type": the schema goes, the words, title
-  and public stay, and undo brings the schema back. An agent makes a type with `canvas draw`'s
-  `schema:` (an added property's attribute, as every one is): `sticky-note "Order" schema: "…"`.
+- **Making one**: `/is-a type`, typed on a line of a shape's words (the `Type` row of `/is-a`'s
+  list, offered while the shape can be one and isn't), or Is a ▸ Type in the shape's menu, runs
+  `editor.makeType(_:)`, one step, "Make Type": the starter schema (`TypeSchemaProperty.starter`,
+  an object with no properties), and nothing else: a type does not start public (it is found by
+  `/is-a` and by its title; `/public` is the person's to say, on a type as on any shape). Its words
+  are then ahead of its schema, and the sync asks for the schema they say once the person is done
+  with them, as for an edit. If the words are a JSON object (no mention in them, not an array or a
+  scalar) they are the schema instead, as written but for the whitespace around them, with no
+  model call, and the sync then writes the words from the schema. `editor.removeType(_:)` takes it
+  back, one step, "Remove Type": the schema goes, the words, title and public stay, and undo
+  brings the schema back. An agent makes a type with `canvas draw`'s `schema:` (an added
+  property's attribute, as every one is): `sticky-note "Order" schema: "…"`.
 - **What a shape is**: `is`, an added property (`IsAProperty`, an ordered list of `TypeLink`s, none
   twice, empty is none) on the kinds that call `typeable()` (it needs `typeWords` too): a note, and
   an arrow, whose label is its words (`arrow.typeWords(\.text, drawnIn: { arrow, shapes in … })`, the
@@ -9948,19 +10004,42 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   object, and a path into it already works in a query (`[fieldValues.status="paid"]`). It knows no
   field and reads no type, so a value no type names is kept. `Fixtures/added/fieldValues.v0.json` is
   its fixture.
-- **`/is-a @Type`** is a slash command with the one-shape argument on every kind that holds `is`:
-  the `@` picker on its line lists the types of the file (`kinds`: the kinds that can be types), and
-  its rule (`TypeIndex.admits`) refuses the shape itself, a type it is already, a type that is it in
-  turn (no cycles) and a pill. It appends (a later line wins) in one step, "Add Type"
+- **`/is-a`** is a slash command that [takes a choice](#a-command-that-takes-a-choice) on every
+  kind that holds `is`: `/is-a ` lists `Type` (while the shape can be one and isn't) and the types
+  of the file the shape may be, by name (`TypeIndex.choices(for:)`: its rule, `admits`, refuses the
+  shape itself, a type it is already, a type that is it in turn (no cycles) and a pill). A pick
+  runs at once: `Type` is "Make Type", a type appends (a later line wins) in one step, "Add Type"
   (`editor.addTypeLink(_:to:)`; `removeTypeLink(_:from:)` takes one away, "Remove Type", and is the
-  one way an entry goes). It works in a note's text and in an arrow's label.
-- **Chips**: `TypeChips` (an `Adornment`, aboveTopLeft, a [group](#adornments)) shows a "Type" chip
-  on a type and one chip for each type a shape is, in order, each its type's live title, dashed
-  (`.missing()`) once the type is gone, the ones that don't fit folded into "+N". A click pops up a
-  small menu below the chip (`editor.popUpMenu`): Go to “Person” and Remove “Person” (Remove left
-  out on a read-only shape); the Type chip's is Remove Type; "+N"'s lists every type. On an arrow
-  the chips sit above its label. The panel's Types tab lists the same, a row that goes to the type
-  and a minus that removes it.
+  one way an entry goes). With nothing typed the first type is highlighted, `Type` when there is
+  none. It works in a note's text and in an arrow's label (no `Type` row there). `@` on its line is
+  a letter.
+- **New type**: where nothing matches what was typed (`/is-a company`), the list offers the one row
+  `New type “Company”` (the name capitalized, spaces folded, at most 80 characters, and only while a kind
+  can be a type and has a tool to place it). A pick, `editor.newType(named:besides:)`, is one step, "New
+  Type": a note of the shape's kind (else the first kind that can be a type) titled with the name and
+  holding the starter schema is put down beside the shape where Placing's `Surroundings.near` lands
+  it (`/move-near`'s place: right if free, then below, left, above), and the shape is made an instance
+  of it. The new note is selected and edited like any placed note, so the step stays open while it is,
+  and words typed into it are in the step; a read-only board or a container that won't take it puts
+  nothing down, and shakes. The new type is not public and has no words, so the sync reads nothing
+  until the person writes.
+- **A type's note is white paper**: StickyNotes draws a note that holds a schema in white (the
+  dark appearance: 0.92), not its yellow, in full and zoomed out (the skeleton resolves the dynamic
+  color once for the appearance drawn), and gives its cover's ink the paper to read on
+  (`titlePillLook` with `coverSurface`); the plain note stays yellow in both appearances. It is
+  yellow again once the schema goes.
+- **A type's color and pill**: a type's color (`TypeColors`) is one of eight by its id, never
+  stored (two types can share one); the table is `TypesStyle.colorTable`. A type's note shows a
+  pill, Titles' own (`registrar.titlePillLook(forShapesHolding: TypeSchemaProperty.self)`): its
+  title after `curlybraces`, solid in the type's color; untitled, a dimmed gray `Untitled`.
+- **Chips**: `TypeChips` (an `Adornment`, aboveTopLeft, a [group](#adornments)) shows one chip for
+  each type a shape is, in order, light in the type's color, with its type's live title (gray
+  and dimmed "Untitled" for a type with none), dashed gray (`.missing()`) once the type is gone, the
+  ones that don't fit folded into "+N". A type's note shows its pill and then the chips of the types
+  it builds on; there is no Type chip (Is a ▸ Type in the menu). A click pops up a small menu
+  below the chip (`editor.popUpMenu`): Go to “Person” and Remove “Person” (Remove left out on a
+  read-only shape); "+N"'s lists every type. On an arrow the chips sit above its label. The panel's
+  Types tab lists the same, a row that goes to the type and a minus that removes it.
 - **The file's types**: `TypeIndex` (`editor.types`) reads every board's types as the file opens,
   then keeps them by each commit's `ChangeSet` alone (what it added, removed and changed, on the
   board shown and `elsewhere`, the kind checked first; a whole file put in place read again), never
@@ -11621,7 +11700,7 @@ keyboard             service KeyboardState · key strokes · key releases · sho
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · channel note-link · edge type note-link
+sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
 framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
@@ -11646,7 +11725,7 @@ title-validation     service TitleIndex · ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
-types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · ShapePopovers · /type → every shape · /is-a → every shape · adornment TypeChips → every shape
+types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
 type-validation      ValidationRules
 type-details         ShapeDetails · ShapeDetails
 snapping             service SnapState · translation adjuster
