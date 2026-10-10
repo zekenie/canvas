@@ -818,15 +818,6 @@ The details:
   it (Frames' F). A tool id used twice is a registry error, and so is a key.
 - **The toolbar** is the default tool, then the rest in plugin-list order, the core's Hand first. It
   follows `editor.currentToolID`, which is observable.
-- **Asking the person.** `editor.ask(CanvasQuestion(id:, message:, detail:, confirm:, cancel:)) { yes in
-  … }` puts a yes-or-no question for the host to show as a sheet on the board's window. Questions
-  wait first in, first out, one at a time; asking again with the id of one that waits replaces it
-  (its answer is never called); a file put in place (`replaceFile`) and the window closing answer all
-  of them no; headless, with no host, a question waits until the host API answers it
-  (`editor.question`, `answerQuestion(_:)`, `cancelQuestions()`), as a test does. The answer runs
-  outside any transaction. CanvasUI's `CanvasView` shows the sheet (`makeAlert(for:)` builds its
-  texts: the confirm button the default, Return; the cancel button Escape), and with no window leaves
-  the question waiting.
 - **A menu from a canvas button.** A button's click is inside its press's bookkeeping, so it asks
   `editor.popUpMenu(menu, below: worldRect)`, and the host pops the `NSMenu` up on the next turn of
   the run loop, at the rect's bottom-left (`menuToPopUp`, `menuDidPopUp()`); a press that begins
@@ -11731,9 +11722,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   counts how often any is walked or renamed, so a test can show something never looks at names (a
   delete). AutomationTests' `Pin` does both too, and a tool places it, so `canvas draw` can write
   ids into it.
-- Questions are tested at the editor with a stub
-  `CanvasEditorDelegate`, or headless (`answerQuestion`), and the sheet through `CanvasView.makeAlert`
-  (a sheet doesn't run in an unshown window); a queued menu through `menuToPopUp`, and in a
+- **Queued menus**: a menu queued by `popUpMenu` is tested through `menuToPopUp`, and in a
   `CanvasView` through its `menuPresenter` seam, which a test swaps for one that notes the menu (its
   tracking runs in no unshown window).
 - **Boards in a file** without a real kind: `PocketsPlugin` (CanvasTesting) registers `Pocket`, a box

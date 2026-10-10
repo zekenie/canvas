@@ -5,9 +5,8 @@ import CanvasTesting
 import Geometry
 import TestKit
 
-// The editor's question is an alert on the canvas's window, and its menu a pop-up under a rect: the
-// texts and where things are queued are tested here, since a sheet and a menu's tracking don't run in
-// an unshown window.
+// The editor's menu is a pop-up under a rect: where it is queued is tested here, since a menu's
+// tracking doesn't run in an unshown window.
 
 @MainActor private func canvasInWindow() throws -> (h: EditorHarness, canvas: CanvasView, window: NSWindow) {
     let h = try EditorHarness(plugins: [FixturesPlugin()])
@@ -16,38 +15,6 @@ import TestKit
     window.contentView = canvas
     return (h, canvas, window)
 }
-
-@MainActor private final class Heard {
-    var answers: [Bool] = []
-}
-
-@MainActor let questionSheetTests = Suite("The question's sheet", [
-    test("the alert says the message and the detail, the first button yes (Return) and the second no (Escape)") {
-        let alert = CanvasView.makeAlert(for: CanvasQuestion(id: "read", message: "Read 120 shapes?", detail: "It takes about a minute.",
-                                                              confirm: "Read Again", cancel: "Not Now"))
-        expectEqual(alert.messageText, "Read 120 shapes?")
-        expectEqual(alert.informativeText, "It takes about a minute.")
-        expectEqual(alert.buttons.map(\.title), ["Read Again", "Not Now"])
-        expectEqual(alert.buttons[0].keyEquivalent, "\r", "the default")
-        expectEqual(alert.buttons[1].keyEquivalent, "\u{1b}")
-    },
-    test("with no detail the alert has none, and the no button says Cancel") {
-        let alert = CanvasView.makeAlert(for: CanvasQuestion(id: "go", message: "Go?", confirm: "Go"))
-        expectEqual(alert.informativeText, "")
-        expectEqual(alert.buttons.map(\.title), ["Go", "Cancel"])
-    },
-    test("a question asked of a canvas with no window waits; the window closing answers it no") {
-        let (h, canvas, window) = try canvasInWindow()
-        let heard = Heard()
-        window.contentView = nil
-        h.editor.ask(CanvasQuestion(id: "a", message: "Go?", confirm: "Go")) { heard.answers.append($0) }
-        expect(h.editor.question != nil, "waits: there is no window to show it on")
-        window.contentView = canvas
-        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
-        expectEqual(heard.answers, [false])
-        expect(h.editor.question == nil)
-    },
-])
 
 @MainActor let menuPopUpTests = Suite("The menu popped up from the canvas", [
     test("a queued menu is popped up on the next turn of the run loop, under the rect it was asked for, and not before") {
