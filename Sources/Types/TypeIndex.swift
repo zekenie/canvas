@@ -166,7 +166,7 @@ public final class TypeIndex {
         return !lineage(of: target).contains(owner)
     }
 
-    /// The types `owner` may be (`admits`), by name (`localizedStandardCompare`, the id the tie), an
+    /// The types `owner` may be (`admits`), by name (case aside, the id the tie), an
     /// untitled one last: what `/is-a`'s list shows. O(types) a time it is asked, which is when a
     /// list opens.
     public func choices(for owner: ShapeID) -> [(type: ShapeID, name: String?)] {
@@ -181,20 +181,19 @@ public final class TypeIndex {
         }.map { ($0, entries[$0]?.name) })
     }
 
+    /// Orders types by name, case aside, an untitled one last, the
+    /// id the tie. Each name is lowercased once and compared as plain text: Foundation's collation and
+    /// folding cost several times what the rest of opening a list does.
     private static func sorted(_ types: [(ShapeID, String?)]) -> [(type: ShapeID, name: String?)] {
-        types.sorted { a, b in
-            switch (a.1, b.1) {
-            case (nil, nil): a.0.rawValue.uuidString < b.0.rawValue.uuidString
+        let keyed = types.map { (type: $0.0, name: $0.1, key: $0.1?.lowercased(), id: $0.0.rawValue.uuidString) }
+        return keyed.sorted { a, b in
+            switch (a.key, b.key) {
+            case (nil, nil): a.id < b.id
             case (nil, _): false
             case (_, nil): true
-            case (let x?, let y?):
-                switch x.localizedStandardCompare(y) {
-                case .orderedAscending: true
-                case .orderedDescending: false
-                case .orderedSame: a.0.rawValue.uuidString < b.0.rawValue.uuidString
-                }
+            case (let x?, let y?): x == y ? a.id < b.id : x < y
             }
-        }.map { (type: $0.0, name: $0.1) }
+        }.map { (type: $0.type, name: $0.name) }
     }
 
     /// What a shape may be, by what the target is: a type. The one place that says so; the custom

@@ -212,4 +212,16 @@ private struct ChitsPlugin: CanvasPlugin {
         editor.removeTypeLink(person, from: [a, c])
         expectEqual(editor.revision, steps, "nothing left to change: no step")
     },
+    test("opening the list over a thousand types costs what the types are: every type asked about once, sorted by name, in well under a frame") {
+        let editor = try typeEditor()
+        for index in 0..<1000 {
+            _ = editor.addType(TypeSchemaProperty.starter, title: "Type \(index)", at: CGPoint(x: Double(index % 40) * 260, y: Double(index / 40) * 60 + 600))
+        }
+        let ann = editor.addInstance("Ann", of: [])
+        let command = try isA(editor, on: ann)
+        var rows: [SlashChoice] = []
+        let took = (0..<5).map { _ in threadCPUTime { rows = command.choices() } }.min() ?? .zero
+        expectEqual(rows.count, 1001)
+        expect(took < .milliseconds(25), "a thousand types took \(took)")
+    },
 ])

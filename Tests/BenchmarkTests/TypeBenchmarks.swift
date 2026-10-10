@@ -31,6 +31,10 @@ extension Budget {
     /// same frame still: the chips are laid out where the shapes are, never made again for a move (the thread's CPU;
     /// release, 0.5 ms more, against 6.7 when a move made each shape's chips again).
     static let typesDragFrame = 3.0
+    /// Opening `/is-a`'s list on a plain note of a 10,000-shape file with 140 types (the thread's CPU, release): the
+    /// types the note may be, asked of the index once and sorted by name, then kept while the list is open: some 3.5 ms
+    /// (3.1, 3.5, 3.6 in three runs alone, load average 6), about three times that.
+    static let isAListOpen = 10.0
 }
 
 /// The generated board's notes made types (every fiftieth), and instances (every sixth that isn't):
@@ -139,9 +143,9 @@ extension Budget {
             let rows = command.choices()
             expect(rows.first?.title == "Type" && rows.dropFirst().allSatisfy { index.isType(ShapeID(UUID(uuidString: $0.id)!)) }, "Type, then the types")
             report(String(format: "%6d shapes, %d types, the /is-a list: the first open %6.3f ms, then %6.3f ms (budget %.0f)",
-                          size, types.count, first, opening, Budget.pickerKeystroke))
+                          size, types.count, first, opening, Budget.isAListOpen))
             if holdsToBudgets {
-                expect(opening < Budget.pickerKeystroke, "opening /is-a's list over \(size) shapes took \(opening) ms")
+                expect(opening < Budget.isAListOpen, "opening /is-a's list over \(size) shapes took \(opening) ms")
             }
         }
     },
