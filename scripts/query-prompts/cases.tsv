@@ -63,3 +63,9 @@ e16	eval-board	locked notes	-	Launch checklist, LDAP bridge, Tax	kinds	sticky-no
 e17	eval-board	plain arrows in Infra	-	00000000-0000-4000-8000-0000000E0504, 00000000-0000-4000-8000-0000000E0505	kinds	"Infra" arrow:not([channel])
 e18	eval-board	shapes with warnings	-	Alert	state	:warned
 e19	eval-board	what does the selected note link to?	in Identity, Auth service	Sessions	state	:edge-from(:selected, arrow)
+s46	story	which shapes are people?	Auth	Employee card, Ann	types	sticky-note:is-a("Person")
+s47	story	what is Ann?	Auth	Employee card	types	:edge-from("Ann", is-a)
+s48	story	who has an employee card?	Auth	Ann	types	sticky-note:is-a("Employee card")
+s49	story	is Ann a Person?	Auth	Ann	types	"Ann":is-a("Person")
+s50	story	notes whose text says person	Auth	Person, Employee card	types	sticky-note:contains("person")
+s51	story	which notes are types?	Auth	Warehouse, Order, 00000000-0000-4000-8000-000000000007, Person, Employee card	types	sticky-note[schema]

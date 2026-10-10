@@ -6,7 +6,7 @@ job. Not a framework: a script, a CSV of cases, a CSV of results, read by eye.
 
 - `evals.py` runs the cases and appends a row per case to `results.csv` (`pass`, what failed, latency,
   tokens, the output on one line); `results.jsonl` gets everything, and isn't committed.
-- `cases.csv` holds the cases (74: 47 prompt → schema, 27 schema → prompt), written by
+- `cases.csv` holds the cases (81: 52 prompt → schema, 29 schema → prompt), written by
   `gen_cases.py`, where they're readable. Edit `gen_cases.py`, then run it. Four chains (a hand edit
   surviving a prompt edit, a round trip, two both-ways edits) are in `evals.py` itself.
 - Ten of the cases (`s_ref_…`, `p_ref_…`) name other types, as the app shows them to the
@@ -24,6 +24,15 @@ Nothing the app sends is copied here: `evals.py` reads the system prompts, each 
 from nothing is sent with the new type's schema as `previous_schema`, as `TypeSync` sends it). Its
 user message and parse rule copy `SchemaPrompts.toSchema`, `toPrompt` and `parse`; when to call and
 what's written is `TypeSync`.
+
+A type's name is its note's title, so `cases.csv` has a `name` column and stores each schema without a
+root `"title"`, as a type holds it. `evals.py` does what `TypeSync.start` does (`TypeNaming.titled`,
+ported in `evals.py`): the name goes in as the root `"title"`, first, in `schema` and `previous_schema`
+(unless the stored schema has a title the person typed, which is kept as typed), and what `apply` does
+with the answer (`TypeNaming.untitled`): the title comes out of the schema that would be written, and an
+untitled note (an empty `name`) is named by it. A case fails when the stripped text isn't a JSON object
+without a title, or an untitled note gets no name; a model title that isn't the name sent is a warning
+(`title-changed`), since the app takes it out anyway.
 
 ## Running it
 
@@ -101,6 +110,36 @@ some a tenth of Sonnet's cost an answer.
 `SCHEMA_LIVE=1 build/debug/TypesTests/TypesTests` (after `./test.sh` has built it) runs three
 cases, and a type that mentions another both ways, through the app's own path, `AnthropicModel` and `TypeSync`, and prints what came back.
 `./test.sh` never sets it.
+
+## Lite round for "Types and new shapes" (2026-10-09)
+
+Haiku 5.5 (`claude-haiku-5-5`) at `medium` effort, the app's own settings. The sync moved from the
+schema card to the type note: the note's title goes in as the schema's root `"title"`, the model's comes
+out of the answer, an untitled note takes the model's as its name, and mentions of type notes reach the
+model as `@Word` with `<schemas>`. The prompts' text didn't change in that build; what's sent did, so
+the harness above was changed to send it, and 7 cases were added (`s_untitled_fields`, `s_typed_title`,
+`s_injection_in_name`, `s_name_quotes`, `s_name_in_mentions_only`, `p_injection_in_name`,
+`p_name_not_in_prompt`).
+
+- Round 20: 32 cases (both directions, the `@` cases, an untitled note, a title typed in the JSON,
+  injection in the words, in the schema and in the note's name, Japanese and Spanish) twice each. to_schema
+  35/42, to_prompt 22/22. Failures: `s_untitled_fields` and `s_injection_in_name` were script bugs
+  (`titlehas` took no `a|b` alternatives; the name itself, which the model rightly kept as the title,
+  tripped `title` and `lacks_text`); `s_non_latin` (English property names for a Japanese prompt, twice)
+  and `indent` (a one-line schema, `s_ref_new` and `s_name_in_mentions_only`, once each) were the model:
+  eight more runs of each with the note untitled, as before the build, failed about a quarter of the
+  time too, so not the title's doing, but real prompt slack.
+- Prompt fixes: the names rule says "a prompt in Japanese gets Japanese names, never English ones", and
+  the format rule says "one member per line, always, however small the schema". 40 runs of the four
+  cases after: 40/40.
+- Round 22 (all 81 cases twice, and the four chains): to_schema 104/104, to_prompt 56/58, chains 3/4.
+  Failures: `chain_roundtrip` step 1 and `p_write_vague_pet` were NO_CHANGE for a prompt written from
+  nothing (about 1 in 5 for the vague pet, already failing before the build in rounds 1, 2, 5 and 9);
+  `p_write_snake` a prompt of 99 characters against 90 (noise, 10/10 on rerun).
+- Prompt fix: the NO_CHANGE option now ends "Never when there is no <prompt>: write one." Sixty runs of
+  six cases (the three that write from nothing, and the NO_CHANGE ones) after: all as expected.
+- Round 23 (all 81 cases twice, the four chains) with both fixes: to_schema 104/104, to_prompt 58/58,
+  chains 4/4.
 
 ## Words that read like a preamble (2026-10-09)
 

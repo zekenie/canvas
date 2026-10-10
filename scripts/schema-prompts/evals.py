@@ -146,6 +146,96 @@ def parse(direction, text, stop_reason, words=""):
     return "prompt", t
 
 
+
+# ------------------------------------------------------------------ the type's name, as TypeSync puts it in and takes it out
+# (Sources/Types/TypeSchema.swift `TypeNaming`, used by TypeSync.start and .apply): a type's schema is
+# stored with no root "title"; its note's title goes in as the first member for the request (unless the
+# person typed one in the JSON), and the model's comes out of what it writes, naming an untitled note.
+
+def _members(text):
+    """The root object's members as (key, key_start, value_start, value_end), or None."""
+    dec = json.JSONDecoder()
+    if not text.startswith("{"):
+        return None
+    i, out = 1, []
+    while True:
+        while i < len(text) and text[i].isspace():
+            i += 1
+        if i >= len(text) or text[i] == "}":
+            return out
+        key, end = dec.raw_decode(text, i)
+        j = end
+        while text[j].isspace() or text[j] == ":":
+            j += 1
+        _, vend = dec.raw_decode(text, j)
+        out.append((key, i, j, vend))
+        i = vend
+        while text[i].isspace():
+            i += 1
+        if text[i] == ",":
+            i += 1
+
+
+def naming_title(text):
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return None
+    t = obj.get("title") if isinstance(obj, dict) else None
+    return t if isinstance(t, str) else None
+
+
+def titled(text, name):
+    """TypeNaming.titled: `name` first, as the root "title", laid out as the first member is."""
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    if "title" in obj or not name.strip():
+        return text
+    lit = json.dumps(name, ensure_ascii=False)
+    members = _members(text)
+    if not members:
+        return "{ \"title\": " + lit + " }"
+    i = members[0][1]
+    space = text[1:i]
+    member = f'"title":{lit},' if not space else f'"title": {lit},{space}'
+    return text[:i] + member + text[i:]
+
+
+def untitled(text):
+    """TypeNaming.untitled: (text without its root "title", what it said or None), or None for none."""
+    members = _members(text)
+    if members is None:
+        return None
+    idx = [k for k, m in enumerate(members) if m[0] == "title"]
+    if not idx:
+        return None
+    i = idx[-1]
+    key, kstart, vstart, vend = members[i]
+    title = json.loads(text[vstart:vend])
+    title = title if isinstance(title, str) and title.strip() else None
+    if i + 1 < len(members):
+        return text[:kstart] + text[members[i + 1][1]:], title
+    if i > 0:
+        return text[:members[i - 1][3]] + text[vend:], title
+    return text[:1] + text[len(text) - 1:], title
+
+
+def prepare(case):
+    """The case as TypeSync sends it: the note's name as each schema's root title, unless the schema
+    has one. `named` is whether the answer's title comes out (the schema as stored has none)."""
+    c = dict(case)
+    name = c.get("name") or ""
+    c["named"] = naming_title(c["schema"]) is None
+    for k in ("schema", "previous_schema"):
+        if c[k] and name:
+            c[k] = titled(c[k], name) or c[k]
+    return c
+
+
 # ------------------------------------------------------------------ calling
 
 def load_key():
@@ -385,7 +475,7 @@ def run_check(check, direction, kind, out_text, out_obj, case):
         if name == "titlesame":
             return None if obj.get("title") == in_obj.get("title") else f"title {obj.get('title')!r}"
         if name == "titlehas":
-            return None if arg.lower() in str(obj.get("title", "")).lower() else f"title {obj.get('title')!r}"
+            return None if any_in(str(obj.get("title", "")), arg) else f"title {obj.get('title')!r}"
         if name == "has":
             return None if resolve(obj, ptr)[0] else f"missing {ptr}"
         if name == "absent":
@@ -486,6 +576,25 @@ def evaluate(case, result):
         f, w = auto_schema_checks(value, out_obj, case.get("schema"))
         failed += f
         warn += w
+        # As TypeSync.apply reads it: the title comes out of what's written when it went in as the
+        # note's name (or the note had none); an untitled note is named by it.
+        if case.get("named", True):
+            got = untitled(value)
+            if got is None:
+                warn.append("no-title-to-take-out")
+            else:
+                stored_text, title = got
+                try:
+                    stored_obj = json.loads(stored_text)
+                except ValueError as e:
+                    failed.append(f"stripped-invalid:{e}")
+                else:
+                    if not isinstance(stored_obj, dict) or "title" in stored_obj:
+                        failed.append("stripped-not-an-object-or-still-titled")
+                    if not case.get("name") and not title:
+                        failed.append("untitled-note-got-no-name")
+                    if case.get("name") and title != case["name"]:
+                        warn.append(f"title-changed:{title!r}")
         # A "$ref" to an @ word is only ever to one <schemas> lists, as the app reads them back.
         listed = {line.strip() for line in (case.get("schemas") or "").split("\n") if line.strip()}
         for ref in refs_in(out_obj):
@@ -720,6 +829,7 @@ def main():
 
     def work(job):
         c, run = job
+        c = prepare(c)
         user = user_message(c["direction"], prompt=c["prompt"], schema=c["schema"],
                             previous_prompt=c["previous_prompt"], previous_schema=c["previous_schema"], schemas=c.get("schemas", ""))
         r = call(key, c["direction"], user, c.get("schemas", ""))

@@ -39,7 +39,7 @@ struct QueryEvalCase: Sendable {
     }
 
     static let categories = ["kinds", "titles", "mentions", "inside", "direction", "transitive", "state", "combined", "unanswerable",
-                             "robustness"]
+                             "robustness", "types"]
 
     let id: String
     let file: File

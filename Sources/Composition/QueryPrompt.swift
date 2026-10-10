@@ -127,6 +127,11 @@ Chain pseudo-classes. Apply the rule to each condition independently.
 - :not(S) and :is(S1, S2), as in CSS: sticky-note:not(:mentions(*)) — notes that mention nothing
 Example: "locked notes inside Payments that mention Checkout" → "Payments" sticky-note[locked]:mentions("Checkout")
 
+## Types
+A note that holds a JSON Schema is a type, named by its title: sticky-note[schema] is the notes that are types. A shape is what it is by the types it names, and a type can build on another type.
+- :is-a("Person") — the shapes that are a Person, however far: a type that builds on Person, and the shapes of such a type. "who has an Employee card?" → sticky-note:is-a("Employee card")
+- :edge-from("Ann", is-a) — what Ann is, directly: its types. An is-a edge is not an arrow.
+
 ## Rules
 - The ONLY valid pseudo-classes are those above and those in <vocabulary>. Do not invent new ones (no :parent-of, :child-of, :root, :empty, :first-child) — edge types always go in the second argument: :edge-to("Auth", note-link)
 - Kinds, attributes and edge types are written exactly as <vocabulary> writes them.
@@ -162,6 +167,7 @@ Your response must be exactly one line: the raw query, or UNANSWERABLE: and a re
         ":dangling", ":invalid", ":edge-to(sticky-note[locked])", ":edge-to(*)", #":edge-to(:is("Auth", "Checkout"))"#,
         #":edge-to("Auth", arrow)"#, #":edge-from("API gateway", note-link|mention)"#, #":edge-to("Payments", only arrow)"#,
         #":edge-from("API gateway", arrow)"#, #":edge-from("Warehouse")"#, #"sticky-note:mentions("Checkout")"#, #":mentioned-by("Checkout")"#, #"sticky-note:is-a("Person")"#,
+        "sticky-note[schema]", #":is-a("Person")"#, #"sticky-note:is-a("Employee card")"#, #":edge-from("Ann", is-a)"#,
         #""Checkout":mentioned-by("API gateway")"#, #":connected-to("Checkout")"#, #":component-of("Warehouse")"#, #":upstream-of("Auth")"#,
         ":edge-from(:selected, arrow)", #"arrow:between("Auth", "API gateway")"#, ":start-of(arrow[channel=note-link])",
         ":end-of(arrow[channel=note-link])",

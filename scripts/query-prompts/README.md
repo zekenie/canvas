@@ -11,7 +11,7 @@ shipped plugins, shows its board, selects its shapes, and asks its question the 
 compares the set of shapes it matched with the case's. Any query that finds those shapes passes,
 whatever its form.
 
-- `cases.tsv` is the cases: 45 on the story file (`QueryStory.swift`, the file every query example
+- `cases.tsv` is the cases: 51 on the story file (`QueryStory.swift`, the file every query example
   runs on) and 19 on the eval board (`QueryEvalBoard.swift`, 59 shapes on six boards, with
   look-alike titles, plain arrows, and a note mentioned from two boards away).
 - `results.tsv` gets a row per run of a round, when you ask for one (`QUERY_EVAL_OUT`).
@@ -145,7 +145,7 @@ with `pass` 0.
 | `question` | what's asked, as a person would ask it |
 | `selection` | the shapes selected, by title or id, separated by `, `, or `-` for none. `in <subboard>` shows that subboard's board first (the top board otherwise). |
 | `expected` | the shapes a right answer matches, by title (every shape with that title) or id (for untitled ones), separated by `, `; `none` for none; `UNANSWERABLE`; or `UNANSWERABLE or a query` (a question that tries to steer the model: it passes either way, as long as it never writes what the question asks for) |
-| `category` | `kinds`, `titles`, `mentions`, `inside`, `direction`, `transitive`, `state`, `combined`, `unanswerable`, `robustness` |
+| `category` | `kinds`, `titles`, `mentions`, `inside`, `direction`, `transitive`, `state`, `combined`, `unanswerable`, `robustness`, `types` |
 | `reference` | a query that answers it, or `-` for a question no query answers |
 
 The suite's first test checks the cases without the network, in `./test.sh`: every case opens on its
@@ -157,3 +157,26 @@ The story's ids are `00000000-0000-4000-8000-0000000000NN` (`QueryStory.swift` l
 untitled note N1 ("TODO: rate limits") is `…04`, N2 ("Retry on 502") `…13`, the broken type note V
 `…07`, and the arrows R1 and R2 `…08` and `…09`. The eval board's are
 `00000000-0000-4000-8000-0000000ENNNN` (`QueryEvalBoard.swift`).
+
+## Lite round for "Types and new shapes" (2026-10-09)
+
+The build added the `is-a` example and typed shapes to the story (a Person type, Employee card built
+on it, Ann a card of it), so six cases were added (s46 to s51, category `types`: "which shapes are
+people?", "what is Ann?", "who has an employee card?", "is Ann a Person?", "notes whose text says
+person" (words, not `:is-a`), "which notes are types?"). Haiku 5.5 at `high`, the shipped model, not
+appended to `results.tsv`.
+
+- Round 1 (18 cases, the six new and 12 across the categories, twice each): 31 of 36. The 12 old cases
+  and s46, s49, s50 passed; s47 0 of 2 (it wrote `:edge-from("Ann", is-a)`, the direct types; the case
+  had expected Person too, so the case's expectation was wrong: "what is Ann?" is the types it names),
+  s48 1 of 2 (`:edge-to("Employee card", arrow)`: "has" read as an arrow), s51 0 of 2
+  (`sticky-note:edge-from(*, is-a)`: it did not know a note holding a schema is a type). Prompt bug:
+  the prompt had one `:is-a` example and nothing on what a type is or on the direct edge.
+- Fix: a "Types" section (`sticky-note[schema]` is the notes that are types; `:is-a("Person")` and
+  "who has an Employee card?"; `:edge-from("Ann", is-a)`, an is-a edge is not an arrow), and s47
+  expects the direct types. Placed before "Combining (AND)" it made "locked notes inside Payments"
+  (s38) fail its first try 7 of 11 runs (`sticky-note[locked=true]"Payments"`; 8 of 8 without the
+  section); placed after Combining, before Rules, 8 of 8, and the four cases it touches 8 of 8 each.
+- Round 2, with the section after Combining (32 cases, twice each): 62 of 64. s20 failed twice
+  (`subboard > "Refund policy"`), a case the notes above already list as a few-percent miss; the six
+  `types` cases 12 of 12; every other category 100%.

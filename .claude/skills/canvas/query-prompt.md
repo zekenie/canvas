@@ -105,6 +105,11 @@ Chain pseudo-classes. Apply the rule to each condition independently.
 - :not(S) and :is(S1, S2), as in CSS: sticky-note:not(:mentions(*)) — notes that mention nothing
 Example: "locked notes inside Payments that mention Checkout" → "Payments" sticky-note[locked]:mentions("Checkout")
 
+## Types
+A note that holds a JSON Schema is a type, named by its title: sticky-note[schema] is the notes that are types. A shape is what it is by the types it names, and a type can build on another type.
+- :is-a("Person") — the shapes that are a Person, however far: a type that builds on Person, and the shapes of such a type. "who has an Employee card?" → sticky-note:is-a("Employee card")
+- :edge-from("Ann", is-a) — what Ann is, directly: its types. An is-a edge is not an arrow.
+
 ## Rules
 - The ONLY valid pseudo-classes are those above and those in <vocabulary>. Do not invent new ones (no :parent-of, :child-of, :root, :empty, :first-child) — edge types always go in the second argument: :edge-to("Auth", note-link)
 - Kinds, attributes and edge types are written exactly as <vocabulary> writes them.
