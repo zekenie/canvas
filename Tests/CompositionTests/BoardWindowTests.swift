@@ -5,6 +5,7 @@ import Boards
 import CanvasTesting
 import CanvasUI
 import CoreGraphics
+import Find
 import Foundation
 import Geometry
 import Mentions
@@ -196,8 +197,10 @@ final class NestedWindow {
     test("the path shows over the canvas inside a subboard, not on the root; only its pill takes clicks, and a crumb goes up") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        expectEqual(w.board.viewState.fileName, w.board.displayName, "the root's crumb is the file's name")
-        expect(!w.board.viewState.fileName.isEmpty)
+        expectEqual(w.editor.rootName, w.board.displayName, "the root board is called what the file is: its window told the editor")
+        expect(!w.editor.rootName.isEmpty)
+        expectEqual(w.editor.tableOfContents?.heading.title, w.board.displayName, "and so the list's heading, as the path's root crumb")
+        expectEqual(w.editor.find?.heading(of: .root).title, w.board.displayName, "and Find's rows on the root")
         w.window.settle()
         expectEqual(w.crumbs.count, 0, "nothing on the root")
         let top = w.canvasPoint(x: w.canvas.bounds.midX, fromTop: 20)

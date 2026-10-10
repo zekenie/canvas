@@ -289,7 +289,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Give each shape of a kind a board of its own, saved, deleted and copied with it | `BoardOwning` on its definition, nothing to implement; `editor.showBoard(BoardID(owner:))` shows one | [Boards in a file](#boards-in-a-file) |
 | Make a double-click, Return or ⌘↓ on a kind's shape do something other than edit it (show its board) | `x.opens("Open") { shape, editor in ... }` (Selection's `ShapeOpening`) | [Selection](#selection) |
 | Make a kind's shapes open onto the boards they own: Open in its menu and panel, ⌘↑ back up, and a name on the path | `x.opensBoard(placeholder:systemImage:)` (Boards), on a `BoardOwning` kind | [Boards](#boards) |
-| Show where you are in a file's boards, and go up | `BoardPath(editor:rootName:)`, over the canvas; `editor.goUp(to:)`, `editor.name(of:root:)` | [Boards](#boards) |
+| Show where you are in a file's boards, and go up | `BoardPath(editor:)`, over the canvas; `editor.goUp(to:)`, `editor.name(of:)` | [Boards](#boards) |
+| Show a view of yours in the detail panel where it has no one shape to show, or in its place while something of yours is open | `registrar.detailOverview { editor, onExit in … }`; `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }` | [The detail panel](#the-overview-and-takeovers) |
+| Say what a board is called over another plugin's list of it | `registrar.contentsHeading { editor in … }` (the table of contents'), `registrar.findHeading { board, editor in … }` (Find's) | [Boards](#boards) |
 | Put a board inside the board | `SubboardsPlugin`: the Subboard tool (B) places a card that opens onto a board of its own | [Subboards](#subboards) |
 | Hold shapes in a region of the board that moves them with it, locks them with it and keeps what's put down from sitting across its edge | `ShapeContaining` on a box kind's definition, nothing to implement; `FramesPlugin`, whose Frame tool (F) draws one | [Frames](#frames), [Containers](#containers) |
 | Draw a kind's shape with a drag, from the press to the pointer, and still say what a click places (and `canvas draw`) | `x.tool(label:systemImage:shortcut:placing:_:)`, a tool of your own with the kind's placement; `editor.place(_:in:)` at the release | [Frames](#frames) |
@@ -370,7 +372,7 @@ Getting around a file's [boards](#boards) is the example: one line,
 a Board tab in the panel and Open first in the context menu. Boards owns opening them, going back
 up, what a board is called and the path that shows where you are; the kind declares nothing, and
 the core only holds the boards and shows one. One horizontal may build on another: Boards imports
-ContextMenus, DetailPanel, Keyboard, Selection, TableOfContents and Titles.
+ContextMenus, DetailPanel, Find, Keyboard, Selection, TableOfContents and Titles.
 
 Selecting is a horizontal too, one that every kind is in unless it opts out
 (`backdrop.unselectable()`). [Selection](#selection) owns what's selected and the way back
@@ -438,7 +440,9 @@ Opting in goes in one of three directions:
   value of its own in the owner's module (`ValidationDetailsPlugin`, `ValidationContentsPlugin`,
   `MentionValidationPlugin` and `TitleValidationPlugin`): the registry refuses a contribution whose
   point's owner isn't installed, so a list with Validation and no panel installs `ValidationPlugin()`
-  alone.
+  alone. A surface shows itself on another the same way: the table of contents is the detail
+  panel's overview (`ContentsOverviewPlugin`), Find's panel its takeover (`FindPanelPlugin`), and
+  Boards heads both their lists with a board's name (`BoardContentsPlugin`, `BoardFindPlugin`).
 - **A lexicon imports a language and the concerns it gives words to.** A language knows no concern:
   [`canvas draw`](#the-command-line) (Automation's) and [queries](#queries) take what shapes are
   called, what an edge is, what's wrong with a shape drawn, what a board is called and what more a
@@ -3201,11 +3205,11 @@ passes `onExit`. `CanvasFocus` (CanvasUI) is the handle: `CanvasRepresentable(ed
 it, and `take()` makes the canvas its window's first responder.
 
 The app places the panel; the core and CanvasUI know nothing of it. Composition, which decides what
-ships, hands the app the view:
+ships, hands the app the view, which is one call: what the panel shows is the plugins' to say.
 
 ```swift
-/// The detail panel, for the app to place beside the canvas. It follows the editor's selection;
-/// `onExit` must give the keyboard back to the canvas.
+/// The detail panel, for the app to place beside the canvas, with `onExit` giving the keyboard
+/// back to the canvas.
 public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
     DetailPanelView(editor: editor, onExit: onExit)
 }
@@ -3218,21 +3222,34 @@ brings resizing, collapsing in narrow windows, and View › Show Inspector (⌃�
 ```swift
 CanvasRepresentable(editor: editor, focus: canvasFocus)
     .focusedSceneValue(\.canvasFocus, canvasFocus)
-    .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: $showsDetails, rootName: name, onExit: canvasFocus.take))
+    .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: $showsDetails, onExit: canvasFocus.take))
 ```
 
 where `boardChrome` (Composition) adds the path, [Jump To's](#jump-to) palette (an overlay, drawing
 nothing until it's open) and the `.inspector` that holds `detailPanel`.
 
-### The takeover slot
+### The overview and takeovers
 
-`DetailPanelView(editor:onExit:overview:takeover:)` also takes a `DetailTakeover`: `isActive`
-(read in the panel's body, so on observable state: the panel redraws when it flips), `onEscape` and
-a content view. While it's active the panel shows the content in place of everything else: "No
-Details", the overview and every selection branch, in the panel's own environment, frame and
-width. Escape and ⌘. in the panel call `onEscape`, then `onExit` (a text view holding keys still
-hears Escape first). The panel doesn't know what it shows; Composition fills the slot with
-[Find](#find)'s panel, active while Find is open, `onEscape` closing it.
+Two points say what the panel shows besides a shape's details. It reads both from the editor's
+registry, and never learns what either view is.
+
+- **The overview** (`DetailOverviews`, at most one: a second is a conflict) shows where the panel
+  has no one shape to show: in place of "No Selection", and under the header of several
+  (data-canvas's details panel takes an `emptyView` and a `multiSelectView` the same way). A plugin
+  gives it with `registrar.detailOverview { editor, onExit in … }`, and its view follows the
+  editor by itself. The table of contents gives its list (`ContentsOverviewPlugin`, below).
+- **A takeover** (`DetailTakeovers`, a list in plugin order: the first that's active shows) is
+  `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }`: `isActive` (read in the
+  panel's body, so on observable state: the panel redraws when it flips), `onEscape` and the view.
+  While it's active the panel shows the view in place of everything else, the overview and every
+  selection branch, in the panel's own environment, frame and width. Escape and ⌘. in the panel
+  call its `onEscape`, then `onExit` (a text view holding keys still hears Escape first).
+  [Find](#find) gives its panel, active while Find is open, `onEscape` closing it
+  (`FindPanelPlugin`).
+
+Each view is handed the panel's editor and its `onExit`, and is made as the panel is. Both points
+are the panel's, so each contributor is a plugin value of its own after `DetailPanelPlugin`: a
+list without the panel leaves it out, and one with the contributor and no panel is refused.
 
 ### Performance
 
@@ -3740,13 +3757,16 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   scope pinned by selecting rows or Show All was the board left's, and goes. Another board's rows
   replace this one's in one run, whatever's listed on either (the list's id is the board, the scope
   and how many times a commit has brought rows in at several places, `ContentsListID`).
-- **The heading.** The header says "Board" over the whole board. Whoever places the list can name
-  the board instead: `TableOfContentsView(editor:onExit:heading:)` takes
-  `heading: (CanvasEditor) -> ContentsHeading?`, a title, a symbol before it, and `up`, a command
+- **The heading.** The header says "Board" over the whole board. A plugin that knows what a board
+  is called can name it instead (the `ContentsHeadings` point, at most one: a second is a
+  conflict): `registrar.contentsHeading { editor in … }` returns a `ContentsHeading`, or nil for
+  the list's own: a title, a symbol before it, and `up`, a command
   the header offers as a button while it can run (`editor.canPerform`): an arrow turning up, not a
   chevron, which in a list's disclosure column reads as collapsing; `upTitle` names it to VoiceOver
-  ("Up" by default) and `upHelp` is its tooltip, the title and its key as a tool's is. The table of
-  contents doesn't know what a board is; the heading's maker does. Filtered, the header is
+  ("Up" by default) and `upHelp` is its tooltip, the title and its key as a tool's is. It's read in
+  the header's body (`ContentsState.heading`), so it reads observable state and the header alone
+  redraws as that changes. The table of contents doesn't know what a board is called; the
+  heading's maker does (Boards' `BoardContentsPlugin`: [Boards](#boards)). Filtered, the header is
   "Selection" with Show All, whatever the heading.
 - **Opening a row.** A double-click or Return on a row opens its shape, as Return on the canvas
   does: `ContentsState.open(_:)`, the list's primary action, selects it and runs Selection's
@@ -3888,7 +3908,7 @@ ContentsOutline(editor: editor, board: board, highlighted: next, maxHeight: 348)
 
 ### Hosting
 
-(The app's window wraps the canvas in `ShippedPlugins.boardChrome(editor:showsDetails:rootName:onExit:)`, a
+(The app's window wraps the canvas in `ShippedPlugins.boardChrome(editor:showsDetails:onExit:)`, a
 view modifier in Composition that adds the path, Jump To's palette (`JumpToPalette`, over the canvas,
 given `onExit` to give the keyboard back),
 the inspector with this panel and its toolbar button, and a hook that shows the inspector on
@@ -3896,18 +3916,22 @@ request (each of Find's ⌘F, `FindState.focusRequest`, with the inspector hidde
 as Find closes, if it showed it: `revealedInspector`); it takes bindings and closures, never a CanvasUI type, and CompositionTests'
 `InspectorHost` applies the same modifier. The toolbar and the frame stay the app's.)
 
-`DetailPanelView` takes an optional overview, a view it shows where it has no shape to show: in
-place of "No Selection", and under the header of several (data-canvas's details panel takes an
-`emptyView` and a `multiSelectView` the same way). Neither horizontal knows the other; Composition,
-which decides what ships, joins them, and the app places the result in its `.inspector` as before:
+The detail panel has [an overview](#the-overview-and-takeovers), a view it shows where it has no
+one shape to show, and the table of contents gives its list as that, from a plugin value of its
+own, so TableOfContents imports DetailPanel (a surface on a surface) and Composition only lists
+the plugin, after both:
 
 ```swift
-public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
-    DetailPanelView(editor: editor, onExit: onExit) {
-        TableOfContentsView(editor: editor, onExit: onExit)
+public struct ContentsOverviewPlugin: CanvasPlugin {
+    public var id: PluginID { .contentsOverview }      // "contents-overview"
+    public func register(into registrar: inout PluginRegistrar) {
+        registrar.detailOverview { editor, onExit in TableOfContentsView(editor: editor, onExit: onExit) }
     }
 }
 ```
+
+A list without the panel leaves it out and keeps the list's state, which the path's crumbs' menus
+read too; a list with it and no panel is refused (`ownerNotInstalled`).
 
 Bringing shapes into view is Selection's `editor.reveal`, which the table of contents calls. It
 takes two generic things from the core: `editor.viewportSize`, which
@@ -6437,16 +6461,21 @@ a shape under a device pixel its pixel, once. A hit under a shape in front shows
 
 ### The panel, and the host
 
-`FindPanel(editor:onExit:heading:)` is Find's panel: its own header (no Back): the field, with
+`FindPanel(editor:onExit:)` is Find's panel: its own header (no Back): the field, with
 a spinner while the index is built; Done; the count with Previous and Next (tooltips from
 `registry.help(_:forCommand:)`: "Next (⌘G)"); and a row per shape with hits, the window of 200 around
-the current one in a lazy stack, under its board's heading (named by `heading`, which the placer
-supplies: Composition passes the path's names), each the kind's symbol in the kind's tint (`registry.label(of:)`), the text
+the current one in a lazy stack, under its board's heading (`FindState.heading(of:)`), each the kind's symbol in the kind's tint (`registry.label(of:)`), the text
 around its first hit with its hits semibold (cut on whole characters, never inside a surrogate
 pair), and its count when it has more than one; "No matches". Return steps unless an input method is
 composing in the field.
-Composition puts it in the detail panel's [takeover slot](#the-takeover-slot) while
-`editor.find?.isActive`, with `onEscape` closing Find, and `boardChrome` shows a hidden inspector
+A board's heading is a plugin's to say (the `FindHeadings` point, at most one: a second is a
+conflict), `registrar.findHeading { board, editor in FindHeading(…) }`, a title and a symbol before
+it, so Find never learns what names a board: Boards' `BoardFindPlugin` gives the path's names
+([Boards](#boards)); without one the root's rows are headed "Board" and another board's have no name.
+`FindPanelPlugin` (id `find-panel`), a plugin value of Find's own after `FindPlugin` and
+`DetailPanelPlugin`, gives the panel as the detail panel's [takeover](#the-overview-and-takeovers) while
+`editor.find?.isActive`, with `onEscape` closing Find (a list without the detail panel leaves it
+out, and keeps Find's state, highlights and commands), and Composition's `boardChrome` shows a hidden inspector
 when `focusRequest` changes (and hides it again as Find closes, if it showed it,
 `revealedInspector`); hiding the inspector while Find is open closes Find. `FindState` (`editor.find`, `@Observable`) is what views read: `isActive`,
 `query`, `results`, `total`, `current`, `currentNumber`, `focusRequest`, `isIndexing`.
@@ -7272,7 +7301,7 @@ registrar.querySelection(Word.selected.rawValue, "the person has it selected", e
   `draw`'s own (DrawLexicon's [`TitleNamesPlugin`](#what-draw-takes-from-other-plugins)), so the two name shapes alike.
 - **Boards are named by Boards' rule**: the owner's name, else `placeholder` for its kind (asked once
   per kind), else its label (`registry.label(of:)`). `BoardQueriesPlugin`'s is `registry.boardPlaceholder(of:)`,
-  which [`editor.name(of:root:)`](#boards) reads, so a row's `inside` says what the path's crumbs say.
+  which [`editor.name(of:)`](#boards) reads, so a row's `inside` says what the path's crumbs say.
 - **A pseudo-class** (`:invalid`) takes no argument. `prepare` runs on the main actor in the turn the
   query takes up the file, taking what it needs there, O(1) or O(what it holds) (a set of ids, a
   service's value), and what it returns (any `Sendable`) is handed as it was to the rest: `seeds`, if
@@ -7561,25 +7590,35 @@ registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .c
   owner of the board below it on the path selected, as one step back
   (`showBoard(_:selecting:)`), so ⌘[ comes back down. Off the root only, never mid-press, and not
   while a shape is being edited, where ⌘↑ is the text's; on the root its key passes.
-- **Names.** `editor.name(of: board, root:)` is what a board is called: its owner's title (Titles;
+- **Names.** `editor.name(of: board)` is what a board is called: its owner's title (Titles;
   a blank one is none), else its kind's placeholder, else its kind's label (`registry.label(of:)`);
-  `root` for the root (the file's name). `editor.symbol(of:)` is its kind's symbol (`opensBoard`'s,
-  else its label's), nil for the root. Composition's table-of-contents
-  heading and the path both read them. `registry.boardPlaceholder(of: kind)` is the placeholder a
+  the root, which no shape owns, is called what the file is, else "Board". Only the window knows
+  the file's name, so it's the core's to hold: `editor.rootName`, observed, empty until the host
+  says (`nameRoot(_:)`, host API, which a board's window calls as it titles itself), and Boards
+  reads it wherever it names the root. `editor.name(of:root:)` is the same with the root called
+  what the caller says. `editor.symbol(of:)` is its kind's symbol (`opensBoard`'s,
+  else its label's), nil for the root. The path, the table of contents' heading and Find's
+  headings all read them. `registry.boardPlaceholder(of: kind)` is the placeholder a
   kind opens its boards with (nil for a kind that doesn't), the registry's alone, which both read,
   and so does a [query](#queries): its rows name the boards a shape is inside by the same rule,
   through QueryLexicon's `BoardQueriesPlugin` (BoardsTests' "A board's placeholder" holds it).
-- **In the app** (Composition and the app's window): the table of contents' header names the
-  board shown, with its symbol and a way up (`ShippedPlugins.contentsHeading(for:rootName:)`, the
+- **Over other plugins' lists.** Boards names a board wherever another plugin lists one, each
+  from a plugin value of its own (a face), after `BoardsPlugin` and the list's plugin, so a list
+  without that plugin leaves it out. `BoardContentsPlugin` (id `board-contents`) heads the table
+  of contents (its `ContentsHeadings` point) with the
   board shown's crumb as a `ContentsHeading` with `up: .enclosingBoard`, called Enclosing Board as
   the Go menu calls it, its tooltip "Enclosing Board (⌘↑)", from Keyboard's
-  `registry.help(_:forCommand:)`; on the root the file's name, `detailPanel`'s `rootName`, as the
-  window and the path's root crumb have it, else "Board"); the window's subtitle names the board
+  `registry.help(_:forCommand:)`; on the root the file's name, as the
+  window and the path's root crumb have it, else "Board". `BoardFindPlugin` (id `board-find`)
+  heads each board's rows in [Find](#find)'s list (its `FindHeadings` point) with the board's name
+  and symbol. Boards imports TableOfContents and Find for them.
+- **In the app** (Composition and the app's window): the window's subtitle names the board
   shown, nothing on the root, where the title is the file's name (`BoardConfiguration.boardName`,
   which the app fills with `ShippedPlugins.boardName(of:)`, the last crumb's title, and the window
   controller reads observed, so it follows a switch or a rename);
-  the path is over the canvas (`ShippedPlugins.boardPath(editor:rootName:)`, the root's crumb the
-  file's display name, `BoardViewState.fileName`); and the Go menu has Back (⌘[), Enclosing Board
+  the path is over the canvas (`ShippedPlugins.boardPath(editor:)`, the root's crumb the
+  file's display name, which `BoardWindowController.synchronizeWindowTitleWithDocumentName` tells
+  the editor); and the Go menu has Back (⌘[), Enclosing Board
   (⌘↑) and Open Selection (⌘↓), sent to the board's window controller wherever the keyboard is, and dimmed
   while text has it, where the menu bar leaves those keys to the text (`MenuBar`: AppKit's menus
   take a disabled item's key and beep), so they move its caret. Jump To… (⌘K), JumpTo's, will follow
@@ -7588,7 +7627,7 @@ registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .c
 
 ### The path
 
-`BoardPath(editor:rootName:)` is where you are, as data-canvas shows it: a small capsule of
+`BoardPath(editor:)` is where you are, as data-canvas shows it: a small capsule of
 crumbs over the top middle of the canvas, root first, the board shown last, in a material pill 8
 points below the canvas's top edge (`BoardsStyle`). The host places it over the whole canvas, with
 `.overlay(alignment: .top)`, so a crumb's menu can stay inside it; only the pill and the menu take
@@ -7609,7 +7648,8 @@ Fit and `reveal` fit shapes below it, where their titles' pills aren't under it.
                            └──────────────────────────┘
 ```
 
-- The root's crumb is `rootName` ("Board" when that's empty); the others are `name(of:)`. The
+- The root's crumb is the file's name (`editor.rootName`; "Board" when that's empty), and follows
+  a rename; the others are `name(of:)`. The
   board shown is bold and isn't a button. Each crumb is at most 180 points wide, truncated past it,
   with its name as its tooltip. The crumbs are separated by ›s, and nothing else marks them but the
   lock below (no caret for a crumb's menu, below: the owner found ⌄s beside the ›s busy).
@@ -10998,7 +11038,7 @@ each of them:
 |---|---|
 | [Selection](#selection) | Opening a shape (`ShapeOpening`); Back crosses boards, and showing another board is a step; nothing is selected on arrival; `showBoard(_:selecting:)`; `goTo` goes to a shape on any board. |
 | [Boards](#boards) | Opening a kind's boards, ⌘↑, a board's name and symbol, and the path over the canvas. |
-| [The table of contents](#whats-listed-and-selecting) | Lists the board shown, keeps each board's rows, and takes its header from its placer (the board's crumb, in the app). A row may read shapes on other boards ([`elsewhere`](#rows-read-from-more-than-their-shape)). |
+| [The table of contents](#whats-listed-and-selecting) | Lists the board shown, keeps each board's rows, and takes its header from the plugin that names boards (Boards: the board's crumb). A row may read shapes on other boards ([`elsewhere`](#rows-read-from-more-than-their-shape)). |
 | [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked, and a rule's lookups (`MentionValidationPlugin`'s targets) find shapes there alone; a rule over a service's state (`TitleValidationPlugin`'s titles, the file's) names the shapes a commit changes the issues of on any board, checked once their board is shown. |
 | [Locking](#locking) | A shape whose board holds a locked shape isn't deleted; a locked owner is entered as any other. |
 | [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`, or `goInto` for a kind followed by opening it: a subboard); who mentions whom (Topology's), what each mentioned shape shows and the `@` picker's catalog are the file's (the board shown's first on a tie), so showing another board reads no mention text; so are the Mentioned In tab's and Show What Mentions' mentioners, the board shown's first. |
@@ -11543,10 +11583,14 @@ detail-panel         service DetailPanelState
 context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
 slash-commands       service SlashCommandState
 table-of-contents    service ContentsState
+contents-overview    detail overview
 titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
 mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
 board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
+board-contents       contents heading
 find-in-boards       service FindState · overlay FindOverlay · command find · shortcut ⌘F → command find · command findNext · shortcut ⌘G → command findNext · command findPrevious · shortcut ⇧⌘G → command findPrevious
+find-panel           detail takeover
+board-find           find heading
 title-find           findable title → every shape
 mention-find         findable mention text → every shape
 arrow-find           findable label → arrow
@@ -12272,7 +12316,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 | Keyed / list registries, last write wins | `KeyedExtensionPoint` / `ExtensionPoint`; every collision is an error. |
 | `ValidationIndicatorLayer` | `ValidationOverlay`, through the core's overlay point. |
 | `toc: { component, filter, getParentShapeId }` on `defineShape`, `TocRegistry` | `x.contentsRow(when:nestedUnder:) { ContentsLabel(...) }`, sugar from the TableOfContents horizontal ([the table of contents](#the-table-of-contents)). |
-| `DetailsPanel`'s `emptyView` and `multiSelectView` (the TOC, whole or filtered to the selection) | `DetailPanelView`'s overview, which Composition fills with `TableOfContentsView`. |
+| `DetailsPanel`'s `emptyView` and `multiSelectView` (the TOC, whole or filtered to the selection) | `DetailPanelView`'s overview (its `DetailOverviews` point), which the table of contents' `ContentsOverviewPlugin` gives `TableOfContentsView`. |
 | `adornments:` on `definePlugin` (`AdornmentShapeUtil`, the `adornment-attachment` binding with its anchor, offset, gap and slot; `singletonPerHost`, `isEligibleHost`; `attachAdornment` and `toggleAdornment`) | An `Adornment` type (its place and its order band) and a label made from the shape's data, placed with `x.adornment`, `registrar.adornment(_:on:)` or `registrar.adornmentForEveryShape(_:where:)`, whose `where` can read another plugin's point (as the sticker read its referenceable registry). Never a record: nothing to attach, sync, cascade on delete, copy or migrate; one per type per shape by construction; laid out by [Adornments](#adornments), so none overlap. A fact one shows (locked, public) is an [added property](#something-the-user-turns-on) of the shape. |
 | `ToolIdle` / `ToolPointing` click-to-create | `Placement` (follow the pointer, or edit), used by place tools and the double-click claim. |
 | `toolbarItems` with a decorative `kbd` | A key registered with the Keyboard horizontal (`shortcut:`), collision-checked, that the canvas answers and the tooltip names. |

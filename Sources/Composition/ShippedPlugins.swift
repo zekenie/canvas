@@ -66,14 +66,19 @@ public enum ShippedPlugins {
             // After Validation: what's shown on shapes draws over its outline.
             ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
             // Slash commands: the list at a `/` in the text views Mentions hosts it in. Titles offers `/title`, Locking `/lock`.
-            SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(),
+            SlashCommandsPlugin(),
+            // The table of contents, and its list in the detail panel where the panel has no one shape to show.
+            TableOfContentsPlugin(), ContentsOverviewPlugin(),
+            TitlesPlugin(),
             // After Titles, whose names its pills show, and the table of contents, whose rows it names.
             MentionsPlugin(),
-            // Getting around a file's boards (a subboard's): opening one, ⌘↑, the path.
-            BoardsPlugin(),
+            // Getting around a file's boards (a subboard's): opening one, ⌘↑, the path. Then the board shown's
+            // name over the table of contents, with the way up.
+            BoardsPlugin(), BoardContentsPlugin(),
             // Finding text on the board shown and every board under it (⌘F, ⌘G): after Adornments, so a
-            // hit's ring draws over a title's pill, and Topology, whose walk of the file orders the hits.
-            FindPlugin(),
+            // hit's ring draws over a title's pill, and Topology, whose walk of the file orders the hits. Then
+            // its panel in the detail panel's place while it's open, and Boards' names over each board's rows.
+            FindPlugin(), FindPanelPlugin(), BoardFindPlugin(),
             // What Find searches, from the plugins that draw it, each after Find and its owner: titles,
             // mention text (a note's, a schema card's description), arrows' labels.
             TitleFindPlugin(), MentionFindPlugin(), ArrowFindPlugin(),
@@ -138,46 +143,20 @@ public enum ShippedPlugins {
         AnthropicSettingsView(keys: .standard)
     }
 
-    /// The detail panel, for the app to place beside the canvas. It follows the editor's selection:
-    /// one shape's details, or, with nothing or several selected, the table of contents (the whole
-    /// board, or the selection), as data-canvas's details panel does. `onExit` must give the
-    /// keyboard back to the canvas. Inside a subboard, the list's header names its board, with
-    /// its symbol and a button up (⌘↑'s `.enclosingBoard`); on the root it's `rootName` (the
-    /// file's name, as the window and the path's root crumb call it), else "Board". While Find is
-    /// open, its panel takes the panel over (Escape and ⌘. there close it), its boards named as the
-    /// path names them.
-    public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void, rootName: String = "") -> some View {
-        DetailPanelView(editor: editor, onExit: onExit, overview: {
-            TableOfContentsView(editor: editor, onExit: onExit, heading: { contentsHeading(for: $0, rootName: rootName) })
-        }, takeover: DetailTakeover(isActive: { $0.find?.isActive ?? false }, onEscape: { editor.find?.close() }) {
-            FindPanel(editor: editor, onExit: onExit, heading: { findHeading(of: $0, in: editor, rootName: rootName) })
-        })
+    /// The detail panel, for the app to place beside the canvas, with `onExit` giving the keyboard
+    /// back to the canvas. What it shows is the plugins' to say: one shape's details, the table of
+    /// contents where it has no one shape to show (`ContentsOverviewPlugin`), Find's panel while Find
+    /// is open (`FindPanelPlugin`), and each named as Boards names a board (`BoardContentsPlugin`,
+    /// `BoardFindPlugin`).
+    public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
+        DetailPanelView(editor: editor, onExit: onExit)
     }
-
-    /// A board's heading over its rows in Find's panel: named as the path names it (Boards'), the
-    /// root `rootName`, else "Board".
-    public static func findHeading(of board: BoardID, in editor: CanvasEditor, rootName: String = "") -> FindHeading {
-        FindHeading(editor.name(of: board, root: rootName.isEmpty ? "Board" : rootName), systemImage: editor.symbol(of: board))
-    }
-
-    /// The table of contents' heading in `detailPanel`: the board shown's crumb (Boards'), so it's
-    /// named as the path names it and redraws as the path does, with ⌘↑'s way up, called as Go ›
-    /// Enclosing Board is, with its key; on the root, `rootName`, or nil where that's empty, for
-    /// the list's own, "Board".
-    public static func contentsHeading(for editor: CanvasEditor, rootName: String = "") -> ContentsHeading? {
-        guard let crumb = editor.boardCrumbs?.crumbs.last else { return rootName.isEmpty ? nil : ContentsHeading(rootName) }
-        return ContentsHeading(crumb.title, systemImage: crumb.systemImage, up: .enclosingBoard, upTitle: enclosingBoard,
-                               upHelp: editor.registry.help(enclosingBoard, forCommand: .enclosingBoard))
-    }
-
-    /// What going up is called in the list, as the Go menu calls it.
-    private static let enclosingBoard = "Enclosing Board"
 
     /// Where the board shown is in its file (Boards' `BoardPath`), for the app to place over the top
-    /// middle of the canvas (`.overlay(alignment: .top)`): a pill of crumbs, the root's named
-    /// `rootName` (the file's name), nothing on the root. Only the pill takes clicks.
-    public static func boardPath(editor: CanvasEditor, rootName: String) -> some View {
-        BoardPath(editor: editor, rootName: rootName)
+    /// middle of the canvas (`.overlay(alignment: .top)`): a pill of crumbs, the root's named as the
+    /// file is (`editor.rootName`, the window's to say), nothing on the root. Only the pill takes clicks.
+    public static func boardPath(editor: CanvasEditor) -> some View {
+        BoardPath(editor: editor)
     }
 
     /// How far down over the canvas `boardPath` reaches on a board, for the app to tell the editor

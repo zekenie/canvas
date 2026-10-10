@@ -23,6 +23,8 @@ import Topology
 public final class FindState {
     @ObservationIgnored private unowned let editor: CanvasEditor
     @ObservationIgnored let index: FindIndex
+    /// What a plugin calls each board (`FindHeadings`), if one does.
+    @ObservationIgnored private let namedHeading: FindHeadings.Contribution?
 
     /// Whether Find is open: its panel shows, its highlights draw.
     public private(set) var isActive = false
@@ -99,11 +101,18 @@ public final class FindState {
     init(editor: CanvasEditor) {
         self.editor = editor
         index = FindIndex(editor: editor)
+        namedHeading = editor.registry.contributions(to: FindHeadings.self).first?.value
         index.didChange = { [weak self] ids in self?.indexDidChange(ids) }
         index.didBuild = { [weak self] in self?.indexDidBuild() }
     }
 
     // MARK: Reading
+
+    /// What heads a board's rows in the panel: what a plugin calls the board (`registrar.findHeading`),
+    /// else "Board" for the root and no name for any other.
+    public func heading(of board: BoardID) -> FindHeading {
+        namedHeading?(board, editor) ?? FindHeading(board.isRoot ? FindStyle.rootHeading : "")
+    }
 
     /// The current hit's number, from 1, in `total`.
     public var currentNumber: Int? {

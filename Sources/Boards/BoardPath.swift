@@ -23,19 +23,18 @@ import TableOfContents
 /// The crumb where the path turns read-only, the first whose board is (a locked subboard's, and so
 /// every board under it), has a small lock after its name; the crumbs below it have none
 /// (`BoardCrumbs.readOnlyStart`). Folded into "…", it's the lock on its item in the menu.
+///
+/// The root's crumb is the file's name, as the host has it (`editor.rootName`), else "Board".
 public struct BoardPath: View {
     let editor: CanvasEditor
-    let rootName: String
 
-    /// `rootName` names the root's crumb: the file's name, say.
-    public init(editor: CanvasEditor, rootName: String) {
+    public init(editor: CanvasEditor) {
         self.editor = editor
-        self.rootName = rootName
     }
 
     public var body: some View {
         if let crumbs = editor.boardCrumbs {
-            BoardPathPill(crumbs: crumbs, editor: editor, rootName: rootName)
+            BoardPathPill(crumbs: crumbs, editor: editor)
         }
     }
 
@@ -61,14 +60,13 @@ struct CrumbBounds: PreferenceKey {
 struct BoardPathPill: View {
     let crumbs: BoardCrumbs
     let editor: CanvasEditor
-    let rootName: String
 
     var body: some View {
         #if DEBUG
         let _ = (crumbs.pathRedrawn += 1)
         #endif
         if !crumbs.crumbs.isEmpty {
-            let layout = crumbs.layout(rootName: rootName.isEmpty ? BoardsStyle.rootFallback : rootName)
+            let layout = crumbs.layout(rootName: editor.name(of: .root))
             // The canvas, which the menu that shows stays inside: only the pill and the menu take
             // clicks, the rest is the canvas's.
             GeometryReader { canvas in

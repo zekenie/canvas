@@ -10,17 +10,16 @@ import SwiftUI
 struct BoardChrome: ViewModifier {
     let editor: CanvasEditor
     @Binding var showsDetails: Bool
-    let rootName: String
     let onExit: @MainActor () -> Void
 
     func body(content: Content) -> some View {
         content
             // Only the pill takes clicks: the rest of the canvas is the canvas's.
-            .overlay(alignment: .top) { ShippedPlugins.boardPath(editor: editor, rootName: rootName) }
+            .overlay(alignment: .top) { ShippedPlugins.boardPath(editor: editor) }
             // Jump To's palette, drawing nothing until it's open.
             .overlay { PaletteOverlay(editor: editor, onExit: onExit) }
             .inspector(isPresented: $showsDetails) {
-                ShippedPlugins.detailPanel(editor: editor, onExit: onExit, rootName: rootName)
+                ShippedPlugins.detailPanel(editor: editor, onExit: onExit)
                     .toolbar {
                         ToolbarItem {
                             // Named as View › Show Inspector names it, and saying what a click does now.
@@ -73,11 +72,11 @@ private struct InspectorReveal: ViewModifier {
 extension ShippedPlugins {
     /// The board's chrome, for the app to apply to the canvas view (`CanvasRepresentable`) in its
     /// window: the path over the top middle, the palette's overlay, and the inspector shown while
-    /// `showsDetails` (the detail panel, with its toolbar button, naming the root `rootName`: the
-    /// file's name). `onExit` must give the keyboard back to the canvas. The tool picker, the zoom
-    /// menu and the view's frame are the app's.
-    public static func boardChrome(editor: CanvasEditor, showsDetails: Binding<Bool>, rootName: String,
+    /// `showsDetails` (the detail panel, with its toolbar button). `onExit` must give the keyboard
+    /// back to the canvas. The tool picker, the zoom menu and the view's frame are the app's, and
+    /// what the root board is called is its window's to tell the editor (`editor.rootName`).
+    public static func boardChrome(editor: CanvasEditor, showsDetails: Binding<Bool>,
                                    onExit: @escaping @MainActor () -> Void) -> some ViewModifier {
-        BoardChrome(editor: editor, showsDetails: showsDetails, rootName: rootName, onExit: onExit)
+        BoardChrome(editor: editor, showsDetails: showsDetails, onExit: onExit)
     }
 }

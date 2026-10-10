@@ -1,5 +1,5 @@
 import AppKit
-import Canvas
+@_spi(Host) import Canvas
 import SwiftUI
 
 /// A board's window: the app's content for it (`BoardConfiguration.content`), hosted with its
@@ -104,10 +104,11 @@ public final class BoardWindowController: NSWindowController {
     /// so a disabled item leaves the key to it.
     private static let textKeys: Set<Selector> = [#selector(enclosingBoard(_:)), #selector(openSelection(_:))]
 
-    /// The root's crumb on the path is the file's name, kept as the title is.
+    /// The root board is called what the file is ("Untitled", "Plans"), kept as the title is: the
+    /// editor's `rootName`, which whatever names boards reads (the root's crumb on the path).
     public override func synchronizeWindowTitleWithDocumentName() {
         super.synchronizeWindowTitleWithDocumentName()
-        if let board, board.viewState.fileName != board.displayName { board.viewState.fileName = board.displayName }
+        if let board { board.editor.nameRoot(board.displayName) }
     }
 }
 

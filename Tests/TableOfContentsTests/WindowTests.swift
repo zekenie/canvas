@@ -22,7 +22,8 @@ final class ContentsWindow {
     /// How often the list handed the keyboard back.
     private(set) var exits = 0
 
-    init(_ editor: CanvasEditor, heading: @escaping @MainActor (CanvasEditor) -> ContentsHeading? = { _ in nil }) {
+    /// The header's heading is the editor's plugins' (BoardTests' `headingPlugin`).
+    init(_ editor: CanvasEditor) {
         self.editor = editor
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: listWidth, y: 0, width: 1000 - listWidth, height: 700)
@@ -31,7 +32,7 @@ final class ContentsWindow {
             guard let self else { return }
             exits += 1
             window.makeFirstResponder(canvas)
-        }, heading: heading)
+        })
         hosting = NSHostingView(rootView: contents)
         hosting.frame = CGRect(x: 0, y: 0, width: listWidth, height: 700)
         let root = NSView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))

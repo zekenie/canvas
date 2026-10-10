@@ -8,40 +8,34 @@ import Selection
 import SwiftUI
 import TestKit
 
-/// The canvas beside the detail panel, Find's panel in its takeover slot, as Composition places
-/// them, in an unshown window: the real `TaskScheduler`, so the panel's updates and the index's
-/// slices land while the main run loop runs.
+/// The canvas beside the detail panel, Find's panel taking it over while Find is open
+/// (`FindPanelPlugin`), as the app has them, in an unshown window: the real `TaskScheduler`, so the
+/// panel's updates and the index's slices land while the main run loop runs.
 @MainActor
 final class FindWindow {
     let editor: CanvasEditor
     let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.titled], backing: .buffered, defer: true)
     let canvas: CanvasView
-    let hosting: NSView
+    private(set) var hosting: NSView!
     private(set) var exits = 0
     private var time: TimeInterval = 1
 
     init(_ file: CanvasFile) throws {
-        editor = CanvasEditor(registry: try Registry(plugins: findPlugins()), file: file, scheduler: TaskScheduler())
+        editor = CanvasEditor(registry: try Registry(plugins: findPlugins(more: [DetailPanelPlugin(), FindPanelPlugin()])), file: file,
+                              scheduler: TaskScheduler())
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 1000 - DetailStyle.idealWidth, height: 700)
-        let editor = editor
-        var exit: @MainActor () -> Void = {}
-        let panel = DetailPanelView(editor: editor, onExit: { exit() }, takeover: DetailTakeover(isActive: { $0.find?.isActive ?? false },
-                                                                                              onEscape: { editor.find?.close() }) {
-            FindPanel(editor: editor, onExit: { exit() })
-        })
-        hosting = NSHostingView(rootView: panel)
+        // Weak: the panel may hand the keyboard back a turn after the test let this go.
+        hosting = NSHostingView(rootView: DetailPanelView(editor: editor, onExit: { [weak self] in
+            guard let self else { return }
+            exits += 1
+            window.makeFirstResponder(canvas)
+        }))
         hosting.frame = CGRect(x: 1000 - DetailStyle.idealWidth, y: 0, width: DetailStyle.idealWidth, height: 700)
         let root = NSView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         root.addSubview(canvas)
         root.addSubview(hosting)
         window.contentView = root
-        // Weak: the panel may hand the keyboard back a turn after the test let this go.
-        exit = { [weak self] in
-            guard let self else { return }
-            exits += 1
-            window.makeFirstResponder(canvas)
-        }
         window.makeFirstResponder(canvas)
         window.settle()
     }
@@ -160,6 +154,32 @@ final class FindWindow {
         done.performClick(nil)
         w.window.spin { w.canvasHasKeyboard }
         expect(!w.find.isActive)
+    },
+    test("FindPanelPlugin needs the detail panel, whose place it takes; Find alone needs neither") {
+        expectThrows(RegistryError.ownerNotInstalled(point: "DetailTakeovers", owner: .detailPanel, contributor: .findPanel)) {
+            _ = try Registry(plugins: findPlugins(more: [FindPanelPlugin()]))
+        }
+        let h = try findHarness(CanvasFile(root: CanvasDocument(shapes: memos(["pear"]))))
+        expectEqual(try search("pear", in: h).total, 1, "no panel, and Find finds as ever")
+    },
+    test("a board's rows are headed as a plugin calls the board, else Board for the root and no name; two plugins naming boards conflict") {
+        let pockets = PocketFile(root: ["pear"], inA: ["pear"], inA1: [], inB: [])
+        let plain = try findHarness(pockets.file)
+        expectEqual(plain.editor.find?.heading(of: .root), FindHeading("Board"))
+        expectEqual(plain.editor.find?.heading(of: pockets.aBoard), FindHeading(""))
+        let naming = Contributor(id: "naming") { $0.findHeading { board, _ in board.isRoot ? FindHeading("Top") : FindHeading("Pocket", systemImage: "tray") } }
+        let named = try findHarness(pockets.file, more: [naming])
+        expectEqual(named.editor.find?.heading(of: .root), FindHeading("Top"))
+        expectEqual(named.editor.find?.heading(of: pockets.aBoard), FindHeading("Pocket", systemImage: "tray"))
+        let report = named.editor.registry.report
+        expect(report.split(separator: "\n").contains { $0.hasPrefix("naming ") && $0.hasSuffix(" find heading") }, report)
+        let again = Contributor(id: "again") { $0.findHeading { _, _ in FindHeading("Again") } }
+        expectThrows(RegistryError.conflict(point: "FindHeadings", key: "heading", plugins: ["naming", "again"])) {
+            _ = try Registry(plugins: findPlugins(more: [naming, again]))
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "FindHeadings", owner: .findInBoards, contributor: "naming")) {
+            _ = try Registry(plugins: [naming])
+        }
     },
     test("No matches for a query nothing matches") {
         let w = try FindWindow(CanvasFile(root: CanvasDocument(shapes: memos(["pear"]))))

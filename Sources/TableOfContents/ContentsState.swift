@@ -189,6 +189,8 @@ public final class ContentsState {
     /// changes (`affected`).
     @ObservationIgnored private let rowAffected: [@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>]
     @ObservationIgnored private let markAffected: [@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>]
+    /// What a plugin calls the board listed (`ContentsHeadings`), if one does.
+    @ObservationIgnored private let namedHeading: ContentsHeadings.Contribution?
     /// The boards shown last, as they were left.
     @ObservationIgnored private var kept = BoardStash<Kept>()
     /// While boards are kept and some rows or marks read more than their shapes: the editor's
@@ -254,9 +256,15 @@ public final class ContentsState {
         lastBeyondMoves = editor.revision
         rowAffected = editor.registry.contributions(to: ContentsRows.self).compactMap(\.value.affected)
         markAffected = editor.registry.contributions(to: ContentsMarks.self).compactMap(\.value.affected)
+        namedHeading = editor.registry.contributions(to: ContentsHeadings.self).first?.value
     }
 
     // MARK: What's listed
+
+    /// What the header calls the board listed, when it lists every shape: what a plugin says
+    /// (`registrar.contentsHeading`), else "Board". Whoever reads it observes what the plugin's
+    /// heading reads.
+    public var heading: ContentsHeading { namedHeading?(editor) ?? ContentsHeading(ContentsStyle.heading) }
 
     /// The shapes listed, nil for every shape. It follows the selection: select shapes (on the
     /// canvas, or anywhere but here) and just they are listed; select nothing and every shape is.

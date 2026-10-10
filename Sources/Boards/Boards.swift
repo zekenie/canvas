@@ -108,9 +108,16 @@ extension CanvasEditor {
         }
     }
 
+    /// What a board is called, the root by the file's name, as the host has it (the core's
+    /// `rootName`), else "Board": what the path, the table of contents' heading and Find's list call
+    /// it. Whoever reads the root's observes the name, and only the root's.
+    public func name(of board: BoardID) -> String {
+        name(of: board, root: board.isRoot ? (rootName.isEmpty ? BoardsStyle.rootFallback : rootName) : "")
+    }
+
     /// What a board is called: its owner's title (Titles), else its kind's placeholder
-    /// (`opensBoard`), else the kind's label (`registry.label(of:)`); `root` for the root (the
-    /// file's name, say).
+    /// (`opensBoard`), else the kind's label (`registry.label(of:)`); `root` for the root, for a
+    /// caller that names it its own way.
     public func name(of board: BoardID, root: String) -> String {
         guard let owner = owner(of: board) else { return board.isRoot ? root : "Board" }
         if let title = registry.title(of: owner) { return title }

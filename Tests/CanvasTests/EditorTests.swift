@@ -346,6 +346,24 @@ import TestKit
         expectEqual(h.editor.camera.origin.x, 0, "190 at 200%: 380 points in, in view")
         expect(!h.editor.canUndo, "the camera's moves are no step")
     },
+    test("the root board is called what the host says, nothing until it does; whoever reads the name hears it change, and only then") {
+        let h = try EditorHarness(plugins: [CardsPlugin()])
+        expectEqual(h.editor.rootName, "")
+        let named = Flag()
+        withObservationTracking { _ = h.editor.rootName } onChange: { named.set() }
+        h.add(Card(CGRect(x: 0, y: 0, width: 100, height: 60)))
+        expect(!named.isSet, "a commit doesn't touch it")
+        h.editor.nameRoot("Plans")
+        expect(named.isSet)
+        expectEqual(h.editor.rootName, "Plans")
+        let again = Flag()
+        withObservationTracking { _ = h.editor.rootName } onChange: { again.set() }
+        h.editor.nameRoot("Plans")
+        expect(!again.isSet, "the same name is no change")
+        h.editor.replaceFile(with: CanvasFile())
+        expectEqual(h.editor.rootName, "Plans", "the editor's, not the file's: another file put in place is the window's to name")
+        expect(!h.editor.canUndo, "naming it is no step")
+    },
     test("an editing text's selection reads each attachment that reads as text as that text, and drops the rest") {
         /// A pill-like attachment that reads as a name, and one that doesn't.
         final class Named: NSTextAttachment, ReadsAsText {

@@ -38,6 +38,11 @@ struct UpPlugin: CanvasPlugin {
     editor.board.isRoot ? ContentsHeading("Root") : ContentsHeading("Inside", systemImage: "folder", up: UpPlugin.up)
 }
 
+/// Names the board listed, as a plugin does (`registrar.contentsHeading`).
+@MainActor func headingPlugin(id: PluginID = "heading", _ heading: @escaping @MainActor (CanvasEditor) -> ContentsHeading?) -> Contributor {
+    Contributor(id: id) { $0.contentsHeading(heading) }
+}
+
 @MainActor let boardTests = Suite("Table of contents across boards", [
     test("the rows are the board shown's, and follow it there and back") {
         let (file, pocket) = pocketFile(outside: ["A", "B"], inside: ["C"])
@@ -134,6 +139,28 @@ struct UpPlugin: CanvasPlugin {
         editor.goBack()
         expectEqual(editor.selectedShapeIDs, [b])
     },
+    test("the heading is what a plugin calls the board listed, else Board; two plugins naming it conflict") {
+        let (file, pocket) = pocketFile(outside: ["A"], inside: ["C"])
+        let plain = try contentsEditor([PocketsPlugin()], file: file)
+        expectEqual(plain.contents.heading.title, "Board", "no plugin names it")
+        let unnamed = try contentsEditor([headingPlugin { _ in nil }])
+        expectEqual(unnamed.contents.heading.title, "Board", "nil is the list's own")
+        let editor = try contentsEditor([PocketsPlugin(), UpPlugin(), headingPlugin(testHeading)], file: file)
+        expectEqual(editor.contents.heading.title, "Root")
+        expectEqual(editor.contents.heading.up, nil)
+        editor.showBoard(BoardID(owner: pocket))
+        let inside = editor.contents.heading
+        expectEqual(inside.title, "Inside")
+        expectEqual(inside.systemImage, "folder")
+        expectEqual(inside.up, UpPlugin.up)
+        expect(editor.registry.report.split(separator: "\n").contains { $0.hasPrefix("heading ") && $0.hasSuffix(" contents heading") }, editor.registry.report)
+        expectThrows(RegistryError.conflict(point: "ContentsHeadings", key: "heading", plugins: ["heading", "again"])) {
+            _ = try contentsRegistry([headingPlugin(testHeading), headingPlugin(id: "again", testHeading)])
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "ContentsHeadings", owner: .tableOfContents, contributor: "heading")) {
+            _ = try Registry(plugins: [headingPlugin(testHeading)])
+        }
+    },
 ])
 
 extension ContentsWindow {
@@ -147,8 +174,8 @@ extension ContentsWindow {
 @MainActor let boardWindowTests = Suite("Table of contents across boards, in a window", [
     test("the heading names the board, with a button up that runs its command while it can") {
         let (file, pocket) = pocketFile(outside: ["A"], inside: ["C"])
-        let editor = try contentsEditor([PocketsPlugin(), UpPlugin()], file: file, scheduler: TaskScheduler())
-        let w = ContentsWindow(editor, heading: testHeading)
+        let editor = try contentsEditor([PocketsPlugin(), UpPlugin(), headingPlugin(testHeading)], file: file, scheduler: TaskScheduler())
+        let w = ContentsWindow(editor)
         w.window.spin { w.rows == 2 }
         expectEqual(w.headerButtons.count, 0, "nothing above the root")
         let root = snapshot(w.hosting), header = try w.rect(ofRow: 0)
@@ -162,7 +189,7 @@ extension ContentsWindow {
     test("with no heading the header is Board's, and Selection's while some shapes are listed") {
         let (file, _) = pocketFile(outside: ["A"], inside: [])
         let windows = try [nil, ContentsHeading("Board"), ContentsHeading("Board", systemImage: "folder"), ContentsHeading("Root")].map { heading in
-            let w = ContentsWindow(try contentsEditor([PocketsPlugin()], file: file, scheduler: TaskScheduler()), heading: { _ in heading })
+            let w = ContentsWindow(try contentsEditor([PocketsPlugin(), headingPlugin { _ in heading }], file: file, scheduler: TaskScheduler()))
             w.window.spin { w.rows == 2 }
             return w
         }
