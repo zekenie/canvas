@@ -3,13 +3,12 @@ import CanvasRPC
 @_spi(Host) import Canvas
 import CoreGraphics
 import Foundation
-import Publishing
 import TestKit
 import Titles
 import Types
 
 // `canvas draw` naming types, in DrawLexicon: `is: "Person"` names the type by its title, as the rest
-// of a script names shapes, and a shape given a schema is a type that is public. Over memos, which
+// of a script names shapes, and a shape given a schema is a type. Over memos, which
 // are types and instances as a note is, and slabs, which are neither.
 
 @MainActor private func types(of title: String, in editor: CanvasEditor) throws -> [ShapeID]? {
@@ -85,43 +84,17 @@ import Types
         expectEqual(error["reason"], "ambiguous_title")
     },
 
-    test("a shape given a schema by draw is public in the same step, as /type makes one; public: false is its own say, and a type already one keeps it") {
+    test("a shape given a schema by draw is a type, in one step") {
         let editor = try typeNamesEditor()
         let steps = editor.undoHistory.undoName
         let result = try drawn(#"memo "Person" schema: "{\"type\":\"object\"}""#, on: editor)
         expectEqual(result["changes"]?.arrayValue?.compactMap { $0["did"]?.stringValue }, ["created"])
         let person = try require(editor.shape(called: "Person"))
         expect(person[TypeSchemaProperty.self] != nil)
-        expectEqual(person[PublicProperty.self], true)
+        expect(editor.types?.isType(person.id) == true)
         expect(editor.undoHistory.undoName != steps)
         editor.undo()
-        expect(editor.shape(called: "Person") == nil, "one step, schema and public together")
-
-        _ = try drawn(#"memo "Quiet" schema: "{\"type\":\"object\"}" public: false"#, on: editor)
-        expectEqual(editor.shape(called: "Quiet")?[PublicProperty.self], false, "said private, so it is")
-
-        // A note already a type, made private by the person, stays private when restated with a new schema.
-        let quiet = try require(editor.shape(called: "Quiet")).id
-        _ = try drawn(#"memo "Quiet" schema: "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"string\"}}}""#, on: editor)
-        expectEqual(editor.document[quiet]?[PublicProperty.self], false)
-
-        // A memo that was no type becomes a public one when given a schema.
-        _ = try drawn(#"memo "Plain""#, on: editor)
-        expectEqual(editor.shape(called: "Plain")?[PublicProperty.self], nil)
-        _ = try drawn(#"memo "Plain" schema: "{\"type\":\"object\"}""#, on: editor)
-        expectEqual(editor.shape(called: "Plain")?[PublicProperty.self], true)
-        // And without a schema, nothing is public.
-        _ = try drawn(#"memo "Ann""#, on: editor)
-        expectEqual(editor.shape(called: "Ann")?[PublicProperty.self], nil)
-    },
-
-    test("a plain memo restated with a schema and public: false is a private type, though it was private already") {
-        let editor = try typeNamesEditor()
-        _ = try drawn(#"memo "Plain""#, on: editor)
-        _ = try drawn(#"memo "Plain" schema: "{\"type\":\"object\"}" public: false"#, on: editor)
-        let plain = try require(editor.shape(called: "Plain"))
-        expect(plain[TypeSchemaProperty.self] != nil)
-        expect(plain[PublicProperty.self] != true, "said private, so it is not made public")
+        expect(editor.shape(called: "Person") == nil, "one step")
     },
 
     test("a type is not its own type; one drawn with its types in the same script is, and undo and redo keep the script whole") {
@@ -134,12 +107,10 @@ import Types
         _ = try drawn(#"memo "Ann" schema: "{\"type\":\"object\"}" is: "Person""#, on: editor)
         let ann = try require(editor.shape(called: "Ann")).id
         expectEqual(editor.document[ann]?[IsAProperty.self]?.map(\.shape), [person])
-        expectEqual(editor.document[ann]?[PublicProperty.self], true)
         editor.undo()
         expect(editor.shape(called: "Ann") == nil)
         editor.redo()
         expectEqual(editor.document[ann]?[IsAProperty.self]?.map(\.shape), [person], "redo brings back the list and the type together")
-        expectEqual(editor.document[ann]?[PublicProperty.self], true)
     },
 
     test("without the plugin an `is:` of text is refused as a value that isn't a list of ids; canvas kinds says what is takes") {

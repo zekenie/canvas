@@ -34,9 +34,9 @@ import Types
             expectEqual(command.admittedKinds, [Memo.kind], "the kinds that can be types: the picker ranks only those")
         }
         expect(!state.commands(for: echo).map(\.name).contains("is-a"))
-        // After `title`, `public` and `type`: the order of the plugins that contribute them.
-        expectEqual(state.commands(for: ann).map(\.name), ["title", "public", "type", "is-a"])
-        expectEqual(state.commands(for: person).map(\.name), ["title", "public", "is-a"], "not /type: it is one")
+        // After `title` and `type`: the order of the plugins that contribute them.
+        expectEqual(state.commands(for: ann).map(\.name), ["title", "type", "is-a"])
+        expectEqual(state.commands(for: person).map(\.name), ["title", "is-a"], "not /type: it is one")
     },
     test("it admits a type: on another board too; not the shape itself, a shape that isn't a type, one it is already, one that is it in turn, a pill, or a shape that isn't there") {
         let pocket = ShapeID(), far = ShapeID()

@@ -11,7 +11,6 @@ import Keyboard
 import LanguageModels
 import Mentions
 import ProseMaps
-import Publishing
 import Selection
 import SlashCommands
 import TableOfContents
@@ -90,7 +89,7 @@ struct MemosPlugin: CanvasPlugin {
 @MainActor func typeNamesEditor(typeNames: Bool = true) throws -> CanvasEditor {
     let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), AutomationPlugin(), MemosPlugin(), ValidationPlugin(),
                                        AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(),
-                                       TitlesPlugin(), MentionsPlugin(), PublishingPlugin(), TypesPlugin(), TypeValidationPlugin(), TypeDetailsPlugin(),
+                                       TitlesPlugin(), MentionsPlugin(), TypesPlugin(), TypeValidationPlugin(), TypeDetailsPlugin(),
                                        ValidationDetailsPlugin(), LanguageModelsPlugin(model: ScriptedLanguageModel()), ProseMapsPlugin(),
                                        TitleNamesPlugin()] + (typeNames ? [TypeNamesPlugin()] : [])
     let editor = CanvasEditor(registry: try Registry(plugins: plugins), scheduler: ManualScheduler())

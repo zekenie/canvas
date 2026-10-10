@@ -38,7 +38,7 @@ private let petAnswer = """
 """
 
 @MainActor let typesShippedTests = Suite("Types, as shipped", [
-    test("/type typed on a line of a note makes it a type in one step, Make Type, public, editing going on; done with it, the model writes its schema and names it") {
+    test("/type typed on a line of a note makes it a type in one step, Make Type, not public, editing going on; done with it, the model writes its schema and names it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let model = ScriptedLanguageModel(), scheduler = ManualScheduler()
@@ -55,7 +55,7 @@ private let petAnswer = """
         window.pressReturn()
         window.settle()
         expectEqual(editor.document[note]?[TypeSchemaProperty.self]?.text, TypeSchemaProperty.starter)
-        expectEqual(editor.document[note]?[PublicProperty.self], true, "a type starts public")
+        expectEqual(editor.document[note]?[PublicProperty.self], nil, "a type does not start public")
         expectEqual(editor.undoHistory.undoName, "Make Type")
         expectEqual(editor.editingShapeID, note, "editing goes on")
         expect(editor.types?.isType(note) == true)
@@ -73,6 +73,26 @@ private let petAnswer = """
         // Its panel has the Schema tab.
         let layout = try require(editor.detailPanel?.layout(for: try require(editor.document[note])))
         expect(layout.tabs.map(\.title).contains("Schema"))
+    },
+    test("a type made public by hand is public, and a type still: /public on it, public: false back, Remove Type leaves it public; undo takes each back") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "a pet in my household"))
+        editor.makeType(note)
+        expectEqual(editor.document[note]?[PublicProperty.self], nil, "a type does not start public")
+        let state = try require(editor.slashCommands)
+        expect(state.commands(for: note).map(\.name).contains("public"), "/public is offered on a type")
+        expect(state.run("public", on: note, with: SlashArguments("")))
+        expectEqual(editor.document[note]?[PublicProperty.self], true)
+        expect(editor.types?.isType(note) == true)
+        editor.removeType(note)
+        expectEqual(editor.document[note]?[PublicProperty.self], true, "Remove Type leaves whether it is public")
+        editor.undo()
+        expect(editor.types?.isType(note) == true)
+        expect(state.run("private", on: note, with: SlashArguments("")))
+        expectEqual(editor.document[note]?[PublicProperty.self], nil)
+        expect(editor.types?.isType(note) == true)
     },
     test("a mention of another type in a type's words is a $ref to it in the schema the model writes; a mention of a note that isn't a type stays words") {
         let pasteboard = NSPasteboard.withUniqueName()

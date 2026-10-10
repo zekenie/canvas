@@ -8,11 +8,11 @@ import TestKit
 import Titles
 import Types
 
-// Types through `canvas` as built, over a socket of its own: a type is drawn with a schema, public;
+// Types through `canvas` as built, over a socket of its own: a type is drawn with a schema, not public;
 // an instance names it by its title, in one undo step; queries find the instances by their types.
 
 @MainActor let drawTypesTests = Suite("Types, drawn and queried through canvas", [
-    test("a note drawn with a schema is a public type; sticky-note \"Ann\" is: \"Person\" makes an instance of it, one undo step; the queries find it") {
+    test("a note drawn with a schema is a type, not public; sticky-note \"Ann\" is: \"Person\" makes an instance of it, one undo step; the queries find it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -24,10 +24,10 @@ import Types
         let made = try canvas(server, ["draw", #"sticky-note "Person" text: "A person: their name" schema: "\#(person)""#])
         expectEqual(made.status, 0, made.error)
         let type = try require(board.editor.document.shapes.first)
-        expectEqual(type[PublicProperty.self], true, "a type draw makes starts public, in its own step")
+        expectEqual(type[PublicProperty.self], nil, "a type draw makes does not start public")
         expectEqual(board.editor.undoHistory.undoName, "Draw")
         board.editor.undo()
-        expectEqual(board.editor.document.shapes.count, 0, "one step takes the type and its being public together")
+        expectEqual(board.editor.document.shapes.count, 0, "one step takes the type back")
         board.editor.redo()
 
         let steps = board.editor.undoHistory.undoName
@@ -53,6 +53,23 @@ import Types
         let refused = try canvas(server, ["draw", #"sticky-note "Bob" is: "Plain""#])
         expect(refused.status != 0)
         expect(refused.error.contains("isn't a type or a shape"), refused.error)
+    },
+
+    test("a type drawn with public: true is public, and a type; the queries find it as either") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let made = try canvas(server, ["draw", #"sticky-note "Open" schema: "{\"type\": \"object\"}" public: true"#])
+        expectEqual(made.status, 0, made.error)
+        let type = try require(board.editor.document.shapes.first)
+        expectEqual(type[PublicProperty.self], true)
+        expect(board.editor.types?.isType(type.id) == true)
+        let found = try JSON(text: canvas(server, ["query", "--brief", "sticky-note[schema][public]"]).output)
+        expectEqual(found["count"], 1)
     },
 
     test("an edge takes is: too: edge \"A\" -> \"B\" is: \"Friendship\" is an arrow that is a Friendship") {

@@ -85,7 +85,7 @@ import Validation
         port-edges           draw edges
         validation-checks    draw checks
         mention-texts        draw text text/x-canvas-mentions
-        type-names           draw text text/x-canvas-type · draw implies
+        type-names           draw text text/x-canvas-type
         queries              service QueryState · query engine
         query-translation    service QueryTranslator
         title-queries        query names

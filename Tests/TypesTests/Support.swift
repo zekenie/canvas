@@ -8,7 +8,6 @@ import Keyboard
 import LanguageModels
 import Mentions
 import ProseMaps
-import Publishing
 import Selection
 import SlashCommands
 import TableOfContents
@@ -90,12 +89,12 @@ struct MemosPlugin: CanvasPlugin {
 }
 
 /// Every plugin a type contributes to (validation, titles and the slash commands, mentions and the
-/// context menu, the detail panel, publishing, adornments and the table of contents they show on),
+/// context menu, the detail panel, adornments and the table of contents they show on),
 /// with the keyboard and the selection, the language model its sync asks (a scripted one, so no test
 /// reaches the network) and the prose maps its highlights are.
 @MainActor func typePlugins(model: any LanguageModel = ScriptedLanguageModel()) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), MemosPlugin(), ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PublishingPlugin(),
+     ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(),
      TypesPlugin(), TypeValidationPlugin(), TypeDetailsPlugin(), ValidationDetailsPlugin(),
      LanguageModelsPlugin(model: model), ProseMapsPlugin()]
 }

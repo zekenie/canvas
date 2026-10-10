@@ -132,28 +132,6 @@ extension DrawEdges: KeyedExtensionPoint {
     }
 }
 
-// MARK: Implications
-
-/// What a script's attributes on a shape imply it also sets, for `canvas draw`: given the kind, the
-/// shape as it is before the script (nil for a new one) and the settings the script writes, by
-/// property key (what it changes, as JSON), the settings that go with them, which the script's own
-/// win over. A concern's rule that one change comes with another in the same step (a note given a
-/// schema becomes public), so what a person's one action does an agent's does. Only the sugar makes
-/// one (`registrar.drawImplies`).
-@MainActor
-public struct DrawImplication {
-    let implied: @MainActor (ShapeKind, AnyShapeRecord?, JSONObject, Registry) -> JSONObject
-}
-
-/// What attributes imply for `canvas draw`: any number of plugins, each asked in turn.
-public enum DrawImplications {}
-
-extension DrawImplications: ExtensionPoint {
-    public typealias Contribution = DrawImplication
-    public static var owner: PluginID { .automation }
-    public static func summary(of _: DrawImplication, for _: ShapeTarget) -> String { "draw implies" }
-}
-
 // MARK: Checks
 
 /// Something wrong with a shape a script drew (an error: it's invalid; or a warning), and the
@@ -293,14 +271,6 @@ extension PluginRegistrar {
         contribute(DrawNaming(name: name, namingProperty: namingProperty, isDerived: isDerived, fold: fold), to: DrawNames.self)
     }
 
-    /// Adds settings to those a script writes on a shape (`DrawImplication`): `implied` gets the
-    /// kind, the shape before the script (nil: new), the settings it writes (property key to value)
-    /// and the registry, and returns the settings that go with them; a key the script wrote itself
-    /// is its own. Any number of plugins.
-    public mutating func drawImplies(_ implied: @escaping @MainActor (ShapeKind, AnyShapeRecord?, JSONObject, Registry) -> JSONObject) {
-        contribute(DrawImplication(implied: implied), to: DrawImplications.self)
-    }
-
     /// Makes edges for `canvas draw`: `kind` is what connections are (nil: nothing draws them now,
     /// and an edge is `no_edges`), `attributes` the keys an edge takes beside `from:` and `to:`,
     /// `sides` which sides of a kind an edge may leave by and what it carries from each (what
@@ -345,15 +315,6 @@ extension Registry {
     @MainActor public func drawCanName(_ kind: ShapeKind) -> Bool {
         guard let naming = drawNaming else { return false }
         return naming.namingProperty(kind, self) != nil || naming.isDerived(kind, self)
-    }
-
-    /// What `settings` on a shape of `kind` imply (`drawImplies`), those a script wrote itself left alone.
-    @MainActor func drawImplied(for kind: ShapeKind, before: AnyShapeRecord?, settings: JSONObject) -> JSONObject {
-        var implied: JSONObject = [:]
-        for implication in contributions(to: DrawImplications.self).map(\.value) {
-            for (key, value) in implication.implied(kind, before, settings, self) where settings[key] == nil { implied[key] = value }
-        }
-        return implied
     }
 
     var drawNaming: DrawNaming? { contributions(to: DrawNames.self).first?.value }

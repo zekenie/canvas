@@ -11,7 +11,6 @@ import Keyboard
 import LanguageModels
 import Mentions
 import ProseMaps
-import Publishing
 import Selection
 import SlashCommands
 import TableOfContents
@@ -102,7 +101,7 @@ func memo(_ n: Int, _ title: String?, type: Bool = false, is types: [Int] = [], 
 /// for names, and the type words.
 @MainActor func typeQueryPlugins(typeWords: Bool = true) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), MemosPlugin(), ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PublishingPlugin(), TypesPlugin(),
+     ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(),
      TypeValidationPlugin(), TypeDetailsPlugin(), ValidationDetailsPlugin(), LanguageModelsPlugin(model: ScriptedLanguageModel()), ProseMapsPlugin(),
      QueriesPlugin(), TitleQueriesPlugin()] + (typeWords ? [TypeQueriesPlugin()] : [])
 }

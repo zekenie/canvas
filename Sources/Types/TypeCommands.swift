@@ -1,5 +1,4 @@
 import Canvas
-import Publishing
 import SlashCommands
 
 /// What makes a shape a type, and what makes it one no longer: `/type`, typed on a line of its words
@@ -16,18 +15,14 @@ func registerTypeCommands(into registrar: inout PluginRegistrar) {
 extension CanvasEditor {
     /// Makes the shape a type, in one step ("Make Type", unless it's part of another): gives it the
     /// starter schema, an object with no fields, which its words are then ahead of (the sync asks the
-    /// model for the schema they say once the person is done with them, as for an edit of them), and
-    /// makes it public, so what stands for a type elsewhere can (Publishing's `public`: the person
-    /// can make it private after). Nothing for a shape that's already one, or whose kind can't be
-    /// one; a read-only shape is refused by the core, and shakes.
+    /// model for the schema they say once the person is done with them, as for an edit of them). It
+    /// is not made public: a type is found by `/is-a` and by its title, and `/public` is the person's
+    /// to say. Nothing for a shape that's already one, or whose kind can't be one; a read-only shape
+    /// is refused by the core, and shakes.
     public func makeType(_ id: ShapeID) {
         guard let record = document[id], record[TypeSchemaProperty.self] == nil, registry.canBeType(record.kind) else { return }
-        let holdsPublic = registry.properties(for: record.kind).contains(PublicProperty.key)
         transact(TypesStyle.makeType) { transaction in
-            transaction.update(id) { shape in
-                shape[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter)
-                if holdsPublic { shape[PublicProperty.self] = true }
-            }
+            transaction.update(id) { $0[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter) }
         }
     }
 

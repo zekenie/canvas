@@ -493,7 +493,7 @@ Each target is one line, with its layer:
 
 ```swift
 .target(name: "StickyNotes", dependencies: ["Canvas", "Connections", "DetailPanel", "Keyboard", "Mentions", "Selection", "TableOfContents", "TextEditing", "Titles"]), // layer: vertical
-.target(name: "DrawLexicon", dependencies: ["Automation", "Canvas", "Connections", "Mentions", "Publishing", "Titles", "Types", "Validation"]), // layer: lexicon
+.target(name: "DrawLexicon", dependencies: ["Automation", "Canvas", "Connections", "Mentions", "Titles", "Types", "Validation"]), // layer: lexicon
 ```
 
 | Layer | May depend on | Modules |
@@ -9459,10 +9459,9 @@ concern it imports (AutomationTests make their own, over fixtures). Without one,
 | `DrawNames` | `registrar.drawNames(name:namingProperty:isDerived:fold:)` | What a shape is called; the property of its kind's schema a title is written to (nil: its shapes can't be named); whether the kind works names out itself; how a title a script writes is folded | No titles: a titled statement is `no_names` | TitleNamesPlugin |
 | `DrawEdges` | `registrar.drawEdges(kind:attributes:sides:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; what an edge may leave a kind on, by side (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdgesPlugin |
 | `DrawChecks` | `registrar.drawChecks { record, shapes in … }` | What's wrong with a shape made or changed, as the script leaves the board: `DrawIssue`s (a message, whether it's an error, the property it's about) | Each shape checked against its kind's schema (`registry.schemaViolations(of:)`) | ValidationChecksPlugin |
-| `DrawImplications` | `registrar.drawImplies { kind, before, settings, registry in … }` | Settings that go with the ones a script writes on a shape (given the kind, the shape before the script, nil if new, and what the script sets, by property key); the script's own say wins. A concern's rule that one change comes with another in the same step | Nothing implied | TypeNamesPlugin (a note given a `schema:` is public) |
 | `DrawTextFormats` | `registrar.drawTextFormat(mediaType:describes:write:)` | Each string a script writes whose schema says `contentMediaType` of that media type, as `write` gets it (its string's escapes undone) with a `DrawTextContext` (the registry, the string's schema as its kind declares it, and `shape(called:admitting:)`, which finds the shape a title names as the script finds one, `admitting` taking the record and the keys the script writes on it, for a shape drawn in the same run: what to keep, or a refusal. `describes` is said after the attribute's type in `canvas kinds` | Text kept as written; `kinds` says nothing after its type | MentionTextsPlugin, TypeNamesPlugin |
 
-`TypeNamesPlugin` ([TypeNames.swift](../Sources/DrawLexicon/TypeNames.swift)) writes `is: "Employee card"`, on a shape and on an edge, as the id of the type that title names (`TypeLink.mediaType`), admitting what `TypeIndex.canBeNamed(_:registry:writing:)` says, a pure function of the record and the registry (a type; the custom shapes join it), and refuses any other shape "which isn't a type or a shape", and the shape itself (`DrawTextContext.owner`); a quoted value for a list of text is a list of that one item (Automation's, `KindVocabulary.value(of:)`), several are JSON. And a shape given a `schema:` is made public in the same step, as `/type` makes one, through `drawImplies`.
+`TypeNamesPlugin` ([TypeNames.swift](../Sources/DrawLexicon/TypeNames.swift)) writes `is: "Employee card"`, on a shape and on an edge, as the id of the type that title names (`TypeLink.mediaType`), admitting what `TypeIndex.canBeNamed(_:registry:writing:)` says, a pure function of the record and the registry (a type; the custom shapes join it), and refuses any other shape "which isn't a type or a shape", and the shape itself (`DrawTextContext.owner`); a quoted value for a list of text is a list of that one item (Automation's, `KindVocabulary.value(of:)`), several are JSON.
 
 DrawLexicon's four registrations, whole but for `PortEdgesPlugin`'s policy and the clauses `MentionTextsPlugin` says
 ([TitleNames.swift](../Sources/DrawLexicon/TitleNames.swift),
@@ -9895,9 +9894,9 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   (below), and the JSON's completions offer no `title` at the root.
 - **Making one**: `/type`, typed on a line of a shape's words, offered while it isn't one, takes
   nothing and runs `editor.makeType(_:)`, one step, "Make Type": the starter schema
-  (`TypeSchemaProperty.starter`, an object with no properties) and `public: true` in one
-  transaction, through Publishing's `PublicProperty` (a type starts public, so what stands for one
-  elsewhere can; the person may make it private after). Its words are then ahead of its schema, and
+  (`TypeSchemaProperty.starter`, an object with no properties), and nothing else: a type does not
+  start public (it is found by `/is-a` and by its title; `/public` is the person's to say, on a
+  type as on any shape). Its words are then ahead of its schema, and
   the sync asks for the schema they say once the person is done with them, as for an edit.
   `editor.removeType(_:)` takes it back, one step, "Remove Type": the schema goes, the words, title
   and public stay, and undo brings the schema back. An agent makes a type with `canvas draw`'s
@@ -11594,7 +11593,7 @@ title-names          draw names
 port-edges           draw edges
 validation-checks    draw checks
 mention-texts        draw text text/x-canvas-mentions
-type-names           draw text text/x-canvas-type · draw implies
+type-names           draw text text/x-canvas-type
 queries              service QueryState · query engine
 query-translation    service QueryTranslator
 title-queries        query names

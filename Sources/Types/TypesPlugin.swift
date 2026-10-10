@@ -16,7 +16,7 @@ extension PluginID {
 /// its words are highlighted where they say a part of its schema (a prose map, `SchemaTarget`, which
 /// ProseMaps asks for: without `ProseMapsPlugin` there are none), each part shown in a popover on its
 /// words; a mention of another type in its words is a `$ref` to that type's schema
-/// (`SchemaReferences`). `/type` makes a shape one (public, through Publishing), and Remove Type
+/// (`SchemaReferences`). `/type` makes a shape one, and Remove Type
 /// (`removeType`) one no longer. The file's types are `editor.types` (`TypeIndex`). Its rules
 /// (`TypeValidationPlugin`) and its panel (`TypeDetailsPlugin`) are plugin values of their own, so a
 /// list without Validation or the panel can install Types. It knows no kind: a kind hands it its

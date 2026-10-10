@@ -8,7 +8,6 @@ import Foundation
 import Keyboard
 import LanguageModels
 import Mentions
-import Publishing
 import Selection
 import SlashCommands
 import TableOfContents
@@ -63,24 +62,17 @@ private struct SlipsPlugin: CanvasPlugin {
         let slip = other.add(Slip())
         expect(!(try require(other.slashCommands)).commands(for: slip).map(\.name).contains("type"))
     },
-    test("/type makes the shape a type in one step, Make Type: the starter schema, public, its words as they were; undo takes it all back") {
+    test("/type makes the shape a type in one step, Make Type: the starter schema, its words as they were; undo takes it all back") {
         let editor = try typeEditor()
         let id = editor.add(memo("a pet in my household"))
         expect(try require(editor.slashCommands).run("type", on: id, with: SlashArguments("")))
         expectEqual(editor.schema(id), TypeSchemaProperty.starter)
-        expectEqual(editor.document[id]?[PublicProperty.self], true, "a type starts public, so what stands for one elsewhere can")
         expectEqual(editor.words(id), "a pet in my household")
         expectEqual(editor.undoHistory.undoName, "Make Type")
         expect(editor.types?.isType(id) == true)
         editor.undo()
         expectEqual(editor.schema(id), nil)
-        expectEqual(editor.document[id]?[PublicProperty.self], nil)
         expect(editor.types?.isType(id) == false)
-        // A type made private after stays a type.
-        editor.makeType(id)
-        editor.makePrivate([id])
-        expectEqual(editor.schema(id), TypeSchemaProperty.starter)
-        expectEqual(editor.document[id]?[PublicProperty.self], nil)
     },
     test("/type takes no argument, and isn't run on a read-only shape") {
         let editor = try typeEditor(more: [FreezingPlugin()])
@@ -93,15 +85,13 @@ private struct SlipsPlugin: CanvasPlugin {
         editor.makeType(id)
         expectEqual(editor.schema(id), nil, "refused by the core")
     },
-    test("Remove Type takes the schema away in one step, Remove Type; the words stay, and so does public; undo brings the schema back") {
+    test("Remove Type takes the schema away in one step, Remove Type; the words stay; undo brings the schema back") {
         let editor = try typeEditor()
         let id = editor.addType(pet, words: "a pet in my household", title: "Pet")
-        editor.makePublic([id])
         editor.removeType(id)
         expectEqual(editor.schema(id), nil)
         expectEqual(editor.words(id), "a pet in my household")
         expectEqual(editor.title(id), "Pet")
-        expectEqual(editor.document[id]?[PublicProperty.self], true)
         expectEqual(editor.undoHistory.undoName, "Remove Type")
         expect(editor.types?.isType(id) == false)
         expect(try require(editor.slashCommands).commands(for: id).map(\.name).contains("type"), "it can be made one again")
@@ -120,16 +110,9 @@ private struct SlipsPlugin: CanvasPlugin {
         _ = try Registry(plugins: typePlugins() + [SlipsPlugin(words: true, canBeType: true)])
         _ = try Registry(plugins: typePlugins() + [SlipsPlugin(words: true, canBeType: false)])
     },
-    test("Types' rules and panel are plugins of their own; without Publishing a type is made all the same, and isn't public") {
+    test("Types' rules and panel are plugins of their own") {
         let faces: Set<PluginID> = ["type-validation", "type-details"]
         _ = try Registry(plugins: typePlugins().filter { !faces.contains($0.id) })
-        expect(try typeEditor().registry.properties(for: Memo.kind).contains(PublicProperty.key), "with Publishing, a memo can be public")
-        let without = typePlugins().filter { !($0 is PublishingPlugin) }
-        let editor = CanvasEditor(registry: try Registry(plugins: without), document: CanvasDocument(), scheduler: ManualScheduler())
-        let id = editor.add(memo("a pet"))
-        editor.makeType(id)
-        expectEqual(editor.schema(id), TypeSchemaProperty.starter)
-        expectEqual(editor.document[id]?[PublicProperty.self], nil)
         let report = try Registry(plugins: typePlugins()).report
         expect(report.contains("type words → memo"), report)
         expect(report.contains("property schema → memo"), report)
