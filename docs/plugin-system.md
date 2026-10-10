@@ -818,21 +818,6 @@ The details:
   it (Frames' F). A tool id used twice is a registry error, and so is a key.
 - **The toolbar** is the default tool, then the rest in plugin-list order, the core's Hand first. It
   follows `editor.currentToolID`, which is observable.
-- **Tool menus.** A tool may carry a menu on its segment of the toolbar:
-  `registrar.toolMenu(for: tool) { editor in [ToolMenuEntry] }`, one per tool, for a registered tool
-  (a second is a `conflict`, one for a tool nobody registers `invalid`; the report line is `tool menu
-  <id>`). The entries are values (`.item(ToolMenuItem("Person", systemImage:, isChecked:, isEnabled:)
-  { editor in … })`, `.separator`), made when the menu opens, never when the editor is made, so it
-  lists what the file holds at that moment; `editor.toolMenu(for:)` asks (nil for a tool with none,
-  `registry.hasToolMenu(for:)`) and `editor.choose(item)` runs an item (a dimmed one does nothing).
-  CanvasUI shows the menu's indicator on the segment and builds the `NSMenu` as it opens
-  (`menuNeedsUpdate`), so plugins never touch the control and a test reads the values. A plain click
-  on the segment still picks the tool; a tool that remembers a choice made in its menu keeps it in its
-  own service.
-- **A tool that places shapes of its own** registers with `registrar.tool(descriptor, placesShapes:
-  true) { … }`: like a kind's tool (`ShapeRegistrar.tool`, whose placement says it) it is dimmed, and
-  its key does nothing, on a board that takes no shapes (`editor.isToolEnabled`), and one in use is left for the default
-  tool when the board becomes read-only.
 - **Asking the person.** `editor.ask(CanvasQuestion(id:, message:, detail:, confirm:, cancel:)) { yes in
   … }` puts a yes-or-no question for the host to show as a sheet on the board's window. Questions
   wait first in, first out, one at a time; asking again with the id of one that waits replaces it
@@ -2411,10 +2396,7 @@ What the shipped app's keys do:
   AppKit segmented control, since SwiftUI's segmented `Picker` dims none of its segments: one a
   tool, selected as the tool is current, and dimmed while the editor doesn't take the tool
   (`editor.isToolEnabled`, observed, so it follows a board shown, or a lock that lands above it).
-  A click on a segment the editor refuses leaves the selection on the current tool. A tool with a
-  menu ([tool menus](#tools-and-sessions)) shows the menu's indicator on its segment, and the
-  segment's `NSMenu` is made as it opens (`menuNeedsUpdate`, from `editor.toolMenu(for:)`); a plain
-  click still picks the tool, and a line chosen runs `editor.choose(item)`.
+  A click on a segment the editor refuses leaves the selection on the current tool.
 - **The core's part** is one hook, like the secondary click's: at most one plugin claims key strokes
   (`registrar.keyStrokes { editor, stroke in ... }`, returning whether it took the key). `CanvasView`
   hands every key it gets to the editor (`editor.keyDown`, host API), as a `KeyStroke`: its
@@ -11809,12 +11791,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   counts how often any is walked or renamed, so a test can show something never looks at names (a
   delete). AutomationTests' `Pin` does both too, and a tool places it, so `canvas draw` can write
   ids into it.
-- **Tools with menus** without a real kind: `PalettePlugin(palette)` (CanvasTesting) registers a
-  tool `palette` whose menu lists a `Palette`'s colors as they are when it opens (the one chosen
-  last checked, a separator, a dimmed line) and a tool `stamp` registered with `placesShapes`.
-  CanvasTests' `ToolMenuTests` hold the registry's rules and the values, CanvasUITests'
-  `ToolPickerTests` host the picker and read each segment's `NSMenu` (`menu.delegate?.menuNeedsUpdate`
-  opens it, `performActionForItem(at:)` chooses a line). Questions are tested at the editor with a stub
+- Questions are tested at the editor with a stub
   `CanvasEditorDelegate`, or headless (`answerQuestion`), and the sheet through `CanvasView.makeAlert`
   (a sheet doesn't run in an unshown window); a queued menu through `menuToPopUp`, and in a
   `CanvasView` through its `menuPresenter` seam, which a test swaps for one that notes the menu (its
