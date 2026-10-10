@@ -123,8 +123,9 @@ extension ShapeRegistrar {
     /// Its shapes can be mentioned. Each closure reads only the shape, as a title does, so a pill
     /// changes only when its shape does. The label is `label`, else the shape's title (Titles'
     /// `registry.title(of:)`, named or derived), else `untitled`, else "Untitled" and the kind's
-    /// label ("Untitled Note"), each on one line, blank counting as none. `symbol` defaults to the
-    /// kind's label's, `detail` to the kind's name, `tint` to none. `following` says what
+    /// label ("Untitled Note"), each on one line, blank counting as none. `symbol` and `tint` default
+    /// to the kind's label's (`registry.label(of:)`), `detail` to the kind's name; a `tint` that
+    /// answers nil for a shape leaves it its kind's, so it can't untint one. `following` says what
     /// following a mention does: go to the shape, or into it (`.opens`: a subboard enters its
     /// board). An `untitled` that reads the shape's own mention text leaves every other shape's
     /// name out of it (`firstLine`, where each mention is "@…"): a mention holds its target's name
@@ -174,12 +175,13 @@ extension PluginRegistrar {
 // MARK: Reading it
 
 /// How a kind is mentioned: its contribution (nil for a kind that isn't mentionable), and what its
-/// shapes default to, its kind's label and symbol. Worked out once per kind by whoever asks often
-/// (`MentionState`).
+/// shapes default to, its kind's label, symbol and tint. Worked out once per kind by whoever asks
+/// often (`MentionState`).
 struct MentionKindDefaults {
     let contribution: MentionContribution?
     let name: String
     let symbol: String
+    let tint: NSColor?
 
     @MainActor
     init(_ kind: ShapeKind, in registry: Registry) {
@@ -187,6 +189,7 @@ struct MentionKindDefaults {
         let label = contribution == nil ? nil : registry.label(of: kind)
         name = label?.name ?? kind.rawValue
         symbol = label?.systemImage ?? "square.dashed"
+        tint = label?.tint
     }
 }
 
@@ -228,7 +231,7 @@ extension Registry {
                                  systemImage: oneLine(contribution.symbol?(shape)) ?? defaults.symbol,
                                  kindName: defaults.name,
                                  detail: oneLine(contribution.detail?(shape)) ?? defaults.name,
-                                 tint: contribution.tint?(shape))
+                                 tint: contribution.tint?(shape) ?? defaults.tint)
     }
 
     /// What a mention of `target` shows now: live, with its appearance, when `lookup` finds it and

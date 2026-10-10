@@ -227,15 +227,13 @@ extension JumpToState {
         return JumpToCandidate(id: entry.id, title: title, titleMatched: titleMatched, path: segments, kindName: name, systemImage: symbol, tint: tint)
     }
 
-    /// What a shape's kind is called, its symbol and the tint it shows in: the kind's label's name and
-    /// symbol, and what the plugin's `appearance` says of the shape (Composition hands it Mentions'
-    /// for the table of contents' and the `@` picker's one color for a kind); untinted if it says
-    /// nothing.
+    /// What a shape's kind is called, its symbol and the tint it shows in: its kind's label's
+    /// (`registry.label(of:)`), the one color a kind has in the table of contents and the `@` picker
+    /// too; a dashed square for a kind with no symbol, untinted for one with no tint.
     private func appearance(of id: ShapeID) -> (name: String, symbol: String, tint: NSColor?) {
         guard let record = editor.shape(inFile: id) else { return ("", "square.dashed", nil) }
         let label = registry.label(of: record.kind)
-        let given = appearance?(record, registry)
-        return (label.name, given?.systemImage ?? label.systemImage ?? "square.dashed", given?.tint)
+        return (label.name, label.systemImage ?? "square.dashed", label.tint)
     }
 
     // MARK: The empty query

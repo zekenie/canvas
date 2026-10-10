@@ -22,26 +22,23 @@ public struct FindHeading: Hashable {
 /// 12", hits) with the buttons that step, and a row per shape with hits, under its board's heading,
 /// in order: the kind's symbol, the text around its first hit with each hit there semibold, and its
 /// count when it has more than one. A click on a row makes its first hit current, keeping the
-/// keyboard in the field. `onExit` gives the keyboard to the canvas (Done); `heading` names a board,
-/// `tint` colors a shape's symbol (nil: secondary).
+/// keyboard in the field. `onExit` gives the keyboard to the canvas (Done); `heading` names a board.
+/// A shape's symbol is its kind's, in its kind's tint (`registry.label(of:)`; none: secondary).
 public struct FindPanel: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
     let heading: @MainActor (BoardID) -> FindHeading
-    let tint: @MainActor (AnyShapeRecord) -> NSColor?
 
     public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void,
-                heading: @escaping @MainActor (BoardID) -> FindHeading = { $0.isRoot ? FindHeading("Board") : FindHeading("") },
-                tint: @escaping @MainActor (AnyShapeRecord) -> NSColor? = { _ in nil }) {
+                heading: @escaping @MainActor (BoardID) -> FindHeading = { $0.isRoot ? FindHeading("Board") : FindHeading("") }) {
         self.editor = editor
         self.onExit = onExit
         self.heading = heading
-        self.tint = tint
     }
 
     public var body: some View {
         if let find = editor.find {
-            FindPanelContent(find: find, editor: editor, onExit: onExit, heading: heading, tint: tint)
+            FindPanelContent(find: find, editor: editor, onExit: onExit, heading: heading)
         }
     }
 }
@@ -51,7 +48,6 @@ private struct FindPanelContent: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
     let heading: @MainActor (BoardID) -> FindHeading
-    let tint: @MainActor (AnyShapeRecord) -> NSColor?
     @FocusState private var focused: Bool
     @State private var handledRequest = 0
     @State private var window = FieldWindow()
@@ -146,7 +142,7 @@ private struct FindPanelContent: View {
                     ForEach(lower..<upper, id: \.self) { i in
                         let result = results[i]
                         if i == lower || results[i - 1].board != result.board { boardHeading(result.board) }
-                        FindRow(find: find, editor: editor, result: result, index: i, tint: tint) {
+                        FindRow(find: find, editor: editor, result: result, index: i) {
                             find.select(result.id)
                             focused = true
                         }
@@ -196,17 +192,15 @@ private struct FindRow: View {
     let editor: CanvasEditor
     let result: FindResult
     let index: Int
-    let tint: @MainActor (AnyShapeRecord) -> NSColor?
     let pick: () -> Void
 
     var body: some View {
         let isCurrent = find.current?.result == index
-        let record = editor.withoutObservingDocument { editor.file.record(result.id) }
-        let symbol = record.flatMap { editor.registry.label(of: $0.kind).systemImage } ?? "square"
+        let label = editor.withoutObservingDocument { editor.file.record(result.id) }.map { editor.registry.label(of: $0.kind) }
         Button(action: pick) {
             HStack(spacing: FindStyle.fieldSpacing) {
-                Image(systemName: symbol)
-                    .foregroundStyle(record.flatMap(tint).map { Color(nsColor: $0) } ?? Color.secondary)
+                Image(systemName: label?.systemImage ?? "square")
+                    .foregroundStyle(label?.tint.map { Color(nsColor: $0) } ?? Color.secondary)
                     .frame(width: FindStyle.rowSymbolWidth)
                 Text(snippet).font(FindStyle.snippet).lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 0)

@@ -170,6 +170,13 @@ public struct ShapeRegistrar<Definition: ShapeDefinition> {
     public mutating func label(_ name: String, systemImage: String) {
         contribute(KindLabel(name: name, systemImage: systemImage), to: CorePoints.KindLabels.self)
     }
+
+    /// The kind's color: its symbol's wherever a shape is shown by its kind on a neutral surface (a
+    /// row, a picker, a mention's pill), so a kind has one color in every list. A dynamic color
+    /// follows light and dark. `registry.label(of:)` reads it; a kind without one is untinted.
+    public mutating func tint(_ color: NSColor) {
+        contribute(KindTint(color: color), to: CorePoints.KindTints.self)
+    }
 }
 
 // Placements, gated by the type system: only box shapes can be placed, and only editable ones can
@@ -204,16 +211,19 @@ public struct ToolDescriptor: Identifiable, Sendable {
     }
 }
 
-/// What a kind is called, and its symbol, wherever a shape is shown by its kind:
+/// What a kind is called, its symbol and its color, wherever a shape is shown by its kind:
 /// `registry.label(of:)`.
 public struct KindLabel: Hashable, Sendable {
     public var name: String
     /// An SF Symbol; nil for a kind that has none.
     public var systemImage: String?
+    /// The symbol's color on a neutral surface (`ShapeRegistrar.tint`); nil for a kind that has none.
+    public var tint: NSColor?
 
-    public init(name: String, systemImage: String?) {
+    public init(name: String, systemImage: String?, tint: NSColor? = nil) {
         self.name = name
         self.systemImage = systemImage
+        self.tint = tint
     }
 }
 

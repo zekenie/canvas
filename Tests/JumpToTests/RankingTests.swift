@@ -17,20 +17,18 @@ import TextEditing
         expectEqual(h.listing("alpha"), ["1"], "Alpha, not what's inside it: contents are Find's")
         expectEqual(h.listing("cardamom"), ["51"])
     },
-    test("a row's symbol and tint are what the plugin's appearance says, the kind's label's name and symbol otherwise, untinted") {
-        let h = try storyHarness()
-        let box = try require(h.candidates("plan note one").first)
-        expectEqual(box.systemImage, "shippingbox")
-        expect(box.tint == boxTint, "the injected tint")
+    test("a row's name, symbol and tint are its kind's label's: a dashed square for a kind with no symbol, untinted for one with no tint") {
+        let h = try storyHarness(file: CanvasFile(root: CanvasDocument(shapes: [shape(1, Card(frame(100, 100)), titled: "Ledger"),
+                                                                                 shape(2, Box(frame(300, 100)), titled: "Ledger box")])))
+        let rows = h.candidates("ledger")
+        let card = try require(rows.first { $0.id == id(1) })
+        expectEqual(card.systemImage, "rectangle", "its tool's symbol")
+        expect(card.tint == cardTint, "the tint its kind declares")
+        expectEqual(card.kindName, "Card")
+        let box = try require(rows.first { $0.id == id(2) })
+        expectEqual(box.systemImage, "square.dashed", "no label symbol: the placeholder")
+        expect(box.tint == nil, "a box declares no tint")
         expectEqual(box.kindName, "box")
-        let pocket = try require(h.candidates("alpha").first)
-        expectEqual(pocket.systemImage, "square.dashed", "no label symbol, none injected: the placeholder")
-        expect(pocket.tint == nil, "nothing injected for a pocket")
-        // No appearance given: every row untinted, and the same names.
-        let blind = try EditorHarness(plugins: jumpPlugins().map { $0.id == .jumpTo ? JumpToPlugin() : $0 }, file: storyFile())
-        let plain = try require(blind.candidates("plan note one").first)
-        expect(plain.tint == nil)
-        expectEqual(plain.kindName, "box")
     },
     test("several pieces go in order along the path, names skipped as they like, the last in the shape's own title") {
         let h = try storyHarness()

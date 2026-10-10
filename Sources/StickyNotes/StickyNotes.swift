@@ -55,13 +55,14 @@ public struct StickyNotesPlugin: CanvasPlugin {
         registrar.shape(StickyNoteDefinition()) { note in
             let place = note.editingPlacement(size: NoteStyle.size) { StickyNote() }
             note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
+            note.tint(NoteStyle.tint)                          // its yellow, wherever it's listed by its kind
             note.createOnDoubleClick(place)                    // opts into the selection's double-click
             note.title(coverSurface: NoteStyle.color)          // and titles: a title, its pill, its cover, and its row's name
             note.noteHeader()                                  // renamed in the detail panel's header
             note.noteRow()                                     // and the table of contents
             note.noteLinks()                                   // and ports: arrows from a note to a note
             note.mentionText { $0.mentionTexts }               // and mentions: its text shows pills,
-            note.mentionable(untitled: { $0.props.text.firstLine }, tint: { _ in NoteStyle.tint })   // called by its title, else its first line
+            note.mentionable(untitled: { $0.props.text.firstLine })   // called by its title, else its first line
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
     }

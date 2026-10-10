@@ -36,7 +36,7 @@ import Titles
         expectEqual(tool.label, "Frame")
         expectEqual(tool.systemImage, "rectangle.dashed")
         expectEqual(registry.help(for: tool), "Frame (F)")
-        expectEqual(registry.label(of: Frame.kind), KindLabel(name: "Frame", systemImage: "rectangle.dashed"))
+        expectEqual(registry.label(of: Frame.kind), KindLabel(name: "Frame", systemImage: "rectangle.dashed", tint: .systemGray))
         let placement = try require(registry.placement(for: Frame.kind), "drawable by canvas draw")
         expectEqual(placement.size, CGSize(width: 640, height: 400))
         expectEqual(placement.shape(at: CGPoint(x: 500, y: 300)).box, CGRect(x: 180, y: 100, width: 640, height: 400))

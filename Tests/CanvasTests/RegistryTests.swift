@@ -128,6 +128,27 @@ extension ShapeRegistrar {
             }])
         }
     },
+    test("a kind's label carries the tint it declares, whichever names it; none for a kind that declares none; a second tint for it conflicts") {
+        let registry = try Registry(plugins: [CardsPlugin { card, _ in
+            card.label("Index Card", systemImage: "menucard")
+            card.tint(.systemTeal)
+        }, Contributor(id: "discs") { r in
+            r.shape(DiscDefinitionForTests()) { disc in
+                disc.tool(label: "Disc", systemImage: "circle", placing: disc.placement(size: CGSize(width: 40, height: 40)) { Disc(.zero) })
+                disc.tint(.systemOrange)
+            }
+        }, Contributor(id: "boxes") { $0.shape(BoxDefinitionForTests()) }])
+        expectEqual(registry.label(of: Card.kind), KindLabel(name: "Index Card", systemImage: "menucard", tint: .systemTeal), "with its declared label")
+        expectEqual(registry.label(of: Disc.kind), KindLabel(name: "Disc", systemImage: "circle", tint: .systemOrange), "with its tool's")
+        expectEqual(registry.label(of: Box.kind).tint, nil)
+        expect(registry.report.contains("tint → card"), registry.report)
+        expectThrows(RegistryError.conflict(point: "KindTints", key: "the tint of card", plugins: ["cards", "cards"])) {
+            _ = try Registry(plugins: [CardsPlugin { card, _ in
+                card.tint(.systemTeal)
+                card.tint(.systemPink)
+            }])
+        }
+    },
     test("the toolbar is the core's Hand tool, then each plugin's tools in plugin order") {
         let registry = try Registry(plugins: [CardsPlugin(), Contributor(id: "x") {
             $0.tool(ToolDescriptor(id: "zap", label: "Zap", systemImage: "bolt")) { _ in NoTool() }

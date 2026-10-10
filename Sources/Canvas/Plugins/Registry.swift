@@ -310,14 +310,18 @@ public struct Registry {
 
     /// What a kind is called, and its symbol, wherever a shape is shown by its kind (a panel's
     /// header, a row, a message): what it declares (`ShapeRegistrar.label`), else its placing
-    /// tool's label and symbol ("Note"), else its id, with no symbol.
+    /// tool's label and symbol ("Note"), else its id, with no symbol. Its tint is the one it
+    /// declares (`ShapeRegistrar.tint`), whichever names it; none, and it has none.
     public func label(of kind: ShapeKind) -> KindLabel {
-        if let declared = contributions(to: CorePoints.KindLabels.self, for: kind).first { return declared }
+        let tint = contributions(to: CorePoints.KindTints.self, for: kind).first?.color
+        if let declared = contributions(to: CorePoints.KindLabels.self, for: kind).first {
+            return KindLabel(name: declared.name, systemImage: declared.systemImage, tint: tint)
+        }
         let placing = ToolID(placing: kind)
         if let tool = contributions(to: CorePoints.Tools.self).first(where: { $0.value.descriptor.id == placing })?.value.descriptor {
-            return KindLabel(name: tool.label, systemImage: tool.systemImage)
+            return KindLabel(name: tool.label, systemImage: tool.systemImage, tint: tint)
         }
-        return KindLabel(name: kind.rawValue, systemImage: nil)
+        return KindLabel(name: kind.rawValue, systemImage: nil, tint: tint)
     }
 
     var toolFactories: [(ToolID, @MainActor (CanvasEditor) -> any Tool)] {
@@ -415,6 +419,7 @@ struct RawContribution {
             "property \(declaration.codec.key)" + (declaration.codec.version > 0 ? " v\(declaration.codec.version)" : "")
         case let optIn as PropertyOptIn: "property \(optIn.key) → \(target == .any ? "every shape" : "\(target)")"
         case let label as KindLabel: "label \(label.name) → \(target)"
+        case is KindTint: "tint → \(target)"
         default:
             switch P.self {
             case is CorePoints.WillDelete.Type: "willDelete"
