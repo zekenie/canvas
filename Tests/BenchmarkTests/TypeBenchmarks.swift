@@ -37,7 +37,7 @@ extension Budget {
     static let isAListOpen = 10.0
     /// Picking `New type “X”` from `/is-a`'s list on a plain note of a 10,000-shape file (the thread's CPU, release): the board
     /// read once for the landing (every shape an obstacle, as `/move-near` reads it), the note put down, the link made; held
-    /// to a frame.
+    /// to a frame (7.1, 7.7, 7.1 ms after the first pick, 15 to 16 for the first, in three runs alone, load average 3).
     static let newTypePick = 16.0
     /// What white paper adds to a frame of 10,000 type notes zoomed out to fit, over the same frame of plain notes
     /// (the thread's CPU, release; 0.2, 0.3, 0.3 in three runs alone, load average 8): the paper resolved once for the appearance drawn, not per note (a dynamic
