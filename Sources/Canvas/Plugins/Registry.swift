@@ -37,6 +37,8 @@ public struct Registry {
     /// Those drawn as a line (`StrokedShape`), found once: a tinted outline of an open shape is
     /// stroked to cover its line, and asks only these.
     let strokedShapes: [ShapeKind: any StrokedShape]
+    /// Kinds laid out past their box (`LaidOutBox`), found once: every shape's frame asks.
+    let laidOutBoxes: [ShapeKind: any LaidOutBox]
     /// What provides each layout input (`registrar.layoutInput`), by the key's name, found once: a
     /// shape laid out asks for its inputs.
     let layoutProviders: [String: LayoutProvider]
@@ -84,6 +86,11 @@ public struct Registry {
         referencingKinds = Set(definitions.filter { $0.value is any ShapeReferencing }.keys)
         boardOwningKinds = Set(definitions.filter { $0.value is any BoardOwning }.keys)
         containingKinds = Set(definitions.filter { $0.value is any ShapeContaining }.keys)
+        laidOutBoxes = definitions.compactMapValues { $0 as? any LaidOutBox }
+        // A container's edge is its box: what it holds is judged by it, and a resize edits it.
+        if let kind = laidOutBoxes.keys.filter(containingKinds.contains).min(by: { $0.rawValue < $1.rawValue }) {
+            throw .invalid(point: "Shapes", reason: "\(kind) holds shapes, so it can't be laid out past its box")
+        }
         customSkeletons = definitions.compactMapValues { $0 as? any CustomSkeleton }
         skeletonOutlines = definitions.compactMapValues { $0 as? any CustomSkeletonOutline }
         strokedShapes = definitions.compactMapValues { $0 as? any StrokedShape }
@@ -194,6 +201,9 @@ public struct Registry {
     public var kinds: [ShapeKind] { contributions(to: CorePoints.Shapes.self).map(\.value.kind) }
 
     public func definition(for kind: ShapeKind) -> (any ShapeDefinition)? { definitions[kind] }
+
+    /// Whether a kind's shapes may be laid out past their box (`LaidOutBox`).
+    public func isLaidOutBox(_ kind: ShapeKind) -> Bool { laidOutBoxes[kind] != nil }
 
     /// A shape's outline as its kind draws it (its kind's `indicatorPath`), in world units: on the
     /// shape's own edge, which the core grows outward before it strokes a selection, a hover or the

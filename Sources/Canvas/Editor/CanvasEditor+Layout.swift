@@ -10,6 +10,7 @@ extension CanvasEditor {
         let ids = Set(ids)
         guard !ids.isEmpty else { return }
         layoutRevision += 1
+        laidOutSizes.forget(ids)
         shapeIndex.layoutDidChange(ids)
         warmIndexes.modifyAll { $0.layoutDidChange(ids) }
         setNeedsDisplay()
@@ -25,4 +26,33 @@ extension CanvasEditor {
         guard layoutInputs.set(key.name, value, for: id) else { return }
         shapesDidChangeLayout([id])
     }
+
+    /// The frame a shape is laid out in, wherever it is in the file: on the board shown it's
+    /// `shapeContext.frame(of:)`; on another board the editor can show (`shape(inFile:)`) it's laid
+    /// out, and kept, without that board's geometry being worked out. Nil for a shape with no box, or
+    /// not there. Observed through `document`.
+    public func frame(inFile id: ShapeID) -> CGRect? {
+        guard let record = shape(inFile: id) else { return nil }
+        if document[id] != nil { return shapeContext.frame(of: record) }
+        guard let board = file.board(containing: id) else { return nil }
+        return ShapeContext(document: file[board], registry: registry, camera: camera, index: nil, layout: layoutSource).frame(of: record)
+    }
+
+    /// A commit changed these shapes: the sizes kept for them are out of date, but for a shape that
+    /// only moved (a size doesn't depend on where the shape is: a drag of thousands costs a
+    /// comparison). Before the index and the services hear it.
+    func forgetLaidOutSizes(after changes: ChangeSet) {
+        guard laidOutSizes.count > 0 else { return }
+        laidOutSizes.forget(changes.added)
+        if changes.changed.count != changes.moved.count {
+            laidOutSizes.forget(changes.changed.lazy.filter { !changes.moved.contains($0) })
+        }
+        laidOutSizes.forget(changes.removed)
+        laidOutSizes.forget(changes.elsewhere)
+    }
+
+    #if DEBUG
+    /// How many laid-out sizes the editor keeps (debug builds): what a test holds a deleted shape's to.
+    @_spi(Host) public var laidOutSizeCount: Int { laidOutSizes.count }
+    #endif
 }

@@ -137,7 +137,7 @@ public struct Transaction {
     public var shapes: ShapeContext {
         guard let layout else { return ShapeContext(document: document, registry: registry, camera: camera) }
         let here = self
-        let source = LayoutSource(inputs: layout.inputs, lend: layout.lend, shape: { here.record(inFile: $0) }, isChanged: { id in
+        let source = LayoutSource(inputs: layout.inputs, sizes: layout.sizes, lend: layout.lend, shape: { here.record(inFile: $0) }, isChanged: { id in
             here.changes.added.contains(id) || (here.changes.changed.contains(id) && !here.changes.moved.contains(id))
                 || here.stagedIDs[id] != nil
         })

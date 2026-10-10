@@ -122,6 +122,29 @@ private let outlineCanvas = CGSize(width: 320, height: 240)
             #endif
         }
     },
+    test("a box laid out larger than it stores is outlined on its laid-out rect, stood off its laid-out edges, and grown directly") {
+        requireShippedStandoff()
+        let outlined = Outlined()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), StretchesPlugin(), Contributor(id: "outliner") { r in
+            r.outlines { _ in Outlines(shapes: outlined.shapes, rects: outlined.rects, faintShapes: outlined.faint, tinted: outlined.tinted) }
+        }])
+        h.editor.outlineStandoff = Style.outlineStandoff
+        let gauge = h.add(StretchGauge(CGRect(x: 200, y: 160, width: 20, height: 20), width: 160, height: 80))
+        let stretch = h.add(Stretch(CGRect(x: 40, y: 40, width: 80, height: 40), gauge: gauge))
+        // Stored, 40 to 120 across and 40 to 80 down; laid out, 40 to 200 and 40 to 120.
+        let plain = renderBitmap(h.editor, size: outlineCanvas)
+        outlined.shapes = [stretch]
+        let drawn = renderBitmap(h.editor, size: outlineCanvas)
+        expect(changedPixels(plain, drawn, in: CGRect(x: 203, y: 60, width: 2, height: 20)) > 20, "the right line, 4 points off the laid-out edge")
+        expect(changedPixels(plain, drawn, in: CGRect(x: 60, y: 123, width: 20, height: 2)) > 20, "the bottom line, 4 points off the laid-out edge")
+        expectEqual(changedPixels(plain, drawn, in: CGRect(x: 123, y: 50, width: 2, height: 20)), 0, "nothing 4 points off the stored edge")
+        expectEqual(changedPixels(plain, drawn, in: CGRect(x: 60, y: 83, width: 20, height: 2)), 0, "nor under it")
+        let path = try require(h.editor.outlinePath(of: try require(h.editor.document[stretch])))
+        expectBox(path.boundingBox, CGRect(x: 36, y: 36, width: 168, height: 88), "the outline path")
+        #if DEBUG
+        expectEqual(h.editor.outlinesGrownByArithmetic, 0, "a laid-out rect is grown directly")
+        #endif
+    },
     test("its corners are concentric with the shape's: a rounded rect's grow by the gap, a plain rect's are the gap's radius") {
         requireShippedStandoff()
         // A plaque, corners of 12 about (52, 52): its outline's, 16 about the same center, passes

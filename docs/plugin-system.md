@@ -614,6 +614,14 @@ is compiled by `./test.sh`, even before anything depends on it.
   already. `editor.shapesDidChangeLayout(ids)` does the same for a set value's other reasons. It
   is no transaction and no undo step, and nothing is stored or marked edited. Mentions does this for
   an arrow's label (`x.mentionLayout { $0.props.text }`, `context.mentionNames(of:)`).
+- **A shape laid out larger than its box is a `LaidOutBox`.** A box kind that shows more than it
+  stores (a note with rows no record holds) adopts it, in an extension like every capability, with
+  `laidOutSize(of:in:)`, answered from its record and its layout inputs and nothing else. The core
+  grows the stored box to it from the same origin, never smaller than the box, keeps the size by
+  shape id until a commit changes the shape other than by moving it or the input's owner says the
+  layout changed, and the kind's geometry, outline and editing frame are that laid-out frame.
+  Whatever asks how much room a shape takes reads `context.frame(of: id)` (or `editor.frame(inFile:)`),
+  never `record.box`, which is what is stored and what a write changes. A container can't be one.
 - **Conform in an extension**, as Patches does, for `ShapeDefinition` and its capabilities,
   `Tool`, `Session`, `EditorService`, and an extension point that implements `check`. Swift flags a
   member that *nearly* matches a defaulted requirement (a wrong label, a missing return type) only
@@ -10341,6 +10349,7 @@ it, the core or a horizontal.
 | `CustomSkeletonOutline` | A `CustomSkeleton` outlined its own way while skeletons are drawn (selected, hovered, the hint): `skeletonIndicatorPath(of:in:)`, what `renderSkeleton` draws, so the outline and the skeleton agree, made from the shape and its kept geometry, since ⌘A zoomed out asks it of every shape of the kind in view each frame; nil for its kept geometry's. Found once per kind (`registry.skeletonOutlines`), so no other kind's shape is asked; never asked for a shape a few pixels across, outlined by its bounds. | Arrows (the arc and its heads, where its kept geometry is three points) |
 | `StrokedShape` | A kind drawn as a line, an open shape, saying how wide its line is, in world units: `lineWidth(of:in:)`. What a tinted outline of it (`Outlines.tinted`, a plugin's own colors: Neighbors' lights) covers, drawn in full: as wide on screen as the line and a point more, round, so the shape's own line and heads don't show along the middle of the outline, a stripe in a thick line at 200% and wider than a thin one at 50%. Zoomed out, where the skeleton is a point-wide line, a tint is its plain width, and the selection's and a hover's outlines stay thin whatever it says. Found once per kind (`registry.strokedShapes`), so no other kind's shape is asked; `registry.lineWidth(of:in:)` reads it, for what decorates along a line. | Arrows (3.5, `ArrowStyle.strokeWidth`); CanvasTesting's `Cable` |
 | `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
+| `LaidOutBox` | A box kind laid out larger than the box it stores, by `laidOutSize(of:in:)` over its layout inputs: the laid-out frame has the stored origin and is never smaller, and everything that asks how much room the shape takes (`context.frame(of:)`) goes by it; its geometry, outline and editing frame default to it. Not a container. | the core's geometry, hit testing, settling and enclosing, snapping, selection |
 | `ShapeContaining` | Each shape of the box kind holds shapes on its board, a frame: what names it as its container (`AnyShapeRecord.container`) moves, restacks, locks and is let go with it, and nothing put down sits across its edge (`Transaction.settle`). Nothing to implement. [Containers](#containers). | CanvasTesting's `Corral` |
 | `BoardOwning` | Each shape of the kind owns a board, a subboard, which the file keeps under the shape's id, never in its props (`CanvasFile`, `BoardID(owner:)`). Nothing to implement: deleting a shape takes its board and every board under it, a copy takes what it holds, a file saves every board ([format 4](#boards-on-disk)), and `editor.showBoard` shows one; Boards' `x.opensBoard(placeholder:systemImage:)` opens it. Its schema is marked `x-canvas-board`. [Boards in a file](#boards-in-a-file). | [Subboards](#subboards)' `Subboard`; CanvasTesting's `Pocket` |
 | `ShapeReferencing` | Props bound to other shapes: every kind whose props are adopts it, or it stays bound to a shape once it's gone. `remappingReferences(of:_:in:)` passes each through a map: bound to the shape it gives, or, for nil, let go of where it's drawn. Deleting a shape asks it of every shape bound to it (after `willDelete` handlers, before anything's removed), and copying asks it of each copy (`record.remappingReferences(_:in:)`). It returns nil when it can't let go of a shape it can't find: a deletion leaves it as it was, and a copy leaves it out. These are bindings, which must be on the board; a name that may outlive its shape (a mention) is a value instead, [`ShapeNaming`](#values-that-name-shapes). | Arrows (an end lets go where it's drawn, keeping the curve; a copy stays bound to the copies of its shapes); CanvasTesting's `Tag` |
@@ -11116,6 +11125,9 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   `container(of:)`, `contents(of:)` and `hasContents(_:)` with the registry's kinds
   (`registry.containingKinds`): a frame's hit test reads whether it holds anything (a geometry that
   reads them is worked out again on every change, as one that reads `document` is).
+- **A container is never laid out past its box.** A kind that is `ShapeContaining` and `LaidOutBox` is
+  refused by the registry, so a container's edge is always its stored box. What is put down in one is
+  judged by its laid-out frame, not its box (a shape grown by a layout input is not settled again).
 - **Moving.** `translate`, and a drag (`TranslatingSession`), move what a container holds with it, at
   any depth, each shape once however it's asked for, read-only or not: a lock stops changes to a
   shape, not its container carrying it. The translation adjuster is given what's carried with the
@@ -11792,6 +11804,11 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   can't use Selection), read the hint (`hintedShapeID`) and the glide (`drawingOffset(of:)`,
   `isGliding`) on the `ManualScheduler`, and hold a seeded run of every container operation, undone
   and redone, to the index and the stack's invariants.
+- **Shapes laid out past their box** without Types or StickyNotes: `StretchesPlugin(log:)`
+  (CanvasTesting, [Stretches.swift](../Tests/CanvasTesting/Stretches.swift)) registers `Stretch`, a
+  `LaidOutBox` laid out by the `Gauge` it names through a layout input it provides
+  (`Stretches.room`), with a service that announces a gauge's change and a `StretchLog` of every size
+  and provider call asked. CanvasTests' `laidOutTests` hold the mechanism with it.
 - **Read-only shapes** without Locking: `FreezingPlugin(log:)` (CanvasTesting) declares `Frozen`, a
   flag every kind opts into, makes frozen shapes read-only, and logs the refusals services hear in
   its `RefusalLog`; `editor.freeze(ids)` sets it. CanvasTests, SelectionTests and DetailPanelTests

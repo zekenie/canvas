@@ -221,9 +221,11 @@ public final class CanvasEditor {
     @ObservationIgnored var shapeIndex = ShapeIndex()
     /// What geometries read that no record holds (`setLayoutInput`).
     @ObservationIgnored let layoutInputs = LayoutInputs()
+    /// The sizes shapes are laid out at, by shape id, for the whole file (`LaidOutBox`).
+    @ObservationIgnored let laidOutSizes = LaidOutSizes()
     /// What the editor's own contexts lay shapes out with: those inputs, its services and its file.
     @ObservationIgnored lazy var layoutSource = LayoutSource(
-        inputs: layoutInputs, lend: { [unowned self] in resolveService($0) },
+        inputs: layoutInputs, sizes: laidOutSizes, lend: { [unowned self] in resolveService($0) },
         shape: { [unowned self] in storedDocument[$0] ?? Self.shape($0, inFile: storedFile, registry: registry) })
     /// Moves whenever shapes were laid out again without a commit (`shapesDidChangeLayout`). What
     /// keeps something worked out from geometry keys it by this beside `revision`.
@@ -601,6 +603,7 @@ public final class CanvasEditor {
         // After what services saved as they heard it: a board the file had then has a revision past it.
         newFile.restamp(after: storedFile)
         warmIndexes.removeAll()
+        laidOutSizes.forgetAll()
         if target == board {
             var changes = ChangeSet(from: storedDocument, to: newFile[board])
             changes.elsewhere = newFile.shapesChanged(from: storedFile, except: board)
@@ -748,6 +751,7 @@ public final class CanvasEditor {
         // Before services hear the commit, which may have locked the board's owner (a commit on the
         // board above, `transact(on:)`) or put another file in place.
         let becameReadOnly = noteBoardReadOnly()
+        forgetLaidOutSizes(after: changes)
         shapeIndex.documentDidChange(changes, in: newDocument, registry: registry)
         for id in changes.removed where drawingOffsets[id] != nil { drawingOffsets[id] = nil }
         // A shape gliding that something changes is where it is now.

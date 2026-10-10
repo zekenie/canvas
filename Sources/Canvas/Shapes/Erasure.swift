@@ -48,6 +48,12 @@ extension Editable {
     }
 }
 
+extension LaidOutBox {
+    func erasedLaidOutSize(of record: AnyShapeRecord, in context: ShapeContext) -> CGSize? {
+        record.typed(as: Props.self).map { laidOutSize(of: $0, in: context) }
+    }
+}
+
 extension CustomSkeleton {
     func erasedRenderSkeleton(_ record: AnyShapeRecord, in context: RenderContext) {
         record.typed(as: Props.self).map { renderSkeleton($0, in: context) }
