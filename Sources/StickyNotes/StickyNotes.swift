@@ -132,6 +132,8 @@ enum NoteStyle {
     static let padding: CGFloat = 16
     /// Between a note's words and the rows under them, when it has words.
     static let blockGap: CGFloat = 12
+    /// How many heights of words `NoteWords` keeps; past it the lot is let go.
+    static let wordsCacheCapacity = 16_384
     static let color = NSColor(srgbRed: 1.0, green: 0.87, blue: 0.45, alpha: 1)
     /// Every line of a note's text is this tall, in the render and the editor alike. It's string
     /// drawing's own pitch for the font, so the render is as it was; TextKit 2, which lays out the

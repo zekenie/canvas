@@ -54,4 +54,15 @@ import TestKit
         h.release()
         expectEqual(h.editor.document[stretch]?.box, CGRect(x: 30, y: 0, width: 100, height: 60))
     },
+    test("a kind that is both resizable and laid out past its box shows no handles and is not resized") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), StretchesPlugin(),
+                                            Contributor(id: "resizable-stretch") { $0.resizable(Stretch.self, minimumSize: CGSize(width: 20, height: 20)) }])
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 900, y: 700, width: 60, height: 40), width: 400, height: 60))
+        let stretch = h.add(Stretch(CGRect(x: 0, y: 0, width: 100, height: 60), gauge: gauge))
+        h.editor.selectedShapeIDs = [stretch]
+        h.press(at: CGPoint(x: 99, y: 59))
+        h.drag(to: CGPoint(x: 129, y: 59))
+        h.release()
+        expectEqual(h.editor.document[stretch]?.box, CGRect(x: 30, y: 0, width: 100, height: 60), "moved, not resized")
+    },
 ])

@@ -64,16 +64,13 @@ enum NoteWords {
     }
 
     private static var heights: [Key: CGFloat] = [:]
-    /// Kept at most; past it the lot is let go.
-    static let capacity = 16_384
-
     /// 0 for no text, else the height of its lines at `width` as `NoteStyle.fittedHeight` takes it,
     /// each mention measured as a live pill by the name it holds.
     static func height(of text: MentionText, width: CGFloat) -> CGFloat {
         guard !text.stored.isEmpty, width > 0 else { return 0 }
         let key = Key(text: text.stored, width: width)
         if let kept = heights[key] { return kept }
-        if heights.count >= capacity { heights.removeAll() }
+        if heights.count >= NoteStyle.wordsCacheCapacity { heights.removeAll() }
         #if DEBUG
         NoteWordsCounts.measured += 1
         #endif
