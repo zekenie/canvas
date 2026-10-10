@@ -116,6 +116,6 @@ struct ContentView: View {
                 ToolbarItem(placement: .principal) { ToolPicker(editor: editor, help: { ShippedPlugins.help(for: $0, in: editor.registry) }) }
             }
             // Last: the path, the palette and the inspector go around the framed, toolbarred canvas.
-            .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: $view.showsDetails, rootName: view.fileName, onExit: focus.take))
+            .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: $view.showsDetails, onExit: focus.take))
     }
 }

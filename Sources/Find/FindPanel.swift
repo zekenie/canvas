@@ -5,40 +5,44 @@ import FuzzyMatching
 import Keyboard
 import SwiftUI
 
-/// What a board is called over its rows in Find's list, as the placer names it (Composition: the
-/// path's names), so Find never learns what names a board.
-public struct FindHeading: Hashable {
-    public var title: String
-    public var systemImage: String?
+extension PluginID {
+    public static let findPanel: PluginID = "find-panel"
+}
 
-    public init(_ title: String, systemImage: String? = nil) {
-        self.title = title
-        self.systemImage = systemImage
+/// Find's panel in the detail panel's place while Find is open (`DetailTakeovers`): Escape and ⌘.
+/// there close Find, before the panel gives the keyboard back to the canvas. A plugin value of its
+/// own, after `FindPlugin` and `DetailPanelPlugin`: a list without the panel leaves it out, and
+/// keeps Find's state, highlights and commands.
+public struct FindPanelPlugin: CanvasPlugin {
+    public init() {}
+    public var id: PluginID { .findPanel }
+
+    public func register(into registrar: inout PluginRegistrar) {
+        registrar.detailTakeover(isActive: { $0.find?.isActive ?? false }, onEscape: { $0.find?.close() }) { editor, onExit in
+            FindPanel(editor: editor, onExit: onExit)
+        }
     }
 }
 
-/// Find's panel, for the detail panel's takeover slot while Find is open (`editor.find?.isActive`):
+/// Find's panel, for the detail panel's place while Find is open (`FindPanelPlugin`):
 /// its own header (the field, with a spinner while the index is built, and Done), the count ("3 of
-/// 12", hits) with the buttons that step, and a row per shape with hits, under its board's heading,
-/// in order: the kind's symbol, the text around its first hit with each hit there semibold, and its
-/// count when it has more than one. A click on a row makes its first hit current, keeping the
-/// keyboard in the field. `onExit` gives the keyboard to the canvas (Done); `heading` names a board.
+/// 12", hits) with the buttons that step, and a row per shape with hits, under its board's heading
+/// (`FindState.heading(of:)`), in order: the kind's symbol, the text around its first hit with each
+/// hit there semibold, and its count when it has more than one. A click on a row makes its first hit
+/// current, keeping the keyboard in the field. `onExit` gives the keyboard to the canvas (Done).
 /// A shape's symbol is its kind's, in its kind's tint (`registry.label(of:)`; none: secondary).
 public struct FindPanel: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
-    let heading: @MainActor (BoardID) -> FindHeading
 
-    public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void,
-                heading: @escaping @MainActor (BoardID) -> FindHeading = { $0.isRoot ? FindHeading("Board") : FindHeading("") }) {
+    public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) {
         self.editor = editor
         self.onExit = onExit
-        self.heading = heading
     }
 
     public var body: some View {
         if let find = editor.find {
-            FindPanelContent(find: find, editor: editor, onExit: onExit, heading: heading)
+            FindPanelContent(find: find, editor: editor, onExit: onExit)
         }
     }
 }
@@ -47,7 +51,6 @@ private struct FindPanelContent: View {
     @Bindable var find: FindState
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
-    let heading: @MainActor (BoardID) -> FindHeading
     @FocusState private var focused: Bool
     @State private var handledRequest = 0
     @State private var window = FieldWindow()
@@ -165,7 +168,7 @@ private struct FindPanelContent: View {
     }
 
     private func boardHeading(_ board: BoardID) -> some View {
-        let named = heading(board)
+        let named = find.heading(of: board)
         return HStack(spacing: FindStyle.buttonSpacing) {
             if let symbol = named.systemImage { Image(systemName: symbol).foregroundStyle(.secondary) }
             Text(named.title).font(FindStyle.boardTitle).lineLimit(1)

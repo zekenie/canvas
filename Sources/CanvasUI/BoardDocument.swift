@@ -44,15 +44,13 @@ public struct BoardWindowContent {
 }
 
 /// A board window's own state, beside the board: whether the details and the minimap show
-/// (remembered per file on this Mac, with the cameras: `BoardViewMemory`), and what the file is
-/// called, for the root's crumb on the path.
+/// (remembered per file on this Mac, with the cameras: `BoardViewMemory`). What the file is called
+/// is the editor's (`rootName`), which the window keeps as it keeps its title.
 @MainActor
 @Observable
 public final class BoardViewState {
     public var showsDetails = true
     public var showsMinimap = true
-    /// The file's display name ("Untitled", "Plans"), kept by its window as the title is.
-    public var fileName = ""
     public init() {}
 }
 

@@ -62,7 +62,7 @@ import TestKit
             let h = EditorHarness { CanvasEditor(registry: registry, file: file, showing: child, scheduler: $0) }
             let size800 = CGRect(x: 0, y: 0, width: 1200, height: 800)
             let window = NSWindow(contentRect: size800, styleMask: [.titled], backing: .buffered, defer: false)
-            let hosting = NSHostingView(rootView: ShippedPlugins.boardPath(editor: h.editor, rootName: "Board"))
+            let hosting = NSHostingView(rootView: ShippedPlugins.boardPath(editor: h.editor))
             hosting.sizingOptions = []
             hosting.frame = size800
             window.contentView = hosting

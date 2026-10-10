@@ -1,11 +1,12 @@
 import AppKit
 import Boards
-import Canvas
+@_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
 import Composition
 import Connections
 import DetailPanel
+import Find
 import Geometry
 import LanguageModels
 import Mentions
@@ -105,7 +106,7 @@ final class InspectorWindow {
 }
 
 /// The app's content view, less its toolbar: the canvas, with the path over it (its root crumb
-/// named by `view`'s file name), and the panel.
+/// named as the editor's told, `rootName`, which a board document's window does), and the panel.
 struct InspectorHost: View {
     let editor: CanvasEditor
     let focus: CanvasFocus
@@ -115,7 +116,7 @@ struct InspectorHost: View {
 
     var body: some View {
         CanvasRepresentable(editor: editor, focus: focus, showsMinimap: showsMinimap)
-            .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: shown, rootName: view?.fileName ?? "", onExit: focus.take))
+            .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: shown, onExit: focus.take))
             .transaction { $0.disablesAnimations = true }
     }
 
@@ -320,28 +321,49 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         let w = try InspectorWindow(file: nest.file)
         w.window.spin { w.contentsRows == 3 }
         expectEqual(w.contentsHeaderButtons.count, 0, "nothing above the root")
-        expect(ShippedPlugins.contentsHeading(for: w.editor) == nil, "the root's is the list's own, \"Board\", with no name for it")
-        let root = try require(ShippedPlugins.contentsHeading(for: w.editor, rootName: "Roadmap"))
+        let contents = try require(w.editor.tableOfContents)
+        expectEqual(contents.heading.title, "Board", "the root's, while no window has said what the file is called")
+        w.editor.nameRoot("Roadmap")
+        let root = contents.heading
         expectEqual(root.title, "Roadmap", "the file's name, as the window and the path's root crumb have it")
         expectEqual(root.up, nil)
         expect(w.editor.showBoard(nest.sBoard))
         w.window.spin { w.contentsHeaderButtons.count == 1 }
         let (first, second) = nest.notes(on: 2)
         expectEqual(w.editor.tableOfContents?.entries.map(\.id), [first, second, nest.t], "its notes (the arrow under the first) and the subboard in it")
-        let heading = try require(ShippedPlugins.contentsHeading(for: w.editor))
+        let heading = contents.heading
         expectEqual(heading.title, "Plans")
         expectEqual(heading.systemImage, "rectangle.stack")
         expectEqual(heading.up, .enclosingBoard)
         expectEqual(heading.upTitle, "Enclosing Board", "as the Go menu calls it")
         expectEqual(heading.upHelp, "Enclosing Board (⌘↑)", "with its key, as Back's tooltip has its")
         expect(w.editor.showBoard(nest.tBoard))
-        expectEqual(ShippedPlugins.contentsHeading(for: w.editor)?.title, "Untitled Subboard", "the placeholder, as the path has it")
+        expectEqual(contents.heading.title, "Untitled Subboard", "the placeholder, as the path has it")
         w.editor.goToEnclosingBoard()
         w.editor.selection = nil
         w.window.spin { w.contentsHeaderButtons.count == 1 }
         try require(w.contentsHeaderButtons.first).performClick(nil)
         w.window.spin { w.editor.board == .root }
         expectEqual(w.editor.selectedShapeIDs, [nest.s], "up, to the subboard")
+    },
+    test("what the panel shows and what heads its lists are plugins of their own, each after the plugins it joins; a list without them keeps the panel, the list and Find") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let all = ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let order = all.map(\.id)
+        @MainActor func place(_ id: PluginID) throws -> Int { try require(order.firstIndex(of: id), "\(id) isn't shipped") }
+        let faces: [(face: PluginID, after: [PluginID])] = [(.contentsOverview, [.detailPanel, .tableOfContents]), (.boardContents, [.boards, .tableOfContents]),
+                                                           (.findPanel, [.findInBoards, .detailPanel]), (.boardFind, [.boards, .findInBoards])]
+        for (face, after) in faces {
+            for owner in after { expect(try place(owner) < place(face), "\(face) comes after \(owner)") }
+        }
+        let without = try Registry(plugins: all.filter { plugin in !faces.contains { $0.face == plugin.id } })
+        expect(!without.report.contains("detail overview") && !without.report.contains("detail takeover"), "the panel has neither")
+        let editor = CanvasEditor(registry: without, file: CanvasFile(), scheduler: ManualScheduler())
+        editor.nameRoot("Roadmap")
+        expectEqual(editor.tableOfContents?.heading.title, "Board", "the list's own heading")
+        expectEqual(editor.find?.heading(of: .root), FindHeading("Board"), "and Find's")
+        expectEqual(editor.name(of: .root), "Roadmap", "Boards names the root all the same")
     },
     test("inside a subboard, the way up is back once a click on empty canvas has let go of a note") {
         let nest = NestedFile()

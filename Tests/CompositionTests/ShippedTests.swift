@@ -58,10 +58,14 @@ import Validation
         context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
         slash-commands       service SlashCommandState
         table-of-contents    service ContentsState
+        contents-overview    detail overview
         titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
         mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
         board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
+        board-contents       contents heading
         find-in-boards       service FindState · overlay FindOverlay · command find · shortcut ⌘F → command find · command findNext · shortcut ⌘G → command findNext · command findPrevious · shortcut ⇧⌘G → command findPrevious
+        find-panel           detail takeover
+        board-find           find heading
         title-find           findable title → every shape
         mention-find         findable mention text → every shape
         arrow-find           findable label → arrow

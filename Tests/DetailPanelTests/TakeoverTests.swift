@@ -16,22 +16,32 @@ import TestKit
     @ObservationIgnored var log: [String] = []
 }
 
-@MainActor private func takeover(_ model: TakeoverModel) -> DetailTakeover {
-    DetailTakeover(isActive: { _ in model.active }, onEscape: { model.log.append("escape") }) {
-        TakeoverField(model: model)
+/// Gives the panel a takeover, as a plugin does: active while `model` says, a text field whose
+/// placeholder is `name`, and Escape noted in `model.log`.
+private struct TakeoverPlugin: CanvasPlugin {
+    let model: TakeoverModel
+    var name = "Takeover"
+    var id: PluginID { PluginID(name.lowercased()) }
+
+    func register(into registrar: inout PluginRegistrar) {
+        let model = model, name = name
+        registrar.detailTakeover(isActive: { _ in model.active }, onEscape: { _ in model.log.append("escape") }) { _, _ in
+            TakeoverField(model: model, name: name)
+        }
     }
 }
 
 private struct TakeoverField: View {
     @Bindable var model: TakeoverModel
-    var body: some View { TextField("Takeover", text: $model.text) }
+    let name: String
+    var body: some View { TextField(name, text: $model.text) }
 }
 
-@MainActor let takeoverTests = Suite("Panel takeover", [
-    test("active, it shows in place of the selection's panel and the overview; inactive, the panel is as it was") {
-        let editor = try gadgetEditor(scheduler: TaskScheduler())
+@MainActor let takeoverTests = Suite("Panel overview and takeovers", [
+    test("active, a takeover shows in place of the selection's panel and the overview; inactive, the panel is as it was") {
         let model = TakeoverModel()
-        let panel = PanelWindow(editor, withOverview: true, takeover: takeover(model))
+        let editor = try gadgetEditor([OverviewPlugin(), TakeoverPlugin(model: model)], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
         let box = editor.add(Box(gadgetFrame))
         panel.window.spin { panel.fields.map(\.placeholderString) == ["Overview"] }
         editor.selection = box
@@ -47,19 +57,44 @@ private struct TakeoverField: View {
         editor.selection = box
         panel.window.spin { panel.fields.map(\.stringValue) == ["240 pt", "160 pt", "80 pt", "40 pt"] }
     },
-    test("it outranks the No Details branch, where there's no panel state") {
-        let editor = CanvasEditor(registry: try Registry(plugins: [KeyboardPlugin(), SelectionPlugin()]), file: CanvasFile(), scheduler: TaskScheduler())
-        expect(editor.detailPanel == nil)
-        let model = TakeoverModel()
-        model.active = true
-        let panel = PanelWindow(editor, takeover: takeover(model))
-        panel.window.spin { panel.fields.map(\.placeholderString) == ["Takeover"] }
+    test("the overview and a takeover are the panel's points: the report names them, and a list without the panel refuses either") {
+        let registry = try Registry(plugins: [DetailPanelPlugin(), OverviewPlugin(), TakeoverPlugin(model: TakeoverModel())])
+        let lines = registry.report.split(separator: "\n")
+        expect(lines.contains { $0.hasPrefix("overview ") && $0.hasSuffix(" detail overview") }, registry.report)
+        expect(lines.contains { $0.hasPrefix("takeover ") && $0.hasSuffix(" detail takeover") }, registry.report)
+        expectThrows(RegistryError.ownerNotInstalled(point: "DetailOverviews", owner: .detailPanel, contributor: "overview")) {
+            _ = try Registry(plugins: [OverviewPlugin()])
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "DetailTakeovers", owner: .detailPanel, contributor: "takeover")) {
+            _ = try Registry(plugins: [TakeoverPlugin(model: TakeoverModel())])
+        }
+    },
+    test("the panel has one overview: a second is a conflict") {
+        expectThrows(RegistryError.conflict(point: "DetailOverviews", key: "overview", plugins: ["overview", "second"])) {
+            _ = try Registry(plugins: [DetailPanelPlugin(), OverviewPlugin(), OverviewPlugin(name: "Second")])
+        }
+    },
+    test("of several takeovers the first that's active shows, in plugin order, and Escape is its own") {
+        let first = TakeoverModel(), second = TakeoverModel()
+        let editor = try gadgetEditor([TakeoverPlugin(model: first, name: "First"), TakeoverPlugin(model: second, name: "Second")], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        second.active = true
+        panel.window.spin { panel.fields.map(\.placeholderString) == ["Second"] }
+        first.active = true
+        panel.window.spin { panel.fields.map(\.placeholderString) == ["First"] }
+        panel.window.focus(try panel.field("First"))
+        panel.window.pressEscape()
+        panel.window.spin { panel.canvasHasKeyboard }
+        expectEqual(first.log, ["escape"])
+        expectEqual(second.log, [], "the one that isn't shown hears nothing")
+        first.active = false
+        panel.window.spin { panel.fields.map(\.placeholderString) == ["Second"] }
     },
     test("typing goes to the takeover's field; Escape in it runs onEscape, then onExit, and hands the keyboard to the canvas") {
-        let editor = try gadgetEditor(scheduler: TaskScheduler())
         let model = TakeoverModel()
         model.active = true
-        let panel = PanelWindow(editor, takeover: takeover(model))
+        let editor = try gadgetEditor([TakeoverPlugin(model: model)], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
         panel.window.spin { !panel.fields.isEmpty }
         panel.window.focus(try panel.field("Takeover"))
         panel.window.type("abc")
@@ -71,10 +106,10 @@ private struct TakeoverField: View {
         expectEqual(panel.exits, 1, "onEscape ran, then onExit")
     },
     test("⌘. in the takeover's field does the same") {
-        let editor = try gadgetEditor(scheduler: TaskScheduler())
         let model = TakeoverModel()
         model.active = true
-        let panel = PanelWindow(editor, takeover: takeover(model))
+        let editor = try gadgetEditor([TakeoverPlugin(model: model)], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
         panel.window.spin { !panel.fields.isEmpty }
         panel.window.focus(try panel.field("Takeover"))
         panel.window.pressCommandPeriod()
@@ -83,9 +118,9 @@ private struct TakeoverField: View {
         expectEqual(panel.exits, 1)
     },
     test("inactive, Escape never reaches onEscape") {
-        let editor = try gadgetEditor(scheduler: TaskScheduler())
         let model = TakeoverModel()
-        let panel = PanelWindow(editor, takeover: takeover(model))
+        let editor = try gadgetEditor([TakeoverPlugin(model: model)], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
         let id = editor.add(Gadget(gadgetFrame))
         editor.selection = id
         panel.window.spin { !panel.fields.isEmpty }

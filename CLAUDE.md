@@ -70,8 +70,8 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 **Surfaces**
 - [keyboard](.claude/rules/keyboard.md): shortcuts and chords, how a key reaches the canvas, the menu bar.
 - [selection](.claude/rules/selection.md): the select tool, handles and resizing, opening, Back, canvas buttons, going to shapes, faces, the shake a refused change gives.
-- [detail panel](.claude/rules/detail-panel.md): sections, tabs, status lines, headers, bindings, text boxes, the code editor and its completions.
-- [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed (front to back), hover, another board's outline, dragging rows.
+- [detail panel](.claude/rules/detail-panel.md): sections, tabs, status lines, headers, bindings, text boxes, the code editor and its completions, and its overview and takeovers (what other plugins show in it).
+- [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed (front to back), its heading, hover, another board's outline, dragging rows.
 - [adornments](.claude/rules/adornments.md): pills and chips on shapes: placing them, their places, drawing and pointing.
 - [context menus](.claude/rules/context-menus.md): a shape's items, the canvas's items, right-clicks and Control-clicks.
 - [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text.
@@ -90,7 +90,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [connections](.claude/rules/connections.md): ports, channels and the connector.
 - [arrows](.claude/rules/arrows.md): tldraw's arc arrows, their labels and binding rules, and the proof-of-concept parity tests.
 - [mentions](.claude/rules/mentions.md): mentions in text: pills, the `@` picker, mention edges, Mentioned In, mentions' warnings.
-- [boards](.claude/rules/boards.md): opening boards, Enclosing Board, the path's crumbs and their menus.
+- [boards](.claude/rules/boards.md): opening boards, Enclosing Board, what a board is called (the root, as the file is) and where that heads other plugins' lists, the path's crumbs and their menus.
 - [snapping](.claude/rules/snapping.md): what a drag snaps to, and its guides.
 - [transform](.claude/rules/transform.md): turning a shape into another kind: channels, sources and targets, the menu item and the command, frame into subboard.
 
