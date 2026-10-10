@@ -89,6 +89,8 @@ public final class BoardWindowController: NSWindowController {
     @objc public func cut(_ sender: Any?) { board?.editor.perform(.cut) }
     @objc public func copy(_ sender: Any?) { board?.editor.perform(.copy) }
     @objc public func paste(_ sender: Any?) { board?.editor.perform(.paste) }
+    /// Edit › Duplicate (⌘D): the command a plugin claims (Clipboard's).
+    @objc public func duplicate(_ sender: Any?) { board?.editor.perform(.duplicate) }
 
     /// The menu items that run a command, enabled while it can run.
     private static let commands: [Selector: CanvasCommand] = [
@@ -96,13 +98,14 @@ public final class BoardWindowController: NSWindowController {
         #selector(showFind(_:)): .find, #selector(findNextMatch(_:)): .findNext, #selector(findPreviousMatch(_:)): .findPrevious,
         #selector(showJumpTo(_:)): .jumpTo,
         #selector(cut(_:)): .cut, #selector(copy(_:)): .copy, #selector(paste(_:)): .paste,
+        #selector(duplicate(_:)): .duplicate,
         #selector(zoomIn(_:)): .zoomIn, #selector(zoomOut(_:)): .zoomOut, #selector(zoomToActualSize(_:)): .zoomToActualSize,
         #selector(zoomToFit(_:)): .zoomToFit, #selector(zoomToSelection(_:)): .zoomToSelection,
     ]
 
-    /// The items whose keys text takes (⌘↑ and ⌘↓ move its caret): off while text has the keyboard,
+    /// The items whose keys text takes (⌘↑ and ⌘↓ move its caret, and ⌘D is not the shape's while one is edited): off while text has the keyboard,
     /// so a disabled item leaves the key to it.
-    private static let textKeys: Set<Selector> = [#selector(enclosingBoard(_:)), #selector(openSelection(_:))]
+    private static let textKeys: Set<Selector> = [#selector(enclosingBoard(_:)), #selector(openSelection(_:)), #selector(duplicate(_:))]
 
     /// The root's crumb on the path is the file's name, kept as the title is.
     public override func synchronizeWindowTitleWithDocumentName() {

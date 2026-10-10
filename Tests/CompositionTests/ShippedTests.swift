@@ -69,7 +69,7 @@ import Validation
         validation-contents  ContentsMarks
         mention-validation   ValidationRules
         title-validation     service TitleIndex · ValidationRules
-        clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
+        clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
         locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
         publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
         types                property schema · property is · edge type is-a · edges → every shape · service TypeIndex · service TypeSync<TypeSchemaProperty> · ShapePopovers · /type → every shape · /is-a → every shape · adornment TypeChips → every shape

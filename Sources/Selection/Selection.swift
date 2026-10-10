@@ -47,6 +47,17 @@ extension DecorationHits: ExtensionPoint {
     public static var owner: PluginID { .selection }
 }
 
+/// What dragging the selection with ⌥ held moves: copies of it, put down in place when the drag
+/// begins (tldraw's), in the step of the drag. A plugin that can copy shapes returns the copies, selected
+/// by the plugin or not; none claiming it (or an answer of none) leaves the drag moving the shapes
+/// themselves. At most one plugin answers; the first wins.
+public enum DragCopies {}
+
+extension DragCopies: ExtensionPoint {
+    public typealias Contribution = @MainActor (CanvasEditor, [ShapeID]) -> [ShapeID]
+    public static var owner: PluginID { .selection }
+}
+
 // Sugar, so opting in or out is one line.
 extension ShapeRegistrar {
     /// The select tool sees through this kind's shapes: a press lands on what's beneath them (or
@@ -77,6 +88,70 @@ extension PluginRegistrar {
     /// The select tool asks it as the pointer moves, so keep it cheap.
     public mutating func decorationHits(_ find: @escaping @MainActor (CanvasEditor, CGPoint, (AnyShapeRecord) -> Bool) -> ShapeID?) {
         contribute(find, to: DecorationHits.self)
+    }
+}
+
+extension PluginRegistrar {
+    /// What this plugin carries in place of the selection when it is dragged with ⌥ held: copies of the
+    /// shapes, in place (see `DragCopies`), which the drag then moves. Nothing for what can't be copied.
+    public mutating func copiesOnDrag(_ copy: @escaping @MainActor (CanvasEditor, [ShapeID]) -> [ShapeID]) {
+        contribute(copy, to: DragCopies.self)
+    }
+}
+
+extension CanvasEditor {
+    /// Whether some plugin copies shapes for a drag with ⌥ (`registrar.copiesOnDrag`).
+    var copiesOnDrag: Bool { !registry.contributions(to: DragCopies.self).isEmpty }
+
+    /// The session that drags the selection from `origin` (world units): moving it, or, with ⌥ held where a
+    /// plugin copies shapes (`registrar.copiesOnDrag`) and none of it is read-only (a drag then refuses to
+    /// move it, as ever), moving copies of it, put down in place now, in the press's step, and selected;
+    /// Escape takes them away again.
+    func translationSession(from origin: CGPoint, pointer: Pointer) -> any Session {
+        let ids = selectedShapeIDs
+        guard pointer.modifiers.contains(.option), !ids.isEmpty, !isBoardReadOnly, !ids.contains(where: { isReadOnly($0) }),
+              let copy = registry.contributions(to: DragCopies.self).first?.value else {
+            return TranslatingSession(ids: ids, from: origin, in: self)
+        }
+        let copies = copy(self, ids)
+        guard !copies.isEmpty else { return TranslatingSession(ids: ids, from: origin, in: self) }
+        selectedShapeIDs = copies
+        return CopyDraggingSession(moving: TranslatingSession(ids: copies, from: origin, in: self), copies: copies, from: ids)
+    }
+}
+
+/// A drag with ⌥ held that carries copies (`translationSession`): the copies follow the pointer as a drag of
+/// them does, and Escape puts them back and takes them away, the selection as it was, so the press comes to
+/// nothing (the step it opened ends where it began and is dropped).
+@MainActor
+final class CopyDraggingSession {
+    private let move: TranslatingSession
+    private let copies: [ShapeID]
+    private let originals: [ShapeID]
+
+    init(moving move: TranslatingSession, copies: [ShapeID], from originals: [ShapeID]) {
+        self.move = move
+        self.copies = copies
+        self.originals = originals
+    }
+}
+
+extension CopyDraggingSession: Session {
+    var scrollsAtEdges: Bool { move.scrollsAtEdges }
+    func drag(_ pointer: Pointer, in editor: CanvasEditor) { move.drag(pointer, in: editor) }
+    func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor) { move.modifiersChanged(modifiers, in: editor) }
+    func end(_ pointer: Pointer, in editor: CanvasEditor) { move.end(pointer, in: editor) }
+    func draw(in context: OverlayContext) { move.draw(in: context) }
+
+    func cancel(in editor: CanvasEditor) -> Bool {
+        _ = move.cancel(in: editor)
+        // A container deleted lets go of what it holds, so the copies of what a copied container holds go with it.
+        let kinds = editor.registry.containingKinds, document = editor.document
+        var gone = Set(copies)
+        if !kinds.isEmpty { for id in copies { gone.formUnion(document.descendants(of: id, containingKinds: kinds)) } }
+        editor.transact { $0.delete(gone) }
+        editor.selectedShapeIDs = originals.filter { editor.document[$0] != nil }
+        return true
     }
 }
 

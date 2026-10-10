@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([copyPasteTests, copyabilityTests, referenceTests, placementTests, pasteboardTests, menuTests, registryTests, undoTests, subtreeTests, moveTests, containerTests, readOnlyBoardTests])
+runTests([copyPasteTests, copyabilityTests, referenceTests, placementTests, pasteboardTests, menuTests, registryTests, undoTests, subtreeTests, moveTests, containerTests, readOnlyBoardTests, duplicateTests])

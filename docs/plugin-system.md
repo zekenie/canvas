@@ -306,6 +306,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Put a pill that stands for a public shape, so an arrow into it is an arrow into the shape | `ReferencesPlugin`: the Reference tool (R); `x.standsIn` is what it declares, Publishing says what it may stand for | [References](#references) |
 | Put a button on the canvas that a click does something with (a chip), or a drag starts something from (a port's dot) | Selection's `registrar.canvasButtons(at:click:)` or `canvasButtons(at:drag:)`, drawn in an overlay with `editor.hoveredButton` and `editor.pressedButton`; or make an adornment a `ClickableAdornment` | [Canvas buttons](#canvas-buttons), [Locking](#locking), [Ports](#ports) |
 | Make what you draw for a shape outside it count as the shape (a press, a hover, a right-click) | Selection's `registrar.decorationHits`; adornments already do | [DecorationHits](#drawn-for-a-shape-decorationhits) |
+| Carry a copy of the selection when it is dragged with ⌥ held | Selection's `registrar.copiesOnDrag` (Clipboard's claim); the drag moves the copies, in the press's step | [The clipboard](#the-clipboard) |
 | Make part of a shape's content answer a click without taking the shape's press (a mention's pill, a link, a checkbox) | Selection's `registrar.shapeFaces(at:click:doubleClick:hovering:)` | [Faces](#faces-clickable-parts-of-a-shape) |
 | Connect shapes with arrows: dots beside a kind's sides, dragged to another shape | `x.ports(C.self, sides:role:)`, on a channel; `ArrowPortsPlugin` draws the arrow | [Ports](#a-kinds-ports), [`ArrowPortsPlugin`](#the-connector-arrows) |
 | Declare a channel: a kind of connection, and which kinds take it | A `Channel` type, `registrar.channel(C.self)`; `ports` on each kind that takes it | [Channels](#channels) |
@@ -826,11 +827,11 @@ The details:
   whose drawn state changes some other way (its own state, a timer) calls `editor.setNeedsDisplay()`,
   as Selection does when the selection or hover changes; a tool whose cursor follows such state
   calls `editor.refreshCursor()`.
-- **Commands** (`CanvasCommand`: `.delete`, `.selectAll`, `.goBack`, `.cut`, `.copy`, `.paste`,
+- **Commands** (`CanvasCommand`: `.delete`, `.selectAll`, `.goBack`, `.cut`, `.copy`, `.paste`, `.duplicate`,
   the zoom commands, …)
   are what menu items run: the canvas view forwards Edit › Delete and Edit › Select All (AppKit's
   standard actions) with `editor.perform`, and dims them as `canPerform` says, the board's window Go › Back (⌘[) and View's zoom items whatever has the
-  keyboard, and Edit › Cut, Copy and Paste wherever text doesn't take them first, and a key or any
+  keyboard, and Edit › Cut, Copy, Paste and Duplicate wherever text doesn't take them first, and a key or any
   plugin may run one. A plugin claims each with `registrar.command`, or with Keyboard's
   `registrar.command(_:shortcuts:)`, which gives it its keys too, and may say when it can run
   (`isEnabled:`), which `editor.canPerform` asks for a menu item to enable it, and a key to take
@@ -2315,6 +2316,7 @@ What the shipped app's keys do:
 | ⌘[ | Goes back to what was selected before, as Go › Back does (while there's somewhere to go) | Selection |
 | ⌘↑ | Goes up to the board above, with the shape whose board it left selected, as Go › Enclosing Board does (off the root) | Boards |
 | ⌘X, ⌘C, ⌘V | Cuts, copies and pastes shapes, as Edit › Cut, Copy and Paste do | Clipboard |
+| ⌘D | Duplicates the selection beside itself, as Edit › Duplicate does, without the pasteboard | Clipboard |
 | ⌘Z, ⇧⌘Z | Undoes and redoes, as Edit › Undo and Redo do (held, again and again) | Keyboard, for the core's `.undo` and `.redo` |
 | ⌘=, ⌘-, ⌘0, ⇧1 | Zooms in and out to the next stop (held, again and again), to 100%, and to fit the board, as View's items do | Keyboard, for the core's `.zoomIn`, `.zoomOut`, `.zoomToActualSize` and `.zoomToFit` |
 | ⇧2 | Brings the selection into view, as View › Zoom to Selection does | Selection |
@@ -4426,6 +4428,7 @@ giving a shape back the id it had.
 |---|---|
 | ⌘C, Edit › Copy, Copy | Puts copies of the selection's copyable shapes on the pasteboard, back to front, with what the boards they own hold, and what the containers among them hold. The board doesn't change. |
 | ⌘X, Edit › Cut, Cut | Copies, marked as a cut's, then deletes what it copied whole, in one transaction. What can't be copied stays, and so does a shape whose board holds one, and a [locked](#locking) shape, or one on a locked subboard's board, copied all the same (it shakes, as with Delete). |
+| ⌘D, Edit › Duplicate | Puts copies of the selection's copyable shapes beside it (`ClipboardStyle.duplicateOffset`, 16 view points down and right), selected, in one step, "Duplicate", without touching the pasteboard: a paste's own machinery, new ids all the way down, each copy naming its original, settled in place first (a container's copy lies over its original, and the copies go in the containers their originals are in) and then moved. Off mid-gesture, on a board that takes no shapes, and with nothing copyable. A drag of the selection with ⌥ held does the same in place at the press and drags the copies (Selection's `registrar.copiesOnDrag`, claimed by Clipboard), in the press's step; Escape takes them away again; read-only shapes are not copied (the drag refuses them, as ever). |
 | ⌘V, Edit › Paste, Paste | Puts what's on the pasteboard on top of the board, settled where it lands by the in-or-out rule, and selects it: what a copy put there as copies, with new ids all the way down; what a cut put there moved, under the ids it had. Off on a board that takes no shapes (a locked subboard's, `editor.isBoardReadOnly`). |
 
 - **Copies get new ids, and remember their originals.** Each copy's metadata names the shape it
@@ -4520,11 +4523,11 @@ giving a shape back the id it had.
   Cut work there as they do for a locked shape: copies, and a cut deletes nothing and shakes. The pasteboard is
   read again only when it's changed. `ClipboardPlugin(pasteboard:)` takes the pasteboard, the
   system's by default.
-- **Where the keys work.** ⌘X, ⌘C and ⌘V are Keyboard's while the canvas has the keyboard.
+- **Where the keys work.** ⌘X, ⌘C, ⌘V and ⌘D are Keyboard's while the canvas has the keyboard.
   Elsewhere the menu has them: the board's window controller answers Edit › Cut, Copy and Paste
   wherever the keyboard is, the table of contents' list included, except in text (a note being
   edited, a panel's field), which takes them first. Cut and Paste don't run mid-gesture; Copy does.
-- **Undo.** Cut and Paste are one step each, "Cut" and "Paste", by key, menu or context menu.
+- **Undo.** Cut and Paste are one step each, "Cut" and "Paste" (a duplicate's is "Duplicate", a ⌥-drag's copy and its move together), by key, menu or context menu.
   Undoing a cut brings the shapes back selected; undoing a paste selects what was before it, and
   redoing it brings back the same copies (the same ids, `copiedFrom` and all). Undoing a move's
   paste takes the shapes out and frees their ids (a paste after it moves them again), redoing it
@@ -11578,7 +11581,7 @@ validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
 mention-validation   ValidationRules
 title-validation     service TitleIndex · ValidationRules
-clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · CanvasContextMenu
+clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
 types                property schema · property is · edge type is-a · edges → every shape · service TypeIndex · service TypeSync<TypeSchemaProperty> · ShapePopovers · /type → every shape · /is-a → every shape · adornment TypeChips → every shape
@@ -12465,10 +12468,10 @@ Each of these adds to the design without changing what plugins are written again
   appear only once you enter it, and nothing on the shape that owns it sums them up.
 - **More of the clipboard**: pasting what other apps put on the pasteboard (text as a note, an
   image) and giving them a text or image version of copied shapes; ⌘V pasting at the pointer
-  (tldraw's preference, and ⌥; the context menu's Paste lands at its click already); and Duplicate
-  (⌘D) and ⌥-dragging a copy, on the same copying.
+  (tldraw's preference, and ⌥; the context menu's Paste lands at its click already); and holding ⌥
+  mid-drag to start carrying a copy (a drag with ⌥ held at its start does).
 - **More of the context menu**: key equivalents and symbols on items; and Duplicate, in
-  Clipboard's group, once a plugin owns it.
+  Clipboard's group (⌘D and Edit › Duplicate are built).
 - **More of locking**: Unlock All (tldraw has it); the menu's other items for a locked shape dimmed, rather than shaking it once chosen;
   a line in the detail panel saying why it's disabled; and a tooltip on the chip (an adornment's,
   above).
