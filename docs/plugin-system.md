@@ -1202,6 +1202,20 @@ splits and joins none of them. What a title brings:
   mostly goes through has something to grab. It's never a title: `registry.title(of:)` is nil, the
   row is the kind's own, and a name takes its place. A kind that doesn't ask shows no pill on an
   untitled shape, and a blank placeholder is none.
+- **A look for the pill of some shapes**, from a plugin that is not the kind's (`TitlePillLooks`, an
+  extension point in Titles, so Titles knows no type): `registrar.titlePillLook(forShapesHolding:
+  TypeSchemaProperty.self) { shape, title in TitlePillLook(symbol: "curlybraces", tint: …,
+  placeholder: "Untitled") }`, asked of the shapes of every kind that holds the property (opted
+  into it) and of no other kind, and `x.titlePillLook { shape, title in … }` on a kind's own
+  registrar. A `TitlePillLook` has a `symbol` (first in the pill, in place of the kind's), a `tint`
+  (an `AdornmentTint`), a `placeholder` (what an untitled shape's pill says, dimmed; the pill then
+  shows where the kind gave none), a `coverSurface` (what the shape's skeleton is drawn on, for its
+  cover's ink, in place of the kind's) and `hidesPill`. Any number of plugins contribute, a kind's
+  own first; each field is the first non-nil in plugin order, `hidesPill` if any says so. It is
+  asked where the pill's label is made (when a commit names the shape; the label is then kept) and
+  for the cover of a titled skeleton in view, never per frame otherwise. The registry report
+  shows it as `title pill look → every shape` or `→ note`; a list with a look and no `TitlesPlugin`
+  is refused.
 - **Its row's name** in [the table of contents](#the-table-of-contents), through TableOfContents'
   `ContentsTitles`, which names a kind's rows without replacing them: a titled note is listed by
   its title; an untitled one by its text, as before. `contents: false`
