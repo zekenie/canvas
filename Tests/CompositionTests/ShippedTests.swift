@@ -64,7 +64,7 @@ import Validation
         title-find           findable title → every shape
         mention-find         findable mention text → every shape · findable mention text over the canvas → every shape
         jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo
-        transform            service TransformState · CanvasContextMenu
+        transform            service TransformState
         validation-details   DetailStatuses in Issues
         validation-contents  ContentsMarks
         mention-validation   ValidationRules

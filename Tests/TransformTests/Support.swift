@@ -147,7 +147,3 @@ extension EditorHarness {
     expect(record.isOpaque)
     return record
 }
-
-/// Where a box a test of offers or vetoes adds is, and a click on it.
-let boxSlot = CGRect(x: 0, y: 0, width: 100, height: 80)
-let boxPoint = CGPoint(x: 50, y: 40)

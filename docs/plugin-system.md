@@ -3363,16 +3363,16 @@ contextMenu {
   not of `editor.canPerform`: the selection is the menu's shapes only once the menu is made.
 - **`Submenu(title) { items }`** shows when any of its items does.
 - **`MenuItems(in:, id:) { subject in … }`** is an item for the canvas that is made when the menu
-  opens, for what the registry can't know because it's in the file (Transform's Turn into … for the
-  shapes someone made). It's registered like an item, by its group and `id` (two plugins claiming
-  one are a `conflict`), and asked once per menu, with the `MenuSubject`; what it returns, written
-  as the other items are (`MenuItem`, `Submenu`, a `for` loop), takes its place in the menu, in its
-  entries' own groups. An id met twice at a level shows once, the first staying, and a kind's own
-  item with an entry's group and id takes its place as it does a registered one's. Returning
-  nothing shows nothing, and a menu with nothing else has no menu. It is for the canvas only: the
-  "every shape shows it" rule is never asked of what it makes. `MenuItem`'s `perform` form takes
-  `stepName:` for an item whose title only makes sense in its submenu (the undo step is named by it:
-  "Turn into ▸ Employee card" is the step "Turn into Employee card").
+  opens, for what the registry can't know because it's in the file. It's registered like an item, by
+  its group and `id` (two plugins claiming one are a `conflict`), and asked once per menu, with the
+  `MenuSubject`; what it returns, written as the other items are (`MenuItem`, `Submenu`, a `for`
+  loop), takes its place in the menu, in its entries' own groups. An id met twice at a level shows
+  once, the first staying, and a kind's own item with an entry's group and id takes its place as it
+  does a registered one's. Returning nothing shows nothing, and a menu with nothing else has no menu.
+  It is for the canvas only: the "every shape shows it" rule is never asked of what it makes.
+  `MenuItem`'s `perform` form takes `stepName:` for an item whose title only makes sense in its
+  submenu (the undo step is named by it: "Turn into ▸ Employee card" is the step "Turn into
+  Employee card").
 
   ```swift
   registrar.contextMenuForCanvas {
@@ -8211,15 +8211,13 @@ default (`admits` is the one that could be misspelled). The sugar:
   share its menu item and its command. If one is ever needed, that's where it's decided.
 - **The graph** is `registry.turnTargets(of: kind)`: each kind whose target takes a channel `kind` offers,
   in plugin order, never `kind` itself.
-- **`TransformPlugin()` is the owner.** It registers the service and one item for the canvas, the
-  offers' ([below](#what-the-file-offers)), and a list with a kind that offers a channel or takes one, or
-  that contributes an offer or a veto, needs it (`ownerNotInstalled`). It needs `ContextMenusPlugin()`
-  for that item, and a target brings a menu item and a command, so it needs `SlashCommandsPlugin()` too;
-  a kind whose id can't be typed as a command's name ("odd_one") is refused (`invalid`, from the
-  commands' point).
+- **`TransformPlugin()` is the owner.** It registers the service and nothing else, and a list with a kind
+  that offers a channel or takes one needs it (`ownerNotInstalled`). A target brings a menu item and a
+  command, so it needs `ContextMenusPlugin()` and `SlashCommandsPlugin()` too, and a kind whose id can't be
+  typed as a command's name ("odd_one") is refused (`invalid`, from the commands' point).
 - **The report** shows each contribution: `offers channel container → frame` on Frames' line and `takes
   channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape` on Subboards',
-  and `service TransformState · CanvasContextMenu` on its own ([The registry](#the-registry)).
+  and `service TransformState` on its own ([The registry](#the-registry)).
 
 ### What a target brings
 
@@ -8274,56 +8272,6 @@ transforms.turn([frame], into: Subboard.kind)    // true: one undo step, "Turn i
   heard (`editor.refuseChanges(to:)`, so Locking shakes them). A shape that's read-only is refused before
   its target runs. A target that throws turns nothing either. `turn` returns whether it turned any.
 
-### What the file offers
-
-The registry knows a kind's targets, but not what a person has made: a shape whose kind is a note, say,
-that others are turned into. That is the file's, so a plugin that reads it contributes **offers**, asked
-when the menu opens, and they go through the same turn as a target's.
-
-```swift
-registrar.turnOffers { shapes, editor in           // the menu's shapes, in its order; [TurnOffer]
-    guard shapes.allSatisfy({ $0.kind == "note" }) else { return [] }
-    return cards.map { card in
-        TurnOffer(id: card.id, label: card.title) { id, transaction in
-            // turns the shape under its id, with `transaction.turn(_:into:)` and what else it needs
-        }
-    }
-}
-```
-
-- **`TransformOffers`** is a list point, in plugin order (`turn offers → every shape` in the report). Each
-  provider is asked once per menu with every shape the menu is for, on the board shown and none kept aside
-  (else no offers); it decides whether its offers suit them, and returns none for a selection they don't.
-  `editor.transforms?.offers(for: ids)` is the same list, the first of each id staying.
-- **One offer is an item, "Turn into <label>"; several are a "Turn into" submenu**, one item each, in the
-  order given. Both are in `TransformMenuGroup` (they come from `TransformPlugin`'s own `MenuItems` entry,
-  [Context menus](#contributing)), after a kind's targets, which stay flat items: no shipped kind has both.
-- **`turn(_:by:)`** is `turn(_:into:)` for an offer, and they share one body: innermost first, the vetoes
-  asked, read-only all or nothing (`refuseChanges`), kept in their containers, settled and glided, in one
-  step named "Turn into <label>". A shape off the board shown or kept aside is left out. There is no
-  command for an offer.
-
-### Vetoing a turn
-
-A plugin may refuse a turn that the rules above would allow, whatever it turns into (a target of the
-registry or an offer). Types does, for a custom shape's template while shapes are made from it.
-
-```swift
-registrar.vetoTurns { request, editor in           // request.shapes, .label, .kind (nil for an offer), .offer
-    let held = request.shapes.filter { hasInstances($0) }
-    return held.isEmpty ? nil : TurnVeto(shapes: Set(held)) { editor.openPanel(at: held[0]) }
-}
-```
-
-- **`TransformVetoes`** is a list point (`turn veto → every shape`). Before anything changes, every rule is
-  asked, in plugin order, about the shapes that would turn (each once, on the board shown, not kept aside).
-  A rule returns nil, or the shapes it refuses and an action.
-- **A refusal holds the whole turn.** Nothing turns, no step is made, the refused shapes are heard
-  (`editor.refuseChanges(to:)`, the union of every rule's, so Locking shakes them) and each refusal's action
-  runs, in plugin order, once they have been. An action may change the document only through
-  `editor.transact`. It runs before the read-only check, so a locked shape a rule refuses is heard once,
-  as the rule's.
-
 ### The container channel
 
 `ContainerChannel` ([ContainerChannel.swift](../Sources/Transform/ContainerChannel.swift)) is the first
@@ -8376,15 +8324,7 @@ a frame, which owns no board for `move` to move onto (`move` would move nothing 
   for each target, a source that says no), the command (offered where it should be, one step named as the
   item is), all or nothing (a frozen box in the corral, a frozen corral, one in a frozen corral, one deep
   in nested corrals, a target never run for a read-only shape, a target that throws), the in-or-out rule
-  and bindings. Offers and vetoes have suites of their own, over boxes: **OfferTests** (one offer an
-  item and several a "Turn into" submenu, in order and across providers, the first of an id staying;
-  providers asked once per menu with the menu's shapes, and nothing shown unless they offer for every one;
-  `offers(for:)` empty for a shape that isn't there or is kept aside; shapes turned innermost first in one
-  step named for the offer, in either order given; a frozen shape refusing all and shaking, an offer that
-  throws changing nothing; the report) and **VetoTests** (a refused target and a refused offer: nothing
-  changes, no step, heard refused, the action run, and the request as it was asked; the menu and the slash
-  command the same; asked only about shapes that would turn; every rule asked, the shapes and actions
-  joined; the report and `ownerNotInstalled`).
+  and bindings.
 - **ContextMenusTests' `DynamicItemsTests`** hold `MenuItems`: asked once per menu with the subject, in
   place after the shapes' own, made again each menu, an empty result showing nothing (and no menu on empty
   canvas), duplicates deduplicated at each level, `when` and `isEnabled`, a kind's own item taking its place,
@@ -11642,7 +11582,7 @@ find-in-boards       service FindState · overlay FindOverlay · command find ·
 title-find           findable title → every shape
 mention-find         findable mention text → every shape · findable mention text over the canvas → every shape
 jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo
-transform            service TransformState · CanvasContextMenu
+transform            service TransformState
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
 mention-validation   ValidationRules

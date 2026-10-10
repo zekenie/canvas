@@ -30,19 +30,6 @@ public final class TransformState {
     /// it is refused, and it shakes.
     public func canTurn(_ id: ShapeID, into kind: ShapeKind) -> Bool { targets(of: id).contains(kind) }
 
-    /// The offers that come from the file for these shapes (a context menu's), when they are: every
-    /// provider's (`registrar.turnOffers`), in plugin order, the first of each id staying. None unless
-    /// every shape is on the board shown and not kept aside: the providers are asked about all of them,
-    /// in the order given.
-    public func offers(for ids: [ShapeID]) -> [TurnOffer] {
-        let records = ids.compactMap { editor.document[$0] }.filter { !$0.isOpaque }
-        guard !records.isEmpty, records.count == ids.count else { return [] }
-        var seen = Set<String>()
-        return editor.registry.contributions(to: TransformOffers.self)
-            .flatMap { $0.value.offers(records, editor) }
-            .filter { seen.insert($0.id).inserted }
-    }
-
     /// Turns these shapes (those that `canTurn`, each once) into `kind`, in one undo step, "Turn into
     /// Subboard": innermost first (the deepest in containers, then back to front), so a container
     /// that turns inside another has turned, and moved what it held, by the time the outer one reads
@@ -53,66 +40,31 @@ public final class TransformState {
     /// another container is nudged out of it, and one too large for its own goes as the rule says;
     /// what moved glides there.
     ///
-    /// Before anything changes the turn is put to the vetoes (`registrar.vetoTurns`): if any refuses,
-    /// nothing turns, no step is made, the refused shapes are heard refused and the veto's action runs.
-    /// Then all or nothing for read-only shapes: if any of them, or anything the target moves, is
-    /// read-only (locked, or in a locked container), or a read-only container would take one of them,
-    /// nothing changes, no step is made, and services hear which were refused
-    /// (`editor.refuseChanges(to:)`: they shake). Once one is refused no other target runs (the turn is
-    /// thrown away), but every read-only one among them is still found, so each shakes. A target whose
-    /// turn throws turns nothing too. Returns whether it turned any.
+    /// All or nothing for read-only shapes: if any of them, or anything the target moves, is read-only
+    /// (locked, or in a locked container), or a read-only container would take one of them, nothing
+    /// changes, no step is made, and services hear which were refused (`editor.refuseChanges(to:)`: they
+    /// shake). Once one is refused no other target runs (the turn is thrown away), but every read-only
+    /// one among them is still found, so each shakes. A target whose turn throws turns nothing too.
+    /// Returns whether it turned any.
     @discardableResult
     public func turn(_ ids: [ShapeID], into kind: ShapeKind) -> Bool {
         guard let target = editor.registry.contributions(to: TransformTargets.self, for: kind).first else { return false }
-        let turning = innermostFirst(ids.filter { canTurn($0, into: kind) })
-        return turn(turning, TurnRequest(shapes: turning, label: target.label, kind: kind, offer: nil)) { id, transaction in
-            try target.turn(id, &transaction)
-        }
-    }
-
-    /// Turns these shapes by an offer from the file (`offers(for:)`), as `turn(_:into:)` turns by a target:
-    /// each once, innermost first, vetoes asked, read-only all or nothing, kept in their containers and put
-    /// down (`transaction.settle`), in one undo step, "Turn into <label>". Shapes off the board shown or kept
-    /// aside are left out. Returns whether it turned any.
-    @discardableResult
-    public func turn(_ ids: [ShapeID], by offer: TurnOffer) -> Bool {
-        let turning = innermostFirst(ids.filter { id in editor.document[id].map { !$0.isOpaque } ?? false })
-        return turn(turning, TurnRequest(shapes: turning, label: offer.label, kind: nil, offer: offer.id)) { id, transaction in
-            try offer.turn(id, &transaction)
-            return true
-        }
-    }
-
-    /// These shapes, each once, the deepest in containers first, then back to front.
-    private func innermostFirst(_ ids: [ShapeID]) -> [ShapeID] {
         var seen = Set<ShapeID>()
         let document = editor.document, kinds = editor.registry.containingKinds
-        return ids.filter { seen.insert($0).inserted }
+        let turning = ids.filter { canTurn($0, into: kind) && seen.insert($0).inserted }
             .map { (id: $0, depth: document.containers(of: $0, containingKinds: kinds).count, index: document.index(of: $0) ?? 0) }
             .sorted { ($0.depth, $1.index) > ($1.depth, $0.index) }
             .map(\.id)
-    }
-
-    /// The body both turns share: `turning` (innermost first) through the vetoes, then in one step named for
-    /// the request. `turnOne` turns a shape, false if it had nothing to turn.
-    private func turn(_ turning: [ShapeID], _ request: TurnRequest,
-                      _ turnOne: @MainActor (ShapeID, inout Transaction) throws -> Bool) -> Bool {
         guard !turning.isEmpty else { return false }
-        let vetoes = editor.registry.contributions(to: TransformVetoes.self).compactMap { $0.value.veto(request, editor) }
-        guard vetoes.isEmpty else {
-            editor.refuseChanges(to: vetoes.reduce(into: Set<ShapeID>()) { $0.formUnion($1.shapes) })
-            for veto in vetoes { veto.action() }
-            return false
-        }
         let turned: (ids: [ShapeID], nudges: [ShapeID: CGPoint])
         do {
-            turned = try editor.transact("Turn into \(request.label)") { transaction in
+            turned = try editor.transact("Turn into \(target.label)") { transaction in
                 var done: [ShapeID] = [], refused: Set<ShapeID> = []
                 for id in turning {
                     guard let record = transaction.document[id] else { continue }
                     if transaction.isReadOnly(record) {
                         refused.insert(id)
-                    } else if refused.isEmpty, transaction.refusedShapes.isEmpty, try turnOne(id, &transaction) {
+                    } else if refused.isEmpty, transaction.refusedShapes.isEmpty, try target.turn(id, &transaction) {
                         done.append(id)
                     }
                 }
