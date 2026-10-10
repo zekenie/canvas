@@ -1,8 +1,10 @@
 import Canvas
 import ContextMenus
 import DetailPanel
+import HostSlots
 import Keyboard
 import Selection
+import SwiftUI
 import Titles
 
 /// Boards, as a plugin: getting around a file's boards, whatever kind owns them. A kind whose shapes
@@ -73,6 +75,11 @@ public struct BoardsPlugin: CanvasPlugin {
         // while a shape is being edited (⌘↑ is then the text's).
         registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .command)],
                           isEnabled: { !$0.board.isRoot && $0.session == nil && $0.editingShapeID == nil }) { $0.goToEnclosingBoard() }
+        // What the window hosts of it: the path over the top of the canvas, which a fit leaves clear
+        // of as far down as its pill reaches, and the board shown's name as the window's subtitle
+        // (its crumb's title; none on the root, which the window's title, the file's name, names).
+        registrar.hostOverlay(alignment: .top, coveredTop: { BoardPath.coveredHeight(on: $0) }) { editor, _ in BoardPath(editor: editor) }
+        registrar.windowSubtitle { $0.boardCrumbs?.crumbs.last?.title }
     }
 }
 

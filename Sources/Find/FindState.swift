@@ -8,9 +8,9 @@ import Selection
 import Topology
 
 /// Find, per editor (`editor.find`): whether it's open, what's typed, what it found and which hit is
-/// current, and the index it searches. Views read it (`@Observable`): the panel, and the host, which
-/// shows the inspector when `focusRequest` changes with it hidden (and hides it again on closing if
-/// it did: `revealedInspector`).
+/// current, and the index it searches. Views read it (`@Observable`): the panel, and, through the
+/// panel's takeover (`FindPanelPlugin`), the window, which shows a hidden inspector while Find is
+/// open and hides it again as Find closes.
 ///
 /// Typing searches the board shown when the query last changed (or ⌘F opened Find) and every board
 /// under it, off the main actor, the newest keystroke's search cancelling the one before; results
@@ -38,13 +38,10 @@ public final class FindState {
     public private(set) var total = 0
     /// The current hit: a result, and which of its hits.
     public private(set) var current: FindPosition?
-    /// +1 each ⌘F: the panel focuses its field and selects what's typed, and the host shows the
-    /// inspector if it's hidden.
+    /// +1 each ⌘F: the panel focuses its field and selects what's typed.
     public private(set) var focusRequest = 0
     /// Whether the index is still being built: the field shows a spinner.
     public private(set) var isIndexing = false
-    /// Set by the host when it showed the inspector for Find, so closing Find hides it again.
-    @ObservationIgnored public var revealedInspector = false
 
     /// The board searched: the one shown when the query last changed.
     @ObservationIgnored public private(set) var scope: BoardID = .root

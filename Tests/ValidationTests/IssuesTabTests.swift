@@ -97,7 +97,7 @@ extension EditorHarness {
         expectEqual(registry.report, """
         core                tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
         validation          service ValidationEngine · overlay ValidationOverlay · ValidationRules
-        detail-panel        service DetailPanelState
+        detail-panel        service DetailPanelState · host inspector
         validation-details  DetailStatuses in Issues
         """)
     },

@@ -82,6 +82,10 @@ extension Registry {
 
     /// The takeovers plugins gave, in plugin order.
     var detailTakeovers: [DetailTakeover] { contributions(to: DetailTakeovers.self).map(\.value) }
+
+    /// The takeover that shows in an editor's panel: the first that's active, in plugin order. Whoever
+    /// reads it observes what each `isActive` reads.
+    func activeDetailTakeover(in editor: CanvasEditor) -> DetailTakeover? { detailTakeovers.first { $0.isActive(editor) } }
 }
 
 /// A takeover in a panel: its view made, for that panel's editor and `onExit`.

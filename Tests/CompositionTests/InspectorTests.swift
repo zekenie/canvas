@@ -116,7 +116,7 @@ struct InspectorHost: View {
 
     var body: some View {
         CanvasRepresentable(editor: editor, focus: focus, showsMinimap: showsMinimap)
-            .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: shown, onExit: focus.take))
+            .modifier(BoardChrome(editor: editor, showsInspector: shown, onExit: focus.take))
             .transaction { $0.disablesAnimations = true }
     }
 

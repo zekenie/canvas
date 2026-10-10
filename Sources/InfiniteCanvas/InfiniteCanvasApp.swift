@@ -18,10 +18,8 @@ enum InfiniteCanvasApp {
         let registry: Registry
         do {
             registry = try ShippedPlugins.registry(model: ShippedPlugins.anthropicModel)
-            BoardDocument.configuration = BoardConfiguration(registry: registry, coveredTop: ShippedPlugins.coveredTop(on:),
-                                                             boardName: ShippedPlugins.boardName(of:)) {
-                AnyView(ContentView(board: $0))
-            }
+            BoardDocument.configuration = BoardConfiguration(registry: registry) { AnyView(ContentView(board: $0)) }
+            delegate.settings = SettingsWindow(registry: registry)
         } catch {
             fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
         }
@@ -46,7 +44,8 @@ enum InfiniteCanvasApp {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let hasShownWelcomeBoard = "hasShownWelcomeBoard"
-    private let settings = SettingsWindow { ShippedPlugins.settings() }
+    /// The Settings window, its panes the shipped plugins': set once the registry is made.
+    var settings: SettingsWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -73,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Infinite Canvas › Settings… (⌘,; `BoardMenus.showSettings`): the one Settings window, its
     /// content made afresh each time it opens.
     @objc func showSettings(_ sender: Any?) {
-        settings.show()
+        settings?.show()
     }
 
     /// Help › Welcome Board: a new board with the welcome notes on it.
@@ -96,8 +95,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// A board window's content: the canvas (with the minimap in its corner, and, inside a subboard,
-/// the path over its top middle), the tools in the toolbar, and the details in an inspector.
+/// A board window's content: the canvas (with the minimap in its corner), the tools in the toolbar,
+/// and around it what the plugins gave the host's slots, placed by CanvasUI's `BoardChrome`: inside
+/// a subboard the path over its top middle, a palette, and the details in an inspector.
 struct ContentView: View {
     let editor: CanvasEditor
     let focus: CanvasFocus
@@ -113,9 +113,9 @@ struct ContentView: View {
         CanvasRepresentable(editor: editor, focus: focus, showsMinimap: view.showsMinimap)
             .frame(minWidth: 480, minHeight: 320)
             .toolbar {
-                ToolbarItem(placement: .principal) { ToolPicker(editor: editor, help: { ShippedPlugins.help(for: $0, in: editor.registry) }) }
+                ToolbarItem(placement: .principal) { ToolPicker(editor: editor) }
             }
             // Last: the path, the palette and the inspector go around the framed, toolbarred canvas.
-            .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: $view.showsDetails, onExit: focus.take))
+            .modifier(BoardChrome(editor: editor, showsInspector: $view.showsDetails, onExit: focus.take))
     }
 }

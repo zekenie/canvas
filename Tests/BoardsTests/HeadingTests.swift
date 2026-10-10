@@ -3,7 +3,9 @@ import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import Find
+import HostSlots
 import Observation
+import SwiftUI
 import TableOfContents
 import TestKit
 import Titles
@@ -70,6 +72,27 @@ import Titles
         expectEqual(find.heading(of: nest.pBoard), FindHeading("Untitled Pocket", systemImage: "tray"))
         h.name(nest.d, "Kitchen")
         expectEqual(find.heading(of: nest.dBoard), FindHeading("Kitchen", systemImage: "archivebox"))
+    },
+    test("the window hosts the path over the top of the canvas, clear of a fit as far as its pill reaches, and names the board shown in its subtitle") {
+        let nest = Nest()
+        let h = try nestHarness(nest)
+        let registry = h.editor.registry
+        let path = try require(registry.hostOverlays.first)
+        expectEqual(registry.hostOverlays.count, 1)
+        expectEqual(path.alignment, .top)
+        expectEqual(path.coveredTop(.root), 0, "nothing on the root, where it shows nothing")
+        expectEqual(path.coveredTop(nest.dBoard), BoardPath.coveredHeight(on: nest.dBoard))
+        expectEqual(registry.hostCoveredTop(on: nest.pBoard), BoardPath.coveredHeight(on: nest.pBoard))
+        expectEqual(registry.windowSubtitle(for: h.editor), nil, "the root is the window's title's to name")
+        expect(h.editor.showBoard(nest.dBoard))
+        expectEqual(registry.windowSubtitle(for: h.editor), "Untitled Drawer")
+        let renamed = Flag()
+        withObservationTracking { _ = registry.windowSubtitle(for: h.editor) } onChange: { renamed.set() }
+        h.editor.transact(on: .root, "Rename") { $0.update(nest.d) { $0[TitleProperty.self] = "Kitchen" } }
+        expect(renamed.isSet, "the window hears the board renamed")
+        expectEqual(registry.windowSubtitle(for: h.editor), "Kitchen")
+        let line = try require(registry.report.split(separator: "\n").first { $0.hasPrefix("board-navigation ") })
+        expect(line.hasSuffix(" host overlay · window subtitle"), String(line))
     },
     test("each needs the plugin whose list it heads; Boards alone needs neither") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsHeadings", owner: .tableOfContents, contributor: .boardContents)) {

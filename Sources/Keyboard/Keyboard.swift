@@ -1,4 +1,5 @@
 import Canvas
+import HostSlots
 
 /// Keyboard shortcuts, as a plugin: every key the canvas answers is registered here, by the plugin
 /// that gives it its meaning, one shortcut per chord. A tool's letter switches to the tool, a
@@ -279,6 +280,8 @@ public struct KeyboardPlugin: CanvasPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { KeyboardState(editor: $0) }
+        // The toolbar's tips: a tool's label and the key that switches to it ("Note (N)").
+        registrar.toolTips { tool, registry in registry.help(for: tool) }
         registrar.keyStrokes { editor, stroke in editor.service(KeyboardState.self)?.handle(stroke) ?? false }
         registrar.keyReleases { editor, stroke in editor.service(KeyboardState.self)?.release(stroke) }
         registrar.shortcut("h", forTool: .hand)

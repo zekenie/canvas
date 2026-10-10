@@ -1,11 +1,13 @@
 import AppKit
+import Canvas
+import HostSlots
 import SwiftUI
 
 /// The Settings window: one for the app (Infinite Canvas › Settings…, ⌘,, which the app's delegate
-/// answers with `show()`), hosting `content`, the app's `ShippedPlugins.settings()`. Made afresh
-/// each time it opens: what a status said (a test that worked) was about a moment that's past, the
-/// key's file may have changed since, and a key typed and left shouldn't wait in a hidden window.
-/// It opens where it was left.
+/// answers with `show()`), hosting `content`: for the app, the panes its plugins gave
+/// (`init(registry:)`). Made afresh each time it opens: what a status said (a test that worked) was
+/// about a moment that's past, a file a pane reads may have changed since, and what was typed and
+/// left shouldn't wait in a hidden window. It opens where it was left.
 @MainActor
 public final class SettingsWindow {
     private let content: @MainActor () -> AnyView
@@ -17,6 +19,12 @@ public final class SettingsWindow {
     public init<Content: View>(autosaveName: String? = "Settings", content: @escaping @MainActor () -> Content) {
         self.content = { AnyView(content()) }
         self.autosaveName = autosaveName
+    }
+
+    /// The app's Settings: the panes the registry's plugins gave (`registrar.settingsPane`), one
+    /// under another in plugin order.
+    public convenience init(registry: Registry, autosaveName: String? = "Settings") {
+        self.init(autosaveName: autosaveName) { SettingsPanesView(panes: registry.settingsPanes) }
     }
 
     /// Brings the window forward, `prepare`d.
@@ -49,5 +57,17 @@ public final class SettingsWindow {
         let controller = NSHostingController(rootView: content())
         controller.view.setFrameSize(controller.view.fittingSize)
         return controller
+    }
+}
+
+/// The Settings window's panes, one under another, each as its plugin made it: a pane says what it
+/// is itself (a form's own label), so none is headed here.
+struct SettingsPanesView: View {
+    let panes: [SettingsPane]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(panes.indices, id: \.self) { panes[$0].view() }
+        }
     }
 }
