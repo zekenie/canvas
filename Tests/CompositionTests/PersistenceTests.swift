@@ -106,6 +106,26 @@ import Types
         }
         expect(!registry.properties(for: Frame.kind).contains(IsAProperty.key))
     },
+    // What a shape holds for the fields of its types: a bare JSON object, nothing empty in it, on the
+    // kinds that can be instances.
+    test("a shape's values read as the object they were; notes and arrows can hold them, a frame can't") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        expectEqual(codec.version(ofProperty: FieldValuesProperty.key), 0)
+        let data = try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/added/fieldValues.v0.json"))
+        let values = try JSONDecoder().decode(FieldValues.self, from: try codec.migrateValue(data, property: FieldValuesProperty.key, version: 0))
+        expectEqual(values["status"], .string("paid"))
+        expectEqual(values["gift"], .bool(false), "a false is a value")
+        expectEqual(values["address"]?["city"], .string("Leeds"))
+        expectEqual(values["lineItems"]?.arrayValue?.count, 2)
+        expectEqual(values["lineItems"]?.arrayValue?.last?["price"], .number(0), "a 0 is a value")
+        expectEqual(values["tags"], .array(["gift", "mugs"]))
+        expectEqual(FieldValues.pruned(.object(values.values)), .object(values.values), "nothing in a fixture is empty")
+        for kind in [StickyNote.kind, Arrow.kind] {
+            expect(registry.properties(for: kind).contains(FieldValuesProperty.key), "\(kind) can hold the values of its types' fields")
+        }
+        expect(!registry.properties(for: Frame.kind).contains(FieldValuesProperty.key))
+    },
     test("the welcome board, and a board of every shipped kind, read back as they were") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)

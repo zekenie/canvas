@@ -105,6 +105,10 @@ private let stickyNoteSchema = #"""
       "description" : "Text that may mention shapes. A mention is @[name](shape:ID): ID is the id of a shape in the same file (a UUID, any case), and name is what it was called when the text was written; the app shows the shape's current name, and this one only if the shape isn't there. In a name, \\] stands for ] and \\\\ for \\. In the text, \\@[ is a literal @[, and any backslashes just before @[ are doubled: \\\\@[ is one backslash, then a mention. @[](shape:ID) mentions a shape without a name. Anything else is text as written.",
       "type" : "string"
     },
+    "types.field-values" : {
+      "description" : "The values of the fields of the shape's types, by field name.",
+      "type" : "object"
+    },
     "types.type-link" : {
       "contentMediaType" : "text/x-canvas-type",
       "description" : "A type it is, by the id of the shape that is the type, which may be gone.",
@@ -116,6 +120,11 @@ private let stickyNoteSchema = #"""
   "$schema" : "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties" : false,
   "properties" : {
+    "fieldValues" : {
+      "$ref" : "#/$defs/types.field-values",
+      "description" : "The values of the fields of the shape's types, by field name, as JSON. A value that is empty is not kept.",
+      "x-canvas-owner" : "types"
+    },
     "frame" : {
       "$ref" : "#/$defs/core.rect"
     },

@@ -72,6 +72,50 @@ import Types
         expectEqual(found["count"], 1)
     },
 
+    test("a note drawn with fieldValues holds them without the empty ones, in one step; a wrong shape is refused; queries read it by path") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let drawn = try canvas(server, ["draw", #"sticky-note "Order 12" fieldValues: {"status": "paid", "note": ""}"#])
+        expectEqual(drawn.status, 0, drawn.error)
+        expectEqual(board.editor.undoHistory.undoName, "Draw")
+        let order = try require(board.editor.document.shapes.first)
+        expectEqual(order[FieldValuesProperty.self], FieldValues(["status": "paid"]), "the empty note is not kept")
+        let rows = try JSON(text: canvas(server, ["query", "--fields", "fieldValues", #"sticky-note"Order 12""#]).output)
+        expectEqual(rows["rows"]?.arrayValue?.first?["properties"]?["fieldValues"], .object(["status": .string("paid")]))
+        for (query, count) in [(#"[fieldValues.status="paid"]"#, 1), (#"[fieldValues.status="due"]"#, 0)] {
+            let found = try JSON(text: canvas(server, ["query", "--brief", query]).output)
+            expectEqual(found["count"], .number(Double(count)), query)
+        }
+        let kinds = try JSON(text: canvas(server, ["kinds", "sticky-note"]).output)
+        expect(String(describing: kinds).contains("fieldValues"), "canvas kinds lists it among a note's attributes")
+        for wrong in ["5", #""paid""#] {
+            let refused = try canvas(server, ["draw", #"sticky-note "Order 12" fieldValues: \#(wrong)"#])
+            expect(refused.status != 0, "fieldValues: \(wrong)")
+            expectEqual(board.editor.document.shapes.first?[FieldValuesProperty.self], FieldValues(["status": "paid"]), "nothing changed")
+        }
+        let emptied = try canvas(server, ["draw", #"sticky-note "Order 12" fieldValues: {"status": ""}"#])
+        expectEqual(emptied.status, 0, emptied.error)
+        expectEqual(board.editor.document.shapes.first?[FieldValuesProperty.self], nil, "only empties leave none")
+        let filled = try canvas(server, ["draw", #"sticky-note "Order 12" fieldValues: {"status": "paid"}"#])
+        expectEqual(filled.status, 0, filled.error)
+        let taken = try canvas(server, ["draw", #"sticky-note "Order 12" fieldValues: null"#])
+        expectEqual(taken.status, 0, taken.error)
+        expectEqual(board.editor.document.shapes.first?[FieldValuesProperty.self], nil, "null takes it off")
+        let edge = try canvas(server, ["draw", """
+        sticky-note "A" below "Order 12"
+        sticky-note "B" right of "A"
+        edge "A" -> "B" fieldValues: {"since": "2024"}
+        """])
+        expectEqual(edge.status, 0, edge.error)
+        let arrow = try require(board.editor.document.shapes.first { $0.kind.rawValue == "arrow" })
+        expectEqual(arrow[FieldValuesProperty.self], FieldValues(["since": "2024"]), "an edge takes it too")
+    },
+
     test("an edge takes is: too: edge \"A\" -> \"B\" is: \"Friendship\" is an arrow that is a Friendship") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

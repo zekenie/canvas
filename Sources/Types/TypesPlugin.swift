@@ -27,8 +27,10 @@ public struct TypesPlugin: CanvasPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.declare(TypeSchemaProperty.self)
-        // What a shape is: the types it names (`typeable()` kinds), and the edge each is.
+        // What a shape is: the types it names (`typeable()` kinds), and the edge each is; and the values it
+        // holds for their fields.
         registrar.declare(IsAProperty.self)
+        registrar.declare(FieldValuesProperty.self)
         registrar.edgeType(IsAEdge.self)
         registrar.edges(in: IsAProperty.self, as: IsAEdge.self)
         // The index first: the sync and what reads types hear each commit after it.

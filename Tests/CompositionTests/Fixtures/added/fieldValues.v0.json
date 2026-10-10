@@ -1,0 +1,24 @@
+{
+  "address" : {
+    "city" : "Leeds",
+    "street" : "12 Main St"
+  },
+  "gift" : false,
+  "lineItems" : [
+    {
+      "price" : 9.5,
+      "product" : "Mug",
+      "quantity" : 2
+    },
+    {
+      "price" : 0,
+      "product" : "Plate",
+      "quantity" : 1
+    }
+  ],
+  "status" : "paid",
+  "tags" : [
+    "gift",
+    "mugs"
+  ]
+}
