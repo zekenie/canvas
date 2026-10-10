@@ -77,6 +77,33 @@ private let petAnswer = """
         let layout = try require(editor.detailPanel?.layout(for: try require(editor.document[note])))
         expect(layout.tabs.map(\.title).contains("Schema"))
     },
+    test("/is-a type typed on a note whose words are a JSON object: the schema is the words, the make asks the model nothing, and ending the editing asks once, for the words") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let model = ScriptedLanguageModel(), scheduler = ManualScheduler()
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler, pasteboard: pasteboard, model: model)
+        let (window, _) = windowed(editor)
+        let json = #"{"type": "object", "properties": {"name": {"type": "string"}}}"#
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: #"{"type": "object", "properties": {"name": {"type": "string"}}}"#))
+        editor.selection = note
+        expect(editor.beginEditing(note))
+        let view = try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the note's editor has the keyboard")
+        view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+        window.pressReturn()
+        window.type("/is-a ")
+        window.pressReturn()
+        window.settle()
+        // The view has committed the line's removal before the command read the words: else they would not parse.
+        expectEqual(editor.document[note]?[TypeSchemaProperty.self]?.text, json, "the words are the schema")
+        expectEqual(editor.undoHistory.undoName, "Make Type")
+        expect(editor.types?.isType(note) == true)
+        expectEqual(model.requests.count, 0, "the make asks nothing")
+        model.queue("a thing with a name")
+        editor.endEditing()
+        scheduler.advance(by: .zero)
+        spinRunLoop(until: { editor.typeSync?.status(of: note) == .idle && model.requests.count == 1 })
+        expectEqual(model.requests.count, 1, "one request, for the words")
+    },
     test("a type made public by hand is public, and a type still: /public on it, Remove Type leaves it public and undo brings the type back, /private takes public away") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
