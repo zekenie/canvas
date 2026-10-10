@@ -24,12 +24,16 @@ import Observation
 /// no answer is the shape's last answer placed on the texts as they are, so words being typed keep
 /// the links still there. The canvas redraws as one lands, and
 /// `revision(of:)` changes for its shape. A failure keeps nothing, and its pair isn't asked about
-/// again this session, but after a key is saved in Settings. Nothing is written to the document.
+/// again this session, but after a key is saved in Settings; one that may well work later (too many
+/// requests, overloaded, the network, a timeout: `LanguageModelError.isTransient`) is asked again once
+/// `retryDelay` has passed and the shape is next drawn. Nothing is written to the document.
 @MainActor
 @Observable
 public final class ProseMapService {
     /// The most calls out at once.
     public static let concurrentCalls = 4
+    /// How long a pair whose call failed for a reason that may pass waits before it is asked about again.
+    public static let retryDelay: Duration = .seconds(30)
 
     @ObservationIgnored private weak var editor: CanvasEditor?
     /// What each shape shows of each target it's read with, by the target's type.
@@ -42,6 +46,8 @@ public final class ProseMapService {
     @ObservationIgnored private var asking: Set<ProseMapAnswers.Key> = []
     @ObservationIgnored private var waiting: [Want] = []
     @ObservationIgnored private var failed: Set<ProseMapAnswers.Key> = []
+    /// Pairs whose call failed in a way that may pass (`isTransient`): not asked about until `retryDelay` has gone.
+    @ObservationIgnored private var cooling: Set<ProseMapAnswers.Key> = []
     @ObservationIgnored private var revisions: [ShapeID: Int] = [:]
     /// Counts the asks and the answers shapes read, in order: what a shape was said last is its last.
     @ObservationIgnored private var clock = 0
@@ -154,7 +160,7 @@ public final class ProseMapService {
 
     /// Whether a pair may be asked about now, as far as what's kept here says: not failed, and not
     /// out already. Looked at before the reader is asked whether it may be.
-    private func mayAsk(_ key: ProseMapAnswers.Key) -> Bool { !failed.contains(key) && !asking.contains(key) }
+    private func mayAsk(_ key: ProseMapAnswers.Key) -> Bool { !failed.contains(key) && !cooling.contains(key) && !asking.contains(key) }
 
     /// The links placed on the texts, found in the target again only if it, or what they lead to,
     /// changed since the last placed.
@@ -252,6 +258,14 @@ public final class ProseMapService {
             editor?.setNeedsDisplay()
         } else if case .failure(.cancelled) = result {
             // Nothing said: asked again when it's next read.
+        } else if case .failure(let error) = result, error.isTransient {
+            // A burst of calls meets a rate limit, a network drops: not for the whole session, but not at once.
+            cooling.insert(want.key)
+            let key = want.key
+            _ = editor?.scheduler.schedule(after: Self.retryDelay) { [weak self] in
+                guard let self, cooling.remove(key) != nil else { return }
+                editor?.setNeedsDisplay()
+            }
         } else {
             failed.insert(want.key)
         }
@@ -262,6 +276,7 @@ public final class ProseMapService {
     /// and what it reads with no answer is asked about.
     private func keyDidChange() {
         failed = []
+        cooling = []
         editor?.setNeedsDisplay()
     }
 

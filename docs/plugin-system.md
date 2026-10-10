@@ -10192,8 +10192,9 @@ if let map = context.proseMaps?.map(Snippet.self, of: shape.id, prose: words, ta
   for its pair whatever the shape says by the time it lands, and is the shape's last unless one
   asked after it has landed, as is an answer a shape reads for its pair (a copy's, one undo
   brought back); the canvas draws again, and `revision(of:)` (observed per shape) changes. A
-  failure keeps nothing, and its pair isn't asked about again until a key is saved in Settings; a
-  cancelled call is asked again when it's next read. A shape taken out of the file keeps nothing but
+  failure keeps nothing, and its pair isn't asked about again until a key is saved in Settings, but one
+  that may pass (too many requests, overloaded, the network, a timeout) is asked again 30 s later
+  (`retryDelay`), when it's next drawn; a cancelled call is asked again when it's next read. A shape taken out of the file keeps nothing but
   its answers, by their texts; one moved to another board keeps its last.
 - **The request** (`ProseMapPrompt`) is one for every target: the `frame`, every target's task and
   rules (copy the words exactly, typos and all; the fewest words; never overlapping, in the prose's
