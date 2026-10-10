@@ -126,7 +126,7 @@ extension Chaser: EditorService {
         expectEqual(types.instances(of: tree.person), [tree.ann, tree.bob, tree.cy])
         try expectIndexMatchesFile(editor)
     },
-    test("the lineage is what a shape's types lead to, level by level, later first, each once, never the shape itself") {
+    test("the lineage is what a shape's types lead to, a type before the types it builds on, each once, never the shape itself") {
         let editor = try typeEditor()
         let thing = editor.addType(TypeSchemaProperty.starter, title: "Thing"), person = editor.addType(TypeSchemaProperty.starter, title: "Person")
         let employee = editor.addType(TypeSchemaProperty.starter, title: "Employee"), manager = editor.addType(TypeSchemaProperty.starter, title: "Manager")
@@ -136,15 +136,15 @@ extension Chaser: EditorService {
             $0.update(employee) { $0[IsAProperty.self] = [TypeLink(person), TypeLink(thing)] }
             $0.update(manager) { $0[IsAProperty.self] = [TypeLink(employee), TypeLink(person)] }
         }
-        expectEqual(types.lineage(of: manager), [person, employee, thing], "later first, then what those are; Thing once")
-        expectEqual(types.lineage(of: employee), [thing, person])
+        expectEqual(types.lineage(of: manager), [employee, person, thing], "Employee builds on Person, though Person was added later; Thing once")
+        expectEqual(types.lineage(of: employee), [person, thing], "Employee was given Thing last, and Person builds on Thing")
         expectEqual(types.lineage(of: thing), [])
         let ann = editor.addInstance("Ann", of: [employee, manager])
         expectEqual(types.lineage(of: ann), [manager, employee, person, thing])
         // A cycle ends where it comes back, and never holds the shape itself.
         editor.transact("Cycle") { $0.update(thing) { $0[IsAProperty.self] = [TypeLink(manager)] } }
-        expectEqual(types.lineage(of: manager), [person, employee, thing])
-        expectEqual(types.lineage(of: thing), [manager, person, employee])
+        expectEqual(types.lineage(of: manager), [employee, person, thing])
+        expectEqual(types.lineage(of: thing), [manager, employee, person])
         editor.transact("Self") { $0.update(thing) { $0[IsAProperty.self] = [TypeLink(thing), TypeLink(person)] } }
         expectEqual(types.lineage(of: thing), [person])
     },

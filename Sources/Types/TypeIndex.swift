@@ -100,11 +100,11 @@ public final class TypeIndex {
     /// are instances of it).
     public func instances(of type: ShapeID) -> Set<ShapeID> { instancesByType[type] ?? [] }
 
-    /// The shapes a shape is, level by level, nearest first: its own types, later first, then the
-    /// types of those, in the same order, and so on, each once, and never the shape itself, so the
-    /// chain of a shape that is its own ancestor stops where it comes back. This is the order a
-    /// shape's types are read in: the first to say a thing wins. A name that is gone is in it,
-    /// ending its branch; check `isType` before reading one.
+    /// The shapes a shape is, in the order its types are read in: a type before every type it builds
+    /// on; where a shape's list leaves a choice, the later added first (C3; where it has no order, a
+    /// depth-first walk, a type still before what it builds on); each once, never the shape itself,
+    /// so the chain of a shape that is its own ancestor stops where it comes back. A name that is
+    /// gone is in it, ending its branch; check `isType` before reading one.
     public func lineage(of id: ShapeID) -> [ShapeID] { kept.lineage(of: id) }
 
     /// The file's types as a value: every shape's types and the types' names, which a query reads
@@ -159,11 +159,11 @@ public final class TypeIndex {
 
     /// Whether `/is-a` may make `owner` an instance of `target`: `target` is a type (a shape of a kind
     /// that stands in for others, a pill, never is), not `owner` itself, not one `owner` is already,
-    /// and not one that is `owner` in turn, which would make a cycle (`lineage`). A shape on any
+    /// and not one that is `owner` in turn, which would make a cycle (`reaches`). A shape on any
     /// board of the file, asked of every shape the `@` picker ranks, so it costs a few lookups.
     public func admits(_ target: ShapeID, for owner: ShapeID) -> Bool {
         guard target != owner, mayBe(target, for: owner), !(kept.links[owner] ?? []).contains(TypeLink(target)) else { return false }
-        return !lineage(of: target).contains(owner)
+        return !kept.reaches(owner, from: target)
     }
 
     /// What a shape may be, by what the target is: a type. The one place that says so; the custom

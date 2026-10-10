@@ -9944,11 +9944,12 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   per frame: `isType(_:)`, `types`, `name(of:)`, a `revision(of:)` that moves whenever a type's
   schema or name does, and `onChange(_:)` for what depends on a type. It also keeps what is what, the
   same way: `links(of:)` (a shape's types, in order), `instances(of:)` (directly), `lineage(of:)` (what
-  a shape's types lead to, level by level, later first, cycle-safe: the order a shape's types are read
-  in), `affected(by:)` (their instances, near and far) and `name(of: TypeLink)` (the live title, or
+  a shape's types lead to in the one order they are read in: a type before every type it builds on,
+  and where a list leaves a choice the later added first (C3, Python's method resolution order; where
+  it has no order a depth-first walk breaks the ties and the rule still holds), cycle-safe), `affected(by:)` (their instances, near and far) and `name(of: TypeLink)` (the live title, or
   missing with the last title known this session, observed per type) and `graph`, a `TypeGraph` (links and
   names, copy on write: the fact queries take up in O(1) for `:is-a`, which follows the same
-  `lineage`); the chips of a renamed,
+  lists and asks only reachability, `reaches`, in no order); the chips of a renamed,
   deleted or restored type's instances are made again.
 - **Rules** (`TypeValidationPlugin`, `validateEveryShape`): text that isn't JSON is an error at its
   line and column ("Invalid JSON: expected a property name at line 6, column 34."), as is a root

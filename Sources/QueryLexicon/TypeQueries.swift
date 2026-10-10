@@ -6,7 +6,7 @@ import Types
 
 /// Types in queries, in QueryLexicon: `:is-a(S)` is a shape that is a shape S matches, however far:
 /// through the types a shape lists (`is`) and the types of those,
-/// breadth first and cycle-safe (`TypeGraph.lineage` is the same chain). So `:is-a("Person")` finds
+/// breadth first and cycle-safe (reachability: the order does not matter to `:is-a`). So `:is-a("Person")` finds
 /// Ann, a card of Employee card, which is a Person. It is `:edge-to(S, is-a)` that stays direct, one
 /// hop. The word is the one `.Name` is refused toward (`namesTypes`: the hint reads `:is-a("Name")`).
 /// And a type read where a shape lists its types (`[is~="Person"]`, a row's `is`) reads as its
