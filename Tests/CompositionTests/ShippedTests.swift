@@ -92,7 +92,7 @@ import Validation
         board-queries        query board names
         mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
         validation-queries   query word :invalid · query word :warned
-        type-queries         query word :is-a · query text text/x-canvas-type
+        type-queries         query word :is-a · query text text/x-canvas-type · query word :incomplete
         selection-queries    query word :selected
         query-commands       command line query · command line query-vocabulary
         neighbors            service NeighborState · outlines

@@ -256,7 +256,7 @@ struct StoryQuery {
             expect(planned.readsOnlyTheFile, "\(query) reads only the file: \(planned.editorWords)")
         }
         let editor: [(query: String, words: [String])] = [
-            (":selected", [":selected"]), (":current-board", [":current-board"]), (":invalid", [":invalid"]), (":warned", [":warned"]),
+            (":selected", [":selected"]), (":current-board", [":current-board"]), (":invalid", [":invalid"]), (":warned", [":warned"]), (":incomplete", [":incomplete"]),
             ("sticky-note:invalid:selected", [":invalid", ":selected"]), (#"sticky-note[text*="TODO"]:selected"#, [":selected"]),
         ]
         for (query, words) in editor {

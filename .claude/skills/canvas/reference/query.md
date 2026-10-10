@@ -605,12 +605,14 @@ Words the app's plugins add, as this app has them. Without a plugin, its words a
 | `:invalid` | `validation-queries` | it has an error |
 | `:warned` | `validation-queries` | it has a warning |
 | `:is-a(S)` | `type-queries` | it is, however far, a type S matches: its types and theirs |
+| `:incomplete` | `type-queries` | it has a field its types need, left empty |
 | `:selected` | `selection-queries` | the person has it selected |
 
 - `:mentions` and `:mentioned-by` follow mention edges: `:mentions(S)` is `:edge-to(S, only mention)`. A shape that mentions itself counts.
 - `:invalid` and `:warned` are what validation finds, on every board of the file, not only the one shown: an error outlines a shape in red, warnings alone in orange.
 - `:is-a(S)` follows `is` however far, so it is transitive and ends where a cycle comes back: Ann is a Person through Employee card, which is one. It is `:edge-to(S, is-a)` that stays direct, one step. Read where a shape lists its types, a type is its title: `[is~="Person"]` finds the shapes that say Person themselves, and a row's `is` lists titles.
 - `.Person` is refused (`unsupported`) and its hint is this word, `:is-a("Person")`.
+- `:incomplete` is a field its types need with no value, on every board of the file. It is not an error: the shape is not `:invalid` for it, and can be both (a wrong value elsewhere). A needed yes or no never counts, since an unticked box is a value.
 - `:selected` is what the person had selected as the query started.
 
 ```query

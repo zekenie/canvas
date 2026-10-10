@@ -7473,7 +7473,7 @@ with words of their own). Without one, a query does without:
 `QueryTextFormats` one a media type (their report lines: `query names`, `query board names`, `query
 word :mentions`, `query text text/x-canvas-mentions`; `query engine` on queries'). QueryLexicon's
 five registrations, whole (each plugin's words are its own nested `enum Word: String`, and
-`ValidationQueriesPlugin` registers each of its two in a helper, whose `has` is below; `TypeQueriesPlugin` adds `:is-a(S)`, a transitive `namesTypes` relation over `TypeIndex.graph`, and reads a type where `is` is read as its title)
+`ValidationQueriesPlugin` registers each of its two in a helper, whose `has` is below; `TypeQueriesPlugin` adds `:is-a(S)`, a transitive `namesTypes` relation over `TypeIndex.graph`, reads a type where `is` is read as its title, and adds `:incomplete`, an `.onMain` word like `:invalid` that asks `FieldChecks.fullCheck(of:)` of the shapes that have types)
 ([TitleQueries.swift](../Sources/QueryLexicon/TitleQueries.swift),
 [BoardQueries.swift](../Sources/QueryLexicon/BoardQueries.swift),
 [MentionQueries.swift](../Sources/QueryLexicon/MentionQueries.swift),
@@ -11809,7 +11809,7 @@ title-queries        query names
 board-queries        query board names
 mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
 validation-queries   query word :invalid · query word :warned
-type-queries         query word :is-a · query text text/x-canvas-type
+type-queries         query word :is-a · query text text/x-canvas-type · query word :incomplete
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
 neighbors            service NeighborState · outlines
