@@ -3362,18 +3362,23 @@ contextMenu {
   does a registered one's. Returning nothing shows nothing, and a menu with nothing else has no menu.
   It is for the canvas only: the "every shape shows it" rule is never asked of what it makes.
   `MenuItem`'s `perform` form takes `stepName:` for an item whose title only makes sense in its
-  submenu (the undo step is named by it: "Turn into ▸ Employee card" is the step "Turn into
-  Employee card").
+  submenu (the undo step is named by it: "Set Level ▸ High" is the step "Set Level High").
 
   ```swift
   registrar.contextMenuForCanvas {
-      MenuItems(in: TransformMenuGroup.self, id: "turn-offers") { subject in
-          for offer in offers(for: subject.shapes) {
-              MenuItem("Turn into \(offer.label)", in: TransformMenuGroup.self, id: offer.id) { ids, editor in … }
+      MenuItems(in: FlagMenuGroup.self, id: "recent-flags") { subject in
+          for flag in recentFlags(in: subject.editor) {
+              MenuItem("Flag as \(flag.name)", in: FlagMenuGroup.self, id: flag.id) { ids, editor in … }
           }
       }
   }
   ```
+
+  ContextMenusTests' `DynamicItemsTests` hold it: asked once per menu with the subject, in place after
+  the shapes' own, made again each menu, an empty result showing nothing (and no menu on empty canvas),
+  duplicates deduplicated at each level, `when` and `isEnabled`, a kind's own item taking its place, one
+  undo group named for the item or by its `stepName:`, the registration key's conflict and
+  `ownerNotInstalled`.
 - **Groups are types**, like tabs: a separator falls between groups, which sort by `order`, then by
   first appearance, in the tabs' bands. An item names its group with `in:`; the default is
   `ShapeMenuGroup`.
@@ -8316,10 +8321,6 @@ a frame, which owns no board for `move` to move onto (`move` would move nothing 
   item is), all or nothing (a frozen box in the corral, a frozen corral, one in a frozen corral, one deep
   in nested corrals, a target never run for a read-only shape, a target that throws), the in-or-out rule
   and bindings.
-- **ContextMenusTests' `DynamicItemsTests`** hold `MenuItems`: asked once per menu with the subject, in
-  place after the shapes' own, made again each menu, an empty result showing nothing (and no menu on empty
-  canvas), duplicates deduplicated at each level, `when` and `isEnabled`, a kind's own item taking its place,
-  one undo group named for the item, the registration key's conflict and `ownerNotInstalled`.
 - **FramesTests' and SubboardsTests' `TurnTests.swift`** hold each end of the edge over a partner of its
   own, since neither can use the other: Frames offers the channel with a pocket as the target (the title
   carried over, a frame inside still a frame holding its box, no Turn into item or command until a kind
@@ -9931,8 +9932,8 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   same way: `links(of:)` (a shape's types, in order), `instances(of:)` (directly), `lineage(of:)` (what
   a shape's types lead to, level by level, later first, cycle-safe: the order a shape's types are read
   in), `affected(by:)` (their instances, near and far) and `name(of: TypeLink)` (the live title, or
-  missing with the last title known this session, observed per type) and `graph`, a `TypeGraph` (links, names
-  and what else a shape leads to, copy on write: the fact queries take up in O(1) for `:is-a`, which follows the same
+  missing with the last title known this session, observed per type) and `graph`, a `TypeGraph` (links and
+  names, copy on write: the fact queries take up in O(1) for `:is-a`, which follows the same
   `lineage`); the chips of a renamed,
   deleted or restored type's instances are made again.
 - **Rules** (`TypeValidationPlugin`, `validateEveryShape`): text that isn't JSON is an error at its
@@ -12361,8 +12362,7 @@ Each of these adds to the design without changing what plugins are written again
   takes along; edges routed around shapes; extending a
   list across runs other than by restating every member; chains (`edge "A" -> "B" -> "C"`);
   naming a shape the user left untitled; mentions written by title in a note's text, which only
-  ids write today; a type made public by its statement (`schema:` alone leaves it as the
-  statement says, private unless `public: true`); and `THIRD_PARTY_NOTICES.md` in the app, which carries reladraw's attribution
+  ids write today; and `THIRD_PARTY_NOTICES.md` in the app, which carries reladraw's attribution
   only in the repository today.
 - **More of containers**: groups (a container with no surface of its own, holding what's selected);
   snapping while a container is resized; and a container growing to fit what's dropped in it.

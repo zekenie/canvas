@@ -5,7 +5,7 @@ import Topology
 import Types
 
 /// Types in queries, in QueryLexicon: `:is-a(S)` is a shape that is a shape S matches, however far:
-/// through the types a shape lists (`is`), the types of those, and what a custom shape builds on,
+/// through the types a shape lists (`is`) and the types of those,
 /// breadth first and cycle-safe (`TypeGraph.lineage` is the same chain). So `:is-a("Person")` finds
 /// Ann, a card of Employee card, which is a Person. It is `:edge-to(S, is-a)` that stays direct, one
 /// hop. The word is the one `.Name` is refused toward (`namesTypes`: the hint reads `:is-a("Name")`).
@@ -20,7 +20,7 @@ public struct TypeQueriesPlugin: CanvasPlugin {
     public var id: PluginID { "type-queries" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.queryRelation(IsAEdge.id.rawValue, "it is, however far, a type or shape S matches: its types, theirs, and what a custom shape builds on",
+        registrar.queryRelation(IsAEdge.id.rawValue, "it is, however far, a type S matches: its types and theirs",
                                 example: #":is-a("Person")"#, reads: .file, transitive: true, namesTypes: true,
                                 prepare: { $0.fact(TypeFacts.self).graph },
                                 seeds: { $0.sources },

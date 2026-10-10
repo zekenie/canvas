@@ -7,7 +7,6 @@ import ContextMenus
 import DetailPanel
 import Keyboard
 import Mentions
-import Publishing
 import Selection
 import SlashCommands
 import TableOfContents
@@ -18,12 +17,11 @@ import Titles
 import Topology
 import Types
 
-/// The note, every plugin it opts into (Types, whose `/type` makes a note public, with Publishing),
-/// and Adornments, which lays out what Titles shows on it.
+/// The note, every plugin it opts into (Types among them), and Adornments, which lays out what Titles
+/// shows on it.
 @MainActor var notePlugins: [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), PublishingPlugin(),
-     TypesPlugin()]
+     ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin()]
 }
 
 @MainActor let stickyNotesTests = Suite("Sticky notes", [

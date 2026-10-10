@@ -7,7 +7,6 @@ import Geometry
 import LanguageModels
 import Mentions
 import ProseMaps
-import Publishing
 import Selection
 import StickyNotes
 import TestKit
@@ -63,7 +62,7 @@ let petSchema = """
 }
 """
 
-/// The note's plugins, Types and Publishing, a scripted model answering highlights with `answer` and
+/// The note's plugins, Types among them, a scripted model answering highlights with `answer` and
 /// the sync from its queue, and prose maps; time moving only when the test says.
 @MainActor
 final class TypeNoteBench {

@@ -128,6 +128,27 @@ import TestKit
         h.editor.undo()
         expectEqual(h.editor.lamp(a)?.level, 1)
     },
+    test("an item whose title only makes sense in its submenu names its step with `stepName`: the undo group takes that name, and one undo takes it back") {
+        let h = try harness([Contributor(id: "setting") { r in
+            r.contextMenuForCanvas {
+                MenuItems(in: PowerMenuGroup.self, id: "setting") { _ in
+                    Submenu("Set Level", in: PowerMenuGroup.self) {
+                        MenuItem("High", in: PowerMenuGroup.self, stepName: "Set Level High") { ids, editor in
+                            editor.transact { transaction in
+                                for id in ids { transaction.update(id, as: Lamp.self) { $0.props.level = 3 } }
+                            }
+                        }
+                    }
+                }
+            }
+        }])
+        let a = h.add(Lamp(slot(0)))
+        try require(h.secondaryClick(at: middle(0))).choose("Set Level", "High")
+        expectEqual(h.editor.lamp(a)?.level, 3)
+        expectEqual(h.editor.undoHistory.undoName, "Set Level High")
+        h.editor.undo()
+        expectEqual(h.editor.lamp(a)?.level, 1)
+    },
 
     test("the entry claims its group and id when it is registered: two plugins making the same is a conflict, in different groups or ids they aren't, and it needs the plugin installed") {
         expectThrows(RegistryError.conflict(point: "CanvasContextMenu", key: "* made", plugins: ["one", "two"])) {

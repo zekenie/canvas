@@ -43,8 +43,8 @@ public final class TypeIndex {
     /// The kinds that stand in for other shapes (pills): never a type, whatever they stand for.
     @ObservationIgnored private let standInKinds: Set<ShapeKind>
     @ObservationIgnored private var observers: [@MainActor (Set<ShapeID>) -> Void] = []
-    /// Each shape's types, in the order of its list (only the shapes that are some), the names of the
-    /// types, and what else a shape leads to: kept as a value, so a query takes it up in O(1).
+    /// Each shape's types, in the order of its list (only the shapes that are some), and the names of
+    /// the types: kept as a value, so a query takes it up in O(1).
     @ObservationIgnored private var kept = TypeGraph()
     /// The shapes whose list names each shape.
     @ObservationIgnored private var instancesByType: [ShapeID: Set<ShapeID>] = [:]
@@ -107,9 +107,9 @@ public final class TypeIndex {
     /// ending its branch; check `isType` before reading one.
     public func lineage(of id: ShapeID) -> [ShapeID] { kept.lineage(of: id) }
 
-    /// The file's types as a value: every shape's types and what else it leads to, and the types'
-    /// names, which a query reads (`:is-a`, a type's title where `is` is read). Copy on write: held
-    /// by a query, a commit copies what it changes, once.
+    /// The file's types as a value: every shape's types and the types' names, which a query reads
+    /// (`:is-a`, a type's title where `is` is read). Copy on write: held by a query, a commit copies
+    /// what it changes, once.
     public var graph: TypeGraph { kept }
 
     /// The shapes that read through these: every instance of them, and every instance of those, and

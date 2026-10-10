@@ -65,8 +65,8 @@ public struct MenuItem<Value> {
     /// For what editing each shape can't do (reordering, deleting, selecting): `perform` gets the
     /// shapes it's for, in selection order, and the editor. It changes the document only through
     /// `editor.transact`. The undo step is named by the title unless `stepName` says otherwise (an item
-    /// in a submenu whose title only makes sense there: "Turn into" ▸ "Employee card" is the step "Turn
-    /// into Employee card").
+    /// in a submenu whose title only makes sense there: "Set Level" ▸ "High" is the step "Set Level
+    /// High").
     public init(_ title: String, in group: any MenuGroup.Type = ShapeMenuGroup.self, id: String? = nil,
                 when isShown: @escaping @MainActor (Value) -> Bool = { _ in true },
                 isEnabled: @escaping @MainActor (Value) -> Bool = { _ in true },
@@ -99,9 +99,9 @@ public struct Submenu<Value> {
 /// item for the canvas.
 ///
 ///     registrar.contextMenuForCanvas {
-///         MenuItems(in: TransformMenuGroup.self, id: "turn-offers") { subject in
-///             for offer in offers(for: subject.shapes) {
-///                 MenuItem("Turn into \(offer.label)", in: TransformMenuGroup.self, id: offer.id) { ids, editor in … }
+///         MenuItems(in: FlagMenuGroup.self, id: "recent-flags") { subject in
+///             for flag in recentFlags(in: subject.editor) {
+///                 MenuItem("Flag as \(flag.name)", in: FlagMenuGroup.self, id: flag.id) { ids, editor in … }
 ///             }
 ///         }
 ///     }

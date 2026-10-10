@@ -604,12 +604,12 @@ Words the app's plugins add, as this app has them. Without a plugin, its words a
 | `:mentioned-by(S)` | `mention-queries` | a shape S matches mentions it |
 | `:invalid` | `validation-queries` | it has an error |
 | `:warned` | `validation-queries` | it has a warning |
-| `:is-a(S)` | `type-queries` | it is, however far, a type or shape S matches: its types, theirs, and what a custom shape builds on |
+| `:is-a(S)` | `type-queries` | it is, however far, a type S matches: its types and theirs |
 | `:selected` | `selection-queries` | the person has it selected |
 
 - `:mentions` and `:mentioned-by` follow mention edges: `:mentions(S)` is `:edge-to(S, only mention)`. A shape that mentions itself counts.
 - `:invalid` and `:warned` are what validation finds, on every board of the file, not only the one shown: an error outlines a shape in red, warnings alone in orange.
-- `:is-a(S)` follows `is` (and what a custom shape builds on) however far, so it is transitive and ends where a cycle comes back: Ann is a Person through Employee card, which is one. It is `:edge-to(S, is-a)` that stays direct, one step. Read where a shape lists its types, a type is its title: `[is~="Person"]` finds the shapes that say Person themselves, and a row's `is` lists titles.
+- `:is-a(S)` follows `is` however far, so it is transitive and ends where a cycle comes back: Ann is a Person through Employee card, which is one. It is `:edge-to(S, is-a)` that stays direct, one step. Read where a shape lists its types, a type is its title: `[is~="Person"]` finds the shapes that say Person themselves, and a row's `is` lists titles.
 - `.Person` is refused (`unsupported`) and its hint is this word, `:is-a("Person")`.
 - `:selected` is what the person had selected as the query started.
 

@@ -88,8 +88,8 @@ public enum ShippedPlugins {
             // Public shapes, the ones another shape may stand for; its chip sits beside the lock's.
             PublishingPlugin(),
             // Types: a note that holds a JSON Schema, its words and its schema kept in step by the model.
-            // After Publishing (`/type` makes a type public), Mentions, Titles and Validation, and after
-            // every plugin whose every-shape commands a note lists before `/type`; its rules and its panel.
+            // After Mentions, Titles and Validation, and after every plugin whose every-shape commands
+            // a note lists before `/type` (Publishing's `/public` among them); its rules and its panel.
             TypesPlugin(), TypeValidationPlugin(), TypeDetailsPlugin(),
             // What a drag moves snaps to the shapes in view: their edges, their middles and the spaces
             // between them.

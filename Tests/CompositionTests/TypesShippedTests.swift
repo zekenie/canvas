@@ -74,7 +74,7 @@ private let petAnswer = """
         let layout = try require(editor.detailPanel?.layout(for: try require(editor.document[note])))
         expect(layout.tabs.map(\.title).contains("Schema"))
     },
-    test("a type made public by hand is public, and a type still: /public on it, public: false back, Remove Type leaves it public; undo takes each back") {
+    test("a type made public by hand is public, and a type still: /public on it, Remove Type leaves it public and undo brings the type back, /private takes public away") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())

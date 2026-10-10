@@ -570,8 +570,8 @@ public final class CanvasEditor {
     /// by what the press, services or an editing view commit as they end, which goes to the file it
     /// replaces and is no step. Every board's revision changes but those whose shapes are as they
     /// were (`CanvasFile.restamp(after:)`), so nothing kept about a board of the old file is taken for
-    /// the new one's; the cameras boards were left with are kept. A menu waiting to be
-    /// popped up (`popUpMenu`) is dropped.
+    /// the new one's; the cameras boards were left with are kept. A menu waiting to be popped up
+    /// (`popUpMenu`) is dropped.
     @_spi(Host) public func replaceFile(with newFile: CanvasFile, showing requested: BoardID? = nil) {
         precondition(!isTransacting, "a file can't be replaced inside a transaction")
         Self.expectAccepted(newFile, by: registry)
