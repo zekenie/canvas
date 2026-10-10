@@ -62,6 +62,12 @@ public enum FieldsPanelModel {
         return rows
     }
 
+    /// The problems at the field's own path, in the check's order. Those deeper (in a group, an item) are
+    /// said at their own rows, by the form.
+    public static func problems(of field: Resolved.Field, in check: FieldCheck) -> [FieldProblem] {
+        check.problems(at: FieldPath(field: field.field.name))
+    }
+
     /// How a box shows what is stored: the kinds' own forms, except that a text keeps its line breaks.
     public static func shown(_ value: JSONValue?, as kinds: [PlainKind]) -> String {
         guard let value else { return "" }
@@ -107,7 +113,7 @@ struct FieldsList: View {
                 switch row {
                 case .plain(let field, let kinds, let value):
                     FieldRowView(field: field, kinds: kinds, value: value, id: id, writer: writer, checks: checks, isReadOnly: isReadOnly)
-                    FieldProblems(problems: Self.problems(of: field, in: check))
+                    FieldProblems(problems: FieldsPanelModel.problems(of: field, in: check))
                 case .form(let field, let kind):
                     if let editor = writer.editor {
                         VStack(alignment: .leading, spacing: TypesStyle.formSpacing) {
@@ -117,7 +123,7 @@ struct FieldsList: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-                    FieldProblems(problems: Self.problems(of: field, in: check))
+                    FieldProblems(problems: FieldsPanelModel.problems(of: field, in: check))
                 case .unnamed(let key, let value):
                     UnnamedValueRow(key: key, value: value, id: id, writer: writer, isReadOnly: isReadOnly)
                 }
@@ -125,11 +131,6 @@ struct FieldsList: View {
         }
     }
 
-    /// The problems at the field or under it, in the check's order.
-    private static func problems(of field: Resolved.Field, in check: FieldCheck) -> [FieldProblem] {
-        let path = FieldPath(field: field.field.name)
-        return check.problems.filter { path.isPrefix(of: $0.path) }
-    }
 }
 
 /// One field's label and control: a text box, a one-line box, a checkbox or a menu.

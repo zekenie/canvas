@@ -241,6 +241,18 @@ extension TypePanelWindow {
         panel.editor.transact { $0.update(FieldFixtures.personID) { $0[TypeSchemaProperty.self] = SchemaText(#"{"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}, "born": {"type": "string", "format": "date"}}}"#) } }
         panel.window.spin { panel.boxes.last?.string == "Mar 3, 2026" }
     },
+    test("a field says the problems at its own path only: a deeper one is the form's, at its own row") {
+        let editor = try fieldEditor()
+        editor.addFieldTypes([FieldFixtures.everyKind.a])
+        let book = try require(editor.fieldBook)
+        let order = instanceRecord("", of: [FieldFixtures.kindsAID])
+        let address = try require(book.fields(of: order).fields.first { $0.field.name == "shippingAddress" })
+        let own = FieldProblem(path: FieldPath(field: "shippingAddress"), kind: .needed, keyword: "required", place: ["shipping address"], message: "shipping address is needed")
+        let deeper = FieldProblem(path: FieldPath(field: "shippingAddress").key("city"), kind: .wrong, keyword: "minLength", place: ["shipping address", "city"], message: "city is too short")
+        let elsewhere = FieldProblem(path: FieldPath(field: "price"), kind: .wrong, keyword: "minimum", place: ["price"], message: "price is too low")
+        expectEqual(FieldsPanelModel.problems(of: address, in: FieldCheck(problems: [own, deeper, elsewhere])), [own])
+        expectEqual(FieldsPanelModel.problems(of: address, in: FieldCheck(problems: [deeper])), [])
+    },
     test("the panel draws again for its shape's commits only: one keystroke once") {
         let panel = try TypePanelWindow()
         let id = panel.instance(of: [FieldFixtures.kindsAID], extra: [FieldFixtures.everyKind.a])
