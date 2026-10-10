@@ -10,7 +10,9 @@ import Connections
 import CoreGraphics
 import DetailPanel
 import Foundation
+import Frames
 import LanguageModels
+import Locking
 import Mentions
 import Publishing
 import Selection
@@ -94,6 +96,48 @@ private let petAnswer = """
         expect(state.run("private", on: note, with: SlashArguments("")))
         expectEqual(editor.document[note]?[PublicProperty.self], nil)
         expect(editor.types?.isType(note) == true)
+    },
+    test("Is a ▸ sits in a shape's menu right after Lock, with no line between; an arrow's has it with the types and no Type, a frame's none; a locked note reads Unlock, Is a") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        _ = editor.addTypeNote(TypeSchemaProperty.starter, title: "Person", frame: CGRect(x: 500, y: 100, width: 200, height: 200))
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Ann"))
+        let arrow = editor.add(Arrow(start: .free(CGPoint(x: 40, y: 500)), end: .free(CGPoint(x: 340, y: 500))))
+        let frame = editor.add(Frame(frame: CGRect(x: 40, y: 560, width: 300, height: 200)), title: "Group")
+        @MainActor func outline(at point: CGPoint, _ time: TimeInterval) -> [String] {
+            canvas.menu(for: window.mouse(.rightMouseDown, at: point, time: time))?.outline ?? ["no menu"]
+        }
+        let noteMenu = outline(at: CGPoint(x: 200, y: 200), 1)
+        let lock = try require(noteMenu.firstIndex(of: "Lock"))
+        expectEqual(Array(noteMenu[lock...].prefix(6)), ["Lock", "Is a ▸", "  Type", "  —", "  Person", "—"], "\(noteMenu)")
+        let arrowMenu = outline(at: CGPoint(x: 190, y: 500), 2)
+        expect(arrowMenu.contains("Is a ▸") && arrowMenu.contains("  Person") && !arrowMenu.contains("  Type"), "\(arrowMenu)")
+        let frameMenu = outline(at: CGPoint(x: 200, y: 700), 3)
+        expect(!frameMenu.contains("Is a ▸"), "\(frameMenu)")
+        _ = (arrow, frame)
+        editor.lock([note])
+        let locked = outline(at: CGPoint(x: 200, y: 200), 4)
+        let unlock = try require(locked.firstIndex(of: "Unlock"))
+        expectEqual(locked[unlock + 1], "Is a ▸", "\(locked)")
+    },
+    test("@ typed on /is-a's line is a letter: no picker, and the choice list stays") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let (window, _) = windowed(editor)
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Ann"))
+        editor.selection = note
+        expect(editor.beginEditing(note))
+        let view = try require(window.firstResponder as? MentionTextView<AnyMentionable>)
+        view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+        window.pressReturn()
+        window.type("/is-a ")
+        window.type("@")
+        expect(view.picker == nil, "no mention picker")
+        expect(view.string.hasSuffix("/is-a @"))
+        expect(view.slashCommands?.choices != nil, "the choice list stays")
     },
     test("a mention of another type in a type's words is a $ref to it in the schema the model writes; a mention of a note that isn't a type stays words") {
         let pasteboard = NSPasteboard.withUniqueName()

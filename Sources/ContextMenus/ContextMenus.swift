@@ -233,6 +233,13 @@ extension PluginRegistrar {
 
 // MARK: The plugin
 
+/// What a shape is made from its menu, after every kind's own groups and before Delete: locked
+/// (Locking's Lock and Unlock), a type (Types' Is a ▸). Together, with no line between them.
+public enum StateMenuGroup {}
+extension StateMenuGroup: MenuGroup {
+    public static var order: Int { 300 }
+}
+
 /// Selection's commands, last in every menu, after Lock, as Keynote has Delete: Delete on the
 /// menu's shapes, and Select All on empty canvas.
 public enum SelectionMenuGroup {}

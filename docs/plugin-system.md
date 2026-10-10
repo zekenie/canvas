@@ -3391,7 +3391,7 @@ contextMenu {
   | 50 | A horizontal's feature, on the kinds that opt in (a flag's `FlagMenuGroup`, [below](#something-the-user-turns-on)), or on the shapes it knows something of (`MentionsMenuGroup`) |
   | 60 | What a feature brings to the shapes it can act on, after the first band (Transform's Turn into …, `TransformMenuGroup`) |
   | 70 | What a vertical makes of the shapes it's for (Frames' Create Frame, `FramesMenuGroup`) |
-  | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200; `LockMenuGroup`, 300; `SelectionMenuGroup`, 400, ContextMenus' own Delete and Select All) |
+  | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200; `StateMenuGroup`, 300, ContextMenus' own, which Locking's Lock and Unlock and Types' Is a ▸ share with no line between; `SelectionMenuGroup`, 400, ContextMenus' own Delete and Select All) |
 
 - **Keyed.** Each item claims its target, group and `id` (the title by default), and an item in a
   submenu its path, so two plugins adding one item to a kind are a `conflict`
@@ -4608,10 +4608,10 @@ registrar.contentsMarkForEveryShape(where: { $0.holds(LockedProperty.self) }) { 
     shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
 }
 registrar.contextMenuForCanvas {                        // of the shapes whose own lock can change
-    MenuItem("Lock", in: LockMenuGroup.self, when: { !$0.lockable.isEmpty && !$0.allLocked }) { ids, editor in
+    MenuItem("Lock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && !$0.allLocked }) { ids, editor in
         editor.lock(ids.filter { !editor.isLockedByContainer($0) })
     }
-    MenuItem("Unlock", in: LockMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked }) { ids, editor in
+    MenuItem("Unlock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked }) { ids, editor in
         editor.unlock(ids.filter { !editor.isLockedByContainer($0) })
     }
 }
@@ -4629,7 +4629,7 @@ extension LockChip: ClickableAdornment {                // a click on the chip
   and saved with the shape (`"added" : { "locked" : true }`). Its default is nil, so only locked
   shapes carry it, and unlocking takes it away. Read it with `record.isLocked`, and change it with
   `editor.lock(ids)` and `editor.unlock(ids)`, each one transaction.
-- **The menu** has one of two items, in `LockMenuGroup` (order 300, after every other group), as
+- **The menu** has one of two items, in `StateMenuGroup` (ContextMenus', order 300, after every other group; Types' Is a ▸ is in it too, right after), as
   tldraw's toggle: Unlock when every shape the menu is for is locked, and otherwise Lock, which locks
   the rest. They're items for the canvas, so a mix of locked and unlocked shapes gets one; on empty
   canvas, neither. There's no key: the menu and `/lock` are the ways to lock a shape. Both go by the shapes'
@@ -11619,7 +11619,7 @@ title-validation     service TitleIndex · ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
-types                property schema · property is · edge type is-a · edges → every shape · service TypeIndex · service TypeSync<TypeSchemaProperty> · ShapePopovers · /is-a → every shape · adornment TypeChips → every shape
+types                property schema · property is · edge type is-a · edges → every shape · service TypeIndex · service TypeSync<TypeSchemaProperty> · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape
 type-validation      ValidationRules
 type-details         ShapeDetails · ShapeDetails
 snapping             service SnapState · translation adjuster

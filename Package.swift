@@ -116,7 +116,7 @@ let package = Package(
         .target(name: "Boards", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "Titles"]), // layer: concern
         .target(name: "Snapping", dependencies: ["Canvas", "Geometry"]),                      // layer: concern
         .target(name: "Transform", dependencies: ["Canvas", "ContextMenus", "SlashCommands"]), // layer: concern
-        .target(name: "Types", dependencies: ["Adornments", "Canvas", "DetailPanel", "LanguageModels", "Mentions", "ProseMaps", "Selection", "SlashCommands", "Titles", "Topology", "Validation"]), // layer: concern
+        .target(name: "Types", dependencies: ["Adornments", "Canvas", "ContextMenus", "DetailPanel", "LanguageModels", "Mentions", "ProseMaps", "Selection", "SlashCommands", "Titles", "Topology", "Validation"]), // layer: concern
 
         .target(name: "Automation", dependencies: ["Adornments", "Canvas", "CanvasRPC", "DrawScript", "Geometry", "Queries", "QueryLanguage", "Topology"]), // layer: language
         // Placing: where shapes land beside, in or anywhere on a board, placed as `canvas draw` places one (DrawScript's solver); Moving's

@@ -41,6 +41,7 @@ public struct TypesPlugin: CanvasPlugin {
             return TypeHighlights.popover(at: point, on: record, in: editor)
         }
         registerIsACommand(into: &registrar)
+        registerTypeMenus(into: &registrar)
         registerTypeChips(into: &registrar)
     }
 

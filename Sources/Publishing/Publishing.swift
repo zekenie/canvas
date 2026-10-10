@@ -83,7 +83,7 @@ extension CanvasEditor {
     }
 }
 
-/// Make Public and Make Private, after Lock and Unlock and before Delete (`LockMenuGroup`'s 300,
+/// Make Public and Make Private, after Lock and Unlock and before Delete (`StateMenuGroup`'s 300,
 /// `SelectionMenuGroup`'s 400).
 public enum PublishMenuGroup {}
 extension PublishMenuGroup: MenuGroup {

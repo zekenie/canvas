@@ -173,6 +173,14 @@ public final class TypeIndex {
         Self.sorted(entries.keys.filter { admits($0, for: owner) }.map { ($0, entries[$0]?.name) })
     }
 
+    /// The types a menu for `shapes` lists: every type some shape is already or may be (`admits`), in
+    /// the order `choices(for:)` gives. O(types × shapes), once a menu opens.
+    public func menuChoices(for shapes: [ShapeID]) -> [(type: ShapeID, name: String?)] {
+        Self.sorted(entries.keys.filter { type in
+            shapes.contains { admits(type, for: $0) || (kept.links[$0] ?? []).contains(TypeLink(type)) }
+        }.map { ($0, entries[$0]?.name) })
+    }
+
     private static func sorted(_ types: [(ShapeID, String?)]) -> [(type: ShapeID, name: String?)] {
         types.sorted { a, b in
             switch (a.1, b.1) {

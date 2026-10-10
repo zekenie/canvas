@@ -53,12 +53,6 @@ extension CanvasEditor {
     }
 }
 
-/// Lock and Unlock, after every other group in a context menu, as Figma and Keynote have them.
-public enum LockMenuGroup {}
-extension LockMenuGroup: MenuGroup {
-    public static var order: Int { 300 }
-}
-
 /// A shape's lock chip: a lock in a disc at the right end of the row just above a locked shape,
 /// where a title's pill starts at the other end, farthest out of what's there, as a state that
 /// comes and goes. For a moment after a shape is unlocked it shows the lock open, fading. Zoomed
@@ -102,10 +96,10 @@ public struct LockingPlugin: CanvasPlugin {
         // it, and its own lock can't change, so a menu for only such shapes has neither, and one
         // for some leaves them be.
         registrar.contextMenuForCanvas {
-            MenuItem("Lock", in: LockMenuGroup.self, when: { !$0.lockable.isEmpty && !$0.allLocked }) { ids, editor in
+            MenuItem("Lock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && !$0.allLocked }) { ids, editor in
                 editor.lock(ids.filter { !editor.isLockedByContainer($0) })
             }
-            MenuItem("Unlock", in: LockMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked }) { ids, editor in
+            MenuItem("Unlock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked }) { ids, editor in
                 editor.unlock(ids.filter { !editor.isLockedByContainer($0) })
             }
         }
