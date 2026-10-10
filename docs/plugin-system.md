@@ -11188,6 +11188,11 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   mostly outside; what's at its level that it reaches is taken in, mostly inside, or nudged out;
   each alone, read-only ones skipped, and a shape a read-only container would take staying as it is,
   even one the transaction put down (a locked frame's copy, pasted, takes nothing it lands on).
+  A shape is judged by its laid-out frame (`context.frame(of:)`: a `LaidOutBox` kind's box grown
+  to what its layout inputs say, else its box), read before anything changes, and a container's own
+  edge is always its stored box (a kind that holds shapes can't be a `LaidOutBox`). One that grows
+  later, by an input changing, is not settled again: it stays where it is and may overlap a
+  neighbor or hang over an edge. Create Frame's frame goes around the laid-out frames too.
   Both hand back what they nudged, by how far, what that carries included (`Settlement.nudges`), for
   the glide. O(the board), at a gesture's end. `transaction.settle(ids, on: board)` is the rule on
   another board of the file, against that board as the transaction leaves it: what `move(_:to:)`

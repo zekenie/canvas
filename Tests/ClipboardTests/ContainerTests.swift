@@ -222,4 +222,53 @@ import TestKit
         expectEqual(board.container(of: boxCopy.id, containingKinds: h.editor.registry.containingKinds), penCopy.id)
         expectEqual(board.container(of: try require(board.shapes.first { $0.copiedFrom == loose }).id, containingKinds: h.editor.registry.containingKinds), nil)
     },
+    test("a stretch pasted at a point is centered by the frame it is laid out in") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard, [StretchesPlugin()])
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 0, y: 500, width: 60, height: 40), width: 300, height: 100))
+        let stretch = h.add(Stretch(CGRect(x: 1000, y: 150, width: 100, height: 60), gauge: gauge))
+        h.editor.copy([stretch])
+        h.editor.paste(centeredAt: CGPoint(x: 2000, y: 2000))
+        let copy = try require(h.editor.selection)
+        expectEqual(h.editor.shapeContext.frame(of: copy), CGRect(x: 1850, y: 1950, width: 300, height: 100), "its middle on the point")
+        expectEqual(h.editor.document[copy]?.box, CGRect(x: 1850, y: 1950, width: 100, height: 60), "and it stores what it did")
+    },
+    test("a gauge and its stretch pasted together into a corral are settled by the frame the pasted gauge lays the pasted stretch out in, in the paste's one step") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard, [CorralsPlugin(), StretchesPlugin()])
+        let pen = h.add(Corral(CGRect(x: 100, y: 100, width: 400, height: 300)))
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 1000, y: 0, width: 60, height: 40), width: 300, height: 100))
+        let stretch = h.add(Stretch(CGRect(x: 1000, y: 100, width: 100, height: 60), gauge: gauge))
+        let before = h.editor.document
+        h.editor.copy([gauge, stretch])
+        h.editor.paste(centeredAt: CGPoint(x: 400, y: 250))
+        let made = h.editor.shapes(since: before)
+        let newGauge = try require(made.first { $0.kind == CanvasTesting.Gauge.kind })
+        let newStretch = try require(made.first { $0.kind == Stretch.kind })
+        expectEqual(newStretch.typed(as: Stretch.self)?.props.gauge?.shape, newGauge.id, "it names the gauge that came with it")
+        // Pasted, the stretch lies across 250…550: 50 over the corral's edge by its frame, well inside by its box.
+        expectEqual(newStretch.box, CGRect(x: 184, y: 250, width: 100, height: 60), "nudged in by its frame")
+        expectEqual(newGauge.box?.origin, CGPoint(x: 184, y: 150))
+        expectEqual(h.editor.shapeContext.frame(of: newStretch.id)?.size, CGSize(width: 300, height: 100))
+        expectEqual([h.editor.holder(of: newStretch.id), h.editor.holder(of: newGauge.id)], [pen, pen])
+        expectEqual(h.editor.undoHistory.undoName, "Paste")
+        h.editor.undo()
+        expectEqual(h.editor.document, before, "one step")
+    },
+    test("a stretch duplicated where its frame hangs over its corral's edge lands by the frame, and goes in") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard, [CorralsPlugin(), StretchesPlugin()])
+        let pen = h.add(Corral(CGRect(x: 100, y: 100, width: 400, height: 300)))
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 1000, y: 0, width: 60, height: 40), width: 250, height: 60))
+        let stretch = h.add(Stretch(CGRect(x: 350, y: 150, width: 100, height: 60), gauge: gauge))
+        h.editor.put([stretch], in: pen)
+        let copy = try require(h.editor.duplicate([stretch], offsetBy: CGPoint(x: 16, y: 16)).first)
+        // Laid out to x 600, 100 over the edge: settled in place 116 back, then 16 on.
+        expectEqual(h.editor.document[copy]?.box, CGRect(x: 250, y: 166, width: 100, height: 60))
+        expectEqual(h.editor.holder(of: copy), pen)
+        expectEqual(h.editor.document[stretch]?.box?.origin, CGPoint(x: 350, y: 150), "the original is where it was")
+    },
 ])

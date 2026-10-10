@@ -71,10 +71,17 @@ extension Transaction {
             if groups[origin] == nil { origins.append(origin) }
             groups[origin, default: []].append(record)
         }
+        // By the frames they are laid out in (a note grown by its type is as big as it looks), read
+        // from one context before anything changes.
+        var frames: [ShapeID: CGRect] = [:]
+        do {
+            let context = shapes
+            for record in judged { frames[record.id] = context.frame(of: record) }
+        }
         var plans: [(members: [ShapeID], verdict: ContainerRule.Verdict)] = []
         for origin in origins {
             let members = groups[origin]!
-            let boxes = members.map { $0.box! }
+            let boxes = members.map { frames[$0.id]! }
             if let verdict = verdict(for: boxes, together: true, among: sites) {
                 plans.append((members.map(\.id), verdict))
             } else {
@@ -136,14 +143,23 @@ extension Transaction {
         let kinds = registry.containingKinds
         guard let holder = document[id], registry.isContainer(holder), let edge = holder.box else { return [:] }
         let level = document.container(of: holder, containingKinds: kinds)
-        var judged: [ShapeID] = []
-        for member in document.contents(of: id, containingKinds: kinds) {
-            if let record = document[member], let box = record.box, !edge.contains(box), !holds(record) { judged.append(member) }
-        }
-        for record in document.shapes where record.id != id {
-            guard let box = record.box, ContainerRule.overlap(box, edge) > 0,
-                  document.container(of: record, containingKinds: kinds) == level, !holds(record) else { continue }
-            judged.append(record.id)
+        // Judged by the frames they are laid out in, whose sizes are kept: one context reads them
+        // (let go before anything changes), and each is put at its origin as it is by then.
+        var judged: [ShapeID] = [], sizes: [ShapeID: CGSize] = [:]
+        do {
+            let context = shapes
+            for member in document.contents(of: id, containingKinds: kinds) {
+                if let record = document[member], let box = context.frame(of: record), !edge.contains(box), !holds(record) {
+                    judged.append(member)
+                    sizes[member] = box.size
+                }
+            }
+            for record in document.shapes where record.id != id {
+                guard let box = context.frame(of: record), ContainerRule.overlap(box, edge) > 0,
+                      document.container(of: record, containingKinds: kinds) == level, !holds(record) else { continue }
+                judged.append(record.id)
+                sizes[record.id] = box.size
+            }
         }
         guard !judged.isEmpty else { return [:] }
         // The containers, as they are: worked out again only once a container judged has moved or
@@ -152,7 +168,8 @@ extension Transaction {
         var nudges: [ShapeID: CGPoint] = [:], joined: [ShapeID: [ShapeID]] = [:]
         for shape in judged {
             // As the board is by now: one judged before may have moved, or taken it in.
-            guard let record = document[shape], let box = record.box else { continue }
+            guard let record = document[shape], let origin = record.box?.origin, let size = sizes[shape] else { continue }
+            let box = CGRect(origin: origin, size: size)
             let isContainer = registry.isContainer(record)
             var others = sites
             if isContainer {
