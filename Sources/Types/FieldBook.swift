@@ -23,7 +23,8 @@ public final class FieldBook {
 
     /// What `types` (a shape's own `is` list, in the order added) give it: the one resolution for that
     /// list, kept until `revision` moves. The same types in another order are another list, as the order
-    /// decides who wins.
+    /// decides who wins. It answers from the committed index (`editor.types`): a type written in the
+    /// same transaction as its instance is not in it until the commit, so the instance has no rows then.
     public func fields(types: [ShapeID]) -> Resolved {
         guard let index = editor?.types else { return Resolved() }
         let book = self.book ?? ChainBook(index: index)

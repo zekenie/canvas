@@ -196,7 +196,7 @@ enum SchemaWalk {
         guard schema.isObject, depth < JSONReader.maxDepth else { return }
         visit(schema, path)
         func joined(_ name: String) -> String { path.isEmpty ? name : "\(path).\(name)" }
-        for key in SchemaPositions.named + SchemaPositions.definitions {
+        for key in ["properties", "patternProperties"] + SchemaPositions.definitions + ["dependentSchemas"] {   // the order warnings were first kept in
             for member in schema[key]?.members ?? [] {
                 let name = key == "properties" ? member.key : key == "patternProperties" ? "/\(member.key)/" : "\(key)/\(member.key)"
                 walk(member.value, path: key.hasPrefix("$") || key == "definitions" ? name : joined(name), depth: depth + 1, visit)

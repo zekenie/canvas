@@ -27,8 +27,8 @@ public struct TypeNamesPlugin: CanvasPlugin {
             }
             // Nor one of the types of a type built on it, which would make a cycle: what `/is-a` refuses
             // (`TypeIndex.admits`), as far as the file says. A shape the script draws in the same run isn't in
-            // the file yet, so a cycle between shapes of one script isn't checked (`lineage` is cycle-safe).
-            if let owner = context.owner, let index = context.service(TypeIndex.self), index.lineage(of: found.id).contains(owner) {
+            // the file yet, so a cycle between shapes of one script isn't checked (`reaches` is cycle-safe).
+            if let owner = context.owner, let index = context.service(TypeIndex.self), index.graph.reaches(owner, from: found.id) {
                 throw AutomationError("\"\(text)\" is already built on this shape, which would make a cycle", reason: "invalid_value", hint: "name another type")
             }
             return found.id.description
