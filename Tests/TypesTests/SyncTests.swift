@@ -756,22 +756,27 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         expectEqual(b.model.requests.count, 2, "a title typed in the JSON is no change of meaning")
     },
     // Becoming a type, and stopping.
-    test("a shape the person makes a type (/is-a type) waits as an edit does: its words are ahead of the starter, and the commit asks for the schema") {
+    test("a shape the person makes a type (/is-a type) is read on the scheduler's next turn, with no wait: its words are ahead of the starter") {
         let b = try SyncBench()
         let id = b.editor.add(memo("a pet in my household", at: .zero))
+        b.model.queue(petSchema)
         b.editor.makeType(id)
         expectEqual(b.schema(id), TypeSchemaProperty.starter)
         expectEqual(b.editor.undoHistory.undoName, "Make Type")
         b.settle()
-        expectEqual(b.model.requests.count, 0, "not at once")
-        b.model.queue(petSchema)
-        b.scheduler.advance(by: .seconds(3))
+        expectEqual(b.model.requests.count, 0, "not within the turn of the make")
+        expectEqual(b.status(id), .idle)
+        expect(b.sync.isWaiting(id), "an edit waits until the next turn")
+        b.scheduler.advance(by: .zero)
+        expectEqual(b.status(id), .updating(.schema), "the call is out at once")
+        expect(!b.sync.isWaiting(id))
         spinRunLoop(until: { b.model.requests.count == 1 && b.status(id) == .idle })
         expectEqual(b.message(0), "<prompt>\na pet in my household\n</prompt>\n\n<schema>\n\(TypeSchemaProperty.starter)\n</schema>")
         expectEqual(b.schema(id), pet)
         expectEqual(b.title(id), "Pet")
+        expectEqual(b.editor.undoHistory.undoName, "Update Schema", "the read is a step of its own")
     },
-    test("words that are JSON made a type are the schema: nothing is asked at the make, and the commit asks for the words, with no schema ahead of them") {
+    test("words that are JSON made a type are the schema: nothing is asked at the make, and the next turn asks for the words, with no schema ahead of them") {
         let b = try SyncBench()
         let id = b.editor.add(memo(pet, at: .zero))
         b.editor.makeType(id)
@@ -780,7 +785,7 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         b.settle()
         expectEqual(b.model.requests.count, 0, "nothing at the make")
         b.model.queue("A pet: a name, a species and a birth year.")
-        b.sync.commit(id)
+        b.scheduler.advance(by: .zero)
         spinRunLoop(until: { b.model.requests.count == 1 && b.status(id) == .idle })
         expectEqual(b.model.requests.count, 1)
         let request = try require(b.model.lastRequest)
@@ -796,6 +801,82 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         expectEqual(b.schema(id), pet)
         b.editor.undo()
         expectEqual(b.schema(id), nil, "undo of the make takes the schema back")
+    },
+    test("an undo in the turn of the make asks nothing: the shape is no type, and its wait is gone") {
+        let b = try SyncBench()
+        let id = b.editor.add(memo("a pet in my household", at: .zero))
+        b.editor.makeType(id)
+        b.editor.undo()
+        b.scheduler.advance(by: .seconds(5))
+        b.settle()
+        expectEqual(b.model.requests.count, 0)
+        expectEqual(b.status(id), .idle)
+        expect(!b.sync.isWaiting(id))
+    },
+    test("a type that is placed, brought by a paste or drawn by an agent is in step and asks nothing, on the next turn or after") {
+        let b = try SyncBench()
+        let placed = b.place()
+        b.typeWords(placed, "a pet in my household")
+        b.editor.transact { $0.insert(typeRecord(pet, words: "a pet in my household", at: CGPoint(x: 400, y: 0))) }
+        b.editor.transact { transaction in
+            transaction.byAgent = true
+            transaction.insert(typeRecord(pet, words: "a pet in my household", at: CGPoint(x: 800, y: 0)))
+        }
+        b.scheduler.advance(by: .zero)
+        b.settle()
+        expectEqual(b.model.requests.count, 0, "the one whose words were typed waits for its 3 s, the others are in step")
+        b.scheduler.advance(by: .seconds(3))
+        spinRunLoop(until: { b.model.requests.count == 1 })
+        expectEqual(b.model.requests.count, 1)
+    },
+    test("the spot is told for each status change and each flip of the wait, and says whether a read has answered") {
+        let b = try SyncBench()
+        var told: [ShapeID] = []
+        b.sync.onSpotChange { told.append($0) }
+        let id = b.place()
+        expect(!b.sync.isWaiting(id) && !b.sync.hasAnswered(id))
+        b.typeWords(id, "a pet in my household")
+        expect(b.sync.isWaiting(id))
+        expectEqual(told, [id], "the wait began")
+        b.model.queue(petSchema)
+        told = []
+        b.sync.commit(id)
+        expectEqual(b.status(id), .updating(.schema))
+        expectEqual(told, [id, id], "the wait ended, and the call went out")
+        expect(!b.sync.hasAnswered(id), "not before the answer")
+        told = []
+        spinRunLoop(until: { b.status(id) == .idle })
+        expect(told.contains(id), "the answer landed")
+        expect(b.sync.hasAnswered(id))
+        told = []
+        b.typeWords(id, "a pet")
+        b.editor.undo()
+        expectEqual(told.count >= 2, true, "a wait begun and stopped by an undo")
+        expect(!b.sync.isWaiting(id))
+        told = []
+        b.model.queue(.overloaded)
+        b.typeWords(id, "a pet in my home")
+        b.sync.commit(id)
+        spinRunLoop(until: { !b.isUpdating(id) })
+        expect(told.contains(id))
+        expectEqual(b.status(id), .failed(TypeSyncFailure(writing: .schema, LanguageModelError.overloaded.message)))
+    },
+    test("with no language model at all, a side to write fails saying so, with nothing to try again; a type in step says nothing") {
+        let plugins = typePlugins().filter { !($0 is LanguageModelsPlugin) }
+        let harness = try EditorHarness { scheduler in CanvasEditor(registry: try Registry(plugins: plugins), file: CanvasFile(root: CanvasDocument()), scheduler: scheduler) }
+        let editor = harness.editor, sync = try require(editor.typeSync)
+        expect(editor.languageModel == nil)
+        let inStep = typeRecord(pet, words: "a pet in my household")
+        editor.transact { $0.insert(inStep) }
+        sync.commit(inStep.id)
+        expectEqual(sync.status(of: inStep.id), .idle, "in step: nothing to write")
+        let id = editor.add(memo("a pet in my household", at: .zero))
+        editor.makeType(id)
+        harness.scheduler.advance(by: .zero)
+        expectEqual(sync.status(of: id), .failed(TypeSyncFailure(writing: .schema, "No language model", remedy: .editByHand)))
+        expectEqual(TypeSyncFailure.noModelMessage, "No language model")
+        sync.retry(id)
+        expectEqual(sync.status(of: id), .failed(TypeSyncFailure(writing: .schema, "No language model", remedy: .editByHand)))
     },
     test("JSON words made a type with no model: the schema stays and nothing is asked; empty-object words ask nothing") {
         let b = try SyncBench()

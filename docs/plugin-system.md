@@ -10158,7 +10158,8 @@ and the prompts it sends (`SyncedSchema`: a type's is `TypeSchemaProperty`, with
 - **When.** Only the person's edits to the two sides: never its own write, a board read again (which
   takes every type of the file afresh), a change to anything else (a move, a lock, a rename), or an
   agent's write (`ChangeSet.byAgent`), whose sides are taken as in step. A shape the person makes a
-  type waits as an edit does. A commit (editing its words ended, however it ended,
+  type waits as an edit does and is committed on the scheduler's next turn: the read starts at once,
+  with no 3 s wait. A commit (editing its words ended, however it ended,
   `EditorService.editingDidEnd`, the next turn; ⌘↩ in the JSON, or the keyboard leaving it) syncs at
   once; otherwise `TypeSync.idleDelay` (3 s) after the last keystroke, on `editor.scheduler`, not
   while the JSON's completion list is open.
@@ -10170,8 +10171,8 @@ and the prompts it sends (`SyncedSchema`: a type's is `TypeSchemaProperty`, with
   typed one there), so the prompts, and the evals that read them, are unchanged; the model's root
   `"title"` comes out of what it writes back, and names an untitled shape in the same step.
 - **Never** while the schema isn't a JSON object, for a read-only shape (on whichever board it is,
-  asked as the sync starts and as an answer lands), for a shape with no fields and no words, or
-  without a model. A shape seen for the first time is in step, but words over a schema with no fields,
+  asked as the sync starts and as an answer lands), or for a shape with no fields and no words; with
+  no model at all, a side to write fails saying "No language model". A shape seen for the first time is in step, but words over a schema with no fields,
   never answered, are ahead.
 - **While a call is out** the side it writes is read-only (the JSON, `detailUpdating`; a note's editor,
   read-only and faint, showing what lands), and its answer is dropped if that side changed; edits to
