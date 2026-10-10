@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Composition
 import CoreGraphics
 import Foundation
 import Geometry
@@ -74,9 +73,17 @@ private let viewport = CGSize(width: 1200, height: 800)
     return (h, hub)
 }
 
+/// The shipped lights, in the order the plugins that own the edges give them: arrows' two
+/// (Connections'), then mentions' two (Mentions').
+private enum Light: Int {
+    case pointsTo, pointedToBy, mentions, mentionedBy
+}
+
 /// How many shapes the canvas outlines in a light's color, whatever the ring.
-@MainActor private func lit(_ editor: CanvasEditor, in color: NSColor) -> Int {
-    editor.outlines.tinted.filter { $0.color == color }.reduce(0) { $0 + $1.shapes.count }
+@MainActor private func lit(_ editor: CanvasEditor, in light: Light) -> Int {
+    let lights = editor.registry.neighborLights
+    guard lights.indices.contains(light.rawValue) else { return 0 }
+    return editor.outlines.tinted.filter { $0.color == lights[light.rawValue].color }.reduce(0) { $0 + $1.shapes.count }
 }
 
 @MainActor let neighborBenchmarks = Suite("Neighbor benchmarks", [
@@ -101,8 +108,8 @@ private let viewport = CGSize(width: 1200, height: 800)
                 }
                 // The first hover makes the engine's vocabulary (a millisecond), and every later one is what a hover costs.
                 let first = try hover()
-                expectEqual(lit(h.editor, in: NeighborLights.mentionedBy), mentioning, "the notes that mention the hub are lit")
-                expectEqual(lit(h.editor, in: NeighborLights.pointsTo) + lit(h.editor, in: NeighborLights.pointedToBy) + lit(h.editor, in: NeighborLights.mentions), 0)
+                expectEqual(lit(h.editor, in: .mentionedBy), mentioning, "the notes that mention the hub are lit")
+                expectEqual(lit(h.editor, in: .pointsTo) + lit(h.editor, in: .pointedToBy) + lit(h.editor, in: .mentions), 0)
                 var mains: [Double] = [], offs: [Double] = []
                 for _ in 0..<11 {
                     unhover()
@@ -151,7 +158,7 @@ private let viewport = CGSize(width: 1200, height: 800)
                 h.editor.hovered = hub
                 h.wait(0)
                 try awaitResult(timeout: 60) { await neighbors.landed() }
-                expectEqual(lit(h.editor, in: NeighborLights.mentionedBy), size - 1)
+                expectEqual(lit(h.editor, in: .mentionedBy), size - 1)
                 let drawn = frame(camera)
                 let added = drawn - unlit
                 lines.append(String(format: "%@: %6.2f ms over %6.2f unlit", what, added, unlit))
@@ -193,7 +200,7 @@ private let viewport = CGSize(width: 1200, height: 800)
             h.editor.hovered = hub
             h.wait(0)
             try awaitResult(timeout: 60) { await neighbors.landed() }
-            expectEqual(lit(h.editor, in: NeighborLights.mentionedBy), size - 1)
+            expectEqual(lit(h.editor, in: .mentionedBy), size - 1)
             let added = frame() - unlit
             report(String(format: "%6d shapes, %d lit and all selected: what they add to a frame at 10%%: %6.2f ms over %6.2f selected and unlit (budget %.0f)",
                           size, size - 1, added, unlit, Budget.neighborFrameSelected))

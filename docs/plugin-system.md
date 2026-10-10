@@ -333,7 +333,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Find the shapes of a file a query matches (by kind, title, attribute, what's inside what, what connects to what), from a plugin or an agent | `editor.queries?.run(QueryRequest(#"sticky-note:mentions("Auth")"#))`, answered off the main actor; `canvas query` | [Queries](#queries) |
 | Make text a kind draws findable with ⌘F, highlighted where it's drawn | `registrar.findableTexts(_:where:…)` (Find), or `x.findableTexts(_:…)` for a kind's own: its texts and where each range is drawn | [Find](#find) |
 | Keep the shapes some queries match (what a plugin that stores answers asks, many at once, ids only), or check a query's titles before keeping it | `await editor.queries?.matches([QueryMatchRequest(text, edges: .recorded, limit: 50) { admit($0) }])`, `checkNames(plan)` | [Many at once](#many-at-once-edge-views-and-waiting) |
-| Outline what's connected to the hovered shape, at a glance, in a color for each way (a light: a color and a query), on the canvas and in the minimap | `NeighborsPlugin(lights: [NeighborLight(color:query:)])`: it asks the engine, places what's on another board on its card, and hands the core tinted outlines | [Neighbors](#neighbors) |
+| Outline what's connected to the hovered shape, at a glance, in a color for each way (a light: a color and a query), on the canvas and in the minimap | `NeighborsPlugin()`, and a light from each plugin that owns a kind of edge, `registrar.neighborLight(color:query:)`: Neighbors asks the engine, places what's on another board on its card, and hands the core tinted outlines | [Neighbors](#neighbors) |
 | Know which shape the pointer is on where the canvas doesn't show it (a row of another board's shapes), outline the card that holds it, or say it from a view of your own | `editor.hoveredElsewhere`, observed and settable (Selection's; the table of contents' rows set it) | [Selection](#selection) |
 | Give queries a plugin's word (a pseudo-class, or a relation over its edges), or say how its text reads in them | A plugin in QueryLexicon, which imports Queries and the concern: `registrar.queryPseudoClass`, `queryRelation` or `queryTextFormat` | [What plugins add](#what-plugins-add) |
 | Put an editing view's selection where the press that began editing was | `editor.beginEditing(id, at: point, clickCount:)`, read as `EditContext.startPoint` and `startClickCount` | [Capabilities](#capabilities) |
@@ -501,11 +501,11 @@ Each target is one line, with its layer:
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
 | foundation | foundation | Geometry, Canvas (the core), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on) and FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) |
 | ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
-| surface | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, ProseMaps, Topology, Find, Queries, QueryTranslation |
+| surface | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, ProseMaps, Topology, Find, Queries, QueryTranslation, Neighbors |
 | concern | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Publishing, Connections, Mentions, Boards, Snapping, Transform |
 | language | foundation, surface, language, wire | Automation, QueryCommands |
 | lexicon | foundation, surface, concern, language | DrawLexicon, QueryLexicon |
-| vertical | foundation, surface, concern | StickyNotes, Schemas, Subboards, Frames, JumpTo, References, Moving, Neighbors, Reordering |
+| vertical | foundation, surface, concern | StickyNotes, Schemas, Subboards, Frames, JumpTo, References, Moving, Reordering |
 | composition | foundation, surface, concern, language, lexicon, vertical, wire | Composition (the shipped plugin list) |
 | app | foundation, ui, composition, wire | InfiniteCanvas |
 | appex | foundation, ui, composition | CanvasQuickLook (an extension the app carries: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk)) |
@@ -5057,6 +5057,10 @@ and lends any plugin what follows, but for `beginArrow`, which is internal:
 - **For [Find](#find)**, `ArrowFindPlugin` (Connections', after Find) gives an arrow's label,
   washed where it's drawn (over the canvas), from the label's own string-drawing layout, centered,
   kept by text and width (`ArrowLabels.layout(of:width:)`).
+- **For [Neighbors](#neighbors)**, `ArrowLightsPlugin` (Connections', after Neighbors and
+  `ArrowPortsPlugin`, whose `arrow` edges its queries name) gives two lights: what the hovered shape
+  points to, in green, and what points to it, in purple (`ArrowStyle.pointsToLight`,
+  `pointedToByLight`), the arrows between with them.
 
 ### Connecting without a drag
 
@@ -5431,6 +5435,10 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
   the whole pill (one character of the drawn text); its rects come from that kept layout. A rename
   changes what its mentioners read: those are what `rowsAffected(by:)` names, which Find asks before
   it reads any text.
+- **For [Neighbors](#neighbors)**, `MentionLightsPlugin` (a plugin value of Mentions' own, after
+  Neighbors, and after arrows' lights in the shipped list, so an arrow's ring comes first) gives two
+  lights: what the hovered shape's text mentions, in teal, and what mentions it, in lavender
+  (`MentionStyle.mentionsLight`, `mentionedByLight`).
 
 ### The service: `MentionState`
 
@@ -8355,12 +8363,14 @@ contents](#the-table-of-contents), and every shape connected to it is outlined i
 how, and the arrows between are colored too. The minimap fills the same shapes in the same colors,
 so what's connected off screen shows there (the rest of it dims while anything is lit, and a shape
 in two lights shows both, one inside the other), and a connected shape on another board (inside a
-subboard) lights the card that holds it. It's a vertical that no kind opts into and nothing imports,
-as [Jump To](#jump-to) and [Moving](#moving) are: it builds on Queries (which finds the shapes),
-Selection (the hover, and the one a list sets for a shape the canvas doesn't show), Topology (when a
-shape's edges change), the file (where a shape on another board is drawn) and the core's [tinted
-outlines](#outlines), and it knows no kind, edge type or concern: what counts as connected is a
-query, which Composition writes.
+subboard) lights the card that holds it. It's a surface: what an edge's owner shows its edges on. It
+builds on Queries (which finds the shapes), Selection (the hover, and the one a list sets for a shape
+the canvas doesn't show), Topology (when a shape's edges change), the file (where a shape on another
+board is drawn) and the core's [tinted outlines](#outlines), and it knows no kind, edge type or
+concern: what counts as connected is a **light**, a color and a query, which the plugin that owns the
+edges contributes to its point (`registrar.neighborLight`). Arrows' two are Connections'
+(`ArrowLightsPlugin`) and mentions' two are Mentions' (`MentionLightsPlugin`), each a plugin value of
+its own, so a list without Neighbors leaves them out.
 
 | Light | Color | What's outlined, for the shape hovered |
 |---|---|---|
@@ -8369,8 +8379,10 @@ query, which Composition writes.
 | mentions | teal | the shapes its text mentions |
 | mentioned by | lavender | the shapes whose text mentions it |
 
-The colors are `NeighborLights`' constants (Composition's), chosen in a design audit from renders of
-the lights over both canvases: one fixed sRGB value for each appearance (`NSColor(name:)`, as the
+The colors are their owners' (`ArrowStyle.pointsToLight` and `pointedToByLight`,
+`MentionStyle.mentionsLight` and `mentionedByLight`), chosen together in a design audit from renders of
+the lights over both canvases: one fixed sRGB value for each appearance
+(`NeighborLight.color(light:dark:)`, an `NSColor(name:)` as the
 arrow's color is), never a system color (system pink read as Validation's error red, system purple as
 the selection's blue, and the light-mode green and teal fell under 3:1). In the light and the dark:
 green #07933B and #2FD359, purple #8C21A4 and #B851FD, teal #0E97B0 and #329AB4, lavender #A76FE2
@@ -8379,31 +8391,50 @@ the canvas it's drawn over in both appearances, and not the accent; the two purp
 some color-vision deficiencies.
 
 ```swift
-// NeighborLights.shipped (Composition): a light is a color and a query, given `#id`, the shape
-// hovered, and the edge types come from their plugins' ids, never written out.
-NeighborLight(color: pointsTo)    { ":edge-from(\($0), \(arrow)|\(standing)), :starts-at(\($0), \(arrow)), :end-of(\($0), \(arrow))" }
-NeighborLight(color: pointedToBy) { ":edge-to(\($0), \(arrow)|\(standing)), :ends-at(\($0), \(arrow)), :start-of(\($0), \(arrow))" }
-NeighborLight(color: mentions)    { ":edge-from(\($0), \(mention))" }
-NeighborLight(color: mentionedBy) { ":edge-to(\($0), \(mention))" }
+// A light is a color and a query, given `#id`, the shape hovered, and the edge types come from
+// their plugins' ids, never written out.
+
+// Connections (ArrowLightsPlugin, id `arrow-lights`):
+let arrow = ArrowEdge.id.rawValue, standing = StandingEdge.id.rawValue
+registrar.neighborLight(color: ArrowStyle.pointsToLight) {
+    ":edge-from(\($0), \(arrow)|\(standing)), :starts-at(\($0), \(arrow)), :end-of(\($0), \(arrow))"
+}
+registrar.neighborLight(color: ArrowStyle.pointedToByLight) {
+    ":edge-to(\($0), \(arrow)|\(standing)), :ends-at(\($0), \(arrow)), :start-of(\($0), \(arrow))"
+}
+
+// Mentions (MentionLightsPlugin, id `mention-lights`):
+let mention = MentionEdge.id.rawValue
+registrar.neighborLight(color: MentionStyle.mentionsLight) { ":edge-from(\($0), \(mention))" }
+registrar.neighborLight(color: MentionStyle.mentionedByLight) { ":edge-to(\($0), \(mention))" }
 ```
 
-- **`NeighborsPlugin(lights:)`** (id `neighbors`; with `NeighborLight`, the colored question, and
-  `NeighborState`, the service, the module's whole public surface) registers the service
-  (`editor.neighbors`) and `registrar.outlines { $0.neighbors?.outlines ?? Outlines() }`; the report's
-  line is `neighbors service NeighborState · outlines`. It's after the query plugins in the shipped
-  list. It lights nothing without `QueriesPlugin()` and `TopologyPlugin()` (a hover asks nothing then),
-  and has nothing to hover without `SelectionPlugin()`; none of them is refused, since it
-  contributes to none of their points.
-- **A light is a color and a question.** `NeighborLight(color:query:)`: `query` is given the selector
+- **`NeighborsPlugin()`** (id `neighbors`, `PluginID.neighbors`; with `NeighborLight`, the colored
+  question, and `NeighborLight.color(light:dark:)`, a color given as one sRGB value for each
+  appearance; its point `NeighborLights`, filled with `registrar.neighborLight` and read as
+  `registry.neighborLights`; and `NeighborState`, the service: the module's whole public surface)
+  registers the service (`editor.neighbors`), which takes the lights from the registry,
+  and `registrar.outlines { $0.neighbors?.outlines ?? Outlines() }`; the report's
+  line is `neighbors service NeighborState · outlines`, and each face's is
+  `neighbor light · neighbor light`. It's after the query plugins in the shipped
+  list, and the lights' plugins are after it. It lights nothing without `QueriesPlugin()` and
+  `TopologyPlugin()` (a hover asks nothing then), has nothing to hover without `SelectionPlugin()`,
+  and nothing to light without a light; none of them is refused, since it
+  contributes to none of their points. A light in a list without Neighbors is refused, as any
+  contribution whose point's owner isn't installed is.
+- **A light is a color and a question.** `registrar.neighborLight(color:query:)` contributes a
+  `NeighborLight` to the `NeighborLights` point (owner `neighbors`): `query` is given the selector
   that names the shape hovered (`#`, then its id, as the query language writes one) and returns the
-  query whose matches are outlined in that color. They are the query language's
+  query whose matches are outlined in that color. Lights are in plugin order, and a plugin's in the
+  order it gives them: a shape's first light is its first ring, so the shipped list has arrows' before
+  mentions'. They are the query language's
   ([Queries](#queries)): `:edge-from(X, arrow|stands-for)` is the shapes X has an arrow to, or
   stands for; `:starts-at(X, arrow)` the arrows (connections) that start at X; `:end-of(X, arrow)`
   the shape X ends at, where X is an arrow (and nothing for any other shape), so hovering an arrow
   lights its two ends; the `|` joins edge types, and a type takes in those under it (`arrow` is every
   channel's too). Another
-  way to be connected, a new kind of edge, or a different set of colors is another light, with nothing
-  in this module changing.
+  way to be connected, a new kind of edge, is another light from the plugin that owns the edge, with
+  nothing in this module, or in the shipped list's code, changing.
 - **The subject** is the shape hovered: `editor.hovered` (the select tool's, or any plugin's where it
   shows shapes), else the shape whose row the pointer is on when the canvas doesn't show it
   (`editor.hoveredElsewhere`, [Selection](#selection): a row of a board nested under its owner's in
@@ -8478,7 +8509,8 @@ NeighborLight(color: mentionedBy) { ":edge-to(\($0), \(mention))" }
   for 10,000). `./build.sh bench` holds them.
 - **Testing.** NeighborsTests use fixtures only (CanvasTesting's boxes, links as wires, memos as
   what quotes, pockets and corrals, a `Pill` that stands for what it cites and a `Lens` for what's
-  provided, and four lights of the tests' own in pure colors, over a `Star` and a `Nest`); they read
+  provided, and four lights of the tests' own in pure colors, given by a plugin of the tests' own,
+  `lightsPlugin`, over a `Star` and a `Nest`); they read
   `editor.outlines.tinted` after `settle()` (a turn of the scheduler, then the run loop until
   `isAsking` says the answer landed): each light's matches in its color, one view asked where nothing
   stands in and two where a shape does, an arrow hovered lighting where it ends and starts, a shape in
@@ -8493,7 +8525,11 @@ NeighborLight(color: mentionedBy) { ":edge-to(\($0), \(mention))" }
   working out what shows again, asking nothing, only for a commit that names what's lit or reaches
   another board (a lit shape moved down a board and back, deleted and undone), never for an unrelated
   edit, a restack or a drag; and the canvas drawing again only when what's outlined changed.
-  CompositionTests' NeighborsShippedTests hold the four shipped lights, the shipped table of
+  CompositionTests' NeighborsShippedTests hold the four shipped lights as the registry has them
+  (arrows' from Connections, then mentions' from Mentions; none in a list without the three plugins,
+  and a list with a light and no Neighbors refused; each face's two queries, and its refusal without
+  Neighbors, are held in its owner's tests too, ArrowPortsTests' and MentionsTests' `LightTests`),
+  the shipped table of
   contents' rows, a reference and a subboard, an arrow re-aimed while hovered, the colors (each
   appearance's value, 3:1 against its canvas), a lit arrow covered, and the rings drawn at 4 and 8
   points in the app's own editor. BenchmarkTests' NeighborBenchmarks hold a hover on a shape
@@ -8713,7 +8749,7 @@ The modules, one job each:
 | FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | vertical | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
 | Moving | vertical | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with DrawScript's solver and `ObstacleGrid` as `draw` places a shape; no kind opts into it, and nothing imports it. |
-| Neighbors | vertical | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)): its lights are colors and the queries that find their shapes, asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`); no kind opts into it, and nothing imports it. |
+| Neighbors | surface | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)): its lights are colors and the queries that find their shapes, each contributed by the plugin that owns the edges (Connections' `ArrowLightsPlugin`, Mentions' `MentionLightsPlugin`), asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`). |
 | DrawLexicon | lexicon | What `draw` takes from Titles (names), Connections (edges), Validation (warnings) and Mentions (mention text): a plugin value for each concern (`TitleNamesPlugin`, `PortEdgesPlugin`, `ValidationChecksPlugin`, `MentionTextsPlugin`), joining Automation to the plugin that owns it. |
 | QueryCommands | language | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
 | QueryLanguage | foundation | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
@@ -11542,6 +11578,8 @@ validation-queries   query word :invalid · query word :warned
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
 neighbors            service NeighborState · outlines
+arrow-lights         neighbor light · neighbor light
+mention-lights       neighbor light · neighbor light
 moving               /move-to /move-near → every shape · ContentsMoves
 reordering           ShapeContextMenus
 ```

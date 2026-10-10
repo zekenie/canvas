@@ -103,6 +103,19 @@ private extension EditorHarness {
     }
 }
 
+/// The shipped lights' colors, as the registry has them, in the order the plugins give them: arrows'
+/// two (Connections': what a shape points to, what points to it), then mentions' two (Mentions': what
+/// it mentions, what mentions it).
+private struct Lights {
+    let pointsTo, pointedToBy, mentions, mentionedBy: NSColor
+
+    @MainActor init(_ registry: Registry) throws {
+        let lights = registry.neighborLights
+        let colors = try require(lights.count == 4 ? lights.map(\.color) : nil, "four lights, not \(lights.count)")
+        (pointsTo, pointedToBy, mentions, mentionedBy) = (colors[0], colors[1], colors[2], colors[3])
+    }
+}
+
 /// On the root: note A, which mentions F and G (G is on subboard S's board); B, which A has an arrow to,
 /// and which has one back; C, which A has a note-link to; D, which has an arrow to A; E, which mentions A;
 /// and the subboard S, holding G.
@@ -122,30 +135,48 @@ private struct Graph {
 }
 
 @MainActor let neighborsShippedTests = Suite("Neighbors, as shipped", [
-    test("it follows the query plugins in the shipped list, with four lights: green, purple, teal and lavender") {
+    test("it follows the query plugins in the shipped list, and the plugins that own the edges give it four lights: arrows' green and purple, then mentions' teal and lavender") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())
         let plugins = ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()).map(\.id.rawValue)
-        let neighbors = try require(plugins.firstIndex(of: "neighbors"))
+        let neighbors = try require(plugins.firstIndex(of: PluginID.neighbors.rawValue))
         expect(try require(plugins.firstIndex(of: "queries")) < neighbors, "after the engine it asks")
         expect(try require(plugins.firstIndex(of: "query-commands")) < neighbors)
+        // The lights are their owners' faces, each a plugin of its own: arrows' first, so a shape both pointed to and mentioned has its arrow's ring first.
+        let arrowLights = try require(plugins.firstIndex(of: PluginID.arrowLights.rawValue))
+        let mentionLights = try require(plugins.firstIndex(of: PluginID.mentionLights.rawValue))
+        expect(neighbors < arrowLights && arrowLights < mentionLights, "Neighbors, then arrows' lights, then mentions'")
         expect(registry.report.contains("neighbors"))
-        expectEqual(NeighborLights.shipped.map(\.color), [NeighborLights.pointsTo, NeighborLights.pointedToBy, NeighborLights.mentions, NeighborLights.mentionedBy])
-        expect(NeighborLights.shipped.count == 4)
+        let lights = registry.neighborLights
+        expectEqual(lights.count, 4)
         // Each light asks for the shape named by its id, with the edge types' ids the plugins declare.
         let selector = "#\(ShapeID())"
-        let queries = NeighborLights.shipped.map { $0.query(selector) }
+        let queries = lights.map { $0.query(selector) }
         expectEqual(queries, [":edge-from(\(selector), arrow|stands-for), :starts-at(\(selector), arrow), :end-of(\(selector), arrow)",
                               ":edge-to(\(selector), arrow|stands-for), :ends-at(\(selector), arrow), :start-of(\(selector), arrow)",
                               ":edge-from(\(selector), mention)", ":edge-to(\(selector), mention)"])
     },
+    test("a list without Neighbors leaves the lights out, and one with a light and no Neighbors is refused") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let all = ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let faces: Set<PluginID> = [.neighbors, .arrowLights, .mentionLights]
+        let without = try Registry(plugins: all.filter { !faces.contains($0.id) })
+        expectEqual(without.neighborLights.count, 0)
+        expectThrows(RegistryError.ownerNotInstalled(point: "NeighborLights", owner: .neighbors, contributor: .arrowLights)) {
+            _ = try Registry(plugins: all.filter { $0.id != .neighbors })
+        }
+    },
     test("the colors are the design audit's: one sRGB value each in the light and the dark, each at least 3:1 against the canvas it's drawn over") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let lights = try Lights(ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel()))
         let chosen: [(color: NSColor, light: [Int], dark: [Int])] = [
-            (NeighborLights.pointsTo, [0x07, 0x93, 0x3B], [0x2F, 0xD3, 0x59]),
-            (NeighborLights.pointedToBy, [0x8C, 0x21, 0xA4], [0xB8, 0x51, 0xFD]),
-            (NeighborLights.mentions, [0x0E, 0x97, 0xB0], [0x32, 0x9A, 0xB4]),
-            (NeighborLights.mentionedBy, [0xA7, 0x6F, 0xE2], [0xD0, 0xB0, 0xFE]),
+            (lights.pointsTo, [0x07, 0x93, 0x3B], [0x2F, 0xD3, 0x59]),
+            (lights.pointedToBy, [0x8C, 0x21, 0xA4], [0xB8, 0x51, 0xFD]),
+            (lights.mentions, [0x0E, 0x97, 0xB0], [0x32, 0x9A, 0xB4]),
+            (lights.mentionedBy, [0xA7, 0x6F, 0xE2], [0xD0, 0xB0, 0xFE]),
         ]
         // The canvas's own backgrounds (`Style.canvasBackground`): white 0.965 and 0.11.
         let (lightCanvas, darkCanvas) = ([246, 246, 246], [28, 28, 28])
@@ -163,13 +194,14 @@ private struct Graph {
         defer { pasteboard.releaseGlobally() }
         let graph = Graph()
         let h = try shipped(graph.file, pasteboard)
+        let lights = try Lights(h.editor.registry)
         expectEqual(h.lit, [])
         h.editor.hovered = graph.a
         h.settleLights()
         // B is pointed to by A and points to A: its second light is a ring further out. G is on S's board: S is where it's drawn.
-        expectEqual(h.lit, [Lit(NeighborLights.pointsTo, 0, [graph.b, graph.c, graph.ab, graph.ac]),
-                            Lit(NeighborLights.pointedToBy, 0, [graph.d, graph.da, graph.ba]), Lit(NeighborLights.pointedToBy, 1, [graph.b]),
-                            Lit(NeighborLights.mentions, 0, [graph.f, graph.s]), Lit(NeighborLights.mentionedBy, 0, [graph.e])])
+        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.b, graph.c, graph.ab, graph.ac]),
+                            Lit(lights.pointedToBy, 0, [graph.d, graph.da, graph.ba]), Lit(lights.pointedToBy, 1, [graph.b]),
+                            Lit(lights.mentions, 0, [graph.f, graph.s]), Lit(lights.mentionedBy, 0, [graph.e])])
         expectEqual(h.editor.outlines.faintShapes, [graph.a], "Selection's hover, on the shape itself")
         h.editor.hovered = nil
         h.wait(0)
@@ -177,11 +209,11 @@ private struct Graph {
         // E mentions A, and nothing else is connected to it.
         h.editor.hovered = graph.e
         h.settleLights()
-        expectEqual(h.lit, [Lit(NeighborLights.mentions, 0, [graph.a])])
+        expectEqual(h.lit, [Lit(lights.mentions, 0, [graph.a])])
         // D has an arrow to A, and nothing else.
         h.editor.hovered = graph.d
         h.settleLights()
-        expectEqual(h.lit, [Lit(NeighborLights.pointsTo, 0, [graph.a, graph.da])])
+        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.a, graph.da])])
         // The subboard S is connected to nothing: A mentions the note on its board, not the card.
         h.editor.hovered = graph.s
         h.settleLights()
@@ -192,12 +224,13 @@ private struct Graph {
         defer { pasteboard.releaseGlobally() }
         let graph = Graph()
         let h = try shipped(graph.file, pasteboard)
+        let lights = try Lights(h.editor.registry)
         h.editor.hovered = graph.a
         h.settleLights()
         // D's arrow to A, along y = 500 between them (A's left edge is at 400): lit as what points to A, in its purple.
         let size = CGSize(width: 1200, height: 800)
         let drawn = renderBitmap(h.editor, size: size)
-        let purple = Array(swatch(NeighborLights.pointedToBy, in: .aqua).prefix(3))
+        let purple = Array(swatch(lights.pointedToBy, in: .aqua).prefix(3))
         let column = (480..<520).map { pixel(drawn, at: CGPoint(x: 300, y: CGFloat($0))) }
         // Its line is 3.5 wide: its cover 4.5, centered on y = 500, the four rows between 497.75 and 502.25 whole.
         expectEqual(column.filter { Array($0.prefix(3)) == purple }.count, 4, "four whole pixels of the light's purple across it")
@@ -214,36 +247,38 @@ private struct Graph {
         defer { pasteboard.releaseGlobally() }
         let graph = Graph()
         let h = try shipped(graph.file, pasteboard)
+        let lights = try Lights(h.editor.registry)
         h.editor.hovered = graph.ab
         h.settleLights()
-        expectEqual(h.lit, [Lit(NeighborLights.pointsTo, 0, [graph.b]), Lit(NeighborLights.pointedToBy, 0, [graph.a])])
+        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.b]), Lit(lights.pointedToBy, 0, [graph.a])])
         // A note-link is an arrow too: its type is under `arrow`.
         h.editor.hovered = graph.ac
         h.settleLights()
-        expectEqual(h.lit, [Lit(NeighborLights.pointsTo, 0, [graph.c]), Lit(NeighborLights.pointedToBy, 0, [graph.a])])
+        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.c]), Lit(lights.pointedToBy, 0, [graph.a])])
         // The arrow back from B to A: the other way round.
         h.editor.hovered = graph.ba
         h.settleLights()
-        expectEqual(h.lit, [Lit(NeighborLights.pointsTo, 0, [graph.a]), Lit(NeighborLights.pointedToBy, 0, [graph.b])])
+        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.a]), Lit(lights.pointedToBy, 0, [graph.b])])
         // Re-aimed at D while it's hovered: it ends there now, and undone, back (its edge changed, which the change lists by its ends).
         let toD = ArrowTerminal.bound(ArrowBinding(shapeID: graph.d, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
         h.editor.transact("Re-aim") { $0.update(graph.ba, as: Arrow.self) { $0.props.end = toD } }
         h.settleLights()
-        expectEqual(h.lit, [Lit(NeighborLights.pointsTo, 0, [graph.d]), Lit(NeighborLights.pointedToBy, 0, [graph.b])])
+        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.d]), Lit(lights.pointedToBy, 0, [graph.b])])
         h.editor.undo()
         h.settleLights()
-        expectEqual(h.lit, [Lit(NeighborLights.pointsTo, 0, [graph.a]), Lit(NeighborLights.pointedToBy, 0, [graph.b])])
+        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.a]), Lit(lights.pointedToBy, 0, [graph.b])])
     },
     test("hovering a row of the table of contents does the same: a row of the board shown hovers its shape, a row of the subboard's board outlines its card faintly") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let graph = Graph()
         let h = try shipped(graph.file, pasteboard)
+        let lights = try Lights(h.editor.registry)
         let contents = try require(h.editor.tableOfContents)
         contents.hover(graph.a)
         h.settleLights()
         expectEqual(h.lit.count, 5)
-        expectEqual(h.lit.first, Lit(NeighborLights.pointsTo, 0, [graph.b, graph.c, graph.ab, graph.ac]))
+        expectEqual(h.lit.first, Lit(lights.pointsTo, 0, [graph.b, graph.c, graph.ab, graph.ac]))
         contents.endHover(graph.a)
         h.wait(0)
         expectEqual(h.lit, [])
@@ -253,7 +288,7 @@ private struct Graph {
         h.settleLights()
         expectEqual(h.editor.hovered, nil)
         expectEqual(h.editor.hoveredElsewhere, graph.g)
-        expectEqual(h.lit, [Lit(NeighborLights.mentionedBy, 0, [graph.a])])
+        expectEqual(h.lit, [Lit(lights.mentionedBy, 0, [graph.a])])
         expectEqual(h.editor.outlines.faintShapes, [graph.s], "the card holding it")
         contents.endHover(graph.g)
         h.wait(0)
@@ -270,18 +305,19 @@ private struct Graph {
         ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: "Orders"))
         let pill = AnyShapeRecord(ShapeRecord(id: r, props))
         let h = try shipped(CanvasFile(root: CanvasDocument(shapes: [public_, note(x, 0, 1, "Checkout"), pill, arrow(x, r).copy(as: into)])), pasteboard)
+        let lights = try Lights(h.editor.registry)
         // The pill's arrow into it is, to the graph, an arrow into the note it stands for.
         h.editor.hovered = target
         h.settleLights()
-        expectEqual(h.lit, [Lit(NeighborLights.pointedToBy, 0, [x, r, into])])
+        expectEqual(h.lit, [Lit(lights.pointedToBy, 0, [x, r, into])])
         // Checkout points to the note, as the graph reads it, and to the pill, as drawn.
         h.editor.hovered = x
         h.settleLights()
-        expectEqual(h.lit, [Lit(NeighborLights.pointsTo, 0, [target, r, into])])
+        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [target, r, into])])
         // The pill stands for the note, and the arrow is into it as drawn.
         h.editor.hovered = r
         h.settleLights()
-        expectEqual(h.lit, [Lit(NeighborLights.pointsTo, 0, [target]), Lit(NeighborLights.pointedToBy, 0, [x, into])])
+        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [target]), Lit(lights.pointedToBy, 0, [x, into])])
     },
     test("what's outlined is drawn: a note's first ring green and its second purple, 4 and 8 points off its edge, in the app's own editor") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -292,6 +328,7 @@ private struct Graph {
         let editor = CanvasEditor(registry: try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel()), file: graph.file,
                                   scheduler: scheduler)
         expectEqual(editor.outlineGap, 4, "what ships")
+        let lights = try Lights(editor.registry)
         editor.camera = Camera(origin: CGPoint(x: -100, y: -100), zoom: 0.8)
         editor.hovered = graph.a
         scheduler.advance(by: .zero)
@@ -302,8 +339,8 @@ private struct Graph {
         let right = (800 + 200 + 100) * 0.8, middle = (400 + 100 + 100) * 0.8
         @MainActor func color(_ x: CGFloat) -> [Int] { pixel(drawn, at: CGPoint(x: right + x, y: middle)) }
         // The lights are drawn in the light appearance's values (`renderBitmap` is aqua), each line 2 points wide: 3 to 5 out and 7 to 9.
-        @MainActor func ink(_ light: NSColor) -> [Int] { Array(swatch(light, in: .aqua).prefix(3)) }
-        let first = ink(NeighborLights.pointsTo), second = ink(NeighborLights.pointedToBy)
+        @MainActor func ink(_ color: NSColor) -> [Int] { Array(swatch(color, in: .aqua).prefix(3)) }
+        let first = ink(lights.pointsTo), second = ink(lights.pointedToBy)
         for x in [3.5, 4.5] { expectEqual(Array(color(x).prefix(3)), first, "ring 0, in the first light's green, \(x) out") }
         for x in [7.5, 8.5] { expectEqual(Array(color(x).prefix(3)), second, "ring 1, in the second light's purple, \(x) out") }
         // Where the line isn't, the canvas is the canvas's: between the rings, and past the second.

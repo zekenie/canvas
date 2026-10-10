@@ -134,11 +134,18 @@ func testLights() -> [NeighborLight] {
     ]
 }
 
+/// A plugin that gives Neighbors `lights`, in order, as the plugins that own the edges give theirs.
+func lightsPlugin(_ lights: [NeighborLight]) -> Contributor {
+    Contributor(id: "lights") { registrar in
+        for light in lights { registrar.neighborLight(color: light.color, query: light.query) }
+    }
+}
+
 /// An editor of `file` with the keyboard and the selection (a hover), Topology, the fixtures and the
-/// engine, then Neighbors with `lights`.
+/// engine, then Neighbors and a plugin that gives it `lights`.
 @MainActor func neighborHarness(_ file: CanvasFile, lights: [NeighborLight] = testLights(), queries: Bool = true) throws -> EditorHarness {
     try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), LinksPlugin(), PocketsPlugin(), CorralsPlugin(),
-                                NamingPlugin(), graphPlugin()] + (queries ? [QueriesPlugin()] : []) + [NeighborsPlugin(lights: lights)], file: file)
+                                NamingPlugin(), graphPlugin()] + (queries ? [QueriesPlugin()] : []) + [NeighborsPlugin(), lightsPlugin(lights)], file: file)
 }
 
 // MARK: Records

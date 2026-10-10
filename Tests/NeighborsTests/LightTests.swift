@@ -196,6 +196,19 @@ struct Nest {
         h.settle()
         expectEqual(h.lit, [Lit(.into, 0, [star.c, star.l2])])
     },
+    test("lights are plugins' contributions, in plugin order and each plugin's own; a list with a light and no Neighbors is refused") {
+        let lights = testLights()
+        let registry = try Registry(plugins: [NeighborsPlugin(), lightsPlugin([lights[2]]), Contributor(id: "more-lights") { registrar in
+            registrar.neighborLight(color: lights[0].color, query: lights[0].query)
+            registrar.neighborLight(color: lights[1].color, query: lights[1].query)
+        }])
+        expectEqual(registry.neighborLights.map(\.color), [Light.quotes.color, Light.out.color, Light.into.color])
+        expectEqual(registry.neighborLights.map { $0.query("#x") }, [lights[2], lights[0], lights[1]].map { $0.query("#x") })
+        expectEqual(try Registry(plugins: [NeighborsPlugin()]).neighborLights.count, 0)
+        expectThrows(RegistryError.ownerNotInstalled(point: "NeighborLights", owner: .neighbors, contributor: "lights")) {
+            _ = try Registry(plugins: [lightsPlugin(lights)])
+        }
+    },
     test("a shape deleted while lit is dropped from the lights at once: it needs no new answer") {
         let star = Star()
         let h = try neighborHarness(star.file())
