@@ -5,13 +5,13 @@ import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import Clipboard
-import Composition
 import CoreGraphics
 import Foundation
 import LanguageModels
 import Locking
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import Subboards
 import TableOfContents

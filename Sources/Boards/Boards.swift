@@ -65,7 +65,7 @@ extension BoardTab: DetailTab {
 
 /// A horizontal any board-owning kind opts into (`x.opensBoard(…)`): opening its shapes shows their
 /// boards, ⌘↑ goes back up, and the path over the canvas (`BoardPath`) shows where you are.
-public struct BoardsPlugin: CanvasPlugin {
+public struct BoardsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .boards }
 

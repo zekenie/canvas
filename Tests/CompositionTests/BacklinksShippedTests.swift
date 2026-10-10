@@ -1,11 +1,11 @@
 import AppKit
 import Canvas
 import CanvasTesting
-import Composition
 import DetailPanel
 import LanguageModels
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import Subboards
 import TestKit

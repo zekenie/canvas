@@ -245,7 +245,7 @@ extension PluginRegistrar {
 /// ⌘F, ⌘G and ⇧⌘G (Edit › Find's items), the state they drive (`editor.find`), and the
 /// highlights. Its panel (`FindPanel`) is in the detail panel's place while Find is open, from a
 /// plugin of its own (`FindPanelPlugin`).
-public struct FindPlugin: CanvasPlugin {
+public struct FindPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .findInBoards }
 

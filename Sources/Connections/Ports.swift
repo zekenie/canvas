@@ -355,7 +355,7 @@ extension CanvasEditor {
 /// A horizontal any kind can opt into: ports, dots on its shapes' sides that a drag connects from,
 /// on channels that say what may connect to what. The connector (arrows, through `ArrowPortsPlugin`)
 /// draws the connections. Needs Selection, whose canvas buttons the dots are.
-public struct PortsPlugin: CanvasPlugin {
+public struct PortsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .ports }
 

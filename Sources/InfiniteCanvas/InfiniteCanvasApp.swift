@@ -1,13 +1,14 @@
 import AppKit
-import Canvas
+@_spi(Product) import Canvas
 import CanvasUI
-import Composition
 import HostSlots
 import SwiftUI
 
 /// A document app: each board is a file (`BoardDocument`), in its own window, with the shipped
-/// plugins. AppKit runs it, so the menus and Open Recent are AppKit's; each window's content is
-/// SwiftUI.
+/// plugins: the product's list, which the build put in this executable, each plugin made by its
+/// name (`ShippedList`). The app imports none of them: what it takes of one comes through the
+/// registry (the host's slots). AppKit runs it, so the menus and Open Recent are AppKit's; each
+/// window's content is SwiftUI.
 @main
 @MainActor
 enum InfiniteCanvasApp {
@@ -18,12 +19,12 @@ enum InfiniteCanvasApp {
     static func main() {
         let registry: Registry
         do {
-            registry = try ShippedPlugins.registry(model: ShippedPlugins.anthropicModel)
+            registry = try Registry(plugins: ShippedList.plugins())
             BoardDocument.configuration = BoardConfiguration(registry: registry) { AnyView(ContentView(board: $0)) }
             delegate.settings = SettingsWindow(registry: registry)
             delegate.welcomeBoard = registry.welcomeBoard
         } catch {
-            fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
+            fatalError("The shipped plugins don't load or don't register: \(error)")   // CompositionTests catches this first
         }
         let server = CommandServer(commands: CommandServer.Commands(registry: registry))
         do {

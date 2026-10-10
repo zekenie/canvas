@@ -4,7 +4,7 @@ import Boards
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Composition
+import Clipboard
 import Connections
 import CoreGraphics
 import DetailPanel
@@ -12,9 +12,11 @@ import Geometry
 import HostSlots
 import LanguageModels
 import Mentions
+import QueryTranslation
 import References
 import Schemas
 import Selection
+import ShippedTesting
 import StickyNotes
 import Subboards
 import SwiftUI
@@ -24,8 +26,32 @@ import Titles
 import Validation
 
 @MainActor let shippedTests = Suite("Shipped plugins", [
-    test("the shipped plugin list registers without conflicts") {
-        _ = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+    test("the product's list loads: each plugin it names is found in this executable and made, in its order, and the list registers without conflicts") {
+        let names = try require(ShippedList.names, "the build puts the list in an executable whose line ends + shipped")
+        expectEqual(names.first, "Keyboard.KeyboardPlugin")
+        expectEqual(Set(names).count, names.count, "each once")
+        let plugins = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: .general), LanguageModelsPlugin(model: ScriptedLanguageModel())])
+        expectEqual(plugins.map { String(reflecting: type(of: $0)) }, names, "every line a plugin of that type, in the list's order")
+        expectEqual(ShippedPlugins.plugins(model: ScriptedLanguageModel()).map(\.id), plugins.map(\.id), "which is what every test here is given")
+        _ = try Registry(plugins: plugins)
+    },
+    test("nothing but the app is made of the plugins that reach outside the process: the list won't load without a pasteboard's and a model's of the caller's own") {
+        let outward = ["Clipboard.ClipboardPlugin", "LanguageModels.LanguageModelsPlugin"]
+        expectThrows(ShippedListError.notSupplied(outward)) { _ = try ShippedList.plugins(supplying: []) }
+        expectThrows(ShippedListError.notSupplied([outward[1]])) { _ = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: .general)]) }
+        expectThrows(ShippedListError.notSupplied([outward[0]])) { _ = try ShippedList.plugins(supplying: [LanguageModelsPlugin(model: ScriptedLanguageModel())]) }
+        // The model handed over is the one the editor asks: never the app's.
+        let model = ScriptedLanguageModel()
+        let plugins = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: .general), LanguageModelsPlugin(model: model)])
+        let editor = CanvasEditor(registry: try Registry(plugins: plugins), document: CanvasDocument(), scheduler: ManualScheduler())
+        expect(editor.languageModel as? ScriptedLanguageModel === model)
+        // Any other listed plugin can be handed over too, and takes its place; one the list hasn't is refused.
+        let asked = QueryTranslationPlugin(prompt: "Ask.", referenceRule: "")
+        let swapped = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: .general), LanguageModelsPlugin(model: model), asked])
+        expectEqual(swapped.map(\.id), plugins.map(\.id))
+        expectThrows(ShippedListError.notInList(["CanvasTesting.Contributor"])) {
+            _ = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: .general), LanguageModelsPlugin(model: model), Contributor(id: "more") { _ in }])
+        }
     },
     test("the toolbar is Select V, Hand H, Note N, Subboard B, Frame F, Schema S, Reference R: arrows are drawn from ports") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
@@ -46,7 +72,7 @@ import Validation
         expectEqual(registry.windowSubtitle(for: editor), "Plans", "Boards' name for the board shown")
         expectEqual(registry.settingsPanes.count, 0, "a scripted model needs no key")
         // The app's model brings the key's pane (made only when Settings opens: nothing reads the key here).
-        expectEqual(try Registry(plugins: [LanguageModelsPlugin(model: ShippedPlugins.anthropicModel)]).settingsPanes.map(\.title), ["Anthropic"])
+        expectEqual(try Registry(plugins: [LanguageModelsPlugin()]).settingsPanes.map(\.title), ["Anthropic"])
     },
     test("and what the app takes besides is the plugins' too: the notes' welcome board, linked by arrows, and every plugin's command for its server") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
@@ -64,7 +90,9 @@ import Validation
         let model = ScriptedLanguageModel()
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: model)
         expect(editor.languageModel as? ScriptedLanguageModel === model)
-        let shipped = try require(ShippedPlugins.anthropicModel as? AnthropicModel)
+        // Made from nothing, as the app's list makes it (never asked here: nothing reads the key or reaches the network).
+        let app = CanvasEditor(registry: try Registry(plugins: [LanguageModelsPlugin()]), document: CanvasDocument(), scheduler: ManualScheduler())
+        let shipped = try require(app.languageModel as? AnthropicModel)
         expectEqual(shipped.model, AnthropicModel.haiku)
         expectEqual(shipped.keys, .standard)
     },

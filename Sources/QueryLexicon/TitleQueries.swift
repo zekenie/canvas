@@ -15,7 +15,7 @@ import Titles
 /// `"title"`; a kind both named and derived is derived, since Titles falls back for the shapes
 /// nobody named), read through `registry.title(of:)` on the main actor; and a kind with neither has
 /// none. A title is folded as Titles folds one (`TitleProperty.folded`), a query's too.
-public struct TitleQueriesPlugin: CanvasPlugin {
+public struct TitleQueriesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "title-queries" }
 

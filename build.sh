@@ -33,14 +33,18 @@ typeset -A MAY_USE=(
     language    "foundation surface language wire"
     lexicon     "foundation surface concern language"
     vertical    "foundation surface concern"
-    composition "foundation surface concern language lexicon vertical wire"
-    app         "foundation ui composition wire"
-    appex       "foundation ui composition"
+    app         "foundation ui wire"
+    appex       "foundation ui"
     cli         "wire"
     testsupport "foundation testsupport"
-    test        "wire foundation ui surface concern language lexicon vertical composition testsupport"
+    test        "wire foundation ui surface concern language lexicon vertical testsupport"
 )
 typeset -A EXECUTABLE_LAYER=(app 1 appex 1 test 1 cli 1)
+# The layers whose targets may be the product, or the tests of it: a line that ends `+ shipped`,
+# which links every module the list of what ships names (Package.swift's table, read below).
+typeset -A SHIPPING_LAYER=(app 1 appex 1 test 1 testsupport 1)
+# The layers a listed plugin's module is in.
+typeset -A PLUGIN_LAYER=(surface 1 concern 1 language 1 lexicon 1 vertical 1)
 # What the command line's executable (the cli layer's) is called once it's built: in the app's
 # bundle, at Contents/Helpers/canvas, and build/canvas, a link to it.
 CLI_NAME=canvas
@@ -73,27 +77,82 @@ MANIFEST_READ=$(stat -f '%Fm %z %N' -- Package.swift)
 # --- 1. Read the manifest's target table --------------------------------------------------------
 typeset -a NAMES
 typeset -A DEPS KIND DIR LAYER PATH_ARG SUBJECT
-integer lineno=0
-TARGET_RE='^[[:space:]]*\.(target|executableTarget)\(name: "([A-Za-z][A-Za-z0-9]*)", dependencies: \[(("[A-Za-z][A-Za-z0-9]*"(, "[A-Za-z][A-Za-z0-9]*")*)?)\](, path: "([^"]+)")?\),[[:space:]]*// layer: ([a-z]+)( of ([A-Za-z][A-Za-z0-9]*))?[[:space:]]*$'
+# A target's dependencies as its line writes them (LITERAL), and whether it ends `+ shipped`
+# (SHIPS): its DEPS are then those and every module the list names.
+typeset -A LITERAL SHIPS
+# What ships (`let ships = [` ... `]`): each plugin as Module.Type, in order, and where it's written.
+typeset -a SHIPPED_PLUGINS=()
+typeset -A SHIPPED_AT
+integer lineno=0 in_ships=0 ships_read=0
+TARGET_RE='^[[:space:]]*\.(target|executableTarget)\(name: "([A-Za-z][A-Za-z0-9]*)", dependencies: \[(("[A-Za-z][A-Za-z0-9]*"(, "[A-Za-z][A-Za-z0-9]*")*)?)\]( \+ shipped)?(, path: "([^"]+)")?\),[[:space:]]*// layer: ([a-z]+)( of ([A-Za-z][A-Za-z0-9]*))?[[:space:]]*$'
+SHIPS_ROW_RE='^[[:space:]]*("[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]*",[[:space:]]*)+$'
 while IFS= read -r line || [[ -n $line ]]; do
     lineno+=1
     [[ $line =~ '^[[:space:]]*//' ]] && continue
-    if [[ $line =~ $TARGET_RE ]]; then
+    if (( in_ships )); then
+        if [[ $line == ']' ]]; then
+            in_ships=0
+        elif [[ $line =~ $SHIPS_ROW_RE ]]; then
+            for plugin in ${=${line//[\",]/ }}; do
+                (( ${+SHIPPED_AT[$plugin]} )) && die "Package.swift:$lineno: $plugin ships twice (also on line $SHIPPED_AT[$plugin])"
+                SHIPPED_PLUGINS+=$plugin
+                SHIPPED_AT[$plugin]=$lineno
+            done
+        elif [[ -n ${line//[[:space:]]/} ]]; then
+            die "Package.swift:$lineno: a line of what ships is plugins as \"Module.Type\", each followed by a comma, or a comment on its own:\n    $line"
+        fi
+    elif [[ $line == 'let ships = [' ]]; then
+        (( ships_read )) && die "Package.swift:$lineno: what ships is written once"
+        in_ships=1 ships_read=1
+    elif [[ $line =~ $TARGET_RE ]]; then
         name=$match[2]
         (( ${+DEPS[$name]} )) && die "Package.swift:$lineno: $name is declared twice"
         NAMES+=$name
         KIND[$name]=$match[1]
-        DEPS[$name]=${${match[3]//\"/}//,/}
-        PATH_ARG[$name]=$match[7]
-        DIR[$name]=${match[7]:-Sources/$name}
-        LAYER[$name]=$match[8]
-        [[ -n $match[10] ]] && SUBJECT[$name]=$match[10]
+        LITERAL[$name]=${${match[3]//\"/}//,/}
+        [[ -n $match[6] ]] && SHIPS[$name]=1
+        PATH_ARG[$name]=$match[8]
+        DIR[$name]=${match[8]:-Sources/$name}
+        LAYER[$name]=$match[9]
+        [[ -n $match[11] ]] && SUBJECT[$name]=$match[11]
+        DEPS[$name]=$LITERAL[$name]
         (( ${+MAY_USE[$LAYER[$name]]} )) || die "Package.swift:$lineno: unknown layer '$LAYER[$name]' (layers: ${(k)MAY_USE})"
     elif [[ $line =~ '\.[A-Za-z]+\([[:space:]]*name:' || $line == *[Tt]arget\(* ]]; then
         die "Package.swift:$lineno: this target doesn't match the one-line form at the top of the file:\n    $line"
+    elif [[ $line == *'ships = '* ]]; then
+        die "Package.swift:$lineno: what ships opens with exactly \`let ships = [\`, on a line of its own:\n    $line"
     fi
 done < Package.swift
 (( ${#NAMES} )) || die "no targets in Package.swift"
+(( in_ships )) && die "Package.swift: what ships never closes (a line that is only \`]\`)"
+(( ${#SHIPPED_PLUGINS} )) || die "Package.swift lists no plugin that ships (\`let ships = [\` ... \`]\`, before the targets)"
+
+# The modules the list names, once each, in its order: what `+ shipped` links.
+typeset -aU SHIPPED_MODULES=()
+for plugin in $SHIPPED_PLUGINS; do
+    module=${plugin%%.*}
+    (( ${+DEPS[$module]} )) || die "Package.swift:$SHIPPED_AT[$plugin]: $plugin ships, but there's no module $module"
+    (( ${+PLUGIN_LAYER[$LAYER[$module]]} )) || die "Package.swift:$SHIPPED_AT[$plugin]: $plugin ships, but $module is a $LAYER[$module] module: a plugin's is a surface, concern, language, lexicon or vertical"
+    SHIPPED_MODULES+=$module
+done
+for name in $NAMES; do
+    (( ${+SHIPS[$name]} )) || continue
+    (( ${+SHIPPING_LAYER[$LAYER[$name]]} )) || die "$name ($LAYER[$name]) can't say + shipped: only the app, its extension, and the tests of what ships and their support are made of the list"
+    for dep in ${=LITERAL[$name]}; do
+        (( ${SHIPPED_MODULES[(Ie)$dep]} )) && die "$name lists $dep, which + shipped already links: leave it out of the line"
+    done
+    DEPS[$name]="${LITERAL[$name]:+$LITERAL[$name] }${SHIPPED_MODULES[*]}"
+done
+# What depends on a library made of the list is made of it too, and says so.
+for name in $NAMES; do
+    for dep in ${=LITERAL[$name]}; do
+        (( ${+SHIPS[$dep]} && ! ${+SHIPS[$name]} )) && die "$name depends on $dep, which is made of what ships (+ shipped), so its line ends + shipped too"
+    done
+done
+# The list as text, a plugin a line: what the product's executables carry (below: SHIPPED_TEXTS).
+SHIPPED_LIST=build/shipped/plugins.txt
+mkdir -p ${SHIPPED_LIST:h}
+[[ -f $SHIPPED_LIST && "$(<$SHIPPED_LIST)" == "${(F)SHIPPED_PLUGINS}" ]] || print -rl -- $SHIPPED_PLUGINS > $SHIPPED_LIST
 
 # --- 2. Check each target's place, layer and dependencies ----------------------------------------
 for name in $NAMES; do
@@ -114,7 +173,8 @@ for name in $NAMES; do
     else
         [[ $KIND[$name] == target ]] || die "$name: layer $layer must be a .target"
     fi
-    typeset -a deps=(${=DEPS[$name]})
+    # What its line writes: the modules + shipped adds are the list's, checked where it's read.
+    typeset -a deps=(${=LITERAL[$name]})
     typeset -aU distinct=($deps)
     (( ${#deps} == ${#distinct} )) || die "$name lists a dependency twice"
     for dep in $deps; do
@@ -162,20 +222,33 @@ for name in $ORDER; do
     for dep in ${=DEPS[$name]}; do acc+=($dep ${=CLOSURE[$dep]}); done
     CLOSURE[$name]="${acc[*]}"
 done
+# What a module compiles against, and may name: its dependencies, all the way down. The app and its
+# extension link what ships and name none of it, so theirs leaves the list's modules out: a plugin's
+# types aren't on their include path at all.
+typeset -A VISIBLE
+for name in $ORDER; do
+    VISIBLE[$name]=$CLOSURE[$name]
+    (( ${+SHIPS[$name]} )) && [[ $LAYER[$name] == (app|appex) ]] || continue
+    typeset -aU acc=()
+    for dep in ${=LITERAL[$name]}; do acc+=($dep ${=CLOSURE[$dep]}); done
+    VISIBLE[$name]="${acc[*]}"
+done
 
 # The product's text files (Shipped/*.txt): what the product says in a file, not in a module
-# (--ask's prompt, whose examples name the shipped kinds, which no module knows all of). Each is put
-# in every executable that is the product, as a section of its text segment named for the file
-# (`__`, then its name with `-` as `_`), where the core's ShippedText reads it back: no path to look
-# under, and no module that holds it. A section's name is at most 16 characters, so a file's is at
-# most 14.
+# (--ask's prompt, whose examples name the shipped kinds, which no module knows all of), and the list
+# of what ships, as text (SHIPPED_LIST, written above from Package.swift's table). Each is put in
+# every executable that is the product, as a section of its text segment named for the file (`__`,
+# then its name with `-` as `_`), where the core's ShippedText reads it back: no path to look under,
+# and no module that holds it. A section's name is at most 16 characters, so a file's is at most 14.
 SHIPPED_TEXTS=(Shipped/*.txt(N))
 for shipped in $SHIPPED_TEXTS; do
     [[ ${shipped:t:r} =~ '^[a-z][a-z0-9-]{0,13}$' ]] ||
         die "$shipped: a shipped text's name is lowercase letters, digits and hyphens, at most 14 characters (it names a section of the binary)"
+    [[ ${shipped:t} != ${SHIPPED_LIST:t} ]] || die "$shipped: that name is the list of what ships, which is Package.swift's table"
 done
-# The executables that are the product: those built on the shipped plugin list.
-is_product() { [[ $KIND[$1] != target && " $CLOSURE[$1] " == *" Composition "* ]] }
+SHIPPED_TEXTS+=($SHIPPED_LIST)
+# The executables that are the product: those whose lines end + shipped.
+is_product() { [[ $KIND[$1] != target ]] && (( ${+SHIPS[$1]} )) }
 
 # A test target named after a module (<M>Tests) tests M on its own: it may use M, what M uses,
 # and testsupport and ui modules, so that (say) SelectionTests can't lean on a shape kind. One named
@@ -384,17 +457,34 @@ audit_sources() {
         (( ${#hits} )) || return 0
         print -rn -- "$(at $hits[1]): "
     }
+    # What + shipped adds to a line is linked, not imported: the app and its extension import none
+    # of it (they name no plugin), and the tests of what ships, and their support, import the modules
+    # they call and no more need be said.
     for name in $ORDER; do
         typeset -aU used=()
         for imported in ${(f)"$(<$AUDITED/modules/$name.imports)"}; do
             (( ${+DEPS[$imported]} )) || continue                      # a system module
             used+=$imported
-            (( ${${=DEPS[$name]}[(Ie)$imported]} )) ||
+            if (( ${${=LITERAL[$name]}[(Ie)$imported]} )); then
+                continue
+            elif (( ${+SHIPS[$name]} && ${SHIPPED_MODULES[(Ie)$imported]} )); then
+                [[ $LAYER[$name] == (app|appex) ]] &&
+                    problems+="$(import_site $name $imported)$name imports $imported, a module of what ships: the $LAYER[$name] names no plugin (what it takes of one comes through the registry)"
+            else
                 problems+="$(import_site $name $imported)$name imports $imported, but Package.swift doesn't list it as a dependency of $name"
+            fi
         done
-        for dep in ${=DEPS[$name]}; do
+        for dep in ${=LITERAL[$name]}; do
             (( ${used[(Ie)$dep]} )) || problems+="$name lists $dep in Package.swift but never imports it"
         done
+    done
+
+    # Every plugin that ships is a public struct of its module that can be made with no arguments
+    # (a ListedPlugin, or an OutwardPlugin, which is one): the core makes it by its name, so a name
+    # with nothing behind it would be found only when the product starts.
+    for plugin in $SHIPPED_PLUGINS; do
+        declared=$(matching "^$DIR[${plugin%%.*}]/[^:]*:[0-9]+:[[:space:]]*public[[:space:]]+struct[[:space:]]+${plugin#*.}[[:space:]]*:[^{]*[^A-Za-z0-9_](ListedPlugin|OutwardPlugin)([^A-Za-z0-9_]|\$)")
+        [[ -n $declared ]] || problems+="Package.swift:$SHIPPED_AT[$plugin]: $plugin ships, but ${plugin%%.*} declares no \`public struct ${plugin#*.}: ListedPlugin\` (a plugin made with no arguments)"
     done
 
     SHADOWING="${(j:|:)NAMES}|${(j:|:)RESERVED_TYPE_NAMES}"
@@ -445,7 +535,7 @@ audit_sources() {
             for id in ${(k)ID_OWNERS}; do
                 [[ ${hit#*:*:} == *\"$id\"* ]] || continue
                 for owner in ${=ID_OWNERS[$id]}; do
-                    [[ $owner == $user ]] || (( ${${=CLOSURE[$user]}[(Ie)$owner]} )) ||
+                    [[ $owner == $user ]] || (( ${${=VISIBLE[$user]}[(Ie)$owner]} )) ||
                         problems+="$(at $hit): \"$id\" is $owner's id, but $user doesn't depend on $owner"
                 done
             done
@@ -453,11 +543,22 @@ audit_sources() {
     fi
     # The core's host API (what CanvasView calls: input, cursor, drawing) is `@_spi(Host)`. Only the
     # hosting view and tests may `@_spi(Host) import` it; foundation modules declare it. No plugin may
-    # use @_spi at all, so the host API stays out of every plugin's reach.
+    # use @_spi at all, so the host API stays out of every plugin's reach. Loading the list of what
+    # ships whole, its plugins that reach outside the process (the network, the user's pasteboard) as
+    # the product has them, is `@_spi(Product)`: the app's and its extension's alone, so a test can't
+    # get the real model or the user's pasteboard by leaving an argument out.
     for hit in ${(f)"$(matching '@_spi[[:space:]]*\(')"}; do
         user=${${hit#*/}%%/*}
-        [[ $LAYER[$user] == (foundation|ui|testsupport|test) ]] ||
-            problems+="$hit  <- only the ui, testsupport and test layers may import SPI (the core's host API)"
+        if [[ $hit =~ '@_spi[[:space:]]*\([[:space:]]*Product[[:space:]]*\)' ]]; then
+            [[ $LAYER[$user] == (foundation|app|appex) ]] ||
+                problems+="$hit  <- only the app and its extension load what ships whole (@_spi(Product)); hand over your own plugins for the ones that reach outside the process: ShippedList.plugins(supplying:)"
+            # What loads the list is made of it: without + shipped it would link no plugin and carry no list.
+            [[ $LAYER[$user] != (app|appex) ]] || (( ${+SHIPS[$user]} )) ||
+                problems+="$hit  <- $user loads what ships, so its line in Package.swift ends + shipped"
+        else
+            [[ $LAYER[$user] == (foundation|ui|testsupport|test) ]] ||
+                problems+="$hit  <- only the ui, testsupport and test layers may import SPI (the core's host API)"
+        fi
     done
     (( ${#problems} )) && { print -u2 -l -- $problems; die "audit failed (${#problems} problems)" }
     print -r -- "$PASSED" > $AUDITED/passed
@@ -472,19 +573,22 @@ zsystem flock -u $AUDIT_LOCK
 # --- 6. Read-only modes ---------------------------------------------------------------------------
 MODE=${1:-app}
 case $MODE in
-audit) print "audit passed: ${#NAMES} modules, acyclic, layers respected, SwiftPM agrees, imports and ids match Package.swift"; exit 0 ;;
+audit) print "audit passed: ${#NAMES} modules, acyclic, layers respected, SwiftPM agrees, imports and ids match Package.swift, ${#SHIPPED_PLUGINS} plugins ship"; exit 0 ;;
 graph)
+    # A line's own dependencies; what + shipped links is the product's membership, not a design
+    # dependency, so it's said once, as the list, after the modules.
     for name in $ORDER; do
         typeset -a users=()
-        for other in $ORDER; do (( ${${=DEPS[$other]}[(Ie)$name]} )) && users+=$other; done
-        print "${(r:12:)LAYER[$name]} ${(r:17:)name} -> ${${DEPS[$name]:-(nothing)}// /, }    <- ${${(j:, :)users}:-(nothing)}"
+        for other in $ORDER; do (( ${${=LITERAL[$other]}[(Ie)$name]} )) && users+=$other; done
+        print "${(r:12:)LAYER[$name]} ${(r:17:)name} -> ${${LITERAL[$name]:-(nothing)}// /, }${SHIPS[$name]:+ + shipped}    <- ${${(j:, :)users}:-(nothing)}"
     done
+    print "\nshipped (${#SHIPPED_PLUGINS} plugins, in order): ${(j:, :)SHIPPED_PLUGINS}"
     exit 0 ;;
 dot)
     print "digraph modules {\n  rankdir=BT; node [shape=box];"
     for name in $ORDER; do
-        print "  \"$name\" [label=\"$name\\\\n$LAYER[$name]\"];"
-        for dep in ${=DEPS[$name]}; do print "  \"$name\" -> \"$dep\";"; done
+        print "  \"$name\" [label=\"$name\\\\n$LAYER[$name]${SHIPS[$name]:+\\\\n+ shipped}\"];"
+        for dep in ${=LITERAL[$name]}; do print "  \"$name\" -> \"$dep\";"; done
     done
     print "}"; exit 0 ;;
 list)
@@ -577,8 +681,8 @@ as_begun() {
 build_job() {
     local name=${1%:*} stage=${1##*:} dir=$OUT/${1%:*} dep src
     [[ -n ${DIR[$name]:-} ]] || { print -u2 "build.sh: no module $name (job $1)"; return 1 }
-    local srcs=($DIR[$name]/**/*.swift(N)) includes=(${(@)${=CLOSURE[$name]}/#/-I$OUT/})
-    INPUTS=($srcs); for dep in ${=CLOSURE[$name]}; do INPUTS+=($OUT/$dep/$dep.swiftmodule); done
+    local srcs=($DIR[$name]/**/*.swift(N)) includes=(${(@)${=VISIBLE[$name]}/#/-I$OUT/})
+    INPUTS=($srcs); for dep in ${=VISIBLE[$name]}; do INPUTS+=($OUT/$dep/$dep.swiftmodule); done
     case $stage in
     interface)
         local emit=($SWIFTC -parse-as-library -emit-module -Xfrontend -experimental-skip-non-inlinable-function-bodies-without-types
@@ -639,7 +743,8 @@ build_job() {
             libs+=(-Xlinker -force_load -Xlinker $OUT/$dep/lib$dep.a)
             INPUTS+=($OUT/$dep/lib$dep.a)
         done
-        # The product's text files, each a section of the binary (above: SHIPPED_TEXTS).
+        # The product's text files and its list of plugins, each a section of the binary (above:
+        # SHIPPED_TEXTS).
         local texts=() shipped
         if is_product $name; then
             for shipped in $SHIPPED_TEXTS; do
@@ -672,12 +777,12 @@ for name in $ORDER; do
     (( ${WANTED[(Ie)$name]} )) || continue
     # Braces around each name: `$name:link` would be $name lowercased (zsh's :l), then "ink". Arrays,
     # so ${^...} of no dependencies is no jobs.
-    deps=(${=DEPS[$name]}); closure=(${=CLOSURE[$name]})
+    deps=(${=DEPS[$name]}); closure=(${=CLOSURE[$name]}); visible=(${=VISIBLE[$name]})
     if [[ $KIND[$name] == target ]]; then
         add_job ${name}:interface ${^deps}:interface
         add_job ${name}:object ${^deps}:interface
     else
-        add_job ${name}:object ${^deps}:interface
+        add_job ${name}:object ${^visible}:interface
         add_job ${name}:link ${name}:object ${^closure}:object
     fi
 done

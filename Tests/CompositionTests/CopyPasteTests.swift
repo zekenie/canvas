@@ -3,13 +3,13 @@ import Canvas
 import CanvasTesting
 import CanvasUI
 import Clipboard
-import Composition
 import Connections
 import CoreGraphics
 import LanguageModels
 import Mentions
 import Schemas
 import Selection
+import ShippedTesting
 import StickyNotes
 import TableOfContents
 import TestKit

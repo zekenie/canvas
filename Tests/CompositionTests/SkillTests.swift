@@ -2,12 +2,12 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasUI
-import Composition
 import DrawScript
 import Foundation
 import HostSlots
 import LanguageModels
 import QueryLanguage
+import ShippedTesting
 import TestKit
 
 // The canvas skill (.claude/skills/canvas) teaches agents `canvas draw` and `canvas query` by

@@ -2,12 +2,12 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasUI
-import Composition
 import Connections
 import Foundation
 import HostSlots
 import Publishing
 import References
+import ShippedTesting
 import Subboards
 import TestKit
 import Titles
@@ -929,7 +929,70 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
         let edges = try json(project.appendingPathComponent("digest.json"))["edges"]?.arrayValue ?? []
         expect(edges.contains { $0["from"] == "Kit.swift" && $0["to"] == "Core.swift" }, "Kit.swift's use of Core.swift is an edge of the digest: \(edges)")
     },
+
+    test("a package whose product is a list of plugins, as this one is: a line that ends + shipped type-checks against the plugins' modules, and the model keeps the line's own dependencies") {
+        let folder = try scratchFolder("shipped")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let repo = folder.appendingPathComponent("repo"), scratch = folder.appendingPathComponent("index"), model = folder.appendingPathComponent("model.json")
+        func write(_ path: String, _ text: String) throws {
+            let file = repo.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try text.write(to: file, atomically: true, encoding: .utf8)
+        }
+        // App names no plugin and is made of the list; its tests call Kit, which their line doesn't write
+        try write("Package.swift", listedPackage(testsShip: true))
+        try write("Sources/Core/Core.swift", "public func core() -> Int { 1 }\n")
+        try write("Sources/Kit/Kit.swift", "import Core\n\npublic struct KitPlugin {\n    public init() {}\n    public var count: Int { core() + 1 }\n}\n")
+        try write("Sources/App/main.swift", "import Core\n\nprint(core())\n")
+        try write("Tests/AppTests/AppTests.swift", "import Core\nimport Kit\n\nfunc both() -> Int { core() + KitPlugin().count }\n")
+        let scripts = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("dogfood/model")
+        let sdk = (try? String(contentsOfFile: "build/.sdk", encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        @MainActor func python(_ script: String, _ arguments: [String]) throws -> ProcessOutput {
+            try run(URL(fileURLWithPath: "/usr/bin/env"), ["python3", scripts.appendingPathComponent(script).path] + arguments,
+                    environment: sdk.map { ["SDKROOT": $0] } ?? [:], timeout: 280)
+        }
+        let built = try python("swift_index_build.py", [repo.path, scratch.path])
+        expectEqual(built.status, 0, built.output + built.error)
+        expect(built.output.contains("interfaces: made 2 of 2 (Core, Kit)\n") && built.output.contains("indexes: made 4 of 4 (App, AppTests, Core, Kit)\n"), built.output)
+
+        // what the board draws its arrows from is what each line writes: the app's card points at Core, never at every plugin
+        let analyzed = try python("swift_analyze.py", [repo.path, model.path])
+        expectEqual(analyzed.status, 0, analyzed.output + analyzed.error)
+        let modules = try json(model)["modules"]?.arrayValue ?? []
+        func deps(_ name: String) -> [String] { (modules.first { $0["name"] == .string(name) }?["deps"]?.arrayValue ?? []).compactMap(\.stringValue) }
+        expectEqual(deps("App"), ["Core"])
+        expectEqual(deps("AppTests"), ["Core"])
+        expectEqual(deps("Kit"), ["Core"])
+
+        // without + shipped, a line's own dependencies are all a compile of it reads
+        try write("Package.swift", listedPackage(testsShip: false))
+        let undeclared = try python("swift_index_build.py", [repo.path, scratch.path])
+        expect(undeclared.status != 0 && undeclared.output.contains("index AppTests: failed") && undeclared.output.contains("no such module 'Kit'"), undeclared.output + undeclared.error)
+    },
 ])
+
+/// A package whose product is a list of plugins, written as this repository's is: the table of what ships, a module a plugin is in
+/// (Kit, on Core), an app made of the list that names no plugin, and its tests, made of the list too unless `testsShip` is false.
+private func listedPackage(testsShip: Bool) -> String {
+    """
+    // swift-tools-version: 5.9
+    import PackageDescription
+
+    let ships = [
+        // the one plugin
+        "Kit.KitPlugin",
+    ]
+    let shipped = ships.map { Target.Dependency(stringLiteral: String($0.prefix { $0 != "." })) }
+
+    let package = Package(name: "Listed", targets: [
+        .target(name: "Core"),
+        .target(name: "Kit", dependencies: ["Core"]),
+        .executableTarget(name: "App", dependencies: ["Core"] + shipped),
+        .testTarget(name: "AppTests", dependencies: ["Core"]\(testsShip ? " + shipped" : "")),
+    ])
+
+    """
+}
 
 /// A package of three modules and a test target, as `Package.swift` declares them: Kit depends on Core, KitTests on Kit, and Loose
 /// (when asked for) on nothing.

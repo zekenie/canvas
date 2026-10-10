@@ -11,7 +11,8 @@ and made again only when that isn't what is there now. So a run after no change 
 function makes its module again and no other, since its interface comes out the same bytes (build.sh relies on that
 too); and an edit that changes a module's interface makes the modules that depend on it again as well. A compile reads
 no interface but those: a module imports only what Package.swift says it depends on, directly or through another, as
-build.sh has it, so an import that isn't declared fails here and is never an index gone stale. A module is one
+build.sh has it (a line that ends `+ shipped` depends on every module of the plugins that ship too: `links`), so an
+import that isn't declared fails here and is never an index gone stale. A module is one
 whole-module compile (-wmo), which type-checks each file once: left to split a module among the cores, the compiler
 checks much of it once a part, three times the work here for the same index. Deleting <scratch> starts over.
     swift_index_build.py <repo> <scratch>      writes <scratch>/store/<Module>, and says what it made"""
@@ -73,7 +74,8 @@ DECLARATIONS = ['-Xfrontend', '-experimental-skip-non-inlinable-function-bodies-
 
 mods = {t['name']: t for t in parse_package(REPO)}
 for t in mods.values():
-    t['deps'] = [d for d in t['deps'] if d in mods]      # a product from another package can't be built here
+    # What a compile of it reads: what its line writes and, for the product and its tests, the plugins' modules too.
+    t['deps'] = [d for d in t['links'] if d in mods]     # a product from another package can't be built here
 
 # What is no module's goes: what a module since removed or renamed left, which the reader would take for code that is
 # there (and what this kept before it kept a folder a module: one store for them all, and their interfaces side by side).

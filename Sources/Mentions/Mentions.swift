@@ -23,7 +23,7 @@ extension PluginID {
 /// after Titles, whose names it shows, and after the table of contents, whose rows it names. Its
 /// faces are Selection's, so the list needs `SelectionPlugin()` too (and so `KeyboardPlugin()`), its
 /// menu item ContextMenus' (`ContextMenusPlugin()`), and its edges Topology's (`TopologyPlugin()`).
-public struct MentionsPlugin: CanvasPlugin {
+public struct MentionsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .mentions }
 

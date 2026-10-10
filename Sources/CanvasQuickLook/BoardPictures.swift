@@ -1,7 +1,6 @@
 import AppKit
-import Canvas
+@_spi(Product) import Canvas
 import CanvasUI
-import Composition
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -9,14 +8,15 @@ import UniformTypeIdentifiers
 /// drawing must be, and handed back as images, which Quick Look takes on whatever thread it asked on.
 @MainActor
 enum BoardPictures {
-    /// The shipped plugins, as the app has them, so a board looks as it does there. Nothing a picture
-    /// draws asks the model, which in the extension's sandbox could read no key and reach no network,
-    /// nor reads the pasteboard (only copying and pasting do).
+    /// The shipped plugins, as the app has them (the product's list, in this executable too, each
+    /// made by its name), so a board looks as it does there. Nothing a picture draws asks the model,
+    /// which in the extension's sandbox could read no key and reach no network, nor reads the
+    /// pasteboard (only copying and pasting do).
     static let registry: Registry = {
         do {
-            return try ShippedPlugins.registry(model: ShippedPlugins.anthropicModel)
+            return try Registry(plugins: ShippedList.plugins())
         } catch {
-            fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
+            fatalError("The shipped plugins don't load or don't register: \(error)")   // CompositionTests catches this first
         }
     }()
 

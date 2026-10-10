@@ -2,13 +2,13 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Composition
 import Connections
 import Find
 import LanguageModels
 import Mentions
 import Schemas
 import Selection
+import ShippedTesting
 import StickyNotes
 import Subboards
 import TestKit

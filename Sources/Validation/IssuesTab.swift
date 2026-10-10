@@ -5,7 +5,7 @@ import DetailPanel
 /// detail panel, which shows only while the shape has some. A plugin of its own, so a list can
 /// install Validation without the detail panel (the registry refuses a contribution to a point
 /// whose owner isn't installed).
-public struct ValidationDetailsPlugin: CanvasPlugin {
+public struct ValidationDetailsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "validation-details" }
 

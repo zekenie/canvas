@@ -274,7 +274,7 @@ extension KeyboardState: EditorService {
 /// tldraw's), Escape (⌘. too, as anywhere on the Mac) to cancel, ⌘Z and ⇧⌘Z to undo and redo (held,
 /// again and again), and the View menu's zoom keys: ⌘= and ⌘- (held, again and again), ⌘0, and ⇧1
 /// for Zoom to Fit (tldraw's), the number row's 1 whatever the layout types with it.
-public struct KeyboardPlugin: CanvasPlugin {
+public struct KeyboardPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .keyboard }
 

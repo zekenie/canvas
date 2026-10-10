@@ -3,9 +3,9 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Composition
 import HostSlots
 import LanguageModels
+import ShippedTesting
 import SwiftUI
 import TableOfContents
 import TestKit

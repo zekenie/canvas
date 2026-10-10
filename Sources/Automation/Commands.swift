@@ -9,7 +9,7 @@ import HostSlots
 // on a board from a script; `kinds` says what a script can draw, and with what. Other plugins add
 // theirs with `registrar.automationCommand`.
 
-public struct AutomationPlugin: CanvasPlugin {
+public struct AutomationPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .automation }
 

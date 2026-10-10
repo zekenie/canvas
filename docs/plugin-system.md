@@ -70,7 +70,7 @@ maps one onto the other.
 |---|---|---|
 | **Kind** | A plain value type holding a shape's data, defined by its list of properties. It names itself once, with `static let kind`. | `struct StickyNote: BoxShapeProps { frame, text }` |
 | **Definition** | Stateless behavior for a kind: how it draws, where it is, how it's hit, what else it can do. | `StickyNoteDefinition`, conforming to `ShapeDefinition` and `Editable` |
-| **Plugin** | A value that says what it adds, in `register(into:)`. | `struct StickyNotesPlugin: CanvasPlugin` |
+| **Plugin** | A value that says what it adds, in `register(into:)`. | `struct StickyNotesPlugin: ListedPlugin` (a `CanvasPlugin` the product's list can name) |
 | **Extension point** | A typed slot some plugin declares and other plugins fill. The type is the key. | `enum ValidationRules: ExtensionPoint` |
 
 Two more things hold them together:
@@ -122,7 +122,7 @@ extension PatchDefinition: CustomSkeleton {
     }
 }
 
-public struct PatchesPlugin: CanvasPlugin {
+public struct PatchesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "patches" }
 
@@ -214,12 +214,14 @@ TEST_FILTER=Patches ./test.sh
 `main.swift` doesn't pass to `runTests`, which would otherwise never run without a word. [Testing
 plugins](#testing-plugins) has the rest of the kit.
 
-**4. Ship it.** Three edits put it in the app:
+**4. Ship it.** One line puts it in the app, and a test pins what it adds:
 
-- `Package.swift`: add it to Composition's dependencies.
-- [`ShippedPlugins.swift`](../Sources/Composition/ShippedPlugins.swift): import it, and add
-  `PatchesPlugin()` to the list in `ShippedPlugins.plugins(pasteboard:model:)`. The list's order
-  is the toolbar's, and the order overlays draw in.
+- `Package.swift`: add `"Patches.PatchesPlugin",` to the table of what ships (`let ships = [`,
+  before the targets), where its order belongs: the list's order is the toolbar's, and the order
+  overlays draw in. Nothing imports the module to list it. The build puts the list in the app,
+  which makes each plugin by its name ([What ships](#what-ships)), which is why the plugin is a
+  `ListedPlugin`: a public struct that can be made with no arguments. The audit refuses a line
+  with nothing like that behind it.
 - [`ShippedTests.swift`](../Tests/CompositionTests/ShippedTests.swift) pins the toolbar and
   [the registry report](#the-registry): add the new tool, `"Patch (P)"`, and the plugin's line,
   `patches              shape patch · tool patch · shortcut P → tool patch`.
@@ -513,20 +515,20 @@ Each target is one line, with its layer:
 | language | foundation, surface, language, wire | Automation, QueryCommands |
 | lexicon | foundation, surface, concern, language | DrawLexicon, QueryLexicon |
 | vertical | foundation, surface, concern | StickyNotes, Schemas, Subboards, Frames, JumpTo, References, Moving, Reordering |
-| composition | foundation, surface, concern, language, lexicon, vertical, wire | Composition (the shipped plugin list) |
-| app | foundation, ui, composition, wire | InfiniteCanvas |
-| appex | foundation, ui, composition | CanvasQuickLook (an extension the app carries: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk)) |
+| app | foundation, ui, wire | InfiniteCanvas (it names no plugin: its plugins are [the list's](#what-ships), linked in and made by name, `+ shipped`) |
+| appex | foundation, ui | CanvasQuickLook (an extension the app carries: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk); `+ shipped`, as the app is) |
 | cli | wire | CanvasCLI (`canvas`, an executable: it knows the wire, never the app) |
-| testsupport, test | (see Package.swift) | TestKit, CanvasTesting, `*Tests` |
+| testsupport, test | (see Package.swift) | TestKit, CanvasTesting, ShippedTesting (the tests' way to the product's plugins), `*Tests` |
 
 What `./build.sh audit` enforces:
 
 - **No cycles.** The graph is sorted topologically; a cycle is printed as a path.
 - **Layers.** A horizontal can't import a vertical, and a vertical can't import another vertical
   or a language. A surface can't import a concern, a concern can't import a language, and a
-  language can't import a concern: only a lexicon joins a language to concerns. The app reaches
-  plugins only through Composition, and nothing but the app, its Quick Look extension and tests
-  sees CanvasUI.
+  language can't import a concern: only a lexicon joins a language to concerns. The app imports
+  no plugin: its plugins are the list's, made by name, and what it takes of one comes through the
+  registry ([Host slots](#host-slots)). Nothing but the app, its Quick Look extension and tests sees
+  CanvasUI.
 - **A test of a module tests it alone.** `<M>Tests`, or a test target that says it tests a plugin
   of M (`// layer: test of M`, as QueryLexicon's TitleQueriesTests does), may use only M, what M
   uses, and the test-support and ui modules, so a plugin's tests can't lean on a shipped kind.
@@ -556,6 +558,13 @@ What `./build.sh audit` enforces:
 - **The host API is fenced off.** What `CanvasView` calls on the editor (input, the cursor,
   drawing, the delegate) is `@_spi(Host)`. Only modules that `@_spi(Host) import Canvas` see it,
   and only the ui, testsupport and test layers may; a plugin that calls it doesn't compile.
+- **What ships is real.** Every line of the list names a public struct of that module that is a
+  `ListedPlugin`, once, in a module of a plugin layer; a target may end `+ shipped` only if it's the
+  app, its extension, or a test of what ships or its support, and what depends on a library that
+  does says so too; and the app and its extension import none of the list's modules.
+- **Loading the list whole is fenced off.** `ShippedList.plugins()`, which makes the plugins that
+  reach outside the process as the product has them (the model on the network, the clipboard on
+  the user's pasteboard), is `@_spi(Product)`, which only the app and its extension may import.
 - **No shadowing names.** A public type named like a module fails, and so does a public `Task` or
   `Span`, which would shadow Swift's in every module that imports it (a query's place in its text is
   a `QuerySpan` for that reason).
@@ -569,6 +578,57 @@ transitive dependency without declaring it is what the import check above catche
 
 **Adding a module** is [Your first plugin](#your-first-plugin), steps 2 to 4. Every non-app module
 is compiled by `./test.sh`, even before anything depends on it.
+
+### What ships
+
+Which plugins the product is made of, and in which order, is a table in `Package.swift`, before
+the targets. It's the only list of them, and no module imports the plugins to make it:
+
+```swift
+let ships = [
+    // First: every key is registered with Keyboard; the others build on Selection, and its
+    // handles draw below their view overlays.
+    "Keyboard.KeyboardPlugin", "Selection.SelectionPlugin",
+    // What connects to what (arrows, mentions), for the whole file: ...
+    "Topology.TopologyPlugin",
+    ...
+]
+```
+
+Each entry is `Module.Type`, a public struct that can be made with no arguments. The comments say
+why each sits where it does: the order is the toolbar's, the order overlays draw in, and each
+plugin after the ones whose points it fills.
+
+- **A plugin a list can name** is a `ListedPlugin`: a `CanvasPlugin` with an `init()`. Every
+  shipped plugin is one. A plugin that takes arguments (a test's fixture, one a function makes)
+  stays a `CanvasPlugin`, handed to a registry by whoever makes it.
+- **Made by name.** `build.sh` writes the table out as text and puts it in every executable that
+  is the product, as it does the product's text files (`Shipped/*.txt`, `ShippedText`). There the core's
+  `ShippedList` turns each line into the type, found in the binary by its mangled name with no
+  import, and makes one. Every library links whole, so a type is in the binary whether or not
+  anything names it. A line that isn't `Module.Type`, a name with no type behind it, or a type
+  that isn't a `ListedPlugin` is a `ShippedListError` that names the line.
+- **`+ shipped`.** A target whose line ends `+ shipped` is the product, or the tests of it: every
+  module the list names links into it, though nothing need import them. Five say it: the app and
+  its Quick Look extension, which import none of those modules and don't compile against them;
+  and CompositionTests, the benchmarks and their support (ShippedTesting), which import the ones
+  they call.
+- **What reaches outside the process.** Two listed plugins, made from nothing, reach outside: the
+  language model's (Claude, over the network, with the key from Settings) and the clipboard's (the
+  system's pasteboard). Each says so (`OutwardPlugin`). Only the product is made of them as they
+  come: `ShippedList.plugins()` is the app's and its extension's alone (`@_spi(Product)`).
+  Anything else calls `ShippedList.plugins(supplying:)` and hands over its own, and the list
+  refuses to load without them (`ShippedListError.notSupplied`), so a test can't reach the network
+  or the user's pasteboard by leaving an argument out. Any other listed plugin can be handed over
+  the same way, and takes its place in the list.
+- **Tests** get the product's plugins from ShippedTesting's `ShippedPlugins`:
+  `plugins(pasteboard:model:)`, `registry(pasteboard:model:)` and
+  `makeEditor(document:scheduler:pasteboard:model:)`, the list with a clipboard on the test's
+  pasteboard and the test's model, whose `model` has no default.
+
+`./build.sh graph` prints the list after the modules, and leaves what `+ shipped` links out of
+each line's dependencies: what ships is membership in the product, not one module's design
+depending on another's.
 
 ## A vertical plugin
 
@@ -1083,7 +1143,7 @@ extension TitlePill: Adornment {
     public static var order: Int { 50 }                                // a horizontal's feature
 }
 
-public struct TitlesPlugin: CanvasPlugin {
+public struct TitlesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .titles }
     public func register(into registrar: inout PluginRegistrar) {
@@ -2611,7 +2671,8 @@ and no window.
 
 Every point is the core's (`owner` is `.core`), so it's always installed: a plugin contributes from
 its own `register`, with no plugin value of its own for it, and a list without the plugin is a
-host without its piece. Composition lists plugins and places nothing.
+host without its piece. Nothing joins a plugin to the host: the list of what ships only names
+plugins ([What ships](#what-ships)).
 
 | Slot | A plugin says | The host reads | Shipped |
 |---|---|---|---|
@@ -3043,7 +3104,7 @@ panel out:
 import Canvas
 import DetailPanel
 
-public struct ValidationDetailsPlugin: CanvasPlugin {
+public struct ValidationDetailsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "validation-details" }
 
@@ -3993,11 +4054,11 @@ as Find closes, if that's what showed it); CompositionTests'
 
 The detail panel has [an overview](#the-overview-and-takeovers), a view it shows where it has no
 one shape to show, and the table of contents gives its list as that, from a plugin value of its
-own, so TableOfContents imports DetailPanel (a surface on a surface) and Composition only lists
+own, so TableOfContents imports DetailPanel (a surface on a surface) and the list of what ships names
 the plugin, after both:
 
 ```swift
-public struct ContentsOverviewPlugin: CanvasPlugin {
+public struct ContentsOverviewPlugin: ListedPlugin {
     public var id: PluginID { .contentsOverview }      // "contents-overview"
     public func register(into registrar: inout PluginRegistrar) {
         registrar.detailOverview { editor, onExit in TableOfContentsView(editor: editor, onExit: onExit) }
@@ -7423,7 +7484,7 @@ selected), as DrawLexicon's do without theirs. `QueryCommandsPlugin()` needs `Au
 and `--ask` `QueryTranslationPlugin` and `LanguageModelsPlugin` (else `no_model`). The shipped list has them after
 DrawLexicon's: `QueriesPlugin(), QueryTranslationPlugin(), TitleQueriesPlugin(), BoardQueriesPlugin(),
 MentionQueriesPlugin(), ValidationQueriesPlugin(), SelectionQueriesPlugin()`, then
-`QueryCommandsPlugin()`; the prompt stays in Composition, since its examples name the shipped kinds.
+`QueryCommandsPlugin()`; the prompt is a text file of the product's (`Shipped/ask-prompt.txt`), since its examples name the shipped kinds.
 
 ### What it costs
 
@@ -9573,7 +9634,7 @@ The language is taught by the canvas skill: SKILL.md's "Reading the board" tours
 ([QueryCommands.swift](../Sources/QueryCommands/QueryCommands.swift)), a language on Automation,
 Queries, QueryTranslation and the wire (the answer is the wire's JSON), which declares no point and
 knows no shipped kind: its help writes `<kind>` and `<title>`, and `--ask`'s prompt is
-`QueryTranslationPlugin`'s, which Composition supplies.
+`QueryTranslationPlugin`'s, which reads it from the product's files (`Shipped/ask-prompt.txt`).
 
 - **Params** (`QueryParams`): `query`, positional, read from standard input as `-` (`x-stdin`: a
   query is full of what shells mangle, so a heredoc with a quoted delimiter); `--ask <question>`
@@ -11652,8 +11713,8 @@ ShapeDetails: Boards.BoardTab (from subboards) and Schemas.BoardTab (from schema
 The hook is generic: the core runs it without knowing what any point checks.
 
 Once built, it's frozen and handed to the editor. The app's list is
-`ShippedPlugins.plugins(pasteboard:model:)` in [Composition](../Sources/Composition/ShippedPlugins.swift),
-and a test checks it registers.
+the table of what ships in `Package.swift` ([What ships](#what-ships)), each plugin made by its name,
+and a test checks it loads and registers.
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
@@ -12396,7 +12457,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 
 | data-canvas | Here |
 |---|---|
-| `definePlugin({ id, shapes, tools, ... })` | `struct XPlugin: CanvasPlugin { var id; func register(into:) }`. A value; functions can generate plugins. |
+| `definePlugin({ id, shapes, tools, ... })` | `struct XPlugin: CanvasPlugin { var id; func register(into:) }` (a `ListedPlugin`, with an `init()`, for one the list names). A value; functions can generate plugins. |
 | `defineShape({ type, util, tools, toolbarItems, validate })` | `registrar.shape(XDefinition()) { x in x.tool(...); x.validate { ... } }`. The kind comes from the props type and is stamped on everything inside. |
 | `ShapeUtil` | `ShapeDefinition`: stateless, typed props, defaults from geometry. |
 | Static capabilities on the util (`layoutHostCapability`) | Capability protocols found by `as?` (`Editable`, `HandleProviding`, ...). |
@@ -12420,7 +12481,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 | `generateBoardPreview` on the card | `context.drawBoardPreview(ofBoardOwnedBy:in:)`: every shape a silhouette in one gray, as the minimap draws, built a chunk a frame. |
 | `install*Lifecycle(editor)` side effects | `registrar.willDelete` inside transactions; `EditorService` for per-editor state. |
 | `module.json` + ESLint DAG + barrel `index.ts` | `Package.swift` with layers + `build.sh audit` + the compiler; `public` is the barrel. |
-| `plugins.config.ts` | `ShippedPlugins.plugins(pasteboard:model:)` in Composition. |
+| `plugins.config.ts` | The table of what ships in `Package.swift` (`let ships = [`), read when the app starts: [What ships](#what-ships). |
 | The query DSL's `#kebab-title` | A title in double quotes, `"Checkout"`, the whole title folded, case and all, as `draw` matches it; `#` takes a shape's id alone (`#Checkout` is `not_an_id`, hinted `"Checkout"` where a shape has that title). |
 | `.Class` (`node.`, `edge.`) | Refused: `.Task` is `not_built` (shapes typed by schema cards may be one day); a kind is its id, `sticky-note`. |
 | `:source-of`, `:target-of` | `:edge-to`, `:edge-from`, the words data-canvas moved to (#87), kept with `:downstream-of` and `:upstream-of`, over Topology's typed edges; the old words are refused with the word to write. |

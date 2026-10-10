@@ -16,7 +16,7 @@ extension PluginID {
     public static let snapping: PluginID = "snapping"
 }
 
-public struct SnappingPlugin: CanvasPlugin {
+public struct SnappingPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .snapping }
 

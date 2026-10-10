@@ -75,7 +75,7 @@ extension LockChip: ClickableAdornment {
     public static func click(on shape: ShapeID, in editor: CanvasEditor) { editor.service(LockState.self)?.click(shape) }
 }
 
-public struct LockingPlugin: CanvasPlugin {
+public struct LockingPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .locking }
 

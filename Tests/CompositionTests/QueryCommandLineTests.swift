@@ -2,12 +2,12 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasUI
-import Composition
 import Foundation
 import HostSlots
 import LanguageModels
 import Queries
 import Selection
+import ShippedTesting
 import SwiftUI
 import TestKit
 import Titles

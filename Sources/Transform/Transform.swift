@@ -257,7 +257,7 @@ extension Registry {
 /// its own: the kinds that take a channel (Subboards') bring them to the kinds that offer it (Frames'). A
 /// list with either needs it (`ownerNotInstalled` otherwise), and a target's item and command need
 /// `ContextMenusPlugin()` and `SlashCommandsPlugin()` too.
-public struct TransformPlugin: CanvasPlugin {
+public struct TransformPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .transform }
 

@@ -4,13 +4,13 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import Clipboard
-import Composition
 import HostSlots
 import LanguageModels
 import Locking
 import Mentions
 import Publishing
 import Selection
+import ShippedTesting
 import StickyNotes
 import TestKit
 

@@ -3,7 +3,6 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Composition
 import Connections
 import CoreGraphics
 import Geometry
@@ -13,6 +12,7 @@ import LanguageModels
 import Locking
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import Subboards
 import SwiftUI

@@ -68,7 +68,7 @@ extension Registry {
 /// outlines it hands the core. Needs `QueriesPlugin` and `TopologyPlugin` to light anything,
 /// `SelectionPlugin` for something to hover (the table of contents' rows set Selection's hover too),
 /// and a light from some plugin; without any of them it does nothing.
-public struct NeighborsPlugin: CanvasPlugin {
+public struct NeighborsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .neighbors }
 

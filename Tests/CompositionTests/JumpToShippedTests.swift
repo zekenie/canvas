@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Composition
 import CoreGraphics
 import Frames
 import Geometry
@@ -10,12 +9,13 @@ import HostSlots
 import JumpTo
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import TestKit
 import TextEditing
 import Titles
 
-// Jump To as the app wires it: the shipped list, the board's window with the chrome Composition puts
+// Jump To as the app wires it: the shipped list, the board's window with the chrome the window puts
 // round the canvas (the palette over it), Go › Jump To… and ⌘K, over the nested file (the root, Plans,
 // and Plans' untitled subboard).
 
