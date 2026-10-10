@@ -1709,8 +1709,8 @@ The checker is 2020-12's validation vocabulary (`type`, `enum`, `const`, the bou
 strings, arrays and objects, `required`, `dependentRequired`) and its applicators (`properties`,
 `patternProperties`, `additionalProperties`, `propertyNames`, `prefixItems`, `items`, `contains`,
 `allOf`, `anyOf`, `oneOf`, `not`, `if`/`then`/`else`, and `$ref` to any place in the same schema).
-`format` is an annotation, as 2020-12 has it, and so is any keyword it doesn't know
-(`x-canvas-owner`): neither is checked. It compares as JSON Schema does: strings code point for
+`format` is an annotation, as 2020-12 has it (unless a validator is given the formats to check,
+below), and so is any keyword it doesn't know (`x-canvas-owner`): neither is checked. It compares as JSON Schema does: strings code point for
 code point (so "é" and "e\u{301}" differ, where Swift's `==` equates them), numbers by value. A
 length is in code points too: a thumbs-up with a skin tone is two, so a message gives both counts
 when they differ, without naming the standard ("Title counts as 82 characters (41 shown)"). A
@@ -1718,6 +1718,21 @@ pattern is ECMA-262's, run by ICU (`NSRegularExpression`) once what ICU reads di
 ends the string (ICU's also matches before a final line break), `.` and `\s` are ECMA's, and `\d`,
 `\w` and `\b` are ASCII. A pattern ICU can't read at all (a lookbehind of no fixed length) refuses
 the plugin list, as one that's no regular expression does.
+
+A `SchemaViolation` also has a `detail`: its message without the place's name (`is 95 characters
+long, and should be at most 80.`), for a reader that says the place its own way. `message` is the
+name, a space and the detail. `detail` takes no part in `==` or `hash(into:)`, so a violation made
+by hand (its detail is its message) equals the validator's.
+
+A validator checks `format` only for the formats it is given: `SchemaValidator(schema, formats:
+.standard)` (both initializers take it, and a resource's formats are checked too). `standard` has
+the six a type's fields use, by the RFCs, each a scan of the characters: `email` (a dot-atom and a
+domain of labels; `bo@acme` fits, quoted forms don't), `date`, `date-time` and `time` (RFC 3339,
+the offset required), `uri` (a scheme, then RFC 3986's characters; a bare `acme.com` doesn't fit)
+and `uuid`. A value that breaks one is a `format` violation (`Email should be an email address, not
+"ann@".`), only for strings. Off by default: the core's kind schemas write `uuid` and `date-time`,
+and checking them would change what the schema rule says of every shape. Build a `SchemaFormats`
+of your own from a name and a `Format("a thing", fits:)` for any other.
 
 A `$ref` may also name a schema that isn't in this one, such as a type's `urn:uuid:…` kept in a file.
 `SchemaValidator(schema) { uri in … }` (the `resources:` parameter) asks its resolver for the schema

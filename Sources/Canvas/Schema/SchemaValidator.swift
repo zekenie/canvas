@@ -94,7 +94,8 @@ extension JSONSchema {
 /// `properties`, `patternProperties`, `additionalProperties`, `propertyNames`, `prefixItems`,
 /// `items`, `contains`, `allOf`, `anyOf`, `oneOf`, `not`, `if`/`then`/`else` and `$ref`, to any
 /// place in the same schema (`#/$defs/core.rect`, `#`). `format` is an annotation, as 2020-12 has
-/// it, and so is any keyword it doesn't know (`x-canvas-owner`, `default`): neither is checked.
+/// it, unless the validator is given the format (`SchemaFormats`), and so is any keyword it doesn't
+/// know (`x-canvas-owner`, `default`): neither is checked.
 /// Strings are compared as JSON Schema compares them, code point for code point (Swift's `==`
 /// equates "é" and "e\u{301}"). Patterns are ECMA-262's, as JSON Schema's are, run by ICU
 /// (`NSRegularExpression`) once what it reads otherwise is rewritten (`ICUPattern`); one ICU can't
@@ -118,8 +119,9 @@ public struct SchemaValidator: Sendable {
     /// schemas changes (or appears). Empty without a resolver.
     public let resources: [String]
 
-    public init(_ schema: JSONSchema) {
-        var compiler = Compiler(root: .object(schema.json), resolver: nil)
+    /// `formats` are the `format`s it checks (`SchemaFormats.standard`); every other is an annotation.
+    public init(_ schema: JSONSchema, formats: SchemaFormats = .none) {
+        var compiler = Compiler(root: .object(schema.json), resolver: nil, formats: formats)
         _ = compiler.node(for: .object(schema.json), at: "#")
         compiler.markLoops()
         nodes = compiler.nodes
@@ -131,9 +133,10 @@ public struct SchemaValidator: Sendable {
     /// URI is the `$ref`'s part before its first `#`, as written, and nil is a schema it doesn't
     /// have. It runs while compiling and isn't kept, so a validator is as `Sendable` as ever: it may
     /// close over state that isn't, or read a snapshot taken for the purpose.
-    public init(_ schema: JSONSchema, resources resolve: (_ uri: String) -> JSONSchema?) {
+    /// A resource is compiled with the same `formats`, so its `format`s are checked too.
+    public init(_ schema: JSONSchema, formats: SchemaFormats = .none, resources resolve: (_ uri: String) -> JSONSchema?) {
         let compiled = withoutActuallyEscaping(resolve) { resolver in
-            var compiler = Compiler(root: .object(schema.json), resolver: resolver)
+            var compiler = Compiler(root: .object(schema.json), resolver: resolver, formats: formats)
             _ = compiler.node(for: .object(schema.json), at: "#")
             compiler.markLoops()
             return (compiler.nodes, compiler.problems, compiler.met)
@@ -261,6 +264,9 @@ public struct SchemaValidator: Sendable {
             if regex.firstMatch(in: string, range: NSRange(string.startIndex..., in: string)) == nil {
                 found.report(path, "pattern", name: name(), "should match \(pattern.source).")
             }
+        }
+        if let format = node.format, !format.fits(string) {
+            found.report(path, "format", name: name(), "should be \(format.reads), not \(Self.describe(.string(string))).")
         }
     }
 
@@ -737,6 +743,8 @@ private final class Node: @unchecked Sendable {
     var minLength: Int?
     var maxLength: Int?
     var pattern: (source: String, regex: NSRegularExpression?)?
+    /// The `format`, when the validator checks that one.
+    var format: SchemaFormats.Format?
     var prefixItems: [Int] = []
     var items: Int?
     var contains: Int?
@@ -768,7 +776,7 @@ private final class Node: @unchecked Sendable {
 
     /// Whether a number or a string has anything to be held to here, beyond its type.
     var checksNumbers: Bool { minimum != nil || maximum != nil || exclusiveMinimum != nil || exclusiveMaximum != nil || multipleOf != nil }
-    var checksStrings: Bool { minLength != nil || maxLength != nil || pattern != nil }
+    var checksStrings: Bool { minLength != nil || maxLength != nil || pattern != nil || format != nil }
 
     /// The places applied to the same value as this one: a loop through them never ends. `then`
     /// and `else` are applied only with an `if`.
@@ -781,6 +789,7 @@ private struct Compiler {
     let root: JSONValue
     /// Asked for a schema outside the root, by its URI; nil when there is none to ask.
     let resolver: ((String) -> JSONSchema?)?
+    let formats: SchemaFormats
     var nodes: [Node] = []
     /// Where each node is, as its resource's URI (empty for the root) and a JSON Pointer from that
     /// resource's root, for `problems`: `#/$defs/core.rect`, `urn:uuid:…#/properties/name`.
@@ -794,9 +803,10 @@ private struct Compiler {
     /// Their URIs, in the order they were first asked for.
     var met: [String] = []
 
-    init(root: JSONValue, resolver: ((String) -> JSONSchema?)?) {
+    init(root: JSONValue, resolver: ((String) -> JSONSchema?)?, formats: SchemaFormats) {
         self.root = root
         self.resolver = resolver
+        self.formats = formats
     }
 
     /// The schema filed under `uri`, asking the resolver the first time only.
@@ -882,6 +892,7 @@ private struct Compiler {
             node.pattern = (pattern, regex)
             if regex == nil { problems.append("the pattern at \(pointer), \(SchemaValidator.quoted(pattern)), isn't a regular expression ICU can read") }
         }
+        node.format = json["format"]?.stringValue.flatMap { formats[$0] }
         node.prefixItems = children("prefixItems")
         node.items = child("items")
         node.contains = child("contains")
