@@ -55,6 +55,9 @@ public final class TypeIndex {
     @ObservationIgnored private var nameVersions: [ShapeID: Int] = [:]
     /// The revision of the editor it's up to date with.
     @ObservationIgnored private var heardRevision: Int
+    /// Moves whenever what a list of types resolves to may: a type comes, goes, its schema's text
+    /// changes, or its own `is` list does. Not for a rename, and not for another shape's list.
+    @ObservationIgnored internal private(set) var chainRevision = 0
 
     #if DEBUG
     /// How many records it has read (debug builds only): a shape that only moved is read by none, a
@@ -81,11 +84,15 @@ public final class TypeIndex {
     /// A type's name, its title; nil for an untitled type and a shape that isn't one.
     public func name(of id: ShapeID) -> String? { entries[id]?.name }
 
+    /// A type's schema text, as the shape holds it; nil for a shape that isn't one.
+    func schemaText(of id: ShapeID) -> String? { entries[id]?.schema }
+
     /// A number that changes whenever the type's schema or name does; nil for a shape that isn't one.
     public func revision(of id: ShapeID) -> Int? { entries[id]?.revision }
 
     /// Calls `body` after each commit that changed types, with the ids of those that came, went, or
-    /// whose schema or name changed (every type there was and is, when a file is put in place).
+    /// whose schema, name or own types changed (every type there was and is, when a file is put in
+    /// place).
     public func onChange(_ body: @escaping @MainActor (Set<ShapeID>) -> Void) {
         observers.append(body)
     }
@@ -204,6 +211,7 @@ public final class TypeIndex {
         if let kept, kept.schema == schema.text, kept.name == name { return false }
         if kept == nil || kept?.name != name { renamed.insert(record.id) }
         if let name { lastNames[record.id] = name }
+        if kept == nil || kept?.schema != schema.text { chainRevision &+= 1 }
         revisions += 1
         put(record.id, Entry(schema: schema.text, name: name, revision: revisions))
         return true
@@ -232,7 +240,17 @@ public final class TypeIndex {
 
     private func drop(_ id: ShapeID) -> Bool {
         kept.names[id] = nil
-        return entries.removeValue(forKey: id) != nil
+        guard entries.removeValue(forKey: id) != nil else { return false }
+        chainRevision &+= 1
+        return true
+    }
+
+    /// A type's own list changed: what its instances resolve to may have, so the stamp moves and it is
+    /// told. An instance's list changing does neither: it is in no chain.
+    private func readLinks(of record: AnyShapeRecord, changed: inout Set<ShapeID>) {
+        guard readLinks(record), entries[record.id] != nil else { return }
+        chainRevision &+= 1
+        changed.insert(record.id)
     }
 
     /// A shape that's gone from the file holds no list.
@@ -279,6 +297,7 @@ public final class TypeIndex {
     /// known by the title it had.
     private func readAfresh(in editor: CanvasEditor, sameFile: Bool) {
         let before = Set(entries.keys), instances = Set(kept.links.keys)
+        chainRevision &+= 1
         entries = [:]
         kept = TypeGraph()
         instancesByType = [:]
@@ -318,7 +337,7 @@ extension TypeIndex: EditorService {
         func hear(_ id: ShapeID) {
             guard let record = editor.document[id] else { return }
             if kinds.contains(record.kind), read(record, registry: registry, renamed: &renamed) { changed.insert(id) }
-            if typeableKinds.contains(record.kind) { readLinks(record) }
+            if typeableKinds.contains(record.kind) { readLinks(of: record, changed: &changed) }
         }
         // (Two passes, not a set of both: a drag of everything makes none, and a set of its ids costs more than it saves.)
         for id in changes.added where !changes.moved.contains(id) { hear(id) }
@@ -334,7 +353,7 @@ extension TypeIndex: EditorService {
                 continue
             }
             if kinds.contains(record.kind), read(record, registry: registry, renamed: &renamed) { changed.insert(id) }
-            if typeableKinds.contains(record.kind) { readLinks(record) }
+            if typeableKinds.contains(record.kind) { readLinks(of: record, changed: &changed) }
         }
         tell(changed)
         told(renamed: renamed, in: editor)

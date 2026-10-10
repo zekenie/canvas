@@ -82,6 +82,45 @@ private struct TypeInPocket {
         editor.transact(on: BoardID(owner: tree.p), "Rename") { $0.update(tree.house) { $0[TitleProperty.self] = "Home" } }
         expectEqual(types.name(of: tree.house), "Home", "a change on a board not shown")
     },
+    test("a type whose own types changed is told, an instance whose types changed is not: it is in no chain") {
+        let editor = try typeEditor()
+        let person = editor.addType(TypeSchemaProperty.starter, title: "Person"), employee = editor.addType(TypeSchemaProperty.starter, title: "Employee")
+        let ann = editor.addInstance("Ann", of: [person])
+        let types = try require(editor.types)
+        let heard = Heard()
+        types.onChange { heard.changes.append($0) }
+        editor.addTypeLink(employee, to: ann)
+        editor.removeTypeLink(person, from: ann)
+        expectEqual(heard.changes, [], "an instance's list changing tells nothing")
+        editor.addTypeLink(person, to: employee)
+        expectEqual(heard.changes, [[employee]], "Employee is a Person now")
+        editor.undo()
+        expectEqual(heard.changes.last, [employee], "and not, once undone")
+        editor.removeTypeLink(person, from: employee)
+        expectEqual(heard.changes.count, 2, "a list that was already empty changes nothing")
+        editor.addTypeLink(person, to: employee)
+        editor.transact { $0.update(employee) { $0[TitleProperty.self] = "Staff" } }
+        expectEqual(heard.changes.last, [employee], "a rename is told, as it was")
+        // A type that stops being one, with its list, is told once as it goes.
+        editor.removeType(employee)
+        expectEqual(heard.changes.last, [employee])
+        expect(!types.isType(employee))
+    },
+    test("`/is-a` refuses a type that is the shape in turn, however far: A is a B, B is a C") {
+        let editor = try typeEditor()
+        let a = editor.addType(TypeSchemaProperty.starter, title: "A"), b = editor.addType(TypeSchemaProperty.starter, title: "B")
+        let c = editor.addType(TypeSchemaProperty.starter, title: "C"), d = editor.addType(TypeSchemaProperty.starter, title: "D")
+        editor.addTypeLink(b, to: a)
+        editor.addTypeLink(c, to: b)
+        let types = try require(editor.types)
+        expect(!types.admits(a, for: a), "itself")
+        expect(!types.admits(b, for: a), "one it is")
+        expect(!types.admits(a, for: b), "one that is it")
+        expect(!types.admits(a, for: c), "one that is it, however far: a cycle")
+        expect(types.admits(c, for: a), "one it is through B is no cycle")
+        expect(types.admits(d, for: a) && types.admits(a, for: d), "unrelated types may")
+        expect(types.admits(c, for: d))
+    },
     test("a file put in place is read afresh") {
         let tree = TypeInPocket()
         let editor = try typeEditor(file: tree.file, more: [PocketsPlugin()])
