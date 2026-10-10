@@ -42,6 +42,17 @@ import Types
         expectEqual(editor.shape(called: "Ann")?[IsAProperty.self], nil)
     },
 
+    test("the same type twice is once: the first, whatever way it is named; restated, no change") {
+        let editor = try typeNamesEditor()
+        let person = editor.addType("Person"), employee = editor.addType("Employee card")
+        _ = try drawn(#"memo "Ann" is: ["Person", "Employee card", "Person"]"#, on: editor)
+        expectEqual(try types(of: "Ann", in: editor), [person, employee])
+        let again = try drawn(#"memo "Ann" is: ["Person", "Employee card", "Person", "Person"]"#, on: editor)
+        expectEqual(again["changes"]?.arrayValue?.compactMap { $0["did"]?.stringValue }, ["unchanged"])
+        _ = try drawn(#"memo "Bob" is: ["Person", "Person"]"#, on: editor)
+        expectEqual(try types(of: "Bob", in: editor), [person])
+    },
+
     test("a shape that is no type is refused, saying so; a title nobody has is unknown, with the types like it") {
         let editor = try typeNamesEditor()
         editor.addType("Person")

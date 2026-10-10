@@ -241,6 +241,12 @@ struct DrawTextWriter {
                 guard let declared = prefix.indices.contains(index) ? prefix[index] : resolved["items"] else { continue }
                 written[index] = try self.written(items[index], declared: declared, in: schema, owner: owner)
             }
+            // A list that is `uniqueItems` holds each once, the first of those that say the same (two titles
+            // of one shape come out as one id).
+            if resolved["uniqueItems"]?.boolValue == true {
+                var seen: Set<JSONValue> = []
+                written = written.filter { seen.insert($0).inserted }
+            }
             return .array(written)
         default:
             return value
