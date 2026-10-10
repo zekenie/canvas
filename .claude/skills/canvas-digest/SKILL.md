@@ -13,20 +13,21 @@ It uses the canvas skill's `canvas` command and draws only with it. Read that sk
 
 - A body of connected things you've read or gathered: a repository's modules and what imports what, an org and who works with whom, research notes and their citations, a plan's tasks and dependencies.
 - You'd otherwise write more than about forty shapes, or arrows would run between groups.
-- It makes a **new** board: a new file, or a new subboard on a board you name. It never moves or restates a shape it didn't make.
+- It makes a **new** board: a new file, a new subboard on a board you name, or an empty board's own. It never moves or restates a shape it didn't make.
+- To draw a digest **again** (it changed, or the dial did), run it with the same `--out` and `--replace`: its last drawing (`drawn.json` there) is taken back first, one undo step, and drawn anew in its place, when it is in the target board's file. On a board that holds anything else, a digest drawn as the board is refused.
 
 ## The steps
 
-Everything runs from the repository root through `.claude/skills/canvas-digest/digest`; it is the only thing here that runs `canvas`, and it finds `canvas` itself (`$CANVAS_CLI`, else `build/canvas`, else your PATH). The state of the app is the canvas skill's [Check the app](../canvas/SKILL.md#check-the-app). Every command takes the digest and, where it draws or reads a board, a **target**: `--board <id>` with `--into "Title"` (the digest goes in a new subboard of that open board, called Title), or `--new-file <path>` (a new board's file, made and opened by `canvas new`; the digest is its board). `--out <dir>` says where the files go (default: the digest's name with `.out`).
+(`digest ready graph.json <target>` says whether a draw could start, before you spend time on the digest: the app running, the board able to take it, a new file's folder there, and, with `--replace`, the last drawing one the app will take back.) Everything runs from the repository root through `.claude/skills/canvas-digest/digest`; it is the only thing here that runs `canvas`, and it finds `canvas` itself (`$CANVAS_CLI`, else `build/canvas`, else your PATH). The state of the app is the canvas skill's [Check the app](../canvas/SKILL.md#check-the-app). Every command takes the digest and, where it draws or reads a board, a **target**: `--board <id>` with `--into "Title"` (the digest goes in a new subboard of that open board, called Title); `--board <id>` alone (the digest is that board, which must be empty); or `--new-file <path>` (a new board's file, made and opened by `canvas new`; the digest is its board). `--board front` is the board in front. `--out <dir>` says where the files go (default: the digest's name with `.out`).
 
 1. **Write the digest.** A JSON file of `nodes` (title, kind, what holds it, text) and `edges` (from, to). The format, and how to choose what holds what, is in [reference/graph.md](reference/graph.md). Make containers for the groups a reader would name (a package, a team, a theme): frames for a group on a board, subboards for a part big enough to open (`kind: auto` picks). Keep titles short and unique across the whole file; keep each frame to about 15 shapes.
 2. **Check it.** `digest check graph.json --board <id> --into "Title"`. It refuses duplicate titles, titles over 80 characters, a title already in the file (one `canvas query`; with `--new-file` there is nothing to clash with), and a kind `canvas kinds` doesn't list; it warns past 15 shapes in a frame or 150 on a board. Fix what it says and run it again.
-3. **Measure and plan it.** `digest plan graph.json --into "Title"` measures every shape with `canvas measure` (a note as tall as its text, a pill as wide as its label), lays out every board, and writes `plan.json`, `report.json` and the draw scripts (`runs/NN-<board>-<step>.draw`) to the out folder. It prints a short summary: the boards, the shapes, the pills, **what it will make public and why**, and where the loop stopped. Nothing is drawn yet. If the summary isn't what you meant, change the digest or the dial and plan again. (`digest measure graph.json` does only the measuring, into `measure.json`.)
+3. **Measure and plan it.** `digest plan graph.json --into "Title"` measures every shape with `canvas measure` (a note as tall as its text, a pill as wide as its label), lays out every board, and writes `plan.json`, `report.json` and the draw scripts (`runs/NN-<board>-<step>.draw`) to the out folder. It prints a short summary: the boards, the shapes, the pills, **what it will make public and why**, and where the loop stopped. Nothing is drawn yet. If the summary isn't what you meant, change the digest or the dial and plan again: `plan` measures again when the digest is newer than its `measure.json`, and keeps the measurement otherwise. (`digest measure graph.json` does only the measuring, into `measure.json`.)
 4. **Draw it.** `digest draw graph.json --board <id>` (or `--new-file <path>`). Each script is a dry run first: every `at` row it gets back is compared with the plan, and it stops before drawing a script whose dry run isn't the plan, naming the shape, rather than drawing a wrong board. Then it draws the script for real and compares again. The order is the plan's: the subboard (with `--into`), then each board's shapes (public ones made public in their own statements), then each board's edges, the host of a shared pill first and the others saying `share: "<host>"`.
 5. **Verify.** `digest verify graph.json --board <id>` reads every saved result back against the plan (each shape and pill within a unit of its place, each arrow drawn, no shape restated) and asks the file for its titles. It says `verify ok` or what is off.
 6. **Tell the user** what you made and what is public (below).
 
-`digest all graph.json <target> [--mess N] [--promote off] [--prefer N] [--cap N] [--into "Title"]` runs check, measure, plan, draw and verify in order and stops at the first that fails. If a step fails, the message says which script and what the app said (exit 1 refused, 4 not the plan). Don't fix a script by hand and run it alone: change the digest and plan again, because the later scripts are placed against the earlier ones. A drawn board's runs are each one undo step (Edit › Undo Draw), but the plan can't be resumed: plan again into a new place.
+`digest all graph.json <target> [--mess N] [--promote off] [--prefer N] [--cap N] [--into "Title"] [--replace]` runs check, measure, plan, draw and verify in order and stops at the first that fails. If a step fails, the message says which script and what the app said (exit 1 refused, 4 not the plan). Don't fix a script by hand and run it alone: change the digest and plan again, because the later scripts are placed against the earlier ones. A drawn board's runs are each one undo step (Edit › Undo Draw), but the plan can't be resumed: run it again with `--replace` (it takes back what was drawn and draws it all; that works whether the user has undone some of it, all of it, or nothing), or plan again into a new place.
 
 A warning that shapes landed outside the window's view is not a problem: a big drawing is bigger than the window, and the camera is the user's.
 
@@ -34,16 +35,23 @@ A warning that shapes landed outside the window's view is not a problem: a big d
 
 One number sets how tidy the board is: `--mess`, from 0 (tidy) to 1 (loose), or `"policy": {"mess": 0.3}` in the digest; the flag wins. The default is **0.1**.
 
-- **Tidy** (0 to 0.2) makes a hub's pills cheap, so more hubs are promoted: fewer long arrows and crossings, more pills, bigger boards. This is the right place to start.
-- **Loose** (0.5 and up) keeps plain arrows and promotes few hubs: smaller boards, more lines across them. At 1 nothing is promoted and only edges between boards use pills.
+- **Tidy** (0 to 0.2) turns more arrows into pills: fewer long arrows and crossings, more pills, bigger boards. This is the right place to start.
+- **Loose** (0.5 and up) keeps plain arrows: smaller boards, more lines across them. At 1 the tool turns no arrow on a board into a pill: only edges between boards use them, and the users of a node you pinned with `public: true` (`--promote off` leaves those as arrows too).
 
-The order hubs are promoted in is the same at every setting; the dial only says how far down the list it goes. `--promote off` (or `"promote": false` in the digest) promotes none. `--cap 0..1` limits promotions to that share of a board's shapes, and `--prefer N` is how many pills' prices a hub's second pill in one frame must save (default 2: one pill is preferred, and a far group of users gets its own).
+What it decides, on each board:
+
+- **Popular shapes first, on a board that needs it.** A board that is tidy enough with plain arrows (nothing crossing, nothing over a shape, by the dial) is left as it is. On any other, a shape that many arrows point at is *promoted*: it is made public, and each shape that points at it shows a pill for it beside itself. A shape that points at many is *fanned out*: each thing it points at is a pill beside it. "Many" is the dial's: 5 arrows at 0.1, 4 at 0, 9 at 0.5. The most arrows go first, until the board is tidy enough or no shape is popular.
+- **Then the judgment calls.** For shapes with fewer arrows it lays the board out both ways and keeps a move only when it clearly pays, up to a cap (a share of the board's shapes).
+- **No arrow runs too long.** One over the dial's length (1300 units at 0.1, about four notes) becomes a pill beside its start.
+
+`--promote off` (or `"promote": false` in the digest) does none of it. `--cap 0..1`, `--margin PILLS` and `--popular ARROWS` override the dial's, and `--prefer N` is how many pills' prices a hub's second pill in one frame must save (default 2: one pill is preferred, and a far group of users gets its own).
 
 ## What it makes public
 
 A reference pill stands for a **public** shape, so promoting a hub makes it public. The tool makes public only shapes it creates itself, never one that was already on a board, and says which:
 
-- a hub whose users it gives pills to (the report says `promoted`),
+- a shape many point at, whose users it gives pills to (the report says `promoted`),
+- what a pill beside a shape that points at many stands for (`fanned out`), and the end of an arrow that would run too long,
 - the end of any edge that crosses boards or says `via: reference`,
 - a node you wrote `public: true` on.
 
@@ -53,6 +61,6 @@ Tell the user the list from the summary, in a sentence: how many shapes are publ
 
 ## Limits
 
-- v1 draws into a new file or a new subboard. It doesn't update a board it drew earlier; plan again into a new place, or delete the old subboard first.
+- It doesn't update a drawing shape by shape: `--replace` takes the last one back and draws the digest anew, so what the user changed in it goes too (one Undo Draw after the run's own brings the last drawing back).
 - An edge can't start or end on a frame (a frame has no ports); point it at a shape in it. A subboard can be an end.
 - Pills read from the app's own sizes. If the app changes how a note or a pill is sized, plan again; a plan is only good for the app it measured.

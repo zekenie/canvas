@@ -3,7 +3,12 @@
 //
 //   mess      0.0    0.2    0.5    0.8    1.0
 //   mu        2.00   2.80   4.00   5.20   6.00     the price of a pill in the cost C           = 2 + 4 mess
-//   cap       50%    40%    25%    10%     0%        the safety cap: share of the board's leaves promoted at most = 0.5 (1 - mess)
+//   cap       50%    40%    25%    10%     0%        the safety cap: share of the board's leaves moved at most (promoted or fanned out; the popular
+//                                                    ones count, and are never held back)                        = 0.5 (1 - mess)
+//   popular   4      6      9      12     14        on a board not good enough as it is, a node with this many arrows a move would turn into pills
+//                                                    (pointing at it, or leaving it) is moved whatever its trial measures  = round(4 + 10 mess)
+//   longest   1000   1600   2500   3400   4000      an arrow longer than this (border to border, in the board's units) is a pill of its own beside
+//                                                    its start: neither end can be seen from the other                 = round(1000 + 3000 mess)
 //   margin    1      1      2      3      3         the least gain margin, in pills (noise may raise it)          = round(1 + 2 mess)
 //   X/arrow   0      .04    .10    .16    .20       good enough: crossings per arrow at most                      = 0.2 mess
 //   Fx/arrow  0      .02    .05    .08    .10       good enough: frame-border crossings per arrow at most         = 0.1 mess
@@ -26,6 +31,8 @@ export function dial(mess) {
     mu: round(2 + 4 * m),
     capShare: round(0.5 * (1 - m)),
     marginPills: Math.round(1 + 2 * m),
+    popular: Math.round(4 + 10 * m),
+    longest: Math.round(1000 + 3000 * m),
     good: { xPerArrow: round(0.2 * m), fxPerArrow: round(0.1 * m), nePerArrow: round(0.4 * Math.max(0, m - 0.5)), aspect: round(2 + 2 * m) },
   };
 }

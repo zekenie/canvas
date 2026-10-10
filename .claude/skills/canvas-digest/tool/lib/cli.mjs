@@ -6,6 +6,7 @@ import { planDigest, DEFAULTS } from './plan.mjs';
 import { verify, formatVerify } from './verify.mjs';
 import { compareRun } from './compare.mjs';
 import { replay, extract } from './replay.mjs';
+import { boardField, drawnRecord, sameFile, beyond, minus, foreign, replaceScript, hasTitle } from './redraw.mjs';
 import { checkDigest } from './check.mjs';
 import { TOOL_DIR, fold } from './util.mjs';
 
@@ -14,7 +15,7 @@ export const USAGE = `digest tool (the driver, ./digest, runs these; the tool ne
                                                                        {"errors": [...], "warnings": [...]}; titles.json and kinds.json are arrays of strings
   check-text <check.json>                                              what check found, as "error: ..." and "warning: ..." lines ("ok" for none)
   measure-script <digest.json>                                         the draw script for \`canvas measure -\`
-  plan <digest.json> <measure.json> <outdir> [--mess 0..1] [--promote off] [--prefer N] [--cap 0..1] [--margin PILLS] [--into "Title"]
+  plan <digest.json> <measure.json> <outdir> [--mess 0..1] [--promote off] [--prefer N] [--cap 0..1] [--margin PILLS] [--popular ARROWS] [--into "Title"]
                                                                        writes <outdir>/plan.json, report.json and runs/NN-<board>-<step>.draw; --into puts the
                                                                        whole digest in a new subboard of that title (runs/00-into.draw makes it)
   compare <plan.json> <result.json> <state.json> [--name run] [--save true] [--text true]
@@ -24,21 +25,38 @@ export const USAGE = `digest tool (the driver, ./digest, runs these; the tool ne
   runs <plan.json>                                                     the run files in the order they are drawn, one a line
   into <plan.json>                                                     the title of the subboard the plan draws into (nothing for a new file)
   replay <plan.json> <resultsdir> [--titles titles.json]               the real runs' saved results (<resultsdir>/<run>.json), all of them, against the plan
-  extract titles|kinds|id|count|errors <answer.json>                   what the driver reads out of canvas's JSON (or check's), printed as JSON
+  extract titles|root-titles|kinds|id|count|errors <answer.json>       what the driver reads out of canvas's JSON (or check's), printed as JSON
+  board <boards.json> <front|id|file|name> id|path|fileShapes|shows [path]   one open board's field, from \`canvas boards\` ([path]: the file named, its links resolved)
+  drawn <plan.json> <path> <id> [shapes] [--over drawn.json --was N]   what drawing the plan makes, to keep as drawn.json (the board's file and id, the subboard, the titles,
+                                                                       how many shapes the file held once drawn); --over: with the drawing it replaces, while it is drawn,
+                                                                       and --was, how many shapes the file held before that one was taken back
+  same-file <drawn.json> <path> <id> [titles.json]                     "yes" when the last drawing is in that board's file (by its path, else by its id and its header), else "no"
+  has-title <titles.json> <title>                                      "yes" when the file holds that title, else "no"
+  beyond <drawn.json> <fileShapes>                                     how many shapes the file holds beyond the last drawing (drawn as the board)
+  minus <titles.json> <drawn.json>                                     the file's titles less the last drawing's, as JSON
+  foreign <titles.json> <drawn.json>                                   the file's titles the last drawing didn't make, one a line
+  replace-script <drawn.json> <titles.json> [root-titles.json]         the draw script that takes the last drawing back (nothing when it is gone); with the titles
+                                                                       on the file's root board, a shape drawn on the root is deleted only where it is on it
 (under jsc, make <outdir>/runs first: jsc cannot make a folder)
 
 THE MESS DIAL: --mess 0..1 (or "policy": {"mess": 0.5} in the digest; the flag wins; default 0.1). 0 is tidy, 1 is loose. One number sets all of:
   mess        0.0   0.2   0.5   0.8   1.0
   mu (pill)   2.0   2.8   4.0   5.2   6.0    = 2 + 4 mess            the price of a pill in the cost C
-  cap         50%   40%   25%   10%   0%     = 0.5 (1 - mess)        most leaves promoted (at least 1 unless mess = 1)
+  popular     4     6     9     12    14     = round(4 + 10 mess)    on a board not good enough as it is, a node with this many arrows a move would turn into pills
+                                                                      (pointing at it, or leaving it) is moved first, the most arrows first, whatever its trial
+                                                                      measures: promoted, or fanned out
+  longest     1000  1600  2500  3400  4000   = round(1000 + 3000 mess)  an arrow longer than this (in the board's units) becomes a pill of its own beside its start
+  cap         50%   40%   25%   10%   0%     = 0.5 (1 - mess)        most leaves moved by judgment (at least 1 unless mess = 1): the popular ones count, and are never held back
   margin      the gain a promotion must beat: the layout's measured noise (3 sd) times (0.5 + mess), never under round(1 + 2 mess) pills
   X/arrow     0     .04   .10   .16   .20    = 0.2 mess              good enough: crossings per arrow at most
   Fx/arrow    0     .02   .05   .08   .10    = 0.1 mess              good enough: frame-border crossings per arrow at most
   NE/arrow    0     0     0     .12   .20    = 0.4 max(0, mess-.5)   good enough: arrows over shapes per arrow at most
   aspect      2     2.4   3     3.6   4      = 2 + 2 mess            good enough: aspect at most
-The order of promotions is the same at every mess; the dial says how far down it the loop goes. --cap and --margin override the dial's cap and margin.
+The popular moves come in the same order at every mess; the dial says how far down them the loop goes. --cap, --margin and --popular override the dial's.
 --promote off: no hub is promoted, only the pills that cross boards or ask via: reference. --prefer N (default 2): each extra pill of a hub in one frame must save N pills' prices.
-The loop stops when the board is good enough, when the best candidates cut the cost by no more than the margin, or at the cap (the report says which).`;
+A move promotes a node many point at (it is made public, and each user reaches it through a pill beside the user) or fans out a node that points at many (each of
+its uses is a pill beside it, and what they stand for is made public). After the popular ones, the loop stops when the board is good enough, when the best candidates
+cut the cost by no more than the margin, or at the cap (the report says which).`;
 
 function parseFlags(args) {
   const pos = [], flags = {};
@@ -68,9 +86,9 @@ export async function run(args, io) {
   if (cmd === 'plan') {
     const [, digestPath, measurePath, outdir] = pos;
     if (!outdir) throw new Error(USAGE);
-    for (const k of Object.keys(flags)) if (!['mess', 'promote', 'prefer', 'cap', 'margin', 'into'].includes(k)) throw new Error(`unknown option --${k}\n${USAGE}`);
+    for (const k of Object.keys(flags)) if (!['mess', 'promote', 'prefer', 'cap', 'margin', 'popular', 'into'].includes(k)) throw new Error(`unknown option --${k}\n${USAGE}`);
     const digest = json(digestPath);
-    const opts = { promote: onOff(flags.promote, DEFAULTS.promote), cap: num(flags.cap), marginPills: num(flags.margin), prefer: num(flags.prefer), mess: num(flags.mess), into: flags.into || null };
+    const opts = { promote: onOff(flags.promote, DEFAULTS.promote), cap: num(flags.cap), marginPills: num(flags.margin), popular: num(flags.popular), prefer: num(flags.prefer), mess: num(flags.mess), into: flags.into || null };
     const model = buildModel(digest);
     const sizes = sizesFrom(model, json(measurePath));
     const elk = await loadElk(io, TOOL_DIR);
@@ -104,6 +122,14 @@ export async function run(args, io) {
     return;
   }
   if (cmd === 'extract') { io.print(JSON.stringify(extract(pos[1], json(pos[2])))); return; }
+  if (cmd === 'board') { io.print(String(boardField(json(pos[1]), pos[2], pos[3], pos[4]))); return; }
+  if (cmd === 'drawn') { io.print(JSON.stringify(drawnRecord(json(pos[1]), pos[2] || null, pos[3], pos[4], flags.over ? json(flags.over) : null, flags.was), null, 1)); return; }
+  if (cmd === 'has-title') { io.print(hasTitle(json(pos[1]), pos[2]) ? 'yes' : 'no'); return; }
+  if (cmd === 'same-file') { io.print(sameFile(json(pos[1]), pos[2] || null, pos[3], pos[4] ? json(pos[4]) : null) ? 'yes' : 'no'); return; }
+  if (cmd === 'beyond') { io.print(String(beyond(json(pos[1]), pos[2]))); return; }
+  if (cmd === 'minus') { io.print(JSON.stringify(minus(json(pos[1]), json(pos[2])))); return; }
+  if (cmd === 'foreign') { const f = foreign(json(pos[1]), json(pos[2])); if (f.length) io.print(f.join('\n')); return; }
+  if (cmd === 'replace-script') { const t = replaceScript(json(pos[1]), json(pos[2]), pos[3] ? json(pos[3]) : null); if (t) io.print(t); return; }
   if (cmd === 'verify') {
     const rows = io.readText(pos[2]).split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
     const res = verify(json(pos[1]), rows);
@@ -145,7 +171,13 @@ export function summarize(r) {
   const shapes = r.plan.boards.reduce((s, b) => s + b.shapes.length, 0);
   const lines = [`plan: ${r.plan.boards.length} board(s), ${shapes} shapes, ${t.pills} pills (${t.sharedArrows} arrows into shared ones), ${t.arrows} plain arrows; ${r.runs.length} runs; mess ${r.model.dial.mess}`];
   lines.push(`public (${rep.public.length}), all made by this run: ` + (rep.public.length ? rep.public.map((p) => `${p} (${rep.publicWhy[p]})`).join('; ') : 'none'));
-  lines.push('stop: ' + Object.entries(rep.boards).map(([b, x]) => `${b === 'root' ? 'root' : b} ${x.stop}`).join(', ') + (rep.promotions.length ? `; promoted ${rep.promotions.length}: ${rep.promotions.map((p) => p.node).join(', ')}` : ''));
+  // the moves the plan keeps: one the loop took back again is in its board's demotions
+  const back = new Set(Object.values(rep.boards).flatMap((x) => (x.demotions || []).map((d) => [d.board, d.mode, d.node].join('\u0000'))));
+  const kept = rep.promotions.filter((p) => !back.has([p.board, p.mode || 'in', p.node].join('\u0000')));
+  const ins = kept.filter((p) => p.mode !== 'out'), outs = kept.filter((p) => p.mode === 'out');
+  lines.push('stop: ' + Object.entries(rep.boards).map(([b, x]) => `${b === 'root' ? 'root' : b} ${x.stop}`).join(', ') + (ins.length ? `; promoted ${ins.length}: ${ins.map((p) => p.node).join(', ')}` : '') + (outs.length ? `; fanned out ${outs.length}: ${outs.map((p) => p.node).join(', ')}` : ''));
+  const long = Object.values(rep.boards).reduce((s, x) => s + (x.long || []).length, 0), left = Object.values(rep.boards).reduce((s, x) => s + (x.longLeft || 0), 0);
+  if (long || left) lines.push(`long arrows: ${long} made pills of their own (over ${r.model.dial.longest} units)` + (left ? `; ${left} still longer after the last pass` : ''));
   for (const w of rep.warnings) lines.push('warning: ' + w);
   return lines.join('\n');
 }

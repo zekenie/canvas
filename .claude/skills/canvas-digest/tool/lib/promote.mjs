@@ -1,12 +1,19 @@
-// The promotion loop. Every same-board edge is a plain arrow at first. Promote the node whose promotion cuts the board's cost
-// most; every user of it then reaches it through a pill (all of them, whether or not the hub uses them back; the tie counts only in
-// the score that picks the candidates to try), the users of it in one container sharing one pill. Repeat until
+// The promotion loop. Every same-board edge is a plain arrow at first. Make the move that cuts the board's cost most: promote a node
+// many arrows point at (every user of it then reaches it through a pill, all of them, whether or not the hub uses them back; the tie
+// counts only in the score that picks the candidates to try; the users of it in one container share one pill), or fan out a node that
+// points at many (each of its uses becomes a pill beside it, and what they stand for is made public: moves.mjs). First, while the
+// board is not good enough as it is and a node is popular (the dial's `popular` arrows or more would turn into pills), the most popular
+// one is moved, whatever its trial measures: a measured gain is noisy, and a node that many arrows meet at is the case the loop is for.
+// A board that is good enough with every arrow plain is left alone: pills are for a mess. Then the judgment calls: repeat until
 //   - the board is good enough, or
 //   - the best of the K candidates tried, and of the K after them, cuts the cost C by no more than the margin (an absolute number,
 //     a number of pills' prices: what a promotion must beat to be more than the layout's reshuffling), or
-//   - a safety cap is reached: 25% of the board's leaves promoted (the report says so if it is hit).
+//   - a safety cap is reached: the dial's share of the board's leaves moved, 0.5 (1 - mess), promoted and fanned out and the popular
+//     ones among them (the report says so if it is hit).
 // A shared pill whose arrows are long or cross notes is split into pills for nearer clusters of its users, if that lowers C.
-// Then take back each promotion that does not pay for itself.
+// Then take back each judgment call that does not pay for itself: a popular node's move stays, and so does a pin (`public: true`).
+// Last, on the final layout: each arrow longer than the dial's `longest` is set apart as a pill of its own beside its start, and the
+// board laid out again from where it is, until none is left.
 // While it searches the loop lays containers out again from where they are (Layouter.warm): ELK's layouts are new draws, whose
 // differences in C are larger than any gain.
 import { byTitle } from './util.mjs';
@@ -14,6 +21,7 @@ import { evaluate, ranksOf } from './cost.mjs';
 import { segLength } from './geom.mjs';
 import { measureNoise } from './noise.mjs';
 import { REF_MU } from './dial.mjs';
+import { ext, withMove, withoutMove, moveGroups, fanTargets, fansOut, mayBeApart } from './moves.mjs';
 
 const SEP = '\u0000';
 const r4 = (x) => Math.round(x * 1e4) / 1e4;   // the engines' last digits differ; a plan should not
@@ -25,7 +33,7 @@ function usersOf(model, layouter, v) {
   return (model.inn.get(v) || []).filter((e) => !e.cross && !e.via && !e.direct && model.node(e.from).board === layouter.board).map((e) => e.from);
 }
 
-export const ext = (state, over) => Object.assign({ promoted: state.promoted, order: state.order, hosts: state.hosts, splits: state.splits }, over);
+export { ext };
 
 export async function runBoard(model, layouter, opts) {
   const now = opts.now || (() => Date.now());
@@ -38,8 +46,8 @@ export async function runBoard(model, layouter, opts) {
   const K = TOP;
   const prefer = opts.prefer == null ? PREFER : opts.prefer;   // how many mu of C each extra pill in a (frame, hub) must save: one pill is preferred
   const board = layouter.board;
-  const report = { board, dial: model.dial, overrides: { cap: opts.cap == null ? null : opts.cap, margin: opts.margin == null ? null : opts.margin }, mu: muD, searchMu: mu, margin, k: K, promotions: [], demotions: [], splits: [], hostChanges: 0, stop: null, safetyCap: null };
-  let state = { promoted: new Set(), order: [], hosts: new Map(), splits: new Map() };
+  const report = { board, dial: model.dial, overrides: { cap: opts.cap == null ? null : opts.cap, margin: opts.margin == null ? null : opts.margin, popular: opts.popular == null ? null : opts.popular }, mu: muD, searchMu: mu, margin, k: K, promotions: [], demotions: [], splits: [], hostChanges: 0, stop: null, safetyCap: null };
+  let state = { promoted: new Set(), order: [], fanned: new Set(), fans: [], apart: new Set(), hosts: new Map(), splits: new Map() };
   const leaves = layouter.leaves;
   if (opts.promote) for (const n of leaves) if (n.pin) { state.promoted.add(n.title); state.order.push(n.title); }
   const lap = (name) => { report.laps = report.laps || {}; const t = now(); report.laps[name] = (report.laps[name] || 0) + (t - lapT); lapT = t; };
@@ -118,13 +126,38 @@ export async function runBoard(model, layouter, opts) {
   lap('settle');
 
   if (opts.promote) {
+    // the popular nodes first, the most arrows first: each is moved whatever its trial measures
+    layouter.phase = 'popular';
+    const none = (opts.cap == null ? model.dial.capShare : opts.cap) <= 0;   // the dial all the way to 1: no move at all
+    for (;;) {
+      if (ev.good || none) break;   // a board that is good enough as it is, or has become so, is left: pills are for a mess
+      const c = mostPopular(model, layouter, state);
+      if (!c || c.arrows < (opts.popular == null ? model.dial.popular : opts.popular)) break;
+      const trial = withMove(state, c);
+      trial.hosts = layouter.assignHosts(trial, cur, moveGroups(layouter, trial, c));
+      const layout = await layouter.layout(trial);
+      const e2 = evaluate(model, layout, mu);
+      const users = c.mode === 'out' ? fanTargets(model, c.node) : usersOf(model, layouter, c.node);
+      const rec = {
+        node: c.node, mode: c.mode, popular: true, arrows: c.arrows, board, before: r4(ev.cost), after: r4(e2.cost), gain: r4(1 - e2.cost / ev.cost), gainC: r4(ev.cost - e2.cost),
+        users: users.map((u) => ({ user: u, frame: model.node(u).container === 'b:' + board ? null : model.node(u).container.slice(2) })).sort((a, b) => byTitle(a.user, b.user)),
+        frames: [...new Set(users.map((u) => model.node(u).container))].sort().map((x) => (x === 'b:' + board ? null : x.slice(2))),
+        was: { X: ev.X, NE: ev.NE, Fx: ev.Fx }, now: { X: e2.X, NE: e2.NE, Fx: e2.Fx },
+      };
+      ({ st: state, cur, ev } = await settled(trial, layout, e2));
+      ({ st: state, cur, ev } = await settle(state, cur, ev));
+      if (opts.split !== false && c.mode !== 'out') ({ st: state, cur, ev } = await splitMany(state, cur, ev, new Set([c.node])));
+      rec.settled = r4(ev.cost);
+      report.promotions.push(rec);
+    }
+    lap('popular');
     const capShare = opts.cap == null ? model.dial.capShare : opts.cap;
     const cap = capShare <= 0 ? 0 : Math.max(1, Math.floor(capShare * leaves.length));   // at least one, unless the dial is all the way to 1
     report.budget = { cap, leaves: leaves.length };
     report.candidatesTried = 0;
     for (;;) {
       if (ev.good) { report.stop = 'good-enough'; break; }
-      const capped = state.order.filter((t) => !model.node(t).pin).length >= cap;
+      const capped = state.order.filter((t) => !model.node(t).pin).length + state.fans.length >= cap;
       layouter.phase = 'trial';
       const cands = candidates(model, layouter, cur, ev, state);
       lap('candidates');
@@ -138,15 +171,15 @@ export async function runBoard(model, layouter, opts) {
         if (!batch.length) break;
         for (const c of batch) {
           report.candidatesTried++;
-          const trial = ext(state, { promoted: new Set(state.promoted).add(c.node), order: state.order.concat([c.node]) });
-          const groups = new Set(layouter.pillPlan(trial).groups.filter((g) => g.target === c.node).map((g) => g.key));
+          const trial = withMove(state, c);
+          const groups = moveGroups(layouter, trial, c);
           trial.hosts = layouter.assignHosts(trial, cur, groups);
           let layout = await layouter.layout(trial);
           let e2 = evaluate(model, layout, mu), tst = trial;
           const tsplits = [];
-          if (opts.split !== false) ({ st: tst, cur: layout, ev: e2 } = await splitMany(trial, layout, e2, new Set([c.node]), true, tsplits));   // the promotion as it would stand once its pills are split
-          if (opts.debug) opts.debug('trial ' + c.node + ' ' + Math.round(e2.cost) + ' vs ' + Math.round(ev.cost) + ' (' + c.users + ' users)');
-          trials.push({ node: c.node, cost: r4(e2.cost), dCost: r4(e2.cost - ev.cost), dPill: r4(e2.pillTerm - ev.pillTerm), users: c.users });
+          if (opts.split !== false && c.mode !== 'out') ({ st: tst, cur: layout, ev: e2 } = await splitMany(trial, layout, e2, new Set([c.node]), true, tsplits));   // the promotion as it would stand once its pills are split
+          if (opts.debug) opts.debug('trial ' + c.mode + ' ' + c.node + ' ' + Math.round(e2.cost) + ' vs ' + Math.round(ev.cost) + ' (' + c.users + ' users)');
+          trials.push({ node: c.node, mode: c.mode, cost: r4(e2.cost), dCost: r4(e2.cost - ev.cost), dPill: r4(e2.pillTerm - ev.pillTerm), users: c.users });
           if (!best || e2.cost < best.ev.cost - 1e-9) best = { c, next: tst, layout, ev: e2, groups, tsplits };
         }
         lap('trials');
@@ -158,7 +191,7 @@ export async function runBoard(model, layouter, opts) {
       const gainD = (ev.cost - best.ev.cost) - (muD - mu) * (best.ev.pillTerm - ev.pillTerm);
       if (!(gainD >= marginD - 1e-9)) {
         report.stop = 'little-gain';
-        report.lastBest = { node: best.c.node, gain: r4(gainD), margin: marginD, trials };
+        report.lastBest = { node: best.c.node, mode: best.c.mode, gain: r4(gainD), margin: marginD, trials };
         if (capped) report.safetyCap = { hit: false, cap, leaves: leaves.length, note: `reached the safety cap of ${cap} promotions, but the next one would not have paid` };
         break;
       }
@@ -167,9 +200,10 @@ export async function runBoard(model, layouter, opts) {
         report.safetyCap = { hit: true, cap, leaves: leaves.length, wouldHaveGained: r4(1 - best.ev.cost / ev.cost), gainC: r4(ev.cost - best.ev.cost), next: best.c.node, note: `STOPPED BY THE SAFETY CAP of ${cap} promotions (${Math.round(100 * (opts.cap == null ? model.dial.capShare : opts.cap))}% of ${leaves.length} leaves): promoting ${best.c.node} next would still have cut the cost by ${Math.round(ev.cost - best.ev.cost)} (${Math.round(100 * (1 - best.ev.cost / ev.cost))}%)` };
         break;
       }
-      const users = usersOf(model, layouter, best.c.node);
+      // a promotion's users, or the shapes a fanned-out node's pills stand for
+      const users = best.c.mode === 'out' ? fanTargets(model, best.c.node) : usersOf(model, layouter, best.c.node);
       const rec = {
-        node: best.c.node, board, before: r4(ev.cost), after: r4(best.ev.cost), gain: r4(1 - best.ev.cost / ev.cost), gainC: r4(ev.cost - best.ev.cost), gainAtDial: r4(gainD), retried,
+        node: best.c.node, mode: best.c.mode, board, before: r4(ev.cost), after: r4(best.ev.cost), gain: r4(1 - best.ev.cost / ev.cost), gainC: r4(ev.cost - best.ev.cost), gainAtDial: r4(gainD), retried,
         users: users.map((u) => ({ user: u, frame: model.node(u).container === 'b:' + board ? null : model.node(u).container.slice(2) })).sort((a, b) => byTitle(a.user, b.user)),
         frames: [...new Set(users.map((u) => model.node(u).container))].sort().map((c) => (c === 'b:' + board ? null : c.slice(2))),
         was: { X: ev.X, NE: ev.NE, Fx: ev.Fx }, now: { X: best.ev.X, NE: best.ev.NE, Fx: best.ev.Fx },
@@ -178,20 +212,22 @@ export async function runBoard(model, layouter, opts) {
       ({ st: state, cur, ev } = await settled(best.next, best.layout, best.ev));
       ({ st: state, cur, ev } = await settle(state, cur, ev));
       lap('settle');
-      if (opts.split !== false) ({ st: state, cur, ev } = await splitMany(state, cur, ev, new Set([best.c.node])));
+      if (opts.split !== false && best.c.mode !== 'out') ({ st: state, cur, ev } = await splitMany(state, cur, ev, new Set([best.c.node])));
       lap('split');
       rec.settled = r4(ev.cost);
       report.promotions.push(rec);
     }
     // take back what does not pay for itself
     layouter.phase = 'demote';
-    for (const v of state.order.slice().reverse()) {
-      if (model.node(v).pin) continue;
-      const next = ext(state, { promoted: new Set([...state.promoted].filter((t) => t !== v)), order: state.order.filter((t) => t !== v) });
+    const popularMoves = new Set(report.promotions.filter((p) => p.popular).map((p) => p.mode + SEP + p.node));   // a popular node's move is not a judgment call: it stays
+    const made = state.order.map((v) => ({ v, mode: 'in' })).concat(state.fans.map((v) => ({ v, mode: 'out' })));
+    for (const { v, mode } of made.reverse()) {
+      if ((mode === 'in' && model.node(v).pin) || popularMoves.has(mode + SEP + v)) continue;
+      const next = withoutMove(state, v, mode);
       const layout = await layouter.layout(next);
       const e2 = evaluate(model, layout, mu);
       if (cm(e2) < cm(ev) - 1e-9) {
-        report.demotions.push({ node: v, board, before: r4(cm(ev)), after: r4(cm(e2)) });
+        report.demotions.push({ node: v, mode, board, before: r4(cm(ev)), after: r4(cm(e2)) });
         ({ st: state, cur, ev } = await settled(next, layout, e2));
       }
     }
@@ -229,6 +265,21 @@ export async function runBoard(model, layouter, opts) {
     if (!taken && ev.aspect > model.dial.good.aspect && evC.aspect <= model.dial.good.aspect && evC.cost <= ev.cost * 1.5) { taken = { fin: finC, ev: evC }; report.finalSqueeze.fallback = 'cold'; }   // nothing squeezed fits: ELK's fresh draw, if it does and costs C no more than half again (the dial's aspect is its own good enough)
     if (taken) { cur = taken.fin; ev = taken.ev; report.final = report.finalSqueeze.fallback || 'squeeze'; report.finalSqueeze.taken = true; }
   }
+  // no arrow longer than the dial allows: each that is (a plain one, or one into a pill others share) is set apart as a pill of its own
+  // beside its start, and the board laid out again from where it is, until none is left (a pill changes its start's box, so a few passes;
+  // each pass sets at least one more edge apart, so there are never more passes than edges)
+  report.long = [];
+  if (opts.promote && (opts.cap == null ? model.dial.capShare : opts.cap) > 0) {
+    for (let pass = 0; pass <= model.edges.length; pass++) {
+      const long = tooLong(model, cur, ev, model.dial.longest).filter((x) => !state.apart.has(x.key));
+      if (!long.length) break;
+      state = ext(state, { apart: new Set([...state.apart, ...long.map((x) => x.key)]) });
+      for (const x of long) report.long.push({ from: x.from, to: x.to, length: x.length, shared: x.shared });
+      layouter.setAnchors(cur); layouter.warm = true;
+      cur = await layouter.layout(state); ev = evaluate(model, cur, mu);
+    }
+    report.longLeft = tooLong(model, cur, ev, model.dial.longest).length;
+  }
   lap('final');
   report.end = { cost: r4(cm(ev)), costSearch: r4(ev.cost), X: ev.X, NE: ev.NE, NEnote: ev.NEnote, NEpill: ev.NEpill, Fx: ev.Fx, aspect: r4(ev.aspect), arrows: ev.arrows, sharedArrows: ev.sharedArrows, pills: ev.pills, orphans: ev.orphans, len: r4(ev.len), good: ev.good };
   const nArr = Math.max(1, ev.arrows + ev.sharedArrows);
@@ -237,6 +288,7 @@ export async function runBoard(model, layouter, opts) {
     n: nArr, NE: { value: ev.NE, perArrow: r4(ev.NE / nArr), need: gd.nePerArrow }, X: { value: ev.X, perArrow: r4(ev.X / nArr), need: gd.xPerArrow }, Fx: { value: ev.Fx, perArrow: r4(ev.Fx / nArr), need: gd.fxPerArrow }, aspect: { value: r4(ev.aspect), need: gd.aspect }, good: ev.good,
   };
   report.promoted = state.order.slice();
+  report.fanned = state.fans.slice();
   report.algorithms = cur.containers.map((c) => ({ container: c.container, algorithm: c.algorithm, warm: !!c.warm, children: c.children, arrows: c.arrows, costs: c.costs, w: c.w, h: c.h })).sort((a, b) => byTitle(a.container || '', b.container || ''));
   report.fill = cur.fills;
   report.shared = cur.plan.groups.filter((g) => g.shared).map((g) => ({ target: g.target, container: g.container === 'b:' + board ? null : g.container.slice(2), host: g.host, users: g.edges.length, split: g.key !== g.base })).sort((a, b) => byTitle(a.target, b.target) || byTitle(a.container || '', b.container || ''));
@@ -255,6 +307,19 @@ export async function runBoard(model, layouter, opts) {
   report.layout = Object.assign({ layouts: layouter.stats.layouts, elkCalls: layouter.stats.elkCalls, cacheHits: layouter.stats.hits }, layouter.stats);
   report.ms = now() - t0;
   return { state, layout: cur, ev, report };
+}
+
+/** The arrows of a layout longer than `max` that may be set apart: plain ones, and those into a pill others share. [{key, from, to, length, shared}] */
+export function tooLong(model, layout, ev, max) {
+  const plan = layout.plan, out = [];
+  const edges = plan.direct.map((e) => ({ e, shared: false })).concat(plan.members.map((m) => ({ e: m.e, shared: true })));   // evaluate's order
+  edges.forEach(({ e, shared }, i) => {
+    const seg = ev.segs[i];
+    if (!seg || !mayBeApart(model, e)) return;
+    const length = segLength(seg);
+    if (length > max) out.push({ key: e.from + SEP + e.to, from: e.from, to: e.to, length: Math.round(length), shared });
+  });
+  return out;
 }
 
 /** Shared groups of 4 or more users, biggest first, with how far their arrows to the pill are (longest, and how many cross something). Returns [{group, farthest, crossing}]. */
@@ -291,11 +356,53 @@ export function clusterK(layout, users, k) {
   return cl.map((g) => g.map((p) => p.u).sort(byTitle)).sort((a, b) => byTitle(a[0], b[0]));
 }
 
-/** Eligible nodes, best first: users x spread x (1 - tie), scaled by how badly their incoming arrows do. The tie is only here. */
+/** The arrows a move on v would turn into pills, each way: those pointing at it that are still arrows, and those leaving it. */
+export function arrowsAt(model, layouter, state, v) {
+  const fanned = state.fanned || new Set();
+  const n = model.node(v);
+  const into = n.never || state.promoted.has(v) ? 0
+    : (model.inn.get(v) || []).filter((e) => !e.cross && !e.via && !e.direct && model.node(e.from).board === layouter.board && !fanned.has(e.from)).length;
+  const out = fanned.has(v) ? 0
+    : (model.out.get(v) || []).filter((e) => fansOut(model, e) && model.node(e.to).board === layouter.board && !state.promoted.has(e.to)).length;
+  return { into, out };
+}
+
+/** The most popular node left and its move: the most arrows a move would turn into pills; on a tie the first node by title, and for one node pointing at it before leaving it. Null when no arrow is left. */
+export function mostPopular(model, layouter, state) {
+  let best = null;
+  for (const n of layouter.leaves) {
+    const a = arrowsAt(model, layouter, state, n.title);
+    for (const c of [{ node: n.title, mode: 'in', arrows: a.into }, { node: n.title, mode: 'out', arrows: a.out }]) {
+      if (c.arrows > 0 && (!best || c.arrows > best.arrows)) best = c;
+    }
+  }
+  return best;
+}
+
+/**
+ * Eligible moves, best first: a node many point at to promote ('in'), a node that points at many to fan out ('out'), each scored
+ * the same way round: its arrows x spread x (1 - tie), scaled by how badly those arrows do. The tie is only here.
+ */
 export function candidates(model, layouter, layout, ev, state) {
   const ranks = ranksOf(layout);
   const out = [];
   const edgeIndex = new Map(layout.plan.direct.map((e, i) => [e.from + SEP + e.to, i]));
+  const badOf = (edges) => { let bad = 0; for (const e of edges) { const i = edgeIndex.get(e.from + SEP + e.to); if (i != null && ev.per[i]) bad += ev.per[i].x + ev.per[i].ne + ev.per[i].fx; } return bad; };
+  const fanned = state.fanned || new Set();
+  for (const n of layouter.leaves) {
+    const v = n.title;
+    if (fanned.has(v)) continue;
+    // its uses that are still arrows, each to become a pill beside it
+    const outgoing = (model.out.get(v) || []).filter((e) => !e.cross && model.node(e.to).board === layouter.board);
+    const uses = outgoing.filter((e) => fansOut(model, e) && !state.promoted.has(e.to));
+    if (uses.length >= 2) {
+      const tie = outgoing.filter((e) => model.hasEdge(e.to, v)).length / Math.max(1, outgoing.length);
+      const frames = new Set(uses.map((e) => model.node(e.to).container)).size;
+      const rs = new Set(uses.map((e) => ranks.get(e.to))).size;
+      const spread = (frames + rs) / (2 * uses.length);
+      out.push({ node: v, mode: 'out', score: outgoing.length * spread * (1 - tie) * (1 + badOf(uses)), users: uses.length });
+    }
+  }
   for (const n of layouter.leaves) {
     const v = n.title;
     if (state.promoted.has(v) || n.never) continue;
@@ -306,9 +413,7 @@ export function candidates(model, layouter, layout, ev, state) {
     const frames = new Set(users.map((u) => model.node(u).container)).size;
     const rs = new Set(users.map((u) => ranks.get(u))).size;
     const spread = (frames + rs) / (2 * users.length);
-    let bad = 0;
-    for (const e of incoming) { const i = edgeIndex.get(e.from + SEP + e.to); if (i != null && ev.per[i]) bad += ev.per[i].x + ev.per[i].ne + ev.per[i].fx; }
-    out.push({ node: v, score: incoming.length * spread * (1 - tie) * (1 + bad), users: users.length });
+    out.push({ node: v, mode: 'in', score: incoming.length * spread * (1 - tie) * (1 + badOf(incoming)), users: users.length });
   }
-  return out.sort((a, b) => b.score - a.score || byTitle(a.node, b.node));
+  return out.sort((a, b) => b.score - a.score || byTitle(a.node, b.node) || byTitle(a.mode, b.mode));
 }

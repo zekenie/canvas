@@ -18,6 +18,7 @@ export function buildModel(digest, mess) {
     nodes.set(t, {
       title: t, kind: n.kind || 'sticky-note', parent: n.in ? fold(n.in) : null, text: n.text || '',
       pin: n.public === true, never: n.public === false, children: [],
+      rank: typeof n.rank === 'number' && isFinite(n.rank) ? n.rank : null,
     });
   }
   for (const n of nodes.values()) {
@@ -71,11 +72,12 @@ export function buildModel(digest, mess) {
   for (const n of nodes.values()) kids.get(n.container).push(n.title);
   for (const v of kids.values()) v.sort(byTitle);
   // header notes, one a board
-  const headers = new Map();
-  for (const b of boards) {
+  // (a title no node and no other board's header has: the digest's own gives way when a subboard is called what the digest is)
+  const headers = new Map(), taken = new Set();
+  for (const b of boards.filter((x) => x !== 'root').concat(['root'])) {
     let t = 'About ' + (b === 'root' ? title : b);
-    while (nodes.has(t)) t += ' (digest)';
-    headers.set(b, t);
+    while (nodes.has(t) || taken.has(t)) t += ' (digest)';
+    headers.set(b, t); taken.add(t);
   }
   // edges
   const edgeMap = new Map();
@@ -103,7 +105,7 @@ export function buildModel(digest, mess) {
   const dl = dial(mess != null ? mess : policy.mess);
   const mu = dl.mu;
   const model = {
-    title, policy, nodes, boards, boardDepth, kids, headers, edges, out, inn, warnings,
+    title, text: typeof digest.text === 'string' ? digest.text : '', policy, nodes, boards, boardDepth, kids, headers, edges, out, inn, warnings,
     mu, dial: dl, promote: policy.promote !== false,
     hasEdge: (a, b) => has.has(a + '\u0000' + b),
     node: (t) => nodes.get(t),
