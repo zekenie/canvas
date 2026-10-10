@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import FuzzyMatching
 import TextEditing
 
 /// Slash commands typed in a text view: the list at a `/` on an empty line, choosing from it, and
@@ -35,6 +36,15 @@ import TextEditing
 ///   would run looks different from one that is only text. Nothing is marked in a view that can't
 ///   be written.
 ///
+/// - A command that takes one choice (`SlashCommand`'s `choices:` form) opens a second list when its
+///   name is done: Tab, Return or a click on it in the names' list writes `/name ` and the list
+///   becomes the choices (`SlashChoicePicker`), and a space typed after a complete name opens it
+///   too; nothing else does (not a click into an old line, not typing after Escape). The keys are
+///   every caret list's, and a pick (Return, Tab, a click) takes the whole line out of the text and
+///   runs the command with the row at once. With the list closed, Return on the line typed whole
+///   runs the first row whose title is what was typed; none, a new line. Only the name of such a
+///   line is marked, never what follows it.
+///
 /// It writes the text only through the view, as a person's edit (undoable, heard by the host), its
 /// list closed first, and ignores its own callbacks while it does. The command runs after the text
 /// is written, so a command that makes the shape read-only has its line gone already. Running is the
@@ -44,7 +54,9 @@ import TextEditing
 public final class SlashCommandTyping {
     /// The open list's model.
     public private(set) var picker: SlashCommandPicker?
-    /// The window it shows in, while it's open.
+    /// The open list of a choice command's choices; never open with `picker`.
+    public private(set) var choices: SlashChoicePicker?
+    /// The window the open list shows in, while it's open.
     public private(set) var window: CaretListWindow?
 
     private weak var view: EditingTextView?
@@ -70,7 +82,12 @@ public final class SlashCommandTyping {
     /// After the view inserted what a person typed (not what it pasted, nor what an input method is
     /// still composing): a `/` on an empty line opens the list.
     public func didType(_ string: String) {
-        guard string == "/", !isWriting, picker == nil, let view, let commands, view.isEditable, view.caretListWindow == nil,
+        if string.utf16.count == 1, let character = string.utf16.first, SlashCommandLine.isWhitespace(character),
+           !SlashCommandLine.isLineBreak(character) {
+            openChoicesAfterSpace()
+            return
+        }
+        guard string == "/", !isWriting, picker == nil, choices == nil, let view, let commands, view.isEditable, view.caretListWindow == nil,
               !view.hasMarkedText(), let storage = view.textStorage else { return }
         let selection = view.selectedRange()
         guard selection.length == 0, selection.location > 0 else { return }
@@ -86,15 +103,18 @@ public final class SlashCommandTyping {
     public func didChange(isEdit: Bool) {
         guard !isWriting else { return }
         read(isEdit: isEdit)
+        readChoices(isEdit: isEdit)
         showCommand()
     }
 
     /// Closes the list, if it's open: its `/` stays as typed, and nothing opens until another is
     /// typed. The substitutions it turned off come back, and VoiceOver hears the list go.
     public func close() {
-        guard picker != nil else { return }
+        guard picker != nil || choices != nil else { return }
         picker?.list.onChange = nil
+        choices?.list.onChange = nil
         picker = nil
+        choices = nil
         if let view { substitutions?.apply(to: view) }
         substitutions = nil
         let closing = window
@@ -120,8 +140,42 @@ public final class SlashCommandTyping {
 
     /// Where the list goes: under its `/`, while it's in the text.
     private var anchor: NSRange? {
-        guard let picker, let storage = view?.textStorage, picker.location < storage.length else { return nil }
-        return NSRange(location: picker.location, length: 1)
+        guard let location = picker?.location ?? choices?.nameRange.location, let storage = view?.textStorage,
+              location < storage.length else { return nil }
+        return NSRange(location: location, length: 1)
+    }
+
+    /// A whitespace typed after a complete choice command's name, with nothing but whitespace after it
+    /// and no list open: opens the choices.
+    private func openChoicesAfterSpace() {
+        guard !isWriting, picker == nil, choices == nil, let view, let commands, view.isEditable, view.caretListWindow == nil,
+              !view.hasMarkedText(), let storage = view.textStorage else { return }
+        let selection = view.selectedRange()
+        guard selection.length == 0, selection.location > 1,
+              let line = SlashCommandLine(in: storage.string as NSString, caret: selection.location),
+              line.arguments.length == 0,
+              let command = commands.command(named: line.name, for: owner), command.takesChoice else { return }
+        openChoices(command, nameRange: line.nameRange, start: selection.location, over: view)
+    }
+
+    private func openChoices(_ command: OfferedSlashCommand, nameRange: NSRange, start: Int, over view: EditingTextView) {
+        let picker = SlashChoicePicker(offering: command, nameRange: nameRange, start: start)
+        choices = picker
+        substitutions = CaretListSubstitutions(of: view)
+        CaretListSubstitutions.off.apply(to: view)
+        window = CaretListWindow(picker.list, accessibilityLabel: SlashCommandStyle.choicesAccessibilityLabel, over: view,
+                                 anchor: { [weak self] in self?.anchor },
+                                 pick: { [weak self] row in self?.pick(row: row) },
+                                 close: { [weak self] in self?.close() })
+        picker.list.onChange = { [weak self] in self?.window?.listDidChange() }
+        readChoices(isEdit: true)
+        if choices != nil { window?.listDidChange() }
+        showCommand()
+    }
+
+    private func readChoices(isEdit: Bool) {
+        guard let choices, let view, let storage = view.textStorage else { return }
+        if choices.read(storage.string as NSString, selection: view.selectedRange(), isEdit: isEdit) != nil { close() }
     }
 
     private func read(isEdit: Bool) {
@@ -146,6 +200,8 @@ public final class SlashCommandTyping {
     public func takesReturn() -> Bool {
         guard !isWriting, let view, let commands, view.isEditable, !view.hasMarkedText(), let storage = view.textStorage else { return false }
         let text = storage.string as NSString
+        // The choices' list has the key: Return is the caret list's own, a pick or a new line.
+        if choices != nil { return false }
         if let picker {
             guard window != nil, let command = picker.highlightedCommand else { return false }
             let name = picker.nameRange
@@ -163,6 +219,7 @@ public final class SlashCommandTyping {
         let selection = view.selectedRange()
         guard selection.length == 0, let line = SlashCommandLine(in: text, caret: selection.location),
               let command = commands.command(named: line.name, for: owner) else { return false }
+        if command.takesChoice { return runTyped(command, line: line, in: text) }
         let arguments = arguments(in: line.arguments)
         guard command.accepts(arguments) else { return false }
         return run(command, with: arguments, removing: line.range)
@@ -179,15 +236,45 @@ public final class SlashCommandTyping {
 
     /// A click on a row of the list completes its command.
     private func pick(row index: Int) {
+        if let choices {
+            guard choices.listed.indices.contains(index) else { return }
+            _ = choose(choices.listed[index], of: choices.command, line: choices.nameRange.location)
+            return
+        }
         guard let picker, picker.listed.indices.contains(index) else { return }
         _ = complete(picker.listed[index], replacing: picker.nameRange)
+    }
+
+    /// Takes the line (from its `/` to its end) out of the text and runs the command with the
+    /// choice. The command is asked of the shape again, as `run` does; nothing of the view or this
+    /// object is touched after, since a pick may end this editing and take the view away.
+    private func choose(_ choice: SlashChoice, of command: OfferedSlashCommand, line location: Int) -> Bool {
+        guard let commands, let current = commands.command(named: command.name, for: owner), current.takesChoice,
+              let storage = view?.textStorage, location < storage.length else { return false }
+        let text = storage.string as NSString
+        var start = 0, end = 0, contentsEnd = 0
+        text.getLineStart(&start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
+        close()
+        guard write(NSRange(location: location, length: contentsEnd - location), with: "") else { return false }
+        commands.run(current, on: owner, choosing: choice)
+        return true
+    }
+
+    /// Return on a closed choice command's line typed whole: runs the first row whose title is what
+    /// was typed (folded as every list folds), asking for the rows now and not before.
+    private func runTyped(_ command: OfferedSlashCommand, line: SlashCommandLine, in text: NSString) -> Bool {
+        guard line.arguments.length > 0 else { return false }
+        let typed = text.substring(with: line.arguments)
+        guard let choice = command.choices().first(where: { FuzzyMatcher.match(typed, in: $0.title)?.score == FuzzyRanking.exact })
+        else { return false }
+        return choose(choice, of: command, line: line.range.location)
     }
 
     /// Writes `/` and the command's name in the place of what was typed, and a space if it takes an
     /// argument and no whitespace follows on its line (a line break doesn't count: the argument is
     /// typed on the line, not run into the one below): the caret after, one step of the text's undo.
     private func complete(_ command: OfferedSlashCommand, replacing range: NSRange) -> Bool {
-        guard let storage = view?.textStorage, NSMaxRange(range) <= storage.length else { return false }
+        guard let view, let storage = view.textStorage, NSMaxRange(range) <= storage.length else { return false }
         close()
         var completed = "/" + command.name
         if command.argument != nil {
@@ -196,7 +283,23 @@ public final class SlashCommandTyping {
             let spaceFollows = next.map { SlashCommandLine.isWhitespace($0) && !SlashCommandLine.isLineBreak($0) } ?? false
             if !spaceFollows { completed += " " }
         }
-        return write(range, with: completed)
+        guard write(range, with: completed) else { return false }
+        if command.takesChoice { openChoicesAfterCompleting(command, over: view) }
+        return true
+    }
+
+    /// The caret is after the name's `/name` and the space `complete` wrote, or before the one that
+    /// was there already: after it either way, and the choices open.
+    private func openChoicesAfterCompleting(_ command: OfferedSlashCommand, over view: EditingTextView) {
+        guard let storage = view.textStorage else { return }
+        let text = storage.string as NSString
+        var caret = view.selectedRange().location
+        if caret < text.length, SlashCommandLine.isWhitespace(text.character(at: caret)), !SlashCommandLine.isLineBreak(text.character(at: caret)) {
+            caret += 1
+            view.setSelectedRange(NSRange(location: caret, length: 0))
+        }
+        guard let line = SlashCommandLine(in: text, caret: caret), NSMaxRange(line.nameRange) == caret - 1 else { return }
+        openChoices(command, nameRange: line.nameRange, start: caret, over: view)
     }
 
     /// Takes the line out of the text and runs the command. The command is asked of the shape now
@@ -243,6 +346,16 @@ public final class SlashCommandTyping {
         return command.shapeRule
     }
 
+    /// Whether the line the location is on is a choice command's line that the shape offers: where
+    /// an `@` is a letter, since a pill would be an argument the command can't take. The host asks as
+    /// it would open the picker, for the line as it is then.
+    public func listsChoices(at location: Int) -> Bool {
+        guard let storage = view?.textStorage, let commands,
+              let line = SlashCommandLine(in: storage.string as NSString, caret: location),
+              let command = commands.command(named: line.name, for: owner) else { return false }
+        return command.takesChoice
+    }
+
     // MARK: Marking the command
 
     /// Marks what's typed as a command, as the view draws it under the text: the `/name`, and what
@@ -262,11 +375,16 @@ public final class SlashCommandTyping {
             guard !picker.listed.isEmpty, NSMaxRange(picker.nameRange) <= storage.length else { return [] }
             return [mark(picker.nameRange, SlashCommandStyle.commandFill, over: view)]
         }
+        if let choices {
+            guard NSMaxRange(choices.nameRange) <= storage.length else { return [] }
+            return [mark(choices.nameRange, SlashCommandStyle.commandFill, over: view)]
+        }
         let selection = view.selectedRange()
         guard let commands, selection.length == 0,
               let line = SlashCommandLine(in: storage.string as NSString, caret: selection.location),
               let command = commands.command(named: line.name, for: owner) else { return [] }
         var found = [mark(line.nameRange, SlashCommandStyle.commandFill, over: view)]
+        if command.takesChoice { return found }
         if line.arguments.length > 0, command.accepts(arguments(in: line.arguments)) {
             found.append(mark(line.arguments, SlashCommandStyle.argumentsFill, over: view))
         }

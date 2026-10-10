@@ -6296,6 +6296,32 @@ Two undo managers, as with every text: the board's steps and the text's own ([Un
   deletes it or shows another board ends editing as any such change does, and the line's removal,
   written first, is already in the step.
 
+### A command that takes a choice
+
+`SlashCommand(_:argument:when:choices:otherwise:step:perform:)` takes one choice from rows it makes
+when asked, where the other forms take text or a shape. The list opens when the name is done (Tab,
+Return or a click on it in the names' list, or a space typed after it), narrows as text is typed
+(`FuzzyMatcher`), and a pick (Return, Tab or a click) takes the whole line out of the text and runs
+the command with the row at once, as one undo step named by the row or else the command.
+
+```swift
+SlashCommand("is-a", argument: "type",
+             choices: { owner, editor in rows(for: owner, in: editor) },         // asked once, when the list opens
+             otherwise: { typed, owner, editor in newRow(typed) },               // the one row when nothing matches; nil: "No matches"
+             step: "Add Type") { owner, choice, editor in                         // a SlashChoice's own `step` wins
+    editor.give(owner, choice.id)
+}
+```
+
+A `SlashChoice` is an `id` (opaque to the module), a `title` (matched and shown), an optional
+`symbol` and `detail`, a `group` (a line sets off a row whose group differs from the row above), a
+`step` and `isPreferred` (with nothing typed the first preferred row is highlighted, else the first).
+The command never runs with `SlashArguments`, so Return in the names' list completes it. With the
+list closed, Return on the line typed whole runs the first row whose title is the typed text; the
+rows are asked for once, then. The list is `SlashChoicePicker`, and `SlashCommandTyping.listsChoices(at:)`
+says a line is a choice command's, where an `@` is a letter (a host that opens a picker for `@`
+asks it).
+
 ### Hosting in a text view: `SlashCommandTyping`
 
 A text view takes part by making a `SlashCommandTyping(over:owner:commands:arguments:)`: for one
