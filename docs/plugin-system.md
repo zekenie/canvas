@@ -10169,6 +10169,29 @@ anything else stays words.
   its label. What the prompts say of other schemas (`toSchemaReferences`, `toPromptReferences`,
   `highlightsReferences`) goes after each only in a request that names some.
 
+### The values a type's fields hold, checked
+
+A note that is an instance of types holds values for their fields (`fieldValues`), and
+`editor.fieldChecks` says what is wrong with them: `fullCheck(of:)` for a record is a `FieldCheck`, a
+list of problems each at a path a row names, of two classes. A **needed** field has no value (`required`,
+`dependentRequired`, or "at least one of"; a needed yes or no never counts, an unticked box is a
+value), and is no issue: amber on its row, no ring. A **wrong** value breaks a rule (`type`, `enum`,
+`pattern`, a bound, a `format`, a list limit), and is an error from a rule of Types' own, so the note
+is ringed, listed in the Issues tab and `:invalid`. A rule across fields that is broken is a wrong
+problem at the root, with no row.
+
+It is the core's validator run over the composed schema of the shape's types, made checkable
+(`FieldSchemas.checkable`) so it says what people mean: a value no field names is never wrong, an
+`if` on a field asks only once the field has a value, "at least one of" names every field it would take,
+and a pattern ICU cannot read is not the note's fault. The formats the plan lists (`email`, `date`,
+`date-time`, `time`, `uri`, `uuid`) are checked, as `SchemaFormats.standard`. One checker is kept for each
+distinct list of types and one answer for each shape asked; an answer is trusted while its inputs are
+the ones it was made from, so nothing is invalidated when a type changes. A type's edit reaches the
+shapes through `TypeIndex.onChange` and `ValidationEngine.recheck`.
+
+The caret is `typing`: the path of the field being typed in is left out of `check(of:)`, so a half-typed
+value is never red; it returns when the caret leaves.
+
 ### Keeping the words and the schema in step: `TypeSync`
 
 Edit the words and Claude rewrites the schema; edit the schema by hand and Claude rewrites the words

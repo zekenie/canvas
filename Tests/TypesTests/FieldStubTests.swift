@@ -5,7 +5,7 @@ import TestKit
 import Types
 
 // The services other tracks fill, as K0 leaves them: the writer is a plain transaction named for the field,
-// the check says clean, the card does not open. What each answers now is what the track that fills it keeps.
+// the card does not open (the check is `FieldCheckerTests`' and `FieldChecksTests`'). What each answers now is what the track that fills it keeps.
 
 private let email = FieldPath(field: "email"), name = FieldPath(field: "name")
 
@@ -137,10 +137,11 @@ private let email = FieldPath(field: "email"), name = FieldPath(field: "name")
         expect(!(try require(editor.fieldWriter)).set("x", at: email, of: pocket))
         expectEqual(editor.revision, before)
     },
-    test("the check says clean, and keeps what is being typed in, redrawing") {
+    test("the check keeps what is being typed in, redrawing") {
         let editor = try fieldEditor()
         let id = ann(editor)
         let checks = try require(editor.fieldChecks)
+        try require(editor.fieldWriter).set("Ann", at: name, of: id)
         let record = try require(editor.document[id])
         expectEqual(checks.check(of: record), .clean)
         expectEqual(checks.fullCheck(of: record), .clean)
