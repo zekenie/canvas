@@ -10279,6 +10279,9 @@ registrar.translationAdjuster { editor, start in SnapDrag(start, in: editor) }  
   neighbors would begin before them, or its near edge onto where it would end after them. Ties go
   to edges and middles before spaces, and to the near edge first. Along an axis where it snaps it
   lands exactly on the line; along the other it follows the pointer exactly, as without Snapping.
+  A frame is the one the shape is laid out in (`context.frame(of:)`), so a note grown by its type
+  snaps by its laid-out edges and others snap to them, and a layout change mid-drag
+  (`editor.layoutRevision`) is followed at the next event.
 - **Guides** show while the drag lasts, in tldraw's snap red (hsl(0, 76%, 60%), light and dark
   alike), a view point wide: for every line it's on exactly, snapped there or not, a line through
   the corners and centers on it, a ✕ at each; for every space it makes as long as one between

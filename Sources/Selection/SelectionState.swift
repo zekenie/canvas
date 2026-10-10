@@ -141,18 +141,21 @@ final class SelectionState {
 
     /// The union of the selected shapes' geometry bounds, in world units (`selectionBounds`), kept
     /// while what it's worked out from stays as it was: the selection, the board's shapes (the
-    /// editor's `revision`: every commit, undo and redo, another board shown) and the camera (a
-    /// kind's geometry may read it). So the box around several is worked out again only after one
+    /// editor's `revision`: every commit, undo and redo, another board shown), the layout (the editor's
+    /// `layoutRevision`: shapes laid out again with no commit, a note whose type gained a field) and the
+    /// camera (a kind's geometry may read it). So the box around several is worked out again only after one
     /// of those changed, which saves each read (the canvas's frame, the minimap's, a hover's
     /// `isInSelectionBox`) a pass over the selection; the selected shapes' outlines still go through
     /// every one of them each frame (on the canvas a lookup of each one's extent, only those in view
     /// stroked; in the minimap each one's silhouette). Any commit works it out again, not only one
     /// naming a selected shape, since a shape's geometry may follow another's (a link's, its ends').
     var selectionBounds: CGRect? {
-        let document = editor.revision, camera = editor.camera
-        if let kept = keptBounds, kept.selection == revision, kept.document == document, kept.camera == camera { return kept.bounds }
+        let document = editor.revision, layout = editor.layoutRevision, camera = editor.camera
+        if let kept = keptBounds, kept.selection == revision, kept.document == document, kept.layout == layout, kept.camera == camera {
+            return kept.bounds
+        }
         let bounds = editor.shapeContext.bounds(of: selectedIDs)
-        keptBounds = KeptBounds(selection: revision, document: document, camera: camera, bounds: bounds)
+        keptBounds = KeptBounds(selection: revision, document: document, layout: layout, camera: camera, bounds: bounds)
         #if DEBUG
         boundsWorkedOut += 1
         #endif
@@ -162,6 +165,7 @@ final class SelectionState {
     private struct KeptBounds {
         let selection: Int
         let document: Int
+        let layout: Int
         let camera: Camera
         let bounds: CGRect?
     }

@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([targetsTests, dragTests])
+runTests([targetsTests, dragTests, laidOutSnappingTests])
