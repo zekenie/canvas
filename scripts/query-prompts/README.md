@@ -6,7 +6,7 @@ framework: a Swift test that asks the real model, a TSV of cases, a TSV of resul
 Nothing here is a copy of the app. The cases run through what ships: CompositionTests' "Query
 prompt, live" suite (`Tests/CompositionTests/QueryLiveTests.swift`) opens each case's file with the
 shipped plugins, shows its board, selects its shapes, and asks its question the way `--ask` asks it:
-`QueryTranslator` with `QueryPrompt.system`, the model `AskStyle` names through the editor's
+`QueryTranslator` with the product's prompt (`Shipped/ask-prompt.txt`), the model `AskStyle` names through the editor's
 `AnthropicModel` (with the key Settings saves), the repair turn, and the command's deadlines. It then runs the query the model wrote and
 compares the set of shapes it matched with the case's. Any query that finds those shapes passes,
 whatever its form.
@@ -15,7 +15,7 @@ whatever its form.
   runs on) and 19 on the eval board (`QueryEvalBoard.swift`, 59 shapes on six boards, with
   look-alike titles, plain arrows, and a note mentioned from two boards away).
 - `results.tsv` gets a row per run of a round, when you ask for one (`QUERY_EVAL_OUT`).
-- `copy_prompt.py` copies `QueryPrompt.system` into the canvas skill's `query-prompt.md` after the
+- `copy_prompt.py` copies the prompt (`Shipped/ask-prompt.txt`) into the canvas skill's `query-prompt.md` after the
   prompt changes (the "Query prompt" suite holds the two equal).
 
 ## Running it

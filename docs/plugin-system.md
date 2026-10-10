@@ -460,9 +460,10 @@ Opting in goes in one of three directions:
   value for each concern (DrawLexicon's `TitleNamesPlugin`, `PortEdgesPlugin`,
   `ValidationChecksPlugin` and `MentionTextsPlugin`; QueryLexicon's `TitleQueriesPlugin`, `BoardQueriesPlugin`,
   `MentionQueriesPlugin`, `ValidationQueriesPlugin` and `SelectionQueriesPlugin`), so a list
-  without a concern leaves its words out. What names the shipped kinds stays in Composition, the
-  one module that depends on them all: `--ask`'s prompt (`QueryPrompt`), whose examples write
-  `sticky-note` and `subboard`.
+  without a concern leaves its words out. What names the shipped kinds is in no module: `--ask`'s
+  prompt, whose examples write `sticky-note` and `subboard`, is a text file of the product's
+  (`Shipped/ask-prompt.txt`), which the build puts in the product's executables and the core reads
+  back (`ShippedText`).
 
 No module joins two others but a lexicon. There's no bridge, a module that imports two others to
 join them where it isn't settled which should know the other (a `PatchTitles` bridge would give
@@ -7420,7 +7421,7 @@ follow, while `TitleQueriesPlugin`, `ValidationQueriesPlugin` and `SelectionQuer
 nothing without Titles, Validation or Selection (every kind untitled, no shape invalid, nothing
 selected), as DrawLexicon's do without theirs. `QueryCommandsPlugin()` needs `AutomationPlugin()`,
 and `--ask` `QueryTranslationPlugin` and `LanguageModelsPlugin` (else `no_model`). The shipped list has them after
-DrawLexicon's: `QueriesPlugin(), QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule), TitleQueriesPlugin(), BoardQueriesPlugin(),
+DrawLexicon's: `QueriesPlugin(), QueryTranslationPlugin(), TitleQueriesPlugin(), BoardQueriesPlugin(),
 MentionQueriesPlugin(), ValidationQueriesPlugin(), SelectionQueriesPlugin()`, then
 `QueryCommandsPlugin()`; the prompt stays in Composition, since its examples name the shipped kinds.
 
@@ -7597,7 +7598,7 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
   `--timeout` that lets go of the model's call, a file closed under it answered `board_closed` at
   once); BoardsTests `:current-board` across a switch (no change set worked out, no snapshot left);
   and SkillTests every `query` and `query-error` block ([Testing plugins](#testing-plugins)).
-- **The prompt.** QueryPromptTests hold `QueryPrompt.system` to the language: each of its
+- **The prompt.** QueryPromptTests hold the prompt (`Shipped/ask-prompt.txt`) to the language: each of its
   `runnableExamples` answered on the story, each of its `illustrativeExamples` refused there with its
   reason, every query written after "→" listed, nothing that reads as a query left out of the lists,
   every `:word` the language's, a shipped plugin's or one the prompt says not to invent, the kinds,
@@ -9685,8 +9686,8 @@ evaluated: the batch that follows the stored query is its first evaluation. `Tra
 `.person` (`--ask`'s: the selection in `<board>`, every word in `<vocabulary>`) or `.reference`: the
 selection is left out of `<board>` (it is the pill being typed into), every word that reads the
 editor (`QueryVocabulary.textForStoredQueries`, from each word's `readsEditor`) is left out of
-`<vocabulary>`, and one line, `referenceRule` (Composition's `QueryPrompt.referenceRule`, handed to
-the plugin beside the prompt), is added to the system prompt. The prompt's own examples still teach
+`<vocabulary>`, and one line, `referenceRule` (the product's `Shipped/ask-rule.txt`, which the
+plugin reads beside the prompt), is added to the system prompt. The prompt's own examples still teach
 `:selected` and `:current-board` and are not edited for this context (it is `--ask`'s byte for
 byte), so the filtered vocabulary and the rule line keep the model off them and the gate's repair
 catches the rest; a QueryPromptTests case holds that the rule line and the filtered vocabulary are
@@ -9704,17 +9705,24 @@ there for `.reference` and not for `.person`.
   cheaper model that clears the evaluation's bar (below), named on every request, while the
   editor's own model stays Haiku 4.5, which answers only a request that names none. `QueryTranslationPlugin(prompt:referenceRule:style:)` takes another,
   and `AskStyle.named(_:)` is a model's style by its id (the evaluation's `QUERY_MODEL`).
-- **The prompt** is Composition's `QueryPrompt.system`
-  ([QueryPrompt.swift](../Sources/Composition/QueryPrompt.swift)), handed to
-  `QueryTranslationPlugin(prompt:referenceRule:)` since its examples name the shipped kinds, edge types and words:
-  a raw string literal, the prompt byte for byte (as `SchemaPrompts`' are), with its query-like
-  examples in two lists, `runnableExamples` (each answered on the story file) and
-  `illustrativeExamples` (each refused there, with its listed reason), which QueryPromptTests hold
-  to the language. The canvas skill carries it byte for byte
+- **The prompt** is a text file of the product's,
+  [`Shipped/ask-prompt.txt`](../Shipped/ask-prompt.txt), the prompt byte for byte, and no module's,
+  since its examples name the shipped kinds, edge types and words, which no module knows all of.
+  The build puts every `Shipped/*.txt` in each executable that is the product (the app, its Quick
+  Look extension, the tests of what ships), as a section of the binary, and the core reads one back
+  by name (`ShippedText.named("ask-prompt")`): `QueryTranslationPlugin()`, made with no arguments,
+  reads the prompt and the rule line (`ask-rule.txt`, taken without its line break), and only an
+  executable that is the product can make one that way; anything else passes its own
+  (`init(prompt:referenceRule:style:)`). Its query-like examples are in two lists in
+  CompositionTests ([QueryPrompt.swift](../Tests/CompositionTests/QueryPrompt.swift)),
+  `runnableExamples` (each answered on the story file) and `illustrativeExamples` (each refused
+  there, with its listed reason), which QueryPromptTests hold to the language. The canvas skill
+  carries the prompt byte for byte
   ([`query-prompt.md`](../.claude/skills/canvas/query-prompt.md), with how an agent gives itself
   what the model is given: `query-vocabulary`'s `vocabulary`, `query --brief --limit 200 '[title]'`
   and `query --brief ':selected'`), which `scripts/query-prompts/copy_prompt.py` rewrites from the
-  literal and QueryPromptTests hold equal.
+  file and QueryPromptTests hold equal ([`Shipped/README.md`](../Shipped/README.md) says how to
+  change it).
 - **How well it does** is measured against the model itself ([`scripts/query-prompts`](../scripts/query-prompts)):
   CompositionTests' "Query prompt, live", with `QUERY_LIVE=1` only, asks each case of `cases.tsv`
   (on the story file and `QueryEvalBoard`, 59 shapes on six boards) as `--ask` asks it, scored by the
@@ -12421,7 +12429,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 | Scope globs, `:on-page` | Containment in the selector: `"Payments" *`, `:top-level`, `:current-board`; `:on-page` is refused with `"Board" *`. |
 | `:selected`, dropped | Back: the engine runs in the live app, over what's selected as the query starts (QueryLexicon's `SelectionQueriesPlugin`). |
 | An unknown pseudo-class accepted and ignored | Refused, with the one like it or the rewrite (`KnownInventions`); every name is resolved against the registry, and every title and id against the file, before anything is answered. |
-| `nl-translate.ts`'s prompt, and the task's move from Haiku 4.5 to Sonnet 4.5 | `QueryPrompt.system`, ported where it still applies (the output contract, the direction procedure, "do not invent new ones"), taught on the story file and held to the language by tests; `--ask` runs on either model through `AskStyle`, and the live evaluation's bar picks the cheaper that clears it: Sonnet 5.5, in round 2. |
+| `nl-translate.ts`'s prompt, and the task's move from Haiku 4.5 to Sonnet 4.5 | the prompt (`Shipped/ask-prompt.txt`), ported where it still applies (the output contract, the direction procedure, "do not invent new ones"), taught on the story file and held to the language by tests; `--ask` runs on either model through `AskStyle`, and the live evaluation's bar picks the cheaper that clears it: Sonnet 5.5, in round 2. |
 
 ## Not built yet
 

@@ -10,7 +10,8 @@ import QueryTranslation
 import TestKit
 import Topology
 
-// `--ask`'s prompt held to the language (`QueryPrompt`): each of its examples written in it as
+// `--ask`'s prompt (the product's `Shipped/ask-prompt.txt`, read as `QueryPrompt.system`) held to
+// the language: each of its examples written in it as
 // listed, each runnable one answered on the story file (the worked ones with what their questions
 // ask), each illustrative one refused there with its reason; nothing it writes as a query left out
 // of the lists; every word it writes accounted for; what its examples assume the shipped app's;
@@ -248,12 +249,23 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         expectEqual(lines[begin + 1], "````text", "a four-backtick text fence opens after the first mark")
         expectEqual(lines[end - 1], "````", "and closes before the second")
         let fenced = lines[(begin + 2)..<(end - 1)].joined(separator: "\n") + "\n"
-        expect(fenced == QueryPrompt.system, "the fenced text is QueryPrompt.system: python3 scripts/query-prompts/copy_prompt.py copies it")
+        expect(fenced == QueryPrompt.system, "the fenced text is Shipped/ask-prompt.txt: python3 scripts/query-prompts/copy_prompt.py copies it")
         // Its paragraphs before the prompt say how to write a query without --ask: with its inputs.
         let before = lines[..<begin].joined(separator: "\n")
         for input in ["query-vocabulary", "--brief --limit 200 '[title]'", "--brief ':selected'", "<vocabulary>", "<titles>", "<board>"] {
             expect(before.contains(input), "query-prompt.md says how to get \(input)")
         }
+    },
+    test("the prompt and its rule line are text files of the product's, in this executable as they're written") {
+        let prompt = try String(contentsOfFile: "Shipped/\(QueryTranslationPlugin.promptFile).txt", encoding: .utf8)
+        let rule = try String(contentsOfFile: "Shipped/\(QueryTranslationPlugin.ruleFile).txt", encoding: .utf8)
+        expect(ShippedText.named(QueryTranslationPlugin.promptFile) == prompt, "the build puts the prompt in the binary, byte for byte")
+        expect(ShippedText.named(QueryTranslationPlugin.ruleFile) == rule, "and the rule line")
+        expect(prompt.hasSuffix("Nothing else.\n") && !prompt.hasSuffix("\n\n"), "the prompt ends with its last line and one line break")
+        expect(rule.hasSuffix(".\n") && !rule.dropLast().contains("\n"), "the rule is one line, with its line break")
+        expectEqual(QueryPrompt.referenceRule + "\n", rule, "which the translator takes without the break")
+        expectEqual(QueryPrompt.system, prompt)
+        expectEqual(ShippedText.named("no-such-text"), nil, "a name the folder has no file of")
     },
     test("a stored query's request carries the rule line and a vocabulary without the words that read the editor, and a person's carries neither") {
         let pasteboard = NSPasteboard.withUniqueName()

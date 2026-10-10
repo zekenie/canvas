@@ -365,6 +365,22 @@ public struct QueryTranslationPlugin: CanvasPlugin {
         self.style = style
     }
 
+    /// The product's translator: asked with the product's prompt and rule line, which are text
+    /// files of its own (`Shipped/ask-prompt.txt` and `ask-rule.txt`, `ShippedText`), since their
+    /// examples name the shipped kinds, edge types and words, which no module knows all of. The
+    /// prompt is the file byte for byte; the rule is its one line, without the line break. Only an
+    /// executable that is the product has them: anything else passes its own (`init(prompt:referenceRule:style:)`).
+    public init() {
+        guard let prompt = ShippedText.named(Self.promptFile), let rule = ShippedText.named(Self.ruleFile) else {
+            preconditionFailure("QueryTranslationPlugin() reads Shipped/\(Self.promptFile).txt and \(Self.ruleFile).txt, which the build puts only in the product's executables: pass a prompt")
+        }
+        self.init(prompt: prompt, referenceRule: rule.trimmingCharacters(in: .newlines))
+    }
+
+    /// The product's files this plugin reads (`Shipped/<name>.txt`).
+    public nonisolated static let promptFile = "ask-prompt"
+    public nonisolated static let ruleFile = "ask-rule"
+
     public var id: PluginID { .queryTranslation }
 
     public func register(into registrar: inout PluginRegistrar) {

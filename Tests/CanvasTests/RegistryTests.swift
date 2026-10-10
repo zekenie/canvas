@@ -63,6 +63,10 @@ extension ShapeRegistrar {
 }
 
 @MainActor let registryTests = Suite("Registry", [
+    test("the product's text files are in the product's executables alone: this one, which isn't, has none") {
+        expectEqual(ShippedText.named("ask-prompt"), nil)
+        expectEqual(ShippedText.named(""), nil)
+    },
     test("a contribution made inside a shape's registrar is stamped with its kind") {
         let registry = try Registry(plugins: [StampsPlugin(), Contributor(id: "boxes") { r in
             r.shape(BoxDefinitionForTests()) { box in box.stamp("hello") }
