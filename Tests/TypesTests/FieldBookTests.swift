@@ -94,14 +94,14 @@ private enum Schemas {
         let note = editor.add(memo("a plain note"))
         let resolved = staff.book.fields(types: list)
         let revision = staff.book.revision
-        let reads = try require(editor.types).recordsRead
         editor.transact("Rename") { $0.update(staff.employee) { $0[TitleProperty.self] = "Staff" } }
         editor.addTypeLink(staff.person, to: staff.ann)
+        let beforeMove = try require(editor.types).recordsRead
         editor.transact("Move") { $0.translate([staff.ann, staff.employee], by: CGPoint(x: 5, y: 5)) }
+        expectEqual(try require(editor.types).recordsRead, beforeMove, "a move reads no record")
         editor.transact("Words") { $0.update(note, as: Memo.self) { $0.props.text = "a longer plain note" } }
         expectEqual(staff.book.revision, revision)
         expectEqual(staff.resolutions { expectEqual(staff.book.fields(types: list), resolved) }, 0)
-        expect(try require(editor.types).recordsRead >= reads, "(and a move reads no record: the index's own test holds that)")
     },
     test("JSON broken mid-edit keeps the last good fields; text that was never JSON has none; undo of the edit is the earlier fields") {
         let staff = try Staff()

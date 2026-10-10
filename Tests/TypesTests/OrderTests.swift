@@ -110,4 +110,24 @@ private func ids(_ numbers: Int...) -> [ShapeID] { numbers.map(id) }
             }
         }
     },
+    test("on random acyclic graphs: a shape before what it builds on, with the fallback reached often") {
+        var random = Random(state: 29)
+        var fallbacks = 0
+        for round in 0..<300 {
+            let count = 3 + random.next(7)
+            var lists: [Int: [Int]] = [:]
+            for n in 1..<count { lists[n] = (0..<random.next(4)).map { _ in random.next(n) } }   // parents from lower indices only
+            let parents = graph(lists)
+            let heads = (0..<(1 + random.next(4))).map { _ in id(random.next(count)) }
+            let order = TypeOrder.linearized(heads, excluding: nil, parents: parents)
+            if TypeOrder.c3(heads, excluding: nil, parents: parents) == nil { fallbacks += 1 }
+            expectEqual(Set(order).count, order.count, "round \(round): each shape once")
+            for (place, shape) in order.enumerated() {
+                for parent in parents(shape) {
+                    if let at = order.firstIndex(of: parent) { expect(at > place, "round \(round): a shape before what it builds on") }
+                }
+            }
+        }
+        expect(fallbacks >= 20, "the fallback was reached \(fallbacks) times")
+    },
 ])
