@@ -41,8 +41,8 @@ public struct SlashCommand<Value> {
     /// For a command that takes one shape: the most kinds of shape it takes, given the registry; nil
     /// for one that names none (any kind) or takes no shape.
     let kinds: (@MainActor (Registry) -> Set<ShapeKind>)?
-    /// For a command that takes one choice: the rows, made when asked, and the one row to offer when
-    /// nothing matches what was typed; nil for the other forms.
+    /// For a command that takes one choice: the rows, made when asked, and the one row to offer for
+    /// what was typed, last unless a row is titled so; nil for the other forms.
     let choices: (@MainActor (_ owner: ShapeID, CanvasEditor) -> [SlashChoice])?
     let otherwise: (@MainActor (_ typed: String, _ owner: ShapeID, CanvasEditor) -> SlashChoice?)?
     let step: String?
@@ -137,10 +137,12 @@ public struct SlashCommand<Value> {
     /// the list opens when its name is done (Tab or a click on it in the names' list, or a space typed
     /// after it), narrows as text is typed, and a pick runs `perform` at once, the whole line taken
     /// out of the text. `choices` is asked once, when the list opens (and once more at a Return on a
-    /// closed line typed whole); `otherwise` is asked with what was typed when nothing matches, and
-    /// returns the one row to offer there, or nil. A pick's undo step is its row's `step`, else this
-    /// command's. `argument` is the hint beside the name. The command takes no arguments as such
-    /// (`accepts` is never true): the names' list's Return completes it rather than running it.
+    /// closed line typed whole); `otherwise` is asked with what was typed, and returns the one row to
+    /// offer for it, or nil: that row goes last, after the matches (the only row where nothing
+    /// matches), unless a row is titled what was typed, and is not asked for with nothing typed. A
+    /// pick's undo step is its row's `step`, else this command's. `argument` is the hint beside the
+    /// name. The command takes no arguments as such (`accepts` is never true): the names' list's
+    /// Return completes it rather than running it.
     ///
     ///     SlashCommand("is-a", argument: "type", choices: { owner, editor in rows(for: owner, in: editor) }) { owner, choice, editor in
     ///         editor.makeIt(owner, as: choice.id)

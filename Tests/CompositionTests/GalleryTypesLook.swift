@@ -132,7 +132,7 @@ private let galleryTypesLookStates: [GalleryState] = [
     GalleryState("Flow2-p1-list-types", answers: "Flow2 p1", "`/is-a ` with nothing typed: `Type`, a line, then the file's types by name, the first type highlighted", size: tall) { stage in
         try listing("", in: stage)
     },
-    GalleryState("Flow2-p1-list-narrowed", answers: "Flow2 p1", "`/is-a pe`: the types that match, the best highlighted, matched letters semibold", size: tall) { stage in
+    GalleryState("Flow2-p1-list-narrowed", answers: "Flow2 p1", "`/is-a pe`: the types that match, the best highlighted, matched letters semibold, then `New type “Pe”` last", size: tall) { stage in
         try listing("pe", in: stage)
     },
     GalleryState("Flow2-p2-instance-chip", answers: "Flow2 p2", "after Person is picked: the line gone, the light `Person` chip above the note", size: wide) { stage in
@@ -160,6 +160,10 @@ private let galleryTypesLookStates: [GalleryState] = [
     },
     GalleryState("Flow2-p4-list-new-type", answers: "Flow2 p4", "`/is-a company`, nothing matching: the one row `New type “Company”`, highlighted, no chip", size: tall) { stage in
         try listing("company", in: stage)
+    },
+    GalleryState("Flow2-p4-list-match-and-new-type", answers: "Flow2 p4", "`/is-a co` with a Company type in the file: `Company` highlighted, then `New type “Co”` last, no chip", size: tall) { stage in
+        _ = stage.editor.typeNote("Company", schema: bareSchema, at: CGPoint(x: 280, y: 60), width: 110, height: 160)
+        return try listing("co", in: stage, types: false)
     },
     GalleryState("Flow2-p4-after-new-type", answers: "Flow2 p4", "after the pick: the new Company note beside Ann, white with its pill, in editing; Ann has the light `Company` chip", size: wide) { stage in
         let ann = stage.editor.note("Ann Lee, staff engineer", title: "Ann", at: CGPoint(x: 40, y: 70))

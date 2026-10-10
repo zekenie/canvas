@@ -6348,7 +6348,7 @@ the command with the row at once, as one undo step named by the row or else the 
 ```swift
 SlashCommand("is-a", argument: "type",
              choices: { owner, editor in rows(for: owner, in: editor) },         // asked once, when the list opens
-             otherwise: { typed, owner, editor in newRow(typed) },               // the one row when nothing matches; nil: "No matches"
+             otherwise: { typed, owner, editor in newRow(typed) },               // the one row for what was typed, last, if no row is titled so; nil: none
              step: "Add Type") { owner, choice, editor in                         // a SlashChoice's own `step` wins
     editor.give(owner, choice.id)
 }
@@ -6357,10 +6357,17 @@ SlashCommand("is-a", argument: "type",
 A `SlashChoice` is an `id` (opaque to the module), a `title` (matched and shown), an optional
 `symbol` and `detail`, a `group` (a line sets off a row whose group differs from the row above), a
 `step`, `isPreferred` (with nothing typed the first preferred row is highlighted, else the first) and `chip` (a color, passed to the row: [a list at the caret](#a-list-at-the-caret)).
+With something typed, the rows that match come ranked and the best is highlighted. `otherwise` is
+asked with what was typed, and the row it gives comes last, after the matches (the only row, and
+highlighted, where nothing matches), unless a row is titled what was typed (case aside, spaces
+folded, as `FuzzyMatcher` has it: `FuzzyRanking.exact`). The best match stays the highlighted row,
+so Return picks it and never the command's own row by accident. With nothing typed there is no such
+row; where nothing matches and `otherwise` gives none, the list says "No matches".
 The command never runs with `SlashArguments`, so Return in the names' list completes it. With the
-list closed, Return on the line typed whole runs the first row whose title is the typed text; the
-rows are asked for once, then. The list is `SlashChoicePicker`, and `SlashCommandTyping.listsChoices(at:)`
-says a line is a choice command's, where an `@` is a letter (a host that opens a picker for `@`
+list closed, Return on the line typed whole runs the first row whose title is the typed text (the
+`otherwise` row is the open list's alone); the rows are asked for once, then. The list is
+`SlashChoicePicker`, and `SlashCommandTyping.listsChoices(at:)` says a line is a choice command's,
+where an `@` is a letter (a host that opens a picker for `@`
 asks it).
 
 ### Hosting in a text view: `SlashCommandTyping`
@@ -10013,9 +10020,13 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   one way an entry goes). With nothing typed the first type is highlighted, `Type` when there is
   none. It works in a note's text and in an arrow's label (no `Type` row there). `@` on its line is
   a letter.
-- **New type**: where nothing matches what was typed (`/is-a company`), the list offers the one row
-  `New type “Company”` (the name capitalized, spaces folded, at most 80 characters, and only while a kind
-  can be a type and has a tool to place it). A pick, `editor.newType(named:besides:)`, is one step, "New
+- **New type**: for what was typed (`/is-a company`), unless a row of the list is titled so (case aside,
+  spaces folded: `/is-a type` has the `Type` row, and `/is-a company` the type Company), the list
+  offers the row `New type “Company”`, last, after the ranked matches (the only row, highlighted, where
+  nothing matches; with matches the best stays highlighted, so `/is-a co` lists Company and then
+  `New type “Co”`, and Return picks Company). The name is capitalized, spaces folded, at most 80
+  characters, and offered only while a kind can be a type and has a tool to place it; with nothing typed
+  there is no such row. A pick, `editor.newType(named:besides:)`, is one step, "New
   Type": a note of the shape's kind (else the first kind that can be a type) titled with the name and
   holding the starter schema is put down beside the shape where Placing's `Surroundings.near` lands
   it (`/move-near`'s place: right if free, then below, left, above), and the shape is made an instance

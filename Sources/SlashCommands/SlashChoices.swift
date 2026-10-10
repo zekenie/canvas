@@ -40,7 +40,8 @@ public struct SlashChoice: Equatable {
 /// typed after the name (the query), the choices that lists, and which is highlighted. Headless, on
 /// every caret list's model (`CaretList`), as `SlashCommandPicker` is: the text view feeds it the
 /// text and the caret after each change (`read`). The command is asked for its rows once, when the
-/// list opens; typing ranks those (`FuzzyMatcher`, best match first, then the command's order).
+/// list opens; typing ranks those (`FuzzyMatcher`, best match first, then the command's order) and
+/// puts the command's own row (`otherwise`) last, unless a row is titled what was typed.
 @MainActor
 public final class SlashChoicePicker {
     /// Why an open picker closes, as the text read after a change says (`read`).
@@ -52,8 +53,8 @@ public final class SlashChoicePicker {
     }
 
     let list = CaretList(metrics: SlashCommandStyle.choiceMetrics)
-    /// What the rows are, in order: row for row with `rows`, none when `rows` is the one row that
-    /// says nothing matches.
+    /// What the rows are, in order (the command's own row, if there is one, last): row for row with
+    /// `rows`, none when `rows` is the one row that says nothing matches.
     public private(set) var listed: [SlashChoice] = []
     public private(set) var query = ""
     public let command: OfferedSlashCommand
@@ -104,7 +105,12 @@ public final class SlashChoicePicker {
             found = choices.indices.compactMap { index in matches[index].map { (index, $0) } }
                 .sorted { a, b in a.1.score != b.1.score ? a.1.score > b.1.score : a.0 < b.0 }
                 .map { (choices[$0.0], $0.1.matched) }
-            if found.isEmpty, let other = command.choice(otherwise: query) { found = [(other, [])] }
+            // The command's own row goes last, after the matches (the highlight stays on the first row, the
+            // best match), unless a row is titled what was typed, which the closed line's Return takes to be
+            // an exact match too.
+            if !matches.contains(where: { $0?.score == FuzzyRanking.exact }), let other = command.choice(otherwise: query) {
+                found.append((other, []))
+            }
         }
         listed = found.map(\.choice)
         var previous: Int?

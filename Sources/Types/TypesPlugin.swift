@@ -100,7 +100,7 @@ public enum TypesStyle {
     public static let addType = "Add Type"
     /// The step a new type is made in: the note and the link.
     public static let newType = "New Type"
-    /// The row where nothing matches: `New type “Company”`.
+    /// The row offered for what was typed, last: `New type “Company”`.
     static func newTypeRow(_ name: String) -> String { "New type “\(name)”" }
     /// What `/is-a` takes, beside its name in the list.
     static let isAArgument = "type"

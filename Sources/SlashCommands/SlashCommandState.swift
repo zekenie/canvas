@@ -99,7 +99,8 @@ public struct OfferedSlashCommand {
     /// time: a list asks once when it opens.
     public func choices() -> [SlashChoice] { choiceRows?() ?? [] }
 
-    /// The one row it offers when nothing matches what was typed (trimmed), if it offers one.
+    /// The one row it offers for what was typed (trimmed), if it offers one: the list puts it last,
+    /// unless a row is titled so.
     public func choice(otherwise typed: String) -> SlashChoice? { choiceOtherwise?(typed) }
 
     /// What a text view that lists shapes asks, for the line it's on: the kinds and the rule of the

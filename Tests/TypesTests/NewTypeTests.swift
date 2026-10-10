@@ -11,9 +11,10 @@ import Titles
 import Topology
 import Types
 
-// New type from `/is-a`: where nothing matches what was typed, one row, `New type “X”`, and a pick
-// puts a note titled X beside the shape, with the starter schema, and links the shape to it: one step.
-// The shipped tests hold the editing a placed note begins (a memo isn't edited when placed).
+// New type from `/is-a`: for what was typed, when no row is titled so, one row last, `New type “X”` (the only
+// row where nothing matches), and a pick puts a note titled X beside the shape, with the starter schema, and
+// links the shape to it: one step. The shipped tests hold the editing a placed note begins (a memo isn't
+// edited when placed).
 
 /// A box that can hold `is` but cannot be a type, so a new type beside it is of another kind.
 private struct NewChit: BoxShapeProps {
@@ -61,7 +62,7 @@ private struct NewChitsPlugin: CanvasPlugin {
 }
 
 @MainActor let newTypeTests = Suite("New type", [
-    test("the row is offered where nothing matches: capitalized, spaces folded, in typographic quotes, with its own step") {
+    test("the row is made from what was typed: capitalized, spaces folded, in typographic quotes, with its own step") {
         let editor = try typeEditor()
         let ann = editor.add(memo("Ann"))
         let row = try require(try newRow("company", on: ann, in: editor))
@@ -73,6 +74,53 @@ private struct NewChitsPlugin: CanvasPlugin {
         expectEqual(try newRow("   ", on: ann, in: editor), nil)
         expectEqual(try newRow(String(repeating: "a", count: 80), on: ann, in: editor)?.title.contains("“"), true)
         expectEqual(try newRow(String(repeating: "a", count: 81), on: ann, in: editor), nil, "a title's limit is 80")
+    },
+    test("with a Company type in the file, /is-a co lists Company and then New type “Co”, the match highlighted; the last makes a type called Co") {
+        let editor = try typeEditor()
+        let company = editor.addType(TypeSchemaProperty.starter, title: "Company")
+        let ann = editor.add(memo("Ann"))
+        let line = try IsALine(on: ann, in: editor)
+        line.type("/is-a co")
+        expectEqual(line.titles, ["Company", "New type “Co”"])
+        expectEqual(line.highlighted, "Company", "Return picks the match, never the new row by accident")
+        line.down()
+        expectEqual(line.highlighted, "New type “Co”")
+        line.returnKey()
+        let made = try require(added(to: editor, since: [ann, company]).first)
+        expectEqual(editor.title(made), "Co")
+        expectEqual(editor.schema(made), TypeSchemaProperty.starter)
+        expectEqual(editor.typesOf(ann), [made], "a Co and not a Company")
+        expectEqual(editor.title(company), "Company")
+        expectEqual(editor.undoHistory.undoName, "New Type")
+    },
+    test("Return on /is-a co picks Company, the highlighted match, and makes nothing") {
+        let editor = try typeEditor()
+        let company = editor.addType(TypeSchemaProperty.starter, title: "Company")
+        let ann = editor.add(memo("Ann"))
+        let line = try IsALine(on: ann, in: editor)
+        line.type("/is-a co")
+        line.returnKey()
+        expectEqual(editor.typesOf(ann), [company])
+        expectEqual(added(to: editor, since: [ann, company]), [])
+        expectEqual(editor.undoHistory.undoName, "Add Type")
+    },
+    test("a type titled what was typed leaves the new type out, case aside and spaces folded; a title it only starts has it last") {
+        let editor = try typeEditor()
+        _ = editor.addType(TypeSchemaProperty.starter, title: "Company")
+        _ = editor.addType(TypeSchemaProperty.starter, title: "Purchase Order")
+        let ann = editor.add(memo("Ann"))
+        @MainActor func titles(_ typed: String) throws -> [String] {
+            let line = try IsALine(on: ann, in: editor)
+            line.type("/is-a " + typed)
+            return line.titles
+        }
+        expectEqual(try titles("company"), ["Company"])
+        expectEqual(try titles("COMPANY"), ["Company"])
+        expectEqual(try titles("purchase   order"), ["Purchase Order"])
+        expectEqual(try titles("compan"), ["Company", "New type “Compan”"])
+        expectEqual(try titles("purchase"), ["Purchase Order", "New type “Purchase”"])
+        expectEqual(try titles("vendor"), ["New type “Vendor”"], "nothing matches: the only row")
+        expectEqual(try titles(""), ["Type", "Company", "Purchase Order"], "nothing typed: none")
     },
     test("nothing offers it where no kind can be a type, or none has a tool to place one") {
         let bare = try typeEditor()

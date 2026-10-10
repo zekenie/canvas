@@ -57,8 +57,9 @@ struct CardCommandsPlugin: CanvasPlugin {
 }
 
 /// Commands for cards that take one choice: `pick` lists alpha, beta (preferred, its own step) and
-/// gamma (a group of its own); `pickElse` lists `one` and offers a row for any text that matches
-/// nothing but "nope"; `pickNone` lists nothing; `pickWide` is offered only while the card is wide.
+/// gamma (a group of its own); `pickElse` lists `phone`, `one` and `red panda` and offers a row for any
+/// text but "nope" that no row is titled; `pickNone` lists nothing; `pickWide` is offered only while the
+/// card is wide.
 /// A pick widens the card by one, so it is a step of the board, and is logged.
 struct ChoicePlugin: CanvasPlugin {
     let log: CommandLog
@@ -79,7 +80,7 @@ struct ChoicePlugin: CanvasPlugin {
             }, perform: widen)
             SlashCommand("pick-else", argument: "item", choices: { _, _ in
                 log.choicesAsked += 1
-                return [SlashChoice("one", title: "One")]
+                return [SlashChoice("phone", title: "Phone"), SlashChoice("one", title: "One"), SlashChoice("red-panda", title: "Red Panda")]
             }, otherwise: { typed, _, _ in
                 typed == "nope" ? nil : SlashChoice("else:\(typed)", title: "Else \(typed)", step: "Make Else")
             }, perform: widen)

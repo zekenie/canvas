@@ -11,6 +11,8 @@ import ProseMaps
 import Selection
 import SlashCommands
 import TableOfContents
+import TestKit
+import TextEditing
 import Titles
 import Topology
 import Types
@@ -194,4 +196,87 @@ extension CanvasEditor {
     stride(from: rect.minY, to: rect.maxY, by: 1).contains { y in
         stride(from: rect.minX, to: rect.maxX, by: 1).contains { x in pixel(bitmap, at: CGPoint(x: x, y: y)).prefix(3).allSatisfy { $0 < below } }
     }
+}
+
+/// A text view that hosts slash commands over a memo's line, as a mention text view does: it forwards what's
+/// typed, every change to the text and the caret, and each key to `SlashCommandTyping`, and shows its list
+/// as its own. A memo is not edited, so the text is nobody's but the view's.
+@MainActor
+final class IsAView: EditingTextView {
+    private(set) var slashCommands: SlashCommandTyping?
+    /// Between `shouldChangeText` and `didChangeText`: the selection moving then is the edit's.
+    private var isChangingText = false
+
+    init(frame: CGRect, owner: ShapeID, commands: SlashCommandState) {
+        super.init(frame: frame)
+        isRichText = false
+        allowsUndo = true
+        slashCommands = SlashCommandTyping(over: self, owner: owner, commands: commands)
+    }
+
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var caretListWindow: CaretListWindow? { slashCommands?.window }
+
+    override func shouldChangeText(inRanges affectedRanges: [NSValue], replacementStrings: [String]?) -> Bool {
+        let should = super.shouldChangeText(inRanges: affectedRanges, replacementStrings: replacementStrings)
+        if should { isChangingText = true }
+        return should
+    }
+
+    override func didChangeText() {
+        isChangingText = false
+        super.didChangeText()
+        slashCommands?.didChange(isEdit: true)
+    }
+
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        if !isChangingText { slashCommands?.didChange(isEdit: false) }
+    }
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        let wasComposing = hasMarkedText()
+        super.insertText(string, replacementRange: replacementRange)
+        let typed = (string as? String) ?? (string as? NSAttributedString)?.string ?? ""
+        if !wasComposing, !hasMarkedText() { slashCommands?.didType(typed) }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if slashCommands?.takesKey(event) == true { return }
+        super.keyDown(with: event)
+    }
+}
+
+/// `/is-a` typed on an empty line for a shape, in an unshown window with the keyboard in it: the real list
+/// (`SlashChoicePicker`) that `type` narrows and the keys move and pick from.
+@MainActor
+final class IsALine {
+    let editor: CanvasEditor
+    let window: NSWindow
+    let view: IsAView
+
+    init(on owner: ShapeID, in editor: CanvasEditor) throws {
+        self.editor = editor
+        view = IsAView(frame: CGRect(x: 0, y: 0, width: 300, height: 200), owner: owner, commands: try require(editor.slashCommands))
+        window = NSWindow(contentRect: CGRect(x: 200, y: 200, width: 400, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        window.makeFirstResponder(view)
+    }
+
+    /// The open list of choices; nil once it has closed.
+    var choices: SlashChoicePicker? { view.slashCommands?.choices }
+    /// The titles of its rows, in order: none for a list that is closed or says nothing matches.
+    var titles: [String] { choices?.listed.map(\.title) ?? [] }
+    var highlighted: String? { choices?.highlightedChoice?.title }
+
+    func type(_ text: String) { window.type(text) }
+    func down() { window.press("\u{F701}", code: 125, modifiers: [.numericPad, .function]) }
+    func up() { window.press("\u{F700}", code: 126, modifiers: [.numericPad, .function]) }
+    func returnKey() { window.pressReturn() }
 }

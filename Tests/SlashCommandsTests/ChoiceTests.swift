@@ -107,7 +107,7 @@ import TextEditing
 
         let none = try session()
         none.type("/pick-else ")
-        expectEqual(none.highlightedChoice, "one", "the first when none is preferred")
+        expectEqual(none.highlightedChoice, "phone", "the first when none is preferred")
     },
 
     test("nothing matches: No matches, nothing highlighted, and Return is a new line that closes it; an empty list says None") {
@@ -208,6 +208,7 @@ import TextEditing
         let s = try session()
         s.type("/pick-else zeta")
         expectEqual(s.choiceRows, ["Else zeta"])
+        expectEqual(s.choiceList?.listed.map(\.id), ["else:zeta"])
         expectEqual(s.highlightedChoice, "else:zeta")
         s.returnKey()
         expectEqual(s.log.runs, ["pick else:zeta"])
@@ -216,9 +217,90 @@ import TextEditing
         let nope = try session()
         nope.type("/pick-else nope")
         expectEqual(nope.choiceRows, ["- No matches"], "a nil leaves No matches")
-        let matching = try session()
-        matching.type("/pick-else on")
-        expectEqual(matching.choiceRows, ["One"], "it isn't offered while something matches")
+        expectEqual(nope.highlightedChoice, nil)
+    },
+
+    test("the command's own row, alone, is highlighted and stays so as the arrows move: Return picks it") {
+        let s = try session()
+        s.type("/pick-else zeta")
+        expectEqual(s.highlightedChoice, "else:zeta")
+        s.down()
+        expectEqual(s.highlightedChoice, "else:zeta")
+        s.up()
+        expectEqual(s.highlightedChoice, "else:zeta")
+        s.returnKey()
+        expectEqual(s.log.runs, ["pick else:zeta"])
+    },
+
+    test("what matches is listed and the command's own row comes last; the best match stays highlighted, so Return picks the match and never the new row") {
+        let s = try session()
+        s.type("/pick-else on")
+        expectEqual(s.choiceRows, ["One", "Phone", "Else on"], "the prefix, the substring, then the command's own")
+        expectEqual(s.choiceList?.listed.map(\.id), ["one", "phone", "else:on"])
+        expectEqual(s.highlightedChoice, "one")
+        let own = try require(s.choiceList?.rows.last?.item)
+        expectEqual(own.matched, [], "no letters of it are matched")
+        s.returnKey()
+        expectEqual(s.log.runs, ["pick one"])
+        expectEqual(s.string, "")
+
+        let tab = try session()
+        tab.type("/pick-else on")
+        tab.tab()
+        expectEqual(tab.log.runs, ["pick one"], "Tab as well")
+
+        let last = try session()
+        last.type("/pick-else on")
+        last.down()
+        last.down()
+        expectEqual(last.highlightedChoice, "else:on", "the arrows reach it")
+        last.returnKey()
+        expectEqual(last.log.runs, ["pick else:on"])
+        expectEqual(last.h.editor.undoHistory.undoName, "Make Else")
+
+        let click = try session()
+        click.type("/pick-else on")
+        click.choiceList?.highlight(row: 2)
+        click.view.slashCommands?.window?.pickHighlighted()
+        expectEqual(click.log.runs, ["pick else:on"], "and a click on it")
+    },
+
+    test("a row titled what was typed takes the command's own row away, however the case or the spaces fall") {
+        let s = try session()
+        s.type("/pick-else on")
+        expectEqual(s.choiceRows, ["One", "Phone", "Else on"])
+        s.type("e")
+        expectEqual(s.choiceRows, ["One", "Phone"], "One is titled so, and Phone has it inside: the best first, no row of the command's own")
+        s.set("/pick-else ONE")
+        s.view.slashCommands?.didChange(isEdit: true)
+        expectEqual(s.choiceRows, ["One", "Phone"], "case aside")
+
+        let spaced = try session()
+        spaced.type("/pick-else red   panda")
+        expectEqual(spaced.choiceRows, ["Red Panda"], "spaces folded")
+        spaced.type(" ")
+        expectEqual(spaced.choiceRows, ["Red Panda"], "and trailing ones")
+        spaced.window.pressDelete()
+        spaced.window.pressDelete()
+        expectEqual(spaced.choiceRows, ["Red Panda", "Else red   pand"], "the start of a title is not the title")
+
+        let words = try session()
+        words.type("/pick-else red pan")
+        expectEqual(words.choiceRows, ["Red Panda", "Else red pan"], "nor are the words that start it")
+    },
+
+    test("the command's own row follows what is typed: none with nothing, the only row when nothing matches, last once something does") {
+        let s = try session()
+        s.type("/pick-else ")
+        expectEqual(s.choiceRows, ["Phone", "One", "Red Panda"])
+        s.type("  ")
+        expectEqual(s.choiceList?.listed.map(\.id), ["phone", "one", "red-panda"], "spaces are nothing typed")
+        s.type("zeta")
+        expectEqual(s.choiceList?.listed.map(\.id), ["else:zeta"])
+        for _ in 0..<4 { s.window.pressDelete() }
+        expectEqual(s.choiceList?.listed.map(\.id), ["phone", "one", "red-panda"], "deleted back to nothing")
+        s.type("o")
+        expectEqual(s.choiceList?.listed.map(\.id), ["one", "phone", "else:o"])
     },
 
     test("the pick of a shape that is gone does nothing") {
@@ -315,6 +397,14 @@ import TextEditing
         no.returnKey()
         expectEqual(no.string, "/pick bet\n")
         expectEqual(no.log.runs, [])
+
+        let own = try session()
+        own.type("/pick-else ")
+        own.pressEscapeKey()
+        own.type("rED   panda")
+        own.returnKey()
+        expectEqual(own.log.runs, ["pick red-panda"], "the row titled so, case aside and spaces folded; not the command's own")
+        expectEqual(own.string, "")
     },
 
     test("a closed line marks its name alone, and asks nothing at a keystroke or a move of the caret") {

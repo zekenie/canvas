@@ -103,6 +103,26 @@ private struct ChitsPlugin: CanvasPlugin {
         expect(try !titles(editor, on: manager).contains("Manager"))
         _ = zed
     },
+    test("/is-a type lists the Type row alone, which is titled so: no New type “Type”; a shape with no Type row is offered one") {
+        let editor = try typeEditor()
+        let ann = editor.add(memo("Ann"))
+        let line = try IsALine(on: ann, in: editor)
+        line.type("/is-a type")
+        expectEqual(line.titles, ["Type"])
+        expectEqual(line.highlighted, "Type")
+        line.returnKey()
+        expectEqual(editor.schema(ann), TypeSchemaProperty.starter, "Return makes it a type")
+        expectEqual(editor.undoHistory.undoName, "Make Type")
+
+        let bo = editor.add(memo("Bo", at: CGPoint(x: 600, y: 40)))
+        let typed = try IsALine(on: bo, in: editor)
+        typed.type("/is-a typ")
+        expectEqual(typed.titles, ["Type", "New type “Typ”"], "a title it only starts")
+
+        let again = try IsALine(on: ann, in: editor)
+        again.type("/is-a type")
+        expectEqual(again.titles, ["New type “Type”"], "Ann is a type now: no Type row, so nothing is titled so")
+    },
     test("the rows are chips: a type's color, Type and an untitled type gray") {
         let editor = try typeEditor()
         let person = editor.addType(TypeSchemaProperty.starter, title: "Person"), untitled = editor.addType(TypeSchemaProperty.starter)

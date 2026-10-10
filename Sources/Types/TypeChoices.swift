@@ -49,9 +49,9 @@ enum TypeChoices {
         return rows
     }
 
-    /// The one row offered where nothing matches what was typed: a new type of that name, beside the
-    /// shape. Nil for nothing typed, a name over a title's limit, no kind that can be a type, or one
-    /// with nothing to place it with.
+    /// The one row offered for what was typed, when no row is titled so (the list puts it last): a new
+    /// type of that name, beside the shape. Nil for nothing typed, a name over a title's limit, no kind
+    /// that can be a type, or one with nothing to place it with.
     static func newRow(typed: String, owner: ShapeID, editor: CanvasEditor) -> SlashChoice? {
         guard let name = newTypeName(typed), let kind = editor.newTypeKind(for: owner), editor.registry.placement(for: kind) != nil else { return nil }
         return SlashChoice(TypeChoice.newPrefix + name, title: TypesStyle.newTypeRow(name), step: TypesStyle.newType)
