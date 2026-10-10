@@ -24,6 +24,8 @@ final class DrawTextLookup {
         let record: AnyShapeRecord
         /// What it's called once the script has run.
         let title: String
+        /// The properties the statement writes on it (by key), which its record doesn't have yet.
+        let writes: Set<String>
     }
 
     private let editor: CanvasEditor
@@ -65,11 +67,11 @@ final class DrawTextLookup {
         var own: [String: Own] = [:], titles: [String] = []
         for index in items.indices {
             guard let title = items[index].title, itemByTitle[title] == index else { continue }
-            own[title] = Own(id: items[index].record.id, record: items[index].record, title: renamed[index] ?? title)
+            own[title] = Own(id: items[index].record.id, record: items[index].record, title: renamed[index] ?? title, writes: Set(items[index].shape.attributes.map(\.key)))
             titles.append(title)
         }
         for (index, new) in renamed.sorted(by: { $0.key < $1.key }) where own[new] == nil {
-            own[new] = Own(id: items[index].record.id, record: items[index].record, title: new)
+            own[new] = Own(id: items[index].record.id, record: items[index].record, title: new, writes: Set(items[index].shape.attributes.map(\.key)))
             titles.append(new)
         }
         self.own = own
@@ -78,7 +80,7 @@ final class DrawTextLookup {
 
     // MARK: Asking
 
-    func shape(called written: String, admitting admits: @MainActor (AnyShapeRecord) -> String?) throws(AutomationError) -> DrawTextShape {
+    func shape(called written: String, admitting admits: @MainActor (AnyShapeRecord, Set<String>) -> String?) throws(AutomationError) -> DrawTextShape {
         guard let naming else {
             throw AutomationError("titles name shapes, and nothing here gives shapes names", reason: ScriptError.Reason.noNames.rawValue,
                                   hint: "leave titles out: without a plugin that names shapes, no shape can be named or found by name")
@@ -89,7 +91,7 @@ final class DrawTextLookup {
         // What's called that and isn't admitted: the first of them, by where it is, and why not.
         var refused: (kind: ShapeKind, why: String)?
         if let entry = own[title] {
-            guard let why = admits(entry.record) else { return DrawTextShape(id: entry.id, title: entry.title) }
+            guard let why = admits(entry.record, entry.writes) else { return DrawTextShape(id: entry.id, title: entry.title) }
             refused = (entry.record.kind, why)
         } else if unresolved.contains(title) {
             throw AutomationError("", reason: Drawing.skipped)
@@ -101,7 +103,7 @@ final class DrawTextLookup {
         func admitted(_ places: [Place]) -> [Place] {
             places.filter { place in
                 guard let record = file.record(place.id) else { return false }
-                guard let why = admits(record) else { return true }
+                guard let why = admits(record, []) else { return true }
                 if refused == nil { refused = (record.kind, why) }
                 return false
             }
@@ -167,15 +169,15 @@ final class DrawTextLookup {
 
     /// The titles a text may name, as "did you mean" picks from: the file's, in the order it lists
     /// them, then those the script draws.
-    private func admittedTitles(_ admits: @MainActor (AnyShapeRecord) -> String?, taken: Set<BoardID>) -> [String] {
+    private func admittedTitles(_ admits: @MainActor (AnyShapeRecord, Set<String>) -> String?, taken: Set<BoardID>) -> [String] {
         let file = editor.file
         let names = names()
         let inFile = (names?.titles ?? []).filter { title in
             names?.places[title]?.contains { place in
-                !deleted.contains(place.id) && !taken.contains(place.board) && file.record(place.id).map { admits($0) == nil } == true
+                !deleted.contains(place.id) && !taken.contains(place.board) && file.record(place.id).map { admits($0, []) == nil } == true
             } == true
         }
-        return inFile + ownTitles.filter { title in own[title].map { admits($0.record) == nil } == true }
+        return inFile + ownTitles.filter { title in own[title].map { admits($0.record, $0.writes) == nil } == true }
     }
 }
 
@@ -186,11 +188,11 @@ extension Drawing {
     /// (the value itself where no format writes any). A refusal is said on the statement's line, as
     /// `prefix` (`"Plan": text`) says what it's about, then `suffix`; one a statement it depends on
     /// leaves to that statement's own error (`Drawing.skipped`) is passed on as it is.
-    func writtenTexts(_ value: JSONValue, of key: String, _ vocabulary: KindVocabulary, prefix: String, suffix: String = "",
+    func writtenTexts(_ value: JSONValue, of key: String, _ vocabulary: KindVocabulary, owner: ShapeID? = nil, prefix: String, suffix: String = "",
                       _ statement: Statement) throws(AutomationError) -> JSONValue {
         guard let textWriter else { return value }
         do throws(AutomationError) {
-            return try textWriter.written(value, of: key, in: vocabulary)
+            return try textWriter.written(value, of: key, in: vocabulary, owner: owner)
         } catch {
             guard error.reason != Self.skipped else { throw error }
             throw AutomationError("\(prefix): \(error.message)\(suffix)", reason: error.reason, hint: error.hint,
@@ -212,24 +214,24 @@ struct DrawTextWriter {
     /// `additionalProperties`, `prefixItems` and `items`, `$ref`s followed). What isn't a string of
     /// such a schema is as it was. It throws what a format throws, as it's thrown; the caller says
     /// where.
-    func written(_ value: JSONValue, of key: String, in vocabulary: KindVocabulary) throws(AutomationError) -> JSONValue {
+    func written(_ value: JSONValue, of key: String, in vocabulary: KindVocabulary, owner: ShapeID?) throws(AutomationError) -> JSONValue {
         guard vocabulary.textKeys.contains(key), let declared = vocabulary.properties[key] else { return value }
-        return try written(value, declared: declared, in: vocabulary.schema)
+        return try written(value, declared: declared, in: vocabulary.schema, owner: owner)
     }
 
-    private func written(_ value: JSONValue, declared: JSONValue, in schema: KindSchema) throws(AutomationError) -> JSONValue {
+    private func written(_ value: JSONValue, declared: JSONValue, in schema: KindSchema, owner: ShapeID?) throws(AutomationError) -> JSONValue {
         let resolved = schema.resolved(declared)
         switch value {
         case .string(let text):
             guard let mediaType = resolved["contentMediaType"]?.stringValue, let format = formats[mediaType] else { return value }
-            return .string(try format.write(text, DrawTextContext(registry: registry, schema: declared.objectValue ?? [:], lookup: lookup)))
+            return .string(try format.write(text, DrawTextContext(registry: registry, schema: declared.objectValue ?? [:], owner: owner, lookup: lookup)))
         case .object(let members):
             var written = members
             for name in members.keys.sorted() {
                 guard let declared = resolved["properties"]?[name] ?? resolved["additionalProperties"].flatMap({ $0.objectValue == nil ? nil : $0 }) else {
                     continue
                 }
-                written[name] = try self.written(members[name]!, declared: declared, in: schema)
+                written[name] = try self.written(members[name]!, declared: declared, in: schema, owner: owner)
             }
             return .object(written)
         case .array(let items):
@@ -237,7 +239,7 @@ struct DrawTextWriter {
             let prefix = resolved["prefixItems"]?.arrayValue ?? []
             for index in items.indices {
                 guard let declared = prefix.indices.contains(index) ? prefix[index] : resolved["items"] else { continue }
-                written[index] = try self.written(items[index], declared: declared, in: schema)
+                written[index] = try self.written(items[index], declared: declared, in: schema, owner: owner)
             }
             return .array(written)
         default:

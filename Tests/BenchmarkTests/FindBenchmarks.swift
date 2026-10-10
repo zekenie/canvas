@@ -42,7 +42,7 @@ extension Budget {
 
 /// The shipped list without Find and what contributes to it.
 @MainActor func pluginsWithoutFind(_ pasteboard: NSPasteboard) -> [any CanvasPlugin] {
-    shippedPlugins(pasteboard).filter { ![PluginID.findInBoards, .titleFind, .mentionFind, .arrowFind].contains($0.id) }
+    shippedPlugins(pasteboard).filter { ![PluginID.findInBoards, .titleFind, .mentionFind].contains($0.id) }
 }
 
 /// Opens Find on a harness and builds its index to the end, a scheduler turn a slice.

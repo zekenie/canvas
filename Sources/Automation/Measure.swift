@@ -7,8 +7,8 @@ import Topology
 
 // `canvas measure`: how big a draw script's shapes would be, and what they reach, without drawing it.
 // A tool that lays shapes out before it draws them (the canvas-digest skill's) needs what the app alone
-// knows: the size draw would make each shape (a note as tall as its text at its width, a schema card as
-// tall as its description), how far its title's pill reaches above it, how wide a reference to a shape is
+// knows: the size draw would make each shape (a note as tall as its text at its width, a note that is a type as
+// tall as its text), how far its title's pill reaches above it, how wide a reference to a shape is
 // for its title, and the constants of the placement it will draw with. It reads the script as `draw`
 // does, ignores where shapes go (placements, `in`), and answers for each shape statement, and each edge
 // that says it goes through a reference (`via:`). It reads nothing on a board and changes nothing: the

@@ -21,7 +21,7 @@ Reply with exactly one of:
 
 A query selects shapes as a CSS selector selects elements. The answer is every shape that matches, on every board of the file, and how many. A yes/no question is a query that matches the shape it asks about, or nothing: "is Refund policy inside Payments?" → "Refund policy":inside("Payments")
 
-The examples assume a file with the kinds arrow, sticky-note (a note), subboard (holds a board of shapes), frame (holds shapes on the board it's on) and schema-card; the edge types mention and arrow (with note-link under it); and the pseudo-classes :mentions, :mentioned-by, :invalid and :selected. <vocabulary> says what this app really has.
+The examples assume a file with the kinds arrow, sticky-note (a note), subboard (holds a board of shapes) and frame (holds shapes on the board it's on); the edge types mention, is-a and arrow (with note-link under it); and the pseudo-classes :mentions, :mentioned-by, :invalid, :is-a and :selected. <vocabulary> says what this app really has.
 
 ## Shapes
 - sticky-note — every shape of that kind. Write the kind's id from <vocabulary>, never its label: sticky-note, not note.
@@ -89,6 +89,7 @@ Examples:
 - "which notes mention Checkout?" → sticky-note:mentions("Checkout")
 - "what does Checkout mention?" → :mentioned-by("Checkout")
 - "is Checkout mentioned by API gateway?" → "Checkout":mentioned-by("API gateway")
+- "which shapes are a Person, however far?" → sticky-note:is-a("Person")
 - "what's connected to Checkout?" → the results have an edge to or from Checkout, directly → :connected-to("Checkout")
 - "everything connected to Warehouse, however far" → :component-of("Warehouse")
 - "everything that leads to Auth, however far" → :upstream-of("Auth")

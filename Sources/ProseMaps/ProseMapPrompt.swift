@@ -3,16 +3,16 @@ import LanguageModels
 
 // What the model is asked, for every target: the task, the answer's form and the rules every link
 // keeps (`frame`), with the target's own guide in it (`ProseTarget.guide`), and what one pair needs
-// beyond that (`context`: the schema card's other schemas) after it, only for a request that has some,
+// beyond that (`context`: a type's other schemas) after it, only for a request that has some,
 // so every other request is sent exactly what it always was. scripts/schema-prompts/highlight_evals.py
-// reads the frame and the settings out of this file, and the schema card's guide out of Schemas', so
+// reads the frame and the settings out of this file, and a type's guide out of Types', so
 // the evals ask what the app asks.
 
 /// The request that asks which words of the prose say which parts of the target, and how its answer
 /// is read.
 public enum ProseMapPrompt {
     /// The model that links words to the parts of a target: Haiku 5.5, named on every request,
-    /// while the editor's own model (Haiku 4.5) answers only a request that names none. The schema card's
+    /// while the editor's own model (Haiku 4.5) answers only a request that names none. A type's
     /// highlight evals (scripts/schema-prompts/highlight_evals.py, 28 cases run four times) put Haiku
     /// 5.5 at `medium` effort at 748 of 760 links found with this frame, four pointing at the wrong
     /// part (all one case, "cells" of a list of lists, which can be read either way), against Sonnet

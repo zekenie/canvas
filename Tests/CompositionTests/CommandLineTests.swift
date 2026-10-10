@@ -8,12 +8,12 @@ import Connections
 import Foundation
 import LanguageModels
 import Mentions
-import Schemas
 import StickyNotes
 import SwiftUI
 import TableOfContents
 import TestKit
 import Titles
+import Types
 
 // The command line end to end, as an agent uses it: `canvas`, as it's built, talking to the app's
 // command server, started as the app starts it (the shipped plugins' commands), on boards
@@ -135,27 +135,6 @@ edge "API" -> "Cache" channel: none
         let again = try JSON(text: canvas(server, ["draw", script]).output)
         expectEqual(again["changes"]?.arrayValue?.map { $0["did"] }, ["unchanged"])
         expectEqual(again["warnings"], [], "what it names hasn't changed")
-    },
-    test("canvas draw schema-card is as tall as the description it's given, as typing makes it; a size: is as asked") {
-        try configureBoards()
-        let board = newBoard()
-        defer { board.close() }
-        let server = try startCommandServer(boards: [board], frontmost: board)
-        defer { server.stop() }
-        let schema = #"{"type": "object", "properties": {"a": {}, "b": {}, "c": {}, "d": {}, "e": {}, "f": {}}}"#
-        // In a script's string, each quote is escaped.
-        let written = schema.replacingOccurrences(of: "\"", with: "\\\"")
-        for (size, expected) in [("", CGSize(width: 240, height: 4 * 19 + 33)), (" size: 300x100", CGSize(width: 300, height: 100))] {
-            let before = Set(board.editor.document.shapes.map(\.id))
-            let result = try canvas(server, ["draw", #"schema-card schema: "\#(written)" prompt: "a person\nname\nemail\nphone""# + size])
-            expectEqual(result.status, 0, result.error)
-            let card = try require(board.editor.document.shapes.first { !before.contains($0.id) }?.typed(as: SchemaCard.self)?.props)
-            expectEqual(card.schema.text, schema)
-            expectEqual(card.prompt, "a person\nname\nemail\nphone")
-            expectEqual(card.frame.size, expected, "four lines: 109 high, where the placed card is 52")
-            let at = try JSON(text: result.output)["changes"]?.arrayValue?.first?["at"]?.arrayValue?.last
-            expectEqual(at, [.number(expected.width), .number(expected.height)], "placed as big as it is")
-        }
     },
     test("canvas draw sticky-note is as tall as its text, from its top; a size: is as asked") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
@@ -442,9 +421,9 @@ edge "API" -> "Cache" channel: none
         // Another language's word for a shape is told the kind like it; its word for a connection, the edge.
         let word = try refusedInProcess(#"note "Idea" text: "Try a cache""#, on: editor)
         expectEqual(word.reason, "unknown_kind")
-        expectEqual(word.hint, #"did you mean sticky-note? the kinds drawn here: frame, reference, schema-card, sticky-note, subboard; a statement starts with its kind, as in sticky-note "A""#)
+        expectEqual(word.hint, #"did you mean sticky-note? the kinds drawn here: frame, reference, sticky-note, subboard; a statement starts with its kind, as in sticky-note "A""#)
         expectEqual(try refusedInProcess(#"link "A""#, on: editor).hint,
-                    #"to join two shapes, write edge "A" -> "B"; the kinds drawn here: frame, reference, schema-card, sticky-note, subboard"#)
+                    #"to join two shapes, write edge "A" -> "B"; the kinds drawn here: frame, reference, sticky-note, subboard"#)
         // A kind no tool places: an arrow is an edge.
         let placing = try refusedInProcess(#"arrow "A""#, on: editor)
         expectEqual(placing.reason, "not_placeable")

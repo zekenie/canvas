@@ -19,7 +19,7 @@ extension PublicChip: Adornment {
 }
 
 extension PublicChip: ClickableAdornment {
-    public static func click(on shape: ShapeID, in editor: CanvasEditor) { editor.publishing?.click(shape) }
+    public static func click(_ click: AdornmentClick, in editor: CanvasEditor) { editor.publishing?.click(click.shape) }
 }
 
 @MainActor

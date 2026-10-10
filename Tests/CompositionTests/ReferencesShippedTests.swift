@@ -7,13 +7,13 @@ import Composition
 import Connections
 import CoreGraphics
 import Foundation
+import Frames
 import Geometry
 import LanguageModels
 import Mentions
 import Publishing
 import Queries
 import References
-import Schemas
 import Selection
 import StickyNotes
 import Subboards
@@ -78,17 +78,15 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
     return id
 }
 
-@MainActor private func schemaCard(_ h: EditorHarness, _ title: String, at origin: CGPoint, isPublic: Bool = true) -> ShapeID {
-    var card = SchemaCard(frame: CGRect(origin: origin, size: CGSize(width: 240, height: 160)))
-    card.setTitle(title)
-    card.frame = CGRect(origin: origin, size: CGSize(width: 240, height: 160))
-    let id = h.editor.add(card, title: title)
+/// A frame, which has no ports: it takes no links.
+@MainActor private func frameShape(_ h: EditorHarness, _ title: String, at origin: CGPoint, isPublic: Bool = true) -> ShapeID {
+    let id = h.editor.add(Frame(frame: CGRect(origin: origin, size: CGSize(width: 240, height: 160))), title: title)
     if isPublic { h.editor.makePublic([id]) }
     return id
 }
 
 @MainActor let referencesShippedTests = Suite("References, as shipped", [
-    test("R is the Reference tool's key, after the Schema tool") {
+    test("R is the Reference tool's key, after the Frame tool") {
         let h = emptyBoard(.withUniqueName())
         expect(h.key("r"))
         expectEqual(h.editor.currentToolID, ToolID(placing: Reference.kind))
@@ -120,25 +118,25 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         h.editor.transact { $0.update(shapes) { $0[PublicProperty.self] = nil } }
         expectEqual(try storyAnswer(#"arrow:ends-at("shapes")"#, on: queries).get().rows.map(\.id), [], "a private shape isn't stood for")
     },
-    test("a port drag from a note ends on a pill standing for a note, and not on one standing for a schema card: the pill takes what it stands for takes") {
+    test("a port drag from a note ends on a pill standing for a note, and not on one standing for a frame: the pill takes what it stands for takes") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = emptyBoard(pasteboard)
         let orders = note(h, "orders", at: CGPoint(x: 100, y: 100), isPublic: true)
         let stickies = note(h, "stickies", at: CGPoint(x: 100, y: 400))
-        let order = schemaCard(h, "Order", at: CGPoint(x: 100, y: 700))
+        let order = frameShape(h, "Order", at: CGPoint(x: 100, y: 700))
         let forNote = reference(h, to: orders, label: "orders", at: CGPoint(x: 500, y: 100))
         let forCard = reference(h, to: order, label: "Order", at: CGPoint(x: 500, y: 300))
         let from = try frame(of: stickies, in: h)
         drag(h, fromRightOf: from, to: try frame(of: forCard, in: h).center)
-        expect(arrows(h).isEmpty, "a schema card doesn't take note links: nothing is drawn")
+        expect(arrows(h).isEmpty, "a frame takes no note links: nothing is drawn")
         drag(h, fromRightOf: from, to: try frame(of: forNote, in: h).center)
         let drawn = try require(arrows(h).first)
         expectEqual(arrows(h).count, 1)
         expectEqual(drawn.props.start.binding?.shapeID, stickies)
         expectEqual(drawn.props.end.binding?.shapeID, forNote)
         expectEqual(drawn[ChannelProperty.self], NoteLink.id, "the pill's note-link, as a drag to the note itself would draw")
-        // The same pill taking a schema card's links once it stands for one.
+        // The same pill standing for the frame instead: its arrow is let be, and its panel says why it's wrong.
         h.editor.transact { $0.update(forNote, as: Reference.self) { ReferenceEdits.pick(&$0.props, ReferenceTarget(id: order, label: "Order")) } }
         expectEqual(h.editor.references?.channelMismatch(of: forNote), ChannelMismatch(channel: NoteLink.id, target: order))
         expectEqual(h.editor.references?.mismatchLine(of: forNote), "“Order” doesn’t take note links.")
@@ -151,7 +149,6 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         let backend = subboard(h, "Backend", at: CGPoint(x: 100, y: 100))
         let frontend = subboard(h, "Frontend", at: CGPoint(x: 900, y: 100), isPublic: false)
         let orders = note(h, "orders", at: CGPoint(x: 900, y: 350), isPublic: true)
-        let customer = schemaCard(h, "Customer", at: CGPoint(x: 520, y: 600))
         let forSubboard = reference(h, to: backend, label: "Backend", at: CGPoint(x: 400, y: 100))
         let forNote = reference(h, to: orders, label: "orders", at: CGPoint(x: 400, y: 300))
         // A dot lit is its channel's color at full strength, whatever's under it.
@@ -171,15 +168,14 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         let pill = try frame(of: forSubboard, in: h)
         drag(h, fromRightOf: pill, to: try frame(of: frontend, in: h).center)
         drag(h, fromRightOf: pill, to: try frame(of: orders, in: h).center)
-        drag(h, fromRightOf: pill, to: try frame(of: customer, in: h).center)
         expectEqual(arrows(h).map { [$0.props.start.binding?.shapeID, $0.props.end.binding?.shapeID] },
-                    [[forSubboard, frontend], [forSubboard, orders], [forSubboard, customer]])
-        expectEqual(arrows(h).map { $0[ChannelProperty.self] }, [SubboardLink.id, NoteLink.id, SchemaLink.id])
-        // Into the pill, as into the subboard: from a subboard, a note and a schema card, each on its own.
-        let from = [frontend, orders, customer]
+                    [[forSubboard, frontend], [forSubboard, orders]])
+        expectEqual(arrows(h).map { $0[ChannelProperty.self] }, [SubboardLink.id, NoteLink.id])
+        // Into the pill, as into the subboard: from a subboard and a note, each on its own.
+        let from = [frontend, orders]
         for id in from { drag(h, fromRightOf: try frame(of: id, in: h), to: pill.center) }
-        expectEqual(arrows(h).dropFirst(3).map { [$0.props.start.binding?.shapeID, $0.props.end.binding?.shapeID] }, from.map { [$0, forSubboard] })
-        expectEqual(arrows(h).dropFirst(3).map { $0[ChannelProperty.self] }, [SubboardLink.id, NoteLink.id, SchemaLink.id])
+        expectEqual(arrows(h).dropFirst(2).map { [$0.props.start.binding?.shapeID, $0.props.end.binding?.shapeID] }, from.map { [$0, forSubboard] })
+        expectEqual(arrows(h).dropFirst(2).map { $0[ChannelProperty.self] }, [SubboardLink.id, NoteLink.id])
     },
     test("an arrow drawn by hand into a pill reads as into the original: the graph, a query, with the pill named, and the table of contents under it") {
         let pasteboard = NSPasteboard.withUniqueName()

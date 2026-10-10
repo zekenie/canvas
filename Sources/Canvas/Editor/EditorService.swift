@@ -45,7 +45,7 @@ public protocol EditorService: AnyObject {
     /// and what it wrote committed. Its step is closed unless what ended it is an action whose step
     /// is still open (a command, an undo or redo about to apply a step, a draw, a file put in
     /// place), so a service that writes, or asks for something, in answer waits a turn
-    /// (`editor.scheduler`) and looks again, as a schema card's sync does before it takes the
+    /// (`editor.scheduler`) and looks again, as a type's sync does before it takes the
     /// description as done.
     func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor)
 }

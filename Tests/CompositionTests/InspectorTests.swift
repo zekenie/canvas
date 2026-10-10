@@ -9,7 +9,6 @@ import DetailPanel
 import Geometry
 import LanguageModels
 import Mentions
-import Schemas
 import Selection
 import StickyNotes
 import Subboards
@@ -17,6 +16,7 @@ import SwiftUI
 import TableOfContents
 import TestKit
 import Titles
+import Types
 import Validation
 
 /// The app's window (a `BoardWindow`), unshown: the canvas (through `CanvasRepresentable`) with the shipped detail
@@ -154,8 +154,8 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         w.click(CGPoint(x: 200, y: 200))
         w.window.spin { w.titleField != nil }
         w.window.focus(try require(w.titleField))
-        w.window.type("hnbfs")     // the Hand, Note, Subboard, Frame and Schema shortcuts, on the canvas
-        expectEqual(w.editor.document[shape.id]?[TitleProperty.self], "hnbfs")
+        w.window.type("hnbfr")     // the Hand, Note, Subboard, Frame and Reference shortcuts, on the canvas
+        expectEqual(w.editor.document[shape.id]?[TitleProperty.self], "hnbfr")
         expectEqual(w.editor.currentToolID, .select)
         expectEqual(w.editor.selection, shape.id)
     },
@@ -215,25 +215,25 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         expectEqual(w.fields.count, 0)
         expectEqual(w.tables.count, 0)
     },
-    test("at its narrowest and its ideal width, a note's panel and each tab of a schema card's and a subboard's fits the column, none pushing it wider") {
-        // What widens a panel most: a note's long title, a schema whose one line runs far past the
-        // column, a subboard's name.
+    test("at its narrowest and its ideal width, a note's panel and each tab of a type note's and a subboard's fits the column, none pushing it wider") {
+        // What widens a panel most: a note's long title, a type's schema whose one line runs far past
+        // the column, a subboard's name.
         var titled = note("Buy milk and bread")
         titled[TitleProperty.self] = "Groceries for the week, and the party on Saturday"
         let schema = #"{"title": "Order", "type": "object", "properties": {"reference": {"type": "string", "description": "What the customer quotes when they call about this order, however long that takes"}}}"#
-        let card = ShapeRecord(SchemaCard(frame: CGRect(x: 400, y: 100, width: 240, height: 67), schema: SchemaText(schema)))
+        let card = typeNote(schema, text: "An order", title: "Order", frame: CGRect(x: 400, y: 100, width: 200, height: 200))
         var sub = ShapeRecord(Subboard(frame: CGRect(x: 700, y: 100, width: 240, height: 160)))
         sub[TitleProperty.self] = "Payments"
         let panels: [(id: ShapeID, kind: ShapeKind, tabs: [any DetailTab.Type])] = [
             (titled.id, StickyNote.kind, []),
-            (card.id, SchemaCard.kind, [SchemaTab.self]),
+            (card.id, StickyNote.kind, [TypeSchemaTab.self]),
             (sub.id, Subboard.kind, [BoardTab.self]),
         ]
         @MainActor func choose<Tab: DetailTab>(_ tab: Tab.Type, for kind: ShapeKind, in editor: CanvasEditor) throws {
             try require(editor.detailPanel).choose(.of(tab), for: kind)
         }
         for width in [DetailStyle.minWidth, DetailStyle.idealWidth] {
-            let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [AnyShapeRecord(titled), AnyShapeRecord(card), AnyShapeRecord(sub)]),
+            let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: [AnyShapeRecord(titled), card, AnyShapeRecord(sub)]),
                                                    scheduler: TaskScheduler(), model: ScriptedLanguageModel())
             let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: width, height: 700), styleMask: [.titled], backing: .buffered, defer: true)
             let hosting = NSHostingView(rootView: DetailPanelView(editor: editor))
@@ -267,7 +267,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         let field = try require(w.titleField)
         expectEqual(field.placeholderString, "Note")
         w.window.focus(field)
-        w.window.type("Groceries")      // s is the schema tool's shortcut, on the canvas
+        w.window.type("Groceries")      // r is the reference tool's shortcut, on the canvas
         w.window.settle()
         expectEqual(w.editor.document[shape.id]?[TitleProperty.self], "Groceries")
         expectEqual(w.editor.currentToolID, .select)

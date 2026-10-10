@@ -9,7 +9,7 @@ import SwiftUI
 /// nothing; a write of the value the shape already has commits nothing.
 ///
 /// Reads never touch `editor.document`, so a section isn't re-rendered when other shapes change.
-/// For a larger section, write a View with `@ShapeBinding var card: SchemaCard` and pass `$card`.
+/// For a larger section, write a View with `@ShapeBinding var note: StickyNote` and pass `$note`.
 ///
 /// Writes are undo steps named for the section ("Change JSON"; "Change" and the kind's name,
 /// "Change Schema", in the header or a section without a title). Writes to one field of one shape, one after

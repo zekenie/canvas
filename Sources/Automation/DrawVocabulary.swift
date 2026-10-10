@@ -149,6 +149,11 @@ struct KindVocabulary {
             }
         }
         do throws(KindSchema.Refusal) {
+            // Quoted text for a list of text is a list of that one item (`is: "Employee card"`); several
+            // items are JSON (`is: ["Person", "Employee card"]`).
+            if quoted, case .array(let items) = shape, case .string = items {
+                return .array([try schema.value(ofLiteral: literal, quoted: true, forItemOf: name)])
+            }
             return try schema.value(ofLiteral: literal, quoted: quoted, for: name)
         } catch {
             switch error {

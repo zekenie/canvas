@@ -57,16 +57,16 @@ private func size(_ json: JSON?) -> [Double]? { json?.arrayValue?.compactMap(\.n
 private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.last) }
 
 @MainActor let measureTests = Suite("canvas measure: what draw would make, read from the source", [
-    test("each shape is the size draw makes it: a note 300 wide with text as tall as its text, a schema card, a subboard, a frame") {
-        let schema = #"{"title": "Person", "type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}}}"#
+    test("each shape is the size draw makes it: a note 300 wide with text as tall as its text, a type (a note that holds a schema), a subboard, a frame") {
+        let schema = #"{"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}}}"#
         let long = String(repeating: "The checkout takes a basket and a card, charges it, and sends the receipt. ", count: 3)
         let script = """
             sticky-note "Checkout v2" size: 300x text: "\(long)"
             sticky-note "Plain"
             sticky-note "Wide" size: 420x text: "short"
             sticky-note "Exact" size: 250x90
-            schema-card schema: "\(scripted(schema))" prompt: "A person who buys things, with the details we keep for them and why we keep each."
-            schema-card schema: "\(scripted(schema.replacingOccurrences(of: "Person", with: "Plain")))"
+            sticky-note "Person" text: "A person who buys things, with the details we keep for them and why we keep each." schema: "\(scripted(schema))"
+            sticky-note "Simple" schema: "\(scripted(schema))"
             subboard "Payments"
             subboard "Big" size: 500x300
             frame "Region" size: 400x300
@@ -84,7 +84,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         for (measure, row) in zip(shapes, drawn) {
             expectEqual(measure["line"], row["line"])
             expectEqual(measure["kind"], row["kind"])
-            expectEqual(measure["title"], row["title"], "\(measure["line"] ?? .null): the title draw reports, a card's from its schema")
+            expectEqual(measure["title"], row["title"], "\(measure["line"] ?? .null): the title draw reports, a type's the one written")
             expectEqual(size(measure["size"]), drawnSize(row), "line \(measure["line"] ?? .null)")
         }
         let tall = try require(size(shapes[0]["size"]))

@@ -29,8 +29,8 @@ def fmt(value, indent=0):
 
 
 def swift_starter():
-    """A new card's schema, `SchemaCard.starter`, read out of the Swift: what the app sends for one."""
-    path = os.path.normpath(os.path.join(HERE, "..", "..", "Sources", "Schemas", "SchemaCard.swift"))
+    """A new type's schema, `TypeSchemaProperty.starter`, read out of the Swift: what the app sends for one."""
+    path = os.path.normpath(os.path.join(HERE, "..", "..", "Sources", "Types", "TypeSchema.swift"))
     with open(path, encoding="utf-8") as f:
         m = re.search(r'static let starter = """\n(.*?)\n([ ]*)"""', f.read(), re.S)
     if not m:
@@ -711,7 +711,7 @@ case("s_huge_add", "to_schema", [
 
 # ---------------------------------------------------------------- other schemas, by their words
 
-# The app shows the model each other schema card a card's texts name as @ and a word
+# The app shows the model each other type a type's texts name as @ and a word
 # (SchemaReferenceNames), lists them in <schemas>, and writes a "$ref" to one as that word; it reads
 # the words back as the cards' URIs, and as mentions in a description.
 

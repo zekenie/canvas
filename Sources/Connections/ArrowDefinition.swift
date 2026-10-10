@@ -1,8 +1,10 @@
 import AppKit
 import Canvas
 import Geometry
+import Mentions
 import Publishing
 import Selection
+import Types
 
 /// Arrows as a shape kind: no box; handles; their own translation; painted just above the
 /// highest shape they're bound to. Each capability is its own extension.
@@ -23,7 +25,7 @@ extension ArrowDefinition: ShapeDefinition {
     /// edited, the editing view draws the text, over the cut, an empty label's too.
     func render(_ shape: ShapeRecord<Arrow>, in context: RenderContext) {
         let geometry = arrowGeometry(shape.props, in: context.shapes)
-        let label = ArrowLabels.frame(of: shape.props, on: geometry, editing: context.isEditing)
+        let label = ArrowLabels.frame(of: shape.props, on: geometry, names: context.shapes.mentionNames(of: shape.id), editing: context.isEditing)
         let cg = context.cg
         cg.saveGState()
         if let label { clip(cg, around: label, beside: geometry) }
@@ -35,7 +37,7 @@ extension ArrowDefinition: ShapeDefinition {
         cg.setLineJoin(.round)
         cg.strokePath()
         cg.restoreGState()
-        if let label, !context.isEditing { ArrowLabels.drawText(shape.props.text, in: label) }
+        if let label, !context.isEditing { context.drawMentionText(ArrowLabels.placement(of: shape.props.text, in: label)) }
     }
 
     /// Clips to everything around the label's cut: what the body and its heads reach, less the cut.
@@ -51,7 +53,7 @@ extension ArrowDefinition: ShapeDefinition {
     func geometry(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> ShapeGeometry {
         let geometry = arrowGeometry(shape.props, in: context)
         var bounds = geometry.bodyPath.boundingBoxOfPath
-        let label = ArrowLabels.frame(of: shape.props, on: geometry)
+        let label = ArrowLabels.frame(of: shape.props, on: geometry, names: context.mentionNames(of: shape.id))
         if let label { bounds = bounds.union(label) }
         return ShapeGeometry(outline: [geometry.start, geometry.middle, geometry.end], bounds: bounds, isClosed: false, label: label)
     }
@@ -341,6 +343,20 @@ public struct ArrowsPlugin: CanvasPlugin {
             // No tool places one (a port's drag draws it, through `ArrowPortsPlugin`), so it names itself.
             arrow.label("Arrow", systemImage: ArrowStyle.symbol)
             arrow.arrowRow()
+            // Its label is mention text, centered on its body: pills, and the slash commands its editor hosts.
+            // Its frame is measured by the names its mentions show now: a rename lays it out again.
+            arrow.mentionLayout { $0.props.text }
+            arrow.mentionText { arrow, shapes in
+                guard arrow.props.hasText, let label = shapes.geometry(of: arrow.id)?.label else { return [] }
+                return [ArrowLabels.placement(of: arrow.props.text, in: label)]
+            }
+            // And types: its label says what it is (`/is-a`), where it's drawn, and fits to nothing but
+            // itself.
+            arrow.typeWords(\.text, drawnIn: { arrow, shapes in
+                guard arrow.props.hasText, let label = shapes.geometry(of: arrow.id)?.label else { return nil }
+                return ArrowLabels.placement(of: arrow.props.text, in: label)
+            })
+            arrow.typeable()
         }
         registrar.service { ArrowTargeting(editor: $0) }
         registrar.service { ArrowRowNesting(editor: $0) }

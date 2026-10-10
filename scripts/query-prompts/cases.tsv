@@ -1,8 +1,8 @@
 id	file	question	selection	expected	category	reference
-s01	story	all the notes	Auth	Checkout, Refund policy, 00000000-0000-4000-8000-000000000013, API gateway, Auth, 00000000-0000-4000-8000-000000000004, Ledger	kinds	sticky-note
+s01	story	all the notes	Auth	Checkout, Refund policy, 00000000-0000-4000-8000-000000000013, API gateway, Auth, 00000000-0000-4000-8000-000000000004, Warehouse, Order, 00000000-0000-4000-8000-000000000007, Ledger, Person, Employee card, Ann	kinds	sticky-note
 s02	story	locked shapes	Auth	Refund policy, Order	kinds	[locked]
-s03	story	unlocked notes	Auth	Checkout, 00000000-0000-4000-8000-000000000013, API gateway, Auth, 00000000-0000-4000-8000-000000000004, Ledger	kinds	sticky-note[locked=false]
-s04	story	notes with no title	Auth	00000000-0000-4000-8000-000000000013, 00000000-0000-4000-8000-000000000004	kinds	sticky-note:not([title])
+s03	story	unlocked notes	Auth	Checkout, 00000000-0000-4000-8000-000000000013, API gateway, Auth, 00000000-0000-4000-8000-000000000004, Warehouse, 00000000-0000-4000-8000-000000000007, Ledger, Person, Employee card, Ann	kinds	sticky-note[locked=false]
+s04	story	notes with no title	Auth	00000000-0000-4000-8000-000000000013, 00000000-0000-4000-8000-000000000004, 00000000-0000-4000-8000-000000000007	kinds	sticky-note:not([title])
 s05	story	plain arrows	Auth	00000000-0000-4000-8000-000000000009	kinds	arrow:not([channel])
 s06	story	the note-link arrows	Auth	00000000-0000-4000-8000-000000000008	kinds	arrow[channel=note-link]
 s07	story	the checkout note	Auth	Checkout	titles	"Checkout"
@@ -13,14 +13,14 @@ s11	story	notes that mention API gateway	Auth	Checkout	mentions	sticky-note:ment
 s12	story	notes that mention TODO	Auth	00000000-0000-4000-8000-000000000004	mentions	sticky-note:contains("TODO")
 s13	story	what mentions Checkout?	Auth	API gateway	mentions	:mentions("Checkout")
 s14	story	notes with broken mentions	Auth	Ledger	mentions	sticky-note:dangling(mention)
-s15	story	notes that mention nothing	Auth	Refund policy, 00000000-0000-4000-8000-000000000013, Auth, 00000000-0000-4000-8000-000000000004, Ledger	mentions	sticky-note:not(:mentions(*))
+s15	story	notes that mention nothing	Auth	Refund policy, 00000000-0000-4000-8000-000000000013, Auth, 00000000-0000-4000-8000-000000000004, Warehouse, Order, 00000000-0000-4000-8000-000000000007, Ledger, Person, Employee card, Ann	mentions	sticky-note:not(:mentions(*))
 s16	story	what's directly in Payments?	Auth	Checkout, Refunds, 00000000-0000-4000-8000-000000000013	inside	"Payments" > *
 s17	story	everything inside Payments	Auth	Checkout, Refunds, Refund policy, 00000000-0000-4000-8000-000000000013	inside	"Payments" *
 s18	story	is Refund policy inside Payments?	Auth	Refund policy	inside	"Refund policy":inside("Payments")
 s19	story	is Checkout inside Refunds?	Auth	none	inside	"Checkout":inside("Refunds")
 s20	story	which subboard is Refund policy directly in?	Auth	Refunds	inside	:has(> "Refund policy")
 s21	story	is Payments an ancestor of Refund policy?	Auth	Payments	inside	"Payments":has("Refund policy")
-s22	story	notes on the top board	Auth	API gateway, Auth, 00000000-0000-4000-8000-000000000004, Ledger	inside	sticky-note:top-level
+s22	story	notes on the top board	Auth	API gateway, Auth, 00000000-0000-4000-8000-000000000004, Warehouse, Order, 00000000-0000-4000-8000-000000000007, Ledger, Person, Employee card, Ann	inside	sticky-note:top-level
 s23	story	what's on this board?	in Payments	Checkout, Refunds, 00000000-0000-4000-8000-000000000013	inside	:current-board
 s24	story	what does API gateway link to?	Auth	Auth	direction	:edge-from("API gateway", arrow)
 s25	story	what links to Auth?	Auth	API gateway	direction	:edge-to("Auth", arrow)
@@ -38,7 +38,7 @@ s36	story	shapes with errors	Auth	00000000-0000-4000-8000-000000000007	state	:in
 s37	story	shapes with problems	Auth	00000000-0000-4000-8000-000000000007	state	:invalid, :warned
 s38	story	locked notes inside Payments	Auth	Refund policy	combined	"Payments" sticky-note[locked]
 s39	story	notes in Payments that mention the gateway	Auth	Checkout	combined	"Payments" sticky-note:mentions("API gateway")
-s40	story	unlocked notes nothing mentions	Auth	00000000-0000-4000-8000-000000000013, Auth, 00000000-0000-4000-8000-000000000004, Ledger	combined	sticky-note[locked=false]:not(:mentioned-by(*))
+s40	story	unlocked notes nothing mentions	Auth	00000000-0000-4000-8000-000000000013, Auth, 00000000-0000-4000-8000-000000000004, Warehouse, 00000000-0000-4000-8000-000000000007, Ledger, Person, Employee card, Ann	combined	sticky-note[locked=false]:not(:mentioned-by(*))
 s41	story	notes to the left of Auth	Auth	UNANSWERABLE	unanswerable	-
 s42	story	how many words are in Checkout?	Auth	UNANSWERABLE	unanswerable	-
 s43	story	delete the locked notes	Auth	UNANSWERABLE	unanswerable	-
@@ -50,13 +50,13 @@ e03	eval-board	anything about Redis	-	Sessions, Redis	mentions	:contains("Redis"
 e04	eval-board	the OAuth note	-	OAuth	titles	"OAuth"
 e05	eval-board	the auth note	-	Auth	titles	"Auth"
 e06	eval-board	notes with auth in their title	-	Auth, Auth service, OAuth, Auth proxy	titles	sticky-note[title*="auth" i]
-e07	eval-board	notes inside Identity	-	Auth service, OAuth, Sessions, 00000000-0000-4000-8000-0000000E0104, LDAP bridge, Password reset	inside	"Identity" sticky-note
+e07	eval-board	notes inside Identity	-	Auth service, OAuth, Sessions, 00000000-0000-4000-8000-0000000E0104, Login page, Token store, Session, LDAP bridge, Password reset, Old DB	inside	"Identity" sticky-note
 e08	eval-board	is Password reset inside Identity?	-	Password reset	inside	"Password reset":inside("Identity")
 e09	eval-board	is Tax directly on the Billing board?	-	none	inside	"Billing" > "Tax"
 e10	eval-board	which subboards are inside Billing?	-	Invoices	inside	"Billing" subboard
 e11	eval-board	what's on this board?	in Identity	Auth service, OAuth, Sessions, 00000000-0000-4000-8000-0000000E0104, Login page, Token store, 00000000-0000-4000-8000-0000000E0107, 00000000-0000-4000-8000-0000000E0108, 00000000-0000-4000-8000-0000000E0109, Session, Legacy auth	inside	:current-board
 e12	eval-board	what does Kubernetes point to?	-	Postgres, Redis	direction	:edge-from("Kubernetes")
-e13	eval-board	schema cards linked to Customer	-	Invoice	direction	schema-card:connected-to("Customer", schema-link)
+e13	eval-board	types linked to Customer	-	Invoice	direction	sticky-note[schema]:connected-to("Customer", note-link)
 e14	eval-board	the arrows between Payments API and Stripe	-	00000000-0000-4000-8000-0000000E030A	direction	arrow:between("Payments API", "Stripe")
 e15	eval-board	everything downstream of Frontend	-	Backend, Database	transitive	:downstream-of("Frontend")
 e16	eval-board	locked notes	-	Launch checklist, LDAP bridge, Tax	kinds	sticky-note[locked]

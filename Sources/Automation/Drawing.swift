@@ -632,7 +632,7 @@ struct Drawing {
             } catch {
                 throw AutomationError(statement, .invalidValue, "\(subject): \(error.message)\(from)", hint: error.hint)
             }
-            settings[key] = try writtenTexts(value, of: key, vocabulary, prefix: "\(subject): \(key)", suffix: from, statement)
+            settings[key] = try writtenTexts(value, of: key, vocabulary, owner: item.record.id, prefix: "\(subject): \(key)", suffix: from, statement)
         }
         for name in shape.styles {
             guard let style = script.styles.first(where: { $0.name == name }) else { continue }
@@ -644,8 +644,17 @@ struct Drawing {
         }
         // What a restated shape already has isn't a change, though it's written without what reading
         // it makes afresh (the id of an item in a list): a script run again changes nothing.
+        let written = settings
         if let existing = item.existing {
             settings = settings.filter { key, value in !Self.alreadyHas(existing, key, value, in: registry) }
+        }
+        // What a change implies in the same step (a note given a schema is public), unless it's said:
+        // by what the statement wrote, not what was left of it (a private note restated `public: false`
+        // has said so, though it already is), and no more than the shape lacks.
+        if !settings.isEmpty {
+            var implied = registry.drawImplied(for: item.kind, before: item.existing, settings: written)
+            if let existing = item.existing { implied = implied.filter { key, value in !Self.alreadyHas(existing, key, value, in: registry) } }
+            settings.merge(implied) { own, _ in own }
         }
         // Every shape a script makes is built by the registry, as the kind's schema reads it. Given a
         // width alone (`size: 300x`), it's built at that width, and what the kind works out from the
@@ -660,7 +669,7 @@ struct Drawing {
         if !settings.isEmpty || item.existing == nil { built = try record(built, setting: settings, item, vocabulary) }
         items[index].record = built
         try references(of: built, item)
-        // A size the kind works out from what was set (a note's or a schema card's height, from its text) is
+        // A size the kind works out from what was set (a note's height, from its text) is
         // the one it's placed at, unless the statement says one; with a width alone, the height it works
         // out at that width (any other kind's height as it was).
         if let widthAlone, let height = built.box?.height {
@@ -673,7 +682,7 @@ struct Drawing {
             var sized = items[index].record
             sized.box = CGRect(origin: box.origin, size: items[index].size)
             if vocabulary.namingProperty == nil {
-                // A title only worked out (a schema card's, from its schema) is renamed by changing
+                // A title only worked out (`title { … }`) is renamed by changing
                 // what it's worked out from: said as a rename, and held to what a rename is.
                 if let now = try renamed(sized, title, item) {
                     try claim(now, for: existing, statement, subject: subject)
@@ -886,7 +895,7 @@ struct Drawing {
         }
     }
 
-    /// The title a restated shape of a kind whose titles are only worked out (a schema card's, from
+    /// The title a restated shape of a kind whose titles are only worked out (`title { … }`, from
     /// its schema's "title") has once changed, if that's another; refused if it has none, as a
     /// script can't take a title away.
     private func renamed(_ record: AnyShapeRecord, _ title: String, _ item: ShapeItem) throws(AutomationError) -> String? {

@@ -40,6 +40,18 @@ extension Pins: EditorService {}
         expectEqual(clicked, [box, box])
         expectEqual(h.editor.selectedShapeIDs, [box])
     },
+    test("a click says its shape, no tag, and where the chip is in world units, at every zoom and wherever the shape is") {
+        clicks = []
+        let h = try adornedHarness([everyShape(Pin.self) { _ in pinLabel }])
+        let box = h.add(Box(boxFrame))
+        h.click(at: flagCenter)
+        expectEqual(clicks, [AdornmentClick(shape: box, tag: nil, rect: CGRect(x: 282, y: 73, width: 18, height: 18))])
+        expectEqual(clicks.first?.rect, h.editor.adornmentFrames(of: box).first?.rect)
+        h.editor.camera = Camera(origin: .zero, zoom: 0.5)       // the chip keeps its size on screen: 36 across in world units
+        h.click(at: h.editor.camera.toView(CGPoint(x: 296, y: 64)))
+        expectEqual(clicks.count, 2)
+        expectEqual(clicks.last?.rect, CGRect(x: 264, y: 46, width: 36, height: 36))
+    },
     test("the pointing hand shows over a pin, which is hovered, and pressed while the pointer's on it; released off it, nothing") {
         clicked = []
         let h = try adornedHarness([everyShape(Pin.self) { _ in pinLabel }])

@@ -3,9 +3,11 @@ import Canvas
 import Connections
 import Keyboard
 import Mentions
+import Observation
 import Selection
 import TextEditing
 import Titles
+import Types
 
 public struct StickyNote: BoxShapeProps {
     public static let kind: ShapeKind = "sticky-note"
@@ -63,6 +65,9 @@ public struct StickyNotesPlugin: CanvasPlugin {
             note.noteLinks()                                   // and ports: arrows from a note to a note
             note.mentionText { $0.mentionTexts }               // and mentions: its text shows pills,
             note.mentionable(untitled: { $0.props.text.firstLine })   // called by its title, else its first line
+            note.typeWords(\.text, drawnIn: { $0.mentionTexts.first }, fitting: { StickyNoteDefinition().derive(&$0) })   // and types: its text says what one holds,
+            note.canBeType()                                   // and `/type` makes it one
+            note.typeable()                                    // and `/is-a` makes it an instance of one
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
     }
@@ -73,9 +78,13 @@ struct StickyNoteDefinition {}
 extension StickyNoteDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
         context.fillWithShadow(NoteStyle.path(shape.frame), NoteStyle.color)
+        let placements = shape.mentionTexts
+        // A type's highlights behind its words, under its editor too, whose text lays out as this
+        // does (a note that isn't a type costs one lookup).
+        if let words = placements.first { context.fillTypeHighlights(of: shape, in: words) }
         // While editing, the editing view draws the text instead.
         guard !context.isEditing else { return }
-        for placement in shape.mentionTexts { context.drawMentionText(placement) }
+        for placement in placements { context.drawMentionText(placement) }
     }
 
     func indicatorPath(of shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> CGPath {
@@ -140,12 +149,28 @@ enum NoteStyle {
 /// world units, the note's frame at its origin, so AppKit scales it by the zoom and the text lays
 /// out exactly as the canvas draws it. Its text shows mentions as pills (`MentionTextView`), and
 /// begun from a press on a pill, that pill is selected. Escape and ⌘↩ end editing.
+///
+/// A type's words: its highlights show behind them, where the canvas draws them under the view, and
+/// resting the pointer on one shows its part of the schema in a popover, as on the canvas
+/// (`TypeIndex.popover(at:on:)`), until something's typed. While the model writes them (the answer
+/// to an edit of the schema) they're read-only and faint, as the panel's JSON is while it's written,
+/// and what lands shows in the view: it follows the type's sync status.
 final class NoteEditor: NSView, NSTextViewDelegate {
     let textView: MentionTextView<AnyMentionable>
     private let context: EditContext<StickyNote>
+    private weak var sync: TypeSync<TypeSchemaProperty>?
+    private weak var types: TypeIndex?
+    /// The text as this view last wrote or showed it: a note that says otherwise was written from
+    /// outside (the model's answer).
+    private var known: MentionText
+    /// Text written from outside is being shown: its caret moved, not the person's.
+    private var isShowing = false
 
     init(text: MentionText, frame: CGRect, context: EditContext<StickyNote>) {
         self.context = context
+        sync = context.service(TypeSync<TypeSchemaProperty>.self)
+        types = context.service(TypeIndex.self)
+        known = text
         textView = MentionTextView(frame: CGRect(origin: .zero, size: frame.size), text: text, style: NoteStyle.text,
                                    owner: context.shapeID, mentions: context.service(MentionState.self))
         super.init(frame: .zero)
@@ -163,7 +188,10 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         // ⌘↩ says the text is done, as in the panel's boxes: editing ends. The keyboard leaving
         // isn't that here: the canvas ends editing itself.
         textView.commitsOnLeaving = false
+        // ⌘↩ ends editing while the model writes the text too.
+        textView.commitsWhileReadOnly = true
         textView.onCommit = { [weak self] in self?.context.end() }
+        textView.onPointer = { [weak self] point in self?.hover(at: point) }
         clipsToBounds = true
         addSubview(textView)
         // A note too short for its text (saved before notes grew with it, or drawn with a `size:`)
@@ -182,6 +210,7 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         if let start = context.startPoint {
             textView.placeSelection(at: CGPoint(x: start.x - frame.minX, y: start.y - frame.minY), selectingWord: context.startClickCount >= 2)
         }
+        follow()
     }
 
     @available(*, unavailable)
@@ -195,16 +224,22 @@ final class NoteEditor: NSView, NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
         let text = textView.mentionText
         let shown = textView.attributedString()
+        known = text
         context.update { note in
             guard note.text != text else { return }
             note.text = text
             note.frame.size.height = NoteStyle.fittedHeight(of: shown, width: note.frame.width, keeping: note.frame.height)
         }
+        context.hoverPopover(nil)
         keepCaretInView()
     }
 
-    /// The caret moved (an arrow key, Return, a click): it's kept in view too.
-    func textViewDidChangeSelection(_ notification: Notification) { keepCaretInView() }
+    /// The caret moved (an arrow key, Return, a click): it's kept in view too. Not for text shown
+    /// from outside, which moves no one's caret.
+    func textViewDidChangeSelection(_ notification: Notification) {
+        guard !isShowing else { return }
+        keepCaretInView()
+    }
 
     /// A note grows downward with its text, past the window's bottom if it's near it, and the canvas
     /// scrolls no text of its own: the camera follows the caret instead, so what's typed is never
@@ -226,5 +261,48 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         guard commandSelector == #selector(cancelOperation(_:)) else { return false }
         context.end()
         return true
+    }
+
+    /// Read-only and faint while the model writes a type's words; and the text the note has, shown
+    /// in place of the view's, when something other than this view wrote it (the model's answer
+    /// landing). Looked at again as the note's sync status changes: only the sync writes the text
+    /// while it's typed into (undo, a draw and a file put in place end editing first), and its
+    /// answer is written before the status moves on, so it's there to read (unobserved: every
+    /// commit would wake an observation of the document).
+    private func follow() {
+        let id = context.shapeID
+        let isUpdating = withObservationTracking {
+            sync?.status(of: id) == .updating(.words)
+        } onChange: { [weak self] in
+            // Heard as it's about to change: looked at once it has.
+            Task { @MainActor [weak self] in self?.follow() }
+        }
+        if textView.isEditable == isUpdating {
+            textView.isEditable = !isUpdating
+            textView.showEnabled(!isUpdating)
+        }
+        if let text = context.shape?.props.text, text != known { show(text) }
+    }
+
+    /// The pointer over the text (a point in the text view's coordinates, which are this view's: the
+    /// note's, its frame at their origin), or gone from it: on a highlight's words where the canvas
+    /// draws them (the text lays out as the canvas draws it), their popover, beside the line it's on.
+    private func hover(at point: CGPoint?) {
+        guard let point, let origin = context.shape?.frame.origin else { return context.hoverPopover(nil) }
+        context.hoverPopover(types?.popover(at: point, on: context.shapeID, origin: origin))
+    }
+
+    /// Shows text written from outside: the text's storage alone (`MentionTextView.show`, the caret
+    /// where it was as far as the text reaches), the camera where it is, and typing's undo dropped,
+    /// since it's of text that isn't there.
+    private func show(_ text: MentionText) {
+        isShowing = true
+        defer { isShowing = false }
+        known = text
+        textView.show(text)
+        if let undoManager = textView.undoManager {
+            if let storage = textView.textStorage { undoManager.removeAllActions(withTarget: storage) }
+            undoManager.removeAllActions(withTarget: textView)
+        }
     }
 }

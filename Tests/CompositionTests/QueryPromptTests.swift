@@ -129,8 +129,8 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         let answers: [(query: String, letters: String)] = [
             (#""Refund policy":inside("Payments")"#, "Y"),               // is Refund policy inside Payments? yes
             (#"sticky-note"Checkout""#, "C"),                            // the notes titled Checkout
-            (#"sticky-note[title=""]"#, "N2, N1"),                       // the notes with no title
-            ("sticky-note:not([title])", "N2, N1"),                      // the same
+            (#"sticky-note[title=""]"#, "N2, N1, V"),                    // the notes with no title
+            ("sticky-note:not([title])", "N2, N1, V"),                   // the same
             (#"arrow[channel=""]"#, "R2"),                               // a plain arrow, on no channel
             (#":contains("tokens")"#, "C"),                              // anything about tokens: Checkout's text
             (#":contains("retry")"#, "N2"),                              // where is retry written? "Retry on 502"
@@ -200,7 +200,7 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         defer { story.pasteboard.releaseGlobally() }
         let language = Set(Word.allCases.map(\.rawValue))
         let plugins = Set(story.queries.vocabulary.words.filter { $0.from != .queries }.map(\.word))
-        expectEqual(plugins, ["mentions", "mentioned-by", "invalid", "warned", "selected"], "the shipped plugins' words")
+        expectEqual(plugins, ["mentions", "mentioned-by", "invalid", "warned", "is-a", "selected"], "the shipped plugins' words")
         // Those it says not to invent are illustrative examples on their own, each refused with its reason.
         let invented = Set(QueryPrompt.illustrativeExamples.map(\.query).filter { $0.hasPrefix(":") && !$0.contains("(") }.map { String($0.dropFirst()) })
             .subtracting(language)

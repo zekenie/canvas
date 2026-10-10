@@ -5,8 +5,7 @@ import Validation
 /// the file also has (“Checkout” is another shape’s title too.), about its `title` where Titles
 /// keeps it. A title is what names a shape for everything that finds one by it (`canvas draw`, a
 /// query, the `@` picker), and two shapes called one thing are found by it no longer: `draw`
-/// refuses the title. Titles as Titles reads them (`registry.title(of:)`: named, or derived, as a
-/// schema card's), folded, compared exactly; an untitled note's first line is no title. On every
+/// refuses the title. Titles as Titles reads them (`registry.title(of:)`: named, or derived), folded, compared exactly; an untitled note's first line is no title. On every
 /// board the editor can show, but shapes kept aside. A warning, never an error: each shape is fine
 /// alone.
 ///

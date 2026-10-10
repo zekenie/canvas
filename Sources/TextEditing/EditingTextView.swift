@@ -1,7 +1,6 @@
 import AppKit
 
-/// The text view under every editable text in the app (a note's on the canvas, a schema card's
-/// description, an arrow's label, the detail panel's boxes): an `NSTextView` with what a host
+/// The text view under every editable text in the app (a note's on the canvas, an arrow's label, the detail panel's boxes): an `NSTextView` with what a host
 /// needs and `TextEditor` doesn't give, which a plugin subclasses for text of its own (the panel's
 /// `DetailTextContent`s). What it adds does nothing until it's set, so a subclass with none of it
 /// set is a plain text view:
@@ -11,13 +10,12 @@ import AppKit
 ///   of them is taken: ⌘↩ goes on as any other key does. A view that isn't editable (read-only,
 ///   though its text can still be clicked, selected and copied) never calls it: nothing was written;
 ///   but for ⌘↩ where it `commitsWhileReadOnly`, whose commit only says the person is done (a
-///   schema card's description, read-only while the model writes it, ends editing on ⌘↩).
+///   type note's words, read-only while the model writes them, end editing on ⌘↩).
 /// - `commitsOnReturn`, with `onCommit`: Return calls it too, and ⇧↩ is a new line.
 /// - `commitsOnLeaving`, true unless set: whether the keyboard leaving calls `onCommit` too. Text
 ///   whose host ends it itself (a note's editor on the canvas) sets it false, so only ⌘↩ says it's
 ///   done. `onLeave` hears the keyboard leave, whatever for, after that: for a host that decides
-///   what leaving means (a schema card's description ends editing only once the keyboard is outside
-///   the canvas).
+///   what leaving means.
 /// - `onExit`: Escape calls it (the panel's, which gives the keyboard back to the canvas) in place
 ///   of what a text view does with Escape. (In the panel, the panel hears Escape before the view
 ///   does, and leaves itself. ⌘. never comes to the view as a key: the window sends
@@ -54,7 +52,7 @@ open class EditingTextView: NSTextView {
     /// False for text whose host ends it when the keyboard leaves (a note's editor on the canvas).
     public var commitsOnLeaving = true
     /// ⌘↩ calls `onCommit` while the text can't be written too: for text whose commit only says the
-    /// person is done with it (a schema card's description ends editing, read-only or not). Return
+    /// person is done with it (a type note's words end editing, read-only or not). Return
     /// and the keyboard leaving still never commit read-only text.
     public var commitsWhileReadOnly = false
     /// The keyboard left it, whatever for (after `onCommit`, if it commits on leaving).

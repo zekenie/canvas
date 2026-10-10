@@ -34,9 +34,24 @@ public struct PluginRegistrar {
     }
 
     /// A toolbar tool. `make` runs once per editor, after the editor's services exist, so it may
-    /// look them up with `editor.service(S.self)`.
-    public mutating func tool(_ descriptor: ToolDescriptor, _ make: @escaping @MainActor (CanvasEditor) -> any Tool) {
-        contribute(ToolRegistration(descriptor: descriptor, make: make), to: CorePoints.Tools.self)
+    /// look them up with `editor.service(S.self)`. `placesShapes`: it puts shapes on the board, as a
+    /// kind's tool does (`ShapeRegistrar.tool`), though it places none by a placement of its own (a tool
+    /// that puts down a shape built when the pointer lands, a custom shape's): it is dimmed, and its key
+    /// does nothing, on a board that takes none (`editor.isToolEnabled`), and a tool in use is left
+    /// for the default tool when the board becomes read-only.
+    public mutating func tool(_ descriptor: ToolDescriptor, placesShapes: Bool = false,
+                              _ make: @escaping @MainActor (CanvasEditor) -> any Tool) {
+        contribute(ToolRegistration(descriptor: descriptor, placesShapes: placesShapes, make: make), to: CorePoints.Tools.self)
+    }
+
+    /// A menu on a tool's segment of the toolbar (`ToolMenuEntry`): what the toolbar shows when it's
+    /// opened, asked of `entries` then, so it lists what the file holds at that moment, never what it
+    /// held when the editor was made. A click on the segment still picks the tool; a tool that
+    /// remembers a choice made in the menu keeps it in its own service. One menu per tool, and the tool
+    /// must be registered (otherwise `RegistryError.invalid`). `editor.toolMenu(for:)` asks it,
+    /// `editor.choose(_:)` runs an item.
+    public mutating func toolMenu(for tool: ToolID, _ entries: @escaping @MainActor (CanvasEditor) -> [ToolMenuEntry]) {
+        contribute(ToolMenuRegistration(tool: tool, entries: entries), to: CorePoints.ToolMenus.self)
     }
 
     /// Per-editor state: an engine, a cache, timers. Made when the editor is (before any tool), and
@@ -105,8 +120,10 @@ public struct PluginRegistrar {
 
     /// Runs inside the deleting transaction, before the shapes are removed. It may change other
     /// shapes, and delete more (their handlers run too), read-only ones included: what it does keeps
-    /// the board whole, which a lock doesn't stand in the way of. Each shape's handlers run once per
-    /// transaction, and every shape being deleted still exists while any handler runs.
+    /// the board whole, which a lock doesn't stand in the way of. It may change shapes on other boards
+    /// of the file too (`transaction.update(_:on:_:)`), read-only ones included, in the same undo
+    /// step: one undo brings back what it took back, on every board. Each shape's handlers run once
+    /// per transaction, and every shape being deleted still exists while any handler runs.
     public mutating func willDelete(_ handler: @escaping @MainActor (Set<ShapeID>, inout Transaction) -> Void) {
         contribute(handler, to: CorePoints.WillDelete.self)
     }
@@ -266,6 +283,26 @@ public struct Placement {
     @MainActor
     public func shape(at point: CGPoint) -> AnyShapeRecord {
         make(CGRect(center: point, size: size))
+    }
+
+    /// The same placement, with every shape it places changed by `transform` after it is made, in a
+    /// frame of the placement's size centered where it lands: for a plugin that puts down a record it
+    /// built (a shape of a kind with extra values set, props another plugin's data fills in). The record
+    /// keeps its id, kind and frame unless `transform` changes them; a record of another kind is a
+    /// precondition failure (a placement is of one kind).
+    public func mapping(_ transform: @escaping @MainActor (AnyShapeRecord) -> AnyShapeRecord) -> Placement {
+        let make = make, kind = kind
+        return Placement(kind: kind, size: size, minimumSize: minimumSize, completion: completion) { frame in
+            let record = transform(make(frame))
+            precondition(record.kind == kind, "a placement of \(kind) shapes can't make \(record.kind) ones")
+            return record
+        }
+    }
+
+    /// The same placement, of shapes this size: what it makes is placed in a frame of `size` centered
+    /// where it lands (or in the rect it is given, `editor.place(_:in:)`). Its smallest size stays.
+    public func sized(_ size: CGSize) -> Placement {
+        Placement(kind: kind, size: size, minimumSize: minimumSize, completion: completion, make: make)
     }
 
     /// The same placement, with an added property set on every shape it places:

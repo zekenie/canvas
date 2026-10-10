@@ -40,9 +40,11 @@ public struct Registry {
     /// Every plugin's rule for which shapes can't change (`registrar.readOnlyShapes`), found once:
     /// a transaction asks them about every shape it changes.
     private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
-    /// The tools that place a kind's shapes (`ShapeRegistrar.tool`): none is enabled on a board that
-    /// can't change (`editor.isToolEnabled`).
+    /// The tools that place a kind's shapes (`ShapeRegistrar.tool`), and those registered with
+    /// `placesShapes`: none is enabled on a board that can't change (`editor.isToolEnabled`).
     let placingTools: Set<ToolID>
+    /// Each tool's menu (`registrar.toolMenu`), found once: the toolbar asks for one when it opens.
+    let toolMenus: [ToolID: @MainActor (CanvasEditor) -> [ToolMenuEntry]]
     /// Added properties: who declares each, and which kinds opt in.
     let propertyTable: PropertyTable
     /// Each kind's schema (`schema(for:)`), described once, as the registry is built.
@@ -87,8 +89,12 @@ public struct Registry {
         readOnlyRules = (byPoint[ObjectIdentifier(CorePoints.ReadOnlyRules.self)] ?? []).map { $0.value as! CorePoints.ReadOnlyRules.Contribution }
         placingTools = Set((byPoint[ObjectIdentifier(CorePoints.Tools.self)] ?? []).compactMap {
             let tool = $0.value as! ToolRegistration
-            return tool.placement == nil ? nil : tool.descriptor.id
+            return tool.placesShapes ? tool.descriptor.id : nil
         })
+        toolMenus = Dictionary((byPoint[ObjectIdentifier(CorePoints.ToolMenus.self)] ?? []).map {
+            let menu = $0.value as! ToolMenuRegistration
+            return (menu.tool, menu.entries)
+        }, uniquingKeysWith: { first, _ in first })
         let declarations = byPoint[ObjectIdentifier(CorePoints.PropertyDeclarations.self)] ?? []
         let table = try PropertyTable(declarations: declarations,
                                       optIns: byPoint[ObjectIdentifier(CorePoints.PropertyOptIns.self)] ?? [],
@@ -324,6 +330,9 @@ public struct Registry {
         return KindLabel(name: kind.rawValue, systemImage: nil, tint: tint)
     }
 
+    /// Whether a tool has a menu on its segment of the toolbar (`registrar.toolMenu`).
+    public func hasToolMenu(for tool: ToolID) -> Bool { toolMenus[tool] != nil }
+
     var toolFactories: [(ToolID, @MainActor (CanvasEditor) -> any Tool)] {
         contributions(to: CorePoints.Tools.self).map { ($0.value.descriptor.id, $0.value.make) }
     }
@@ -412,6 +421,7 @@ struct RawContribution {
             // A kind's version shows once it has one, so the pinned report shows every bump.
             "shape \(shape.kind)" + (shape.definition.kindCodec.version > 0 ? " v\(shape.definition.kindCodec.version)" : "")
         case let tool as ToolRegistration: "tool \(tool.descriptor.id)"
+        case let menu as ToolMenuRegistration: "tool menu \(menu.tool)"
         case let service as ServiceRegistration: "service \(service.name)"
         case let overlay as any CanvasOverlay: "overlay \(type(of: overlay))"
         case let command as CommandRegistration: "command \(command.command)"

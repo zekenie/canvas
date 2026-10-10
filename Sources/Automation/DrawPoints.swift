@@ -132,6 +132,28 @@ extension DrawEdges: KeyedExtensionPoint {
     }
 }
 
+// MARK: Implications
+
+/// What a script's attributes on a shape imply it also sets, for `canvas draw`: given the kind, the
+/// shape as it is before the script (nil for a new one) and the settings the script writes, by
+/// property key (what it changes, as JSON), the settings that go with them, which the script's own
+/// win over. A concern's rule that one change comes with another in the same step (a note given a
+/// schema becomes public), so what a person's one action does an agent's does. Only the sugar makes
+/// one (`registrar.drawImplies`).
+@MainActor
+public struct DrawImplication {
+    let implied: @MainActor (ShapeKind, AnyShapeRecord?, JSONObject, Registry) -> JSONObject
+}
+
+/// What attributes imply for `canvas draw`: any number of plugins, each asked in turn.
+public enum DrawImplications {}
+
+extension DrawImplications: ExtensionPoint {
+    public typealias Contribution = DrawImplication
+    public static var owner: PluginID { .automation }
+    public static func summary(of _: DrawImplication, for _: ShapeTarget) -> String { "draw implies" }
+}
+
 // MARK: Checks
 
 /// Something wrong with a shape a script drew (an error: it's invalid; or a warning), and the
@@ -187,6 +209,9 @@ public struct DrawTextContext {
     /// `$ref` left unfollowed, so what's written beside the reference (an annotation a kind adds to
     /// a shared definition) is there to read.
     public let schema: JSONObject
+    /// The shape whose attribute the string is, if it is a shape's: a new one has its id already, so
+    /// a text that names a shape can refuse the shape itself (a type that is its own type).
+    public let owner: ShapeID?
     let lookup: DrawTextLookup
 
     /// The shape called `name`, as a title names one in the script, among those `admits` takes (nil:
@@ -198,6 +223,15 @@ public struct DrawTextContext {
     /// that but none `admits` is `invalid_value`, saying why. What's thrown is a refusal as the
     /// script's own are, which the run says on the statement's line.
     public func shape(called name: String, admitting admits: @MainActor (AnyShapeRecord) -> String? = { _ in nil }) throws(AutomationError) -> DrawTextShape {
+        try lookup.shape(called: name, admitting: { record, _ in admits(record) })
+    }
+
+    /// As above, for a rule that needs what the script writes on a shape it draws or restates: `admits`
+    /// is also given the keys of the properties its statement writes, which its record, as the
+    /// statement starts it, doesn't have yet (empty for a shape the script doesn't mention). A type
+    /// the script draws with `schema:` is one, though its record has none until the statement is read.
+    public func shape(called name: String,
+                      admitting admits: @MainActor (AnyShapeRecord, _ writing: Set<String>) -> String?) throws(AutomationError) -> DrawTextShape {
         try lookup.shape(called: name, admitting: admits)
     }
 }
@@ -250,13 +284,21 @@ extension PluginRegistrar {
     /// Names shapes for `canvas draw`: `name` is what a shape is called (folded, as `fold` folds a
     /// title; nil for none, or blank), `namingProperty` the property of a kind's schema a title is
     /// written to (nil: its shapes can't be given one), `isDerived` whether the kind works a name out
-    /// by itself (a schema card's, from its schema's `"title"`), and `fold` how a title a script writes
+    /// by itself (`title { … }`; no shipped kind's), and `fold` how a title a script writes
     /// is folded before it's matched (nil: it's blank). At most one plugin names shapes.
     public mutating func drawNames(name: @escaping @MainActor (AnyShapeRecord, Registry) -> String?,
                                    namingProperty: @escaping @MainActor (ShapeKind, Registry) -> String?,
                                    isDerived: @escaping @MainActor (ShapeKind, Registry) -> Bool,
                                    fold: @escaping @Sendable (String) -> String?) {
         contribute(DrawNaming(name: name, namingProperty: namingProperty, isDerived: isDerived, fold: fold), to: DrawNames.self)
+    }
+
+    /// Adds settings to those a script writes on a shape (`DrawImplication`): `implied` gets the
+    /// kind, the shape before the script (nil: new), the settings it writes (property key to value)
+    /// and the registry, and returns the settings that go with them; a key the script wrote itself
+    /// is its own. Any number of plugins.
+    public mutating func drawImplies(_ implied: @escaping @MainActor (ShapeKind, AnyShapeRecord?, JSONObject, Registry) -> JSONObject) {
+        contribute(DrawImplication(implied: implied), to: DrawImplications.self)
     }
 
     /// Makes edges for `canvas draw`: `kind` is what connections are (nil: nothing draws them now,
@@ -303,6 +345,15 @@ extension Registry {
     @MainActor public func drawCanName(_ kind: ShapeKind) -> Bool {
         guard let naming = drawNaming else { return false }
         return naming.namingProperty(kind, self) != nil || naming.isDerived(kind, self)
+    }
+
+    /// What `settings` on a shape of `kind` imply (`drawImplies`), those a script wrote itself left alone.
+    @MainActor func drawImplied(for kind: ShapeKind, before: AnyShapeRecord?, settings: JSONObject) -> JSONObject {
+        var implied: JSONObject = [:]
+        for implication in contributions(to: DrawImplications.self).map(\.value) {
+            for (key, value) in implication.implied(kind, before, settings, self) where settings[key] == nil { implied[key] = value }
+        }
+        return implied
     }
 
     var drawNaming: DrawNaming? { contributions(to: DrawNames.self).first?.value }

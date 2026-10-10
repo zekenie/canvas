@@ -174,6 +174,14 @@ extension AnyShapeRecord {
         set { added[P.self] = newValue }
     }
 
+    /// The value of the added property under `key` as JSON, as a board would write it; nil if the shape
+    /// holds none of that key (its kind doesn't opt in, it's unset, or the value is one the app can't use
+    /// and keeps aside, `keptProperties`). For a plugin that reads a property by the name a user's text
+    /// gives it (`registry.properties(for:)` lists the names), without the type.
+    public func addedJSON(for key: PropertyKey) -> JSONValue? {
+        added[key].flatMap { try? JSONValue(encoding: $0) }
+    }
+
     /// Added properties this shape holds values for that the app can't use, kept as they were.
     public var keptProperties: [PropertyKey] { added.kept.keys.sorted { $0.rawValue < $1.rawValue } }
 }

@@ -77,18 +77,25 @@ public enum Filter: Sendable, Equatable {
 
 /// `[name]`, `[name op value]` or `[name op value i]`: a test of an attribute, typed later by its
 /// property's schema. `[name]` alone has no operator, value or flag; the rest have an operator and a
-/// value, and maybe a flag.
+/// value, and maybe a flag. `[name.a.b]` tests what is found at `a`, then `b`, inside the
+/// attribute's object: typed later by the value found there, not by a schema.
 public struct AttributeTest: Sendable, Equatable {
-    /// As written, or as quoted (`["my attr"]`), escapes undone.
+    /// As written, or as quoted (`["my attr"]`), escapes undone. The attribute itself; with a
+    /// `path`, the one whose object the path goes into.
     public var name: String
+    /// The members inside the attribute's value, in order: `["a", "b"]` for `[name.a.b]`. Each is an
+    /// identifier (a letter or `_`, then letters, digits, `-` and `_`), and only an unquoted name
+    /// has any. Empty for the attribute alone.
+    public var path: [String]
     public var op: Operator?
     public var value: Literal?
     public var flag: CaseFlag?
     /// From `[` to `]`.
     public var span: QuerySpan
 
-    public init(name: String, op: Operator? = nil, value: Literal? = nil, flag: CaseFlag? = nil, span: QuerySpan) {
+    public init(name: String, path: [String] = [], op: Operator? = nil, value: Literal? = nil, flag: CaseFlag? = nil, span: QuerySpan) {
         self.name = name
+        self.path = path
         self.op = op
         self.value = value
         self.flag = flag

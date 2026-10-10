@@ -18,7 +18,7 @@ extension Stamp: Adornment {
     static var placement: AdornmentPlacement { .aboveTopRight }
 }
 extension Stamp: ClickableAdornment {
-    static func click(on shape: ShapeID, in editor: CanvasEditor) { clicked.append(shape) }
+    static func click(_ click: AdornmentClick, in editor: CanvasEditor) { clicked.append(click.shape) }
 }
 
 /// Where a box is at `zoom` to be where `boxFrame` is at 100%, in view.

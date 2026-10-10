@@ -299,6 +299,7 @@ struct Parser {
         position += 1
         _ = try lexer.skipSpace()
         let name: String
+        var path: [String] = []
         if lexer.atQuote {
             let nameStart = position
             name = try lexer.string()
@@ -311,13 +312,13 @@ struct Parser {
             if current == "|", let next = peek(1), Lexer.startsIdentifier(next) || next == "*" {
                 throw namespace(from: nameStart, attribute: true)
             }
-            if current == ".", let next = peek(1), Lexer.startsIdentifier(next) {
-                while current == ".", let next = peek(1), Lexer.startsIdentifier(next) {
-                    position += 1
-                    _ = lexer.identifier()
+            // `a.b.c`: members inside the attribute, each an identifier.
+            while current == "." {
+                guard let next = peek(1), Lexer.startsIdentifier(next) else {
+                    throw QueryError(.syntax, "A member's name follows the dot: [\(Printer.name(name)).member].", span: span(position..<(position + 1)))
                 }
-                let path = lexer.text(nameStart..<position)
-                throw QueryError(.notBuilt, "\(path) is an attribute inside an attribute, which a query can't read yet.", span: span(nameStart..<position))
+                position += 1
+                path.append(lexer.identifier())
             }
         } else if atEnd {
             throw unclosedBracket(start)
@@ -328,13 +329,13 @@ struct Parser {
         _ = try lexer.skipSpace()
         if current == "]" {
             position += 1
-            return AttributeTest(name: name, span: span(start..<position))
+            return AttributeTest(name: name, path: path, span: span(start..<position))
         }
         guard !atEnd else { throw unclosedBracket(start) }
         let opStart = position
         guard let op = readOperator() else {
             let end = lexer.atIdentifier ? position + lexer.identifierLength : position + 1
-            throw QueryError(.syntax, "An operator or ] follows \(Printer.name(name)).", hint: "The operators: = != ^= $= *= ~= |= < <= > >=.",
+            throw QueryError(.syntax, "An operator or ] follows \(Printer.name(name) + path.map { "." + $0 }.joined()).", hint: "The operators: = != ^= $= *= ~= |= < <= > >=.",
                              span: span(position..<end))
         }
         if let next = current, Self.operatorCharacters.contains(next) {
@@ -370,12 +371,12 @@ struct Parser {
             if case .bare = value, flag == nil, let close = closingBracket() {
                 let words = lexer.text(valueStart..<close).trimmingTrailingWhitespace
                 throw QueryError(.syntax, "A value with spaces is quoted.",
-                                 hint: "[\(Printer.name(name))\(op.rawValue)\(Printer.quoted(words))]", span: span(valueStart..<(valueStart + words.count)))
+                                 hint: "[\(Printer.name(name) + path.map { "." + $0 }.joined())\(op.rawValue)\(Printer.quoted(words))]", span: span(valueStart..<(valueStart + words.count)))
             }
             throw QueryError(.syntax, "\(character) can't follow the value: the test ends with ].", span: span(position..<(position + 1)))
         }
         position += 1
-        return AttributeTest(name: name, op: op, value: value, flag: flag, span: span(start..<position))
+        return AttributeTest(name: name, path: path, op: op, value: value, flag: flag, span: span(start..<position))
     }
 
     static let operatorCharacters: Set<Character> = ["=", "<", ">", "!"]
@@ -781,8 +782,10 @@ struct Parser {
         case ".":
             guard lexer.atIdentifier else { return QueryError(.syntax, ". can't start a part of a query.", span: span(start..<position)) }
             let name = lexer.identifier()
-            return QueryError(.notBuilt, "Shapes aren't typed by schemas yet, so .\(name) names nothing.",
-                              hint: "Name a kind, or find the word: :contains(\(Printer.quoted(name))).", span: span(start..<position))
+            // A word the app may give a meaning (`HintPremise.Claim.typeWord`); without one, a plain refusal.
+            return QueryError(.unsupported, ".\(name) has no meaning here: a shape is found by its kind, its title, its id, an attribute or a word.",
+                              hint: "Name a kind, or find the word: :contains(\(Printer.quoted(name))).",
+                              premise: HintPremise(.typeWord(name), hint: nil), span: span(start..<position))
         case "&":
             return QueryError(.unsupported, "& has no meaning here: a query is one selector, not a nested rule.", span: span(start..<position))
         case "$":

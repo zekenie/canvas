@@ -10,7 +10,7 @@ public enum MentionTextFormat {
     public static let mediaType = "text/x-canvas-mentions"
 
     /// The member a scoped use of the definition says what its scope admits under, beside the
-    /// reference: `{"kinds": ["schema-card"]}`, or `{"scope": "Blockers"}`.
+    /// reference: `{"kinds": ["plate"]}`, or `{"scope": "Blockers"}`.
     public static let annotationKey = "x-canvas-mentions"
 
     /// The annotation's members: the kinds a text of one kind admits (`Only`), and the title of the

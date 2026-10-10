@@ -56,7 +56,7 @@ extension JumpNudger: EditorService {
         h.openJumpTo()
         expectEqual(h.jump.catalogCount, storyTitled)
         for text in ["orphan", "untitled"] { expectEqual(h.listing(text), ["(No matches)"], text) }
-        // A derived title, as a schema card's is: the card's text, read from it.
+        // A derived title: the card's text, read from it.
         let derived = try storyHarness(file: CanvasFile(root: CanvasDocument(shapes: [])))
         derived.editor.add(Card(frame(0, 0), text: "Receipt"))
         expectEqual(derived.listing("receipt"), ["(No matches)"], "a kind with no title isn't listed")

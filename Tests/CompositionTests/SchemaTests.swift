@@ -104,6 +104,12 @@ private let stickyNoteSchema = #"""
       "contentMediaType" : "text/x-canvas-mentions",
       "description" : "Text that may mention shapes. A mention is @[name](shape:ID): ID is the id of a shape in the same file (a UUID, any case), and name is what it was called when the text was written; the app shows the shape's current name, and this one only if the shape isn't there. In a name, \\] stands for ] and \\\\ for \\. In the text, \\@[ is a literal @[, and any backslashes just before @[ are doubled: \\\\@[ is one backslash, then a mention. @[](shape:ID) mentions a shape without a name. Anything else is text as written.",
       "type" : "string"
+    },
+    "types.type-link" : {
+      "contentMediaType" : "text/x-canvas-type",
+      "description" : "A type it is, by the id of the shape that is the type, which may be gone.",
+      "format" : "uuid",
+      "type" : "string"
     }
   },
   "$id" : "tag:infinite-canvas,2026:kinds/sticky-note",
@@ -113,6 +119,15 @@ private let stickyNoteSchema = #"""
     "frame" : {
       "$ref" : "#/$defs/core.rect"
     },
+    "is" : {
+      "description" : "The types the shape is, by the ids of the shapes that are them, in the order they were added: a later one wins where two say the same.",
+      "items" : {
+        "$ref" : "#/$defs/types.type-link"
+      },
+      "type" : "array",
+      "uniqueItems" : true,
+      "x-canvas-owner" : "types"
+    },
     "locked" : {
       "type" : "boolean",
       "x-canvas-owner" : "locking"
@@ -120,6 +135,12 @@ private let stickyNoteSchema = #"""
     "public" : {
       "type" : "boolean",
       "x-canvas-owner" : "publishing"
+    },
+    "schema" : {
+      "contentMediaType" : "application/schema+json",
+      "description" : "A JSON Schema, as text, which makes the shape a type named by its title: its properties in the order written, kept as typed while it isn't JSON. A \"$ref\" to \"urn:uuid:\" and another type's id refers to that type.",
+      "type" : "string",
+      "x-canvas-owner" : "types"
     },
     "text" : {
       "$ref" : "#/$defs/mentions.text",

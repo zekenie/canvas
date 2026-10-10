@@ -46,7 +46,35 @@ extension Adornment {
 /// the pointing hand shows over it; a right-click on it is on its shape, as on any adornment. The
 /// lock chip: a click unlocks its shape.
 public protocol ClickableAdornment: Adornment {
-    @MainActor static func click(on shape: ShapeID, in editor: CanvasEditor)
+    @MainActor static func click(_ click: AdornmentClick, in editor: CanvasEditor)
+}
+
+/// Which of a group's labels a chip is: any plugin's own name for it (a type chip's is its type
+/// note's id), kept with the label so a click and a hover go by it, and a rename or a change in the
+/// others' places doesn't change which one the pointer's on.
+public struct AdornmentTag: Hashable, Sendable {
+    public let raw: String
+
+    public init(_ raw: String) { self.raw = raw }
+    public init(_ id: ShapeID) { raw = id.description }
+}
+
+/// A click on a clickable adornment: its shape, the label's tag (nil for an untagged label, and for
+/// a group's "+N" chip, `isOverflow`), and where the chip is now, in world units, where its shape
+/// is (not where a shake draws it): what a menu opened by the click goes below.
+public struct AdornmentClick: Equatable, Sendable {
+    public let shape: ShapeID
+    public let tag: AdornmentTag?
+    public let rect: CGRect
+    /// The click is on a group's "+N" chip, which stands for the labels the row had no room for.
+    public let isOverflow: Bool
+
+    public init(shape: ShapeID, tag: AdornmentTag? = nil, rect: CGRect, isOverflow: Bool = false) {
+        self.shape = shape
+        self.tag = tag
+        self.rect = rect
+        self.isOverflow = isOverflow
+    }
 }
 
 /// Where on its shape an adornment goes, from the shape's bounds (its geometry's, axis-aligned), in
@@ -95,19 +123,32 @@ public struct AdornmentID: Hashable, Sendable, CustomStringConvertible {
 public struct AdornmentButton: Hashable, Sendable {
     public let adornment: AdornmentID
     public let shape: ShapeID
+    /// Which of a group's labels (nil for an untagged label, and for the "+N" chip).
+    public let tag: AdornmentTag?
+    /// The group's "+N" chip, which stands for the labels the row had no room for.
+    public let isOverflow: Bool
 
-    public init<A: ClickableAdornment>(_: A.Type, on shape: ShapeID) { self.init(.of(A.self), on: shape) }
+    public init<A: ClickableAdornment>(_: A.Type, on shape: ShapeID, tag: AdornmentTag? = nil) {
+        self.init(.of(A.self), on: shape, tag: tag)
+    }
 
-    init(_ adornment: AdornmentID, on shape: ShapeID) {
+    /// The "+N" chip of `A`'s group on a shape.
+    public static func overflow<A: ClickableAdornment>(of _: A.Type, on shape: ShapeID) -> AdornmentButton {
+        AdornmentButton(.of(A.self), on: shape, tag: nil, isOverflow: true)
+    }
+
+    init(_ adornment: AdornmentID, on shape: ShapeID, tag: AdornmentTag? = nil, isOverflow: Bool = false) {
         self.adornment = adornment
         self.shape = shape
+        self.tag = tag
+        self.isOverflow = isOverflow
     }
 }
 
 /// What an adornment shows on one shape. Adornments draws it, so every plugin's look alike (as
 /// `ContentsLabel` does for rows): a capsule in the title pill's dark gray (green for something
 /// done), white text on one line (dimmed for a placeholder's), a small symbol before it if it has
-/// one (a kind's mark: a schema card's title's `{}`), or a symbol alone in a disc. Its height, font
+/// one (a kind's mark: a subboard's title's `rectangle.stack`), or a symbol alone in a disc. Its height, font
 /// and padding are its place's: 18 points, 11-point text, 7 in, in the row; 16 points, 10-point
 /// semibold figures, 5 in, on the corner. On a shape drawn as a skeleton, zoomed out
 /// (`editor.drawsSkeleton(of:)`), it isn't drawn.
@@ -133,11 +174,16 @@ public struct AdornmentLabel: Hashable, Sendable {
     /// Its text stands in for what isn't there (an untitled shape's pill, `init(placeholder:)`):
     /// drawn dimmed, as secondary text is.
     public let isPlaceholder: Bool
+    /// Which of its adornment's labels this is (`tagged(_:)`): a group's chips are told apart by it,
+    /// for hover, press and click.
+    public private(set) var tag: AdornmentTag?
+    /// What it names is gone (`missing()`): no fill, a dashed stroke, the text in italic.
+    public private(set) var isMissing: Bool
     /// The smaller face this label may be drawn in (`compact(_:)`): at most one, held in an array
     /// since a label can't hold itself.
     private var compactFaces: [AdornmentLabel]
 
-    /// Text, after a small symbol if `systemImage` names one (a kind's mark: a schema card's `{}`).
+    /// Text, after a small symbol if `systemImage` names one (a kind's mark: a subboard's `rectangle.stack`).
     public init(_ text: String, systemImage: String? = nil, tone: Tone = .neutral) {
         self.init(text: text, systemImage: systemImage, tone: tone, isPlaceholder: false)
     }
@@ -155,6 +201,8 @@ public struct AdornmentLabel: Hashable, Sendable {
         opacity = 1
         hasBrightSymbol = false
         self.isPlaceholder = isPlaceholder
+        tag = nil
+        isMissing = false
         compactFaces = []
     }
 
@@ -165,6 +213,8 @@ public struct AdornmentLabel: Hashable, Sendable {
         opacity = 1
         hasBrightSymbol = false
         isPlaceholder = false
+        tag = nil
+        isMissing = false
         compactFaces = []
     }
 
@@ -173,6 +223,23 @@ public struct AdornmentLabel: Hashable, Sendable {
         var label = self
         label.opacity = min(1, max(0, opacity))
         if let face = compactFace { label = label.compact(face.opacity(opacity)) }
+        return label
+    }
+
+    /// The same label as the one `tag` names, among its adornment's: a click on it, and the hover and
+    /// press on it, say which.
+    public func tagged(_ tag: AdornmentTag) -> AdornmentLabel {
+        var label = self
+        label.tag = tag
+        return label
+    }
+
+    /// The same label drawn as naming what is gone, as a mention's pill does (Mentions): no fill, a
+    /// dashed stroke and its text in italic, in the canvas's own label colors; its symbol before the
+    /// text is left off, since it is white. Text, and a symbol alone in a dashed ring.
+    public func missing() -> AdornmentLabel {
+        var label = self
+        label.isMissing = true
         return label
     }
 
@@ -247,6 +314,14 @@ extension ShapeAdornments: KeyedExtensionPoint {
         [AdornmentKey(target: target, adornment: contribution.adornment)]
     }
 
+    /// Several labels are for the row's left end only: at the right end a run is cut where it
+    /// reaches `maxRun`, and everything after it with it (the lock), and the corner is a tally's.
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        for c in registry.contributions(to: ShapeAdornments.self) where c.value.isGroup && c.value.adornment.placement != .aboveTopLeft {
+            throw .invalid(point: "ShapeAdornments", reason: "\(c.value.adornment.name) (from \(c.pluginID)) shows several labels, which only aboveTopLeft allows, not \(c.value.adornment.placement)")
+        }
+    }
+
     /// "adornment TitlePill → every shape", "adornment Flag → box".
     public static func summary(of contribution: AdornmentContribution, for target: ShapeTarget) -> String {
         "adornment \(contribution.adornment) → \(target == .any ? "every shape" : "\(target)")"
@@ -266,17 +341,26 @@ public struct AdornmentContribution {
     let adornment: AdornmentID
     /// Every-shape ones: which kinds. Always true for a kind's own.
     let appliesTo: @MainActor (AdornableKind) -> Bool
-    let label: @MainActor (AnyShapeRecord, AdornmentContext) -> AdornmentLabel?
+    let labels: @MainActor (AnyShapeRecord, AdornmentContext) -> [AdornmentLabel]
+    /// Several labels, in order, each its own chip, each shown whole or folded into a "+N" chip:
+    /// only at `aboveTopLeft`.
+    let isGroup: Bool
     /// From the type's `ClickableAdornment` conformance, if it has one.
-    let click: (@MainActor (ShapeID, CanvasEditor) -> Void)?
+    let click: (@MainActor (AdornmentClick, CanvasEditor) -> Void)?
 
     init<A: Adornment>(_: A.Type, appliesTo: @escaping @MainActor (AdornableKind) -> Bool = { _ in true },
                        label: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> AdornmentLabel?) {
+        self.init(A.self, appliesTo: appliesTo, isGroup: false) { shape, context in label(shape, context).map { [$0] } ?? [] }
+    }
+
+    init<A: Adornment>(_: A.Type, appliesTo: @escaping @MainActor (AdornableKind) -> Bool = { _ in true }, isGroup: Bool,
+                       labels: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> [AdornmentLabel]) {
         adornment = .of(A.self)
         self.appliesTo = appliesTo
-        self.label = label
+        self.isGroup = isGroup
+        self.labels = labels
         if let clickable = A.self as? any ClickableAdornment.Type {
-            click = { id, editor in clickable.click(on: id, in: editor) }
+            click = { click, editor in clickable.click(click, in: editor) }
         } else {
             click = nil
         }
@@ -297,7 +381,35 @@ extension ShapeRegistrar {
     }
 }
 
+extension ShapeRegistrar {
+    /// `A` on this kind's shapes as several chips, one per label, in order, each tagged
+    /// (`AdornmentLabel.tagged(_:)`): at `aboveTopLeft` only (the registry refuses it elsewhere). A
+    /// chip is shown whole or not at all: the first the row has no room for and those after it fold
+    /// into one "+N" chip, which is shown if it fits.
+    public mutating func adornments<A: Adornment>(_: A.Type, _ labels: @escaping @MainActor (ShapeRecord<Definition.Props>) -> [AdornmentLabel]) {
+        contribute(AdornmentContribution(A.self, isGroup: true) { shape, _ in shape.typed(as: Definition.Props.self).map(labels) ?? [] },
+                   to: ShapeAdornments.self)
+    }
+}
+
 extension PluginRegistrar {
+    /// `adornments` on the shapes of a kind another plugin registers.
+    public mutating func adornments<A: Adornment, P: ShapeProps>(_: A.Type, on _: P.Type,
+                                                                 _ labels: @escaping @MainActor (ShapeRecord<P>) -> [AdornmentLabel]) {
+        contribute(AdornmentContribution(A.self, isGroup: true) { shape, _ in shape.typed(as: P.self).map(labels) ?? [] },
+                   to: ShapeAdornments.self, for: .kind(P.kind))
+    }
+
+    /// `adornments` on every shape of the kinds `where` picks, as `adornmentForEveryShape` does for
+    /// one label.
+    public mutating func adornmentsForEveryShape<A: Adornment>(
+        _: A.Type,
+        where appliesTo: @escaping @MainActor (AdornableKind) -> Bool = { _ in true },
+        _ labels: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> [AdornmentLabel]
+    ) {
+        contribute(AdornmentContribution(A.self, appliesTo: appliesTo, isGroup: true, labels: labels), to: ShapeAdornments.self, for: .any)
+    }
+
     /// `A` on the shapes of a kind another plugin registers, as `adornment` does on a
     /// kind's own registrar.
     public mutating func adornment<A: Adornment, P: ShapeProps>(_: A.Type, on _: P.Type,
@@ -332,6 +444,11 @@ public struct AdornmentFrame: Equatable {
     /// In world units, at the current zoom, where the shape is (not where a shake draws it), as
     /// hit testing goes.
     public let rect: CGRect
+    /// It is a group's "+N" chip, its `label` the "+N" itself.
+    public let isOverflow: Bool
+
+    /// Which of its adornment's labels: nil for an untagged one, and for the "+N" chip.
+    public var tag: AdornmentTag? { isOverflow ? nil : label.tag }
 }
 
 extension CanvasEditor {

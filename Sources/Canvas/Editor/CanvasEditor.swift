@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import Geometry
@@ -20,11 +21,20 @@ public protocol CanvasEditorDelegate: AnyObject {
     /// The text selected in the editing view, if it shows text and some is selected: what
     /// `editingSelectedText` answers.
     func editorEditingSelectedText(_ editor: CanvasEditor) -> String?
+    /// The question to show changed (`question`): another is first in line, the first was replaced,
+    /// or none waits. Show it as a sheet on the board's window (answering with `answerQuestion`),
+    /// replacing the one shown, or take the sheet down.
+    func editorQuestionDidChange(_ editor: CanvasEditor)
+    /// A menu is waiting to be popped up (`menuToPopUp`): pop it up on the next turn of the run loop
+    /// and say so (`menuDidPopUp`).
+    func editorMenuToPopUpDidChange(_ editor: CanvasEditor)
 }
 
 @_spi(Host) extension CanvasEditorDelegate {
     public func editorBoardDidChange(_ editor: CanvasEditor) {}
     public func editorPopoverDidChange(_ editor: CanvasEditor) {}
+    public func editorQuestionDidChange(_ editor: CanvasEditor) {}
+    public func editorMenuToPopUpDidChange(_ editor: CanvasEditor) {}
     public func editorEditingSelectedText(_ editor: CanvasEditor) -> String? { nil }
 }
 
@@ -214,9 +224,11 @@ public final class CanvasEditor {
     /// Each shape's geometry and extent, and the paint order, kept from frame to frame: the shown
     /// board's.
     @ObservationIgnored var shapeIndex = ShapeIndex()
+    /// What geometries read that no record holds (`setLayoutInput`).
+    @ObservationIgnored let layoutInputs = LayoutInputs()
     /// The indexes of the boards shown lately, for when they're shown again (while they haven't
     /// changed).
-    @ObservationIgnored private var warmIndexes = BoardStash<ShapeIndex>()
+    @ObservationIgnored var warmIndexes = BoardStash<ShapeIndex>()
     /// Where the camera was on each board shown this session, as it was left.
     @ObservationIgnored private var leftCameras: [BoardID: Camera] = [:]
     /// The boards left this session, in the order they were last left (`boardsLeft`).
@@ -286,6 +298,10 @@ public final class CanvasEditor {
     @ObservationIgnored var waitingPopover: CanvasPopover?
     @ObservationIgnored var popoverTimer: ScheduledTask?
     @ObservationIgnored var popoverWarmth: ScheduledTask?
+    // The questions waiting for the host, first asked first (Questions.swift), and the menu waiting to be
+    // popped up.
+    @ObservationIgnored var questions: [(question: CanvasQuestion, answer: @MainActor (Bool) -> Void)] = []
+    @ObservationIgnored var menuWaiting: (menu: NSMenu, rect: CGRect)?
     /// An animation's frame is moving the camera: `zoomPercentage` stays its target's.
     @ObservationIgnored var isAnimationFrame = false
     // The press under way, for scrolling at the canvas's edges (EdgeScrolling.swift): where it was, in
@@ -359,7 +375,7 @@ public final class CanvasEditor {
     }
 
     var currentTool: any Tool { tools[currentToolID]! }
-    public var shapeContext: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera, index: shapeIndex) }
+    public var shapeContext: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera, index: shapeIndex, layout: layoutInputs) }
 
     /// Redraw. The core redraws for everything it owns (the document, camera, tool, sessions); a
     /// plugin whose drawn state changes some other way (its own state, a timer) calls this.
@@ -561,17 +577,21 @@ public final class CanvasEditor {
     /// by what the press, services or an editing view commit as they end, which goes to the file it
     /// replaces and is no step. Every board's revision changes but those whose shapes are as they
     /// were (`CanvasFile.restamp(after:)`), so nothing kept about a board of the old file is taken for
-    /// the new one's; the cameras boards were left with are kept.
+    /// the new one's; the cameras boards were left with are kept. Every question waiting (`ask`) is
+    /// answered no, and a menu waiting to be popped up (`popUpMenu`) is dropped.
     @_spi(Host) public func replaceFile(with newFile: CanvasFile, showing requested: BoardID? = nil) {
         precondition(!isTransacting, "a file can't be replaced inside a transaction")
         Self.expectAccepted(newFile, by: registry)
         isReplacingFile = true
         defer { isReplacingFile = false }
         dismissPopover()
+        menuWaiting = nil
         if let running = session {
             _ = running.cancel(in: self)
             session = nil
         }
+        // What was asked of the file that goes is answered no.
+        cancelQuestions()
         var newFile = registry.fillingDefaults(newFile)
         let showable = { [registry] (board: BoardID) in Self.canShow(board, in: newFile, registry: registry) }
         let target = requested.flatMap { showable($0) ? $0 : nil } ?? boardPath.reversed().first(where: showable) ?? .root
@@ -886,11 +906,11 @@ public final class CanvasEditor {
         let contents = file[target]
         let arrival = arrivalCamera(for: target) {
             let index = ShapeIndex()
-            return index.bounds(in: ShapeContext(document: contents, registry: registry, camera: Camera(), index: index))
+            return index.bounds(in: ShapeContext(document: contents, registry: registry, camera: Camera(), index: index, layout: layoutInputs))
         }
         let index = ShapeIndex(), clear = unobscuredViewport(on: target)
         return BoardReading(board: target, document: contents,
-                            shapes: ShapeContext(document: contents, registry: registry, camera: arrival, index: index), index: index,
+                            shapes: ShapeContext(document: contents, registry: registry, camera: arrival, index: index, layout: layoutInputs), index: index,
                             view: clear.isEmpty ? nil : arrival.toWorld(clear), isBoardReadOnly: isReadOnly(board: target))
     }
 

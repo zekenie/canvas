@@ -106,6 +106,30 @@ extension WireDefinition: ShapeDefinition {
     var hitMargin: HitMargin { HitMargin(world: 2, view: 5) }
 }
 
+/// The key of the side a sizer is laid out with.
+let sizerSide = LayoutInputKey<CGFloat>("sizer-side")
+
+/// A square at the origin, 10 units a side unless a layout input says another: its geometry reads
+/// something no record holds.
+struct Sizer: ShapeProps {
+    static let kind: ShapeKind = "sizer"
+    static let properties = Properties<Sizer> {}
+}
+
+struct SizerDefinition {
+    let log: IndexLog
+}
+
+extension SizerDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Sizer>, in context: RenderContext) {}
+
+    func geometry(of shape: ShapeRecord<Sizer>, in context: ShapeContext) -> ShapeGeometry {
+        log.geometries.append(shape.id)
+        let side = context.layoutInput(sizerSide, for: shape.id) ?? 10
+        return ShapeGeometry(outline: CGRect(x: 0, y: 0, width: side, height: side).polygon)
+    }
+}
+
 struct IndexKinds: CanvasPlugin {
     let log: IndexLog
     var id: PluginID { "index-kinds" }
@@ -114,6 +138,7 @@ struct IndexKinds: CanvasPlugin {
         registrar.shape(CensusDefinition())
         registrar.shape(BadgeDefinition())
         registrar.shape(WireDefinition(log: log))
+        registrar.shape(SizerDefinition(log: log))
     }
 }
 
@@ -141,6 +166,37 @@ struct IndexKinds: CanvasPlugin {
         expectEqual(h.editor.paintOrder(in: CGRect(x: 80, y: -20, width: 40, height: 40)).map(\.id), [])
         h.editor.transact { $0.delete([host]) }
         expectEqual(h.editor.shape(at: CGPoint(x: 2, y: 2)), marker, "at the origin, its host gone")
+    },
+    test("a geometry that reads a layout input is worked out again when the input changes, and what looked it up with it, and nothing is stored") {
+        let log = IndexLog()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), IndexKinds(log: log)])
+        let sizer = h.add(Sizer())
+        let other = h.add(Sizer())
+        let marker = h.add(Marker(host: sizer))
+        @MainActor func side(_ id: ShapeID) -> CGFloat? { h.editor.shapeContext.geometry(of: id)?.bounds.width }
+        @MainActor func count(_ id: ShapeID) -> Int { log.geometries.filter { $0 == id }.count }
+        expectEqual([side(sizer), side(other)], [10, 10])
+        expectEqual(h.editor.shapeContext.geometry(of: marker)?.bounds.midX, 10, "the marker on the sizer's corner")
+        let worked = (count(sizer), count(other), count(marker))
+        let revision = h.editor.revision, undo = h.editor.undoHistory.undoName, document = h.editor.document
+        h.editor.setLayoutInput(sizerSide, 30, for: sizer)
+        expectEqual(side(sizer), 30)
+        expectEqual(h.editor.shapeContext.geometry(of: marker)?.bounds.midX, 30, "the marker looked the sizer up: it followed")
+        expectEqual([count(sizer), count(other), count(marker)], [worked.0 + 1, worked.1, worked.2 + 1], "the sizer and the marker that looks it up, not the other sizer")
+        expectEqual(h.editor.document, document, "nothing stored")
+        expectEqual(h.editor.revision, revision, "no commit")
+        expectEqual(h.editor.undoHistory.undoName, undo, "no step")
+        h.editor.setLayoutInput(sizerSide, 30, for: sizer)
+        _ = side(sizer)
+        expectEqual(count(sizer), worked.0 + 1, "the same input again costs nothing")
+        h.editor.setLayoutInput(sizerSide, nil, for: sizer)
+        expectEqual(side(sizer), 10, "taken back")
+        h.editor.setLayoutInput(sizerSide, 50, for: other)
+        h.editor.shapesDidChangeLayout([sizer, ShapeID()])
+        expectEqual([side(sizer), side(other)], [10, 50], "each its own")
+        let mark = h.editor.damageMark
+        h.editor.setLayoutInput(sizerSide, 20, for: sizer)
+        expect(h.editor.damage(since: mark).contains(CGRect(x: 0, y: 0, width: 20, height: 20)), "the minimap redraws where it grew")
     },
     test("a geometry that reads the whole document is worked out again after every change") {
         let h = try EditorHarness(plugins: [FixturesPlugin(), IndexKinds(log: IndexLog())])

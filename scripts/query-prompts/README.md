@@ -154,6 +154,6 @@ case's answer is the engine's, never a guess. To add a case, add a row with a re
 `TEST_FILTER="Query prompt, live" build/debug/CompositionTests/CompositionTests`.
 
 The story's ids are `00000000-0000-4000-8000-0000000000NN` (`QueryStory.swift` lists them). The
-untitled note N1 ("TODO: rate limits") is `…04`, N2 ("Retry on 502") `…13`, the broken schema card V
+untitled note N1 ("TODO: rate limits") is `…04`, N2 ("Retry on 502") `…13`, the broken type note V
 `…07`, and the arrows R1 and R2 `…08` and `…09`. The eval board's are
 `00000000-0000-4000-8000-0000000ENNNN` (`QueryEvalBoard.swift`).

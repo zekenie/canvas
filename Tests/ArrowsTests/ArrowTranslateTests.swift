@@ -82,7 +82,7 @@ let boxC = CGRect(x: 80, y: 600, width: 100, height: 100)
         expectEqual(h.editor.arrowGeometry(of: arrow)?.startHandle, CGPoint(x: 200, y: 240))
     },
     test("a free arrow in a multi-selection moves both ends by the delta, with no begin commit; the bend is unchanged") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+        let h = try EditorHarness(plugins: arrowsPlugins())
         let c = h.add(Box(boxC))
         let arrow = h.add(Arrow(start: .free(CGPoint(x: 700, y: 500)), end: .free(CGPoint(x: 900, y: 560)), bend: 30))
         h.editor.selectedShapeIDs = [arrow, c]

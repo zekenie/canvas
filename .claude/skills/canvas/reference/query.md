@@ -40,12 +40,15 @@ Roadmap (the top board), back to front:
   sticky-note "API gateway"   text: Owns auth. See @Checkout        (a mention of Checkout)
   sticky-note "Auth"          text: JWT, 15 min expiry
   sticky-note (untitled)      text: TODO: rate limits
-  schema-card                 its schema's "title" is "Warehouse"
-  schema-card                 its schema's "title" is "Order"; locked
-  schema-card                 its schema isn't JSON (a comma is missing), so it has no title
+  sticky-note "Warehouse"     a type (a schema of an object with an id): text: A warehouse: its id
+  sticky-note "Order"         a type, as Warehouse is: text: An order: its id; locked
+  sticky-note (untitled)      a type whose schema isn't JSON (a comma is missing): text: An invoice
   arrow                       from API gateway to Auth, on the note-link channel
   arrow                       from Warehouse to Payments, on no channel
   sticky-note "Ledger"        text: Moved to @Old ledger            (Old ledger was deleted)
+  sticky-note "Person"        a type (a schema of an object with a name): text: A person: their name
+  sticky-note "Employee card" a type, and a Person (is: Person): text: A person at work: their desk
+  sticky-note "Ann"           an Employee card (is: Employee card): text: Ann, on the platform team
 Payments' board:
   sticky-note "Checkout"      text: Calls @API gateway for tokens   (a mention of API gateway)
   subboard "Refunds"
@@ -54,7 +57,7 @@ Refunds' board:
   sticky-note "Refund policy" text: 30 days; locked
 ```
 
-Its file order, the order of every answer: Payments, Checkout, Refunds, Refund policy, Payments' untitled note, API gateway, Auth, the top board's untitled note, Warehouse, Order, the untitled schema card, the two arrows, Ledger.
+Its file order, the order of every answer: Payments, Checkout, Refunds, Refund policy, Payments' untitled note, API gateway, Auth, the top board's untitled note, Warehouse, Order, the untitled type, the two arrows, Ledger, Person, Employee card, Ann.
 
 ## Running a query
 
@@ -97,7 +100,7 @@ The result goes to standard output: JSON when standard output isn't a terminal (
 - **`count`**: how many shapes match, listed or not.
 - **`rows`**: the first `--limit` of them, in file order. Each has:
   - `id`: the shape's id. Use it to name the shape in a later query (`#00000000-…`), and for nothing else: `draw` names shapes only by title.
-  - `kind`, and `title`, unless it has none (a schema card's is its schema's `"title"`).
+  - `kind`, and `title`, unless it has none.
   - `board`: the board it's on, `"root"` for the top board, else the id of the shape that owns it.
   - `inside`: the names of the subboards and frames it's inside, outermost first, as the path over the canvas names a board (an untitled subboard's is "Untitled Subboard"), and a frame by its title (an untitled one's is "Frame"). Left out for a shape inside nothing.
   - `properties`: its attributes as they read (`locked`, `public` and `channel` only when they're set): text as a person reads it (a mention as `@` and the name of what it mentions), numbers, `true` and `false`. Its title and where it is aren't among them.
@@ -126,7 +129,7 @@ A connection's row (`arrow[channel=note-link]`):
 
 - **Every shape the app can show, on every board of the file.** A shape the app keeps aside (a kind this app doesn't have, from a newer app) and a board it can't show aren't in any answer; `#` with such a shape's id says which it is.
 - **File order.** Every answer lists its shapes as the top board holds them, back to front, each subboard followed at once by what its board holds, and each frame by what's in it, all the way down. The same query on the same file answers in the same order.
-- **When.** An answer is the file as it was when the app took up the query, but for titles a shape works out from what it holds (a schema card's) and whether shapes are valid (`:invalid`, `:warned`), which are as the app has them when the query asks. So a shape changed while the query ran can answer with its newer title or verdict. The board the window shows (`:current-board`) and what's selected (`:selected`) are as they were when the query started.
+- **When.** An answer is the file as it was when the app took up the query, but for whether shapes are valid (`:invalid`, `:warned`), which is as the app has it when the query asks. So a shape changed while the query ran can answer with its newer verdict. The board the window shows (`:current-board`) and what's selected (`:selected`) are as they were when the query started.
 - **Names as the app shows them.** A title is a shape's name, derived ones included. Text that mentions shapes reads as a person reads it, each mention `@` and the name of what it mentions now, never the form it's stored in.
 - **Edges are read settled.** An arrow into a shape that stands for other shapes counts as an arrow into each of them, so `:edge-to`, `:connected-to`, `:downstream-of`, `:between` and the rest read through it. A query with an edge word that runs right after a `draw` waits, up to 2 seconds, for answers that are still arriving, and says `pending` if they hadn't.
 - **A query changes nothing.** No shape, no selection, no step of undo, and it never ends the person's typing: a note being typed into reads as typed so far (its last keystroke), and the answer warns that it may still change.
@@ -146,12 +149,12 @@ A part of a query (a compound) starts with at most one of these, then any number
 A kind is its id, as `build/canvas query-vocabulary` writes it: `sticky-note`, never its label, "Note". Titles are in double quotes (single quotes work too), and match as `draw` matches them: the whole title, folded (runs of spaces and new lines as one space), case and all. A title can name several shapes across a file, and names them all. A kind and a title together, with no space between, is the shapes of that kind with that title: `sticky-note"Checkout"` finds what `sticky-note[title="Checkout"]` finds, but a title no shape has is refused, as `"Checkout"` alone is. A title some shape has, but none of that kind, matches nothing. With a space between, it's a title inside the kind's shapes ([Inside](#inside)), which a note can't have.
 
 ```query
-/* matches: "Checkout", "Refund policy", (sticky-note), "API gateway", "Auth", (sticky-note), "Ledger" */
+/* matches: "Checkout", "Refund policy", (sticky-note), "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), "Ledger", "Person", "Employee card", "Ann" */
 sticky-note
 ```
 
 ```query
-/* matches: "Payments", "Checkout", "Refunds", "Refund policy", (sticky-note), "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (schema-card), (arrow), (arrow), "Ledger" */
+/* matches: "Payments", "Checkout", "Refunds", "Refund policy", (sticky-note), "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), (arrow), (arrow), "Ledger", "Person", "Employee card", "Ann" */
 *
 ```
 
@@ -160,7 +163,7 @@ sticky-note
 "Checkout"
 ```
 
-A schema card's title is its schema's `"title"`, worked out from what it holds:
+A type is a note that holds a schema, called by its title as any note is:
 
 ```query
 /* matches: "Order" */
@@ -176,7 +179,7 @@ sticky-note"Checkout"
 
 ```query
 /* matches: "Order" */
-schema-card"Order"
+sticky-note"Order"
 ```
 
 ```query
@@ -208,8 +211,8 @@ note
 | `:is(S)`, `:where(S)` | matched by S, the same thing: a list where a single part is wanted, `:is("Auth", "Checkout")` |
 
 ```query
-/* matches: "Payments", "Refunds", "Warehouse", "Order", (schema-card) */
-subboard, schema-card
+/* matches: "Payments", "Refunds", "Warehouse", "Order", (sticky-note), "Person", "Employee card" */
+subboard, sticky-note[schema]
 ```
 
 ```query
@@ -218,13 +221,13 @@ subboard, schema-card
 ```
 
 ```query
-/* matches: "Payments" */
-:is(subboard, schema-card):edge-from(*)
+/* matches: "Payments", "Person", "Employee card" */
+:is(subboard, sticky-note[schema]):edge-from(*)
 ```
 
 ## Attributes
 
-An attribute is a property of the kind, as its schema says (`build/canvas query-vocabulary` lists each kind's, and what each takes), and `title`, for the kinds whose shapes have titles, derived ones too. `[…]` right after a part of a query tests one:
+An attribute is a property of the kind, as its schema says (`build/canvas query-vocabulary` lists each kind's, and what each takes), and `title`, for the kinds whose shapes have titles. `[…]` right after a part of a query tests one:
 
 | test | means |
 |---|---|
@@ -243,20 +246,21 @@ The value after the operator is read as the attribute takes it, so `[bend=0]` an
 | the attribute is | `=` `!=` | `^=` `$=` `*=` `\|=` | `~=` | `<` `<=` `>` `>=` | the value |
 |---|---|---|---|---|---|
 | text | exactly; `i` in any case; `""`, no value | yes | a word | refused | any text |
-| text that mentions shapes (a note's `text`) | on the text as it reads: each mention `@` and its name now; `""`, no value | yes | a word | refused | any text |
+| text that mentions shapes (a note's or an arrow's `text`) | on the text as it reads: each mention `@` and its name now; `""`, no value | yes | a word | refused | any text |
 | a date | `YYYY-MM-DD` matches any time that day (UTC); a time, that instant; `""`, no date | refused | refused | a day: `<` before it starts, `<=` before it ends, `>` after it ends, `>=` from its start | `YYYY-MM-DD`, or ISO 8601 |
 | one of a few choices | the choice; `i` in any case; `""`, none | as text | as text | refused | one of them, with the one like it named when it isn't |
 | a number | the number | refused | refused | yes | a finite number |
 | a whole number | the number (a fraction is refused) | refused | refused | yes | a finite number |
 | true or false | as set, and false when not set | refused | refused | refused | `true` or `false` |
 | a list | refused: use `~=` | refused | an item equals | refused | what an item takes |
-| an object | refused (not built) | refused | refused | refused | — |
+| an object | refused (not built); `[a.b]` tests what is inside it | refused | refused | refused | — |
 
 - **Not set is false.** A true-or-false attribute a shape hasn't set is its default, else false: `[locked=false]` matches every shape that isn't locked. `[locked]` is the same as `[locked=true]`.
 - **`""` is no value.** On text, a date or a choice, `[a=""]` matches a shape whose kind has `a` and that hasn't set it, or has it empty: `sticky-note[title=""]` is the notes with no title (a blank title is none), the same as `sticky-note:not([title])`, and `arrow[channel=""]` a plain arrow. `^=`, `$=` and `*=` with `""` match nothing, as in CSS.
 - **In a part with a kind**, the attribute must be that kind's (`unknown_attribute`, with its attributes listed). **In a part without one**, it must be some kind's, and the test applies to the kinds that have it: `[text*="x"]` is about notes.
-- **Text that mentions shapes is compared as it reads.** A note's `text` holds its mentions as ids, which never reach you: a query reads each as `@` and the name of the shape it mentions now, so a rename changes what matches. To follow a mention, use `:mentions(…)`.
-- **Where a shape is isn't an attribute** (`frame`, a line's `points`, an arrow's `start` and `end` are `not_built`), and neither is anything inside an attribute (`[a.b]`).
+- **Text that mentions shapes is compared as it reads.** A note's or an arrow's `text` holds its mentions as ids, which never reach you: a query reads each as `@` and the name of the shape it mentions now, so a rename changes what matches. To follow a mention, use `:mentions(…)`.
+- **Where a shape is isn't an attribute** (`frame`, a line's `points`, an arrow's `start` and `end` are `not_built`).
+- **`[a.b.c]` tests what is inside an attribute that holds an object**, at the members it names (a letter or `_`, then letters, digits, `-` and `_`; no quotes). Each test is read by the value found there, shape by shape: on a string, the text operators, `=` and `i`; on a number, `=`, `<`, `<=`, `>` and `>=` when the value after the operator is a number (`[a.b>=3]`; `"3"` reads the same); on `true` or `false`, `[a.b=true]`; on a list, `~=` for an item. A value of another sort doesn't match (`[a.b^=3]` on a number matches nothing). `[a.b]` says something is there, and `[a.b=""]` that nothing is: a member that is missing, null, empty, or inside something that isn't an object, matches `[a.b=""]` and not `[a.b]`. An attribute that isn't an object has no members (`unknown_attribute`).
 
 ```query
 /* matches: "Checkout" */
@@ -269,17 +273,17 @@ The value after the operator is read as the attribute takes it, so `[bend=0]` an
 ```
 
 ```query
-/* matches: "Checkout", "Refund policy", "API gateway", "Auth", "Ledger" */
+/* matches: "Checkout", "Refund policy", "API gateway", "Auth", "Warehouse", "Order", "Ledger", "Person", "Employee card", "Ann" */
 sticky-note[title]
 ```
 
 ```query
-/* matches: (sticky-note), (sticky-note) */
+/* matches: (sticky-note), (sticky-note), (sticky-note) */
 sticky-note:not([title])
 ```
 
 ```query
-/* matches: (sticky-note), (sticky-note) */
+/* matches: (sticky-note), (sticky-note), (sticky-note) */
 sticky-note[title=""]
 ```
 
@@ -289,7 +293,7 @@ sticky-note[title=""]
 ```
 
 ```query
-/* count: 12 */
+/* count: 15 */
 [locked=false]
 ```
 
@@ -393,12 +397,12 @@ subboard:has("Refund policy")
 ```
 
 ```query
-/* matches: "API gateway", "Auth", (sticky-note), "Ledger" */
+/* matches: "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), "Ledger", "Person", "Employee card", "Ann" */
 sticky-note:top-level
 ```
 
 ```query
-/* matches: "Payments", "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (schema-card), (arrow), (arrow), "Ledger" */
+/* matches: "Payments", "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), (arrow), (arrow), "Ledger", "Person", "Employee card", "Ann" */
 :current-board
 ```
 
@@ -418,7 +422,7 @@ Auth, the shape selected, is on the top board, inside nothing:
 subboard *:selected
 ```
 
-- **What holds nothing can't have anything inside it.** When the container side of a space, a `>`, `:inside()` or `:has()` can only be kinds that hold no shapes (a schema card, a note, named straight or through `:is()` or `:where()`), the query is refused (`cannot_contain`), with the kinds that do. Being drawn within the bounds of a shape that holds none isn't something a query can ask yet.
+- **What holds nothing can't have anything inside it.** When the container side of a space, a `>`, `:inside()` or `:has()` can only be kinds that hold no shapes (a note, named straight or through `:is()` or `:where()`), the query is refused (`cannot_contain`), with the kinds that do. Being drawn within the bounds of a shape that holds none isn't something a query can ask yet.
 
 ```query-error
 /* reason: cannot_contain */
@@ -600,10 +604,13 @@ Words the app's plugins add, as this app has them. Without a plugin, its words a
 | `:mentioned-by(S)` | `mention-queries` | a shape S matches mentions it |
 | `:invalid` | `validation-queries` | it has an error |
 | `:warned` | `validation-queries` | it has a warning |
+| `:is-a(S)` | `type-queries` | it is, however far, a type or shape S matches: its types, theirs, and what a custom shape builds on |
 | `:selected` | `selection-queries` | the person has it selected |
 
 - `:mentions` and `:mentioned-by` follow mention edges: `:mentions(S)` is `:edge-to(S, only mention)`. A shape that mentions itself counts.
 - `:invalid` and `:warned` are what validation finds, on every board of the file, not only the one shown: an error outlines a shape in red, warnings alone in orange.
+- `:is-a(S)` follows `is` (and what a custom shape builds on) however far, so it is transitive and ends where a cycle comes back: Ann is a Person through Employee card, which is one. It is `:edge-to(S, is-a)` that stays direct, one step. Read where a shape lists its types, a type is its title: `[is~="Person"]` finds the shapes that say Person themselves, and a row's `is` lists titles.
+- `.Person` is refused (`unsupported`) and its hint is this word, `:is-a("Person")`.
 - `:selected` is what the person had selected as the query started.
 
 ```query
@@ -624,8 +631,40 @@ sticky-note:mentions("API gateway")
 Ledger's mention is of a shape that's gone, so it mentions nothing a query sees:
 
 ```query
-/* matches: "Refund policy", (sticky-note), "Auth", (sticky-note), "Ledger" */
+/* matches: "Refund policy", (sticky-note), "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), "Ledger", "Person", "Employee card", "Ann" */
 sticky-note:not(:mentions(*))
+```
+
+```query
+/* matches: "Employee card", "Ann" */
+:is-a("Person")
+```
+
+```query
+/* matches: "Ann" */
+sticky-note:is-a("Employee card")
+```
+
+```query
+/* matches: "Employee card", "Ann" */
+sticky-note:is-a("Person")
+```
+
+Only the shapes that name Person themselves, by the title it reads as:
+
+```query
+/* matches: "Employee card" */
+[is~="Person"]
+```
+
+```query
+/* matches: "Ann" */
+[is~="Employee card"]
+```
+
+```query
+/* matches: "Employee card" */
+:edge-to("Person", is-a)
 ```
 
 ```query
@@ -633,10 +672,10 @@ sticky-note:not(:mentions(*))
 :selected
 ```
 
-The schema card whose schema isn't JSON has an error:
+The type whose schema isn't JSON has an error:
 
 ```query
-/* matches: (schema-card) */
+/* matches: (sticky-note) */
 :invalid
 ```
 
@@ -653,12 +692,14 @@ The edge types this app has. A type takes in those under it.
 |---|---|---|
 | `stands-for` | — | from a shape to each shape it stands for |
 | `mention` | — | a mention in a shape's text, from that shape to the shape it names |
+| `is-a` | — | from a shape to each type it is, in the order of its list |
 | `arrow` | — | an arrow bound at both ends, from the shape it starts on to the shape it ends on, whatever its arrowheads |
 | `note-link` | `arrow` | an arrow drawn on the note-link channel |
 | `subboard-link` | `arrow` | an arrow drawn on the subboard-link channel |
-| `schema-link` | `arrow` | an arrow drawn on the schema-link channel |
 
 `stands-for` is the app's own, from a shape that stands for others to each of them. A `reference` that names a shape stands for it while it's public, so an arrow into the reference is an arrow into that shape ([references.md](references.md) runs on a file that has one).
+
+`is-a` is from an instance to each type its `is` names (a type may be one of types itself), so `:edge-to("Person", is-a)` finds the shapes that are a Person, directly.
 
 A type the app doesn't declare but the file has (a newer app's channel) is accepted as it's written; one the app doesn't declare and the file doesn't have is `unknown_edge_type`, with the type like it.
 
@@ -710,8 +751,8 @@ The messages are examples. The wording can differ, but the reason doesn't.
 | `syntax` | The query can't be read: `[text*="x"` isn't closed, a comma at the end, two heads in one part (`"Checkout"sticky-note`). | The hint, usually the query mended: `[text*="x"]`, `sticky-note"Checkout"`. |
 | `stray_space` | A space before a test: `sticky-note :selected` asks for shapes inside notes. | No space for one shape (`sticky-note:selected`); for a shape inside a subboard, a `*` after the space (`subboard *:selected`), which the hint offers only where what's before the space can hold shapes. |
 | `too_long`, `too_complex` | Over 8192 characters, 32 levels of brackets, or 256 parts. | Several shorter queries. |
-| `unsupported` | CSS with no meaning here: `+` and `~` (shapes have no siblings), `\|\|`, `::before`, namespaces, `:nth-child` and the like, `:root`, `:empty`, `:hover`, a space or `>` inside `:has()`. | The hint's form, if it has one: `:top-level` for `:root`. |
-| `not_built` | Planned, not built: `.Task` (shapes typed by schema cards), where shapes sit (`:near`, `:left-of`, `:within`, …), `frame` and the other attributes that say where a shape is, `[a.b]`, `=` on an object. | `:contains("Task")`, a kind, or what the hint names. |
+| `unsupported` | CSS with no meaning here: `+` and `~` (shapes have no siblings), `\|\|`, `::before`, namespaces, `:nth-child` and the like, `:root`, `:empty`, `:hover`, a space or `>` inside `:has()`; `.Task` and `[class=Task]`, which name a type with no selector of their own. | The hint's form, if it has one: `:top-level` for `:root`; for `.Task`, the word that finds a type's shapes when the app has one, else `:contains("Task")` or a kind. |
+| `not_built` | Planned, not built: where shapes sit (`:near`, `:left-of`, `:within`, …), `frame` and the other attributes that say where a shape is, `=` on an object. | `:contains("Task")`, a kind, or what the hint names. |
 | `unknown_kind` | No kind has that id: `note`; a title without its quotes, `:mentions(Checkout)`. | The kind like it: `sticky-note`; the title in quotes, `"Checkout"`, when a shape has it. |
 | `unknown_attribute` | Not the kind's attribute, nor any kind's: `sticky-note[txt*="x"]`; `[kind=…]`, `[id=…]`, `[name=…]`; `title` on a kind without titles, `arrow"Auth"` too; `--fields` naming one no kind has. | The attribute like it, from the kind's list in the hint; the kind itself, `#id`, or `[title=…]`. |
 | `unknown_pseudo_class` | Not the language's, nor a plugin's: `:mention(…)`; `:parent-of(…)` and the other invented words; `:locked`. | The word like it, or the form the hint writes: `:has(> …)`, `[locked]`. |
@@ -760,8 +801,13 @@ sticky-note + sticky-note
 ```
 
 ```query-error
-/* reason: not_built */
+/* reason: unsupported */
 .Task
+```
+
+```query-error
+/* reason: not_built */
+sticky-note[frame]
 ```
 
 ```query-error
@@ -839,15 +885,14 @@ These are left out on purpose. What they protect is that a query means one thing
 - **Where shapes are isn't read.** A query sees what's inside what by boards and frames, and what's connected to what by edges, never positions, sizes or overlaps.
 - **Text being typed** reads as typed so far, and the answer warns that it may still change (`editing`).
 - **Shapes the app keeps aside**, and those on boards it can't show, aren't in any answer.
-- **Derived titles and validity are as the app has them when asked**, so a query that runs while the person edits can answer with a schema card's newer title, or a newer verdict, than the rest of its answer.
+- **Validity is as the app has it when asked**, so a query that runs while the person edits can answer with a newer verdict than the rest of its answer.
 - **A shape that's gone can't be named**: find what mentioned it with `:dangling`.
 - **`--fields` lists what it can**: an attribute a shape's kind doesn't have is left out of its row; only one no kind has is refused.
 
 ## Not built yet
 
 - **Where shapes sit**: `:near`, `:left-of`, `:right-of`, `:above`, `:below`, `:overlaps`, `:within`, and attributes that say where a shape is.
-- **Shapes typed by schema cards** (`.Task`).
-- **Attributes inside attributes** (`[a.b]`), and `=` on an object.
+- **`=` on a whole object**: test a member, `[a.b=…]`, or whether it says anything, `[a]`.
 - **Edges as answers.** A query lists shapes; an arrow is a shape, so ask for arrows (`arrow:starts-at("A"):ends-at("B")`), and for the shapes at their ends with `:start-of` and `:end-of`.
 - **Search**: ranking, stemming, words that mean the same. `:contains` is a filter.
 - **Selecting or revealing what a query found**, and a query box in the app.

@@ -222,14 +222,31 @@ struct ContributedPseudoClass: Sendable {
     let onMain: (@MainActor (AnyShapeRecord, BoardID, any Sendable, QueryMainContext) -> Bool)?
 }
 
-/// A word a plugin adds to queries: a pseudo-class (`:selected`) or a relation over edges of
-/// exactly some types (`:mentions(S)`), with what it means in a line and a query that uses it.
-/// Only the sugar makes one (`registrar.queryPseudoClass`, `registrar.queryRelation`).
+/// A relation a plugin answers from what it keeps of the file (`:is-a(S)`), type-erased: `related`
+/// says, for a shape, the shapes it stands in the relation to directly, with what `prepare` took on
+/// the main actor; `seeds` is every shape that has any, which are the only shapes that can match.
+struct ContributedFileRelation: Sendable {
+    /// Whether a shape is also related to what the shapes it's related to are, however far.
+    let transitive: Bool
+    /// Whether its argument names types: what `.Name` is refused toward.
+    let namesTypes: Bool
+    let prepare: @MainActor (QueryFilePreparation) -> any Sendable
+    let seeds: @Sendable (any Sendable) -> Set<ShapeID>
+    let related: @Sendable (ShapeID, any Sendable) -> [ShapeID]
+}
+
+/// A word a plugin adds to queries: a pseudo-class (`:selected`), a relation over edges of exactly
+/// some types (`:mentions(S)`) or a relation answered from a fact of the file (`:is-a(S)`), with
+/// what it means in a line and a query that uses it. Only the sugar makes one
+/// (`registrar.queryPseudoClass`, `registrar.queryRelation`).
 public struct QueryWordDeclaration: Sendable {
     enum Meaning: Sendable {
         case pseudoClass(ContributedPseudoClass)
         /// `.outgoing`: the result → S; `.incoming`: S → the result.
         case relation(types: [EdgeTypeID], direction: EdgeDirection)
+        /// The result is related, directly or (`transitive`) through other shapes, to a shape S
+        /// matches, as the plugin's `related` says.
+        case fileRelation(ContributedFileRelation)
     }
 
     let word: String
@@ -240,7 +257,7 @@ public struct QueryWordDeclaration: Sendable {
     var reads: QueryReads {
         switch meaning {
         case .pseudoClass(let behavior): behavior.reads
-        case .relation: .file
+        case .relation, .fileRelation: .file
         }
     }
     /// Whether it's the person's selection (`registrar.querySelection`): what `--ask` says is
@@ -282,6 +299,12 @@ extension QueryWords: KeyedExtensionPoint {
             if declared.value.isSelection,
                let other = registry.contributions(to: QueryWords.self).first(where: { $0.value.isSelection && $0.value.word != word }) {
                 throw refuse("the person's selection, which :\(other.value.word) (\(other.pluginID)) says already")
+            }
+            if case .fileRelation(let relation) = declared.value.meaning, relation.namesTypes,
+               let other = registry.contributions(to: QueryWords.self).first(where: { other in
+                   if case .fileRelation(let theirs) = other.value.meaning { theirs.namesTypes && other.value.word != word } else { false }
+               }) {
+                throw refuse("a relation that names types, which :\(other.value.word) (\(other.pluginID)) is already")
             }
             guard case .relation(let types, _) = declared.value.meaning else { continue }
             guard !types.isEmpty else { throw refuse("a relation over no edge type") }
@@ -450,6 +473,30 @@ extension PluginRegistrar {
         contribute(QueryWordDeclaration(word: word, summary: summary, example: example,
                                         meaning: .relation(types: types, direction: direction)),
                    to: QueryWords.self)
+    }
+
+    /// `:word(S)`, a relation answered from what a plugin keeps of the file (a `QueryFileFact`, taken
+    /// by `prepare` in the turn the query takes up the file), meaning `summary`, as `example` uses
+    /// it: a result is related, as `related` says (the shapes `shape` is related to directly), to a
+    /// shape S matches. With `transitive`, also through other shapes, however many, breadth first
+    /// and cycle-safe (a shape in a cycle is related to itself); an answer is worked out once per
+    /// query. `seeds` is every shape that has anything `related`: the only shapes that can match.
+    /// It reads only the file (`reads: .file`), so a plan that holds it is `readsOnlyTheFile`. A
+    /// relation with `namesTypes` is the word `.Name` is refused toward (`unsupported`, hinted
+    /// `:word("Name")`); at most one word is.
+    public mutating func queryRelation<Prepared: Sendable>(
+        _ word: String, _ summary: String, example: String, reads _: QueryFileReads,
+        transitive: Bool, namesTypes: Bool = false,
+        prepare: @escaping @MainActor (QueryFilePreparation) -> Prepared,
+        seeds: @escaping @Sendable (Prepared) -> Set<ShapeID>,
+        related: @escaping @Sendable (ShapeID, Prepared) -> [ShapeID]
+    ) {
+        let relation = ContributedFileRelation(
+            transitive: transitive, namesTypes: namesTypes,
+            prepare: { prepare($0) },
+            seeds: { seeds($0 as! Prepared) },
+            related: { shape, prepared in related(shape, prepared as! Prepared) })
+        contribute(QueryWordDeclaration(word: word, summary: summary, example: example, meaning: .fileRelation(relation)), to: QueryWords.self)
     }
 
     /// How strings whose schema says `contentMediaType: mediaType` read in queries and rows: `read`

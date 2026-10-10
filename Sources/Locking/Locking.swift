@@ -72,7 +72,7 @@ extension LockChip: Adornment {
 
 extension LockChip: ClickableAdornment {
     /// A locked shape's chip unlocks it; a just-unlocked one's locks it again.
-    public static func click(on shape: ShapeID, in editor: CanvasEditor) { editor.service(LockState.self)?.click(shape) }
+    public static func click(_ click: AdornmentClick, in editor: CanvasEditor) { editor.service(LockState.self)?.click(click.shape) }
 }
 
 public struct LockingPlugin: CanvasPlugin {

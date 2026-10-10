@@ -1,11 +1,17 @@
+import Adornments
 @_spi(Host) import Canvas
 import CanvasTesting
 import Connections
+import ContextMenus
 import CoreGraphics
 import Keyboard
+import Mentions
 import Selection
+import SlashCommands
 import TableOfContents
+import Titles
 import Topology
+import Types
 
 // Fixture shapes only, with channels of the tests' own, so nothing here imports a real vertical
 // (the arrows come with Connections): boxes take the wire channel, discs the pipe. Boxes A and B
@@ -45,8 +51,8 @@ struct PortBoard {
         c = h.add(Disc(discC))
     }
 
-    /// What every board here has: the keys, the selection, the fixtures, arrows, ports, `ArrowPortsPlugin`,
-    /// and the tests' channels (boxes on the wire, discs on the pipe), then `more`.
+    /// What every board here has: the keys, the selection, the fixtures, arrows (whose labels are mention text, so
+    /// Mentions and what it stands on), ports, `ArrowPortsPlugin`, and the tests' channels (boxes on the wire, discs on the pipe), then `more`.
     static func plugins(more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
         let channels = Contributor(id: "channels") { registrar in
             registrar.channel(Wire.self)
@@ -55,6 +61,7 @@ struct PortBoard {
             registrar.ports(Disc.self, on: Pipe.self)
         }
         return [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin(),
+                AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(),
                 PortsPlugin(), ArrowPortsPlugin(), channels] + more
     }
 

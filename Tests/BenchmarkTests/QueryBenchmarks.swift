@@ -13,12 +13,12 @@ import Queries
 import QueryCommands
 import QueryLanguage
 import QueryTranslation
-import Schemas
 import Selection
 import StickyNotes
 import TestKit
 import Titles
 import Topology
+import Types
 import Validation
 
 // Queries' budgets, on the generated boards and files: what a query costs the main actor (reading,
@@ -62,8 +62,9 @@ extension Budget {
     /// A note found by its name (`"Title 5004"`) off the main actor: every name read, named ones
     /// there.
     static let queryTitleOffMain = SizedBudget(thousand: 1, tenThousand: 5)
-    /// And on it: every derived name asked (a schema card's, 1,000 at 10,000 shapes), in slices, on a
-    /// board drawn and validated once, as one the person has looked at is.
+    /// And on it: every derived name asked, in slices, on a board drawn and validated once, as one the
+    /// person has looked at is. No shipped kind's names are derived now (a type's is its note's
+    /// title), so this holds the main actor's part with none to ask.
     static let queryTitleMain = SizedBudget(thousand: 0.5, tenThousand: 4)
     /// Notes with an edge to a subboard 100 of them mention (`:edge-to(#…)`), off the main actor: the
     /// anchor's edges, never every shape, and the rows in file order, named, brief.
@@ -87,8 +88,8 @@ extension Budget {
     /// there.
     static let queryRows = SizedBudget(thousand: 15, tenThousand: 150)
     /// And the whole command's main time: its query's (`queryMain`), and its rows' derived names,
-    /// which only the main actor can say, asked in slices as a name's are (`queryTitleMain`: every
-    /// schema card among 10,000 rows). What's beyond the query's own main time, making and letting
+    /// which only the main actor can say, asked in slices as a name's are (`queryTitleMain`; no shipped
+    /// kind's are derived now). What's beyond the query's own main time, making and letting
     /// go of the answer, is held to `queryMain` alone. (The design held the whole command to
     /// `queryMain`, which rows of derived kinds can't meet.)
     static let queryRowsMain = SizedBudget(thousand: queryMain.thousand + queryTitleMain.thousand,
@@ -103,11 +104,9 @@ extension Budget {
     /// fire date to its draw's end, on the wall clock (`FrameDriver`): the worst.
     static let queryFrame = frame
     /// A batch of 20 queries by title and by kind, ids only (`matches`, what a plugin that keeps
-    /// answers asks), on a board whose schema cards' names are derived (asked of the main actor in
-    /// slices): the main actor's time in all, reading and resolving the 20, taking up the file once
-    /// and the slices that read every name once for the whole batch, never once a query. As
-    /// `queryTitleMain`, a name being a derived one's, 4 µs each: the design's 0.5 ms is the board of
-    /// 1,000 shapes, whose 100 cards ask 0.4 of it.
+    /// answers asks), on a board whose types are titled notes: the main actor's time in all, reading
+    /// and resolving the 20, taking up the file once and the slices that would read every derived
+    /// name once for the whole batch, never once a query. As `queryTitleMain`.
     static let referenceBatchMain = queryTitleMain
     /// And off it: 20 queries' evaluation over the one snapshot, names read once.
     static let referenceBatchOffMain = SizedBudget(thousand: 20, tenThousand: 100)
@@ -405,7 +404,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
             }
         }
     },
-    test("a note found by its name reads every name, derived ones in slices: on a board looked at, and on one never shown") {
+    test("a note found by its name reads every name, derived ones (none shipped) in slices: on a board looked at, and on one never shown") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let registry = try Registry(plugins: shippedPlugins(pasteboard))
@@ -414,7 +413,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
         for size in sizes {
             let document = generatedBoard(shapes: size)
             let title = middleTitle(size), text = "\"\(title)\""
-            let cards = document.shapes.count { $0.kind == SchemaCard.kind }
+            let types = document.shapes.count { $0[TypeSchemaProperty.self] != nil }
             // Warm: the board shown, drawn and validated once, as a board the person has looked at is.
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             h.editor.viewportDidResize(to: viewport)
@@ -433,31 +432,30 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
             expectEqual(result?.rows.first?.title, title)
             #if DEBUG
             let asked = try require(h.editor.queries).derivedTitlesAsked
-            expectEqual(asked, cards * 11, "every card's name asked, each query")
+            expectEqual(asked, 0, "no shipped kind's names are derived: a type's is its note's title")
             #endif
             // On a board never shown, of a file generated afresh each run (new ids): as it opens, the
-            // schema cards' sync reads every card of the file, as it reads each as it changes, so a
-            // query finds every card read (a card is unread only once its reading is evicted, past
-            // the 4,096 kept).
+            // types' sync reads every type of the file, as it reads each as it changes, so a query
+            // reads no schema (a type's is unread only once its reading is evicted, past the 4,096 kept).
             var openedMains: [Double] = []
             for _ in 0..<5 {
                 let file = generatedFile(root: 0, children: [size])
                 let editor = CanvasEditor(registry: registry, file: file, scheduler: ManualScheduler())
                 _ = try require(editor.queries).vocabulary
                 #if DEBUG
-                let read = SchemasPlugin.schemasRead
+                let read = TypesPlugin.schemasRead
                 #endif
                 let opened = try queried(text, on: editor)
                 #if DEBUG
-                expectEqual(SchemasPlugin.schemasRead - read, 0, "every card read as the file opened")
+                expectEqual(TypesPlugin.schemasRead - read, 0, "every type read as the file opened")
                 #endif
                 expectEqual(opened.count, 1)
                 expectEqual(opened.rows.first?.inside.count, 1, "the note is inside the subboard")
                 openedMains.append(opened.timings.main.milliseconds)
             }
             let main = middle(mains), off = middle(offs), opened = middle(openedMains)
-            report(String(format: "%6d shapes, a note by its name, %d cards' names derived: off the main actor %6.3f ms (budget %.1f), main %6.3f in %d slices (budget %.1f); on a board never shown, main %6.3f as the file opens; the longest slice %5.3f (budget %.0f)",
-                          size, cards, off, Budget.queryTitleOffMain.at(size), main, Int(middle(slices.map(Double.init))),
+            report(String(format: "%6d shapes, a note by its name, %d of them types: off the main actor %6.3f ms (budget %.1f), main %6.3f in %d slices (budget %.1f); on a board never shown, main %6.3f as the file opens; the longest slice %5.3f (budget %.0f)",
+                          size, types, off, Budget.queryTitleOffMain.at(size), main, Int(middle(slices.map(Double.init))),
                           Budget.queryTitleMain.at(size), opened, longest, Budget.querySlice))
             if holdsToBudgets {
                 expect(off < Budget.queryTitleOffMain.at(size), "a name on \(size) shapes took \(off) ms off the main actor")
@@ -869,17 +867,16 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
         let context = try bitmapContext(viewport)
         for size in sizes {
             let document = generatedBoard(shapes: size)
-            let cards = document.shapes.count { $0.kind == SchemaCard.kind }
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             h.editor.viewportDidResize(to: viewport)
             draw(h.editor, into: context, size: viewport)
             _ = try require(h.editor.validation).results
             let queries = try require(h.editor.queries)
-            // Ten cards by title, five by kind and title, a note by its title, and four by kind and a test: each of the titles
-            // is a name a derived one's or a note's, so every request reads names.
+            // Ten types by title, five by kind and title, a note by its title, and four by kind and a test: each of the
+            // titles a note's name, so every request reads names.
             let records = (0..<10).map { "Record \(9 + 10 * $0)" }
-            var texts = records.map { "\"\($0)\"" } + records.prefix(5).map { "schema-card\"\($0)\"" } + ["\"\(middleTitle(size))\""]
-            texts += ["schema-card", "subboard[title]", "sticky-note:not([title])", #"schema-card[title^="Record"]"#]
+            var texts = records.map { "\"\($0)\"" } + records.prefix(5).map { "sticky-note\"\($0)\"" } + ["\"\(middleTitle(size))\""]
+            texts += ["sticky-note[schema]", "subboard[title]", "sticky-note:not([title])", #"sticky-note[schema][title^="Record"]"#]
             expectEqual(texts.count, 20)
             let requests = texts.map { QueryMatchRequest($0, edges: .recorded, limit: 50) }
             var mains: [Double] = [], offs: [Double] = [], answers: [Result<QueryMatches, QueryError>] = []
@@ -889,7 +886,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
                 #endif
                 let (value, main, off) = try cpu { await queries.matches(requests) }
                 #if DEBUG
-                expectEqual(queries.derivedTitlesAsked - asked, cards, "every card's name asked once for the whole batch")
+                expectEqual(queries.derivedTitlesAsked - asked, 0, "no derived name to ask: a type's is its note's title")
                 #endif
                 mains.append(main)
                 offs.append(off)
@@ -906,8 +903,8 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
                 expect(matches.count >= 1, "\(text) matched nothing")
             }
             let main = middle(mains), off = middle(offs)
-            report(String(format: "%6d shapes, %d cards' names derived, a batch of 20 queries by title and kind: main %6.3f ms (budget %.1f), off the main actor %6.2f (budget %.0f)",
-                          size, cards, main, Budget.referenceBatchMain.at(size), off, Budget.referenceBatchOffMain.at(size)))
+            report(String(format: "%6d shapes, a batch of 20 queries by title and kind: main %6.3f ms (budget %.1f), off the main actor %6.2f (budget %.0f)",
+                          size, main, Budget.referenceBatchMain.at(size), off, Budget.referenceBatchOffMain.at(size)))
             if holdsToBudgets {
                 expect(main < Budget.referenceBatchMain.at(size), "a batch of 20 queries on \(size) shapes took \(main) ms on the main actor")
                 expect(off < Budget.referenceBatchOffMain.at(size), "a batch of 20 queries on \(size) shapes took \(off) ms off the main actor")

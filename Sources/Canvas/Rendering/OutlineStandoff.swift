@@ -22,7 +22,7 @@ extension CGPath {
 }
 
 /// A closed outline that is a rectangle's edge, its corners rounded by one radius or not at all:
-/// what every box kind's `indicatorPath` is (a note's, a frame's, a schema card's, a subboard's, and
+/// what every box kind's `indicatorPath` is (a note's, a frame's, a subboard's, and
 /// the default's, the frame itself).
 struct RoundedBox: Equatable {
     var rect: CGRect
