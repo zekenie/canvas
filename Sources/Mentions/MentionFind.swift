@@ -15,7 +15,7 @@ extension PluginID {
 /// Mentions' rows name (`rowsAffected(by:)`), read before any text, so the names read are the
 /// commit's. A plugin value of its own, after Find and Mentions, so a list without Find leaves it
 /// out.
-public struct MentionFindPlugin: CanvasPlugin {
+public struct MentionFindPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .mentionFind }
 

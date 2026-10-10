@@ -3,13 +3,13 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Composition
 import Foundation
 import HostSlots
 import LanguageModels
 import Locking
 import Mentions
 import Schemas
+import ShippedTesting
 import StickyNotes
 import Subboards
 import TestKit

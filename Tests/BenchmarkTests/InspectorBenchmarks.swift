@@ -2,10 +2,10 @@ import AppKit
 import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
-import Composition
 import DetailPanel
 import Foundation
 import LanguageModels
+import ShippedTesting
 import SwiftUI
 import TableOfContents
 import TestKit

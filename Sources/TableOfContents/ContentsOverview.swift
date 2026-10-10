@@ -10,7 +10,7 @@ extension PluginID {
 /// (`DetailOverviews`): with nothing selected, and under the header of several. A plugin value of
 /// its own, after `DetailPanelPlugin` and `TableOfContentsPlugin`: a list without the panel leaves
 /// it out and keeps the list's state, which the path's crumbs' menus read too.
-public struct ContentsOverviewPlugin: CanvasPlugin {
+public struct ContentsOverviewPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .contentsOverview }
 

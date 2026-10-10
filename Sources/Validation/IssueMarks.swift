@@ -8,7 +8,7 @@ import TableOfContents
 /// and a click on a row goes to its shape. A plugin of its own, so a list can have Validation
 /// without the table of contents (the registry refuses a contribution to a point whose owner isn't
 /// installed).
-public struct ValidationContentsPlugin: CanvasPlugin {
+public struct ValidationContentsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "validation-contents" }
 

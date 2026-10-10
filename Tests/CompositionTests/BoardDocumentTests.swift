@@ -2,12 +2,12 @@ import AppKit
 import Canvas
 import CanvasTesting
 import CanvasUI
-import Composition
 import Foundation
 import Geometry
 import LanguageModels
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import SwiftUI
 import TestKit

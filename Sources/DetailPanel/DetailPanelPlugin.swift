@@ -9,7 +9,7 @@ import SwiftUI
 /// takeover is something open in the panel (Find), which would go on with nothing shown to end it
 /// by. So the window shows a hidden inspector for it, and hiding the inspector meanwhile escapes the
 /// takeover, as Escape in the panel does.
-public struct DetailPanelPlugin: CanvasPlugin {
+public struct DetailPanelPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .detailPanel }
     public func register(into registrar: inout PluginRegistrar) {

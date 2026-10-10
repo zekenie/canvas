@@ -8,7 +8,7 @@ import Connections
 /// it's made by the connector (`registry.connection`), on the channel this plugin picks from the
 /// port table, as a drag from a port would: a connection runs only from a shape with ports on its
 /// channel to one that takes it.
-public struct PortEdgesPlugin: CanvasPlugin {
+public struct PortEdgesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "port-edges" }
 

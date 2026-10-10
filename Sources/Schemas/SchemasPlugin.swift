@@ -24,7 +24,7 @@ extension PluginID {
 /// cards in its description, each a `$ref` to that card's schema (`SchemaReferences`), so a card can
 /// be mentioned (its Mentioned In tab lists the cards that refer to it); and ports, whose arrows link
 /// a schema to a schema (`SchemaLink`).
-public struct SchemasPlugin: CanvasPlugin {
+public struct SchemasPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .schemas }
     public func register(into registrar: inout PluginRegistrar) {

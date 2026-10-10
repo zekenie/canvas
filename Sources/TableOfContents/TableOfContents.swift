@@ -542,7 +542,7 @@ extension EnvironmentValues {
 
 /// The table of contents' state. Contributes no rows of its own: a kind nobody describes is listed
 /// by its label and symbol (`registry.label(of:)`).
-public struct TableOfContentsPlugin: CanvasPlugin {
+public struct TableOfContentsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .tableOfContents }
 

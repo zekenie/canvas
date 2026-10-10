@@ -7,7 +7,7 @@ import Queries
 /// its kind opens its boards with (`opensBoard(placeholder:)`, "Untitled Subboard", read through
 /// `registry.boardPlaceholder(of:)`), else the kind's label. Only the kinds that open their boards
 /// have a placeholder; the rest are named by their labels, as Boards names them.
-public struct BoardQueriesPlugin: CanvasPlugin {
+public struct BoardQueriesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "board-queries" }
 

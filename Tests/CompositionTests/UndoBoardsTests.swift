@@ -2,11 +2,11 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Composition
 import CoreGraphics
 import Foundation
 import LanguageModels
 import Mentions
+import ShippedTesting
 import StickyNotes
 import SwiftUI
 import TestKit

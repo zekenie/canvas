@@ -13,7 +13,7 @@ extension PluginID {
 /// Enclosing Board is, with its key; on the root, the file's name (`editor.rootName`), else "Board".
 /// A plugin value of its own, after `BoardsPlugin` and `TableOfContentsPlugin`: a list without the
 /// table of contents leaves it out.
-public struct BoardContentsPlugin: CanvasPlugin {
+public struct BoardContentsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .boardContents }
 
@@ -29,7 +29,7 @@ public struct BoardContentsPlugin: CanvasPlugin {
 /// What heads each board's rows in Find's list (`FindHeadings`): the board's name and symbol, as the
 /// path has them (`editor.name(of:)`, `symbol(of:)`). A plugin value of its own, after `BoardsPlugin`
 /// and `FindPlugin`: a list without Find leaves it out.
-public struct BoardFindPlugin: CanvasPlugin {
+public struct BoardFindPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .boardFind }
 

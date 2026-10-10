@@ -2,8 +2,8 @@ import AppKit
 import Canvas
 import CanvasTesting
 import CanvasUI
-import Composition
 import LanguageModels
+import ShippedTesting
 import StickyNotes
 import Subboards
 import TestKit

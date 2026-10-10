@@ -67,6 +67,40 @@ extension ShapeRegistrar {
         expectEqual(ShippedText.named("ask-prompt"), nil)
         expectEqual(ShippedText.named(""), nil)
     },
+    test("a list's plugins are made by name, in its order: each a type this executable has that can be made from nothing") {
+        let plugins = try ShippedList.plugins(named: ["CanvasTests.SecondListed", "CanvasTests.FirstListed"])
+        expectEqual(plugins.map(\.id), ["second-listed", "first-listed"], "the list's order, not the order they're declared in")
+        _ = try Registry(plugins: plugins)
+        expectEqual(try ShippedList.plugins(named: []).count, 0)
+    },
+    test("a list is refused, saying which line, for a name that isn't Module.Type, a type that isn't here, and one that can't be made from nothing") {
+        for line in ["FirstListed", "CanvasTests.", ".FirstListed", "CanvasTests.First.Listed", "Canvas Tests.FirstListed", ""] {
+            expectThrows(ShippedListError.malformed(line)) { _ = try ShippedList.plugins(named: ["CanvasTests.FirstListed", line]) }
+        }
+        expectThrows(ShippedListError.notFound("CanvasTests.Mislisted")) { _ = try ShippedList.plugins(named: ["CanvasTests.Mislisted"]) }
+        expectThrows(ShippedListError.notFound("Nowhere.FirstListed")) { _ = try ShippedList.plugins(named: ["Nowhere.FirstListed"]) }
+        expectThrows(ShippedListError.notListed("CanvasTests.NeverListed")) { _ = try ShippedList.plugins(named: ["CanvasTests.NeverListed"]) }
+        expectThrows(ShippedListError.notListed("CanvasTests.NotAPlugin")) { _ = try ShippedList.plugins(named: ["CanvasTests.NotAPlugin"]) }
+        expect(ShippedListError.notFound("Boards.BoardsPlugin").description.contains("Boards.BoardsPlugin"))
+    },
+    test("a plugin that reaches outside the process is the caller's to hand over: the list won't make one, and takes the caller's in its place") {
+        let names = ["CanvasTests.FirstListed", "CanvasTests.Outward", "CanvasTests.SecondListed"]
+        expectThrows(ShippedListError.notSupplied(["CanvasTests.Outward"])) { _ = try ShippedList.plugins(named: names) }
+        let plugins = try ShippedList.plugins(named: names, supplying: [Outward(reaching: "a test's own")])
+        expectEqual(plugins.map(\.id), ["first-listed", "outward", "second-listed"], "in the list's place for it")
+        expectEqual((plugins[1] as? Outward)?.reaching, "a test's own", "the one handed over, not one made from nothing")
+        // Any listed plugin can be handed over; one the list hasn't is refused, so a typo can't pass for a swap.
+        let own = try ShippedList.plugins(named: names, supplying: [Outward(reaching: "own"), SecondListed(note: "own")])
+        expectEqual((own[2] as? SecondListed)?.note, "own")
+        expectThrows(ShippedListError.notInList(["CanvasTests.NeverListed"])) {
+            _ = try ShippedList.plugins(named: names, supplying: [Outward(reaching: "own"), NeverListed()])
+        }
+        expect(ShippedListError.notSupplied(["CanvasTests.Outward"]).description.contains("supplying"), "it says what to do")
+    },
+    test("only the product has a list: this executable, which isn't, has none to load") {
+        expectEqual(ShippedList.names, nil)
+        expectThrows(ShippedListError.notTheProduct) { _ = try ShippedList.plugins(supplying: []) }
+    },
     test("a contribution made inside a shape's registrar is stamped with its kind") {
         let registry = try Registry(plugins: [StampsPlugin(), Contributor(id: "boxes") { r in
             r.shape(BoxDefinitionForTests()) { box in box.stamp("hello") }
@@ -337,3 +371,38 @@ final class Late: EditorService {}
 @MainActor final class RunLog {
     var commands: [String] = []
 }
+
+
+// MARK: Plugins a list can name
+
+/// Plugins the loader finds in this executable by name (`CanvasTests.FirstListed`): two made from
+/// nothing, one that reaches outside the process, one that's a plugin but can't be listed, and a
+/// type that's no plugin at all.
+struct FirstListed: ListedPlugin {
+    init() {}
+    var id: PluginID { "first-listed" }
+    func register(into registrar: inout PluginRegistrar) {}
+}
+
+struct SecondListed: ListedPlugin {
+    let note: String
+    init() { note = "" }
+    init(note: String) { self.note = note }
+    var id: PluginID { "second-listed" }
+    func register(into registrar: inout PluginRegistrar) {}
+}
+
+struct Outward: OutwardPlugin {
+    let reaching: String
+    init() { reaching = "the world" }
+    init(reaching: String) { self.reaching = reaching }
+    var id: PluginID { "outward" }
+    func register(into registrar: inout PluginRegistrar) {}
+}
+
+struct NeverListed: CanvasPlugin {
+    var id: PluginID { "never-listed" }
+    func register(into registrar: inout PluginRegistrar) {}
+}
+
+struct NotAPlugin {}

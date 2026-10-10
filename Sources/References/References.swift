@@ -146,7 +146,7 @@ extension CanvasCommand {
 /// header naming what it stands for, and Go to Original), the context menu (Go to Original, first) and
 /// Publishing's Referenced In (its own row). Going to the original is a canvas button, the leading
 /// symbol, as well. A reference is never public itself (`NeverPublic`).
-public struct ReferencesPlugin: CanvasPlugin {
+public struct ReferencesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .references }
 

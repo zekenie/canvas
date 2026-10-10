@@ -3,8 +3,10 @@ import HostSlots
 import SwiftUI
 
 /// The app's language model, as a plugin: it lends every editor one model (`editor.languageModel`)
-/// for any plugin to ask. Generic: it knows nothing of what plugins ask it for. The app's is
-/// `AnthropicModel` (Claude Haiku, with the key saved in Settings); tests pass a
+/// for any plugin to ask. Generic: it knows nothing of what plugins ask it for. Made from nothing
+/// (as the product's list makes it), the model is the app's: `AnthropicModel` (Claude Haiku, over
+/// the network, with the key saved in Settings). That reaches outside the process, so the plugin is
+/// an `OutwardPlugin`: anything but the app that loads the list hands over its own, and tests pass a
 /// `ScriptedLanguageModel`, so no test ever reaches the network.
 ///
 /// A model that needs a key brings the Settings pane that keeps it (the host's slot for one): the
@@ -14,9 +16,10 @@ extension PluginID {
     public static let languageModels: PluginID = "language-models"
 }
 
-public struct LanguageModelsPlugin: CanvasPlugin {
+public struct LanguageModelsPlugin: OutwardPlugin {
     let model: any LanguageModel
 
+    public init() { self.init(model: AnthropicModel(keys: .standard)) }
     public init(model: any LanguageModel) { self.model = model }
     public var id: PluginID { .languageModels }
 

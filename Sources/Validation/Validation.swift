@@ -651,7 +651,7 @@ final class SchemaVerdicts {
 /// that have any. They also show in the detail panel's Issues tab (`ValidationDetailsPlugin`) and
 /// as a dot on a shape's row in the table of contents (`ValidationContentsPlugin`), plugins of
 /// their own in this module.
-public struct ValidationPlugin: CanvasPlugin {
+public struct ValidationPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .validation }
     public func register(into registrar: inout PluginRegistrar) {

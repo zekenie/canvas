@@ -333,7 +333,7 @@ struct BindingHintsOverlay: CanvasOverlay {
     }
 }
 
-public struct ArrowsPlugin: CanvasPlugin {
+public struct ArrowsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .arrows }
     public func register(into registrar: inout PluginRegistrar) {

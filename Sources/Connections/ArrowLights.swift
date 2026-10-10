@@ -21,7 +21,7 @@ extension PluginID {
 /// Neighbors asks each in the engine's resolved view of the edges and in the literal one, so a
 /// reference's own arrows count, and so does what it stands for: an arrow into a reference is, to the
 /// graph, an arrow into the shape, and drawn, one into the pill.
-public struct ArrowLightsPlugin: CanvasPlugin {
+public struct ArrowLightsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .arrowLights }
 

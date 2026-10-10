@@ -1,11 +1,13 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-// THE MODULE GRAPH. This file is the only place module dependencies are written down.
+// THE MODULE GRAPH, AND WHAT SHIPS. This file is the only place module dependencies are written
+// down, and the only list of the plugins the product is made of (the table before the targets).
 // build.sh reads it as a table, so every target stays on ONE line, in exactly this form:
 //     .target(name: "X", dependencies: ["A", "B"]),                          // layer: <layer>
 //     .target(name: "X", dependencies: ["A"], path: "Examples/X"),          // layer: <layer>
 //     .executableTarget(name: "X", dependencies: ["A"], path: "Tests/X"),   // layer: <layer>
+//     .executableTarget(name: "X", dependencies: ["A"] + shipped),          // layer: <layer>
 // Modules live in Sources/X or Examples/X; test and testsupport modules in Tests/X.
 //
 // Layers, and what each may depend on:
@@ -42,17 +44,25 @@ import PackageDescription
 //                                                        language and the concerns meet
 //     vertical     -> foundation, surface, concern       a feature (shape kinds, tools); knows no other
 //                                                        vertical, and no language
-//     composition  -> foundation, surface, concern, language, lexicon, vertical, wire   the shipped plugin list
-//     app          -> foundation, ui, composition, wire
-//     appex        -> foundation, ui, composition        an app extension, an executable the app
+//     app          -> foundation, ui, wire               names no plugin: its plugins are the list's,
+//                                                        made by name (`+ shipped`)
+//     appex        -> foundation, ui                     an app extension, an executable the app
 //                                                        carries that macOS runs on its own (Quick
-//                                                        Look's preview and thumbnail of a board file)
+//                                                        Look's preview and thumbnail of a board file);
+//                                                        `+ shipped`, as the app is
 //     cli          -> wire                               the command line (`canvas`), an executable:
 //                                                        knows only the wire, never the app
-//     testsupport  -> foundation, testsupport
+//     testsupport  -> foundation, testsupport            and, for the one that is the tests' way to the
+//                                                        product's plugins (`+ shipped`), what ships
 //     test         -> anything but app, appex, cli and test; a test named <M>Tests may use only M, M's
 //                     dependencies, and testsupport and ui modules, and so may one named after a
 //                     plugin of M that says so: `// layer: test of M` (TitleQueriesTests)
+//
+// `+ shipped` after a line's dependencies makes it the product, or the tests of it: every module the
+// list names links into it, whether or not it imports them. Only the app, its extension, and the
+// tests of what ships and their support may say it. The app and its extension import none of those
+// modules (and compile against none); the tests and their support import the ones they call. What
+// depends on a library that says it says it too.
 //
 // So an edge between two horizontals goes the way their layers say, and within a layer from the module
 // that owns a meaning to the one it builds on (Mentions imports Titles, whose names its pills show). A
@@ -62,6 +72,9 @@ import PackageDescription
 //
 // build.sh refuses to build when:
 //   - the graph has a cycle, or an edge the layers above forbid;
+//   - the list names something that isn't a public struct of that module that can be made with no
+//     arguments (a ListedPlugin), names a plugin twice, or isn't in the form its comment says;
+//   - the app or its extension imports a module the list names;
 //   - SwiftPM, evaluating this file, sees other targets or dependencies than the one-line table
 //     (so code below the targets can't change the graph);
 //   - a module's imports, as the compiler parses them, aren't exactly its dependencies here;
@@ -76,8 +89,99 @@ import PackageDescription
 // dependency closure, with MemberImportVisibility, and the import check rejects undeclared
 // imports); the id check keeps any module from writing another module's kind, tool, plugin, property,
 // channel or edge type id as a literal. The editor's host API is @_spi(Host), which only ui, testsupport and test modules
-// may import.
+// may import; loading the list whole, with the plugins that reach outside the process as the product
+// has them, is @_spi(Product), which only the app and its extension may.
 // Audit it:  ./build.sh graph | dot | audit | api <Module>
+
+// WHAT SHIPS. The plugins the product is made of, each as `Module.Type`, in order: the toolbar's
+// order, the order overlays draw in, and each after the plugins whose points it fills (the registry
+// refuses a contribution whose point's owner isn't installed). This table is the only list of them.
+// build.sh puts it, as text, in every executable that is the product, and the core makes each
+// plugin there by its name (Canvas's ShippedList), so no module imports the plugins to list them.
+// Each is a public struct that can be made with no arguments (a ListedPlugin).
+//
+// A target line that ends `+ shipped` is the product, or the tests of it: the list's modules link
+// into it though nothing need import them. The app and its extension import none (they name no
+// plugin); the tests of what ships, and their support, import the ones they call.
+//
+// build.sh reads this table as text, as it reads the targets, so it stays in this form: the opening
+// line, lines of strings each followed by a comma, comments on lines of their own, and `]`.
+let ships = [
+    // First: every key is registered with Keyboard; the others build on Selection, and its
+    // handles draw below their view overlays.
+    "Keyboard.KeyboardPlugin", "Selection.SelectionPlugin",
+    // What connects to what (arrows, mentions), for the whole file: its index hears each
+    // commit before the services that read it (the table of contents', Mentions').
+    "Topology.TopologyPlugin",
+    // The kinds. Frames beside subboards, the two ways of grouping shapes (a region of this
+    // board, a board of its own), after notes: the toolbar's Note, Subboard, Frame, Schema, Reference.
+    "Connections.ArrowsPlugin", "StickyNotes.StickyNotesPlugin", "Subboards.SubboardsPlugin", "Frames.FramesPlugin", "Schemas.SchemasPlugin", "References.ReferencesPlugin",
+    // After Validation: what's shown on shapes draws over its outline.
+    "Validation.ValidationPlugin", "Adornments.AdornmentsPlugin", "DetailPanel.DetailPanelPlugin", "ContextMenus.ContextMenusPlugin",
+    // Slash commands: the list at a `/` in the text views Mentions hosts it in. Titles offers `/title`, Locking `/lock`.
+    "SlashCommands.SlashCommandsPlugin",
+    // The table of contents, and its list in the detail panel where the panel has no one shape to show.
+    "TableOfContents.TableOfContentsPlugin", "TableOfContents.ContentsOverviewPlugin",
+    "Titles.TitlesPlugin",
+    // After Titles, whose names its pills show, and the table of contents, whose rows it names.
+    "Mentions.MentionsPlugin",
+    // Getting around a file's boards (a subboard's): opening one, ⌘↑, the path. Then the board shown's
+    // name over the table of contents, with the way up.
+    "Boards.BoardsPlugin", "Boards.BoardContentsPlugin",
+    // Finding text on the board shown and every board under it (⌘F, ⌘G): after Adornments, so a
+    // hit's ring draws over a title's pill, and Topology, whose walk of the file orders the hits. Then
+    // its panel in the detail panel's place while it's open, and Boards' names over each board's rows.
+    "Find.FindPlugin", "Find.FindPanelPlugin", "Boards.BoardFindPlugin",
+    // What Find searches, from the plugins that draw it, each after Find and its owner: titles,
+    // mention text (a note's, a schema card's description), arrows' labels.
+    "Titles.TitleFindPlugin", "Mentions.MentionFindPlugin", "Connections.ArrowFindPlugin",
+    // Jump To (⌘K): goes to a shape by its title and where it is. After Titles, whose titles it
+    // lists, and Boards, whose way of following a shape it takes.
+    "JumpTo.JumpToPlugin",
+    // Turning shapes into other kinds: a frame into a subboard, from its menu.
+    "Transform.TransformPlugin",
+    "Validation.ValidationDetailsPlugin", "Validation.ValidationContentsPlugin", "Mentions.MentionValidationPlugin", "Titles.TitleValidationPlugin",
+    "Clipboard.ClipboardPlugin",
+    "Locking.LockingPlugin",
+    // Public shapes, the ones another shape may stand for; its chip sits beside the lock's.
+    "Publishing.PublishingPlugin",
+    // What a drag moves snaps to the shapes in view: their edges, their middles and the spaces
+    // between them.
+    "Snapping.SnappingPlugin",
+    // Ports, whose arrows `ArrowPortsPlugin` draws. After Adornments: a shape's dots draw
+    // above its adornments (the lock chip among them), and are found before them.
+    "Connections.PortsPlugin", "Connections.ArrowPortsPlugin",
+    "LanguageModels.LanguageModelsPlugin",
+    // What words say of what's lower level, asked of the model: a schema card's highlights.
+    "ProseMaps.ProseMapsPlugin",
+    // The command line's commands, and what `canvas draw` takes from the plugins that own a
+    // concern: titles for names, ports' connections for edges, validity for its warnings, and
+    // mentions for text (`@[Title]` in a note's text names the shape called that).
+    "Automation.AutomationPlugin", "DrawLexicon.TitleNamesPlugin", "DrawLexicon.PortEdgesPlugin", "DrawLexicon.ValidationChecksPlugin", "DrawLexicon.MentionTextsPlugin",
+    // Reading the file: `canvas query`, and what queries take from the plugins that own a concern:
+    // titles for names, boards' names, mentions for text and relations, validity and the selection
+    // for their words. The translator of English into queries reads its prompt from the product's
+    // own files (Shipped/ask-prompt.txt, in the binary).
+    "Queries.QueriesPlugin", "QueryTranslation.QueryTranslationPlugin", "QueryLexicon.TitleQueriesPlugin", "QueryLexicon.BoardQueriesPlugin", "QueryLexicon.MentionQueriesPlugin", "QueryLexicon.ValidationQueriesPlugin",
+    "QueryLexicon.SelectionQueriesPlugin",
+    "QueryCommands.QueryCommandsPlugin",
+    // Hover a shape, on the canvas or by its row in the table of contents, and what it connects to is outlined by how: after the
+    // query plugins, whose engine it asks, and Selection and the table of contents, whose hovers it follows. Then the lights,
+    // from the plugins that own the edges, in the order a shape's rings go: arrows' (points to, pointed to by), then
+    // mentions' (mentions, mentioned by).
+    "Neighbors.NeighborsPlugin", "Connections.ArrowLightsPlugin", "Mentions.MentionLightsPlugin",
+    // `/move-to` and `/move-near`: a shape moved into a frame, onto a subboard's board or beside a shape, on any board,
+    // placed as `canvas draw` places one. After every plugin whose every-shape commands a note lists before them.
+    "Moving.MovingPlugin",
+    // The example (Examples/): one line here; delete it to leave it out.
+    "Reordering.ReorderingPlugin",
+]
+// The modules those plugins are in, once each, in the list's order: what `+ shipped` links.
+let shipped = ships.reduce(into: [String]()) { modules, plugin in
+    let module = String(plugin.prefix { $0 != "." })
+    if !modules.contains(module) { modules.append(module) }
+}.map { Target.Dependency(stringLiteral: $0) }
+
 let package = Package(
     name: "InfiniteCanvas",
     platforms: [.macOS(.v14)],
@@ -149,13 +253,14 @@ let package = Package(
         // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
         .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus"], path: "Examples/Reordering"),             // layer: vertical
 
-        .target(name: "Composition", dependencies: ["Adornments", "Automation", "Boards", "Canvas", "Clipboard", "Connections", "ContextMenus", "DetailPanel", "DrawLexicon", "Find", "Frames", "JumpTo", "Keyboard", "LanguageModels", "Locking", "Mentions", "Moving", "Neighbors", "ProseMaps", "Publishing", "Queries", "QueryCommands", "QueryLexicon", "QueryTranslation", "References", "Reordering", "Schemas", "Selection", "SlashCommands", "Snapping", "StickyNotes", "Subboards", "TableOfContents", "Titles", "Topology", "Transform", "Validation"]), // layer: composition
-        .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI", "Composition", "HostSlots"]),           // layer: app
-        .executableTarget(name: "CanvasQuickLook", dependencies: ["Canvas", "CanvasUI", "Composition"]),          // layer: appex
+        .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI", "HostSlots"] + shipped),  // layer: app
+        .executableTarget(name: "CanvasQuickLook", dependencies: ["Canvas", "CanvasUI"] + shipped),              // layer: appex
         .executableTarget(name: "CanvasCLI", dependencies: ["CanvasRPC"]),                                        // layer: cli
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport
         .target(name: "CanvasTesting", dependencies: ["Canvas", "Geometry", "TestKit"], path: "Tests/CanvasTesting"), // layer: testsupport
+        // The tests' way to the product's plugins: the list, with a pasteboard and a model of the test's own.
+        .target(name: "ShippedTesting", dependencies: ["Canvas"] + shipped, path: "Tests/ShippedTesting"),  // layer: testsupport
         .executableTarget(name: "CanvasTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "TestKit"], path: "Tests/CanvasTests"), // layer: test
         .executableTarget(name: "CanvasRPCTests", dependencies: ["CanvasRPC", "TestKit"], path: "Tests/CanvasRPCTests"), // layer: test
         .executableTarget(name: "DrawScriptTests", dependencies: ["DrawScript", "Geometry", "TestKit"], path: "Tests/DrawScriptTests"), // layer: test
@@ -210,8 +315,8 @@ let package = Package(
         .executableTarget(name: "MentionTextsTests", dependencies: ["Adornments", "Automation", "Canvas", "CanvasRPC", "ContextMenus", "DetailPanel", "DrawLexicon", "Keyboard", "Mentions", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Validation"], path: "Tests/MentionTextsTests"), // layer: test of DrawLexicon
         .executableTarget(name: "ValidationChecksTests", dependencies: ["Automation", "Canvas", "CanvasRPC", "CanvasTesting", "DrawLexicon", "TestKit", "Validation"], path: "Tests/ValidationChecksTests"), // layer: test of DrawLexicon
         .executableTarget(name: "ExamplesTests", dependencies: ["Canvas", "CanvasTesting", "Connections", "ContextMenus", "Keyboard", "Reordering", "Selection", "TableOfContents", "TestKit"], path: "Tests/ExamplesTests"), // layer: test
-        .executableTarget(name: "CompositionTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Clipboard", "Composition", "Connections", "DetailPanel", "DrawScript", "Find", "Frames", "Geometry", "HostSlots", "JumpTo", "Keyboard", "LanguageModels", "Locking", "Mentions", "Neighbors", "Publishing", "Queries", "QueryLanguage", "QueryTranslation", "References", "Schemas", "Selection", "SlashCommands", "Snapping", "StickyNotes", "Subboards", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Transform", "Validation"], path: "Tests/CompositionTests"), // layer: test
-        .executableTarget(name: "BenchmarkTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Composition", "Connections", "DetailPanel", "Find", "Frames", "Geometry", "HostSlots", "JumpTo", "LanguageModels", "Locking", "Mentions", "Neighbors", "Publishing", "Queries", "QueryCommands", "QueryLanguage", "QueryTranslation", "References", "Schemas", "Selection", "Snapping", "StickyNotes", "Subboards", "TableOfContents", "TestKit", "Titles", "Topology", "Validation"], path: "Tests/BenchmarkTests"), // layer: test
+        .executableTarget(name: "CompositionTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "DrawScript", "Geometry", "HostSlots", "QueryLanguage", "ShippedTesting", "TestKit", "TextEditing"] + shipped, path: "Tests/CompositionTests"), // layer: test
+        .executableTarget(name: "BenchmarkTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Geometry", "HostSlots", "QueryLanguage", "ShippedTesting", "TestKit"] + shipped, path: "Tests/BenchmarkTests"), // layer: test
     ],
     swiftLanguageModes: [.v6]
 )

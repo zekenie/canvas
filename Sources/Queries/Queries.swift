@@ -27,7 +27,7 @@ extension PluginID {
 /// The query engine's plugin: its service (`editor.queries`), and the points QueryLexicon fills. Every
 /// plugin list with it needs `TopologyPlugin`: without Topology every query is refused
 /// (`no_topology`), since what a query ranges over and its order are Topology's.
-public struct QueriesPlugin: CanvasPlugin {
+public struct QueriesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .queries }
 

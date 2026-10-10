@@ -49,7 +49,7 @@ extension PluginID {
     public static let stickyNotes: PluginID = "sticky-notes"
 }
 
-public struct StickyNotesPlugin: CanvasPlugin {
+public struct StickyNotesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .stickyNotes }
     public func register(into registrar: inout PluginRegistrar) {

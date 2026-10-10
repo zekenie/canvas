@@ -3,7 +3,6 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import Clipboard
-import Composition
 import Connections
 import CoreGraphics
 import Foundation
@@ -15,6 +14,7 @@ import Queries
 import References
 import Schemas
 import Selection
+import ShippedTesting
 import StickyNotes
 import Subboards
 import TableOfContents

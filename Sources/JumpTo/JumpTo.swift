@@ -15,7 +15,7 @@ extension PluginID {
     public static let jumpTo: PluginID = "jump-to"
 }
 
-public struct JumpToPlugin: CanvasPlugin {
+public struct JumpToPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .jumpTo }
 

@@ -2,10 +2,10 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Composition
 import CoreGraphics
 import LanguageModels
 import Selection
+import ShippedTesting
 import Subboards
 import TestKit
 

@@ -13,7 +13,7 @@ extension PluginID {
 /// there close Find, before the panel gives the keyboard back to the canvas. A plugin value of its
 /// own, after `FindPlugin` and `DetailPanelPlugin`: a list without the panel leaves it out, and
 /// keeps Find's state, highlights and commands.
-public struct FindPanelPlugin: CanvasPlugin {
+public struct FindPanelPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .findPanel }
 

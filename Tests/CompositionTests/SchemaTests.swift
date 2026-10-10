@@ -1,8 +1,8 @@
 import Canvas
 import CanvasTesting
-import Composition
 import Foundation
 import LanguageModels
+import ShippedTesting
 import TestKit
 
 @MainActor let shippedSchemaTests = Suite("Shipped schemas", [

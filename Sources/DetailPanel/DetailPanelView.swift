@@ -4,7 +4,7 @@ import Selection
 import SwiftUI
 import TextEditing
 
-/// The panel. The app places it (in `.inspector`, through Composition); it follows the editor's
+/// The panel. The window places it (in `.inspector`, the host's slot for one); it follows the editor's
 /// selection by itself. `onExit` gives the keyboard back to the canvas: the panel calls it on
 /// Escape and ⌘., when it has just removed the control that had the keyboard, and when it's hidden
 /// with that control in it (an `.inspector` hides its content without removing it). The keyboard

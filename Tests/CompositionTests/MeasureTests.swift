@@ -4,12 +4,12 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Composition
 import DrawScript
 import Foundation
 import Geometry
 import HostSlots
 import LanguageModels
+import ShippedTesting
 import StickyNotes
 import TestKit
 import Titles

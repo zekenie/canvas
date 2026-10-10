@@ -5,7 +5,6 @@ import Boards
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Composition
 import Connections
 import CoreGraphics
 import DetailPanel
@@ -17,6 +16,7 @@ import Locking
 import Mentions
 import Schemas
 import Selection
+import ShippedTesting
 import Snapping
 import StickyNotes
 import Subboards

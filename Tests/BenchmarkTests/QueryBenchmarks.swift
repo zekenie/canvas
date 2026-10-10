@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
-import Composition
 import Connections
 import Foundation
 import Frames
@@ -16,6 +15,7 @@ import QueryLanguage
 import QueryTranslation
 import Schemas
 import Selection
+import ShippedTesting
 import StickyNotes
 import TestKit
 import Titles

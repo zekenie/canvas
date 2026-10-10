@@ -44,7 +44,7 @@ extension Subboard {
 /// a subboard to anything). Going back up, and the path, are Boards'. It takes Transform's container
 /// channel: a shape that holds shapes (a frame) can be turned into a subboard, a subboard's size at
 /// its top-left corner, holding on its board what the shape held.
-public struct SubboardsPlugin: CanvasPlugin {
+public struct SubboardsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .subboards }
 

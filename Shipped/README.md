@@ -3,7 +3,8 @@
 What the product says in a file, not in a module: text that names the shipped kinds, edge types and
 words, which no one module knows all of.
 
-`build.sh` puts every `*.txt` here in each executable that is the product (the app, its Quick Look
+`build.sh` puts every `*.txt` here, and the list of the plugins that ship (which isn't a file here:
+it's the table in `Package.swift`, written out as `plugins`), in each executable that is the product (the app, its Quick Look
 extension, and the tests of what ships), as a section of the binary, and the core reads one back by
 its name: `ShippedText.named("ask-prompt")`. Nothing looks for a file at run time. A file's name is
 lowercase letters, digits and hyphens, at most 14 characters, since it names a section.

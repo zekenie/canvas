@@ -11,7 +11,7 @@ extension PluginID {
 /// the canvas, whose color follows the appearance), from the label's own layout: string drawing's,
 /// centered in its frame, kept by text and width (`ArrowLabels.layout(of:width:)`). A plugin value
 /// of its own, after Find and Arrows, so a list without Find leaves it out.
-public struct ArrowFindPlugin: CanvasPlugin {
+public struct ArrowFindPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .arrowFind }
 

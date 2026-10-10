@@ -1,12 +1,12 @@
 import AppKit
 import Canvas
 import CanvasTesting
-import Composition
 import Foundation
 import LanguageModels
 import Queries
 import QueryLanguage
 import QueryTranslation
+import ShippedTesting
 import TestKit
 import Topology
 

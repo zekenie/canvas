@@ -11,7 +11,7 @@ import QueryLanguage
 // maps its errors to the wire's); it knows no command and no shape.
 //
 // A surface: the editor's model (LanguageModels) and the engine (Queries) are surfaces, and the
-// system prompt comes from its init (Composition's, whose examples name the shipped kinds).
+// system prompt comes from its init (the product's, a text file, whose examples name the shipped kinds).
 
 extension PluginID {
     public static let queryTranslation: PluginID = "query-translation"
@@ -351,7 +351,7 @@ extension CanvasEditor {
 
 /// Lends every editor a `QueryTranslator`. Every plugin list with it needs `QueriesPlugin` and
 /// `LanguageModelsPlugin` (without them it answers `noQueries` and `noModel`).
-public struct QueryTranslationPlugin: CanvasPlugin {
+public struct QueryTranslationPlugin: ListedPlugin {
     let prompt: String
     let referenceRule: String
     let style: AskStyle
