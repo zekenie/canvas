@@ -50,9 +50,13 @@ public final class FieldChecks {
     }
 
     @ObservationIgnored private weak var editor: CanvasEditor?
+    /// The services it reads, found once: a frame asks for each note in view, and a lookup by type costs more than the rest of an ask.
+    @ObservationIgnored private let book: FieldBook?
+    @ObservationIgnored private let index: TypeIndex?
     @ObservationIgnored private var answers: [ShapeID: Answer] = [:]
     @ObservationIgnored private var checkers: [[ShapeID]: FieldChecker] = [:]
     @ObservationIgnored private var references: TypeReferences?
+    @ObservationIgnored private var recent: (links: [TypeLink], revision: Int, checker: FieldChecker?)?
     @ObservationIgnored private var typingStorage: (shape: ShapeID, path: FieldPath)?
     /// Moves when any type was renamed: an answer that names a type is made again.
     @ObservationIgnored private var names = 0
@@ -72,6 +76,8 @@ public final class FieldChecks {
 
     public init(editor: CanvasEditor) {
         self.editor = editor
+        book = editor.fieldBook
+        index = editor.types
         lastChain = editor.types?.chainRevision ?? 0
         editor.types?.onChange { [weak self] changed in self?.typesChanged(changed) }
     }
@@ -88,19 +94,21 @@ public final class FieldChecks {
 
     /// The whole answer for a shape, `typing` ignored: for queries.
     public func fullCheck(of record: AnyShapeRecord) -> FieldCheck {
-        guard let editor, let book = editor.fieldBook, let index = editor.types,
-              let links = record[IsAProperty.self], !links.isEmpty, record[TypeSchemaProperty.self] == nil, !record.isOpaque else { return .clean }
+        // (An opaque shape holds nothing typed, so it has no `is` and is passed here.) The book's revision is the index's
+        // stamp, read from the index at hand: the book finds it by a lookup of the service.
+        guard let book, let index, let links = record[IsAProperty.self], !links.isEmpty, record[TypeSchemaProperty.self] == nil else { return .clean }
+        let revision = index.chainRevision
         let values = record[FieldValuesProperty.self]
         let id = record.id
         let old = answers[id]
         if let old, old.links == links, old.values == values {
             if let checker = old.checker {
-                if checker.stamp == book.revision, old.nameStamp == nil || old.nameStamp == names { return old.check }
-            } else if old.stamp == book.revision {
+                if checker.stamp == revision, old.nameStamp == nil || old.nameStamp == names { return old.check }
+            } else if old.stamp == revision {
                 return old.check
             }
         }
-        let checker = checker(for: links.map(\.shape), book: book, index: index)
+        let checker = self.checker(for: links, revision: revision, book: book, index: index)
         let check: FieldCheck
         if let old, let checker, old.checker === checker, old.links == links, old.values == values, old.nameStamp == nil || old.nameStamp == names {
             check = old.check
@@ -117,17 +125,26 @@ public final class FieldChecks {
             check = .clean
         }
         let namesAType = check.problems.contains { $0.path.isRoot }
-        if namesAType { named.insert(id) } else { named.remove(id) }
-        answers[id] = Answer(links: links, values: values, checker: checker, stamp: book.revision, nameStamp: namesAType ? names : nil, check: check)
+        if namesAType { named.insert(id) } else if !named.isEmpty { named.remove(id) }
+        answers[id] = Answer(links: links, values: values, checker: checker, stamp: revision, nameStamp: namesAType ? names : nil, check: check)
         return check
+    }
+
+    /// The checker for a shape's list. Notes made in a row mostly share a list, so the last answer is kept
+    /// (a first read of thousands of notes maps and hashes a list once, not each time).
+    private func checker(for links: [TypeLink], revision: Int, book: FieldBook, index: TypeIndex) -> FieldChecker? {
+        if let recent, recent.revision == revision, recent.links == links { return recent.checker }
+        let found = checker(for: links.map(\.shape), book: book, index: index)
+        recent = (links, revision, found)
+        return found
     }
 
     /// The checker for a list, made current (or made); nil when no type of the list is a type.
     private func checker(for types: [ShapeID], book: FieldBook, index: TypeIndex) -> FieldChecker? {
         if let kept = checkers[types] {
-            if kept.stamp == book.revision { return kept }
+            if kept.stamp == index.chainRevision { return kept }
             if kept.isCurrent() {
-                kept.stamp = book.revision
+                kept.stamp = index.chainRevision
                 return kept
             }
         }
@@ -138,7 +155,10 @@ public final class FieldChecks {
         #if DEBUG
         checkersMade += 1
         #endif
-        if checkers.count >= Self.capacity { checkers = [:] }
+        if checkers.count >= Self.capacity {
+            checkers = [:]
+            recent = nil
+        }
         checkers[types] = made
         return made
     }
@@ -261,6 +281,7 @@ extension FieldChecks: EditorService {
         if change.isFileReplaced {
             answers = [:]
             checkers = [:]
+            recent = nil
             references = nil
             named = []
             names &+= 1

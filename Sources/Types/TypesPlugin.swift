@@ -69,9 +69,13 @@ public struct TypesPlugin: CanvasPlugin {
     #endif
 }
 
-/// Validation's rules for a type's schema (`SchemaReadings.issues`): not JSON, or not an object, is an
-/// error; `required` naming no property, or a `type` that isn't JSON Schema's, a warning. After
-/// `TypesPlugin` and `ValidationPlugin`.
+/// Validation's rules for types: a type's schema (`SchemaReadings.issues`): not JSON, or not an object,
+/// is an error; `required` naming no property, or a `type` that isn't JSON Schema's, a warning. A
+/// note's values against its types' fields (`FieldChecks`): each wrong value is an error (a needed
+/// field with no value is no issue), and a type whose JSON refers to a type that is gone carries a
+/// warning. Neither has an `affected:`: a type's change reaches the notes through the service
+/// (`TypeIndex.onChange`, then `ValidationEngine.recheck`), since a rule's `affected:` hears a commit
+/// before the index does. After `TypesPlugin` and `ValidationPlugin`.
 public struct TypeValidationPlugin: CanvasPlugin {
     public init() {}
     public var id: PluginID { "type-validation" }
@@ -80,6 +84,19 @@ public struct TypeValidationPlugin: CanvasPlugin {
         // Only the schema's text matters, never where the shape is: a drag of a thousand notes
         // checks none of them again for this.
         registrar.validateEveryShape(ignoringMoves: true) { shape, _ in SchemaReadings.reading(of: shape)?.issues ?? [] }
+        // The values of a note are a function of the values and the file's types, never of where it is.
+        // Without an editor (draw's check) there is no service, and it says nothing.
+        registrar.validateEveryShape(ignoringMoves: true) { shape, context in
+            guard let checks = context.service(FieldChecks.self) else { return [] }
+            let check = checks.check(of: shape)
+            guard check.isWrong else { return [] }
+            return check.problems.filter { $0.kind == .wrong }.map { ValidationIssue.error($0.message, field: $0.path.field) }
+        }
+        // The type that refers to a gone one carries the warning, not the notes of either.
+        registrar.validateEveryShape(ignoringMoves: true) { shape, context in
+            guard shape[TypeSchemaProperty.self] != nil, let checks = context.service(FieldChecks.self) else { return [] }
+            return checks.goneReferences(of: shape.id).map { ValidationIssue.warning(FieldCheckWords.refersToGone($0), field: "schema") }
+        }
     }
 }
 
