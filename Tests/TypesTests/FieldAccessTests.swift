@@ -34,6 +34,13 @@ private let order = FieldValues([
                     ["product": "Cup", "quantity": 2])
         expectEqual(order.setting("cancelled", at: FieldPath(field: "status")).value(at: FieldPath(field: "status")), "cancelled")
     },
+    test("a path that starts with an index changes nothing, and removing under a parent of the other shape too") {
+        expectEqual(order.setting("x", at: FieldPath([.index(0)])), order)
+        expectEqual(order.setting(nil, at: FieldPath([.index(0)])), order)
+        expectEqual(order.setting(nil, at: FieldPath(field: "status").key("city")), order, "nothing there to remove")
+        expectEqual(order.setting(nil, at: FieldPath(field: "shippingAddress").index(0)), order)
+        expectEqual(order.setting("x", at: FieldPath(field: "status").key("city")).value(at: FieldPath(field: "status").key("city")), "x", "a write replaces a parent of the other shape")
+    },
     test("an index equal to the count appends, and so does one past it: no holes") {
         let tags = FieldPath(field: "tags")
         expectEqual(order.setting("new", at: tags.index(2)).value(at: tags), ["gift", "mugs", "new"])

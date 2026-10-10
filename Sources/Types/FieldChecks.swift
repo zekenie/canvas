@@ -14,6 +14,9 @@ public final class FieldChecks {
     /// The answer for a shape, with `typing` left out. Reading it from a view tracks `revision`.
     public func check(of record: AnyShapeRecord) -> FieldCheck { .clean }
 
+    /// The whole answer for a shape, `typing` ignored: for queries.
+    public func fullCheck(of record: AnyShapeRecord) -> FieldCheck { .clean }
+
     /// Set by whoever has the caret in a field (a row, a card's cell, a panel's box) when it gets it, and
     /// nil when it leaves: one at a time, and only whoever set it clears it. The field being typed in is
     /// left out of every read, so what is half typed is never red.

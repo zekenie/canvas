@@ -2,7 +2,7 @@ import Foundation
 
 /// What a row is called, and the step a write to it is called, whichever surface writes it.
 public enum FieldName {
-    /// The field's own `title` when it is a non-empty string (as written: a title is the author's), else
+    /// The field's own `title` when it is a non-empty string (trimmed of surrounding spaces, otherwise as written: a title is the author's), else
     /// its key split into words, lower case: `shippingAddress`, `shipping_address` and `shipping-address`
     /// all read `shipping address`. Split on `_`, `-`, spaces and a step from lower case (or a digit) to
     /// upper (`lineItems`); a run of capitals stays one word and ends before a capital that starts a
@@ -10,7 +10,7 @@ public enum FieldName {
     /// word before them (`address2`).
     public static func words(of field: ChainField) -> String {
         if let title = field.schema["title"]?.string, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return title
+            return title.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         let split = words(in: field.name)
         return split.isEmpty ? field.name : split.joined(separator: " ")

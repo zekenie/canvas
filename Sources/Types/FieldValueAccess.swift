@@ -28,13 +28,16 @@ extension FieldValues {
     /// index equal to the count appends, and so does one past it (no holes). Setting empty at an index
     /// takes the element out and the rest shift up. A parent that holds a value of the other shape (a
     /// string where a group should be) is replaced: nothing is refused. At the root, an object is the new
-    /// whole and nil clears it; anything else changes nothing.
+    /// whole and nil clears it; anything else changes nothing. A path that starts with an index has no
+    /// row to be in: it changes nothing. Removing from under a parent of the other shape changes nothing
+    /// (there was nothing there).
     public func setting(_ value: JSONValue?, at path: FieldPath) -> FieldValues {
         let value = value.flatMap(Self.pruned)
         if path.isRoot {
             guard let value else { return FieldValues() }
             return value.objectValue.map { FieldValues($0) } ?? self
         }
+        guard path.field != nil else { return self }
         return FieldValues(Self.set(.object(values), steps: path.steps[...], to: value)?.objectValue ?? [:])
     }
 
@@ -49,10 +52,12 @@ extension FieldValues {
         let rest = steps.dropFirst()
         switch step {
         case .key(let key):
+            if value == nil, let current, current.objectValue == nil { return current }
             var members = current?.objectValue ?? [:]
             members[key] = set(members[key], steps: rest, to: value).flatMap(pruned)
             return members.isEmpty ? Optional.none : .object(members)
         case .index(let index):
+            if value == nil, let current, current.arrayValue == nil { return current }
             var elements = current?.arrayValue ?? []
             if elements.indices.contains(index) {
                 if let child = set(elements[index], steps: rest, to: value).flatMap(pruned) {

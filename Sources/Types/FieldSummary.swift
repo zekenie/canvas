@@ -81,7 +81,7 @@ public enum FieldSummary: Equatable, Sendable {
     }
 
     /// A group and another type's fields: the filled members' shown values in the members' order, a member
-    /// with more in it as its own summary (`2 items`), a ticked box as its name. A type that is gone has no
+    /// with more in it as its own summary (`2 items`), one edited as JSON left out (a sentence is not a value), a ticked box as its name. A type that is gone has no
     /// members: the stored object's string and number leaves, in key order.
     @MainActor
     private static func group(_ value: JSONValue, field: Resolved.Field, in book: FieldBook, locale: Locale) -> FieldSummary? {
@@ -95,8 +95,8 @@ public enum FieldSummary: Equatable, Sendable {
                 guard let held = members[member.field.name] else { continue }
                 if case .plain(.yesNo) = book.kind(of: member) {
                     if held == .bool(true) { shown.append(FieldName.words(of: member.field)) }
-                } else if let text = summary(of: held, field: member, in: book, locale: locale)?.text {
-                    shown.append(text)
+                } else if let found = summary(of: held, field: member, in: book, locale: locale), found != .json {
+                    shown.append(found.text)
                 }
             }
         }

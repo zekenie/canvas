@@ -77,7 +77,13 @@ public final class FieldWriter {
     /// A value no field names: the step `Remove <key>`, never coalesced.
     @discardableResult
     public func removeUnnamed(_ key: String, of shape: ShapeID) -> Bool {
-        commit(values(of: shape).setting(nil, at: FieldPath(field: key)), of: shape, name: "Remove \(key)", coalescing: nil)
+        commit(values(of: shape).setting(nil, at: FieldPath(field: key)), of: shape, name: Self.removeName(of: key), coalescing: nil)
+    }
+
+    /// `Remove Nickname`: the key's words, each with a capital, as the step of a named field is.
+    private static func removeName(of key: String) -> String {
+        let words = FieldName.words(of: ChainField(name: key, schema: .null)).split(whereSeparator: \.isWhitespace)
+        return (["Remove"] + words.map { $0.prefix(1).uppercased() + $0.dropFirst() }).joined(separator: " ")
     }
 
     private func commit(_ new: FieldValues, of shape: ShapeID, field key: String, step: FieldWriteStep) -> Bool {

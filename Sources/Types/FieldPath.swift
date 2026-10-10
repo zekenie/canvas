@@ -21,8 +21,8 @@ public struct FieldPath: Hashable, Sendable {
         steps = [.key(key)]
     }
 
-    /// A `SchemaViolation`'s path.
-    public init(_ components: [JSONPathComponent]) {
+    /// A `SchemaViolation`'s path. (The root is `FieldPath()`: `FieldPath([])` would be ambiguous.)
+    public init(violation components: [JSONPathComponent]) {
         steps = components.map { component in
             switch component {
             case .member(let name): .key(name)

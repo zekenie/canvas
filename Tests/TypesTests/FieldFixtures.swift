@@ -25,3 +25,10 @@ extension CanvasEditor {
     editor.addTypeLink(FieldFixtures.personID, to: FieldFixtures.employeeID)
     return editor
 }
+
+extension FieldFixtures {
+    /// `fieldEditor(scheduler:more:)`, spelled beside the shared fixtures.
+    @MainActor static func fieldEditor(scheduler: any Scheduler = ManualScheduler(), more: [any CanvasPlugin] = []) throws -> CanvasEditor {
+        try TypesTests.fieldEditor(scheduler: scheduler, more: more)
+    }
+}

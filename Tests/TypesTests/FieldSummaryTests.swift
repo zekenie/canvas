@@ -67,7 +67,8 @@ private let us = Locale(identifier: "en_US")
           "extra": {}}}
         """#)
         let value: JSONValue = ["name": "Ann", "tags": ["a", "b"], "lines": [["p": "x"], ["p": "y"]], "labels": ["size": "L", "weight": "heavy"], "gift": true, "extra": ["k": 1]]
-        expectEqual(s.summary(value, group), .items(["Ann", "a, b", "2 items", "size: L, +1", "gift", "edited as JSON in the panel"]))
+        expectEqual(s.summary(value, group), .items(["Ann", "a, b", "2 items", "size: L, +1", "gift"]))
+        expectEqual(s.summary(["extra": ["k": 1]], group), .empty("add f"), "a member edited as JSON adds no words to a group")
         expectEqual(s.summary(["name": "Ann", "gift": false], group), .items(["Ann"]), "unticked is nothing")
         expectEqual(s.summary(["gift": false], group), .empty("add f"), "and a group of nothing else reads empty")
         expectEqual(s.summary(["gift": true], group), .items(["gift"]))

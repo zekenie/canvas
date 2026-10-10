@@ -30,8 +30,8 @@ import Types
     },
     test("a validator's path: members are keys, elements indexes") {
         let violation = SchemaViolation(path: [.member("lineItems"), .element(1), .member("quantity")], keyword: "minimum", message: "")
-        expectEqual(FieldPath(violation.path), FieldPath(field: "lineItems").index(1).key("quantity"))
-        expectEqual(FieldPath([JSONPathComponent]()), FieldPath())
+        expectEqual(FieldPath(violation: violation.path), FieldPath(field: "lineItems").index(1).key("quantity"))
+        expectEqual(FieldPath(violation: [JSONPathComponent]()), FieldPath())
     },
     test("the pointer is JSON Pointer's, with `~` and `/` escaped, and empty for the root") {
         expectEqual(FieldPath(field: "lineItems").index(1).key("quantity").pointer, "/lineItems/1/quantity")
