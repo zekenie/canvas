@@ -972,8 +972,18 @@ public struct Transaction {
         guard board != self.board else { return update(id, body) }
         guard !climb(board).isTaken, var there = transaction(on: board), there.document[id] != nil else { return }
         there.isCascading = isCascading
+        // `there` reads the board as this transaction leaves it, sharing its storage with the copy this one
+        // has staged: a write would copy the board's whole array of shapes, again for every shape written
+        // (n shapes on a board of m cost n times m). This transaction lets go of its copy while `there`
+        // writes, and takes the result back (or the copy, if nothing changed).
+        let wasStaged = stagedBoards.removeValue(forKey: board) != nil
         there.update(id, body)
-        take(there, reserving: false)
+        if there.didChange {
+            take(there, reserving: false)
+        } else {
+            refused.formUnion(there.refused)
+            if wasStaged { stagedBoards[board] = there.document }
+        }
     }
 
     /// `update(_:on:_:)`, with the shape's props typed.

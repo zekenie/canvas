@@ -315,11 +315,14 @@ extension TypeIndex: EditorService {
             forgetLinks(of: id)
         }
         // A shape that only moved (a drag) has the schema, the name and the types it had.
-        for id in changes.added.union(changes.changed) where !changes.moved.contains(id) {
-            guard let record = editor.document[id] else { continue }
+        func hear(_ id: ShapeID) {
+            guard let record = editor.document[id] else { return }
             if kinds.contains(record.kind), read(record, registry: registry, renamed: &renamed) { changed.insert(id) }
             if typeableKinds.contains(record.kind) { readLinks(record) }
         }
+        // (Two passes, not a set of both: a drag of everything makes none, and a set of its ids costs more than it saves.)
+        for id in changes.added where !changes.moved.contains(id) { hear(id) }
+        for id in changes.changed where !changes.moved.contains(id) { hear(id) }
         // A board taken or brought back holds thousands of shapes, and few are types: the kind first.
         for id in changes.elsewhere {
             guard let record = file.record(id) else {

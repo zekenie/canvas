@@ -4,7 +4,9 @@ import CanvasTesting
 import Composition
 import CoreGraphics
 import Foundation
+import Geometry
 import LanguageModels
+import Mentions
 import Selection
 import StickyNotes
 import TestKit
@@ -24,6 +26,10 @@ extension Budget {
     /// What renaming a type that 1,000 notes are instances of adds to the commit, over renaming one
     /// that none are: the instances' chips made again (a set of ids forgotten, one redraw).
     static let renameType = 1.0
+    /// What a frame of 1,000 instances in view at 40%, with their chips, costs after a drag of all of them over the
+    /// same frame still: the chips are laid out where the shapes are, never made again for a move (the thread's CPU;
+    /// release, 0.5 ms more, against 6.7 when a move made each shape's chips again).
+    static let typesDragFrame = 3.0
 }
 
 /// The generated board's notes made types (every fiftieth), and instances (every sixth that isn't):
@@ -112,5 +118,89 @@ extension Budget {
                 expect(withInstances - withNone < Budget.renameType, "renaming a type with \(instances.count) instances over \(size) shapes took \(withInstances) ms, against \(withNone)")
             }
         }
+    },
+
+    test("a keystroke in the /is-a picker over 10,000 notes, the @ that opens it included, costs what the types are: a plain note is passed over by one lookup") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        for size in sizes {
+            let (document, types, _, _) = typedBoard(shapes: size)
+            let editor = CanvasEditor(registry: try Registry(plugins: shippedPlugins(pasteboard)), document: document, scheduler: ManualScheduler())
+            let mentions = try require(editor.mentions), index = try require(editor.types)
+            let plain = document.shapes.first { (record: AnyShapeRecord) -> Bool in
+                record.kind == StickyNote.kind && record[TypeSchemaProperty.self] == nil && record[IsAProperty.self] == nil
+            }
+            let owner = try require(plain).id
+            // What `/is-a` offers: the kinds that can be types, the rule `admits`.
+            let registry = editor.registry
+            let kinds = Set(registry.kinds.filter { registry.canBeType($0) })
+            let rule: @MainActor (ShapeID) -> Bool = { index.admits($0, for: owner) }
+            let open = { _ = MentionPicker(at: 0, mentions: mentions, scope: AnyMentionable.self, owner: owner, kinds: kinds, admitting: rule) }
+            let first = median(runs: 1, onThread: true, open)
+            let opening = median(runs: 21, onThread: true, open)
+            let picker = MentionPicker(at: 0, mentions: mentions, scope: AnyMentionable.self, owner: owner, kinds: kinds, admitting: rule)
+            var worst = (query: "@", ms: opening)
+            for query in ["t", "ty", "typ", "type", "type 1", "tpye 12", "note", "zzzzq"] {
+                let typed = "@" + query as NSString, before = "@" + query.dropLast() as NSString
+                let ms = median(runs: 21, prepare: {
+                    _ = picker.read(before, selection: NSRange(location: before.length, length: 0), isEdit: true)
+                }, onThread: true) {
+                    _ = picker.read(typed, selection: NSRange(location: typed.length, length: 0), isEdit: true)
+                }
+                if ms > worst.ms { worst = ("@" + query, ms) }
+            }
+            _ = picker.read("@type 1", selection: NSRange(location: 7, length: 0), isEdit: true)
+            expect(picker.highlightedCandidate.map { index.isType($0.id) } == true, "a type is what it offers")
+            report(String(format: "%6d shapes, %d types, the /is-a picker: the first @ %6.3f ms, then %6.3f ms, the slowest keystroke %6.3f ms (\"%@\") (budget %.0f)",
+                          size, types.count, first, opening, worst.ms, worst.query, Budget.pickerKeystroke))
+            if holdsToBudgets {
+                expect(opening < Budget.pickerKeystroke, "the @ on /is-a's line over \(size) shapes took \(opening) ms")
+                expect(worst.ms < Budget.pickerKeystroke, "a keystroke in /is-a's picker (\(worst.query)) over \(size) shapes took \(worst.ms) ms")
+            }
+        }
+    },
+
+    test("a frame of a thousand instances in view with their chips, each after a drag of all of them, costs little more than the same frame still") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        let count = holdsToBudgets ? 1_000 : 300
+        var type = ShapeRecord(StickyNote(frame: CGRect(x: -400, y: 0, width: 200, height: 200), text: MentionText(plain: "A person")))
+        type[TitleProperty.self] = "Person"
+        type[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter)
+        var shapes = [AnyShapeRecord(type)]
+        var instances: [ShapeID] = []
+        for index in 0..<count {
+            let frame = CGRect(x: CGFloat(index % 40) * 70, y: CGFloat(index / 40) * 50, width: 60, height: 40)
+            var note = ShapeRecord(StickyNote(frame: frame, text: MentionText(plain: "Ann \(index)")))
+            note[IsAProperty.self] = [TypeLink(type.id)]
+            shapes.append(AnyShapeRecord(note))
+            instances.append(note.id)
+        }
+        let document = CanvasDocument(shapes: shapes)
+        @MainActor func frame(moving: Bool) throws -> Double {
+            let editor = CanvasEditor(registry: try Registry(plugins: shippedPlugins(pasteboard)), document: document, scheduler: ManualScheduler())
+            editor.viewportDidResize(to: viewport)
+            editor.camera = Camera(origin: .zero, zoom: 0.4)
+            var step = 0.0
+            let pan = { @MainActor () -> Void in
+                step = step == 0 ? 1 : 0
+                if moving {
+                    // A drag of every instance in view: the commit (not measured) and the frame after it, whose
+                    // chips must not be made again, only laid out where the shapes are.
+                    editor.transact("Move") { $0.translate(Set(instances), by: CGPoint(x: step == 0 ? -1 : 1, y: 0)) }
+                } else {
+                    editor.camera = Camera(origin: CGPoint(x: step / 0.4, y: 0), zoom: 0.4)
+                }
+            }
+            draw(editor, into: context, size: viewport)
+            draw(editor, into: context, size: viewport)
+            return median(runs: 11, prepare: { pan() }, onThread: true) { draw(editor, into: context, size: viewport) }
+        }
+        let still = try frame(moving: false), dragged = try frame(moving: true)
+        report(String(format: "%6d instances in view at 40%%, all dragged: the frame after each event %5.1f ms, %.1f more than still %5.1f (budget %.0f more)",
+                      count, dragged, dragged - still, still, Budget.typesDragFrame))
+        if holdsToBudgets { expect(dragged - still < Budget.typesDragFrame, "dragging \(count) instances added \(dragged - still) ms to a frame") }
     },
 ])

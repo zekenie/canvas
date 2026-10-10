@@ -26,6 +26,8 @@ final class AdornmentState {
     /// Dropped for the shapes each commit names and `adornmentsDidChange` names, and for all of them
     /// as the canvas starts drawing skeletons.
     private var kept: [ShapeID: LaidOutAdornments] = [:]
+    /// The "+N" faces made, by text and place: the same on every shape.
+    private var overflowFacesKept: [OverflowKey: AdornmentStyle.Face] = [:]
     /// The revision `kept` is up to date with. Read before this service has heard of a commit (by
     /// a service that hears first: Selection, looking for a button under a still pointer), what's
     /// asked for is made afresh and not kept, so it's never stale and nothing else is thrown away.
@@ -77,7 +79,7 @@ final class AdornmentState {
             adornment.label.compactFace.map { AdornmentStyle.face(of: $0, in: adornment.id.placement) }
         }
         let overflowFaces: [AdornmentStyle.Face?] = shown.map { adornment in
-            adornment.overflowLabel.map { AdornmentStyle.face(of: $0, in: adornment.id.placement) }
+            adornment.overflowLabel.map { overflowFace(of: $0, in: adornment.id.placement) }
         }
         #if DEBUG
         facesMade += faces.count + compactFaces.filter { $0 != nil }.count + overflowFaces.filter { $0 != nil }.count
@@ -93,6 +95,21 @@ final class AdornmentState {
     /// These shapes' labels are made again when they're next asked for.
     func forget(_ ids: Set<ShapeID>) {
         for id in ids { kept[id] = nil }
+    }
+
+    /// A group's "+N" face: the same text, in the same place, is the same face on every shape, so it is made
+    /// once (measuring text is what a face costs).
+    private func overflowFace(of label: AdornmentLabel, in placement: AdornmentPlacement) -> AdornmentStyle.Face {
+        let key = OverflowKey(text: label.text ?? "", placement: placement)
+        if let known = overflowFacesKept[key] { return known }
+        let face = AdornmentStyle.face(of: label, in: placement)
+        if overflowFacesKept.count < 64 { overflowFacesKept[key] = face }
+        return face
+    }
+
+    private struct OverflowKey: Hashable {
+        let text: String
+        let placement: AdornmentPlacement
     }
 
     private func candidates(for kind: ShapeKind) -> [AdornmentContribution] {
@@ -191,7 +208,11 @@ final class AdornmentState {
 extension AdornmentState: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         heardRevision = editor.revision
-        forget(changes.shapeIDs)
+        // A shape that only moved (a drag) has the labels it had: they are laid out against its bounds when
+        // asked, never kept at a place. Everything else a commit touched is made again.
+        for id in changes.added { kept[id] = nil }
+        for id in changes.removed { kept[id] = nil }
+        for id in changes.changed where !changes.moved.contains(id) { kept[id] = nil }
     }
 
     /// Another board is shown: what the board left's shapes showed goes, and the shown board's
