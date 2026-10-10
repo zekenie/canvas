@@ -3740,6 +3740,12 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   read from its shape alone leaves `affected` out. A service that reads the table of contents as
   it hears of a commit, before the table of contents does, gets every row's marks read again,
   since only hearing of the commit says which it affects.
+
+  A rule's state can also change with no commit at all (a caret leaving a row, a type edited
+  after the engine heard the commit). `editor.validation?.recheck(ids)` checks those shapes
+  again: on the board shown at the next read, with the ring redrawn, on a board the engine keeps
+  when it is taken back. It tells the table of contents to make their rows again itself, since
+  the table of contents has asked `affected(by:)` by the time a later service can name them.
 - **Several marks** on one row stand side by side: the kind's, then every kind's, each in plugin
   order (`ContentsMarkContribution`, contributed for a kind, is a kind's own).
 - **`where`** keeps a mark for every shape to the kinds that opted into what it marks, as an
