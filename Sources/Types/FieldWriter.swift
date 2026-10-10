@@ -1,9 +1,8 @@
 import Canvas
 
 // The one writer of a shape's `fieldValues`: every surface that changes a value (a row, a card, the fold,
-// the panel) goes through it, so a field is changed one way and its undo step is named one way. This is
-// the plain form (K0): a transaction named for the field, coalesced for each field, with no more than the
-// core already does for a shape that can't change.
+// the panel) goes through it, so a field is changed one way and its undo step is named one way. It is a
+// door and no more: it asks whether the shape can change, names the step, and makes one `update`.
 
 /// The run of commits one top-level field of one shape makes while it is typed in: one undo step.
 public struct FieldRunKey: Hashable, Sendable {
@@ -27,11 +26,14 @@ public enum FieldWriteStep: @unchecked Sendable {
     case card(key: AnyHashable)
 }
 
+/// Called from a key or mouse handler, never inside a transaction or while an undo is applied (`transact`
+/// refuses both).
 @MainActor
 public final class FieldWriter {
-    private weak var editor: CanvasEditor?
+    /// Internal: the panel builds a form's context and asks `isReadOnly` through it.
+    weak var editor: CanvasEditor?
 
-    public init(editor: CanvasEditor) {
+    init(editor: CanvasEditor) {
         self.editor = editor
     }
 
@@ -40,13 +42,14 @@ public final class FieldWriter {
         editor?.document[shape]?[FieldValuesProperty.self] ?? FieldValues()
     }
 
-    /// False and nothing changed for a shape that can't change (read-only: the core shakes it), for a shape
-    /// not on the board shown, and for a path that starts with no key. A write that changes nothing makes
-    /// no step and is true.
+    /// True once the value stands: written, or already there (a write that changes nothing makes no commit
+    /// and no step). False, and nothing changed, for a shape that can't change (the core shakes it), a shape
+    /// not on the board shown, a kind that holds no values, and a path that starts with no key (the root
+    /// included).
     @discardableResult
     public func set(_ value: JSONValue?, at path: FieldPath, of shape: ShapeID, step: FieldWriteStep = .ownRun) -> Bool {
-        guard let key = path.field else { return false }
-        return commit(values(of: shape).setting(value, at: path), of: shape, field: key, step: step)
+        guard let field = path.field else { return false }
+        return apply(shape, field: field, step: step) { $0 = $0.setting(value, at: path) }
     }
 
     /// `set(FieldText.value(from: typed, as: kind), …)`.
@@ -61,23 +64,22 @@ public final class FieldWriter {
         set(nil, at: path, of: shape, step: step)
     }
 
-    /// A pair's name: moves the value to the new key in the same commit. False when `to` is taken, or
-    /// when there is no pair of that name.
+    /// A pair's name: moves the value to the new key in the same commit. False when there is no pair of
+    /// that name, when `new` is empty, equal to `key` or taken, and for the root (a field's own key is
+    /// never renamed); nothing changed then.
     @discardableResult
     public func rename(_ key: String, to new: String, under parent: FieldPath, of shape: ShapeID, step: FieldWriteStep = .ownRun) -> Bool {
-        guard let field = parent.field else { return false }
+        guard let field = parent.field, !new.isEmpty, new != key else { return false }
         let current = values(of: shape)
-        guard let members = current.value(at: parent)?.objectValue, let held = members[key] else { return false }
-        if new == key { return true }
-        guard members[new] == nil else { return false }
-        let moved = current.setting(held, at: parent.key(new)).setting(nil, at: parent.key(key))
-        return commit(moved, of: shape, field: field, step: step)
+        guard let held = current.value(at: parent.key(key)), current.value(at: parent.key(new)) == nil else { return false }
+        return apply(shape, field: field, step: step) { $0 = $0.setting(held, at: parent.key(new)).setting(nil, at: parent.key(key)) }
     }
 
-    /// A value no field names: the step `Remove <key>`, never coalesced.
+    /// A value no field names: the step `Remove <key>`, never coalesced. It does not ask whether a field
+    /// names the key (its caller lists only the keys none does).
     @discardableResult
     public func removeUnnamed(_ key: String, of shape: ShapeID) -> Bool {
-        commit(values(of: shape).setting(nil, at: FieldPath(field: key)), of: shape, name: Self.removeName(of: key), coalescing: nil)
+        apply(shape, name: Self.removeName(of: key), key: nil) { $0 = $0.setting(nil, at: FieldPath(field: key)) }
     }
 
     /// `Remove Nickname`: the key's words, each with a capital, as the step of a named field is.
@@ -86,22 +88,29 @@ public final class FieldWriter {
         return (["Remove"] + words.map { $0.prefix(1).uppercased() + $0.dropFirst() }).joined(separator: " ")
     }
 
-    private func commit(_ new: FieldValues, of shape: ShapeID, field key: String, step: FieldWriteStep) -> Bool {
+    private func apply(_ shape: ShapeID, field: String, step: FieldWriteStep, _ change: (inout FieldValues) -> Void) -> Bool {
         switch step {
-        case .ownRun: commit(new, of: shape, name: stepName(of: key, on: shape), coalescing: FieldRunKey(shape: shape, field: key))
-        case .card(let card): commit(new, of: shape, name: nil, coalescing: card)
+        case .ownRun: apply(shape, name: stepName(of: field, on: shape), key: AnyHashable(FieldRunKey(shape: shape, field: field)), change)
+        case .card(let card): apply(shape, name: nil, key: card, change)
         }
     }
 
-    private func commit(_ new: FieldValues, of shape: ShapeID, name: String?, coalescing key: AnyHashable?) -> Bool {
+    /// The one door: a shape that can't change is refused before a transaction (the core shakes it, and
+    /// there is no empty step); else one `update` of the shape's record, which keeps it only if it differs.
+    private func apply(_ shape: ShapeID, name: String?, key: AnyHashable?, _ change: (inout FieldValues) -> Void) -> Bool {
         guard let editor, let record = editor.document[shape], editor.registry.isTypeable(record.kind) else { return false }
-        let isReadOnly = editor.isReadOnly(shape)
-        if !isReadOnly, new == values(of: shape) { return true }
-        // A shape that can't change refuses the write, and the core shakes it.
-        editor.transact(name, coalescing: key) { transaction in
-            transaction.update(shape) { $0[FieldValuesProperty.self] = new }
+        if editor.isReadOnly(shape) {
+            editor.refuseChanges(to: [shape])
+            return false
         }
-        return !isReadOnly
+        editor.transact(name, coalescing: key) { transaction in
+            transaction.update(shape) { record in
+                var values = record[FieldValuesProperty.self] ?? FieldValues()
+                change(&values)
+                record[FieldValuesProperty.self] = values.isEmpty ? nil : values
+            }
+        }
+        return true
     }
 
     /// `Change Shipping Address`: of the field the key names on this shape's types, else of the key as it is.

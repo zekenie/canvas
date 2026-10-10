@@ -83,7 +83,7 @@ private let email = FieldPath(field: "email"), name = FieldPath(field: "name")
         expectEqual(values(editor, id)?.value(at: labels), ["length": "L", "color": "red"])
         expect(!writer.rename("length", to: "color", under: labels, of: id), "taken")
         expect(!writer.rename("nobody", to: "x", under: labels, of: id), "no such pair")
-        expect(writer.rename("length", to: "length", under: labels, of: id), "the same name changes nothing")
+        expect(!writer.rename("length", to: "length", under: labels, of: id), "the same name changes nothing")
         expectEqual(values(editor, id)?.value(at: labels), ["length": "L", "color": "red"])
     },
     test("a value no field names is removed in a step of its own, named for it, never joined to another") {
