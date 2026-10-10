@@ -93,6 +93,8 @@ import Validation
         selection-queries    query word :selected
         query-commands       command line query · command line query-vocabulary
         neighbors            service NeighborState · outlines
+        arrow-lights         neighbor light · neighbor light
+        mention-lights       neighbor light · neighbor light
         moving               /move-to /move-near → every shape · ContentsMoves
         reordering           ShapeContextMenus
         """)

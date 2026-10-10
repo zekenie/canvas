@@ -19,7 +19,8 @@ import PackageDescription
 //     surface      -> foundation, surface                what the others show themselves on or build
 //                                                        on (keys, the selection, the panel, menus, the
 //                                                        table of contents, adornments, slash commands,
-//                                                        the graph, the language model, prose maps, the
+//                                                        the graph, the lights on a hovered shape's
+//                                                        neighbors, the language model, prose maps, the
 //                                                        query engine and English-to-query translation: every
 //                                                        plugin may run them); declares extension
 //                                                        points; knows no concern
@@ -98,13 +99,19 @@ let package = Package(
         .target(name: "ProseMaps", dependencies: ["Canvas", "LanguageModels"]),               // layer: surface
         .target(name: "Topology", dependencies: ["Canvas"]),                                  // layer: surface
         .target(name: "Find", dependencies: ["Canvas", "DetailPanel", "FuzzyMatching", "Geometry", "Keyboard", "Selection", "Topology"]), // layer: surface
+        // Neighbors: a surface an edge's owner shows its edges on. Hovering a shape, on the canvas or by its row in the table of contents
+        // (Selection's `hovered`, and `hoveredElsewhere` for a row of another board), outlines every shape connected to it in a color for each
+        // way, through the core's tinted outlines. What counts as connected is a light, a color and a query, which the plugin that owns the edges
+        // contributes (Connections' arrows, Mentions' mentions) and Queries answers; the file says where a shape on another board is drawn, and
+        // Topology when the hovered shape's edges change.
+        .target(name: "Neighbors", dependencies: ["Canvas", "Queries", "Selection", "Topology"]), // layer: surface
 
         .target(name: "Validation", dependencies: ["Canvas", "DetailPanel", "TableOfContents"]), // layer: concern
         .target(name: "Clipboard", dependencies: ["Canvas", "ContextMenus", "Geometry", "Keyboard", "Selection"]), // layer: concern
         .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Find", "SlashCommands", "TableOfContents", "Validation"]),  // layer: concern
         .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "SlashCommands", "TableOfContents"]), // layer: concern
-        .target(name: "Connections", dependencies: ["Canvas", "Find", "Geometry", "Publishing", "Selection", "TableOfContents", "TextEditing", "Topology"]), // layer: concern
-        .target(name: "Mentions", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Find", "FuzzyMatching", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: concern
+        .target(name: "Connections", dependencies: ["Canvas", "Find", "Geometry", "Neighbors", "Publishing", "Selection", "TableOfContents", "TextEditing", "Topology"]), // layer: concern
+        .target(name: "Mentions", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Find", "FuzzyMatching", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: concern
         .target(name: "Publishing", dependencies: ["Adornments", "Canvas", "ContextMenus", "DetailPanel", "Selection", "SlashCommands", "TableOfContents", "Titles", "Topology"]), // layer: concern
         .target(name: "Boards", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "TableOfContents", "Titles"]), // layer: concern
         .target(name: "Snapping", dependencies: ["Canvas", "Geometry"]),                      // layer: concern
@@ -123,7 +130,7 @@ let package = Package(
         .target(name: "Subboards", dependencies: ["Boards", "Canvas", "Connections", "DetailPanel", "Keyboard", "Mentions", "TableOfContents", "Titles", "Transform"]), // layer: vertical
         .target(name: "Frames", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Selection", "TableOfContents", "Titles", "Transform"]), // layer: vertical
         // Jump To (⌘K): a feature no kind opts into and nothing imports, as Reordering is one: a vertical, which
-        // lists the titled shapes Titles names (their tint injected by Composition, from Mentions), goes to one as Boards' crumbs do
+        // lists the titled shapes Titles names (each tinted as its kind is, the core's `registry.label(of:)`), goes to one as Boards' crumbs do
         // (Boards' `follow`), and shows its list in TextEditing's caret list.
         .target(name: "JumpTo", dependencies: ["Boards", "Canvas", "FuzzyMatching", "Geometry", "Keyboard", "TextEditing", "Titles", "Topology"]), // layer: vertical
         .target(name: "References", dependencies: ["Canvas", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Mentions", "Publishing", "Queries", "QueryLanguage", "QueryTranslation", "Selection", "TableOfContents", "TextEditing", "Topology", "Validation"]), // layer: vertical
@@ -131,12 +138,6 @@ let package = Package(
         // commands that move a shape into a frame, onto a subboard's board or beside a shape, placed as `canvas draw` places one (DrawScript),
         // and the table of contents' drops that move shapes into a frame, onto a subboard's board or out of frames (`ContentsMoves`).
         .target(name: "Moving", dependencies: ["Canvas", "DrawScript", "Geometry", "SlashCommands", "TableOfContents"]), // layer: vertical
-        // Neighbors: a feature no kind opts into and nothing imports, as Jump To and Moving are: hovering a shape, on the canvas or by its row in
-        // the table of contents (Selection's `hovered`, and `hoveredElsewhere` for a row of another board), outlines every shape connected to it in a
-        // color for each way, through the core's tinted outlines. What counts as connected is a query, which Composition writes and Queries answers;
-        // the file says where a shape on another board is drawn, and Topology when the hovered shape's edges change.
-        .target(name: "Neighbors", dependencies: ["Canvas", "Queries", "Selection", "Topology"]), // layer: vertical
-
 
         // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
         .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus"], path: "Examples/Reordering"),             // layer: vertical
@@ -174,8 +175,8 @@ let package = Package(
         .executableTarget(name: "ProseMapsTests", dependencies: ["Canvas", "CanvasTesting", "LanguageModels", "ProseMaps", "TestKit"], path: "Tests/ProseMapsTests"), // layer: test
         .executableTarget(name: "TitlesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Find", "Geometry", "Keyboard", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Validation"], path: "Tests/TitlesTests"), // layer: test
         .executableTarget(name: "PortsTests", dependencies: ["Canvas", "CanvasTesting", "Connections", "Geometry", "Keyboard", "Selection", "TestKit", "Topology"], path: "Tests/PortsTests"), // layer: test of Connections
-        .executableTarget(name: "ArrowPortsTests", dependencies: ["Canvas", "CanvasTesting", "Connections", "Geometry", "Keyboard", "Selection", "TableOfContents", "TestKit", "Topology"], path: "Tests/ArrowPortsTests"), // layer: test of Connections
-        .executableTarget(name: "MentionsTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "CanvasUI", "ContextMenus", "DetailPanel", "Find", "Geometry", "Keyboard", "Mentions", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Validation"], path: "Tests/MentionsTests"), // layer: test
+        .executableTarget(name: "ArrowPortsTests", dependencies: ["Canvas", "CanvasTesting", "Connections", "Geometry", "Keyboard", "Neighbors", "Selection", "TableOfContents", "TestKit", "Topology"], path: "Tests/ArrowPortsTests"), // layer: test of Connections
+        .executableTarget(name: "MentionsTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "CanvasUI", "ContextMenus", "DetailPanel", "Find", "Geometry", "Keyboard", "Mentions", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Validation"], path: "Tests/MentionsTests"), // layer: test
         .executableTarget(name: "BoardsTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasTesting", "ContextMenus", "DetailPanel", "Keyboard", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles"], path: "Tests/BoardsTests"), // layer: test
         .executableTarget(name: "SubboardsTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasTesting", "CanvasUI", "Connections", "ContextMenus", "DetailPanel", "Keyboard", "Mentions", "Selection", "SlashCommands", "Subboards", "TableOfContents", "TestKit", "Titles", "Topology", "Transform"], path: "Tests/SubboardsTests"), // layer: test
         .executableTarget(name: "FramesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "ContextMenus", "DetailPanel", "Frames", "Geometry", "Keyboard", "Mentions", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Transform"], path: "Tests/FramesTests"), // layer: test

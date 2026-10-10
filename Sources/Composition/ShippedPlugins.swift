@@ -106,9 +106,11 @@ public enum ShippedPlugins {
             QueriesPlugin(), QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule), TitleQueriesPlugin(), BoardQueriesPlugin(), MentionQueriesPlugin(), ValidationQueriesPlugin(),
             SelectionQueriesPlugin(),
             QueryCommandsPlugin(),
-            // Hover a shape, on the canvas or by its row in the table of contents, and what it connects to is outlined by how (NeighborLights): after the
-            // query plugins, whose engine it asks, and Selection and the table of contents, whose hovers it follows.
-            NeighborsPlugin(lights: NeighborLights.shipped),
+            // Hover a shape, on the canvas or by its row in the table of contents, and what it connects to is outlined by how: after the
+            // query plugins, whose engine it asks, and Selection and the table of contents, whose hovers it follows. Then the lights,
+            // from the plugins that own the edges, in the order a shape's rings go: arrows' (points to, pointed to by), then
+            // mentions' (mentions, mentioned by).
+            NeighborsPlugin(), ArrowLightsPlugin(), MentionLightsPlugin(),
             // `/move-to` and `/move-near`: a shape moved into a frame, onto a subboard's board or beside a shape, on any board,
             // placed as `canvas draw` places one. After every plugin whose every-shape commands a note lists before them.
             MovingPlugin(),

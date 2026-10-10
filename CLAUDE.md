@@ -79,6 +79,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [language models](.claude/rules/language-models.md): the model plugins ask, the Anthropic key and Settings, `--ask`'s model.
 - [prose maps](.claude/rules/prose-maps.md): which words of a text say which part of a lower-level text (a schema card's highlights): targets, maps, asking the model, the request.
 - [find](.claude/rules/find.md): ⌘F: the `FindableTexts` point and its contributors, the index, the search off the main actor, scope and order, the highlights, the panel in the detail panel's place.
+- [neighbors](.claude/rules/neighbors.md): hovering a shape, on the canvas or in the table of contents, outlines what's connected to it in a color for each way (the lights, each a color and a query, contributed by the plugin that owns the edges); the subject, asking and asking again, where a match is drawn, rings, and the core's tinted outlines it hands.
 
 **Concerns**
 - [validation](.claude/rules/validation.md): rules and issues, the schema rule, what each commit re-checks, rings, where issues show.
@@ -104,6 +105,5 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [frames](.claude/rules/frames.md): a region that holds shapes, the Frame tool, and Create Frame.
 - [jump to](.claude/rules/jump-to.md): ⌘K, a palette that goes to a shape by its title and where it is; the catalog, the ranking over the containment tree, the palette and its list, picks.
 - [moving](.claude/rules/moving.md): `/move-to` and `/move-near`, the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board; the table of contents' drops that move shapes; what each takes, where it lands (draw's solver), the commit.
-- [neighbors](.claude/rules/neighbors.md): hovering a shape, on the canvas or in the table of contents, outlines what's connected to it in a color for each way (the lights, each a color and a query); the subject, asking and asking again, where a match is drawn, rings, and the core's tinted outlines it hands.
 - [references](.claude/rules/references.md): a pill that stands for a public shape: its props and writers, its look in every state, what it stands for, going to the original, its row and panel.
 - Sticky notes have no file of their own: [editing](.claude/rules/editing.md) holds a note's editor against its render, and the files of what notes opt into hold the rest. Reordering (`Examples/`) is in [context menus](.claude/rules/context-menus.md).
