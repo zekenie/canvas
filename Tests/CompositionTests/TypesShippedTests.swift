@@ -465,4 +465,50 @@ private let petAnswer = """
         expectEqual(editor.types?.instances(of: person), [ann, alone.id])
         expectEqual(editor.types?.instances(of: copyOfPerson), [copyOfAnn])
     },
+    test("a note made a type is 320 wide, with its rows, on the next frame once the read lands; a note that is one has the room for them") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let model = ScriptedLanguageModel(), scheduler = ManualScheduler()
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler, pasteboard: pasteboard, model: model)
+        let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "a pet in my household"))
+        let ann = editor.add(StickyNote(frame: CGRect(x: 500, y: 100, width: 200, height: 200), text: "Ann"))
+        model.holdsAnswers = true
+        model.queue(petAnswer)
+        editor.makeType(note)
+        expectEqual(editor.shapeContext.frame(of: note)?.width, 200, "white, with nothing under its words until the read starts")
+        scheduler.advance(by: .zero)
+        expectEqual(editor.typeSync?.status(of: note), .updating(.schema), "the read starts on the next turn, with no wait")
+        expectEqual(editor.shapeContext.frame(of: note)?.width, 320, "the bars")
+        spinRunLoop(until: { model.waiting == 1 })
+        model.release()
+        spinRunLoop(until: { editor.typeSync?.status(of: note) == .idle })
+        expectEqual(editor.rowBook?.rows(of: note).map(\.name), ["name"])
+        let paper = try require(editor.shapeContext.frame(of: note))
+        expectEqual(paper.width, 320)
+        _ = renderBitmap(editor, size: CGSize(width: 900, height: 500))
+        editor.addTypeLink(note, to: ann)
+        let room = try require(editor.shapeContext.frame(of: ann))
+        expectEqual(room.width, 320)
+        expectEqual(editor.rowBook?.rows(of: ann).map(\.name), ["name"])
+        expectEqual(editor.document[ann]?.box?.width, 200, "what is stored is as it was")
+    },
+    test("a draw of a type and an instance in one script reports the instance's laid-out frame, and the notes are laid out so") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        let schema = #"{"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}, "city": {"type": "string"}}}"#
+        let drew = try drawnInProcess("""
+            sticky-note "Person" text: "A person: a name, an email and a city" schema: "\(scripted(schema))"
+            sticky-note "Ann" text: "Ann" is: "Person" right of "Person"
+            """, on: editor)
+        let rows = try require(drew["changes"]?.arrayValue)
+        expectEqual(rows.count, 2)
+        let size = rows.map { $0["at"]?.arrayValue?.last?.arrayValue?.compactMap(\.numberValue) }
+        let ann = try require(editor.document.shapes.first { $0[TitleProperty.self] == "Ann" })
+        let laidOut = try require(editor.shapeContext.frame(of: ann.id))
+        expectEqual(size[1], [laidOut.width, laidOut.height].map(Double.init), "the size draw reports is the one the note is laid out at")
+        expectEqual(laidOut.width, 320)
+        expect(laidOut.height > 200 - 1, "room for its words and its rows: \(laidOut)")
+    },
 ])

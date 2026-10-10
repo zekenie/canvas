@@ -1,0 +1,236 @@
+import Adornments
+import AppKit
+import Canvas
+import CoreText
+
+// A shape's rows drawn by its kind's render (`drawTypeRows`): what a type's note has under its words
+// (a row for each field, its kind at the right; or the reading, the reason it failed), and, on a note that
+// is one, the names of its fields. Text is kept as Core Text lines, not typeset each frame; a type's chip
+// in a row is Adornments' own, drawn as the chip above a note is.
+
+extension TypesStyle {
+    /// A note's paper is light in both appearances, so the rows' inks are fixed colors, as the highlights
+    /// are: the note's ink, and its strengths.
+    static let rowInk = NSColor(white: 0.12, alpha: 1)
+    static let faintStrength: CGFloat = 0.45
+    static let mutedStrength: CGFloat = 0.55
+    /// The rule under a type's words, and the reading state's bars: black at these strengths.
+    static let rowsRule = CGColor(gray: 0, alpha: 0.12)
+    static let spotBar = CGColor(gray: 0, alpha: 0.10)
+    /// A needed field's dot: the same amber as a rule's highlight and a warning.
+    static let neededInk = NSColor(srgbRed: 0.96, green: 0.62, blue: 0.04, alpha: 1)
+    /// A wrong value's red.
+    static let wrongInk = NSColor(srgbRed: 0.86, green: 0.15, blue: 0.15, alpha: 1)
+    /// An action's words (`Retry`, `Settings…`): the accent blue.
+    static let linkInk = NSColor(srgbRed: 0.0, green: 0.38, blue: 0.85, alpha: 1)
+    /// A tick for rows more than one type gave.
+    static let manyTick = grayChip
+}
+
+/// The lines of text rows draw, kept by their text, style and the width they are cut to: Core Text lines,
+/// made once and drawn each frame. 8,192 are kept, then the lot is let go.
+@MainActor
+enum FieldLines {
+    enum Style: Int, CaseIterable {
+        case name, faint, kind, muted, value, empty, needed, wrong, link
+    }
+
+    struct Line {
+        let line: CTLine
+        let width: CGFloat
+        let ascent: CGFloat
+        let descent: CGFloat
+    }
+
+    private struct Key: Hashable {
+        let text: String
+        let style: Style
+        let cut: CGFloat
+    }
+
+    static let capacity = 8_192
+    private static var kept: [Key: Line] = [:]
+    private static var attributes: [Style: [NSAttributedString.Key: Any]] = [:]
+
+    #if DEBUG
+    /// How many lines have been made (debug builds): a frame that draws what it drew makes none.
+    static private(set) var made = 0
+    #endif
+
+    /// `text` in `style`, cut to `width` with an ellipsis when it is wider (never cut for nil).
+    static func line(_ text: String, _ style: Style, cutTo width: CGFloat? = nil) -> Line {
+        let key = Key(text: text, style: style, cut: width ?? -1)
+        if let known = kept[key] { return known }
+        if kept.count >= capacity { kept.removeAll(keepingCapacity: true) }
+        #if DEBUG
+        made += 1
+        #endif
+        let made = make(text, style, cutTo: width)
+        kept[key] = made
+        return made
+    }
+
+    static func width(of text: String, _ style: Style) -> CGFloat { line(text, style).width }
+
+    /// Draws `line` with its left at `x`, centered on `midY` (the context has y down).
+    static func draw(_ line: Line, at x: CGFloat, midY: CGFloat, in cg: CGContext) {
+        cg.saveGState()
+        cg.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+        cg.textPosition = CGPoint(x: x, y: midY + (line.ascent - line.descent) / 2)
+        CTLineDraw(line.line, cg)
+        cg.textMatrix = .identity
+        cg.restoreGState()
+    }
+
+    private static func make(_ text: String, _ style: Style, cutTo width: CGFloat?) -> Line {
+        let attributes = self.attributes(of: style)
+        var line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
+        if let width, CTLineGetTypographicBounds(line, nil, nil, nil) > width {
+            let token = CTLineCreateWithAttributedString(NSAttributedString(string: "…", attributes: attributes))
+            line = CTLineCreateTruncatedLine(line, Double(max(0, width)), .end, token) ?? token
+        }
+        var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+        let measured = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+        return Line(line: line, width: CGFloat(measured), ascent: ascent, descent: descent)
+    }
+
+    private static func attributes(of style: Style) -> [NSAttributedString.Key: Any] {
+        if let known = attributes[style] { return known }
+        let regular = NSFont.systemFont(ofSize: TypesStyle.rowFontSize)
+        let italic = NSFontManager.shared.convert(regular, toHaveTrait: .italicFontMask)
+        let font: NSFont, color: NSColor
+        switch style {
+        case .name, .value: (font, color) = (regular, TypesStyle.rowInk)
+        case .faint: (font, color) = (regular, TypesStyle.rowInk.withAlphaComponent(TypesStyle.faintStrength))
+        case .kind, .muted: (font, color) = (regular, TypesStyle.rowInk.withAlphaComponent(TypesStyle.mutedStrength))
+        case .empty: (font, color) = (italic, TypesStyle.rowInk.withAlphaComponent(TypesStyle.faintStrength))
+        case .needed: (font, color) = (italic, TypesStyle.neededInk)
+        case .wrong: (font, color) = (regular, TypesStyle.wrongInk)
+        case .link: (font, color) = (regular, TypesStyle.linkInk)
+        }
+        let made: [NSAttributedString.Key: Any] = [.font: font, NSAttributedString.Key(kCTForegroundColorAttributeName as String): color.cgColor]
+        attributes[style] = made
+        return made
+    }
+}
+
+extension RenderContext {
+    /// Draws the shape's rows (or what its rows' spot says) in `block`, the rect its kind gives them
+    /// (`typeRows(drawnIn:)`). Drawn while the shape is edited too: the editor has no background.
+    public func drawTypeRows<P: ShapeProps>(of shape: ShapeRecord<P>, in block: CGRect) {
+        guard let book = service(RowBook.self) else { return }
+        book.draw(AnyShapeRecord(shape), in: block, to: cg)
+    }
+}
+
+extension RowBook {
+    /// Draws a shape's rows in `block`, clipped to it widened at the left by the tick's room.
+    func draw(_ record: AnyShapeRecord, in block: CGRect, to cg: CGContext) {
+        guard let subject = subject(of: record), kinds.contains(record.kind) else { return }
+        let template = template(subject)
+        let spot: RowSpot?
+        if subject.isType {
+            spot = self.spot(of: record, template: template)
+            guard spot != nil else { return }
+        } else {
+            spot = .rows
+            guard !template.items.isEmpty else { return }
+        }
+        let hasWords = hasWords(record)
+        let geometry = RowGeometry(block: block, hasLead: hasWords, longestName: template.nameColumn)
+        let reach = TypesStyle.tickInset + TypesStyle.tickWidth
+        cg.saveGState()
+        defer { cg.restoreGState() }
+        cg.clip(to: CGRect(x: block.minX - reach, y: block.minY, width: block.width + reach, height: block.height))
+        if hasWords {
+            cg.setFillColor(TypesStyle.rowsRule)
+            cg.fill(CGRect(x: block.minX, y: block.minY, width: block.width, height: 1))
+        }
+        switch spot {
+        case .reading?: drawReading(in: geometry, to: cg)
+        case .noFields?: FieldLines.draw(FieldLines.line(FieldWords.noFields, .kind), at: block.minX, midY: geometry.rect(0).midY, in: cg)
+        case .failed(let reason, let action)?: drawFailure(reason, action: action, in: geometry, to: cg)
+        case .rows?: drawRows(of: template, subject: subject, in: geometry, to: cg)
+        case nil: break
+        }
+    }
+
+    private func drawReading(in geometry: RowGeometry, to cg: CGContext) {
+        cg.setFillColor(TypesStyle.spotBar)
+        for (row, share) in TypesStyle.spotBarShares.enumerated() {
+            let rect = geometry.rect(row)
+            let bar = CGRect(x: rect.minX, y: rect.midY - TypesStyle.spotBarHeight / 2, width: geometry.block.width * share, height: TypesStyle.spotBarHeight)
+            cg.addPath(CGPath(roundedRect: bar, cornerWidth: TypesStyle.spotBarHeight / 2, cornerHeight: TypesStyle.spotBarHeight / 2, transform: nil))
+            cg.fillPath()
+        }
+    }
+
+    private func drawFailure(_ reason: String, action: RowSpot.Action?, in geometry: RowGeometry, to cg: CGContext) {
+        let rect = geometry.rect(0)
+        var room = rect.width
+        if let action {
+            let words = FieldLines.line(action == .retry ? FieldWords.retry : FieldWords.settings, .link)
+            room -= words.width + TypesStyle.actionGap
+            let reasonLine = FieldLines.line(reason, .kind, cutTo: max(0, room))
+            FieldLines.draw(reasonLine, at: rect.minX, midY: rect.midY, in: cg)
+            FieldLines.draw(words, at: rect.minX + reasonLine.width + TypesStyle.actionGap, midY: rect.midY, in: cg)
+        } else {
+            FieldLines.draw(FieldLines.line(reason, .kind, cutTo: room), at: rect.minX, midY: rect.midY, in: cg)
+        }
+    }
+
+    private func drawRows(of template: RowTemplate, subject: RowSubject, in geometry: RowGeometry, to cg: CGContext) {
+        let types = editor?.types
+        for (row, item) in template.items.enumerated() {
+            let rect = geometry.rect(row), name = geometry.nameRect(row), value = geometry.valueRect(row)
+            switch item {
+            case .field(let field):
+                if let tick = field.tick { drawTick(TypeColors.base(tick), in: rect, to: cg) }
+                let dotRoom = field.isNeeded && subject.isType ? TypesStyle.neededDotGap + TypesStyle.neededDotSize : 0
+                let style: FieldLines.Style = subject.isType ? (field.isFaint ? .faint : .name) : .muted
+                let line = FieldLines.line(field.name, style, cutTo: max(0, name.width - dotRoom))
+                FieldLines.draw(line, at: name.minX, midY: rect.midY, in: cg)
+                if dotRoom > 0 {
+                    let dot = CGRect(x: name.minX + line.width + TypesStyle.neededDotGap, y: rect.midY - TypesStyle.neededDotSize / 2,
+                                     width: TypesStyle.neededDotSize, height: TypesStyle.neededDotSize)
+                    cg.setFillColor(TypesStyle.neededInk.cgColor)
+                    cg.fillEllipse(in: dot)
+                }
+                if subject.isType { drawKind(of: field, in: value, midY: rect.midY, types: types, to: cg) }
+            case .fold(let fold):
+                if fold.isMore {
+                    FieldLines.draw(FieldLines.line(fold.name + " ›", .kind), at: rect.minX, midY: rect.midY, in: cg)
+                } else {
+                    drawTick(fold.sources.count == 1 ? TypeColors.base(fold.sources[0]) : TypesStyle.manyTick, in: rect, to: cg)
+                    FieldLines.draw(FieldLines.line(fold.name, .faint, cutTo: name.width), at: name.minX, midY: rect.midY, in: cg)
+                    let words = FieldLines.line(fold.value + " ›", .kind, cutTo: value.width)
+                    FieldLines.draw(words, at: value.maxX - words.width, midY: rect.midY, in: cg)
+                }
+            }
+        }
+    }
+
+    private func drawTick(_ color: NSColor, in rect: CGRect, to cg: CGContext) {
+        cg.setFillColor(color.cgColor)
+        cg.fill(CGRect(x: rect.minX - TypesStyle.tickInset, y: rect.minY + 4, width: TypesStyle.tickWidth, height: rect.height - 8))
+    }
+
+    /// A type's row at the right: its kind's label, the chip of the type it names, and `›`, from the right.
+    private func drawKind(of field: FieldRowTemplate, in value: CGRect, midY: CGFloat, types: TypeIndex?, to cg: CGContext) {
+        var right = value.maxX
+        if field.opensOnType {
+            let chevron = FieldLines.line("›", .kind)
+            FieldLines.draw(chevron, at: right - chevron.width, midY: midY, in: cg)
+            right -= chevron.width + TypesStyle.partGap
+        }
+        if let chip = field.chip, let types {
+            let label = TypeChips.label(for: TypeLink(chip), in: types)
+            let size = label.contentSize
+            label.draw(at: CGPoint(x: right - size.width, y: midY - size.height / 2), in: cg)
+            right -= size.width + (field.label.isEmpty ? 0 : TypesStyle.partGap)
+        }
+        guard !field.label.isEmpty else { return }
+        let words = FieldLines.line(field.label, .kind, cutTo: max(0, right - value.minX))
+        FieldLines.draw(words, at: right - words.width, midY: midY, in: cg)
+    }
+}

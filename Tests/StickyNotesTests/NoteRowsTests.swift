@@ -1,0 +1,310 @@
+import AppKit
+@_spi(Host) import Canvas
+import CanvasTesting
+import Foundation
+import Geometry
+import LanguageModels
+import Mentions
+import StickyNotes
+import TestKit
+import Titles
+import Types
+
+// A type's note draws its rows under its words, and a note that is one the names of its fields: each row's
+// name at the left and its kind at the right, a needed field's dot, an inherited row fainter and ticked in
+// the color of the type that gave it, another type as its chip, the fold, and what the spot says while
+// there are none. Through bitmaps: nothing here reads the screen.
+
+private let white = [255, 255, 255, 255]
+
+/// What a test says when its setup is not what it expects.
+private struct Failure: Error {
+    let message: String
+    init(_ message: String) { self.message = message }
+}
+
+/// Type notes of the shared fixtures (`FieldFixtures`), Employee a Person, and a note that is each of
+/// `instances`' types, at `origin`; the types in a row from (40, 40), each 200 stored and 320 laid out.
+@MainActor
+private final class Bench {
+    let editor: CanvasEditor
+    var book: RowBook { editor.rowBook! }
+
+    init(_ types: [FieldFixtures.TypeText] = [FieldFixtures.person], zoom: CGFloat = 1, buildingOn parents: [(FieldFixtures.TypeText, FieldFixtures.TypeText)] = []) throws {
+        editor = CanvasEditor(registry: try Registry(plugins: notePlugins + [LanguageModelsPlugin(model: ScriptedLanguageModel())]), scheduler: ManualScheduler())
+        editor.camera.setZoom(zoom, around: .zero)
+        for (place, type) in types.enumerated() { add(type, at: CGPoint(x: 40 + 400 * Double(place), y: 40)) }
+        for (parent, child) in parents { editor.addTypeLink(parent.id, to: child.id) }
+    }
+
+    @discardableResult
+    func add(_ type: FieldFixtures.TypeText, at origin: CGPoint) -> ShapeID {
+        var note = ShapeRecord(id: type.id, StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 200, height: 200)), text: MentionText(plain: type.words)))
+        note[TypeSchemaProperty.self] = SchemaText(type.schema)
+        note[TitleProperty.self] = type.title
+        let record = AnyShapeRecord(note)
+        editor.transact { $0.insert(record) }
+        return record.id
+    }
+
+    /// A note of text with `fields` text fields.
+    @discardableResult
+    func addWide(_ count: Int, words: String = "Wide", at origin: CGPoint = CGPoint(x: 40, y: 40)) -> ShapeID {
+        add((ShapeID(), "Wide", words, FieldFixtures.wide(count).schema), at: origin)
+    }
+
+    @discardableResult
+    func addInstance(of types: [ShapeID], words: String = "Ann", at origin: CGPoint = CGPoint(x: 40, y: 500)) -> ShapeID {
+        var note = ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 200, height: 200)), text: MentionText(plain: words)))
+        note[IsAProperty.self] = types.map(TypeLink.init)
+        let record = AnyShapeRecord(note)
+        editor.transact { $0.insert(record) }
+        return record.id
+    }
+
+    func draw(dark: Bool = false, size: CGSize = CGSize(width: 900, height: 800)) -> NSBitmapImageRep {
+        if !dark { return renderBitmap(editor, size: size) }
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height), bitsPerSample: 8, samplesPerPixel: 4,
+                                   hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        let cg = NSGraphicsContext(bitmapImageRep: rep)!.cgContext
+        cg.translateBy(x: 0, y: size.height)
+        cg.scaleBy(x: 1, y: -1)
+        NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance {
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: true)
+            editor.draw(in: cg, bounds: CGRect(origin: .zero, size: size), dirtyRect: CGRect(origin: .zero, size: size))
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        return rep
+    }
+}
+
+/// How many pixels in `rect` differ from `paper`.
+@MainActor private func ink(_ rep: NSBitmapImageRep, in rect: CGRect, paper: [Int] = white, by tolerance: Int = 24) -> Int {
+    var count = 0
+    for y in stride(from: rect.minY.rounded(.down), to: rect.maxY.rounded(.up), by: 1) {
+        for x in stride(from: rect.minX.rounded(.down), to: rect.maxX.rounded(.up), by: 1)
+        where zip(pixel(rep, at: CGPoint(x: x, y: y)), paper).prefix(3).contains(where: { abs($0 - $1) > tolerance }) {
+            count += 1
+        }
+    }
+    return count
+}
+
+/// The darkest red channel in `rect`: how dark its ink gets.
+@MainActor private func darkest(_ rep: NSBitmapImageRep, in rect: CGRect) -> Int {
+    var low = 255
+    for y in stride(from: rect.minY.rounded(.down), to: rect.maxY.rounded(.up), by: 1) {
+        for x in stride(from: rect.minX.rounded(.down), to: rect.maxX.rounded(.up), by: 1) { low = min(low, pixel(rep, at: CGPoint(x: x, y: y))[0]) }
+    }
+    return low
+}
+
+/// Whether any pixel in `rect` is about `color`.
+@MainActor private func has(_ rep: NSBitmapImageRep, _ color: [Int], in rect: CGRect, within tolerance: Int = 40) -> Bool {
+    for y in stride(from: rect.minY.rounded(.down), to: rect.maxY.rounded(.up), by: 1) {
+        for x in stride(from: rect.minX.rounded(.down), to: rect.maxX.rounded(.up), by: 1)
+        where zip(pixel(rep, at: CGPoint(x: x, y: y)), color).prefix(3).allSatisfy({ abs($0 - $1) <= tolerance }) { return true }
+    }
+    return false
+}
+
+private let amber = [245, 158, 10], personBlue = [44, 114, 219]
+
+/// The right part of a row, where its kind is.
+private func kindRect(_ row: ShownRow) -> CGRect { CGRect(x: row.valueRect.maxX - 90, y: row.rect.minY, width: 90, height: row.rect.height) }
+
+@MainActor let noteRowsTests = Suite("Note rows", [
+    test("a type's note draws ink in the name and the kind of each of its rows, and none below them") {
+        let b = try Bench()
+        let id = b.addWide(3)
+        let rows = b.book.rows(of: id)
+        expectEqual(rows.map(\.name), ["f1", "f2", "f3"])
+        let drawn = b.draw()
+        for row in rows {
+            expect(ink(drawn, in: row.nameRect) > 10, "ink in the name of \(row.name)")
+            expect(ink(drawn, in: kindRect(row)) > 10, "ink in the kind of \(row.name)")
+        }
+        let last = try require(rows.last)
+        let below = CGRect(x: last.rect.minX, y: last.rect.maxY + 2, width: last.rect.width, height: 40)
+        expectEqual(ink(drawn, in: below), 0, "nothing under the last row")
+        let rule = try require(b.editor.rowBook?.rowsRect(of: id))
+        expect(ink(drawn, in: CGRect(x: rule.minX, y: rule.minY, width: rule.width, height: 1)) > 100, "a hairline under the words")
+    },
+    test("each state of the spot has its look: three gray bars and no text ink; `No fields`; a reason with the accent blue at its end") {
+        let model = ScriptedLanguageModel()
+        let editor = CanvasEditor(registry: try Registry(plugins: notePlugins + [LanguageModelsPlugin(model: model)]), scheduler: ManualScheduler())
+        var note = ShapeRecord(StickyNote(frame: CGRect(x: 40, y: 40, width: 200, height: 200), text: MentionText(plain: "a pet")))
+        note[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter)
+        let record = AnyShapeRecord(note)
+        editor.transact { $0.insert(record) }
+        let size = CGSize(width: 500, height: 300)
+        let book = try require(editor.rowBook), sync = try require(editor.typeSync)
+        // Reading: the call is held out.
+        model.holdsAnswers = true
+        model.queue(#"{"type": "object"}"#)
+        editor.transact { $0.update(record.id, as: StickyNote.self) { $0.props.text = MentionText(plain: "a pet, edited") } }
+        sync.commit(record.id)
+        expectEqual(book.spot(of: record.id), .reading)
+        let reading = renderBitmap(editor, size: size)
+        let block = try require(book.rowsRect(of: record.id))
+        let firstRow = CGRect(x: block.minX, y: block.minY + TypesStyle.rowsLead, width: block.width, height: TypesStyle.rowHeight)
+        expect(ink(reading, in: firstRow) > 100, "a bar")
+        expect(darkest(reading, in: CGRect(x: block.minX, y: block.minY + TypesStyle.rowsLead, width: block.width, height: 3 * TypesStyle.rowHeight)) > 200, "gray bars, no text")
+        spinRunLoop(until: { model.waiting == 1 })
+        model.release()
+        spinRunLoop(until: { sync.status(of: record.id) == .idle })
+        // No fields.
+        expectEqual(book.spot(of: record.id), .noFields)
+        let none = renderBitmap(editor, size: size)
+        expect(ink(none, in: firstRow) > 20 && darkest(none, in: firstRow) < 200, "`No fields`, in text")
+        // A reason, and Retry in the accent blue at its end.
+        model.holdsAnswers = false
+        model.queue(.overloaded)
+        editor.transact { $0.update(record.id, as: StickyNote.self) { $0.props.text = MentionText(plain: "a pet, edited again") } }
+        sync.commit(record.id)
+        spinRunLoop(until: { sync.status(of: record.id) != .updating(.schema) })
+        guard case .failed(let reason, .retry?)? = book.spot(of: record.id) else { throw Failure("a reason with Retry: \(String(describing: book.spot(of: record.id)))") }
+        expect(!reason.isEmpty)
+        let failed = renderBitmap(editor, size: size)
+        expect(has(failed, [0, 97, 217], in: firstRow, within: 60), "Retry in the accent blue")
+        expect(!has(none, [0, 97, 217], in: firstRow, within: 60), "and no blue without it")
+    },
+    test("a needed field has amber pixels after its name; a field that is not has none") {
+        let b = try Bench([FieldFixtures.person])
+        let rows = b.book.rows(of: FieldFixtures.personID)
+        expectEqual(rows.map(\.name), ["name", "email"])
+        expectEqual(rows.map(\.isNeeded), [true, false])
+        let drawn = b.draw()
+        expect(has(drawn, amber, in: rows[0].nameRect, within: 30), "the dot after `name`")
+        expect(!has(drawn, amber, in: rows[1].nameRect, within: 30), "none after `email`")
+        expect(!has(drawn, amber, in: rows[0].valueRect, within: 30), "and none in the kind")
+    },
+    test("inherited rows are fainter than own rows, and each has its type's color in the left padding; own rows have none") {
+        let b = try Bench([FieldFixtures.person, FieldFixtures.employee], buildingOn: [(FieldFixtures.person, FieldFixtures.employee)])
+        let rows = b.book.rows(of: FieldFixtures.employeeID)
+        expectEqual(rows.map(\.name), ["name", "email", "role", "start date"])
+        expectEqual(rows.map(\.isFaint), [true, true, false, false])
+        expectEqual(rows.map(\.tick), [FieldFixtures.personID, FieldFixtures.personID, nil, nil])
+        let drawn = b.draw()
+        let faint = darkest(drawn, in: rows[0].nameRect), full = darkest(drawn, in: rows[2].nameRect)
+        expect(faint > full + 40, "an inherited name is fainter: \(faint) against \(full)")
+        let tick = { (row: ShownRow) in CGRect(x: row.rect.minX - TypesStyle.tickInset, y: row.rect.minY + 6, width: TypesStyle.tickWidth, height: row.rect.height - 12) }
+        for row in rows.prefix(2) { expect(has(drawn, personBlue, in: tick(row), within: 24), "\(row.name)'s tick is Person's blue, in the padding") }
+        for row in rows.suffix(2) { expectEqual(ink(drawn, in: tick(row).insetBy(dx: -3, dy: 0)), 0, "\(row.name) has no tick") }
+    },
+    test("an inherited row's tick is drawn outside the block, in the paper's left padding, and is not clipped away") {
+        let b = try Bench([FieldFixtures.person, FieldFixtures.employee], buildingOn: [(FieldFixtures.person, FieldFixtures.employee)])
+        let block = try require(b.book.rowsRect(of: FieldFixtures.employeeID))
+        let row = try require(b.book.rows(of: FieldFixtures.employeeID).first)
+        let x = block.minX - TypesStyle.tickInset
+        expect(x > 440, "inside the paper: \(x) (the note starts at 440)")
+        expect(has(b.draw(), personBlue, in: CGRect(x: x, y: row.rect.midY - 2, width: TypesStyle.tickWidth, height: 4), within: 24))
+    },
+    test("a chip is drawn in a row of another type's fields, in that type's color; dashed once the type is deleted") {
+        let b = try Bench([FieldFixtures.address, FieldFixtures.order])
+        let rows = b.book.rows(of: FieldFixtures.orderID)
+        let row = try require(rows.first { $0.name == "shipping address" })
+        guard case .kind(_, let chip, _) = row.content else { throw Failure("a kind") }
+        expectEqual(chip, FieldFixtures.addressID)
+        let orange = [180, 95, 35]
+        let chipArea = CGRect(x: row.valueRect.maxX - 140, y: row.rect.minY, width: 140, height: row.rect.height)
+        let drawn = b.draw()
+        // A light chip: its capsule is the color at 14%, its text the color's ink.
+        expect(has(drawn, [255, 244, 236], in: chipArea, within: 10) || has(drawn, orange, in: chipArea, within: 60), "the chip in Address's orange")
+        let filled = ink(drawn, in: chipArea)
+        b.editor.removeType(FieldFixtures.addressID)
+        let gone = b.draw()
+        expect(ink(gone, in: chipArea) > 20, "a dashed chip with the last name")
+        expect(ink(gone, in: chipArea) < filled, "far less ink than the filled one")
+    },
+    test("the fold rows read as the rule says, and draw") {
+        let b = try Bench()
+        let id = b.addWide(20)
+        let rows = b.book.rows(of: id)
+        expectEqual(rows.map(\.name), (1...8).map { "f\($0)" } + ["+12 more"])
+        guard case .fold(let words) = rows[8].content else { throw Failure("a fold") }
+        expectEqual(words, "")
+        let drawn = b.draw()
+        expect(ink(drawn, in: rows[8].rect) > 20, "`+12 more ›` is drawn")
+        let nine = try Bench()
+        let wide9 = nine.addWide(9)
+        expectEqual(nine.book.rows(of: wide9).count, 9)
+        let person = try Bench([FieldFixtures.person, FieldFixtures.employee], buildingOn: [(FieldFixtures.person, FieldFixtures.employee)])
+        let employee = person.addWide(8, at: CGPoint(x: 900, y: 40))
+        person.editor.addTypeLink(FieldFixtures.personID, to: employee)
+        let inherited = person.book.rows(of: employee)
+        expectEqual(inherited.map(\.name), ["from Person"] + (1...8).map { "f\($0)" }, "ten fields, two of them Person's: they fold")
+        guard case .fold(let value) = inherited[0].content else { throw Failure("a fold") }
+        expectEqual(value, "2 fields")
+        expectEqual(inherited[0].tick, FieldFixtures.personID)
+    },
+    test("a long name is cut and the kind is whole; the name column is at most 45% of the rows' width") {
+        let b = try Bench()
+        let long = "averyveryveryverylongfieldnamethatneverseemstoend"
+        let id = b.add((ShapeID(), "Long", "Words", #"{"type": "object", "properties": {"\#(long)": {"type": "string"}, "b": {"type": "string"}}}"#), at: CGPoint(x: 40, y: 40))
+        let rows = b.book.rows(of: id)
+        let block = try require(b.book.rowsRect(of: id))
+        expectEqual(rows[0].nameRect.width, TypesStyle.nameShare * block.width)
+        expectEqual(rows[1].nameRect.width, rows[0].nameRect.width, "one column")
+        let drawn = b.draw()
+        let gap = CGRect(x: rows[0].nameRect.maxX, y: rows[0].rect.minY, width: TypesStyle.nameGap - 1, height: rows[0].rect.height)
+        expectEqual(ink(drawn, in: gap), 0, "the name is cut before the kind's column")
+        expect(ink(drawn, in: kindRect(rows[0])) > 10, "the kind is whole")
+    },
+    test("the name column is the same width on a type's note and on a note that is one, so a name is cut at the same place") {
+        let b = try Bench([FieldFixtures.person])
+        let long = "averyveryveryverylongfieldnamethatneverseemstoend"
+        let id = b.add((ShapeID(), "Long", "Words", #"{"type": "object", "properties": {"\#(long)": {"type": "string"}, "b": {"type": "string"}}}"#), at: CGPoint(x: 440, y: 40))
+        let instance = b.addInstance(of: [id])
+        let type = b.book.rows(of: id), mine = b.book.rows(of: instance)
+        expectEqual(mine.map(\.name), type.map(\.name))
+        expect(zip(mine, type).allSatisfy { abs($0.nameRect.width - $1.nameRect.width) < 0.001 }, "the same column: \(mine.map(\.nameRect.width)) and \(type.map(\.nameRect.width))")
+        expect(zip(mine, type).allSatisfy { abs($0.valueRect.width - $1.valueRect.width) < 0.001 })
+        let plain = try Bench([FieldFixtures.person])
+        let person = plain.addInstance(of: [FieldFixtures.personID])
+        let names = plain.book.rows(of: person)
+        let draws = plain.draw(size: CGSize(width: 500, height: 900))
+        let yellow = [255, 222, 115, 255]
+        for row in names { expect(ink(draws, in: row.nameRect, paper: yellow) > 10, "the name of \(row.name) is drawn on a note that is one") }
+        expectEqual(ink(draws, in: CGRect(x: names[0].valueRect.minX, y: names[0].rect.minY, width: names[0].valueRect.width, height: names[0].rect.height), paper: yellow), 0,
+                    "and nothing at the right yet")
+    },
+    test("the rows draw under the editor while the words are edited, and the words' lines still fall on the render's") {
+        for (scale, zoom) in [(1, 1), (2, 1), (1, 2), (2, 0.6)] as [(CGFloat, CGFloat)] {
+            let b = try Bench([FieldFixtures.person])
+            b.editor.camera.setZoom(zoom, around: .zero)
+            let id = FieldFixtures.personID
+            let paper = try require(b.editor.shapeContext.frame(of: id))
+            let size = CGSize(width: (paper.maxX + 20) * zoom, height: (paper.maxY + 20) * zoom)
+            let inView = b.editor.camera.toView(paper)
+            let drawn = renderBitmap(b.editor, size: size, scale: scale)
+            expect(b.editor.beginEditing(id))
+            let editing = try require(b.editor.makeEditingView())
+            let edited = renderBitmap(b.editor, size: size, scale: scale, editing: editing)
+            let rows = b.book.rows(of: id)
+            let first = b.editor.camera.toView(rows[0].nameRect)
+            expect(ink(edited, in: CGRect(x: first.minX * scale, y: first.minY * scale, width: first.width * scale, height: first.height * scale)) > 10, "the rows draw under the editor at \(scale)×, zoom \(zoom)")
+            let words = b.editor.camera.toView(try require(b.editor.registry.mentionTextPlacements(of: try require(b.editor.document[id]), in: b.editor.shapeContext).first?.box))
+            let difference = largestDifference(drawn, edited, in: words, scale: scale)
+            expect(difference <= antiAliasing, "at \(scale)×, zoom \(zoom): a pixel of the words differs by \(difference)")
+            _ = inView
+            b.editor.endEditing()
+        }
+    },
+    test("light and dark give the same rows, chips and a gone type's dashed chip: the paper's ink is fixed") {
+        let b = try Bench([FieldFixtures.address, FieldFixtures.order])
+        b.editor.removeType(FieldFixtures.addressID)
+        let rows = b.book.rows(of: FieldFixtures.orderID)
+        let light = b.draw(), dark = b.draw(dark: true)
+        for row in rows {
+            let rect = row.rect.insetBy(dx: 0, dy: 2)
+            expect(abs(darkest(light, in: rect) - darkest(dark, in: rect)) <= 3, "\(row.name): the same darkest ink, \(darkest(light, in: rect)) and \(darkest(dark, in: rect))")
+            expectEqual(ink(light, in: rect, paper: white, by: 30) > 0, ink(dark, in: rect, paper: [235, 235, 235, 255], by: 30) > 0)
+        }
+        let chipRow = try require(rows.first { $0.name == "shipping address" })
+        let chip = CGRect(x: chipRow.valueRect.maxX - 120, y: chipRow.rect.minY, width: 120, height: chipRow.rect.height)
+        let a = ink(light, in: chip, paper: white, by: 30), c = ink(dark, in: chip, paper: [235, 235, 235, 255], by: 30)
+        expect(abs(a - c) * 20 <= max(a, c), "the chip, dashes and all: \(a) and \(c) inked pixels")
+    },
+])

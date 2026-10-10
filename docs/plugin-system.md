@@ -10126,6 +10126,43 @@ its URI (`types`, asked only at a `$ref`'s value: `TypeIndex.referenceTargets(fr
 `$vocabulary` goes only in the root and `$schema` only in the root or a subschema with an `$id`; no
 `title` at the root; and what a caller adds where a value goes (`extra`).
 
+### Rows on a type's note
+
+A type's note has, under its words, one row for each field its type gives it (a note that is one has the
+names of its fields in the same place). Types lays the rows out and draws them; a kind says only where they go,
+as it says where its words are, and Types knows no kind:
+
+```swift
+note.typeRows(drawnIn: { shape, context in NoteLayout(shape, in: context).block })   // where the rows are drawn
+// and in its render, under the highlights and before the editing guard:
+if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
+```
+
+- **The room** is `TypeRows.extent` (`LayoutInputKey<RowsExtent>`: the least width and the height), a layout
+  input Types provides (`RowBook.provide`) only for the kinds that say where their rows go
+  (`TypeRowsPlaces`, one contribution a kind, refused for a kind that holds neither `schema` nor `is`). The
+  note is a `LaidOutBox` that reads it: at least 320 wide and as tall as its words and the rows, never
+  shorter than a new note, with no record written: the stored box is the note as it is with no rows.
+  Nothing is stored of the rows, and no change of them is an undo step.
+- **The rows** are `RowList`'s: nine fields or fewer all show; ten or more fold the rows a type builds on
+  into `from Person` (two or more of them) and show at most eight of the rest and `+N more`, so a note has at
+  most ten rows. `RowBook` (`editor.rowBook`) keeps one template for each distinct list of types, dropped
+  whole when a type changes, so ten thousand notes of one type share one.
+- **A type's note** (what its rows' spot says, `RowBook.spot(of:)`): its rows; else three bars while the
+  model writes the schema; else the reason the last read failed (`Retry`, `Settings…`, or nothing to try
+  again); else nothing under its words while the first words are typed and nothing has answered; else
+  `No fields`. A type with rows keeps them while it is read again. Making a note a type starts the read on the
+  scheduler's next turn, with no 3 second wait.
+- **A row** is the field's name at the left, the kind at the right (`Text`, `2 fields`, `List of Text`, `Either`)
+  or the type's chip (Adornments draws it as the chip above a note: `AdornmentLabel.draw(at:in:)`), a needed
+  field's amber dot, and `›` where a read-only card would have something to show. An inherited row is faint and
+  ticked in its type's color in the paper's left padding.
+- **Announcements.** A type's change, which moves what a list resolves to, has the type, its instances near and
+  far, and the instances the same commit added laid out again (`editor.shapesDidChangeLayout`): no commit, no
+  step. A rename moves no size and only redraws. The sync's status or wait changing for a type with no rows has
+  that note laid out again. A layout asked mid-transaction (a draw, a paste, a type and its instance written
+  together) resolves over the shapes as the transaction leaves them.
+
 ### References between types
 
 A type refers to another as a JSON Schema refers to another document: with a `$ref` to its URI,
@@ -11721,7 +11758,7 @@ keyboard             service KeyboardState · key strokes · key releases · sho
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · channel note-link · edge type note-link
+sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
 framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
@@ -11746,7 +11783,7 @@ title-validation     service TitleIndex · ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
-types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
+types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · service RowBook · layout input type-rows · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
 type-validation      ValidationRules
 type-details         ShapeDetails · ShapeDetails
 snapping             service SnapState · translation adjuster

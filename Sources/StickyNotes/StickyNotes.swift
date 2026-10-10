@@ -76,6 +76,7 @@ public struct StickyNotesPlugin: CanvasPlugin {
             note.typeWords(\.text, drawnIn: { $0.mentionTexts(in: $1).first }, fitting: { StickyNoteDefinition().derive(&$0) })   // and types: its text says what one holds,
             note.canBeType()                                   // and `/is-a type` makes it one
             note.typeable()                                    // and `/is-a` makes it an instance of one
+            note.typeRows(drawnIn: { NoteLayout($0, in: $1).block })   // and a type's rows go under its words
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
     }
@@ -92,6 +93,8 @@ extension StickyNoteDefinition: ShapeDefinition {
         context.fillWithShadow(NoteStyle.path(layout.frame), isType ? NoteStyle.typePaper : NoteStyle.color)
         let placements = shape.mentionTexts(placedIn: layout.words)
         if isType, let words = placements.first { context.fillTypeHighlights(of: shape, in: words) }
+        // Its rows, if it has any (a plain note has no block), under the editor too.
+        if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
         // While editing, the editing view draws the text instead.
         guard !context.isEditing else { return }
         for placement in placements { context.drawMentionText(placement) }

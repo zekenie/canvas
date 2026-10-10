@@ -323,10 +323,11 @@ extension Budget {
         let context = try bitmapContext(viewport)
         for size in sizes {
             // Notes 60 x 40, titled, 96 apart in rows of 125: 10,000 fill 12,000 x 7,680, all in view at 10%.
-            // The control is the same board with plain notes (yellow, no schema).
+            // The control is the same board with plain notes (yellow, no schema). No words and no fields: a type
+            // with words and none of the second says `No fields` under them and is 320 wide, which is rows' cost.
             @MainActor func frames(types: Bool) throws -> (first: Double, next: Double, zoom: CGFloat) {
                 let shapes = (0..<size).map { i -> AnyShapeRecord in
-                    var note = ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(i % 125) * 96, y: CGFloat(i / 125) * 96, width: 60, height: 40), text: "words"))
+                    var note = ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(i % 125) * 96, y: CGFloat(i / 125) * 96, width: 60, height: 40)))
                     if types { note[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter) }
                     note[TitleProperty.self] = "Note \(i)"
                     return AnyShapeRecord(note)

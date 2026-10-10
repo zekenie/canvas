@@ -71,6 +71,16 @@ public final class FieldBook {
         return inner(ChainField(name: "", schema: items, holdsItself: field.field.holdsItself), of: field)
     }
 
+    /// The level the file's type `id` is read as, as the chain reads it: the schema read once by its text,
+    /// and for text that is half typed the shape's last text that was a JSON object. Nil for a shape that
+    /// is no type. What a layout under way reads for a type the transaction has not changed.
+    func level(of id: ShapeID) -> ChainLevel? {
+        guard let index = editor?.types else { return nil }
+        let book = self.book ?? ChainBook(index: index)
+        self.book = book
+        return book.node(id)?.level
+    }
+
     /// Moves when a resolution may differ: a type comes, goes, changes its schema or its own types.
     public var revision: Int { editor?.types?.chainRevision ?? 0 }
 
