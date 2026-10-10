@@ -35,6 +35,10 @@ extension Budget {
     /// types the note may be, asked of the index once and sorted by name, then kept while the list is open: some 3.5 ms
     /// (3.1, 3.5, 3.6 in three runs alone, load average 6), about three times that.
     static let isAListOpen = 10.0
+    /// What white paper adds to a frame of 10,000 type notes zoomed out to fit, over the same frame of plain notes
+    /// (the thread's CPU, release; 0.2, 0.3, 0.3 in three runs alone, load average 8): the paper resolved once for the appearance drawn, not per note (a dynamic
+    /// color resolved per note added 8 ms).
+    static let typePaper = 1.0
 }
 
 /// The generated board's notes made types (every fiftieth), and instances (every sixth that isn't):
@@ -192,5 +196,42 @@ extension Budget {
         report(String(format: "%6d instances in view at 40%%, all dragged: the frame after each event %5.1f ms, %.1f more than still %5.1f (budget %.0f more)",
                       count, dragged, dragged - still, still, Budget.typesDragFrame))
         if holdsToBudgets { expect(dragged - still < Budget.typesDragFrame, "dragging \(count) instances added \(dragged - still) ms to a frame") }
+    },
+    test("10,000 type notes zoomed out to fit the board, white paper and covers, fit in a frame: the first and each after") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        for size in sizes {
+            // Notes 60 x 40, titled, 96 apart in rows of 125: 10,000 fill 12,000 x 7,680, all in view at 10%.
+            // The control is the same board with plain notes (yellow, no schema).
+            @MainActor func frames(types: Bool) throws -> (first: Double, next: Double, zoom: CGFloat) {
+                let shapes = (0..<size).map { i -> AnyShapeRecord in
+                    var note = ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(i % 125) * 96, y: CGFloat(i / 125) * 96, width: 60, height: 40), text: "words"))
+                    if types { note[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter) }
+                    note[TitleProperty.self] = "Note \(i)"
+                    return AnyShapeRecord(note)
+                }
+                let editor = CanvasEditor(registry: try Registry(plugins: shippedPlugins(pasteboard)), document: CanvasDocument(shapes: shapes), scheduler: ManualScheduler())
+                editor.viewportDidResize(to: viewport)
+                editor.camera = Camera(fitting: editor.shapeBounds, in: viewport, inset: 0)
+                expect(editor.drawsSkeletons, "zoomed out, shapes are skeletons")
+                let first = median(runs: 1, onThread: true) { draw(editor, into: context, size: viewport) }
+                var step = 0.0
+                let next = median(runs: 11, prepare: { step = step == 0 ? 1 : 0; editor.camera = Camera(fitting: editor.shapeBounds, in: viewport, inset: step) }, onThread: true) {
+                    draw(editor, into: context, size: viewport)
+                }
+                return (first, next, editor.camera.zoom)
+            }
+            let plain = try frames(types: false), type = try frames(types: true)
+            report(String(format: "%6d type notes zoomed out to fit (%.0f%%): the first frame %5.1f ms (reported), the next %5.1f (budget %.0f, and %.1f more than plain notes' %5.1f); plain notes' first %5.1f",
+                          size, type.zoom * 100, type.first, type.next, Budget.zoomedOut, type.next - plain.next, plain.next, plain.first))
+            // The first frame is reported: a board of 10,000 type notes costs its first draw more than one of
+            // plain notes whatever the skeleton does (it's the same with the skeleton reading no schema).
+            if holdsToBudgets {
+                expect(type.next < Budget.zoomedOut, "a frame of \(size) type notes zoomed out took \(type.next) ms")
+                expect(type.next - plain.next < Budget.typePaper, "the paper added \(type.next - plain.next) ms to a frame of \(size) notes zoomed out")
+            }
+        }
     },
 ])

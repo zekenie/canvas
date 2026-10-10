@@ -1,17 +1,19 @@
 import AppKit
 import Canvas
 import Mentions
+import Types
 
 // A note zoomed out (`CustomSkeleton`): its yellow, and a bar where each line of its text would
 // be, counted from its characters rather than laid out.
 
 extension StickyNoteDefinition: CustomSkeleton {
-    /// Its frame in its yellow, square (its 4-point corners are under a point and a half on screen
+    /// Its frame in its yellow (a type's, in its white paper, which follows the appearance: resolved here,
+    /// in the frame's), square (its 4-point corners are under a point and a half on screen
     /// here) and with no shadow, and its text greeked (`SkeletonTextBars`, each mention as wide as
     /// its pill): two fills, whatever it says. Its outline is its frame's, as the core draws it.
     func renderSkeleton(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
         let frame = shape.frame
-        context.cg.setFillColor(NoteStyle.skeletonFill)
+        context.cg.setFillColor(shape[TypeSchemaProperty.self] != nil ? NoteStyle.typePaperCG : NoteStyle.skeletonFill)
         context.cg.fill(frame)
         let box = frame.insetBy(dx: NoteStyle.padding, dy: NoteStyle.padding)
         context.fillSkeletonText(SkeletonTextBars(shape.props.text.runs, in: box, metrics: NoteStyle.skeletonText))
