@@ -4150,8 +4150,10 @@ click (`ClickableAdornment`) that pops a menu up below the chip with `editor.pop
   places. `AdornmentTag` takes a string or a `ShapeID`.
 - **Whole or "+N".** A chip is shown whole or not at all, but for the group's last, which may be
   cut short like any text (30 points at least). The first that doesn't fit whole, and those after
-  it, fold into one chip, "+N" (N the number it stands for), if that fits whole; with no room even
-  for that, nothing is shown. A last chip with under 30 points folds into "+1".
+  it, fold into one chip, "+N" (N the number it stands for), which always shows: if it wouldn't fit
+  whole after the chips before it, those fold into it too, the later first, until it does; with no
+  room even for the "+N" of the group's first chip, none of the group is shown. A last chip with
+  under 30 points folds into "+1".
 - **A title doesn't hide the chips.** Text at the row's left end before a group (a title's pill)
   leaves the group's "+N" its width, 4 points and the chip, so a long title is cut short and every
   type is still reachable. The title keeps the 30 points it needs to be shown at all; below that

@@ -233,9 +233,24 @@ public enum AdornmentLayout {
                 } else if isLast, item.isText, room >= minTextRoom + item.lead {
                     shown = room
                 } else {
-                    guard item.overflowWidth <= room else { break }
-                    slots[i] = Slot(frame: CGRect(x: left, y: rowY, width: item.overflowWidth, height: rowHeight), isFromRight: false, isOverflow: true)
-                    left += item.overflowWidth + spacing
+                    // Fold from here; if the "+N" doesn't fit whole, fold the chips shown before it too,
+                    // the later first, until it does, so what folds never goes unsaid. Not even the
+                    // group's first chip's "+N" fitting, the run ends.
+                    var at = i
+                    var start = left
+                    var available = room
+                    while items[at].overflowWidth > available {
+                        guard at > 0, items[at - 1].group == group, let before = slots[at - 1] else { break }
+                        at -= 1
+                        start = before.frame.minX
+                        available = width + right - start
+                    }
+                    // With no room for even that, none of the group is shown: chips with no word of
+                    // those left out would say less than none.
+                    for j in at..<i { slots[j] = nil }
+                    guard items[at].overflowWidth <= available else { break }
+                    slots[at] = Slot(frame: CGRect(x: start, y: rowY, width: items[at].overflowWidth, height: rowHeight), isFromRight: false, isOverflow: true)
+                    left = start + items[at].overflowWidth + spacing
                     folded = group
                     continue
                 }

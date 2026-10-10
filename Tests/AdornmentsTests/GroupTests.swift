@@ -27,10 +27,11 @@ func group(_ widths: [CGFloat], overflow: CGFloat = 22, id: Int = 0) -> [Item] {
         let chips = group([40, 40, 40, 40])
         // Two fit whole (to 84); the third has 32 points, not 40: it and the fourth fold.
         expectEqual(AdornmentLayout.frames(of: chips, width: 120), [rect(0, rowY, 40, 18), rect(44, rowY, 40, 18), rect(88, rowY, 22, 18), nil])
-        expectEqual(AdornmentLayout.frames(of: chips, width: 128), [rect(0, rowY, 40, 18), rect(44, rowY, 40, 18), rect(88, rowY, 40, 18), nil],
-                    "the third fits whole; the fourth has nothing, not even a \"+1\"")
+        expectEqual(AdornmentLayout.frames(of: chips, width: 128), [rect(0, rowY, 40, 18), rect(44, rowY, 40, 18), rect(88, rowY, 22, 18), nil],
+                    "the third would fit whole, but then the fourth's \"+1\" wouldn't: it folds into a \"+2\"")
+        expectEqual(AdornmentLayout.frames(of: chips, width: 162), [rect(0, rowY, 40, 18), rect(44, rowY, 40, 18), rect(88, rowY, 40, 18), rect(132, rowY, 30, 18)], "the fourth, the last, cut short at 30")
         // The "+N" is shown whole or not at all: 21 points of room is too few for 22.
-        expectEqual(AdornmentLayout.frames(of: chips, width: 109), [rect(0, rowY, 40, 18), rect(44, rowY, 40, 18), nil, nil])
+        expectEqual(AdornmentLayout.frames(of: chips, width: 109), [rect(0, rowY, 40, 18), rect(44, rowY, 22, 18), nil, nil], "21 points for the \"+2\": the second folds with them, into the \"+3\"")
         expectEqual(AdornmentLayout.frames(of: chips, width: 110), [rect(0, rowY, 40, 18), rect(44, rowY, 40, 18), rect(88, rowY, 22, 18), nil])
         // Nothing fits whole: the "+N" for all of them stands alone.
         expectEqual(AdornmentLayout.frames(of: chips, width: 30), [rect(0, rowY, 22, 18), nil, nil, nil])
@@ -43,12 +44,12 @@ func group(_ widths: [CGFloat], overflow: CGFloat = 22, id: Int = 0) -> [Item] {
         expectEqual(AdornmentLayout.frames(of: chips, width: 118)[2], rect(88, rowY, 30, 18), "30")
         expectEqual(AdornmentLayout.frames(of: chips, width: 117)[2], rect(88, rowY, 22, 18), "29 points of room: the \"+1\"")
         // Only the last is cut short: the one before it, short of room, folds with it.
-        expectEqual(AdornmentLayout.frames(of: chips, width: 100), [rect(0, rowY, 40, 18), rect(44, rowY, 40, 18), nil])
+        expectEqual(AdornmentLayout.frames(of: chips, width: 100), [rect(0, rowY, 40, 18), rect(44, rowY, 22, 18), nil], "the second folds with the third, into the \"+2\"")
         expectEqual(AdornmentLayout.frames(of: chips, width: 70), [rect(0, rowY, 40, 18), rect(44, rowY, 22, 18), nil])
     },
     test("a chip that isn't text is whole or folded, and so is the last") {
         let discs = (0..<3).map { _ in Item(.aboveTopLeft, width: 18, isText: false, group: 0, overflowWidth: 22) }
-        expectEqual(AdornmentLayout.frames(of: discs, width: 60), [rect(0, rowY, 18, 18), rect(22, rowY, 18, 18), nil], "16 points for the third")
+        expectEqual(AdornmentLayout.frames(of: discs, width: 60), [rect(0, rowY, 18, 18), rect(22, rowY, 22, 18), nil], "16 points for the third, and the second folds into its \"+2\"")
         expectEqual(AdornmentLayout.frames(of: discs, width: 62)[2], rect(44, rowY, 18, 18), "18")
     },
     test("a title before a group leaves the group's \"+N\" its width: a long title can't hide every chip") {
@@ -65,6 +66,43 @@ func group(_ widths: [CGFloat], overflow: CGFloat = 22, id: Int = 0) -> [Item] {
         // The right end's items are placed first, and the title and the chips share what they leave.
         let flag = Item(.aboveTopRight, width: 18, isText: false)
         expectEqual(AdornmentLayout.frames(of: [title, flag] + chips, width: 200).compactMap { $0 }.map(\.width), [152, 18, 22])
+    },
+    test("when the \"+N\" doesn't fit after the chips shown, the later chips fold into it, back toward the front, so what folds is never unsaid") {
+        let chips = group([46, 60, 68, 56], overflow: 26)
+        // Two fit whole (to 110), the third has 16 points less than it needs, and the "+2" needs 26: the second folds too.
+        expectEqual(AdornmentLayout.frames(of: chips, width: 130), [rect(0, rowY, 46, 18), rect(50, rowY, 26, 18), nil, nil])
+        expectEqual(AdornmentLayout.frames(of: chips, width: 139), [rect(0, rowY, 46, 18), rect(50, rowY, 26, 18), nil, nil], "one short of the \"+2\" fitting")
+        expectEqual(AdornmentLayout.frames(of: chips, width: 140), [rect(0, rowY, 46, 18), rect(50, rowY, 60, 18), rect(114, rowY, 26, 18), nil])
+        // Not even the second chip fits whole beside the first: the "+3".
+        expectEqual(AdornmentLayout.frames(of: chips, width: 100), [rect(0, rowY, 46, 18), rect(50, rowY, 26, 18), nil, nil])
+        // Nor the first beside its own "+4"'s room: the "+4" stands alone, and the title, as always, gives way first.
+        expectEqual(AdornmentLayout.frames(of: chips, width: 60), [rect(0, rowY, 26, 18), nil, nil, nil])
+        expectEqual(AdornmentLayout.frames(of: chips, width: 25), [nil, nil, nil, nil])
+        // After a short title.
+        let title = Item(.aboveTopLeft, width: 20, isText: true)
+        expectEqual(AdornmentLayout.frames(of: [title] + group([30, 30, 30, 30], overflow: 26), width: 100),
+                    [rect(0, rowY, 20, 18), rect(24, rowY, 30, 18), rect(58, rowY, 26, 18), nil, nil])
+        // After a long one, which keeps 30 points and leaves the rest.
+        let long = Item(.aboveTopLeft, width: 500, isText: true)
+        expectEqual(AdornmentLayout.frames(of: [long] + chips, width: 100), [rect(0, rowY, 70, 18), rect(74, rowY, 26, 18), nil, nil, nil])
+    },
+    test("four type chips after a title pill, at a sticky note's 200 and 230: the \"+N\" is always said") {
+        // A pill 70 wide, then Person, Employee, Contractor, Manager; a "+N" is 26.
+        let items = [Item(.aboveTopLeft, width: 70, isText: true)] + group([44, 60, 72, 56], overflow: 26)
+        // 200: Contractor doesn't fit whole and neither would a "+2" after Employee, so Employee folds too.
+        expectEqual(AdornmentLayout.frames(of: items, width: 200), [rect(0, rowY, 70, 18), rect(74, rowY, 44, 18), rect(122, rowY, 26, 18), nil, nil])
+        // 230: the "+2" fits after Employee.
+        expectEqual(AdornmentLayout.frames(of: items, width: 230), [rect(0, rowY, 70, 18), rect(74, rowY, 44, 18), rect(122, rowY, 60, 18), rect(186, rowY, 26, 18), nil])
+        // A title that fills the row gives way to the "+4", which stands alone after it.
+        let long = [Item(.aboveTopLeft, width: 400, isText: true)] + group([44, 60, 72, 56], overflow: 26)
+        expectEqual(AdornmentLayout.frames(of: long, width: 200), [rect(0, rowY, 170, 18), rect(174, rowY, 26, 18), nil, nil, nil])
+        // At every width, a group with chips left out shows a "+N", unless it shows nothing.
+        for width in stride(from: CGFloat(0), through: 400, by: 1) {
+            let frames = AdornmentLayout.frames(of: items, width: width)
+            let chips = frames.dropFirst()
+            guard chips.contains(where: { $0 == nil }), let last = chips.last(where: { $0 != nil }) else { continue }
+            expectEqual(last?.width, 26, "the last chip shown is a \"+N\" at \(width)")
+        }
     },
     test("a group's chips aren't a title: they don't make the right end take its compact face") {
         let flag = Item(.aboveTopRight, width: 60, isText: false, compact: .init(width: 18))
@@ -100,6 +138,10 @@ func group(_ widths: [CGFloat], overflow: CGFloat = 22, id: Int = 0) -> [Item] {
                     let members = items.indices.filter { items[$0].group == g }
                     // Shown from the first, in a run: once one isn't, none after is.
                     let shown = members.map { frames[$0] != nil }
+                    // What folds is said: a group with chips left out and some shown ends in its "+N".
+                    if shown.contains(false), shown.contains(true), let last = members.last(where: { frames[$0] != nil }) {
+                        expect(frames[last]?.width == items[last].overflowWidth, "the last chip shown is the fold, width \(width): \(items)")
+                    }
                     expect(!zip(shown, shown.dropFirst()).contains { !$0 && $1 }, "a group's chips are a run from its first: \(shown), width \(width): \(items)")
                     for (position, i) in members.enumerated() {
                         guard let frame = frames[i] else { continue }
@@ -168,7 +210,7 @@ let names = ["Alexander", "Benjamin", "Charlotte", "Dominique"]
         expectEqual(frames[2].rect.minX, frames[1].rect.maxX + 4, "the \"+2\" after the last that fit")
         // The "+N" is shown whole or not at all: with 4 points less than the "+2" takes, none is.
         let tight = try boxWithChips(names, width: wide[0].rect.width + frames[2].rect.width).frames
-        expectEqual(tight.map(\.label.text), ["Alexander"], "no room for the \"+3\"")
+        expectEqual(tight.map(\.label.text), ["+4"], "no room for the \"+3\": the first folds too, into the \"+4\"")
     },
     test("the pointer over a chip hovers that chip, and a press presses it; the \"+N\" is its own button") {
         let (h, box, frames) = try boxWithChips(names, width: try foldingWidth())
