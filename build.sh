@@ -26,7 +26,7 @@ die() { print -u2 "build.sh: $*"; exit 1 }
 # concern, and only a lexicon joins a language to the concerns its words are about.
 typeset -A MAY_USE=(
     wire        "wire"
-    foundation  "foundation"
+    foundation  "foundation wire"
     ui          "foundation wire"
     surface     "foundation surface"
     concern     "foundation surface concern"

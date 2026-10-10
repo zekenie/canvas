@@ -7,6 +7,7 @@ import Composition
 import Connections
 import CoreGraphics
 import Geometry
+import HostSlots
 import Keyboard
 import LanguageModels
 import Locking
@@ -271,7 +272,7 @@ struct NotePill: Hashable, Sendable {
         let (window, canvas) = windowed(editor)
         editor.add(StickyNote(frame: CGRect(x: 100, y: 200, width: 200, height: 200)), title: "A")
         editor.add(StickyNote(frame: CGRect(x: 500, y: 200, width: 200, height: 200)), title: "B")
-        let commands = ShippedPlugins.commands(in: editor.registry)
+        let commands = editor.registry.hostCommands
         let spec = try require(commands.specs.first { $0.name == "draw" })
         @MainActor func draw(_ script: String) throws {
             let params = try spec.params(from: ["-"], standardInput: { script })

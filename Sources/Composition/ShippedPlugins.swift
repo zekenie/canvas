@@ -3,11 +3,9 @@ import AppKit
 import Automation
 import Boards
 import Canvas
-import CanvasRPC
 import Clipboard
 import Connections
 import ContextMenus
-import CoreGraphics
 import DetailPanel
 import DrawLexicon
 import Find
@@ -137,47 +135,5 @@ public enum ShippedPlugins {
         } catch {
             fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
         }
-    }
-
-    /// The commands the plugins give the command line (Automation's), for the app's command server:
-    /// what `canvas` shows of each, and how to run one, by name, on a board's editor (nil for a
-    /// command about the app as a whole), answering when it's done: at once for most, later for
-    /// one that waits.
-    public static func commands(in registry: Registry)
-        -> (specs: [CommandSpec], run: @MainActor (_ name: String, _ params: JSON, _ editor: CanvasEditor?) async throws(RPCError) -> JSON) {
-        (registry.automationCommands, { name, params, editor async throws(RPCError) in
-            try await registry.runAutomationCommand(name, params: params, editor: editor)
-        })
-    }
-}
-
-public enum WelcomeBoard {
-    /// The six notes' text: the top row left to right, then the bottom row.
-    public static let texts = [
-        "Double-click empty space to add a note. Drag a note to move it.",
-        "Double-click a note (or select it and press Return) to edit it.",
-        "Pinch to zoom, scroll with two fingers to pan. Press H for the hand tool; drag the background to select.",
-        "Point at a note, then drag one of its dots to another note to link them.",
-        "Pause inside a note while linking to aim at that spot. Hold ⌥ to go all the way in.",
-        "Select an arrow and drag its middle handle to bend it.",
-    ]
-
-    /// The board, its notes saying `texts` in that order.
-    public static func document(texts: [String] = WelcomeBoard.texts) -> CanvasDocument {
-        precondition(texts.count == 6, "the welcome board has six notes")
-        let origins = [CGPoint(x: 80, y: 80), CGPoint(x: 460, y: 80), CGPoint(x: 840, y: 80),
-                       CGPoint(x: 80, y: 420), CGPoint(x: 460, y: 420), CGPoint(x: 840, y: 420)]
-        let notes = zip(origins, texts).map { origin, text in
-            ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: MentionText(plain: text)))
-        }
-        func bound(_ note: ShapeRecord<StickyNote>) -> ArrowTerminal {
-            .bound(ArrowBinding(shapeID: note.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
-        }
-        let arrows = [
-            Arrow(start: bound(notes[0]), end: bound(notes[1])),
-            Arrow(start: bound(notes[3]), end: bound(notes[4])),
-            Arrow(start: bound(notes[4]), end: bound(notes[5]), bend: 70),
-        ]
-        return CanvasDocument(shapes: notes.map(AnyShapeRecord.init) + arrows.map { AnyShapeRecord(ShapeRecord($0)) })
     }
 }

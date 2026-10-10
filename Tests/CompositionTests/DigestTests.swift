@@ -5,6 +5,7 @@ import CanvasUI
 import Composition
 import Connections
 import Foundation
+import HostSlots
 import Publishing
 import References
 import Subboards
@@ -312,7 +313,7 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
         defer { first.close() }
         let opened = Opened()
         defer { for board in opened.boards { board.close() } }
-        let commands = ShippedPlugins.commands(in: try require(BoardDocument.configuration).registry)
+        let commands = try require(BoardDocument.configuration).registry.hostCommands
         let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
                                    boards: { [first] + opened.boards }, frontmost: { opened.boards.last ?? first }, show: { opened.boards.append($0) })
         try server.start()
@@ -386,7 +387,7 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
         defer { first.close() }
         let opened = Opened()
         defer { for board in opened.boards { board.close() } }
-        let commands = ShippedPlugins.commands(in: try require(BoardDocument.configuration).registry)
+        let commands = try require(BoardDocument.configuration).registry.hostCommands
         let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
                                    boards: { [first] + opened.boards }, frontmost: { opened.boards.last ?? first }, show: { opened.boards.append($0) })
         try server.start()

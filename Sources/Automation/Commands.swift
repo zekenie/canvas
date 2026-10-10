@@ -3,6 +3,7 @@ import CanvasRPC
 import CoreGraphics
 import DrawScript
 import Foundation
+import HostSlots
 
 // The command line's own commands: what any board can do whatever's installed. `draw` puts shapes
 // on a board from a script; `kinds` says what a script can draw, and with what. Other plugins add
@@ -103,6 +104,11 @@ public struct AutomationPlugin: CanvasPlugin {
             ]
         ) { params, context throws(AutomationError) in
             try measure(params, in: context)
+        }
+        // The app's command server runs them all, every plugin's: what the command line shows of
+        // each, and each by name.
+        registrar.hostCommands(specs: { $0.automationCommands }) { registry, name, params, editor async throws(RPCError) in
+            try await registry.runAutomationCommand(name, params: params, editor: editor)
         }
     }
 }

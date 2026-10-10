@@ -2,13 +2,15 @@ import AppKit
 import Canvas
 import CanvasRPC
 import Foundation
+import HostSlots
 import UniformTypeIdentifiers
 
 /// The app's end of the command line (`canvas`): it listens where `canvas` looks (`SocketPath`),
 /// tells it what the app is and what it runs (`describe`), and answers each request on the main
 /// actor. Three commands are its own, since they're about the app's boards, which only it knows:
 /// `status`, `boards` and `new`, which makes a board's file as Save As does and opens it. It's given
-/// the rest (`Commands`: the plugins' commands, from Composition), and runs each on the board its
+/// the rest (`Commands`: the plugins' commands, from the host's slot for them, HostSlots'
+/// `registry.hostCommands`), and runs each on the board its
 /// request names (`board`), or the one in front, whose editor it changes as anything else does, so
 /// the board's window shows each change as it's made. A file with boards inside shapes is worked on
 /// where its window is: the board it shows (`editor.board`), which `status` and `boards` name. A board command's result, when it's an object, says which
@@ -37,6 +39,13 @@ public final class CommandServer {
                     run: @escaping @MainActor (_ name: String, _ params: JSON, _ editor: CanvasEditor?) async throws(RPCError) -> JSON) {
             self.specs = specs
             self.run = run
+        }
+
+        /// The commands a plugin gives the host (`registry.hostCommands`: Automation's, every
+        /// plugin's command), none where the list has no such plugin.
+        @MainActor public init(registry: Registry) {
+            let commands = registry.hostCommands
+            self.init(specs: commands.specs, run: commands.run)
         }
     }
 
