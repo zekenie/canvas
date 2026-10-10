@@ -91,6 +91,8 @@ stretch "S" gauge: "G" right of "G"
         let editor = try roomEditor()
         let result = try drawn(both + "\n" + #"tile "T" right of "S""#, on: editor)
         let laidOut = try require(at(row(result, line: 2)))
+        expectEqual(editor.shapeContext.frame(of: try require(stretch("S", in: editor)).id), laidOut, "the row is the frame the board has")
+        expectEqual(laidOut.size, CGSize(width: 300, height: 120))
         let tile = try require(at(row(result, line: 3)))
         expect(tile.minX >= laidOut.maxX + 40, "the tile at \(tile) is clear of \(laidOut)")
         expect(!tile.intersects(laidOut))
@@ -120,14 +122,17 @@ stretch "S" gauge: "G" right of "G"
         expect(!messages(result).contains { $0.contains("resized") }, "\(messages(result))")
         expectStored(in: editor)
     },
-    test("a stretch drawn over a pen's edge is nudged by the frame it is laid out in, and the warning says so") {
+    test("a stretch whose stored box fits the pen but whose laid-out frame hangs over its edge is nudged in by the laid-out frame, and the warning says so") {
         let editor = try roomEditor()
         _ = PenBoardForRoom(editor)
-        gauge("G", 450, 60, in: editor)
-        let result = try drawn(#"stretch "S" gauge: "G" below "M" (gap: tight)"#, on: editor)
-        expectEqual(try require(at(row(result, line: 1))).size, CGSize(width: 450, height: 60))
-        expect(messages(result).contains(#""S" was over the edge of "Pen", so it was nudged out"#), "\(messages(result))")
-        expectEqual(stretch("S", in: editor)?.box?.size, storedSize, "stored at its own size")
+        gauge("G", 150, 60, in: editor)
+        let result = try drawn(#"stretch "S" gauge: "G" right of "M" (gap: tight)"#, on: editor)
+        let laidOut = try require(at(row(result, line: 1)))
+        expectEqual(laidOut.size, CGSize(width: 150, height: 60))
+        expect(laidOut.maxX <= 400, "the laid-out frame \(laidOut) is inside the pen, which ends at 400")
+        expect(messages(result).contains(#""S" was over the edge of "Pen", so it was nudged in"#), "\(messages(result))")
+        expectEqual(editor.shapeContext.frame(of: try require(stretch("S", in: editor)).id), laidOut, "the board has the frame the row says")
+        expectStored(in: editor)
     },
     test("size: written on a stretch is what is stored, and the row says the larger of it and the frame it is laid out in") {
         let editor = try roomEditor()
@@ -172,6 +177,28 @@ stretch "S" gauge: "G" right of "G"
         let record = try require(stretch("S", in: editor))
         expectEqual(editor.shapeContext.frame(of: record.id)?.size, CGSize(width: 500, height: 200))
         expectStored(in: editor)
+    },
+    test("a script that deletes the gauge a stretch names, and restates the stretch, reports the frame the board has afterward: the stored one") {
+        let editor = try roomEditor()
+        _ = try drawn(both, on: editor)
+        let result = try drawn(#"delete "G""# + "\n" + #"stretch "S""# + "\n" + #"tile "T" right of "S""#, on: editor)
+        let reported = try require(at(row(result, line: 2)))
+        let record = try require(stretch("S", in: editor))
+        expectEqual(editor.shapeContext.frame(of: record.id), reported, "the row is what the board has once the gauge is gone")
+        expectEqual(reported.size, storedSize)
+        let tile = try require(at(row(result, line: 3)))
+        expect(!tile.intersects(reported), "\(tile) is clear of \(reported)")
+        expectStored(in: editor)
+    },
+    test("nothing a run writes holds a laid-out size: every stretch of a mixed script is stored at what the script or its tool says") {
+        let editor = try roomEditor()
+        gauge("B", 260, 90, in: editor)
+        _ = try drawn(both + "\n" + #"stretch "U" gauge: "G" right of "S""# + "\n" + #"stretch "V" gauge: "B" size: 120x70 below "S""# + "\n" + #"tile "T" right of "U""#, on: editor)
+        let sizes = Dictionary(uniqueKeysWithValues: editor.document.shapes.compactMap { r in r.typed(as: Stretch.self).map { ($0.props.label, r.box?.size) } })
+        expectEqual(sizes, ["S": storedSize, "U": storedSize, "V": CGSize(width: 120, height: 70)])
+        _ = try drawn(#"gauge "G" width: 500 height: 200"#, on: editor)
+        expectEqual(editor.document.shapes.filter { $0.kind == Stretch.kind }.count, 3)
+        expectEqual(stretch("S", in: editor)?.box?.size, storedSize, "a gauge restated bigger writes nothing to the stretches")
     },
 ])
 

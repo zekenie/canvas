@@ -249,10 +249,10 @@ struct Drawing {
     /// Works out how much room each shape takes once drawn (`ShapeItem.room`): the frame its kind lays
     /// it out in, with the script's own shapes read as the file's (a type and its instance drawn
     /// together, a stretch and the gauge it names), and a board shape the script doesn't restate read as
-    /// it is. Only the size is kept: a shape is placed where the layout says, so its origin is its
-    /// own. What draw places and reports, and `canvas measure` answers with, so the two agree.
+    /// it is, but for those it deletes, which are not there. Only the size is kept: a shape is placed
+    /// where the layout says, so its origin is its own. What draw places and reports, and `canvas measure` answers with, so the two agree.
     private mutating func layOut() {
-        let context = target.shapes.layingOut(with: items.map(\.record))
+        let context = target.shapes.layingOut(with: items.map(\.record), removing: deletedShapes)
         for index in items.indices {
             var sized = items[index].record
             sized.box = CGRect(origin: items[index].existing?.box?.origin ?? .zero, size: items[index].size)
