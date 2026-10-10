@@ -35,6 +35,8 @@ public struct TypesPlugin: CanvasPlugin {
         registrar.edges(in: IsAProperty.self, as: IsAEdge.self)
         // The index first: the sync and what reads types hear each commit after it.
         registrar.service { TypeIndex(editor: $0) }
+        // What the types of a list give, resolved once and kept; it reads nothing as it is made.
+        registrar.service { FieldBook(editor: $0) }
         registrar.service { TypeSync<TypeSchemaProperty>(editor: $0) }
         // Resting the pointer on a highlight's words shows the part of the schema they say; in the
         // editor, its own view asks (`TypeIndex.popover(at:on:)`).

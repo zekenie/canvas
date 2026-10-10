@@ -9951,6 +9951,20 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   names, copy on write: the fact queries take up in O(1) for `:is-a`, which follows the same
   lists and asks only reachability, `reaches`, in no order); the chips of a renamed,
   deleted or restored type's instances are made again.
+- **The chain and the field book**: what a shape's types give it is `editor.fieldBook`
+  (`FieldBook`, an `EditorService`): `fields(types:)` (or `fields(of: record)`, its `is` list) is a
+  `Resolved`, the one resolution for that list, kept until a type comes, goes, changes its schema's
+  text or its own types (`revision`; not a rename, nor another shape's types), and resolved when first
+  asked, so ten thousand notes with one list resolve it once. `order` is the types, `lineage`'s order
+  with the gone left out; `fields` is each field once in the order rows show: the most general type's
+  first, in the order written, a field a more specific type restates keeping the place the more
+  general one gave it, with the restater's whole definition (the first type in `order` to name a field
+  gives all of it, `required` with it; nothing is merged). `rules` are the types' root keywords across
+  fields, `directives` their `$`-key properties (one per name, the first in `order`), and `schema` the
+  one object schema over fields and rules for a check. A field's schema is a `SchemaValue` (JSON with
+  its members in the order written), with its `#` references written out and a `urn:uuid:` one (another
+  type) kept; `members(of:)` and `item(of:)` give the fields inside a group, another type's fields and a
+  list's items. The pure part, `Chain.resolve`, reads a catalog of values and needs no editor.
 - **Rules** (`TypeValidationPlugin`, `validateEveryShape`): text that isn't JSON is an error at its
   line and column ("Invalid JSON: expected a property name at line 6, column 34."), as is a root
   that isn't an object; `required` naming a property its object doesn't have, a `type` that isn't
@@ -11597,7 +11611,7 @@ title-validation     service TitleIndex · ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
-types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service TypeSync<TypeSchemaProperty> · ShapePopovers · /type → every shape · /is-a → every shape · adornment TypeChips → every shape
+types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · ShapePopovers · /type → every shape · /is-a → every shape · adornment TypeChips → every shape
 type-validation      ValidationRules
 type-details         ShapeDetails · ShapeDetails
 snapping             service SnapState · translation adjuster

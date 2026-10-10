@@ -30,6 +30,15 @@ extension Budget {
     /// same frame still: the chips are laid out where the shapes are, never made again for a move (the thread's CPU;
     /// release, 0.5 ms more, against 6.7 when a move made each shape's chips again).
     static let typesDragFrame = 3.0
+    /// The field book (`editor.fieldBook`) asked cold for 1,000 distinct lists of three types, each holding a type of six
+    /// fields that is built on one of twelve, a group through `#/$defs` among them: each list ordered and its fields
+    /// laid out, asked after a schema written to another type, which drops every kept list. Also held after a schema edit
+    /// to the first type, which makes every list resolve again (the levels it read are read again too): some 15 ms (release, the thread's CPU, three runs 14.8, 15.1 and 15.2, and 14.9, 15.1 and 15.0
+    /// after the edit).
+    static let fieldListsResolved = 45.0
+    /// 10,000 asks of lists already kept (what a frame of notes in view pays, a stamp compare and a hash of a list
+    /// of three ids each): some 1 ms (1.03, 1.03 and 1.05).
+    static let fieldListsKept = 3.0
 }
 
 /// The generated board's notes made types (every fiftieth), and instances (every sixth that isn't):
@@ -202,5 +211,72 @@ extension Budget {
         report(String(format: "%6d instances in view at 40%%, all dragged: the frame after each event %5.1f ms, %.1f more than still %5.1f (budget %.0f more)",
                       count, dragged, dragged - still, still, Budget.typesDragFrame))
         if holdsToBudgets { expect(dragged - still < Budget.typesDragFrame, "dragging \(count) instances added \(dragged - still) ms to a frame") }
+    },
+    test("the field book resolves 1,000 distinct lists of types cold, again after a schema edit, and answers kept ones at a lookup each") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        for size in sizes {
+            let (document, types, _, _) = typedBoard(shapes: size)
+            let editor = CanvasEditor(registry: try Registry(plugins: shippedPlugins(pasteboard)), document: document, scheduler: ManualScheduler())
+            let book = try require(editor.fieldBook)
+            let first = types[0], second = types[1], spare = types[2]
+            func text(_ fields: Int, prefix: String, extra: String = "", note: Int = 0) -> String {
+                let properties = (0..<fields).map { #""\#(prefix)\#($0)": {"type": "string", "description": "\#(note)"}"# } + (extra.isEmpty ? [] : [extra])
+                return #"{"type": "object", "properties": {\#(properties.joined(separator: ", "))}, "required": ["\#(prefix)0"], "$defs": {"address": {"type": "object", "properties": {"street": {"type": "string"}, "city": {"type": "string"}}}}}"#
+            }
+            let group = ##""address": {"$ref": "#/$defs/address"}"##
+            @MainActor func write(_ id: ShapeID, _ schema: String) {
+                editor.transact("Write") { $0.update(id) { $0[TypeSchemaProperty.self] = SchemaText(schema) } }
+            }
+            editor.transact("Types") {
+                $0.update(first) { $0[TypeSchemaProperty.self] = SchemaText(text(11, prefix: "f", extra: group)) }
+                $0.update(second) {
+                    $0[TypeSchemaProperty.self] = SchemaText(text(6, prefix: "g"))
+                    $0[IsAProperty.self] = [TypeLink(first)]
+                }
+            }
+            // Distinct lists of three: the second type among two others, in each place.
+            let others = types.filter { $0 != second }
+            var lists: [[ShapeID]] = []
+            search: for x in others {
+                for y in others where y != x {
+                    lists.append([x, second, y])
+                    if lists.count == 1_000 { break search }
+                }
+            }
+            @MainActor func ask() { for list in lists { _ = book.fields(types: list) } }
+            var note = 0
+            let cold = median(runs: 11, prepare: {
+                note += 1
+                let before = book.revision
+                write(spare, text(2, prefix: "a", note: note))
+                expect(book.revision != before, "a type's schema written moves the revision")
+            }, onThread: true) { ask() }
+            let afterEdit = median(runs: 11, prepare: {
+                note += 1
+                write(first, text(11, prefix: "f", extra: group, note: note))
+            }, onThread: true) { ask() }
+            #if DEBUG
+            let made = book.resolutionsMade
+            write(first, text(11, prefix: "f", extra: group, note: note + 1))
+            ask()
+            expectEqual(book.resolutionsMade - made, lists.count, "one resolution for each distinct list after an edit")
+            ask()
+            expectEqual(book.resolutionsMade - made, lists.count, "and none for lists kept")
+            #endif
+            let resolved = book.fields(types: try require(lists.first))
+            expect(resolved.fields.count >= 12 + 6, "the first type's twelve and the second's six, among the rest")
+            ask()
+            let rounds = max(1, 10_000 / lists.count)
+            let kept = median(runs: 11, onThread: true) { for _ in 0..<rounds { ask() } } * 10_000 / Double(rounds * lists.count)
+            report(String(format: "%6d shapes, %d types, %d lists of three: resolved cold %6.2f ms, again after a schema edit %6.2f ms (budget %.0f); 10,000 asks kept %6.2f ms (budget %.0f)",
+                          size, types.count, lists.count, cold, afterEdit, Budget.fieldListsResolved, kept, Budget.fieldListsKept))
+            if holdsToBudgets, size >= 10_000 {
+                expect(lists.count == 1_000, "\(lists.count) lists")
+                expect(cold < Budget.fieldListsResolved, "resolving \(lists.count) lists cold took \(cold) ms")
+                expect(afterEdit < Budget.fieldListsResolved, "resolving \(lists.count) lists again after a schema edit took \(afterEdit) ms")
+                expect(kept < Budget.fieldListsKept, "10,000 asks of kept lists took \(kept) ms")
+            }
+        }
     },
 ])
