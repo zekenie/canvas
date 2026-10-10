@@ -20,7 +20,7 @@ import TestKit
 import Titles
 import Types
 
-// Types as shipped: a note made a type with `/type`, typed in its editor in the app's canvas view;
+// Types as shipped: a note made a type with `/is-a type`, typed in its editor in the app's canvas view;
 // its words and its schema kept in step by the model; a mention of another type, a `$ref` to it;
 // copied with the type it refers to; and drawn by an agent with `schema:`.
 
@@ -38,7 +38,7 @@ private let petAnswer = """
 """
 
 @MainActor let typesShippedTests = Suite("Types, as shipped", [
-    test("/type typed on a line of a note makes it a type in one step, Make Type, not public, editing going on; done with it, the model writes its schema and names it") {
+    test("/is-a type typed on a line of a note makes it a type in one step, Make Type, not public, editing going on; done with it, the model writes its schema and names it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let model = ScriptedLanguageModel(), scheduler = ManualScheduler()
@@ -50,8 +50,9 @@ private let petAnswer = """
         let view = try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the note's editor has the keyboard")
         view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
         window.pressReturn()
-        window.type("/ty")
-        expectEqual(view.slashCommands?.picker?.highlightedCommand?.name, "type")
+        window.type("/is-a ")
+        expectEqual(view.slashCommands?.choices?.listed.map(\.title), ["Type"], "no types in the file: only Type")
+        expectEqual(view.slashCommands?.choices?.highlightedChoice?.title, "Type")
         window.pressReturn()
         window.settle()
         expectEqual(editor.document[note]?[TypeSchemaProperty.self]?.text, TypeSchemaProperty.starter)
@@ -187,15 +188,13 @@ private let petAnswer = """
         let editing = try view()
         editing.setSelectedRange(NSRange(location: editing.textStorage?.length ?? 0, length: 0))
         window.pressReturn()
-        window.type("/is")
-        expectEqual(editing.slashCommands?.picker?.highlightedCommand?.name, "is-a")
-        window.press("\t", code: 48)
-        window.type("@")
-        let picker = try require(editing.picker, "the @ picker, on the line of a command that takes a type")
-        expectEqual(picker.rows.compactMap(\.candidate?.id), [person], "a type, not Zeke or the note itself")
+        window.type("/is-a ")
+        let rows = try require(editing.slashCommands?.choices, "the choices")
+        expectEqual(rows.listed.map(\.title), ["Type", "Person"], "no Zeke (not a type), and not Ann herself")
+        expectEqual(rows.highlightedChoice?.title, "Person", "the first type")
+        window.type("per")
+        expectEqual(rows.listed.map(\.title), ["Person"])
         window.pressReturn()
-        window.pressReturn()
-        window.settle()
         expectEqual(editor.document[ann]?[IsAProperty.self]?.map(\.shape), [person])
         expectEqual(editor.editingShapeID, ann, "editing goes on")
         expectEqual(editor.document[ann]?.typed(as: StickyNote.self)?.props.text.plainText(), "Ann\n", "the line is gone from its text, the line break is not")
@@ -217,9 +216,7 @@ private let petAnswer = """
         label.setSelectedRange(NSRange(location: 4, length: 0))
         window.pressReturn()
         window.type("/is-a ")
-        window.type("@")
-        expectEqual(try require(label.picker).rows.compactMap(\.candidate?.id), [person])
-        window.pressReturn()
+        expectEqual(try require(label.slashCommands?.choices).listed.map(\.title), ["Person"], "no Type row on a label")
         window.pressReturn()
         window.settle()
         expectEqual(editor.document[arrow]?[IsAProperty.self]?.map(\.shape), [person])

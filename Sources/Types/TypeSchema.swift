@@ -1,9 +1,11 @@
 import Canvas
+import Foundation
+import Mentions
 
 /// What makes a shape a Type: its JSON Schema, kept as its text (`SchemaText`: order and half-typed
 /// text survive), an added property of the kinds whose words can say what a type holds
 /// (`canBeType()`: a note). A shape holding one is a Type, and one without isn't: there's no other
-/// mark. It's written whole by `/type` (the starter) and by the sync from the shape's words
+/// mark. It's written whole by `/is-a type` (the starter, or its words) and by the sync from the shape's words
 /// (`TypeSync`), and by hand in the panel's Schema tab. Its `$ref`s to `urn:uuid:` and another
 /// type's id refer to that type (`SchemaReferences`), so the value names shapes (`ShapeNaming`), as
 /// mention text does: a copy refers to the copies made with it. It holds no root `"title"` of its
@@ -26,6 +28,20 @@ extension TypeSchemaProperty: ShapeProperty {
       "properties": {}
     }
     """
+}
+
+/// A shape's words taken as its schema when it is made a type: they are the schema when they are a
+/// JSON object, as written but for the whitespace around them (the removal of `/is-a type`'s line
+/// leaves a line break the schema should not start or end with).
+enum TypeWordsSchema {
+    /// The words as a schema; nil if they hold a mention (a pill inside a JSON string still parses),
+    /// or trimmed are empty or not a JSON object (an array, a scalar, text).
+    static func schema(fromWords words: MentionText) -> String? {
+        guard words.mentioned.isEmpty else { return nil }
+        let text = words.stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let root = try? JSONReader.read(text), root.members != nil else { return nil }
+        return text
+    }
 }
 
 /// A type's name in its schema's text, which holds none of its own: put in as the root `"title"`

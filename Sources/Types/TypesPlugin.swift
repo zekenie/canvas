@@ -16,7 +16,7 @@ extension PluginID {
 /// its words are highlighted where they say a part of its schema (a prose map, `SchemaTarget`, which
 /// ProseMaps asks for: without `ProseMapsPlugin` there are none), each part shown in a popover on its
 /// words; a mention of another type in its words is a `$ref` to that type's schema
-/// (`SchemaReferences`). `/type` makes a shape one, and Remove Type
+/// (`SchemaReferences`). `/is-a type` makes a shape one, and Remove Type
 /// (`removeType`) one no longer. The file's types are `editor.types` (`TypeIndex`). Its rules
 /// (`TypeValidationPlugin`) and its panel (`TypeDetailsPlugin`) are plugin values of their own, so a
 /// list without Validation or the panel can install Types. It knows no kind: a kind hands it its
@@ -40,7 +40,6 @@ public struct TypesPlugin: CanvasPlugin {
             guard editor.editingShapeID != record.id else { return nil }
             return TypeHighlights.popover(at: point, on: record, in: editor)
         }
-        registerTypeCommands(into: &registrar)
         registerIsACommand(into: &registrar)
         registerTypeChips(into: &registrar)
     }
@@ -87,7 +86,10 @@ public enum TypesStyle {
     /// The step `/is-a` takes, and what the chips' and the panel's Remove take back with Remove Type's.
     public static let addType = "Add Type"
     /// What `/is-a` takes, beside its name in the list.
-    static let isAArgument = "@type"
+    static let isAArgument = "type"
+    /// `/is-a`'s rows: `Type`, which makes the shape one, and the mark each has.
+    static let typeChoice = "Type"
+    static let typeSymbol = "curlybraces"
     /// The chips: the mark of a type, and what a type that has no title, or is gone and was never
     /// known by one, is called.
     static let typeChip = "Type"

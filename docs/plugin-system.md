@@ -6034,7 +6034,7 @@ command offered `when` the shape says so, and a text view that hosts it is where
 Mentions' `MentionTextView` does, so every text where mentions are typed (a note's editor, the panel's [`MentionTextArea`](#in-the-panel-mentiontextarea)) takes
 slash commands. The core has never heard of a command, and SlashCommands has never heard of a
 mention: a command's arguments are runs of text and shapes, and a pill is a shape only because the
-text view that reads the line says so. Titles' `/title`, Locking's `/lock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, [Types](#types-shapes-that-hold-a-schema)' `/type` and `/is-a` (the one-shape form: `/is-a @Person`, in a note's text or an arrow's label), and [Moving](#moving)'s `/move-to` and `/move-near` are the commands that ship.
+text view that reads the line says so. Titles' `/title`, Locking's `/lock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, [Types](#types-shapes-that-hold-a-schema)' `/is-a` (the choice form: `/is-a Person` or `/is-a type`, in a note's text or an arrow's label), and [Moving](#moving)'s `/move-to` and `/move-near` are the commands that ship.
 
 ```swift
 // In LockingPlugin.register:
@@ -9924,15 +9924,18 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   root `"title"`, so there's one place to say the name; one the person types in the JSON is kept as
   typed, and is never the name. The sync puts the name in for the model and takes the model's out
   (below), and the JSON's completions offer no `title` at the root.
-- **Making one**: `/type`, typed on a line of a shape's words, offered while it isn't one, takes
-  nothing and runs `editor.makeType(_:)`, one step, "Make Type": the starter schema
-  (`TypeSchemaProperty.starter`, an object with no properties), and nothing else: a type does not
-  start public (it is found by `/is-a` and by its title; `/public` is the person's to say, on a
-  type as on any shape). Its words are then ahead of its schema, and
-  the sync asks for the schema they say once the person is done with them, as for an edit.
-  `editor.removeType(_:)` takes it back, one step, "Remove Type": the schema goes, the words, title
-  and public stay, and undo brings the schema back. An agent makes a type with `canvas draw`'s
-  `schema:` (an added property's attribute, as every one is): `sticky-note "Order" schema: "…"`.
+- **Making one**: `/is-a type`, typed on a line of a shape's words (the `Type` row of `/is-a`'s
+  list, offered while the shape can be one and isn't), or Is a ▸ Type in the shape's menu, runs
+  `editor.makeType(_:)`, one step, "Make Type": the starter schema (`TypeSchemaProperty.starter`,
+  an object with no properties), and nothing else: a type does not start public (it is found by
+  `/is-a` and by its title; `/public` is the person's to say, on a type as on any shape). Its words
+  are then ahead of its schema, and the sync asks for the schema they say once the person is done
+  with them, as for an edit. If the words are a JSON object (no mention in them, not an array or a
+  scalar) they are the schema instead, as written but for the whitespace around them, with no
+  model call, and the sync then writes the words from the schema. `editor.removeType(_:)` takes it
+  back, one step, "Remove Type": the schema goes, the words, title and public stay, and undo
+  brings the schema back. An agent makes a type with `canvas draw`'s `schema:` (an added
+  property's attribute, as every one is): `sticky-note "Order" schema: "…"`.
 - **What a shape is**: `is`, an added property (`IsAProperty`, an ordered list of `TypeLink`s, none
   twice, empty is none) on the kinds that call `typeable()` (it needs `typeWords` too): a note, and
   an arrow, whose label is its words (`arrow.typeWords(\.text, drawnIn: { arrow, shapes in … })`, the
@@ -9942,12 +9945,15 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   type that is deleted leaves its name behind until the delete is undone; `ShapeID` itself is not
   `ShapeNaming` (an arrow's bindings are ids). Types declares the `is-a` edge (a root) and derives it
   with [the property rule](#sources). `Fixtures/added/is.v0.json` is its fixture.
-- **`/is-a @Type`** is a slash command with the one-shape argument on every kind that holds `is`:
-  the `@` picker on its line lists the types of the file (`kinds`: the kinds that can be types), and
-  its rule (`TypeIndex.admits`) refuses the shape itself, a type it is already, a type that is it in
-  turn (no cycles) and a pill. It appends (a later line wins) in one step, "Add Type"
+- **`/is-a`** is a slash command that [takes a choice](#a-command-that-takes-a-choice) on every
+  kind that holds `is`: `/is-a ` lists `Type` (while the shape can be one and isn't) and the types
+  of the file the shape may be, by name (`TypeIndex.choices(for:)`: its rule, `admits`, refuses the
+  shape itself, a type it is already, a type that is it in turn (no cycles) and a pill). A pick
+  runs at once: `Type` is "Make Type", a type appends (a later line wins) in one step, "Add Type"
   (`editor.addTypeLink(_:to:)`; `removeTypeLink(_:from:)` takes one away, "Remove Type", and is the
-  one way an entry goes). It works in a note's text and in an arrow's label.
+  one way an entry goes). With nothing typed the first type is highlighted, `Type` when there is
+  none. It works in a note's text and in an arrow's label (no `Type` row there). `@` on its line is
+  a letter.
 - **Chips**: `TypeChips` (an `Adornment`, aboveTopLeft, a [group](#adornments)) shows a "Type" chip
   on a type and one chip for each type a shape is, in order, each its type's live title, dashed
   (`.missing()`) once the type is gone, the ones that don't fit folded into "+N". A click pops up a
@@ -11613,7 +11619,7 @@ title-validation     service TitleIndex · ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
-types                property schema · property is · edge type is-a · edges → every shape · service TypeIndex · service TypeSync<TypeSchemaProperty> · ShapePopovers · /type → every shape · /is-a → every shape · adornment TypeChips → every shape
+types                property schema · property is · edge type is-a · edges → every shape · service TypeIndex · service TypeSync<TypeSchemaProperty> · ShapePopovers · /is-a → every shape · adornment TypeChips → every shape
 type-validation      ValidationRules
 type-details         ShapeDetails · ShapeDetails
 snapping             service SnapState · translation adjuster

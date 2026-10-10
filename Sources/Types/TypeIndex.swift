@@ -166,6 +166,29 @@ public final class TypeIndex {
         return !lineage(of: target).contains(owner)
     }
 
+    /// The types `owner` may be (`admits`), by name (`localizedStandardCompare`, the id the tie), an
+    /// untitled one last: what `/is-a`'s list shows. O(types) a time it is asked, which is when a
+    /// list opens.
+    public func choices(for owner: ShapeID) -> [(type: ShapeID, name: String?)] {
+        Self.sorted(entries.keys.filter { admits($0, for: owner) }.map { ($0, entries[$0]?.name) })
+    }
+
+    private static func sorted(_ types: [(ShapeID, String?)]) -> [(type: ShapeID, name: String?)] {
+        types.sorted { a, b in
+            switch (a.1, b.1) {
+            case (nil, nil): a.0.rawValue.uuidString < b.0.rawValue.uuidString
+            case (nil, _): false
+            case (_, nil): true
+            case (let x?, let y?):
+                switch x.localizedStandardCompare(y) {
+                case .orderedAscending: true
+                case .orderedDescending: false
+                case .orderedSame: a.0.rawValue.uuidString < b.0.rawValue.uuidString
+                }
+            }
+        }.map { (type: $0.0, name: $0.1) }
+    }
+
     /// What a shape may be, by what the target is: a type. The one place that says so; the custom
     /// shapes of a later slice join here, as what a shape of their kind may be besides.
     private func mayBe(_ target: ShapeID, for owner: ShapeID) -> Bool {

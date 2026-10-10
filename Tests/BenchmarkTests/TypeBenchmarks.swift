@@ -8,6 +8,7 @@ import Geometry
 import LanguageModels
 import Mentions
 import Selection
+import SlashCommands
 import StickyNotes
 import TestKit
 import Titles
@@ -120,42 +121,27 @@ extension Budget {
         }
     },
 
-    test("a keystroke in the /is-a picker over 10,000 notes, the @ that opens it included, costs what the types are: a plain note is passed over by one lookup") {
+    test("opening the /is-a list over 10,000 notes costs what the types are: a plain note is passed over by one lookup, and no keystroke asks again") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         for size in sizes {
             let (document, types, _, _) = typedBoard(shapes: size)
             let editor = CanvasEditor(registry: try Registry(plugins: shippedPlugins(pasteboard)), document: document, scheduler: ManualScheduler())
-            let mentions = try require(editor.mentions), index = try require(editor.types)
+            let index = try require(editor.types)
             let plain = document.shapes.first { (record: AnyShapeRecord) -> Bool in
                 record.kind == StickyNote.kind && record[TypeSchemaProperty.self] == nil && record[IsAProperty.self] == nil
             }
             let owner = try require(plain).id
-            // What `/is-a` offers: the kinds that can be types, the rule `admits`.
-            let registry = editor.registry
-            let kinds = Set(registry.kinds.filter { registry.canBeType($0) })
-            let rule: @MainActor (ShapeID) -> Bool = { index.admits($0, for: owner) }
-            let open = { _ = MentionPicker(at: 0, mentions: mentions, scope: AnyMentionable.self, owner: owner, kinds: kinds, admitting: rule) }
+            let command = try require(editor.slashCommands?.command(named: "is-a", for: owner))
+            let open = { _ = command.choices() }
             let first = median(runs: 1, onThread: true, open)
             let opening = median(runs: 21, onThread: true, open)
-            let picker = MentionPicker(at: 0, mentions: mentions, scope: AnyMentionable.self, owner: owner, kinds: kinds, admitting: rule)
-            var worst = (query: "@", ms: opening)
-            for query in ["t", "ty", "typ", "type", "type 1", "tpye 12", "note", "zzzzq"] {
-                let typed = "@" + query as NSString, before = "@" + query.dropLast() as NSString
-                let ms = median(runs: 21, prepare: {
-                    _ = picker.read(before, selection: NSRange(location: before.length, length: 0), isEdit: true)
-                }, onThread: true) {
-                    _ = picker.read(typed, selection: NSRange(location: typed.length, length: 0), isEdit: true)
-                }
-                if ms > worst.ms { worst = ("@" + query, ms) }
-            }
-            _ = picker.read("@type 1", selection: NSRange(location: 7, length: 0), isEdit: true)
-            expect(picker.highlightedCandidate.map { index.isType($0.id) } == true, "a type is what it offers")
-            report(String(format: "%6d shapes, %d types, the /is-a picker: the first @ %6.3f ms, then %6.3f ms, the slowest keystroke %6.3f ms (\"%@\") (budget %.0f)",
-                          size, types.count, first, opening, worst.ms, worst.query, Budget.pickerKeystroke))
+            let rows = command.choices()
+            expect(rows.first?.title == "Type" && rows.dropFirst().allSatisfy { index.isType(ShapeID(UUID(uuidString: $0.id)!)) }, "Type, then the types")
+            report(String(format: "%6d shapes, %d types, the /is-a list: the first open %6.3f ms, then %6.3f ms (budget %.0f)",
+                          size, types.count, first, opening, Budget.pickerKeystroke))
             if holdsToBudgets {
-                expect(opening < Budget.pickerKeystroke, "the @ on /is-a's line over \(size) shapes took \(opening) ms")
-                expect(worst.ms < Budget.pickerKeystroke, "a keystroke in /is-a's picker (\(worst.query)) over \(size) shapes took \(worst.ms) ms")
+                expect(opening < Budget.pickerKeystroke, "opening /is-a's list over \(size) shapes took \(opening) ms")
             }
         }
     },

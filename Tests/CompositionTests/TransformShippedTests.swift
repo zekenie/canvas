@@ -187,7 +187,7 @@ import Validation
         let h = g.h
         let state = try require(h.editor.slashCommands)
         expectEqual(state.commands(for: g.frame).map(\.name), ["turn-into-subboard", "title", "lock", "public", "move-to", "move-near"], "a command is placed where its plugin is: Subboards' is before Titles', Locking's, Publishing's and Moving's")
-        expectEqual(state.commands(for: g.milk).map(\.name), ["title", "lock", "public", "type", "is-a", "move-to", "move-near"], "a note has nothing to turn into")
+        expectEqual(state.commands(for: g.milk).map(\.name), ["title", "lock", "public", "is-a", "move-to", "move-near"], "a note has nothing to turn into")
         expectEqual(state.commands(for: g.frame).first?.title, "Turn into Subboard")
         let before = h.file
         h.editor.selectedShapeIDs = [g.frame, g.milk]

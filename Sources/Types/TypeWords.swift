@@ -78,7 +78,7 @@ extension ShapeRegistrar {
     }
 
     /// This kind's shapes can be types: each may hold a JSON Schema (`TypeSchemaProperty`), which
-    /// `/type` gives it and its words are kept in step with. Needs `typeWords`.
+    /// `/is-a type` gives it and its words are kept in step with. Needs `typeWords`.
     public mutating func canBeType() {
         optIn(to: TypeSchemaProperty.self)
     }

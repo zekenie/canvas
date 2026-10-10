@@ -357,19 +357,15 @@ private final class LabelCanvas: NSView {
 ])
 
 @MainActor let labelTypeTests = Suite("Arrow labels: /is-a", [
-    test("an arrow offers /is-a, taking one type: the @ picker on its line lists the types, not the other shapes; Return picks one and runs the line") {
+    test("an arrow offers /is-a, taking one choice: the list on its line holds the types and no Type row, Groceries being none; Return picks one and runs the line") {
         let session = try EditedLabel("keep")
         let typing = try require(session.textView.slashCommands)
         session.window.pressReturn()
         session.window.type("/is")
         expectEqual(typing.picker?.highlightedCommand?.name, "is-a")
         session.window.press("\t", code: 48)
-        session.window.type("@")
-        let picker = try require(session.textView.picker, "the @ picker, on the line of a command that takes a type")
-        expectEqual(picker.rows.compactMap(\.candidate?.id), [session.person], "Groceries is no type")
-        session.window.pressReturn()
-        expect(session.textView.picker == nil)
-        expectEqual(session.committed?.mentioned, [session.person], "the pill is in the command's line")
+        let choices = try require(typing.choices, "the choices")
+        expectEqual(choices.listed.map(\.title), ["Person"], "Groceries is no type, and an arrow's label has no Type row")
         session.window.pressReturn()
         session.window.settle()
         expectEqual(session.h.editor.document[session.arrow]?[IsAProperty.self]?.map(\.shape), [session.person], "the arrow is a Person")
