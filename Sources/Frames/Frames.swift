@@ -61,8 +61,9 @@ public struct FramesPlugin: CanvasPlugin {
             // its minimum, however it's drawn.
             let place = frame.placement(size: Frame.defaultSize, minimumSize: Frame.minimumSize) { Frame() }
             frame.tool(label: "Frame", systemImage: Frame.systemImage, shortcut: "f", placing: place) { _ in FrameTool(placing: place) }
+            frame.tint(FrameStyle.tint)                                     // its gray, wherever it's listed by its kind
             frame.title(placeholderInPill: Frame.pillPlaceholder, coverSurface: FrameStyle.fill)  // Titles keeps its name, in a pill above it
-            frame.mentionable(tint: { _ in FrameStyle.tint })               // by its name; followed, it's gone to
+            frame.mentionable()                                             // by its name; followed, it's gone to
             frame.resizable(minimumSize: place.minimumSize)                 // eight handles, Selection's
             frame.frameRow()                                                // the table of contents, named by Titles
             frame.frameHeader()                                             // renamed in the panel's header

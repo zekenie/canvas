@@ -37,6 +37,7 @@ public struct SchemasPlugin: CanvasPlugin {
         registrar.shape(SchemaCardDefinition()) { schema in
             let place = schema.editingPlacement(size: SchemaCard.defaultSize) { SchemaCard() }
             schema.tool(label: "Schema", systemImage: "curlybraces", shortcut: "s", placing: place)
+            schema.tint(SchemaStyle.accent)                // its magenta, wherever it's listed by its kind
             schema.validate { shape, _ in SchemaReadings.reading(of: shape).issues }
             schema.title(symbolInPill: true, coverSurface: SchemaStyle.card) { SchemaReadings.reading(of: $0).shown.title }
             schema.contentsRow { shape in
@@ -49,7 +50,7 @@ public struct SchemasPlugin: CanvasPlugin {
             // Its description's mentions of other cards show as pills, and a card is mentioned by
             // its title, in its kind's magenta, as its row shows it.
             schema.mentionText { [$0.mentionPlacement] }
-            schema.mentionable(tint: { _ in SchemaStyle.accent })
+            schema.mentionable()
         }
         registrar.channel(SchemaLink.self)
     }

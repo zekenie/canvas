@@ -29,8 +29,6 @@ import Topology
 @Observable
 public final class JumpToState {
     @ObservationIgnored unowned let editor: CanvasEditor
-    /// How a shape's symbol shows beyond its kind's label (`JumpToPlugin(appearance:)`); nil: not at all.
-    @ObservationIgnored let appearance: JumpToAppearanceProvider?
     public var registry: Registry { editor.registry }
 
     /// Whether the palette is open.
@@ -104,9 +102,8 @@ public final class JumpToState {
         var placeholder: String
     }
 
-    init(editor: CanvasEditor, appearance: JumpToAppearanceProvider? = nil) {
+    init(editor: CanvasEditor) {
         self.editor = editor
-        self.appearance = appearance
         heardRevision = editor.revision
     }
 

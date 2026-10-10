@@ -99,6 +99,22 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 80)
         expectEqual(starred.tint, .systemYellow)
     },
 
+    test("a mention's tint is its kind's (the core's `x.tint`), unless how the kind is mentioned says one for the shape") {
+        // CanvasTesting's card (these tests have a `Card` of their own, for validation).
+        typealias IndexCard = CanvasTesting.Card
+        let h = try mentionHarness([CardsPlugin { card, _ in card.tint(.systemTeal) },
+                                    Contributor(id: "card-mentions") {
+                                        $0.mentionable(IndexCard.self, untitled: { _ in "A card" }, tint: { $0.props.text == "red" ? .systemRed : nil })
+                                    }])
+        let registry = h.editor.registry
+        let plain = try require(h.record(h.add(IndexCard(frame))).flatMap(registry.mentionAppearance(of:)))
+        expectEqual(plain.tint, .systemTeal, "the kind's")
+        let red = try require(h.record(h.add(IndexCard(frame, text: "red"))).flatMap(registry.mentionAppearance(of:)))
+        expectEqual(red.tint, .systemRed, "the shape's own, over the kind's")
+        let plate = try require(h.record(h.editor.add(Plate(frame), titled: "P")).flatMap(registry.mentionAppearance(of:)))
+        expectEqual(plate.tint, nil, "a kind with no tint")
+    },
+
     test("a shape of a kind that isn't mentionable, or kept aside, has no appearance; a mention of it is unavailable") {
         let h = try mentionHarness()
         let registry = h.editor.registry

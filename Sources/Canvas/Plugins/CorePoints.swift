@@ -21,6 +21,13 @@ enum CorePoints {
         static func uniqueKeys(of _: KindLabel, for target: ShapeTarget) -> [AnyHashable] { [KindLabelKey(target: target)] }
     }
 
+    /// A kind's color where a shape is shown by its kind (`ShapeRegistrar.tint`). One per kind.
+    enum KindTints: KeyedExtensionPoint {
+        typealias Contribution = KindTint
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: KindTint, for target: ShapeTarget) -> [AnyHashable] { [KindTintKey(target: target)] }
+    }
+
     enum Services: KeyedExtensionPoint {
         typealias Contribution = ServiceRegistration
         static var owner: PluginID { .core }
@@ -113,6 +120,15 @@ struct ToolKey: Hashable, CustomStringConvertible {
 struct KindLabelKey: Hashable, CustomStringConvertible {
     let target: ShapeTarget
     var description: String { "the label of \(target)" }
+}
+
+struct KindTint {
+    let color: NSColor
+}
+
+struct KindTintKey: Hashable, CustomStringConvertible {
+    let target: ShapeTarget
+    var description: String { "the tint of \(target)" }
 }
 
 struct ShapeRegistration {

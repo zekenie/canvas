@@ -251,11 +251,11 @@ public final class MentionState {
     }
 
     /// How a mentioner is named in a backlink: as it's mentioned, if it can be; else by its title,
-    /// else its kind's label; with its kind's symbol, and the tint it's mentioned with.
+    /// else its kind's label; with its kind's symbol, and the tint it's mentioned with, else its kind's.
     private func backlinkName(of record: AnyShapeRecord) -> (label: String, systemImage: String, tint: NSColor?) {
         if let appearance = appearance(of: record) { return (appearance.label, appearance.systemImage, appearance.tint) }
         let kind = registry.label(of: record.kind)
-        return (oneLine(registry.title(of: record)) ?? kind.name, kind.systemImage ?? MentionStyle.unknownSymbol, nil)
+        return (oneLine(registry.title(of: record)) ?? kind.name, kind.systemImage ?? MentionStyle.unknownSymbol, kind.tint)
     }
 
     /// The quote around a mentioner's first mention of `target`: in the first of its texts that

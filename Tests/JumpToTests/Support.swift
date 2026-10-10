@@ -24,22 +24,21 @@ func titled() -> Contributor {
         r.title(Box.self, pill: false, contents: false)
         r.title(Pocket.self, pill: false, contents: false)
         r.title(Corral.self, pill: false, contents: false)
+        r.title(Card.self, pill: false, contents: false)
         r.opensBoard(Pocket.self, placeholder: "Untitled Pocket", systemImage: "tray")
     }
 }
 
-/// What Composition hands Jump To from Mentions, as a fixture: a box's symbol and tint (a pocket's,
-/// a corral's, nothing).
-let boxTint = NSColor.systemTeal
-let tinted: JumpToAppearanceProvider = { record, _ in
-    record.kind == Box.kind ? JumpToAppearance(systemImage: "shippingbox", tint: boxTint) : nil
-}
+/// A card's tint, the one fixture kind that declares one (`card.tint`): a box, a pocket and a
+/// corral have none.
+let cardTint = NSColor.systemTeal
 
 /// What opening a board takes (keys, the selection, the panel, menus), titles, Topology and Boards,
 /// then Jump To, and the titles of the fixtures.
 @MainActor func jumpPlugins() -> [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PocketsPlugin(), CorralsPlugin(), CardsPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), BoardsPlugin(), JumpToPlugin(appearance: tinted), titled()]
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PocketsPlugin(), CorralsPlugin(),
+     CardsPlugin { card, _ in card.tint(cardTint) }, DetailPanelPlugin(),
+     ContextMenusPlugin(), AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), BoardsPlugin(), JumpToPlugin(), titled()]
 }
 
 func uuid(_ n: Int) -> String { String(format: "00000000-0000-4000-8000-%012d", n) }

@@ -78,11 +78,8 @@ public enum ShippedPlugins {
             // mention text (a note's, a schema card's description), arrows' labels.
             TitleFindPlugin(), MentionFindPlugin(), ArrowFindPlugin(),
             // Jump To (⌘K): goes to a shape by its title and where it is. After Titles, whose titles it
-            // lists, and Boards, whose way of following a shape it takes. Its rows' symbols are tinted as
-            // a mention of the shape is (JumpTo doesn't import Mentions).
-            JumpToPlugin(appearance: { record, registry in
-                registry.mentionAppearance(of: record).map { JumpToAppearance(systemImage: $0.systemImage, tint: $0.tint) }
-            }),
+            // lists, and Boards, whose way of following a shape it takes.
+            JumpToPlugin(),
             // Turning shapes into other kinds: a frame into a subboard, from its menu.
             TransformPlugin(),
             ValidationDetailsPlugin(), ValidationContentsPlugin(), MentionValidationPlugin(), TitleValidationPlugin(),
@@ -146,13 +143,12 @@ public enum ShippedPlugins {
     /// its symbol and a button up (⌘↑'s `.enclosingBoard`); on the root it's `rootName` (the
     /// file's name, as the window and the path's root crumb call it), else "Board". While Find is
     /// open, its panel takes the panel over (Escape and ⌘. there close it), its boards named as the
-    /// path names them and each shape's symbol tinted as a mention of it is.
+    /// path names them.
     public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void, rootName: String = "") -> some View {
         DetailPanelView(editor: editor, onExit: onExit, overview: {
             TableOfContentsView(editor: editor, onExit: onExit, heading: { contentsHeading(for: $0, rootName: rootName) })
         }, takeover: DetailTakeover(isActive: { $0.find?.isActive ?? false }, onEscape: { editor.find?.close() }) {
-            FindPanel(editor: editor, onExit: onExit, heading: { findHeading(of: $0, in: editor, rootName: rootName) },
-                      tint: { editor.registry.mentionAppearance(of: $0)?.tint })
+            FindPanel(editor: editor, onExit: onExit, heading: { findHeading(of: $0, in: editor, rootName: rootName) })
         })
     }
 

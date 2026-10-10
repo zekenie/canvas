@@ -970,7 +970,11 @@ arrow.label("Arrow", systemImage: "arrow.up.right")
 `registry.label(of: kind)` is what a kind is called, and its symbol, wherever a shape is shown by
 its kind (the detail panel's header, a row in the table of contents, “Arrow” can’t be mentioned.):
 what the kind declares (`ShapeRegistrar.label`, one per kind), else its placing tool's label and
-symbol ("Note"), else its id, with no symbol.
+symbol ("Note"), else its id, with no symbol. It carries the kind's color too, `tint`, which a kind
+declares once (`x.tint(NoteStyle.tint)`, one per kind; the report's `tint → sticky-note`): its
+symbol's color wherever a shape is listed by its kind on a neutral surface (Find's rows, Jump To's,
+the `@` picker, a mention's pill in the panel), so a kind has one color in every list and no list
+asks another plugin for it. A kind that declares none is untinted.
 
 Zoomed out, an arrow draws a [skeleton](#skeletons) of its own
 ([ArrowSkeleton.swift](../Sources/Connections/ArrowSkeleton.swift)), since its render looks up the
@@ -5227,15 +5231,15 @@ registrar.shape(StickyNoteDefinition()) { note in
     ...
     note.noteRow()                                               // its row reads its mention text (below)
     note.mentionText { $0.mentionTexts }                         // where its text, with pills, is drawn
-    note.mentionable(untitled: { $0.props.text.firstLine }, tint: { _ in NoteStyle.tint })   // by its title, else its first line; yellow
+    note.mentionable(untitled: { $0.props.text.firstLine })      // by its title, else its first line; in its kind's yellow (note.tint)
 }
 
 // In SubboardsPlugin.register:
-sub.mentionable(tint: { _ in SubboardStyle.border }, following: .opens)   // by its title; the card's indigo; followed, it's entered
+sub.mentionable(following: .opens)                               // by its title; in the card's indigo (sub.tint); followed, it's entered
 
 // In SchemasPlugin.register:
 schema.mentionText { [$0.mentionPlacement] }                     // its description, with pills
-schema.mentionable(tint: { _ in SchemaStyle.accent })            // by its title, in its magenta
+schema.mentionable()                                             // by its title, in its magenta (schema.tint)
 ```
 
 ### Mentionable kinds
@@ -5256,10 +5260,11 @@ only when its shape does:
   that mention each other would each take in the other's name, and their own with it, every time
   either was written.
 - **Its symbol** is `symbol`, else its kind's (`registry.label(of:)`); `detail` is said beside the name in the
-  picker (the kind's name by default), and `tint` colors the symbol where the surface is neutral:
-  the picker, Mentioned In's lines, a pill in the panel's text. Give the kind the color its row
-  has, so it reads as one kind everywhere (a note's yellow, a subboard's indigo); the panel's
-  header keeps its symbol neutral.
+  picker (the kind's name by default), and its tint colors the symbol where the surface is neutral:
+  the picker, Mentioned In's lines, a pill in the panel's text. The tint is the kind's
+  (`x.tint`, the core's, in `registry.label(of:)`), so it reads as one kind everywhere (a note's
+  yellow, a subboard's indigo), unless `tint` says one for the shape (a fixture's starred token);
+  the panel's header keeps its symbol neutral.
 - **Following one** (a double-click on its pill, Go to in the text's menu) is `following`:
   `.goesTo`, the default, goes to the shape (Selection's `goTo`: selects it and brings it into
   view); `.opens` goes into it (`goInto`: goes to it, then opens it, as a double-click on it would,
@@ -6424,11 +6429,11 @@ a shape under a device pixel its pixel, once. A hit under a shape in front shows
 
 ### The panel, and the host
 
-`FindPanel(editor:onExit:heading:tint:)` is Find's panel: its own header (no Back): the field, with
+`FindPanel(editor:onExit:heading:)` is Find's panel: its own header (no Back): the field, with
 a spinner while the index is built; Done; the count with Previous and Next (tooltips from
 `registry.help(_:forCommand:)`: "Next (⌘G)"); and a row per shape with hits, the window of 200 around
 the current one in a lazy stack, under its board's heading (named by `heading`, which the placer
-supplies: Composition passes the path's names), each the kind's symbol (tinted by `tint`), the text
+supplies: Composition passes the path's names), each the kind's symbol in the kind's tint (`registry.label(of:)`), the text
 around its first hit with its hits semibold (cut on whole characters, never inside a surrogate
 pair), and its count when it has more than one; "No matches". Return steps unless an input method is
 composing in the field.
@@ -7686,9 +7691,10 @@ because everything it does is a horizontal's
 registrar.shape(SubboardDefinition()) { sub in                     // SubboardDefinition: BoardOwning
     let place = sub.placement(size: Subboard.defaultSize) { Subboard() }
     sub.tool(label: "Subboard", systemImage: "rectangle.stack", shortcut: "b", placing: place)
+    sub.tint(SubboardStyle.border)                                  // the card's indigo, wherever it's listed by its kind
     sub.title(symbolInPill: true)                                   // Titles keeps its name, in a pill after the symbol
     sub.opensBoard(placeholder: "Untitled Subboard", systemImage: "rectangle.stack")
-    sub.mentionable(tint: { _ in SubboardStyle.border }, following: .opens)   // Mentions: by its title; followed, it's entered
+    sub.mentionable(following: .opens)                              // Mentions: by its title; followed, it's entered
     sub.contentsRow { _ in                                          // in the card's indigo, as its mentions are
         ContentsLabel("", placeholder: "Untitled Subboard", systemImage: "rectangle.stack", color: Color(nsColor: SubboardStyle.border))
     }
@@ -7860,8 +7866,9 @@ across its edge. The rest is opt-ins, as a subboard's are
 registrar.shape(FrameDefinition()) { frame in                     // FrameDefinition: ShapeContaining, BrushHitTesting
     let place = frame.placement(size: Frame.defaultSize, minimumSize: Frame.minimumSize) { Frame() }   // what a click and draw place, never under 96 × 64
     frame.tool(label: "Frame", systemImage: "rectangle.dashed", shortcut: "f", placing: place) { _ in FrameTool(placing: place) }
+    frame.tint(FrameStyle.tint)                                    // its gray, wherever it's listed by its kind
     frame.title(placeholderInPill: "Frame")                        // Titles keeps its name; untitled, a dimmed pill to grab
-    frame.mentionable(tint: { _ in FrameStyle.tint })              // Mentions: by its title; followed, it's gone to
+    frame.mentionable()                                            // Mentions: by its title; followed, it's gone to
     frame.resizable(minimumSize: place.minimumSize)                // Selection's eight handles, no smaller than it's drawn
     frame.frameRow()                                               // the table of contents, named by Titles
     frame.frameHeader()                                            // renamed in the panel's header
@@ -8163,9 +8170,9 @@ opts into and nothing imports, as [Reordering](#every-shape-reordering) is one: 
 when its kind has a title ([Titles](#a-horizontal-plugin), named or derived), and that's all a kind
 does for it. It builds on Boards (a pick is `editor.follow`, below), Titles, Topology (the tree),
 Keyboard, TextEditing (its field and its list), FuzzyMatching and Geometry. It doesn't import
-Mentions: a row's symbol is its kind's label's, and its tint, the one color a kind has in the list,
-the picker and Mentioned In, comes from a closure the host injects (`JumpToPlugin(appearance:)`,
-which Composition builds from `registry.mentionAppearance(of:)`; none, and rows are untinted).
+Mentions: a row's symbol and tint are its kind's label's (`registry.label(of:)`, the core's), the
+one color a kind has in the list, the picker and Mentioned In; a kind that declares no tint is
+untinted.
 
 ```
  ╭────────────────────────────────────────────────╮
@@ -9665,13 +9672,14 @@ registrar.service { SchemaSync(editor: $0) }                                    
 registrar.shape(SchemaCardDefinition()) { schema in
     let place = schema.editingPlacement(size: SchemaCard.defaultSize) { SchemaCard() } // 240 × 52, typed into
     schema.tool(label: "Schema", systemImage: "curlybraces", shortcut: "s", placing: place)
+    schema.tint(SchemaStyle.accent)                                                    // its magenta, wherever it's listed by its kind
     schema.validate { shape, _ in SchemaReadings.reading(of: shape).issues }
     schema.title(symbolInPill: true) { SchemaReadings.reading(of: $0).shown.title }   // its pill: `{}` and the title
     schema.contentsRow { shape in ContentsLabel(…, systemImage: "curlybraces", badge: "6") }  // top-level fields
     schema.schemaPanel()                                                               // the header and the Schema tab
     schema.schemaLinks()                                                               // ports: a schema to a schema
     schema.mentionText { [$0.mentionPlacement] }                                       // its description's pills
-    schema.mentionable(tint: { _ in SchemaStyle.accent })                              // by its title, in its magenta
+    schema.mentionable()                                                               // by its title, in its magenta
 }
 registrar.channel(SchemaLink.self)
 ```
@@ -11488,10 +11496,10 @@ keyboard             service KeyboardState · key strokes · key releases · sho
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v1 · label Arrow → arrow · ContentsRows → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
-subboards            shape subboard · tool subboard · shortcut B → tool subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
-framing              shape frame · tool frame · shortcut F → tool frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
-schemas              service SchemaSync · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
+sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · channel note-link · edge type note-link
+subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
+framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
+schemas              service SchemaSync · ShapePopovers · shape schema-card v1 · tool schema-card · shortcut S → tool schema-card · tint → schema-card · ValidationRules → schema-card · ShapeTitles → schema-card · ContentsTitles → schema-card · ContentsRows → schema-card · ShapeDetails → schema-card · ports schema-link → schema-card · mention text → schema-card · mentionable → schema-card · ShapeDetails → schema-card · channel schema-link · edge type schema-link
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · service ChipFade · overlay AdornmentOverlay · CanvasButtons · DecorationHits
