@@ -2719,7 +2719,9 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   `DetailFields`. Multiline text is a `DetailTextArea` (with a `placeholder:` shown while it's
   empty, and an `onCommit:` for text that's acted on once it's done: then Return commits, ⇧↩ is a
   new line, and the keyboard leaving commits too, a turn later if the text view left its window
-  with the keyboard, so capture a service in `onCommit` weakly: the board may have gone), code a
+  with the keyboard, so capture a service in `onCommit` weakly: the board may have gone; `asTyped: true`
+  for a value rather than words: the panel's font, and nothing changed as it is keyed, no spelling check or
+  correction, quotes, dashes or replacement), code a
   `DetailCodeEditor` (monospaced, typed exactly as keyed: smart quotes and dashes, text
   replacement, autocorrect, spelling, automatic completion, inline predictions, math results and
   Writing Tools off; lines never wrap, so a line's indentation says where it is and line N of an error is
