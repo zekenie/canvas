@@ -63,6 +63,11 @@ private final class Bench {
         return record.id
     }
 
+    /// A note's values.
+    func set(_ id: ShapeID, _ values: JSONObject) {
+        editor.transact { $0.update(id) { $0[FieldValuesProperty.self] = FieldValues(values) } }
+    }
+
     func draw(dark: Bool = false, size: CGSize = CGSize(width: 900, height: 800)) -> NSBitmapImageRep {
         if !dark { return renderBitmap(editor, size: size) }
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height), bitsPerSample: 8, samplesPerPixel: 4,
@@ -294,8 +299,7 @@ private let petFields = #"{"type": "object", "properties": {"name": {"type": "st
         let draws = plain.draw(size: CGSize(width: 500, height: 900))
         let yellow = [255, 222, 115, 255]
         for row in names { expect(ink(draws, in: row.nameRect, paper: yellow) > 10, "the name of \(row.name) is drawn on a note that is one") }
-        expectEqual(ink(draws, in: CGRect(x: names[0].valueRect.minX, y: names[0].rect.minY, width: names[0].valueRect.width, height: names[0].rect.height), paper: yellow), 0,
-                    "and nothing at the right yet")
+        for row in names { expect(ink(draws, in: row.valueRect, paper: yellow) > 5, "and `add \(row.name)`, empty, at the right") }
     },
     test("the rows draw under the editor while the words are edited, and the words' lines still fall on the render's") {
         for (scale, zoom) in [(1, 1), (2, 1), (1, 2), (2, 0.6)] as [(CGFloat, CGFloat)] {
@@ -460,5 +464,114 @@ private let petFields = #"{"type": "object", "properties": {"name": {"type": "st
         let chip = CGRect(x: chipRow.valueRect.maxX - 120, y: chipRow.rect.minY, width: 120, height: chipRow.rect.height)
         let a = ink(light, in: chip, paper: white, by: 30), c = ink(dark, in: chip, paper: [235, 235, 235, 255], by: 30)
         expect(abs(a - c) * 20 <= max(a, c), "the chip, dashes and all: \(a) and \(c) inked pixels")
+    },
+    test("each kind of value has its look: a value in the ink, `add x` faint, a box that is blue when ticked, a summary with its `›`") {
+        let b = try Bench([FieldFixtures.everyKind.a, FieldFixtures.address])
+        let id = b.addInstance(of: [FieldFixtures.kindsAID])
+        b.set(id, ["name": "Ann", "done": true, "status": "paid", "tags": ["gift", "mugs"]])
+        let rows = b.book.rows(of: id)
+        let drawn = b.draw()
+        let yellow = [255, 222, 115, 255]
+        let row = { (name: String) throws -> ShownRow in try require(rows.first { $0.name == name }, name) }
+        let value = { (name: String) throws -> CGRect in try row(name).valueRect }
+        for name in ["name", "status", "tags"] { expect(ink(drawn, in: try value(name), paper: yellow) > 20, "\(name) is drawn") }
+        let filled = darkest(drawn, in: try value("name")), faint = darkest(drawn, in: try value("price"))
+        expect(ink(drawn, in: try value("price"), paper: yellow) > 5, "`add price`")
+        expect(faint > filled + 40, "the empty row is fainter than a value: \(faint) against \(filled)")
+        let box = { (name: String) throws -> CGRect in let r = try value(name); return CGRect(x: r.minX, y: try row(name).rect.midY - 7, width: 14, height: 14) }
+        expect(has(drawn, [0, 97, 217], in: try box("done"), within: 40), "a ticked box is blue")
+        b.set(id, ["done": false])
+        let unticked = b.draw()
+        expect(!has(unticked, [0, 97, 217], in: try box("done"), within: 40), "an unticked one is not")
+        expect(ink(unticked, in: try box("done"), paper: yellow) > 20, "but it is there, outlined")
+        // A summary's `›` follows the text: more ink in the row than the text alone has.
+        let tags = try row("tags")
+        expect(ink(drawn, in: CGRect(x: tags.valueRect.minX, y: tags.rect.minY, width: 100, height: tags.rect.height), paper: yellow) > 20)
+    },
+    test("a wrong value is red with a wavy line under it, and so is a row above it; a needed one is amber; a fold carries the worst of what it folds") {
+        let b = try Bench([FieldFixtures.person, FieldFixtures.order])
+        let yellow = [255, 222, 115, 255]
+        let red = [189, 26, 26], amberText = [140, 82, 0]
+        let person = b.addInstance(of: [FieldFixtures.personID])
+        b.set(person, ["name": "Bob", "email": "Bob"])
+        func problem(_ path: FieldPath, _ kind: FieldClass) -> FieldProblem {
+            FieldProblem(path: path, kind: kind, keyword: kind == .wrong ? "format" : "required", place: [], message: "")
+        }
+        let email = try require(b.book.rows(of: person).first { $0.name == "email" })
+        let name = try require(b.book.rows(of: person).first { $0.name == "name" })
+        let underline = CGRect(x: email.valueRect.minX, y: email.rect.midY + 6.5, width: 30, height: 4.5)
+        let before = b.draw()
+        expect(!has(before, red, in: email.valueRect, within: 40) && ink(before, in: underline, paper: yellow) == 0, "unmarked")
+        b.book.checks = { _ in FieldCheck(problems: [problem(FieldPath(field: "email"), .wrong)]) }
+        let wrong = b.draw()
+        expect(has(wrong, red, in: email.valueRect, within: 40), "the value is red")
+        expect(ink(wrong, in: underline, paper: yellow) > 0, "with a wavy line under the baseline")
+        expect(!has(wrong, red, in: name.valueRect, within: 40), "the row above it that is fine is not")
+        // The row being typed in is not drawn, marked or not: its own text view draws it.
+        b.editor.fieldChecks?.typing = (person, FieldPath(field: "email"))
+        let typing = b.draw()
+        expectEqual(ink(typing, in: email.valueRect, paper: yellow), 0, "the typed row's value is the field's to draw")
+        b.editor.fieldChecks?.typing = nil
+        // Needed: amber, not red; inside a row that has a value its summary is amber.
+        let order = b.addInstance(of: [FieldFixtures.orderID], at: CGPoint(x: 440, y: 500))
+        b.set(order, ["lineItems": [["product": "Mug"]], "status": "paid"])
+        let rows = b.book.rows(of: order)
+        let customer = try require(rows.first { $0.name == "customer" }), items = try require(rows.first { $0.name == "line items" })
+        b.book.checks = { _ in FieldCheck(problems: [problem(FieldPath(field: "customer"), .needed),
+                                                      problem(FieldPath(field: "lineItems").index(0).key("quantity"), .needed)]) }
+        let needed = b.draw()
+        expect(has(needed, amberText, in: customer.valueRect, within: 40), "`add customer` is amber")
+        expect(has(needed, amberText, in: items.valueRect, within: 40), "`1 item` is amber for a missing quantity inside it")
+        expect(!has(needed, red, in: customer.valueRect, within: 40) && !has(needed, red, in: items.valueRect, within: 40), "and nothing is red")
+        b.book.checks = { _ in FieldCheck(problems: [problem(FieldPath(field: "lineItems").index(0).key("quantity"), .wrong)]) }
+        let inside = b.draw()
+        expect(has(inside, red, in: items.valueRect, within: 40), "a wrong cell inside makes its row red")
+        // The fold carries the worst mark of its rows.
+        let wide = b.addWide(20, at: CGPoint(x: 900, y: 40))
+        let instance = b.addInstance(of: [wide], at: CGPoint(x: 900, y: 500))
+        let more = try require(b.book.rows(of: instance).last)
+        expectEqual(more.name, "+12 more")
+        let foldRect = CGRect(x: more.rect.minX, y: more.rect.minY, width: 90, height: more.rect.height)
+        let plain = b.draw(size: CGSize(width: 1300, height: 1000))
+        expect(!has(plain, red, in: foldRect, within: 40) && !has(plain, amberText, in: foldRect, within: 40))
+        b.book.checks = { _ in FieldCheck(problems: [problem(FieldPath(field: "f15"), .needed)]) }
+        expect(has(b.draw(size: CGSize(width: 1300, height: 1000)), amberText, in: foldRect, within: 40), "amber for a needed one folded away")
+        b.book.checks = { _ in FieldCheck(problems: [problem(FieldPath(field: "f15"), .needed), problem(FieldPath(field: "f12"), .wrong)]) }
+        expect(has(b.draw(size: CGSize(width: 1300, height: 1000)), red, in: foldRect, within: 40), "red for a wrong one: the worst")
+    },
+    test("the red and the amber of a row's text each read at 4.5 to 1 or more on a note's yellow and on white") {
+        func linear(_ c: CGFloat) -> CGFloat { c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        func luminance(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> CGFloat { 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b) }
+        func contrast(_ a: CGFloat, _ b: CGFloat) -> CGFloat { (max(a, b) + 0.05) / (min(a, b) + 0.05) }
+        let yellow = luminance(1.0, 0.87, 0.45), white = luminance(1, 1, 1)
+        for (name, ink) in [("red", luminance(0.74, 0.10, 0.10)), ("amber", luminance(0.55, 0.32, 0.0))] {
+            expect(contrast(ink, yellow) >= 4.5, "\(name) on yellow: \(contrast(ink, yellow))")
+            expect(contrast(ink, white) >= 4.5, "\(name) on white: \(contrast(ink, white))")
+        }
+    },
+    test("zoomed out, a filled row has a second bar for its value, an empty one has none, and a wrong one is red") {
+        let b = try Bench([FieldFixtures.person], zoom: 0.3)
+        let id = b.addInstance(of: [FieldFixtures.personID], words: "")
+        b.set(id, ["name": "Ann"])
+        let rows = b.book.rows(of: id)
+        let name = try require(rows.first { $0.name == "name" }), email = try require(rows.first { $0.name == "email" })
+        let view = { (rect: CGRect) in b.editor.camera.toView(rect) }
+        let drawn = b.draw(size: CGSize(width: 400, height: 400))
+        let skeleton = pixel(drawn, at: CGPoint(x: view(email.valueRect).midX, y: view(email.valueRect).midY))
+        expect(ink(drawn, in: view(name.valueRect).insetBy(dx: 1, dy: 0), paper: skeleton, by: 6) > 0, "a bar for Ann")
+        expectEqual(ink(drawn, in: view(email.valueRect).insetBy(dx: 1, dy: 0), paper: skeleton, by: 6), 0, "none for an empty row")
+        let letters = b.addInstance(of: [FieldFixtures.personID], words: "", at: CGPoint(x: 440, y: 500))
+        b.set(letters, ["name": "Zed"])
+        let other = try require(b.book.rows(of: letters).first { $0.name == "name" })
+        let again = b.draw(size: CGSize(width: 800, height: 400))
+        let barWidth = { (rep: NSBitmapImageRep, row: ShownRow) -> Int in
+            let rect = view(row.valueRect)
+            return Int(stride(from: rect.minX, to: rect.maxX, by: 1).filter { ink(rep, in: CGRect(x: $0, y: rect.minY, width: 1, height: rect.height), paper: skeleton, by: 6) > 0 }.count)
+        }
+        expectEqual(barWidth(again, name), barWidth(again, other), "a bar says only that there is a value, never what it says")
+        b.book.checks = { _ in FieldCheck(problems: [FieldProblem(path: FieldPath(field: "name"), kind: .wrong, keyword: "x", place: [], message: "")]) }
+        let wrong = b.draw(size: CGSize(width: 400, height: 400))
+        expect(has(wrong, [235, 120, 73], in: view(name.valueRect), within: 45), "a wrong value's bar is red")
+        expect(!has(drawn, [235, 120, 73], in: view(name.valueRect), within: 45))
     },
 ])

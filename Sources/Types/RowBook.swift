@@ -47,6 +47,8 @@ struct RowSubject: Hashable {
 }
 
 struct FieldRowTemplate {
+    /// The resolved field: what its value's summary is read by.
+    var resolved: Resolved.Field
     var path: FieldPath
     var name: String
     var kind: FieldKind
@@ -102,7 +104,7 @@ public final class RowBook {
     private var templates: [RowSubject: RowTemplate] = [:]
     private var seenChain: Int
     /// How often a type was renamed: a template that says a type's name is made again after one.
-    private var renames = 0
+    var renames = 0
     /// The levels of types the transaction under way wrote (by id and the text), so a paste of a thousand
     /// instances parses their type once.
     private var levels: [ShapeID: (text: String, level: ChainLevel)] = [:]
@@ -111,13 +113,23 @@ public final class RowBook {
     /// How many templates have been made (debug builds): one for each distinct list and isType, and again after a type changes.
     public private(set) var templatesMade = 0
     /// How many shapes' rows have been built (`rows(of:)`): a drag builds none.
-    public private(set) var rowsShown = 0
+    public internal(set) var rowsShown = 0
     /// What `openCard` asked `FieldCards` to open (debug builds): one service type takes one registration, so
     /// no double can stand in for it.
     public internal(set) var opened: [FieldCardRequest] = []
     #endif
     /// The one view over the rows of the shape being edited, if any.
     weak var rowsView: RowsView?
+    /// The rows of the notes that are one, as shown (`shownRows`): kept by shape, their rects from the block's
+    /// top-left so a drag lets go of nothing, and let go of for the shapes a commit changed other than by
+    /// moving.
+    var shown: [ShapeID: ShownRows] = [:]
+    static let shownCapacity = 2_048
+    #if DEBUG
+    /// What the check says of a shape's values in place of `FieldChecks`' (debug builds): tests draw marks before
+    /// the check is there, and as it is.
+    public var checks: ((AnyShapeRecord) -> FieldCheck)?
+    #endif
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -156,6 +168,7 @@ public final class RowBook {
         seenChain = revision
         templates = [:]
         levels = [:]
+        shown = [:]
     }
 
     private func makeTemplate(_ subject: RowSubject) -> RowTemplate {
@@ -178,7 +191,7 @@ public final class RowBook {
                 let memberCount: Int
                 if case .group = kind { memberCount = book.members(of: field).count } else { memberCount = 0 }
                 column = max(column, width + (subject.isType && field.field.isRequired ? dotRoom : 0))
-                items.append(.field(FieldRowTemplate(path: FieldPath(field: field.field.name), name: name, kind: kind,
+                items.append(.field(FieldRowTemplate(resolved: field, path: FieldPath(field: field.field.name), name: name, kind: kind,
                                                      label: kind.typeLabel(memberCount: memberCount), chip: kind.chip,
                                                      opensOnType: kind.opensOnType, isNeeded: field.field.isRequired,
                                                      tick: inherited ? field.introducedBy : nil, isFaint: inherited, nameWidth: width,
@@ -329,7 +342,11 @@ public final class RowBook {
         guard let editor, let record = editor.document[id], let subject = subject(of: record), kinds.contains(record.kind),
               let block = rowsRect(of: id) else { return [] }
         let template = template(subject)
-        if subject.isType, spot(of: record, template: template) != .rows { return [] }
+        if !subject.isType {
+            guard !template.items.isEmpty else { return [] }
+            return shownRows(of: record, subject: subject, template: template, block: block).rows.map { $0.offset(by: block.origin) }
+        }
+        if spot(of: record, template: template) != .rows { return [] }
         #if DEBUG
         rowsShown += 1
         #endif
@@ -338,10 +355,8 @@ public final class RowBook {
             let rect = geometry.rect(row), name = geometry.nameRect(row), value = geometry.valueRect(row)
             switch item {
             case .field(let field):
-                let content: ShownRow.Content = subject.isType
-                    ? .kind(label: field.label, chip: field.chip, hasMore: field.opensOnType) : .text("")
-                return ShownRow(path: field.path, name: field.name, content: content, isNeeded: subject.isType && field.isNeeded, tick: field.tick,
-                                isFaint: field.isFaint, rect: rect, nameRect: name, valueRect: value)
+                return ShownRow(path: field.path, name: field.name, content: .kind(label: field.label, chip: field.chip, hasMore: field.opensOnType),
+                                isNeeded: field.isNeeded, tick: field.tick, isFaint: field.isFaint, rect: rect, nameRect: name, valueRect: value)
             case .fold(let fold):
                 return ShownRow(path: nil, name: fold.name, content: .fold(fold.value), isNeeded: false, tick: fold.sources.count == 1 ? fold.sources[0] : nil,
                                 isFaint: !fold.isMore, rect: rect, nameRect: fold.isMore ? rect : name, valueRect: fold.isMore ? .zero : value)
@@ -379,9 +394,12 @@ public final class RowBook {
 }
 
 extension RowBook: EditorService {
-    /// A file put in place: every table goes. (Everything else is told by the index and the sync.)
+    /// A file put in place: every table goes. A shape another commit changed (other than by moving) or took
+    /// lets go of its rows. (Everything else is told by the index and the sync.)
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        if changes.replacedDocument { dropEverything() }
+        if changes.replacedDocument { dropEverything() } else if !shown.isEmpty {
+            for id in changes.added.union(changes.removed).union(changes.changed.subtracting(changes.moved)).union(changes.elsewhere) { shown[id] = nil }
+        }
         // The shape being edited may have grown, or its rows changed: the view over them follows.
         rowsChanged()
     }
@@ -393,6 +411,7 @@ extension RowBook: EditorService {
     private func dropEverything() {
         templates = [:]
         levels = [:]
+        shown = [:]
         seenChain = editor?.types?.chainRevision ?? 0
     }
 }

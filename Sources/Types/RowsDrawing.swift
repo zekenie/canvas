@@ -17,6 +17,23 @@ extension TypesStyle {
     static let skeletonRowColumn = SkeletonTextMetrics.systemFontColumn * rowFontSize
     /// Below this zoom a row is under three pixels tall and its bar is not drawn at all.
     public static let skeletonRowsZoom: CGFloat = 0.14
+    /// A note that is one, zoomed out: a filled row's value is a bar this share of the value column (as wide as a
+    /// box for a box), never as wide as what it says; a wrong one is red.
+    public static let skeletonValueShare: CGFloat = 0.7
+    static let skeletonWrong = CGColor(srgbRed: 0.86, green: 0.15, blue: 0.15, alpha: 0.55)
+    /// A yes or no's box: this across, with corners this round.
+    public static let boxSize: CGFloat = 14
+    static let boxCorner: CGFloat = 3
+    /// A wrong value's wavy line: this far under the row's middle, 1 point thick, this long a wave, this high.
+    static let waveDrop: CGFloat = 8
+    static let wavePeriod: CGFloat = 4
+    static let waveAmplitude: CGFloat = 1.25
+    /// The outline round a row's value that has the caret or whose card is open: this thick, this far out,
+    /// at least this wide, with these corners.
+    static let fieldFocusWidth: CGFloat = 1.5
+    static let fieldFocusOutset: CGFloat = 4
+    static let fieldFocusMinimum: CGFloat = 44
+    static let fieldFocusCorner: CGFloat = 4
 
     /// A note's paper is light in both appearances, so the rows' inks are fixed colors, as the highlights
     /// are: the note's ink, and its strengths.
@@ -28,8 +45,11 @@ extension TypesStyle {
     static let spotBar = CGColor(gray: 0, alpha: 0.10)
     /// A needed field's dot: the same amber as a rule's highlight and a warning.
     static let neededInk = NSColor(srgbRed: 0.96, green: 0.62, blue: 0.04, alpha: 1)
-    /// A wrong value's red.
-    static let wrongInk = NSColor(srgbRed: 0.86, green: 0.15, blue: 0.15, alpha: 1)
+    /// Text that says a needed value is missing: the dot's amber, darkened until it reads at 4.5 to 1 on a note's
+    /// yellow and on white (the dot itself is a mark, not text).
+    static let neededTextInk = NSColor(srgbRed: 0.55, green: 0.32, blue: 0.0, alpha: 1)
+    /// A wrong value's red: as dark as it takes to read at 4.5 to 1 on a note's yellow and on white.
+    static let wrongInk = NSColor(srgbRed: 0.74, green: 0.10, blue: 0.10, alpha: 1)
     /// An action's words (`Retry`, `Settings…`): the accent blue.
     static let linkInk = NSColor(srgbRed: 0.0, green: 0.38, blue: 0.85, alpha: 1)
     /// A tick for rows more than one type gave.
@@ -41,7 +61,7 @@ extension TypesStyle {
 @MainActor
 enum FieldLines {
     enum Style: Int, CaseIterable {
-        case name, faint, kind, muted, value, empty, needed, wrong, link
+        case name, faint, kind, muted, value, empty, needed, neededInside, wrong, link
     }
 
     struct Line {
@@ -113,7 +133,8 @@ enum FieldLines {
         case .faint: (font, color) = (regular, TypesStyle.rowInk.withAlphaComponent(TypesStyle.faintStrength))
         case .kind, .muted: (font, color) = (regular, TypesStyle.rowInk.withAlphaComponent(TypesStyle.mutedStrength))
         case .empty: (font, color) = (italic, TypesStyle.rowInk.withAlphaComponent(TypesStyle.faintStrength))
-        case .needed: (font, color) = (italic, TypesStyle.neededInk)
+        case .needed: (font, color) = (italic, TypesStyle.neededTextInk)
+        case .neededInside: (font, color) = (regular, TypesStyle.neededTextInk)
         case .wrong: (font, color) = (regular, TypesStyle.wrongInk)
         case .link: (font, color) = (regular, TypesStyle.linkInk)
         }
@@ -155,7 +176,7 @@ extension RenderContext {
     /// (`typeRows(drawnIn:)`). Drawn while the shape is edited too: the editor has no background.
     public func drawTypeRows<P: ShapeProps>(of shape: ShapeRecord<P>, in block: CGRect) {
         guard let book = service(RowBook.self) else { return }
-        book.draw(AnyShapeRecord(shape), in: block, to: cg)
+        book.draw(AnyShapeRecord(shape), in: block, isEditing: isEditing, to: cg)
     }
 }
 
@@ -169,21 +190,35 @@ extension RenderContext {
     /// lays out text.
     public func fillTypeRowBars<P: ShapeProps>(of shape: ShapeRecord<P>, in block: CGRect) {
         guard showsTypeRowBars, let book = service(RowBook.self) else { return }
-        fillSkeletonText(book.bars(of: AnyShapeRecord(shape), in: block))
+        let bars = book.bars(of: AnyShapeRecord(shape), in: block)
+        fillSkeletonText(bars.plain)
+        guard !bars.wrong.isEmpty else { return }
+        cg.saveGState()
+        for bar in bars.wrong { cg.addRect(bar) }
+        cg.setFillColor(TypesStyle.skeletonWrong)
+        cg.fillPath()
+        cg.restoreGState()
     }
 }
 
+/// What a skeleton draws for rows: gray bars, and the red ones of a wrong value.
+struct RowBars {
+    var plain: [CGRect] = []
+    var wrong: [CGRect] = []
+}
+
 extension RowBook {
-    /// The bars a skeleton draws for a shape's rows in `block`.
-    func bars(of record: AnyShapeRecord, in block: CGRect) -> [CGRect] {
-        guard let subject = subject(of: record), kinds.contains(record.kind) else { return [] }
+    /// The bars a skeleton draws for a shape's rows in `block`: a note that is one adds a bar for each row that holds
+    /// a value, red where the check marks it wrong. Nothing here lays text out.
+    func bars(of record: AnyShapeRecord, in block: CGRect) -> RowBars {
+        guard let subject = subject(of: record), kinds.contains(record.kind) else { return RowBars() }
         let template = template(subject)
         let spot: RowSpot
         if subject.isType {
-            guard let known = self.spot(of: record, template: template) else { return [] }
+            guard let known = self.spot(of: record, template: template) else { return RowBars() }
             spot = known
         } else {
-            guard !template.items.isEmpty else { return [] }
+            guard !template.items.isEmpty else { return RowBars() }
             spot = .rows
         }
         let geometry = RowGeometry(block: block, hasLead: hasWords(record), longestName: template.nameColumn)
@@ -191,34 +226,43 @@ extension RowBook {
             let rect = geometry.rect(row)
             return CGRect(x: rect.minX, y: rect.midY - TypesStyle.skeletonRowBarHeight / 2, width: max(1, width), height: TypesStyle.skeletonRowBarHeight)
         }
+        var bars = RowBars()
         switch spot {
         case .reading:
-            return TypesStyle.spotBarShares.enumerated().map { bar($0.offset, width: block.width * $0.element) }
+            bars.plain = TypesStyle.spotBarShares.enumerated().map { bar($0.offset, width: block.width * $0.element) }
         case .noFields, .failed:
-            return [bar(0, width: block.width * TypesStyle.spotBarShares[0])]
+            bars.plain = [bar(0, width: block.width * TypesStyle.spotBarShares[0])]
         case .rows:
-            var bars: [CGRect] = []
-            bars.reserveCapacity(template.items.count)
+            bars.plain.reserveCapacity(template.items.count * (subject.isType ? 1 : 2))
+            let values = subject.isType ? nil : record[FieldValuesProperty.self]
+            let check = subject.isType ? FieldCheck.clean : self.check(of: record)
             for (row, item) in template.items.enumerated() {
                 switch item {
                 case .field(let field):
-                    bars.append(bar(row, width: min(field.barWidth, TypesStyle.nameShare * block.width)))
-                case .fold:
+                    bars.plain.append(bar(row, width: min(field.barWidth, TypesStyle.nameShare * block.width)))
+                    guard let values, values.value(at: field.path) != nil else { continue }
+                    let value = geometry.valueRect(row)
+                    var rect = bar(row, width: field.kind == .plain(.yesNo) ? TypesStyle.boxSize : value.width * TypesStyle.skeletonValueShare)
+                    rect.origin.x = value.minX
+                    if check.mark(at: field.path) == .wrong { bars.wrong.append(rect) } else { bars.plain.append(rect) }
+                case .fold(let fold):
                     let rect = geometry.rect(row)
+                    let marked = !check.problems.isEmpty && fold.folded.contains { check.mark(at: FieldPath(field: $0.field.name)) == .wrong }
                     for dot in 0..<3 {
-                        bars.append(CGRect(x: rect.minX + CGFloat(dot) * (TypesStyle.skeletonFoldDot + TypesStyle.skeletonFoldDotGap),
-                                           y: rect.midY - TypesStyle.skeletonFoldDot / 2, width: TypesStyle.skeletonFoldDot, height: TypesStyle.skeletonFoldDot))
+                        let shape = CGRect(x: rect.minX + CGFloat(dot) * (TypesStyle.skeletonFoldDot + TypesStyle.skeletonFoldDotGap),
+                                           y: rect.midY - TypesStyle.skeletonFoldDot / 2, width: TypesStyle.skeletonFoldDot, height: TypesStyle.skeletonFoldDot)
+                        if marked { bars.wrong.append(shape) } else { bars.plain.append(shape) }
                     }
                 }
             }
-            return bars
         }
+        return bars
     }
 }
 
 extension RowBook {
     /// Draws a shape's rows in `block`, clipped to it widened at the left by the tick's room.
-    func draw(_ record: AnyShapeRecord, in block: CGRect, to cg: CGContext) {
+    func draw(_ record: AnyShapeRecord, in block: CGRect, isEditing: Bool, to cg: CGContext) {
         guard let subject = subject(of: record), kinds.contains(record.kind) else { return }
         let template = template(subject)
         let spot: RowSpot?
@@ -243,7 +287,8 @@ extension RowBook {
         case .reading?: drawReading(in: geometry, to: cg)
         case .noFields?: FieldLines.draw(FieldLines.line(FieldWords.noFields, .kind), at: block.minX, midY: geometry.rect(0).midY, in: cg)
         case .failed(let reason, let action)?: drawFailure(reason, action: action, in: geometry, to: cg)
-        case .rows?: drawRows(of: template, subject: subject, in: geometry, to: cg)
+        case .rows? where subject.isType: drawRows(of: template, in: geometry, to: cg)
+        case .rows?: drawValues(of: record, template: template, subject: subject, in: block, isEditing: isEditing, to: cg)
         case nil: break
         }
     }
@@ -265,16 +310,15 @@ extension RowBook {
         if let words = layout.action { FieldLines.draw(words, at: layout.actionX, midY: rect.midY, in: cg) }
     }
 
-    private func drawRows(of template: RowTemplate, subject: RowSubject, in geometry: RowGeometry, to cg: CGContext) {
+    private func drawRows(of template: RowTemplate, in geometry: RowGeometry, to cg: CGContext) {
         let types = editor?.types
         for (row, item) in template.items.enumerated() {
             let rect = geometry.rect(row), name = geometry.nameRect(row), value = geometry.valueRect(row)
             switch item {
             case .field(let field):
                 if let tick = field.tick { drawTick(TypeColors.base(tick), in: rect, to: cg) }
-                let dotRoom = field.isNeeded && subject.isType ? TypesStyle.neededDotGap + TypesStyle.neededDotSize : 0
-                let style: FieldLines.Style = subject.isType ? (field.isFaint ? .faint : .name) : .muted
-                let line = FieldLines.line(field.name, style, cutTo: max(0, name.width - dotRoom))
+                let dotRoom = field.isNeeded ? TypesStyle.neededDotGap + TypesStyle.neededDotSize : 0
+                let line = FieldLines.line(field.name, field.isFaint ? .faint : .name, cutTo: max(0, name.width - dotRoom))
                 FieldLines.draw(line, at: name.minX, midY: rect.midY, in: cg)
                 if dotRoom > 0 {
                     let dot = CGRect(x: name.minX + line.width + TypesStyle.neededDotGap, y: rect.midY - TypesStyle.neededDotSize / 2,
@@ -282,7 +326,7 @@ extension RowBook {
                     cg.setFillColor(TypesStyle.neededInk.cgColor)
                     cg.fillEllipse(in: dot)
                 }
-                if subject.isType { drawKind(of: field, in: value, midY: rect.midY, types: types, to: cg) }
+                drawKind(of: field, in: value, midY: rect.midY, types: types, to: cg)
             case .fold(let fold):
                 if fold.isMore {
                     FieldLines.draw(FieldLines.line(fold.name + " ›", .kind), at: rect.minX, midY: rect.midY, in: cg)
@@ -296,7 +340,7 @@ extension RowBook {
         }
     }
 
-    private func drawTick(_ color: NSColor, in rect: CGRect, to cg: CGContext) {
+    func drawTick(_ color: NSColor, in rect: CGRect, to cg: CGContext) {
         cg.setFillColor(color.cgColor)
         cg.fill(CGRect(x: rect.minX - TypesStyle.tickInset, y: rect.minY + 4, width: TypesStyle.tickWidth, height: rect.height - 8))
     }

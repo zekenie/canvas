@@ -10128,8 +10128,8 @@ its URI (`types`, asked only at a `$ref`'s value: `TypeIndex.referenceTargets(fr
 
 ### Rows on a type's note
 
-A type's note has, under its words, one row for each field its type gives it (a note that is one has the
-names of its fields in the same place). Types lays the rows out and draws them; a kind says only where they go,
+A type's note has, under its words, one row for each field its type gives it (a note that is one has its fields
+in the same place, with its values). Types lays the rows out and draws them; a kind says only where they go,
 as it says where its words are, and Types knows no kind:
 
 ```swift
@@ -10157,6 +10157,11 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   or the type's chip (Adornments draws it as the chip above a note: `AdornmentLabel.draw(at:in:)`), a needed
   field's amber dot, and `›` where a read-only card would have something to show. An inherited row is faint and
   ticked in its type's color in the paper's left padding.
+- **A note that is one** has the same rows with its values at the right: `RowBook.rows(of:)` pairs each row with
+  the value its field holds (`ShownRow.Content`: `.text`, `.empty("add gift note")`, `.box`, `.choice`, `.summary`
+  for a row with more in it, `.gone` for another type's fields whose type is gone), kept for each shape and let
+  go of when a commit changes it. A value is drawn as `RowLook.of(content:mark:)` says from the check's mark
+  (`FieldChecks`): wrong is red with a wavy line, a needed field with no value is amber.
 - **Clicks.** Nothing in a type's rows is edited. Types registers one `shapeFaces` (Selection): a row with `›`
   and a fold ask `editor.rowBook?.openCard` for a read-only card, a `Choice` or `Choices` value lists its
   options (every item disabled), `Retry` reads again (a read-only type shakes instead) and `Settings…` opens
