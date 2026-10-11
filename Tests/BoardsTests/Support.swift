@@ -1,7 +1,7 @@
 import Adornments
 import AppKit
 import Boards
-import Canvas
+@_spi(Host) import Canvas
 import CanvasTesting
 import ContextMenus
 import DetailPanel
@@ -123,11 +123,13 @@ final class PathWindow {
     let window: NSWindow
     let hosting: NSHostingView<BoardPath>
 
-    /// `size` is the canvas's, which a crumb's menu stays inside.
+    /// `rootName` is what the file is called, told the editor as its window does; `size` is the
+    /// canvas's, which a crumb's menu stays inside.
     init(_ editor: CanvasEditor, rootName: String = "Plans", size: CGSize = CGSize(width: 900, height: 120)) {
         self.editor = editor
+        editor.nameRoot(rootName)
         window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
-        hosting = NSHostingView(rootView: BoardPath(editor: editor, rootName: rootName))
+        hosting = NSHostingView(rootView: BoardPath(editor: editor))
         // The canvas's size, as the host's overlay proposes it; not the path's own.
         hosting.sizingOptions = []
         hosting.frame = CGRect(origin: .zero, size: size)

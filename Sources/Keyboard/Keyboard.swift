@@ -1,4 +1,5 @@
 import Canvas
+import HostSlots
 
 /// Keyboard shortcuts, as a plugin: every key the canvas answers is registered here, by the plugin
 /// that gives it its meaning, one shortcut per chord. A tool's letter switches to the tool, a
@@ -273,12 +274,14 @@ extension KeyboardState: EditorService {
 /// tldraw's), Escape (⌘. too, as anywhere on the Mac) to cancel, ⌘Z and ⇧⌘Z to undo and redo (held,
 /// again and again), and the View menu's zoom keys: ⌘= and ⌘- (held, again and again), ⌘0, and ⇧1
 /// for Zoom to Fit (tldraw's), the number row's 1 whatever the layout types with it.
-public struct KeyboardPlugin: CanvasPlugin {
+public struct KeyboardPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .keyboard }
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { KeyboardState(editor: $0) }
+        // The toolbar's tips: a tool's label and the key that switches to it ("Note (N)").
+        registrar.toolTips { tool, registry in registry.help(for: tool) }
         registrar.keyStrokes { editor, stroke in editor.service(KeyboardState.self)?.handle(stroke) ?? false }
         registrar.keyReleases { editor, stroke in editor.service(KeyboardState.self)?.release(stroke) }
         registrar.shortcut("h", forTool: .hand)

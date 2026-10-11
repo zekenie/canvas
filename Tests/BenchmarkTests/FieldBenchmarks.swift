@@ -1,7 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import Composition
 import CoreGraphics
 import Foundation
 import Locking

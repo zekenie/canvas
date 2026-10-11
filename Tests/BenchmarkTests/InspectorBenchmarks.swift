@@ -2,9 +2,10 @@ import AppKit
 import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
-import Composition
+import DetailPanel
 import Foundation
 import LanguageModels
+import ShippedTesting
 import SwiftUI
 import TableOfContents
 import TestKit
@@ -24,7 +25,7 @@ import TestKit
             // nothing selected, about the panel's width, with real time for SwiftUI's updates.
             let editor = CanvasEditor(registry: registry, file: file, scheduler: TaskScheduler())
             let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 260, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
-            let hosting = NSHostingView(rootView: ShippedPlugins.detailPanel(editor: editor, onExit: {}))
+            let hosting = NSHostingView(rootView: DetailPanelView(editor: editor, onExit: {}))
             hosting.frame = CGRect(x: 0, y: 0, width: 260, height: 700)
             window.contentView = hosting
             // The table's rows, less its header, and those it should show for the board shown: one
@@ -62,7 +63,7 @@ import TestKit
             let h = EditorHarness { CanvasEditor(registry: registry, file: file, showing: child, scheduler: $0) }
             let size800 = CGRect(x: 0, y: 0, width: 1200, height: 800)
             let window = NSWindow(contentRect: size800, styleMask: [.titled], backing: .buffered, defer: false)
-            let hosting = NSHostingView(rootView: ShippedPlugins.boardPath(editor: h.editor, rootName: "Board"))
+            let hosting = NSHostingView(rootView: BoardPath(editor: h.editor))
             hosting.sizingOptions = []
             hosting.frame = size800
             window.contentView = hosting

@@ -155,7 +155,7 @@ extension CopyDraggingSession: Session {
     }
 }
 
-public struct SelectionPlugin: CanvasPlugin {
+public struct SelectionPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .selection }
 

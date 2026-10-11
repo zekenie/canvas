@@ -13,8 +13,8 @@ import QueryTranslation
 //
 // A language on Automation (its commands), Queries (the engine), QueryTranslation (--ask) and the
 // wire, since the answer is built as the wire's JSON, off the main actor (QueryOutput). It declares
-// no point, and knows no shipped kind: --ask's system prompt is QueryTranslationPlugin's (Composition
-// supplies it, whose examples name the shipped kinds), and its help writes <kind> and <title>.
+// no point, and knows no shipped kind: --ask's system prompt is QueryTranslationPlugin's (a text file
+// of the product's, whose examples name the shipped kinds), and its help writes <kind> and <title>.
 
 extension PluginID {
     public static let queryCommands: PluginID = "query-commands"
@@ -23,7 +23,7 @@ extension PluginID {
 /// `canvas query` and `canvas query-vocabulary`. Every plugin list with it needs `AutomationPlugin`,
 /// and `QueriesPlugin` (without it both answer `no_queries`); `--ask` needs `QueryTranslationPlugin`
 /// and `LanguageModelsPlugin` too (without them, `no_model`).
-public struct QueryCommandsPlugin: CanvasPlugin {
+public struct QueryCommandsPlugin: ListedPlugin {
     public init() {}
 
     public var id: PluginID { .queryCommands }

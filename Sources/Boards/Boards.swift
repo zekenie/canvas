@@ -1,8 +1,10 @@
 import Canvas
 import ContextMenus
 import DetailPanel
+import HostSlots
 import Keyboard
 import Selection
+import SwiftUI
 import Titles
 
 /// Boards, as a plugin: getting around a file's boards, whatever kind owns them. A kind whose shapes
@@ -63,7 +65,7 @@ extension BoardTab: DetailTab {
 
 /// A horizontal any board-owning kind opts into (`x.opensBoard(…)`): opening its shapes shows their
 /// boards, ⌘↑ goes back up, and the path over the canvas (`BoardPath`) shows where you are.
-public struct BoardsPlugin: CanvasPlugin {
+public struct BoardsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .boards }
 
@@ -73,6 +75,11 @@ public struct BoardsPlugin: CanvasPlugin {
         // while a shape is being edited (⌘↑ is then the text's).
         registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .command)],
                           isEnabled: { !$0.board.isRoot && $0.session == nil && $0.editingShapeID == nil }) { $0.goToEnclosingBoard() }
+        // What the window hosts of it: the path over the top of the canvas, which a fit leaves clear
+        // of as far down as its pill reaches, and the board shown's name as the window's subtitle
+        // (its crumb's title; none on the root, which the window's title, the file's name, names).
+        registrar.hostOverlay(alignment: .top, coveredTop: { BoardPath.coveredHeight(on: $0) }) { editor, _ in BoardPath(editor: editor) }
+        registrar.windowSubtitle { $0.boardCrumbs?.crumbs.last?.title }
     }
 }
 
@@ -108,9 +115,16 @@ extension CanvasEditor {
         }
     }
 
+    /// What a board is called, the root by the file's name, as the host has it (the core's
+    /// `rootName`), else "Board": what the path, the table of contents' heading and Find's list call
+    /// it. Whoever reads the root's observes the name, and only the root's.
+    public func name(of board: BoardID) -> String {
+        name(of: board, root: board.isRoot ? (rootName.isEmpty ? BoardsStyle.rootFallback : rootName) : "")
+    }
+
     /// What a board is called: its owner's title (Titles), else its kind's placeholder
-    /// (`opensBoard`), else the kind's label (`registry.label(of:)`); `root` for the root (the
-    /// file's name, say).
+    /// (`opensBoard`), else the kind's label (`registry.label(of:)`); `root` for the root, for a
+    /// caller that names it its own way.
     public func name(of board: BoardID, root: String) -> String {
         guard let owner = owner(of: board) else { return board.isRoot ? root : "Board" }
         if let title = registry.title(of: owner) { return title }

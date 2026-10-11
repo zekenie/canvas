@@ -45,7 +45,7 @@ public struct CrumbMenu: Equatable, Sendable {
 @Observable
 public final class BoardCrumbs {
     /// The boards below the root, root first, the board shown last: empty on the root. The root's
-    /// crumb is the host's to name (`BoardPath`'s `rootName`).
+    /// crumb is the host's to name (`editor.rootName`, which `BoardPath` hands `layout(rootName:)`).
     public private(set) var crumbs: [BoardCrumb] = []
     /// Where the path's read-only part starts: the first crumb whose board is read-only (every board
     /// under it is too), which the path marks with a lock, once. Nil while none is. The editor's

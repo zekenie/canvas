@@ -5,7 +5,7 @@ import Keyboard
 /// Find, as a plugin: ⌘F searches the board shown and every board under it for text that matches
 /// what's typed, folded (case, diacritics, width) and forgiving a typo, as a browser's ⌘F searches
 /// a page; highlights each hit where its shape draws it; and lists the shapes it's in, in the
-/// detail panel's place (Composition puts `FindPanel` in the panel's takeover slot). ⌘G and ⇧⌘G
+/// detail panel's place (`FindPanelPlugin` gives `FindPanel` as the panel's takeover). ⌘G and ⇧⌘G
 /// step through the hits, showing each one's board. It knows no kind and no concern: what a shape
 /// shows as text, and where, comes from the plugins that draw it (`FindableTexts`: Mentions' text,
 /// Titles' titles, Connections' arrow labels). It never transacts.
@@ -204,11 +204,48 @@ extension FindableTextsContribution {
     }
 }
 
+// MARK: Board headings
+
+/// What a board is called over its rows in Find's list: its title, and a symbol before it.
+public struct FindHeading: Hashable {
+    public var title: String
+    public var systemImage: String?
+
+    public init(_ title: String, systemImage: String? = nil) {
+        self.title = title
+        self.systemImage = systemImage
+    }
+}
+
+/// What heads each board's rows in Find's list, from the plugin that knows what a board is called
+/// (Boards', its `BoardFindPlugin`: the path's names), so Find never learns what names a board. At
+/// most one: two are `RegistryError.conflict` at startup. Without one the root's rows are headed
+/// "Board" and another board's have no name.
+public enum FindHeadings {}
+
+extension FindHeadings: KeyedExtensionPoint {
+    public typealias Contribution = @MainActor (BoardID, CanvasEditor) -> FindHeading
+    public static var owner: PluginID { .findInBoards }
+    public static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["heading"] }
+    public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "find heading" }
+}
+
+extension PluginRegistrar {
+    /// What a board is called over its rows in Find's list (`FindHeadings`). Read in the panel's
+    /// body, for each board with rows in view:
+    ///
+    ///     registrar.findHeading { board, editor in FindHeading(editor.name(of: board), systemImage: editor.symbol(of: board)) }
+    public mutating func findHeading(_ heading: @escaping @MainActor (BoardID, CanvasEditor) -> FindHeading) {
+        contribute(heading, to: FindHeadings.self)
+    }
+}
+
 // MARK: The plugin
 
 /// ⌘F, ⌘G and ⇧⌘G (Edit › Find's items), the state they drive (`editor.find`), and the
-/// highlights. Its panel (`FindPanel`) is placed by Composition, in the detail panel's takeover.
-public struct FindPlugin: CanvasPlugin {
+/// highlights. Its panel (`FindPanel`) is in the detail panel's place while Find is open, from a
+/// plugin of its own (`FindPanelPlugin`).
+public struct FindPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .findInBoards }
 

@@ -344,7 +344,7 @@ extension Registry {
 /// A horizontal any kind can opt into: a title, kept in the property this plugin adds to the kind or
 /// derived from the kind's own, in a pill on the canvas and naming the shape's row in the table of
 /// contents. This plugin places the pill and offers `/title`, and `TitleHeader` renames it.
-public struct TitlesPlugin: CanvasPlugin {
+public struct TitlesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .titles }
 

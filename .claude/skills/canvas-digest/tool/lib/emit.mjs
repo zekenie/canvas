@@ -1,7 +1,7 @@
 // plan.json and the draw scripts. Every shape at an exact offset from its container's top-left (the header note
 // for the board itself), frames at their final size, shapes made public one run before the edges through them.
 import { q, lit, byTitle, slug, pad2, fold } from './util.mjs';
-import { headerText, HEADER_W } from './sizes.mjs';
+import { headerText, HEADER_W, HEADER_GAP } from './sizes.mjs';
 import { fanTargets } from './moves.mjs';
 
 /** What the plan makes public by its moves: the promoted nodes, and what the fanned-out nodes' pills stand for. */
@@ -32,7 +32,7 @@ export function buildPlan(model, sizes, results, opts) {
     const hdrTitle = model.headers.get(board);
     const hs = sizes.shapes[hdrTitle];
     const hh = Math.ceil(hs.h), hw = Math.ceil(hs.w);
-    const dy = hh + 80;
+    const dy = hh + HEADER_GAP;
     const shapes = [{ title: hdrTitle, kind: 'sticky-note', in: null, x: 0, y: 0, w: hw, h: hh }];
     const boxOf = new Map();
     for (const [t, b] of layout.boxes) boxOf.set(t, { x: b.x, y: b.y + dy, w: b.w, h: b.h });

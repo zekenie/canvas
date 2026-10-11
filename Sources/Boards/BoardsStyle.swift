@@ -11,8 +11,11 @@ enum BoardsStyle {
     static let fontSize: CGFloat = 12
     static let crumbMaxWidth: CGFloat = 180
     static let maxWidth: CGFloat = 640
-    /// The root's crumb when the host names it nothing.
+    /// What the root is called when the host names it nothing (`editor.rootName`): its crumb, and
+    /// wherever else it's named.
     static let rootFallback = "Board"
+    /// What going up is called in the table of contents' heading, as the Go menu calls it.
+    static let enclosingBoard = "Enclosing Board"
     /// The lock after the name of the crumb where the read-only part of the path starts: its symbol,
     /// how far it is from the name, and what it's called (its tooltip, and to assistive apps).
     static let readOnlySymbol = "lock.fill"

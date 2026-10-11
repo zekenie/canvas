@@ -2,7 +2,7 @@
 // to the sizes or the arrows moves the boxes a little. ELK's own stress ignores the positions it is given, and lays the container
 // out afresh: a new draw each time, which in the cost C is noise of a size no promotion's gain stands out of.
 // Deterministic, and about a millisecond a container (ELK takes 4 to 20).
-import { removeOverlaps } from './elk.mjs';
+import { removeOverlaps, stretch } from './elk.mjs';
 
 const DETACHED = 99;   // hops a box in another component is taken to be away at most (99: as far as ELK puts it; 2 or 3 tried: it did not help)
 const GAP = 100;   // the length of an arrow between two boxes, between their borders (ELK's 460 between the centers of two notes)
@@ -24,10 +24,12 @@ function hops(n, edges) {
 /**
  * items: [{w, h}], edges: [{a, b}], init: [{x, y}] top-lefts. Returns {raw, pos}: the top-lefts the majorization comes to (what the
  * next layout starts from: it is the same again when nothing has changed), and the same with overlaps removed (on the 16 grid, not
- * yet moved to the origin).
+ * yet moved to the origin). `k` is the stretch the positions have (elk.mjs's `stretched`): the majorization is done on them unstretched,
+ * and its answer stretched again, so a layout stretched to a shape keeps it.
  */
-export function warmStress(items, edges, init, iterations = 300) {
+export function warmStress(items, edges, init, iterations = 300, k = 1) {
   const n = items.length;
+  if (k !== 1) init = stretch(items, init, 1 / k);
   const rad = items.map((it) => Math.hypot(it.w, it.h) / 2);
   const medR = rad.slice().sort((p, q) => p - q)[n >> 1];
   const h = hops(n, edges);
@@ -55,6 +57,7 @@ export function warmStress(items, edges, init, iterations = 300) {
     }
     if (move < 0.25) break;
   }
-  const raw = x.map((cx, i) => ({ x: cx - items[i].w / 2, y: y[i] - items[i].h / 2 }));
+  let raw = x.map((cx, i) => ({ x: cx - items[i].w / 2, y: y[i] - items[i].h / 2 }));
+  if (k !== 1) raw = stretch(items, raw, k);
   return { raw, pos: removeOverlaps(items, raw) };
 }

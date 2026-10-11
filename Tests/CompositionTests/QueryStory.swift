@@ -3,7 +3,6 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Composition
 import Connections
 import CoreGraphics
 import Foundation
@@ -12,6 +11,7 @@ import Locking
 import Mentions
 import Queries
 import Selection
+import ShippedTesting
 import StickyNotes
 import Subboards
 import TestKit

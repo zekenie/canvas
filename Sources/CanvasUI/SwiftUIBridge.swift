@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import HostSlots
 import SwiftUI
 
 /// A window's canvas view, for chrome beside it: a panel hands the keyboard back with `take()`, and
@@ -40,24 +41,22 @@ public struct CanvasRepresentable: NSViewRepresentable {
 
 /// The toolbar, built from the registry. The editor is observable, so this follows tool switches
 /// made on the canvas (shortcuts, finishing an arrow) with no callback, and dims the tools the board
-/// shown can't take (`editor.isToolEnabled`: those that place shapes, on a read-only board). `help` is
-/// each tool's tooltip: the host passes one that names the tool's key ("Note (N)"), which only the
-/// plugin that keeps the keys knows; the label alone otherwise.
+/// shown can't take (`editor.isToolEnabled`: those that place shapes, on a read-only board). Each
+/// tool's tooltip is what a plugin says of it (the host's slot for tool tips, `registry.toolTip(for:)`:
+/// the plugin that keeps the keys names the tool's, "Note (N)"), its label alone otherwise.
 ///
 /// An AppKit segmented control, since SwiftUI's segmented `Picker` dims none of its segments:
 /// `.disabled` on a segment's content changes nothing there.
 public struct ToolPicker: View {
     let editor: CanvasEditor
-    let help: @MainActor (ToolDescriptor) -> String
 
-    public init(editor: CanvasEditor, help: @escaping @MainActor (ToolDescriptor) -> String = { $0.label }) {
+    public init(editor: CanvasEditor) {
         self.editor = editor
-        self.help = help
     }
 
     public var body: some View {
-        let tools = editor.registry.tools
-        ToolSegments(editor: editor, tools: tools, tooltips: tools.map(help), current: editor.currentToolID,
+        let registry = editor.registry, tools = registry.tools
+        ToolSegments(editor: editor, tools: tools, tooltips: tools.map { registry.toolTip(for: $0) }, current: editor.currentToolID,
                      enabled: tools.map { editor.isToolEnabled($0.id) })
             .fixedSize()
     }

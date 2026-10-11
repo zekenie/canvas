@@ -3,7 +3,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Clipboard
-import Composition
 import CoreGraphics
 import Foundation
 import LanguageModels
@@ -11,6 +10,7 @@ import Locking
 import Mentions
 import Queries
 import Selection
+import ShippedTesting
 import StickyNotes
 import TableOfContents
 import TestKit

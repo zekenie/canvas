@@ -108,7 +108,7 @@ extension PublishingDials: ExtensionPoint {
     public static func summary(of _: Bool, for _: ShapeTarget) -> String { "public dials" }
 }
 
-public struct PublishingPlugin: CanvasPlugin {
+public struct PublishingPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .publishing }
 

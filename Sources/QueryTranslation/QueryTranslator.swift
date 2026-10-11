@@ -11,7 +11,7 @@ import QueryLanguage
 // maps its errors to the wire's); it knows no command and no shape.
 //
 // A surface: the editor's model (LanguageModels) and the engine (Queries) are surfaces, and the
-// system prompt comes from its init (Composition's, whose examples name the shipped kinds).
+// system prompt comes from its init (the product's, a text file, whose examples name the shipped kinds).
 
 extension PluginID {
     public static let queryTranslation: PluginID = "query-translation"
@@ -351,7 +351,7 @@ extension CanvasEditor {
 
 /// Lends every editor a `QueryTranslator`. Every plugin list with it needs `QueriesPlugin` and
 /// `LanguageModelsPlugin` (without them it answers `noQueries` and `noModel`).
-public struct QueryTranslationPlugin: CanvasPlugin {
+public struct QueryTranslationPlugin: ListedPlugin {
     let prompt: String
     let referenceRule: String
     let style: AskStyle
@@ -364,6 +364,22 @@ public struct QueryTranslationPlugin: CanvasPlugin {
         self.referenceRule = referenceRule
         self.style = style
     }
+
+    /// The product's translator: asked with the product's prompt and rule line, which are text
+    /// files of its own (`Shipped/ask-prompt.txt` and `ask-rule.txt`, `ShippedText`), since their
+    /// examples name the shipped kinds, edge types and words, which no module knows all of. The
+    /// prompt is the file byte for byte; the rule is its one line, without the line break. Only an
+    /// executable that is the product has them: anything else passes its own (`init(prompt:referenceRule:style:)`).
+    public init() {
+        guard let prompt = ShippedText.named(Self.promptFile), let rule = ShippedText.named(Self.ruleFile) else {
+            preconditionFailure("QueryTranslationPlugin() reads Shipped/\(Self.promptFile).txt and \(Self.ruleFile).txt, which the build puts only in the product's executables: pass a prompt")
+        }
+        self.init(prompt: prompt, referenceRule: rule.trimmingCharacters(in: .newlines))
+    }
+
+    /// The product's files this plugin reads (`Shipped/<name>.txt`).
+    public nonisolated static let promptFile = "ask-prompt"
+    public nonisolated static let ruleFile = "ask-rule"
 
     public var id: PluginID { .queryTranslation }
 

@@ -254,7 +254,7 @@ extension SelectionMenuGroup: MenuGroup {
 /// shapes, runs `.selectAll`. Whether they show is asked of the menu's subject, never of
 /// `canPerform`, which reads the selection as it was before the click. So with Selection
 /// installed, a right-click shows no menu only on an empty board with nothing else to offer there.
-public struct ContextMenusPlugin: CanvasPlugin {
+public struct ContextMenusPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .contextMenus }
 

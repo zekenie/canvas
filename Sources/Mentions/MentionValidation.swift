@@ -15,7 +15,7 @@ import Validation
 /// reads, so it ignores moves: a drag of a shape mentioned 100 times, or of the whole board, runs
 /// it for none. A plugin of its own, so a list can have Mentions without Validation (the registry
 /// refuses its rule where Validation isn't installed).
-public struct MentionValidationPlugin: CanvasPlugin {
+public struct MentionValidationPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "mention-validation" }
 

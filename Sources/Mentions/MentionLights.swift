@@ -12,7 +12,7 @@ extension PluginID {
 /// shape it names). A plugin value of its own, after Neighbors and Mentions, so a list without
 /// Neighbors leaves it out; after arrows' lights in the shipped list, so a shape both pointed to
 /// and mentioned has its arrow's ring first.
-public struct MentionLightsPlugin: CanvasPlugin {
+public struct MentionLightsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .mentionLights }
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Swift's reader, second half: reads an index store (swift_index_build.py's, or the one Xcode or `swift build`
-writes) through libIndexStore into exact file-to-file uses: for every file, the symbols it defines (USRs), and for
-every explicit reference, the file that defines the symbol. Adds them to model.json as its uses.
+"""Swift's reader, second half: reads an index store (the one Xcode or `swift build` writes, or the folder of them
+swift_index_build.py writes, a store a module) through libIndexStore into exact file-to-file uses: for every file,
+the symbols it defines (USRs), and for every explicit reference, the file that defines the symbol. Adds them to
+model.json as its uses.
     swift_index_read.py <store> <project dir>/model.json"""
 import ctypes as C, json, os, sys, collections
 
@@ -35,22 +36,27 @@ lib.indexstore_symbol_get_kind.argtypes = [C.c_void_p]
 
 DECL, DEF, REF, IMPLICIT = 1 << 0, 1 << 1, 1 << 2, 1 << 8
 
-store = lib.indexstore_store_create(STORE.encode(), C.byref(err))
-assert store, 'no store'
+# One store, or a folder of them: a store holds its records in v5/records
+paths = [STORE] if os.path.isdir(os.path.join(STORE, 'v5')) else \
+    sorted(os.path.join(STORE, d) for d in os.listdir(STORE) if os.path.isdir(os.path.join(STORE, d, 'v5')))
+assert paths, f'no store at {STORE}'
 
 model = json.load(open(MODEL))
 by_base = collections.defaultdict(list)
 for f in model['files']:
     by_base[os.path.basename(f['rel'])].append((f['module'], f['rel']))
 
-records = []
-for dp, dn, fn in os.walk(os.path.join(STORE, 'v5', 'records')):
-    records += fn
+records = []         # (a record's name, its store), in the stores' order
+for path in paths:
+    store = lib.indexstore_store_create(path.encode(), C.byref(err))
+    assert store, f'no store at {path}'
+    for dp, dn, fn in os.walk(os.path.join(path, 'v5', 'records')):
+        records += [(f, store) for f in fn]
 
 defs = {}            # usr -> (module, rel)
 file_refs = {}       # (module, rel) -> {usr: name}
 unplaced = []
-for rec in sorted(records):
+for rec, store in sorted(records, key=lambda r: r[0]):
     base = rec.rsplit('-', 1)[0]
     occ = []
     def cb(ctx, o):

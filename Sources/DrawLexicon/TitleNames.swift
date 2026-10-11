@@ -13,7 +13,7 @@ import Titles
 /// a script's title is written there; a kind's titles are derived when Titles works them out from
 /// what the kind keeps (`title { … }`); and a title a script writes is
 /// folded as Titles folds one (`TitleProperty.folded`).
-public struct TitleNamesPlugin: CanvasPlugin {
+public struct TitleNamesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "title-names" }
 

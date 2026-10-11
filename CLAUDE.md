@@ -20,7 +20,7 @@ Keep it that way: a change to a subsystem updates its topic file in the same com
 Read `docs/plugin-system.md` first; it's the guide to the plugin system, with the examples.
 
 - `Canvas` (the core) knows no particular shape or concern (its one tool is Hand), and must stay that way. A concern like validity is declared by a plugin (an `ExtensionPoint` in its own module) and other plugins opt in; if the core seems to need to know about one, add a generic extension point instead.
-- `Package.swift` is the module graph, a target a line, each tagged `// layer:`, and the audit refuses a cycle, an edge the layers don't allow, imports that aren't exactly a module's declared dependencies, and a module writing another module's kind, tool, plugin, property, channel or edge type id as a literal without depending on it. Every plugin may use the foundation (Geometry, Canvas, DrawScript, QueryLanguage, TextEditing and FuzzyMatching); beyond it, surfaces use only surfaces (the query engine, Queries, and the English-to-query translator, QueryTranslation, are surfaces every plugin may run), concerns use surfaces and concerns, languages (the command line, draw, `canvas query`) use surfaces, languages and the wire (never a concern), lexicons use surfaces, concerns and languages, and verticals use surfaces and concerns (never another vertical). No module joins two others but a lexicon, and plugins can't import CanvasUI. Read [build](.claude/rules/build.md) before adding a module or an import.
+- `Package.swift` is the module graph, a target a line, each tagged `// layer:`, and the list of what ships (the plugins the product is made of, in order, each made by its name), and the audit refuses a cycle, an edge the layers don't allow, imports that aren't exactly a module's declared dependencies, and a module writing another module's kind, tool, plugin, property, channel or edge type id as a literal without depending on it. Every plugin may use the foundation (Geometry, Canvas, HostSlots, DrawScript, QueryLanguage, TextEditing and FuzzyMatching); beyond it, surfaces use only surfaces (the query engine, Queries, and the English-to-query translator, QueryTranslation, are surfaces every plugin may run), concerns use surfaces and concerns, languages (the command line, draw, `canvas query`) use surfaces, languages and the wire (never a concern), lexicons use surfaces, concerns and languages, and verticals use surfaces and concerns (never another vertical). No module joins two others but a lexicon, and none imports the plugins to list them: shipping a plugin is its line in `Package.swift`'s table. Plugins can't import CanvasUI, and the app imports no plugin: what a host takes of a plugin's goes through [host slots](.claude/rules/host-slots.md). Read [build](.claude/rules/build.md) before adding a module or an import.
 - Change documents only with `editor.transact`, and name the step a user would call it (`transact("Name")`, `undoHistory.group("Name")` around several). A body that throws commits nothing and opens no step, and the error comes out untyped. Tools see `Pointer` values, never `NSEvent`; timers go through `editor.scheduler`. Model positions are world units; overlay sizes (handles, outlines, hit margins) are view points, divided by `zoom` in world space.
 - Conform to `ShapeDefinition` (and capabilities), `Tool`, `Session`, `EditorService`, `MentionScope`, `TransformChannel` and any extension point that implements `check` or `summary` in an extension: only there does the compiler flag a near miss on a defaulted requirement ([plugins and kinds](.claude/rules/plugins-and-kinds.md)).
 - A frame costs what's in view and what changed, never the whole board: per-frame code goes through `editor.paintOrder(in:)`, and a service keeps per-shape state and redoes only the shapes a commit's `ChangeSet` names ([drawing](.claude/rules/drawing.md)); `./build.sh bench` holds the budgets.
@@ -36,7 +36,7 @@ Read [testing](.claude/rules/testing.md) before writing a test, and the Testing 
 
 - Never touch the user's pasteboard: give the plugin a private one ([clipboard](.claude/rules/clipboard.md)).
 - Never use the app's socket: a test listens on its own (`temporarySocketPath()`, TestKit) ([command line](.claude/rules/command-line.md)).
-- Never reach the network: only the two live tests do, when asked, and every other test that builds the shipped list passes `model: ScriptedLanguageModel()` ([language models](.claude/rules/language-models.md)).
+- Never reach the network: only the two live tests do, when asked, and every other test that builds the shipped list passes `model: ScriptedLanguageModel()` (ShippedTesting's `ShippedPlugins`; the list itself won't load for a test without a model and a pasteboard of its own: [language models](.claude/rules/language-models.md), [build](.claude/rules/build.md)).
 - Close the `BoardDocument`s the test edits ([testing](.claude/rules/testing.md)).
 
 Screen capture isn't permitted here: tests draw into bitmaps, and what a drawing change costs on screen is seen only in the app on screen ([testing](.claude/rules/testing.md)).
@@ -46,7 +46,7 @@ Screen capture isn't permitted here: tests draw into bitmaps, and what a drawing
 Each topic file starts with what it covers, the topics it touches, and its sections of the guide.
 
 **Workflow**
-- [build](.claude/rules/build.md): how `build.sh` builds; `Package.swift`, the layers and what each may import; what the audit refuses.
+- [build](.claude/rules/build.md): how `build.sh` builds; `Package.swift`, the layers and what each may import; what ships (the list, plugins made by name, `+ shipped`, the product's text files); what the audit refuses.
 - [benchmarks](.claude/rules/benchmarks.md): what `./build.sh bench` measures, and every budget.
 - [testing](.claude/rules/testing.md): the headless harness, views in unshown windows, the board documents a test closes, and which topic files have test guidance.
 
@@ -64,14 +64,15 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [Quick Look](.claude/rules/quick-look.md): a board file's preview and thumbnail in the Finder: `BoardPicture`, the app's extension, how it's built, signed and registered.
 
 **Foundation**
+- [host slots](.claude/rules/host-slots.md): what a window puts around its canvas, and what the app takes besides, from plugins: views over the canvas, the inspector, the subtitle, settings panes, tool tips, the welcome board, the commands the app's server runs; CanvasUI's chrome that places them, and the app.
 - [text editing](.claude/rules/text-editing.md): `EditingTextView`, the app's spelling settings and the one caret list, under every editable text.
 - [fuzzy matching](.claude/rules/fuzzy-matching.md): `FuzzyMatcher`, the matcher every list ranks typed text with; `TextSearch`, Find's, over folded texts; `PathMatcher`, Jump To's, over containment paths.
 
 **Surfaces**
 - [keyboard](.claude/rules/keyboard.md): shortcuts and chords, how a key reaches the canvas, the menu bar.
 - [selection](.claude/rules/selection.md): the select tool, handles and resizing, opening, Back, canvas buttons, going to shapes, faces, the shake a refused change gives.
-- [detail panel](.claude/rules/detail-panel.md): sections, tabs, status lines, headers, bindings, text boxes, the code editor and its completions.
-- [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed (front to back), hover, another board's outline, dragging rows.
+- [detail panel](.claude/rules/detail-panel.md): sections, tabs, status lines, headers, bindings, text boxes, the code editor and its completions, and its overview and takeovers (what other plugins show in it).
+- [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed (front to back), its heading, hover, another board's outline, dragging rows.
 - [adornments](.claude/rules/adornments.md): pills and chips on shapes: placing them, their places, drawing and pointing.
 - [context menus](.claude/rules/context-menus.md): a shape's items, the canvas's items, right-clicks and Control-clicks.
 - [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text.
@@ -91,7 +92,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [connections](.claude/rules/connections.md): ports, channels and the connector.
 - [arrows](.claude/rules/arrows.md): tldraw's arc arrows, their labels and binding rules, and the proof-of-concept parity tests.
 - [mentions](.claude/rules/mentions.md): mentions in text: pills, the `@` picker, mention edges, Mentioned In, mentions' warnings.
-- [boards](.claude/rules/boards.md): opening boards, Enclosing Board, the path's crumbs and their menus.
+- [boards](.claude/rules/boards.md): opening boards, Enclosing Board, what a board is called (the root, as the file is) and where that heads other plugins' lists, the path's crumbs and their menus.
 - [snapping](.claude/rules/snapping.md): what a drag snaps to, and its guides.
 - [transform](.claude/rules/transform.md): turning a shape into another kind: channels, sources and targets, the menu item and the command, frame into subboard.
 - [types](.claude/rules/types.md): a note that holds a JSON Schema is a type, named by its title; `/is-a type` and Remove Type, New type from `/is-a`, what a shape is (`is`, the `is-a` edge, `/is-a`, the type chips and the Types tab), the file's types and what is what (`TypeIndex`), the words kept in step with the schema by the model (`TypeSync`), the rows a type's note has under its words (`RowBook`: the room they take, the fold, what its spot says while the model reads or fails), references, the Schema tab's JSON and completions, highlights, the card a row with more in it opens and the form in it.

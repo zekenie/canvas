@@ -1,11 +1,12 @@
 import AppKit
-import Canvas
+@_spi(Host) import Canvas
+import HostSlots
 import SwiftUI
 
 /// A board's window: the app's content for it (`BoardConfiguration.content`), hosted with its
 /// SwiftUI toolbar. The window's title and edited dot follow the document, and its subtitle names
-/// the board shown inside a subboard (`BoardConfiguration.boardName`), so windows open on one
-/// file's boards can be told apart.
+/// the board shown inside a subboard (what a plugin gives the host's slot for it,
+/// `registry.windowSubtitle(for:)`), so windows open on one file's boards can be told apart.
 ///
 /// It answers the menu commands that must reach the canvas whatever has the keyboard (the
 /// responder chain from a detail-panel field never passes through the canvas, but always reaches
@@ -29,18 +30,18 @@ public final class BoardWindowController: NSWindowController {
         window.setContentSize(NSSize(width: 1200, height: 800))
         super.init(window: window)
         shouldCascadeWindows = true
-        if let name = configuration.boardName { showBoardName(name) }
+        showSubtitle()
     }
 
     private let editor: CanvasEditor
 
-    /// The subtitle: what `name` calls the board shown, none on the root; read again, the next turn,
-    /// each time something it read changes (another board shown, the board renamed), as SwiftUI
-    /// would redraw a view that read it.
-    private func showBoardName(_ name: @escaping @MainActor (CanvasEditor) -> String?) {
-        let subtitle = withObservationTracking { name(editor) ?? "" } onChange: { [weak self] in
+    /// The subtitle: what a plugin says of the board shown (`registry.windowSubtitle(for:)`: what
+    /// it's called, none on the root); read again, the next turn, each time something it read
+    /// changes (another board shown, the board renamed), as SwiftUI would redraw a view that read it.
+    private func showSubtitle() {
+        let subtitle = withObservationTracking { editor.registry.windowSubtitle(for: editor) ?? "" } onChange: { [weak self] in
             // Told as it's about to change: read it once it has.
-            Task { @MainActor in self?.showBoardName(name) }
+            Task { @MainActor in self?.showSubtitle() }
         }
         if window?.subtitle != subtitle { window?.subtitle = subtitle }
     }
@@ -107,10 +108,11 @@ public final class BoardWindowController: NSWindowController {
     /// so a disabled item leaves the key to it.
     private static let textKeys: Set<Selector> = [#selector(enclosingBoard(_:)), #selector(openSelection(_:)), #selector(duplicate(_:))]
 
-    /// The root's crumb on the path is the file's name, kept as the title is.
+    /// The root board is called what the file is ("Untitled", "Plans"), kept as the title is: the
+    /// editor's `rootName`, which whatever names boards reads (the root's crumb on the path).
     public override func synchronizeWindowTitleWithDocumentName() {
         super.synchronizeWindowTitleWithDocumentName()
-        if let board, board.viewState.fileName != board.displayName { board.viewState.fileName = board.displayName }
+        if let board { board.editor.nameRoot(board.displayName) }
     }
 }
 

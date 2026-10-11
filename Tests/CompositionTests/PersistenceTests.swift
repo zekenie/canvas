@@ -1,12 +1,12 @@
 import Canvas
 import CanvasTesting
-import Composition
 import Connections
 import CoreGraphics
 import Foundation
 import Frames
 import LanguageModels
 import Mentions
+import ShippedTesting
 import StickyNotes
 import TestKit
 import Titles

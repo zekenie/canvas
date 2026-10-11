@@ -1,14 +1,15 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import Composition
 import Connections
 import CoreGraphics
 import DetailPanel
 import Foundation
+import HostSlots
 import Locking
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import SwiftUI
 import TestKit
@@ -25,7 +26,7 @@ extension GalleryStage {
         let record = try require(editor.document[id])
         try require(editor.detailPanel).choose(.of(TypesTab.self), for: record.kind)
         editor.selection = id
-        let host = NSHostingView(rootView: ShippedPlugins.detailPanel(editor: editor, onExit: {}))
+        let host = NSHostingView(rootView: try require(editor.registry.hostInspector).view(for: editor, onExit: {}))
         host.frame = CGRect(origin: .zero, size: size)
         let panelWindow = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: true)
         panelWindow.contentView = host

@@ -150,6 +150,8 @@ public final class AnthropicKeySettings {
 /// The Settings window's metrics. Points.
 @MainActor
 enum SettingsStyle {
+    /// What the key's pane is called in the Settings window.
+    static let anthropicPane = "Anthropic"
     static let width: CGFloat = 480
     /// Between the buttons.
     static let buttonSpacing: CGFloat = 8

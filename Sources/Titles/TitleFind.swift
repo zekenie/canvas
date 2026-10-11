@@ -13,7 +13,7 @@ extension PluginID {
 /// laid out again as the zoom changes); zoomed out, where the title is said on the shape, it's
 /// tinted where its cover is (`titleCover(of:)`). A plugin value of its own, after Find and
 /// Titles, so a list without Find leaves it out.
-public struct TitleFindPlugin: CanvasPlugin {
+public struct TitleFindPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .titleFind }
 

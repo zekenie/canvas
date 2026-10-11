@@ -5,31 +5,28 @@ import SwiftUI
 
 /// The table of contents: a Mac source list of the shown board's shapes, a shape that owns a board
 /// opening onto that board's (`BoardRows`). The app shows it in the detail panel when nothing or
-/// several shapes are selected (through Composition); it follows the editor by itself. Clicking a row gives it the keyboard, as a source list does: the arrow keys
+/// several shapes are selected (`ContentsOverviewPlugin`); it follows the editor by itself. Clicking a row gives it the keyboard, as a source list does: the arrow keys
 /// move through the rows, Delete runs the `.delete` command (what Delete on the canvas and Edit ›
 /// Delete run: deleting the selection), a double-click or Return on a row opens its shape (as
 /// Return on the canvas does: Selection's `editor.open`), and Escape calls `onExit`, which gives the keyboard back to the
 /// canvas. So does hiding the list while a row has the keyboard.
 ///
-/// Its header names the board listed: `heading` says how, else it's "Board". The list doesn't know
-/// what a board is; whoever places it (Composition) does.
+/// Its header names the board listed: a plugin says how (`ContentsHeadings`), else it's "Board".
+/// The list doesn't know what a board is called; the plugin that names boards does.
 public struct TableOfContentsView: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
-    let heading: @MainActor (CanvasEditor) -> ContentsHeading?
     @State private var window = ContentsWindowBox()
 
-    public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void = {},
-                heading: @escaping @MainActor (CanvasEditor) -> ContentsHeading? = { _ in nil }) {
+    public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void = {}) {
         self.editor = editor
         self.onExit = onExit
-        self.heading = heading
     }
 
     public var body: some View {
         Group {
             if let state = editor.tableOfContents {
-                ContentsList(state: state, editor: editor, heading: heading)
+                ContentsList(state: state, editor: editor)
             } else {
                 ContentUnavailableView("No Contents", systemImage: "list.bullet.indent")
             }
@@ -80,7 +77,6 @@ struct ContentsListID: Hashable {
 struct ContentsList: View {
     let state: ContentsState
     let editor: CanvasEditor
-    let heading: @MainActor (CanvasEditor) -> ContentsHeading?
 
     var body: some View {
         let entries = state.entries
@@ -105,7 +101,7 @@ struct ContentsList: View {
                     // Read after `entries`, which counts the replacements.
                     .id(ContentsListID(board: editor.board, scope: state.scope, replacements: state.replacements))
                 } header: {
-                    ContentsHeader(state: state, editor: editor, heading: heading)
+                    ContentsHeader(state: state, editor: editor)
                 }
             }
             .listStyle(.sidebar)
@@ -243,13 +239,12 @@ final class BoardRows {
     }
 }
 
-/// The board's heading (else "Board"), with a button up from it while it can go up; or "Selection"
-/// with a button that lists every shape again. Its own view, so what the heading reads redraws only
-/// the header.
+/// The board's heading (`ContentsState.heading`: a plugin's, else "Board"), with a button up from it
+/// while it can go up; or "Selection" with a button that lists every shape again. Its own view, so
+/// what the heading reads redraws only the header.
 struct ContentsHeader: View {
     let state: ContentsState
     let editor: CanvasEditor
-    let heading: @MainActor (CanvasEditor) -> ContentsHeading?
 
     var body: some View {
         HStack(spacing: ContentsStyle.headerSpacing) {
@@ -260,7 +255,7 @@ struct ContentsHeader: View {
                     .buttonStyle(.borderless)
                     .help("List every shape on the board")
             } else {
-                let heading = heading(editor) ?? ContentsHeading("Board")
+                let heading = state.heading
                 if let up = heading.up, editor.canPerform(up) {
                     Button { editor.perform(up) } label: {
                         // Not a chevron: in a list's disclosure column, one reads as collapsing.

@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
+import HostSlots
 import SwiftUI
 import TestKit
 
@@ -17,14 +18,17 @@ import TestKit
     let frozen = ShapeID(), plain = ShapeID()
     let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 40), styleMask: [.titled], backing: .buffered, defer: false)
 
-    init() throws {
+    /// `withTips`: a plugin says each tool's tip, its label and " tool" (the host's slot for tool
+    /// tips); without it a tip is the tool's label.
+    init(withTips: Bool = true) throws {
         var locked = AnyShapeRecord(ShapeRecord(id: frozen, Pocket(CGRect(x: 0, y: 0, width: 100, height: 100))))
         locked[Frozen.self] = true
         let free = AnyShapeRecord(ShapeRecord(id: plain, Pocket(CGRect(x: 200, y: 0, width: 100, height: 100))))
         let file = CanvasFile(root: CanvasDocument(shapes: [locked, free]),
                               children: [frozen: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(Box(CGRect(x: 0, y: 0, width: 40, height: 30))))])])
-        h = try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin(), TilesPlugin(), FreezingPlugin()], file: file)
-        window.contentView = NSHostingView(rootView: ToolPicker(editor: h.editor, help: { "\($0.label) tool" }))
+        let tips = Contributor(id: "tips") { $0.toolTips { tool, _ in "\(tool.label) tool" } }
+        h = try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin(), TilesPlugin(), FreezingPlugin()] + (withTips ? [tips] : []), file: file)
+        window.contentView = NSHostingView(rootView: ToolPicker(editor: h.editor))
         window.settle()
     }
 
@@ -50,7 +54,9 @@ import TestKit
         let control = bar.control, tools = bar.tools
         expect(tools.count > 1)
         expectEqual(control.segmentCount, tools.count)
-        expectEqual((0..<tools.count).map { control.toolTip(forSegment: $0) }, tools.map { "\($0.label) tool" })
+        expectEqual((0..<tools.count).map { control.toolTip(forSegment: $0) }, tools.map { "\($0.label) tool" }, "what a plugin says of each")
+        let plain = try ToolBar(withTips: false)
+        expectEqual((0..<tools.count).map { plain.control.toolTip(forSegment: $0) }, tools.map(\.label), "its label, where no plugin says more")
         expectEqual((0..<tools.count).map { control.image(forSegment: $0)?.accessibilityDescription }, tools.map(\.label), "VoiceOver reads each by its label")
         expectEqual(control.accessibilityLabel(), "Tool")
         expectEqual(control.selectedSegment, 0, "the Hand")

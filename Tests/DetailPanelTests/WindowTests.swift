@@ -22,12 +22,11 @@ final class PanelWindow {
     /// How often the panel handed the keyboard back.
     private(set) var exits = 0
 
-    /// `withOverview`: the panel's overview is a text field whose placeholder is "Overview".
-    /// `takeover`: the panel's takeover slot.
     /// `inBoardWindow`: the window is a board's, as the app's is, which splits Edit › Undo between
-    /// text and the board.
+    /// text and the board. The panel's overview and takeovers are the editor's plugins'
+    /// (`OverviewPlugin`, TakeoverTests' `TakeoverPlugin`).
     init(_ editor: CanvasEditor, panelWidth: CGFloat = DetailStyle.idealWidth, locale: Locale = Locale(identifier: "en_US"),
-         withOverview: Bool = false, inBoardWindow: Bool = false, takeover: DetailTakeover? = nil) {
+         inBoardWindow: Bool = false) {
         self.editor = editor
         let frame = CGRect(x: 0, y: 0, width: 1000, height: 700)
         if inBoardWindow {
@@ -45,10 +44,7 @@ final class PanelWindow {
             exits += 1
             window.makeFirstResponder(canvas)
         }
-        let panel = withOverview
-            ? AnyView(DetailPanelView(editor: editor, onExit: exit, overview: { TextField("Overview", text: .constant("")) }, takeover: takeover))
-            : AnyView(DetailPanelView(editor: editor, onExit: exit, takeover: takeover))
-        hosting = NSHostingView(rootView: panel.environment(\.locale, locale))
+        hosting = NSHostingView(rootView: DetailPanelView(editor: editor, onExit: exit).environment(\.locale, locale))
         hosting.frame = CGRect(x: 1000 - panelWidth, y: 0, width: panelWidth, height: 700)
         let root = NSView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         root.addSubview(canvas)
@@ -163,10 +159,21 @@ struct CountingPlugin: CanvasPlugin {
 enum ListTab {}
 extension ListTab: DetailTab { static var title: String { "List" } }
 
+/// Gives the panel its overview, as a plugin does: a text field whose placeholder is "Overview"
+/// (or `name`).
+struct OverviewPlugin: CanvasPlugin {
+    var name = "Overview"
+    var id: PluginID { PluginID(name.lowercased()) }
+    func register(into registrar: inout PluginRegistrar) {
+        let name = name
+        registrar.detailOverview { _, _ in TextField(name, text: .constant("")) }
+    }
+}
+
 @MainActor let windowTests = Suite("Panel in a window", [
     test("an overview stands in for No Selection and goes under the header of several; one shape shows its own panel") {
-        let editor = try gadgetEditor(scheduler: TaskScheduler())
-        let panel = PanelWindow(editor, withOverview: true)
+        let editor = try gadgetEditor([OverviewPlugin()], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
         let a = editor.add(Box(gadgetFrame)), b = editor.add(Box(gadgetFrame.offsetBy(dx: 300, dy: 0)))
         panel.window.spin { panel.fields.map(\.placeholderString) == ["Overview"] }
         editor.selection = a

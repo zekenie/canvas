@@ -51,7 +51,7 @@ extension Frame {
 /// contents (a row Titles names), the detail panel (a header that renames it) and Transform (it offers
 /// the container channel, so it can be turned into whatever takes that: a subboard, in the app). Create
 /// Frame, in the context menu, puts one down around the shapes it's for, holding them.
-public struct FramesPlugin: CanvasPlugin {
+public struct FramesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .framing }
 

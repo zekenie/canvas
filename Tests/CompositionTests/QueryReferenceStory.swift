@@ -3,7 +3,6 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Composition
 import Connections
 import CoreGraphics
 import Foundation
@@ -12,6 +11,7 @@ import Mentions
 import Publishing
 import Queries
 import References
+import ShippedTesting
 import StickyNotes
 import TestKit
 import Titles

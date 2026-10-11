@@ -12,7 +12,7 @@ extension ReorderMenuGroup: MenuGroup {
 /// Bring Forward, Send Backward and Send to Back. The smallest plugin that adds items for every
 /// kind, and one that picks kinds by capability: a kind painted by anchor (an arrow, just above the
 /// shapes it joins) is left out, since document order doesn't decide where it's drawn.
-public struct ReorderingPlugin: CanvasPlugin {
+public struct ReorderingPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "reordering" }
 

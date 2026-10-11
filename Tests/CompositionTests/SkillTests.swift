@@ -2,11 +2,12 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasUI
-import Composition
 import DrawScript
 import Foundation
+import HostSlots
 import LanguageModels
 import QueryLanguage
+import ShippedTesting
 import TestKit
 
 // The canvas skill (.claude/skills/canvas) teaches agents `canvas draw` and `canvas query` by
@@ -269,7 +270,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         expect(skill.contains("build/canvas measure -"), "SKILL.md points to measure")
 
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        let commands = ShippedPlugins.commands(in: registry)
+        let commands = registry.hostCommands
         let script = "sticky-note \"A\" text: \"x\"\nsticky-note \"B\" public: true\nedge \"A\" -> \"B\" via: reference"
         let answer = try awaitResult { try await commands.run("measure", ["script": .string(script)], nil) }
         let start = try require(reference.range(of: "## Measuring a script")), end = try require(reference.range(of: "## Errors"))
@@ -312,7 +313,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())
-        let commands = ShippedPlugins.commands(in: registry)
+        let commands = registry.hostCommands
         let vocabulary = try awaitResult { try await commands.run("query-vocabulary", [:], nil) }
         let reference = try String(contentsOfFile: "\(skillFolder)/reference/query.md", encoding: .utf8)
         let tables = markdownTables(in: reference)
@@ -341,7 +342,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
     },
     test("the skill's tables of kinds are what canvas kinds says: every drawable kind, its size, its attributes, its channels by side, and its smallest") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        let commands = ShippedPlugins.commands(in: registry)
+        let commands = registry.hostCommands
         let listed = try awaitResult { try await commands.run("kinds", [:], nil) }.arrayValue ?? []
         var kinds: [String: JSON] = [:]
         for kind in listed where kind["drawable"] == true { kinds[kind["kind"]?.stringValue ?? "?"] = kind }

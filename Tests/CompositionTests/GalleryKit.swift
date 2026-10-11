@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Composition
 import CoreGraphics
 import Foundation
 import Geometry
@@ -10,6 +9,7 @@ import LanguageModels
 import Mentions
 import ProseMaps
 import Selection
+import ShippedTesting
 import SlashCommands
 import StickyNotes
 import TestKit

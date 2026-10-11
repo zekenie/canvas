@@ -5,16 +5,17 @@ import Boards
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Composition
 import Connections
 import CoreGraphics
 import DetailPanel
 import Foundation
 import Geometry
+import HostSlots
 import LanguageModels
 import Locking
 import Mentions
 import Selection
+import ShippedTesting
 import Snapping
 import StickyNotes
 import Subboards
@@ -1346,7 +1347,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             let lines = (0..<count).map { k in
                 "sticky-note \"Mine \(k)\" right of \"\(firstTitled[rows[k * rows.count / count]]!)\" text: \"Pushed along\""
             }
-            let commands = ShippedPlugins.commands(in: registry)
+            let commands = registry.hostCommands
             var result: JSON = [:], times: [Double] = []
             for _ in 0..<5 {
                 // The draw alone: it answers without suspending, so the clock reads nothing else.

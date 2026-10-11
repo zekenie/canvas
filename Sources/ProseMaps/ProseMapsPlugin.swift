@@ -9,7 +9,7 @@ extension PluginID {
 /// type's words and its schema), and the frame's end it asks from. Generic: it knows no
 /// kind and no target; a target is a type of its plugin's (`ProseTarget`), and what's drawn of a map
 /// is its reader's. It asks the editor's model, so it does nothing without `LanguageModelsPlugin`.
-public struct ProseMapsPlugin: CanvasPlugin {
+public struct ProseMapsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .proseMaps }
 

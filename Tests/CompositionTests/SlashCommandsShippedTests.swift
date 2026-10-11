@@ -1,7 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import Composition
 import Connections
 import CoreGraphics
 import LanguageModels
@@ -9,6 +8,7 @@ import Locking
 import Mentions
 import Publishing
 import Selection
+import ShippedTesting
 import SlashCommands
 import StickyNotes
 import TestKit
