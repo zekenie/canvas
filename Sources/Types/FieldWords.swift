@@ -22,6 +22,8 @@ public enum FieldWords {
     public static func fields(_ count: Int) -> String { count == 1 ? "1 field" : "\(count) fields" }
     /// `2 items` (`1 item`).
     public static func items(_ count: Int) -> String { count == 1 ? "1 item" : "\(count) items" }
+    /// What the amber dot by a field's name says to VoiceOver: a value it needs is missing.
+    public static let needed = "needed"
     /// A choice left empty, last in its menu.
     public static let none = "None"
 }

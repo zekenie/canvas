@@ -212,6 +212,17 @@ public final class FieldCards {
         forms.removeAll { $0.form == nil }
         guard !forms.isEmpty else { return }
         for held in forms where held.form.map({ changes.shapeIDs.contains($0.shape) }) == true { held.form?.reload() }
+        schedulePass(in: editor)
+    }
+
+    /// What the check says moved with no commit (a caret came to a field or left it, on a surface that is not one of
+    /// the forms): the forms look again a turn later, and a form that already shows it (its own caret) is left be.
+    func checkDidMove() {
+        guard let editor, !forms.isEmpty else { return }
+        schedulePass(in: editor)
+    }
+
+    private func schedulePass(in editor: CanvasEditor) {
         guard pass == nil else { return }
         pass = editor.scheduler.schedule(after: .zero) { [weak self] in
             guard let self, let editor = self.editor else { return }

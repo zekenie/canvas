@@ -158,9 +158,13 @@ extension FieldFormView {
 extension FieldFormView {
     private var ink: NSColor { TypesStyle.formValueInk }
 
-    func chipName(_ type: ShapeID) -> (text: String, isGone: Bool) {
-        guard let index = editor.types, index.isType(type) else { return (TypesStyle.untitledType, true) }
-        return (index.name(of: type) ?? TypesStyle.untitledType, false)
+    /// A type's chip says what every chip of it says (`TypeChips`, the rows' and the panel's): its title; `Untitled`
+    /// while it has none; the last title it was known by once it is gone, else `Deleted`.
+    public func chipName(_ type: ShapeID) -> (text: String, isGone: Bool) {
+        guard let index = editor.types else { return (TypesStyle.deletedType, true) }
+        let name = index.name(of: TypeLink(type))
+        if case .missing = name { return (TypesStyle.menuName(name), true) }
+        return (TypesStyle.menuName(name), false)
     }
 
     func branchWidth(_ branch: Int) -> CGFloat {

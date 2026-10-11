@@ -214,7 +214,7 @@ public final class FieldFormView: NSView {
     /// `+12 more`, or `from Person` when one type brought every row: what the line back from inside it says.
     private func foldTitle() -> String {
         if let first = foldFields.first, foldFields.allSatisfy({ $0.introducedBy == first.introducedBy }) {
-            return FieldWords.from(editor.types?.name(of: first.introducedBy) ?? TypesStyle.untitledType)
+            return FieldWords.from(chipName(first.introducedBy).text)
         }
         return FieldWords.more(foldFields.count)
     }
@@ -402,9 +402,11 @@ public final class FieldFormView: NSView {
         // The editor goes from cell to cell, and the window clears a text's undo only when the keyboard changes hands.
         cellEditor.undoManager?.removeAllActions()
         typingPath = cell.path
+        let current = showsCurrentCheck
         editor.fieldChecks?.typing = (shape, cell.path)
         if let window, window.firstResponder !== cellEditor { window.makeFirstResponder(cellEditor) }
         if !isRebuilding { refreshMarks() }
+        keepCheckCurrent(if: current)
     }
 
     func hideEditor() {
@@ -425,8 +427,18 @@ public final class FieldFormView: NSView {
     func stopTyping() {
         guard let path = typingPath else { return }
         typingPath = nil
+        let current = showsCurrentCheck
         if let checks = editor.fieldChecks, let typing = checks.typing, typing.shape == shape, typing.path == path { checks.typing = nil }
         if !isRebuilding { refreshMarks() }
+        keepCheckCurrent(if: current)
+    }
+
+    /// Whether the marks drawn are the check's latest. Asked before this form moves the caret the check keeps (it
+    /// draws that for itself), so the pass a turn later does not take the form apart for a move it already shows.
+    public var showsCurrentCheck: Bool { checkRevision == (editor.fieldChecks?.revision ?? 0) }
+
+    func keepCheckCurrent(if current: Bool) {
+        if current { checkRevision = editor.fieldChecks?.revision ?? 0 }
     }
 
     /// The check's marks again, with no layout: the cell with the caret came or went.

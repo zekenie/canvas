@@ -421,6 +421,51 @@ private extension Resolved {
         r.editor.freeze([r.order], false)
         expectEqual(r.values.value(at: r.path("shippingAddress").key("street")), "x")
     },
+    test("a caret that comes to a field or goes with no commit reaches the open card a turn later: the cell is not marked while another surface has the caret in it, and is again when it leaves") {
+        let r = try CardRig()
+        defer { r.close() }
+        let quantity = r.path("lineItems").index(0).key("quantity")
+        r.editor.fieldWriter?.set([["product": "Mug", "quantity": 0]], at: r.path("lineItems"), of: r.order)
+        expect(r.open("lineItems"))
+        let form = try require(r.cards.openForm)
+        @MainActor func mark() -> FieldClass? { form.sheet.lines.flatMap(\.cells).first { $0.path == quantity }?.mark }
+        expectEqual(mark(), .wrong, "a quantity of 0 breaks the minimum of 1")
+        let checks = try require(r.editor.fieldChecks)
+        checks.typing = (r.order, quantity)
+        expectEqual(mark(), .wrong, "not yet: a turn later")
+        r.advance()
+        expectEqual(mark(), nil, "the caret of another surface is in it")
+        checks.typing = nil
+        r.advance()
+        expectEqual(mark(), .wrong)
+        expectEqual(r.values.value(at: quantity), 0, "nothing was written")
+    },
+    test("the form's own caret moves the check and the form is not taken apart for it: moving between cells reloads nothing") {
+        let r = try CardRig()
+        defer { r.close() }
+        expect(r.open("shippingAddress"))
+        let form = try require(r.cards.openForm)
+        let sheet = form.sheet
+        r.tab()
+        r.advance()
+        expectEqual(form.focus, FieldStop(line: 1, column: 0))
+        expectEqual(form.sheet.lines.count, sheet.lines.count)
+        expect(form.showsCurrentCheck, "the form shows the check as it is")
+    },
+    test("a type's chip in a card says what a chip says everywhere: its title, `Untitled`, the last title it was known by once gone, else `Deleted`") {
+        let r = try CardRig(types: [FieldFixtures.everyKind.a])
+        defer { r.close() }
+        expect(r.open("shippingAddress"))
+        let form = try require(r.cards.openForm)
+        let draft = r.editor.addType(TypeSchemaProperty.starter, at: CGPoint(x: 600, y: 300))
+        expect(form.chipName(FieldFixtures.addressID) == ("Address", false))
+        expect(form.chipName(draft) == ("Untitled", false))
+        r.editor.transact("Delete") { $0.delete([FieldFixtures.addressID]) }
+        expect(form.chipName(FieldFixtures.addressID) == ("Address", true), "the last title it was known by")
+        expect(form.chipName(ShapeID()) == ("Deleted", true), "never known")
+        r.editor.undo()
+        expect(form.chipName(FieldFixtures.addressID) == ("Address", false), "back whole when the delete is undone")
+    },
 ])
 
 @MainActor private func storedValues(_ editor: CanvasEditor, _ shape: ShapeID) -> FieldValues? {

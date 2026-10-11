@@ -52,6 +52,14 @@ extension TypePanelWindow {
         return false
     }
     var popups: [NSPopUpButton] { hosting.descendants(NSPopUpButton.self) }
+    /// The amber dots by the fields' names, top to bottom.
+    var neededDots: [NSView] {
+        hosting.descendants(NSView.self).filter { $0.className.contains("FieldNeededDot") }.sorted { frame(of: $0).minY < frame(of: $1).minY }
+    }
+    /// The forms of the fields with more in them, top to bottom.
+    var forms: [FieldFormView] {
+        hosting.descendants(FieldFormView.self).sorted { frame(of: $0).minY < frame(of: $1).minY }
+    }
     /// SwiftUI's checkboxes, top to bottom.
     var checkboxes: [NSButton] {
         hosting.descendants(NSButton.self).filter { $0.className.contains("FocusRing") }.sorted { frame(of: $0).minY < frame(of: $1).minY }
@@ -264,6 +272,52 @@ extension TypePanelWindow {
         expectEqual(FieldsPanelModel.problems(of: address, in: FieldCheck(problems: [own, deeper, elsewhere])), [own])
         expectEqual(FieldsPanelModel.problems(of: address, in: FieldCheck(problems: [needed])), [], "amber on the note, no words here")
         expectEqual(FieldsPanelModel.problems(of: address, in: FieldCheck(problems: [deeper])), [])
+    },
+    test("a needed field left empty has the amber dot by its name, a plain one and one with more in it, and no words; a value takes it away, and a wrong one leaves red and words, not amber") {
+        let panel = try TypePanelWindow()
+        let id = panel.instance(of: [FieldFixtures.orderID, FieldFixtures.kindsAID], extra: [FieldFixtures.everyKind.a])
+        panel.window.spin { panel.forms.count >= 2 && !panel.boxes.isEmpty }
+        // Order needs a customer and line items, KindsA a name: a dot by each, above its box or its form.
+        panel.window.spin { panel.neededDots.count == 3 }
+        expectEqual(panel.neededDots.count, 3, "name, customer and line items")
+        expect(panel.neededDots.allSatisfy { $0.frame.size == CGSize(width: TypesStyle.neededDotSize, height: TypesStyle.neededDotSize) })
+        let customer = try require(panel.forms.first)
+        let dotAboveForm = panel.neededDots.contains { panel.frame(of: $0).maxY <= panel.frame(of: customer).minY + 1 && panel.frame(of: customer).minY - panel.frame(of: $0).maxY < 30 }
+        expect(dotAboveForm, "the dot is by the name above the form, not inside it")
+        panel.editor.fieldWriter?.set("Ann", at: FieldPath(field: "name"), of: id)
+        panel.window.spin { panel.neededDots.count == 2 }
+        expectEqual(panel.neededDots.count, 2, "a value in a plain field takes its dot away")
+        panel.editor.fieldWriter?.set([["product": "Mug", "quantity": 0]], at: FieldPath(field: "lineItems"), of: id)
+        panel.window.spin { panel.neededDots.count == 1 }
+        expectEqual(panel.neededDots.count, 1, "line items has a value; customer is still missing")
+        let record = try require(panel.editor.document[id])
+        let book = try require(panel.editor.fieldBook)
+        let check = try require(panel.editor.fieldChecks).check(of: record)
+        let items = try require(book.fields(of: record).fields.first { $0.field.name == "lineItems" })
+        let customerField = try require(book.fields(of: record).fields.first { $0.field.name == "customer" })
+        expect(!FieldsPanelModel.isNeeded(items, in: check), "red inside, not amber")
+        expect(FieldsPanelModel.isNeeded(customerField, in: check))
+        expectEqual(FieldsPanelModel.problems(of: customerField, in: check).count, 0, "and no words")
+    },
+    test("a field with more in it takes the panel's full width under its name, and a problem inside is said once, at its own row in the form, open without a click") {
+        let panel = try TypePanelWindow()
+        let id = panel.instance(of: [FieldFixtures.orderID])
+        panel.editor.fieldWriter?.set([["product": "Mug", "quantity": 2], ["product": "Plate", "quantity": 0]], at: FieldPath(field: "lineItems"), of: id)
+        panel.window.spin { panel.forms.count >= 2 }
+        panel.window.settle()
+        let items = try require(panel.forms.first { $0.sheet.lines.flatMap(\.cells).contains { $0.mark == .wrong } }, "the form that holds the wrong quantity")
+        let room = panel.frame(of: panel.hosting)
+        expect(panel.frame(of: items).width > room.width - 3 * DetailStyle.inset, "the form fills the width: \(panel.frame(of: items).width) of \(room.width)")
+        let wrong = items.sheet.lines.flatMap(\.cells).filter { $0.mark == .wrong }
+        let quantity = FieldPath(field: "lineItems").index(1).key("quantity")
+        expectEqual(wrong.map(\.path), [FieldPath(field: "lineItems"), FieldPath(field: "lineItems").index(1), quantity], "red at the Plate's quantity, and on the lines above it, which is how every row carries a mark under it")
+        expectEqual(wrong.filter { $0.path.steps.count == 3 }.map(\.path), [quantity], "one cell is where the problem is")
+        expect(items.sheet.lines.count > 1, "and the list is open by itself")
+        let record = try require(panel.editor.document[id])
+        let check = try require(panel.editor.fieldChecks).check(of: record)
+        let field = try require(try require(panel.editor.fieldBook).fields(of: record).fields.first { $0.field.name == "lineItems" })
+        expectEqual(FieldsPanelModel.problems(of: field, in: check), [], "the section says nothing of it in words: the form has it")
+        expectEqual(check.problems.filter { $0.kind == .wrong }.count, 1, "it is one problem")
     },
     test("a yes or no in an either shows as true or false, which the box reads back; alone it is yes or no") {
         expectEqual(FieldsPanelModel.shown(.bool(true), as: [.yesNo, .text]), "true")

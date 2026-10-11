@@ -25,9 +25,11 @@ extension FieldFormView {
             jsonEditor.undoManager?.removeAllActions()
             jsonClip.isHidden = false
             typingPath = cell.path
+            let current = showsCurrentCheck
             editor.fieldChecks?.typing = (shape, cell.path)
             if let window, window.firstResponder !== jsonEditor { window.makeFirstResponder(jsonEditor) }
             if !isRebuilding { refreshMarks() }
+            keepCheckCurrent(if: current)
         } else if jsonDrafts[cell.path] == nil, jsonEditor.string != cell.shown {
             // Written by something else, and not being typed: the box shows it.
             setJSONText(cell.shown, caretAtEnd: false)

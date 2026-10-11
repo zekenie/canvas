@@ -177,6 +177,8 @@ public final class FieldChecks {
             let shapes = Set([old?.shape, newValue?.shape].compactMap { $0 })
             editor?.validation?.recheck(shapes)
             editor?.setNeedsDisplay()
+            // An open form shows the answer less the cell with the caret: it looks again, a turn later.
+            editor?.fieldCards?.checkDidMove()
         }
     }
 

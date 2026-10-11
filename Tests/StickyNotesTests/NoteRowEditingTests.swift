@@ -427,6 +427,32 @@ private final class Bench {
         expectEqual(b.editor.card?.anchor, after, "the card follows the row the book finds again")
         cards.close()
     },
+    test("a card taken down some other way than the row's own keys (its field left the type, the service closed it) leaves the row free: the keyboard leaving it ends its focus") {
+        let b = try Bench()
+        let id = b.note(of: [FieldFixtures.orderID], ["lineItems": [["product": "Mug"]]])
+        expect(try b.begin(id, on: "line items"))
+        b.h.scheduler.advance(by: .zero)
+        let cards = try require(b.editor.fieldCards)
+        expect(cards.openTarget != nil, "the card is open on the row")
+        expectEqual(b.focused, "line items")
+        // The card goes with nobody's key: the row's `closed` is not told.
+        cards.close()
+        expect(cards.openTarget == nil)
+        expectEqual(b.focused, "line items", "the row is still the focus")
+        b.window.makeFirstResponder(b.canvas)
+        expectEqual(b.focused, nil, "and the keyboard going elsewhere ends it, as it does with no card ever opened")
+        // The same when the type loses the field under the card.
+        b.editor.endEditing()
+        expect(try b.begin(id, on: "line items"))
+        b.h.scheduler.advance(by: .zero)
+        expect(cards.openTarget != nil)
+        let without = FieldFixtures.order.schema.replacingOccurrences(of: #""lineItems": {"#, with: #""lineItemsGone": {"#)
+        expect(without != FieldFixtures.order.schema)
+        b.editor.transact("Change Schema") { $0.update(FieldFixtures.orderID) { $0[TypeSchemaProperty.self] = SchemaText(without) } }
+        b.h.scheduler.advance(by: .zero)
+        expect(cards.openTarget == nil, "the field left its type and the card with it")
+        b.editor.endEditing()
+    },
     test("a session begun by a press on a `›` row asks for its card on the scheduler's next turn, and not at all if editing ended first") {
         let b = try Bench()
         let id = b.note(of: [FieldFixtures.orderID], ["lineItems": [["product": "Mug"]]])

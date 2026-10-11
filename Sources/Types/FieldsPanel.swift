@@ -1,6 +1,7 @@
 import Canvas
 import DetailPanel
 import Foundation
+import AppKit
 import Selection
 import SwiftUI
 
@@ -71,6 +72,13 @@ public enum FieldsPanelModel {
         check.problems(at: FieldPath(field: field.field.name)).filter { $0.kind == .wrong }
     }
 
+    /// Whether the field's name carries the amber dot: the check finds a value it needs missing at the field or
+    /// anywhere inside it, and nothing wrong (a wrong value is said in words, and red where it is). As a type's row
+    /// has it, with no words.
+    public static func isNeeded(_ field: Resolved.Field, in check: FieldCheck) -> Bool {
+        check.mark(at: FieldPath(field: field.field.name)) == .needed
+    }
+
     /// How a box shows what is stored: the kinds' own forms, except that a text keeps its line breaks, and
     /// a yes or no in an either shows as `true` or `false`, which is what the box reads back (`yes` would
     /// become the text `yes` on the next edit).
@@ -118,12 +126,14 @@ struct FieldsList: View {
             ForEach(rows) { row in
                 switch row {
                 case .plain(let field, let kinds, let value):
-                    FieldRowView(field: field, kinds: kinds, value: value, id: id, writer: writer, checks: checks, isReadOnly: isReadOnly)
+                    FieldRowView(field: field, kinds: kinds, value: value, id: id, writer: writer, checks: checks, isReadOnly: isReadOnly,
+                                 isNeeded: FieldsPanelModel.isNeeded(field, in: check))
                     FieldProblems(problems: FieldsPanelModel.problems(of: field, in: check))
                 case .form(let field, let kind):
                     if let editor = writer.editor {
                         VStack(alignment: .leading, spacing: TypesStyle.formSpacing) {
-                            Text(FieldName.words(of: field.field)).foregroundStyle(.secondary)
+                            FieldNameLabel(words: FieldName.words(of: field.field), isNeeded: FieldsPanelModel.isNeeded(field, in: check))
+                                .foregroundStyle(.secondary)
                             FieldForm(FieldFormContext(editor: editor, shape: id, path: FieldPath(field: field.field.name), field: field, kind: kind,
                                                        mode: .values, isReadOnly: isReadOnly, presentation: .panel, step: .ownRun))
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -148,10 +158,11 @@ struct FieldRowView: View {
     let writer: FieldWriter
     weak var checks: FieldChecks?
     let isReadOnly: Bool
+    let isNeeded: Bool
 
     var body: some View {
         let path = FieldPath(field: field.field.name), words = FieldName.words(of: field.field)
-        LabeledContent(words) {
+        LabeledContent {
             Group {
                 if kinds == [.yesNo] {
                     DetailCheckbox("", isOn: Binding(get: { value?.boolValue == true }, set: { writer.set(.bool($0), at: path, of: id) }))
@@ -164,7 +175,42 @@ struct FieldRowView: View {
                 }
             }
             .disabled(isReadOnly)
+        } label: {
+            FieldNameLabel(words: words, isNeeded: isNeeded)
         }
+    }
+}
+
+/// A field's name, and the amber dot after it while the check finds a value it needs missing.
+struct FieldNameLabel: View {
+    let words: String
+    let isNeeded: Bool
+
+    var body: some View {
+        HStack(spacing: TypesStyle.neededDotGap) {
+            Text(words)
+            if isNeeded {
+                NeededDot()
+                    .frame(width: TypesStyle.neededDotSize, height: TypesStyle.neededDotSize)
+                    .accessibilityLabel(FieldWords.needed)
+            }
+        }
+    }
+}
+
+/// The dot, a view of its own so that a test can find where it is.
+struct NeededDot: NSViewRepresentable {
+    func makeNSView(context: Context) -> FieldNeededDot { FieldNeededDot() }
+    func updateNSView(_ view: FieldNeededDot, context: Context) {}
+}
+
+final class FieldNeededDot: NSView {
+    override var isFlipped: Bool { true }
+    override var intrinsicContentSize: NSSize { NSSize(width: TypesStyle.neededDotSize, height: TypesStyle.neededDotSize) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        TypesStyle.neededInk.setFill()
+        NSBezierPath(ovalIn: bounds).fill()
     }
 }
 

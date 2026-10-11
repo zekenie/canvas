@@ -70,8 +70,13 @@ public final class RowsView: NSView {
     private var slide: CGFloat = 0
     /// Moving the focus between this view's own parts: the keyboard leaving one is not the person leaving.
     private var switching = false
-    /// A card is open for the focused row: the keyboard is the card's, and the row stays focused.
-    private var cardIsOpen = false
+    /// A card is being asked for: it takes the keyboard as it opens, before the service has it down as open.
+    private var cardOpening = false
+    /// A card of this shape is open: the keyboard is the card's, and the row stays focused. The service's word, not
+    /// a flag kept here: a card goes down in ways that tell this view nothing (the field left its type, the note
+    /// scrolled out of view, the zoom went to skeletons), and a row that thought one still open would never again
+    /// let go of its focus.
+    private var cardIsOpen: Bool { cardOpening || book?.editor?.fieldCards?.openTarget?.shape == shape }
 
     init(shape: ShapeID, book: RowBook, host: RowsHost) {
         self.shape = shape
@@ -400,14 +405,13 @@ public final class RowsView: NSView {
     private func openCard(_ row: Int) {
         guard let book, let edited = rows() else { return }
         let request = book.valuesCardRequest(row: row, of: edited,
-                                             closed: { [weak self] in self?.cardEnded(); self?.restoreFocus() },
-                                             tabbedOut: { [weak self] forward in self?.cardEnded(); self?.handle(forward ? .next : .previous) })
+                                             closed: { [weak self] in self?.restoreFocus() },
+                                             tabbedOut: { [weak self] forward in self?.handle(forward ? .next : .previous) })
         // Before the card is asked for: it takes the keyboard as it opens, and the row stays focused.
-        cardIsOpen = true
-        if !book.openCard(request) { cardIsOpen = false }
+        cardOpening = true
+        defer { cardOpening = false }
+        book.openCard(request)
     }
-
-    private func cardEnded() { cardIsOpen = false }
 
     // MARK: The pointer
 
