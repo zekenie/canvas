@@ -58,6 +58,9 @@ struct FieldRowTemplate {
     var tick: ShapeID?
     var isFaint: Bool
     var nameWidth: CGFloat
+    /// The bar zoomed out: the name's columns, counted as every skeleton counts text (never laid out), so a bar
+    /// does not depend on the letters.
+    var barWidth: CGFloat
 }
 
 struct FoldTemplate {
@@ -178,7 +181,8 @@ public final class RowBook {
                 items.append(.field(FieldRowTemplate(path: FieldPath(field: field.field.name), name: name, kind: kind,
                                                      label: kind.typeLabel(memberCount: memberCount), chip: kind.chip,
                                                      opensOnType: kind.opensOnType, isNeeded: field.field.isRequired,
-                                                     tick: inherited ? field.introducedBy : nil, isFaint: inherited, nameWidth: width)))
+                                                     tick: inherited ? field.introducedBy : nil, isFaint: inherited, nameWidth: width,
+                                                     barWidth: CGFloat(SkeletonText.columns(of: name)) * TypesStyle.skeletonRowColumn)))
             case .fold(let fold):
                 let name: String
                 if fold.isMore {

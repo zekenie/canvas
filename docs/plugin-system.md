@@ -10164,6 +10164,9 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   second press of a fast pair does not begin an edit. While the words are edited a kind's editing view lays
   Types' `RowsView` over its rows (`context.service(RowBook.self)?.makeRowsView(for:host:)`, as
   `NoteEditor` does) and a press there is the rows': the same clicks, and no caret moved.
+- **Zoomed out** a kind's skeleton asks `context.showsTypeRowBars` (14% and up) and calls
+  `context.fillTypeRowBars(of:in:)`: a bar for each row's name (as wide as its columns, never laid out), three
+  dots for a fold, three bars while the model reads, one for `No fields` and a reason; below 14% no bar is drawn.
 - **Announcements.** A type's change, which moves what a list resolves to, has the type, its instances near and
   far, and the instances the same commit added laid out again (`editor.shapesDidChangeLayout`): no commit, no
   step. A rename moves no size and only redraws. The sync's status or wait changing for a type with no rows has

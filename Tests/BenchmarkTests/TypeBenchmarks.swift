@@ -52,6 +52,17 @@ extension Budget {
     /// (the thread's CPU, release; 0.2, 0.3, 0.3 in three runs alone, load average 8): the paper resolved once for the appearance drawn, not per note (a dynamic
     /// color resolved per note added 8 ms).
     static let typePaper = 1.0
+    /// What their rows add to a frame of 150 type notes of six fields in full at 40%, over the same notes whose
+    /// schema has no fields (the same words, paper and pill, and the one row that says `No fields`): five more rows
+    /// of name and kind, the kept Core Text lines, dots. A frame of the same notes with a blank type each is some 23
+    /// ms (the pills and the paper), so this is what the rows are. Release, the thread's CPU, three runs alone at a load
+    /// average of 3: +2.1, +1.7 and -0.5 ms (the design guessed 2 to 4); about three times the median.
+    static let typeRowsFrame = 5.0
+    /// What rows' bars add to a frame of typed notes drawn as skeletons at 20%, some 350 in view, over the same notes
+    /// as plain skeletons: each skeleton's `NoteLayout` (the provider's lookups and its words' kept height), a template
+    /// lookup and at most ten rects in one fill. Release, the thread's CPU, three runs alone at a load average of 3:
+    /// +1.5, +1.6 and +1.7 ms (the design guessed 2); about three times the median.
+    static let typeRowBars = 4.5
 }
 
 /// The generated board's notes made types (every fiftieth), and instances (every sixth that isn't):
@@ -352,6 +363,66 @@ extension Budget {
                 expect(type.next < Budget.zoomedOut, "a frame of \(size) type notes zoomed out took \(type.next) ms")
                 expect(type.next - plain.next < Budget.typePaper, "the paper added \(type.next - plain.next) ms to a frame of \(size) notes zoomed out")
             }
+        }
+    },
+    test("a frame of 150 type notes with their rows in full at 40%, and of 350 as skeletons at 20% with the rows' bars, costs little more than the same notes with none") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let words = "A thing with six fields, as a type's words say it."
+        /// What each note of a board is: a type of six fields, a type whose schema has none (the words, the paper and
+        /// the pill alike, and one row that says `No fields`), or a plain note at the size a type of six is laid out.
+        enum Notes { case sixFields, noFields, plain(height: CGFloat) }
+        /// `count` notes of the same words in `columns` columns, 340 by 240 apart, the editor over them at `zoom`.
+        @MainActor func board(_ count: Int, columns: Int, _ notes: Notes, size: CGSize, zoom: CGFloat) throws -> CanvasEditor {
+            let shapes = (0..<count).map { i -> AnyShapeRecord in
+                var frame = CGRect(x: CGFloat(i % columns) * 340, y: CGFloat(i / columns) * 240, width: 200, height: 200)
+                var type: String?
+                switch notes {
+                case .sixFields: type = FieldFixtures.wide(6).schema
+                case .noFields: type = #"{"type": "object"}"#
+                case .plain(let height): frame.size = CGSize(width: TypesStyle.rowsMinimumWidth, height: height)
+                }
+                var note = ShapeRecord(StickyNote(frame: frame, text: MentionText(plain: words)))
+                if let type { note[TypeSchemaProperty.self] = SchemaText(type) }
+                return AnyShapeRecord(note)
+            }
+            let editor = CanvasEditor(registry: try Registry(plugins: shippedPlugins(pasteboard)), document: CanvasDocument(shapes: shapes), scheduler: ManualScheduler())
+            editor.viewportDidResize(to: size)
+            editor.camera = Camera(origin: .zero, zoom: zoom)
+            return editor
+        }
+        /// The median frame, the camera nudged between frames, after two to warm what is kept.
+        @MainActor func frames(_ editor: CanvasEditor, size: CGSize, zoom: CGFloat) throws -> Double {
+            let context = try bitmapContext(size)
+            draw(editor, into: context, size: size)
+            draw(editor, into: context, size: size)
+            var step = 0.0
+            return median(runs: 11, prepare: { step = step == 0 ? 1 : 0; editor.camera = Camera(origin: CGPoint(x: step / zoom, y: 0), zoom: zoom) }, onThread: true) {
+                draw(editor, into: context, size: size)
+            }
+        }
+        // 150 in full: 15 columns by 10 rows, 5,100 by 2,400 world units, at 40%. Over the same notes saying `No fields`.
+        let full = CGSize(width: 2_100, height: 1_000)
+        let six = try board(150, columns: 15, .sixFields, size: full, zoom: 0.4)
+        let first = try require(six.document.shapes.first).id
+        let paper = try require(six.shapeContext.frame(of: first))
+        expectEqual(paper.width, TypesStyle.rowsMinimumWidth)
+        expectEqual(try require(six.rowBook).rows(of: first).count, 6)
+        let none = try board(150, columns: 15, .noFields, size: full, zoom: 0.4)
+        let withRows = try frames(six, size: full, zoom: 0.4), withNone = try frames(none, size: full, zoom: 0.4)
+        report(String(format: "150 type notes of six fields in full at 40%%: a frame %5.2f ms, %5.2f more than the same notes saying `No fields` (%5.2f) (budget %.0f more)",
+                      withRows, withRows - withNone, withNone, Budget.typeRowsFrame))
+        // 350 as skeletons: 25 columns by 14 rows at 20%. Over plain notes' skeletons of the same size.
+        let far = CGSize(width: 1_800, height: 700)
+        let typedFar = try board(350, columns: 25, .sixFields, size: far, zoom: 0.2)
+        expect(typedFar.drawsSkeletons, "zoomed out, shapes are skeletons")
+        let plainFar = try board(350, columns: 25, .plain(height: paper.height), size: far, zoom: 0.2)
+        let typedBars = try frames(typedFar, size: far, zoom: 0.2), plainBars = try frames(plainFar, size: far, zoom: 0.2)
+        report(String(format: "350 type notes as skeletons at 20%%: a frame %5.2f ms, %5.2f more than plain notes' (%5.2f) (budget %.1f more)",
+                      typedBars, typedBars - plainBars, plainBars, Budget.typeRowBars))
+        if holdsToBudgets {
+            expect(withRows - withNone < Budget.typeRowsFrame, "rows added \(withRows - withNone) ms to a frame of 150 type notes in full")
+            expect(typedBars - plainBars < Budget.typeRowBars, "rows' bars added \(typedBars - plainBars) ms to a frame of 350 type notes as skeletons")
         }
     },
 ])

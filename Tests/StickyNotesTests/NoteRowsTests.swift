@@ -42,7 +42,7 @@ private final class Bench {
     func add(_ type: FieldFixtures.TypeText, at origin: CGPoint) -> ShapeID {
         var note = ShapeRecord(id: type.id, StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 200, height: 200)), text: MentionText(plain: type.words)))
         note[TypeSchemaProperty.self] = SchemaText(type.schema)
-        note[TitleProperty.self] = type.title
+        if !type.title.isEmpty { note[TitleProperty.self] = type.title }
         let record = AnyShapeRecord(note)
         editor.transact { $0.insert(record) }
         return record.id
@@ -374,6 +374,77 @@ private let petFields = #"{"type": "object", "properties": {"name": {"type": "st
         let after = try require(canvas.descendants(RowsView.self).first).frame
         expectEqual(after.height, before.height + TypesStyle.rowHeight, "one more row, one more row of view")
         expect(b.editor.rowBook?.rowsRect(of: id)?.height == after.height)
+    },
+    test("zoomed out at 30%: a bar for each row's name, as wide as the name; a fold is three dots; the words' bars stay above the rows; `No fields` and the reading state are bars") {
+        let b = try Bench([], zoom: 0.3)
+        // Untitled: zoomed out a titled note wears its title large over the paper, on top of the rows' bars.
+        let words = "A thing with a long enough description that it wraps on to a second line, and then a third one besides."
+        let id = b.add((ShapeID(), "", words, #"{"type": "object", "properties": {"a": {"type": "string"}, "averyveryverylongfieldname": {"type": "string"}, "b": {"type": "string"}}}"#), at: CGPoint(x: 40, y: 40))
+        let rows = b.book.rows(of: id)
+        expectEqual(rows.map(\.name), ["a", "averyveryverylongfieldname", "b"])
+        let drawn = b.draw(size: CGSize(width: 300, height: 120))
+        let zoom = b.editor.camera.zoom
+        let view = { (rect: CGRect) in b.editor.camera.toView(rect) }
+        /// How far across a row's name column ink goes, in world units: the bar's width.
+        @MainActor func extent(_ row: ShownRow) -> CGFloat {
+            let rect = view(row.rect)
+            var widest: CGFloat = 0
+            for x in stride(from: rect.minX, to: rect.minX + view(row.nameRect).width + 4, by: 1)
+            where ink(drawn, in: CGRect(x: x, y: rect.minY, width: 1, height: rect.height), by: 6) > 0 { widest = x + 1 - rect.minX }
+            return widest / zoom
+        }
+        let widths = rows.map(extent)
+        expect(widths.allSatisfy { $0 > 0 }, "a bar in each row: \(widths)")
+        expect(widths[1] > widths[0] * 3, "as wide as the name: \(widths)")
+        for row in rows { expectEqual(ink(drawn, in: view(row.valueRect).insetBy(dx: 1, dy: 0), by: 6), 0, "nothing at the right of \(row.name)") }
+        let block = try require(b.book.rowsRect(of: id))
+        let last = try require(rows.last)
+        expectEqual(ink(drawn, in: view(CGRect(x: block.minX, y: block.minY, width: block.width, height: TypesStyle.rowsLead - 1)), by: 6), 0, "no hairline zoomed out")
+        expectEqual(ink(drawn, in: view(CGRect(x: block.minX, y: last.rect.maxY + 2, width: block.width, height: 30)), by: 6), 0, "nothing under the last row")
+        let paper = try require(b.editor.shapeContext.frame(of: id))
+        expect(ink(drawn, in: view(CGRect(x: paper.minX, y: paper.minY, width: paper.width, height: block.minY - paper.minY)), by: 6) > 0, "the words' bars, above the rows")
+        // A fold is three dots from the left edge.
+        let wide = b.addWide(20, at: CGPoint(x: 440, y: 40))
+        let more = try require(b.book.rows(of: wide).last)
+        let after = b.draw()
+        for dot in 0..<3 {
+            let x = more.rect.minX + CGFloat(dot) * (TypesStyle.skeletonFoldDot + TypesStyle.skeletonFoldDotGap)
+            expect(ink(after, in: view(CGRect(x: x, y: more.rect.midY - 2, width: TypesStyle.skeletonFoldDot, height: 4)), by: 6) > 0, "dot \(dot) of `+12 more`")
+        }
+        // The reading state is its three bars; a reason, one.
+        let model = ScriptedLanguageModel()
+        let editor = CanvasEditor(registry: try Registry(plugins: notePlugins + [LanguageModelsPlugin(model: model)]), scheduler: ManualScheduler())
+        editor.camera.setZoom(0.3, around: .zero)
+        var note = ShapeRecord(StickyNote(frame: CGRect(x: 40, y: 40, width: 200, height: 200), text: MentionText(plain: "a pet")))
+        note[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter)
+        let record = AnyShapeRecord(note)
+        editor.transact { $0.insert(record) }
+        let book = try require(editor.rowBook), sync = try require(editor.typeSync)
+        model.holdsAnswers = true
+        model.queue(.overloaded)
+        sync.commit(record.id)
+        expectEqual(book.spot(of: record.id), .reading)
+        let blockNow = try require(book.rowsRect(of: record.id))
+        let reading = renderBitmap(editor, size: CGSize(width: 300, height: 200))
+        let rowView = { (row: Int) in editor.camera.toView(CGRect(x: blockNow.minX, y: blockNow.minY + TypesStyle.rowsLead + CGFloat(row) * TypesStyle.rowHeight, width: blockNow.width, height: TypesStyle.rowHeight)) }
+        for row in 0..<3 { expect(ink(reading, in: rowView(row), by: 6) > 0, "reading bar \(row)") }
+        spinRunLoop(until: { model.waiting == 1 })
+        model.release()
+        spinRunLoop(until: { sync.status(of: record.id) != .updating(.schema) })
+        guard case .failed? = book.spot(of: record.id) else { throw Failure("a reason") }
+        let failed = renderBitmap(editor, size: CGSize(width: 300, height: 200))
+        expect(ink(failed, in: rowView(0), by: 6) > 0, "one bar for the reason")
+        expectEqual(ink(failed, in: rowView(1), by: 6), 0, "and no second")
+    },
+    test("zoomed out to 10%, below the zoom a row is under three pixels tall, no bar is drawn for any row") {
+        let b = try Bench([], zoom: 0.1)
+        let id = b.addWide(5)
+        let rows = b.book.rows(of: id)
+        let drawn = b.draw(size: CGSize(width: 200, height: 100))
+        for row in rows { expectEqual(ink(drawn, in: b.editor.camera.toView(row.rect), by: 6), 0, "no bar in \(row.name)") }
+        b.editor.camera.setZoom(TypesStyle.skeletonRowsZoom, around: .zero)
+        let drawnAt = b.draw(size: CGSize(width: 400, height: 200))
+        expect(ink(drawnAt, in: b.editor.camera.toView(try require(rows.first).rect), by: 6) > 0, "at the zoom itself the bars are drawn")
     },
     test("light and dark give the same rows, chips and a gone type's dashed chip: the paper's ink is fixed") {
         let b = try Bench([FieldFixtures.address, FieldFixtures.order])

@@ -9,6 +9,15 @@ import CoreText
 // in a row is Adornments' own, drawn as the chip above a note is.
 
 extension TypesStyle {
+    /// Zoomed out, a row is a bar this tall, as wide as its name; a fold is three dots this big, this far apart.
+    public static let skeletonRowBarHeight: CGFloat = 8
+    public static let skeletonFoldDot: CGFloat = 4
+    public static let skeletonFoldDotGap: CGFloat = 4
+    /// A name's bar is as wide as its columns, each this wide: the skeleton's, at the rows' font.
+    static let skeletonRowColumn = SkeletonTextMetrics.systemFontColumn * rowFontSize
+    /// Below this zoom a row is under three pixels tall and its bar is not drawn at all.
+    public static let skeletonRowsZoom: CGFloat = 0.14
+
     /// A note's paper is light in both appearances, so the rows' inks are fixed colors, as the highlights
     /// are: the note's ink, and its strengths.
     static let rowInk = NSColor(white: 0.12, alpha: 1)
@@ -147,6 +156,63 @@ extension RenderContext {
     public func drawTypeRows<P: ShapeProps>(of shape: ShapeRecord<P>, in block: CGRect) {
         guard let book = service(RowBook.self) else { return }
         book.draw(AnyShapeRecord(shape), in: block, to: cg)
+    }
+}
+
+extension RenderContext {
+    /// Whether rows' bars are drawn at this zoom: a kind's skeleton asks before it works out where its rows are.
+    public var showsTypeRowBars: Bool { zoom >= TypesStyle.skeletonRowsZoom }
+
+    /// The shape's rows zoomed out (a kind's skeleton): a bar for each row's name, as wide as its columns (counted, never laid out: a skeleton shows no letters); three dots
+    /// for a fold; the reading state's three bars; one bar for `No fields` and for a reason. Nothing below
+    /// `TypesStyle.skeletonRowsZoom`. It reads the book's kept template and the spot, nothing that parses or
+    /// lays out text.
+    public func fillTypeRowBars<P: ShapeProps>(of shape: ShapeRecord<P>, in block: CGRect) {
+        guard showsTypeRowBars, let book = service(RowBook.self) else { return }
+        fillSkeletonText(book.bars(of: AnyShapeRecord(shape), in: block))
+    }
+}
+
+extension RowBook {
+    /// The bars a skeleton draws for a shape's rows in `block`.
+    func bars(of record: AnyShapeRecord, in block: CGRect) -> [CGRect] {
+        guard let subject = subject(of: record), kinds.contains(record.kind) else { return [] }
+        let template = template(subject)
+        let spot: RowSpot
+        if subject.isType {
+            guard let known = self.spot(of: record, template: template) else { return [] }
+            spot = known
+        } else {
+            guard !template.items.isEmpty else { return [] }
+            spot = .rows
+        }
+        let geometry = RowGeometry(block: block, hasLead: hasWords(record), longestName: template.nameColumn)
+        func bar(_ row: Int, width: CGFloat) -> CGRect {
+            let rect = geometry.rect(row)
+            return CGRect(x: rect.minX, y: rect.midY - TypesStyle.skeletonRowBarHeight / 2, width: max(1, width), height: TypesStyle.skeletonRowBarHeight)
+        }
+        switch spot {
+        case .reading:
+            return TypesStyle.spotBarShares.enumerated().map { bar($0.offset, width: block.width * $0.element) }
+        case .noFields, .failed:
+            return [bar(0, width: block.width * TypesStyle.spotBarShares[0])]
+        case .rows:
+            var bars: [CGRect] = []
+            bars.reserveCapacity(template.items.count)
+            for (row, item) in template.items.enumerated() {
+                switch item {
+                case .field(let field):
+                    bars.append(bar(row, width: min(field.barWidth, TypesStyle.nameShare * block.width)))
+                case .fold:
+                    let rect = geometry.rect(row)
+                    for dot in 0..<3 {
+                        bars.append(CGRect(x: rect.minX + CGFloat(dot) * (TypesStyle.skeletonFoldDot + TypesStyle.skeletonFoldDotGap),
+                                           y: rect.midY - TypesStyle.skeletonFoldDot / 2, width: TypesStyle.skeletonFoldDot, height: TypesStyle.skeletonFoldDot))
+                    }
+                }
+            }
+            return bars
+        }
     }
 }
 
