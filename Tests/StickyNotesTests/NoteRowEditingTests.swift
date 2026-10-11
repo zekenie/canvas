@@ -26,7 +26,9 @@ private struct Failure: Error {
 
 @MainActor
 private final class Bench {
+    let h: EditorHarness
     let editor: CanvasEditor
+    let log = RefusalLog()
     let window: NSWindow
     let canvas: CanvasView
     var book: RowBook { editor.rowBook! }
@@ -34,7 +36,9 @@ private final class Bench {
     /// The shared types a row below the visible part of the window, so a note that is one at the top of the
     /// window never pans the camera to be seen.
     init(words: String = "Ann Lee, staff engineer.") throws {
-        editor = CanvasEditor(registry: try Registry(plugins: notePlugins + [LanguageModelsPlugin(model: ScriptedLanguageModel()), FreezingPlugin()]), scheduler: ManualScheduler())
+        let registry = try Registry(plugins: notePlugins + [LanguageModelsPlugin(model: ScriptedLanguageModel()), FreezingPlugin(log: log)])
+        h = EditorHarness { CanvasEditor(registry: registry, scheduler: $0) }
+        editor = h.editor
         let types = [FieldFixtures.person, FieldFixtures.employee, FieldFixtures.address, FieldFixtures.order, FieldFixtures.everyKind.a, FieldFixtures.everyKind.b]
         for (place, type) in types.enumerated() {
             var note = ShapeRecord(id: type.id, StickyNote(frame: CGRect(x: 40 + 400 * Double(place), y: 1500, width: 200, height: 200), text: MentionText(plain: type.words)))
@@ -87,6 +91,9 @@ private final class Bench {
     func begin(_ id: ShapeID, on name: String, dx: CGFloat = 8) throws -> Bool {
         editor.beginEditing(id, at: try point(id, name, dx: dx))
     }
+
+    /// A click on the canvas at a world point, as the person's: the select tool's press and release.
+    func click(_ point: CGPoint, count: Int = 1) { h.click(at: h.view(point), clickCount: count) }
 
     var rowsView: RowsView? { canvas.descendants(RowsView.self).first }
 
@@ -573,6 +580,70 @@ private final class Bench {
         try b.press(at: try b.point(id, "status", dx: 5))
         expectEqual(b.focused, "status")
         expect(b.editor.menuToPopUp != nil, "a choice pops its menu")
+    },
+    test("a click on a value of a note that is not selected begins editing in that row at once, the caret where it was clicked; a click on a name begins nothing, a double-click on one edits the words") {
+        let b = try Bench()
+        let id = b.note(of: [FieldFixtures.personID], ["name": "Ann Lee"])
+        let other = b.note(of: [FieldFixtures.personID], at: CGPoint(x: 440, y: 40))
+        b.editor.selection = other
+        let text = "Ann Lee" as NSString
+        let after3 = text.size(withAttributes: [.font: NSFont.systemFont(ofSize: TypesStyle.rowFontSize)]).width * 3 / 7
+        b.click(try b.point(id, "name", dx: after3))
+        expectEqual(b.editor.selection, id, "selected alone")
+        expectEqual(b.editor.editingShapeID, id, "and edited, at once")
+        let field = try require(b.field, "the row's field has the keyboard")
+        expect((2...4).contains(field.selectedRange().location), "the caret near the 3rd character: \(field.selectedRange())")
+        b.editor.endEditing()
+        // The note is the only one selected: a click on a name only selects it.
+        let name = try b.row(id, "name")
+        b.click(CGPoint(x: name.nameRect.minX + 4, y: name.rect.midY))
+        expectEqual(b.editor.editingShapeID, nil, "a name edits nothing")
+        expectEqual(b.editor.selection, id)
+        // The words, on a click of the only selected note, are edited as ever.
+        let words = try require(b.editor.registry.mentionTextPlacements(of: try require(b.editor.document[id]), in: b.editor.shapeContext).first?.box)
+        b.click(CGPoint(x: words.minX + 6, y: words.minY + 6))
+        expectEqual(b.editor.editingShapeID, id)
+        expect(b.words_ != nil && b.field == nil)
+        b.editor.endEditing()
+        // A double-click on a name edits the words.
+        b.click(CGPoint(x: name.nameRect.minX + 4, y: name.rect.midY), count: 2)
+        expectEqual(b.editor.editingShapeID, id)
+        expect(b.words_ != nil && b.field == nil, "the words take it")
+    },
+    test("a click on a box ticks it and one on a choice pops its menu, on a note that is not selected, and neither begins editing; one on a `›` row begins the session in it and asks for the card a turn later") {
+        let b = try Bench()
+        let id = b.note(of: [FieldFixtures.kindsAID], ["tags": ["gift"]])
+        let done = try b.row(id, "done")
+        b.click(CGPoint(x: done.valueRect.minX + 4, y: done.rect.midY))
+        expectEqual(b.value(id, "done"), true)
+        expectEqual(b.editor.editingShapeID, nil)
+        expectEqual(b.editor.undoHistory.undoName, "Change Done")
+        b.click(try b.point(id, "status"))
+        expect(b.editor.menuToPopUp != nil)
+        b.editor.menuDidPopUp()
+        expectEqual(b.editor.editingShapeID, nil)
+        b.click(try b.point(id, "tags"))
+        expectEqual(b.editor.editingShapeID, id)
+        expectEqual(b.focused, "tags")
+        expect(b.book.opened.isEmpty, "not yet: the session is not in its window")
+        b.h.scheduler.advance(by: .zero)
+        let request = try require(b.book.opened.last)
+        expectEqual(request.target, .field(FieldPath(field: "tags")))
+        expect(!request.isReadOnly)
+    },
+    test("a locked note: a click on a typed value shakes it and edits nothing, a click on a `›` row opens a card to be read and does not shake") {
+        let b = try Bench()
+        let id = b.note(of: [FieldFixtures.kindsAID], ["tags": ["gift"], "name": "Ann"])
+        b.editor.freeze([id])
+        b.click(try b.point(id, "name"))
+        expectEqual(b.log.refusals, [[id]])
+        expectEqual(b.editor.editingShapeID, nil)
+        expectEqual(b.value(id, "name"), "Ann")
+        b.click(try b.point(id, "tags"))
+        expectEqual(b.log.refusals.count, 1, "reading is no try")
+        let request = try require(b.book.opened.last)
+        expect(request.isReadOnly)
+        expectEqual(b.editor.editingShapeID, nil)
     },
     test("the rows change under a focused row: the focus stays with the row of the same field; the field taken out, the caret is back in the words") {
         let b = try Bench()

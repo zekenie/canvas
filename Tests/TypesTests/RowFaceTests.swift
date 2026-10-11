@@ -48,6 +48,16 @@ private struct Bench {
         try require(book.rows(of: id).first { $0.name == name }, "a row \(name)")
     }
 
+    /// A note that is each of the types (slips; the types are already on the board), holding these values.
+    @discardableResult
+    func note(_ types: [ShapeID], _ values: JSONObject = [:], at origin: CGPoint = CGPoint(x: 40, y: 600)) -> ShapeID {
+        let id = editor.addSlip("Ann", of: types, at: origin)
+        if !values.isEmpty { editor.transact { $0.update(id) { $0[FieldValuesProperty.self] = FieldValues(values) } } }
+        return id
+    }
+
+    func value(_ id: ShapeID, _ key: String) -> JSONValue? { editor.document[id]?[FieldValuesProperty.self]?.value(at: FieldPath(field: key)) }
+
     func click(_ point: CGPoint, count: Int = 1) { h.click(at: point, clickCount: count) }
     func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.midY) }
 }
@@ -229,6 +239,135 @@ private struct Bench {
         expectEqual(t.refusals, [[id]], "Settings… changes nothing")
         t.click(t.middle(settings), count: 2)
         expectEqual(catcher.shown, 2, "a double-click does nothing more")
+    },
+    test("a click on a name only selects the note, also when it is the only one selected; a double-click on a name is the note's") {
+        let t = try Bench()
+        t.add([FieldFixtures.everyKind.a])
+        let id = t.note([FieldFixtures.kindsAID], ["name": "Ann"])
+        let name = try t.row(id, "name")
+        t.click(CGPoint(x: name.nameRect.minX + 4, y: name.rect.midY))
+        expectEqual(t.editor.selection, id)
+        t.click(CGPoint(x: name.nameRect.minX + 4, y: name.rect.midY))
+        expectEqual(t.editor.selection, id, "still selected, nothing started")
+        expect(t.editor.editingShapeID == nil && t.editor.menuToPopUp == nil && t.book.opened.isEmpty)
+        expectEqual(t.value(id, "name"), "Ann")
+        // Also the names of rows with more in them, and of a box and a choice.
+        for key in ["venue", "done", "status"] {
+            t.click(t.middle(try t.row(id, key).nameRect))
+            expect(t.editor.menuToPopUp == nil && t.book.opened.isEmpty, key)
+        }
+        t.click(t.middle(name.nameRect), count: 2)
+        expect(t.editor.menuToPopUp == nil && t.book.opened.isEmpty)
+    },
+    test("a click on a box writes true, a second false, each a step named for the field; a double-click is two writes and begins no editing") {
+        let t = try Bench()
+        t.add([FieldFixtures.everyKind.a])
+        let id = t.note([FieldFixtures.kindsAID])
+        let done = try t.row(id, "done")
+        expectEqual(t.value(id, "done"), nil)
+        // On an unselected note, at once.
+        expectEqual(t.editor.selection, nil)
+        t.click(CGPoint(x: done.valueRect.minX + 4, y: done.rect.midY))
+        expectEqual(t.value(id, "done"), true)
+        expectEqual(t.editor.selection, id)
+        expectEqual(t.editor.undoHistory.undoName, "Change Done")
+        t.click(CGPoint(x: done.valueRect.minX + 4, y: done.rect.midY))
+        expectEqual(t.value(id, "done"), false, "an unticked box that was ticked holds false, which is a value")
+        expectEqual(t.editor.undoHistory.undoName, "Change Done")
+        t.editor.undo()
+        expectEqual(t.value(id, "done"), true, "each click is a step of its own")
+        t.click(CGPoint(x: done.valueRect.minX + 4, y: done.rect.midY), count: 2)
+        expectEqual(t.value(id, "done"), false, "the second press of a pair toggles it again")
+        expect(t.editor.editingShapeID == nil)
+        // Off the box itself, in the value column, is the note's.
+        t.click(CGPoint(x: done.valueRect.maxX - 4, y: done.rect.midY))
+        expectEqual(t.value(id, "done"), false)
+    },
+    test("a click on a choice queues its menu: the options, a check by the stored one, a separator, None; a pick writes the value and None clears the field") {
+        let t = try Bench()
+        t.add([FieldFixtures.everyKind.a])
+        let id = t.note([FieldFixtures.kindsAID], ["status": "paid"])
+        let status = try t.row(id, "status")
+        t.click(t.middle(status.valueRect))
+        let queued = try require(t.editor.menuToPopUp, "a menu")
+        expectEqual(queued.rect, status.valueRect)
+        expectEqual(queued.menu.outline, ["draft", "✓ paid", "shipped", "—", "None"])
+        expectEqual(t.editor.selection, id)
+        try queued.menu.choose("shipped")
+        t.editor.menuDidPopUp()
+        expectEqual(t.value(id, "status"), "shipped")
+        expectEqual(t.editor.undoHistory.undoName, "Change Status")
+        t.click(t.middle(status.valueRect))
+        let again = try require(t.editor.menuToPopUp)
+        expectEqual(again.menu.outline, ["draft", "paid", "✓ shipped", "—", "None"])
+        try again.menu.choose("None")
+        t.editor.menuDidPopUp()
+        expectEqual(t.value(id, "status"), nil, "None clears the field")
+        // A stored value that is no option is shown as itself and checks nothing.
+        t.editor.transact { $0.update(id) { $0[FieldValuesProperty.self] = FieldValues(["status": "archived"]) } }
+        t.click(t.middle(status.valueRect))
+        expectEqual(try require(t.editor.menuToPopUp).menu.outline, ["draft", "paid", "shipped", "—", "None"])
+        t.editor.menuDidPopUp()
+        t.click(t.middle(status.valueRect), count: 2)
+        expect(t.editor.menuToPopUp != nil, "a double-click pops it too")
+    },
+    test("a locked note: a box and a choice shake it and write nothing; a row with more opens a card to be read, with no shake; a typed value is refused") {
+        let t = try Bench()
+        t.add([FieldFixtures.everyKind.a])
+        let id = t.note([FieldFixtures.kindsAID], ["done": true, "status": "paid"])
+        t.editor.freeze([id])
+        t.click(CGPoint(x: try t.row(id, "done").valueRect.minX + 4, y: try t.row(id, "done").rect.midY))
+        expectEqual(t.refusals, [[id]], "the box shakes it")
+        expectEqual(t.value(id, "done"), true)
+        t.click(t.middle(try t.row(id, "status").valueRect))
+        expectEqual(t.refusals, [[id], [id]], "the choice too")
+        expect(t.editor.menuToPopUp == nil, "and pops nothing")
+        expectEqual(t.value(id, "status"), "paid")
+        t.click(t.middle(try t.row(id, "venue").valueRect))
+        let request = try require(t.book.opened.last, "the card to be read")
+        expect(request.isReadOnly)
+        expectEqual(request.mode, .values)
+        expectEqual(request.target, .field(FieldPath(field: "venue")))
+        expectEqual(t.refusals.count, 2, "reading is no try")
+        t.click(t.middle(try t.row(id, "name").valueRect))
+        expectEqual(t.editor.editingShapeID, nil)
+    },
+    test("a row that reads `edited as JSON in the panel` asks for the panel and begins nothing, locked or not") {
+        let t = try Bench()
+        t.add([FieldFixtures.everyKind.b])
+        let id = t.note([FieldFixtures.kindsBID])
+        let anything = try t.row(id, "anything")
+        expectEqual(anything.content, .summary(FieldWords.editedAsJSON))
+        t.click(t.middle(anything.valueRect))
+        let request = try require(t.book.opened.last)
+        expectEqual(request.target, .field(FieldPath(field: "anything")))
+        expectEqual(request.mode, .values)
+        expect(t.editor.editingShapeID == nil)
+        t.editor.freeze([id])
+        t.click(t.middle(anything.valueRect), count: 2)
+        expectEqual(t.book.opened.count, 2)
+        expect(try require(t.book.opened.last).isReadOnly)
+        expectEqual(t.refusals, [])
+    },
+    test("a row of a gone type and a pointer row have no face on their values: a click there is the note's; a typed value has a face of its own") {
+        let t = try Bench()
+        let types = t.add([FieldFixtures.address, FieldFixtures.everyKind.a, FieldFixtures.everyKind.b])
+        let a = t.note([FieldFixtures.kindsAID], ["shippingAddress": ["street": "12 Main St"], "name": "Ann"], at: CGPoint(x: 40, y: 700))
+        let b = t.note([FieldFixtures.kindsBID], at: CGPoint(x: 440, y: 700))
+        t.editor.transact("Delete") { $0.delete([types[0]]) }
+        expectEqual(try t.row(a, "shipping address").content, .gone(types[0]))
+        for (id, key) in [(a, "shipping address"), (b, "customer")] {
+            t.editor.selection = nil
+            t.click(t.middle(try t.row(id, key).valueRect))
+            expectEqual(t.editor.selection, id, key)
+            expect(t.editor.menuToPopUp == nil && t.book.opened.isEmpty && t.editor.editingShapeID == nil, key)
+        }
+        // The slip is not edited in place, so the click only selects it; a note that is, begins in the row
+        // (noteRowEditingTests).
+        t.editor.selection = nil
+        t.click(t.middle(try t.row(a, "name").valueRect))
+        expectEqual(t.editor.selection, a)
+        expect(t.book.opened.isEmpty)
     },
     test("a blank type has no faces") {
         let t = try Bench()

@@ -10168,7 +10168,11 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   Settings; anywhere else a press is the note's. Its `doubleClick` does the same for the first two, so the
   second press of a fast pair does not begin an edit. While the words are edited a kind's editing view lays
   Types' `RowsView` over its rows (`context.service(RowBook.self)?.makeRowsView(for:host:)`, as
-  `NoteEditor` does) and a press there is the rows': the same clicks, and no caret moved.
+  `NoteEditor` does) and a press there is the rows': the same clicks, and no caret moved. On a note that is one
+  a click on a value acts at once, even on a note that is not selected: a typed value or a row with more in it
+  begins the note's editing session in that row (`editor.beginEditing(_:at:)`), a box is ticked, a choice pops
+  its menu; a click on a name only selects the note (its double-click edits the words), and on a locked note a
+  change shakes it while a card opens to be read.
 - **Typing in a row.** A note that is one has two places for the caret in its one editing session, the words
   and a row. `NoteEditor` hosts Types' `RowsView` over the rows (`makeRowsView`) and hands it the press that began
   the session (`rows.begin(at:clickCount:)`: a typed value's field takes the keyboard, the caret where it was

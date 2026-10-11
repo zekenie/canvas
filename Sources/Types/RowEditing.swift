@@ -67,7 +67,11 @@ struct EditedRows {
 extension RowBook {
     /// The rows of the shape being used, as they are now; nil for a shape that has none or is a type.
     func editedRows(of id: ShapeID) -> EditedRows? {
-        guard let editor, let record = editor.document[id], let subject = subject(of: record), !subject.isType, kinds.contains(record.kind),
+        editor?.document[id].flatMap { editedRows(for: $0) }
+    }
+
+    func editedRows(for record: AnyShapeRecord) -> EditedRows? {
+        guard let subject = subject(of: record), !subject.isType, kinds.contains(record.kind),
               let block = rowsRect(of: record) else { return nil }
         let template = template(subject)
         guard !template.items.isEmpty else { return nil }

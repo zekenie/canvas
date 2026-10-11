@@ -4,12 +4,14 @@ import CoreGraphics
 import LanguageModels
 import Selection
 
-// Clicks on a type's rows: the parts of a row that answer a click without taking the note's press (Selection's
-// faces), on the canvas and, while the words are edited, through the rows view over them. Nothing in a type's
-// rows is edited: a row with `›` opens its card to be read, a `Choice` lists its options, a failed read offers
-// Retry or Settings…. Anywhere else a press is the note's: it selects, edits its words, moves.
+// Clicks on rows: the parts of a row that answer a click without taking the note's press (Selection's faces),
+// on the canvas and, while the words are edited, through the rows view over them. Nothing in a type's rows is
+// edited: a row with `›` opens its card to be read, a `Choice` lists its options, a failed read offers Retry or
+// Settings…. On a note that is one a click on a value acts at once, even on a note that is not selected: it
+// begins the note's editing session in that row, ticks the box, pops the choice's menu or opens the card; a
+// click on a name only selects the note. Anywhere else a press is the note's: it selects, edits its words, moves.
 
-/// A part of a type's row under a point.
+/// A part of a row under a point.
 struct RowFace: Hashable, Sendable {
     enum Part: Hashable, Sendable {
         /// A row with `›`, or a fold: its read-only card.
@@ -18,6 +20,10 @@ struct RowFace: Hashable, Sendable {
         case options
         /// The failed read's `Retry`, and `Settings…`.
         case retry, settings
+        /// A note that is one: a field's name, which only selects the note (a double-click edits its words).
+        case name
+        /// A note that is one: the value of a row, which acts by what the row holds (`RowClass`).
+        case value
     }
 
     let shape: ShapeID
@@ -83,14 +89,14 @@ extension RowBook {
         return FailureLayout(reason, action: action, in: geometry.rect(0)).actionRect
     }
 
-    /// The part of a type's row at a world point on the shape, nil off every part and for a shape with no
-    /// rows to click: a note that is one is the values' (slice 11), and a type's note not showing rows or
-    /// an action has nothing. Asked as the pointer moves over a shape, so it costs the lookups the render
-    /// pays and no more.
+    /// The part of a row at a world point on the shape, nil off every part and for a shape with no rows to
+    /// click: a type's note not showing rows or an action has nothing, and a note that is one has a name or a
+    /// value in each row it has. Asked as the pointer moves over a shape, so it costs the lookups the render
+    /// pays and no more: the shape's kept rows are all it reads.
     func face(at point: CGPoint, on record: AnyShapeRecord) -> RowFace? {
-        guard record[TypeSchemaProperty.self] != nil, kinds.contains(record.kind), editor?.editingShapeID != record.id,
-              let block = rowsRect(of: record), block.contains(point) else { return nil }
-        return part(at: point, on: record, in: block)
+        guard kinds.contains(record.kind), editor?.editingShapeID != record.id, let block = rowsRect(of: record), block.contains(point) else { return nil }
+        if record[TypeSchemaProperty.self] != nil { return part(at: point, on: record, in: block) }
+        return valuePart(at: point, on: record)
     }
 
     /// The same for the rows view over a shape being edited: no test of the edit.
@@ -98,6 +104,17 @@ extension RowBook {
         guard let record = editor?.document[id], record[TypeSchemaProperty.self] != nil, kinds.contains(record.kind),
               let block = rowsRect(of: record), block.contains(point) else { return nil }
         return part(at: point, on: record, in: block)
+    }
+
+    /// A row of a note that is one: its value if the point is on the part of the row that answers a press (a
+    /// box, a gone type's chip: only the thing itself), else its name. A row that takes the focus and does
+    /// nothing has no value to click: a click there is the note's.
+    private func valuePart(at point: CGPoint, on record: AnyShapeRecord) -> RowFace? {
+        guard let edited = editedRows(for: record) else { return nil }
+        let local = CGPoint(x: point.x - edited.block.minX, y: point.y - edited.block.minY)
+        guard let hit = target(at: local, in: edited) else { return nil }
+        if hit.onValue { return edited.classes[hit.row] == .still ? nil : RowFace(shape: record.id, row: hit.row, part: .value, at: point) }
+        return RowFace(shape: record.id, row: hit.row, part: .name, at: point)
     }
 
     private func part(at point: CGPoint, on record: AnyShapeRecord, in block: CGRect) -> RowFace? {
@@ -129,6 +146,39 @@ extension RowBook {
     /// What a click on a part does. A type's rows are never edited, so a locked type changes nothing here but
     /// Retry, which would write the schema: that shakes it, and Settings… opens whatever the lock.
     func perform(_ face: RowFace) {
+        switch face.part {
+        case .name: return
+        case .value: performValue(face)
+        default: performOnType(face)
+        }
+    }
+
+    /// A click on a value of a note that is one acts at once. A typed value, a row with more in it and the
+    /// fold begin the note's editing session (the row's field has the caret there, a card is asked for on the
+    /// session's next turn); a read-only note refuses, which shakes it, but a card opens to be read, and no
+    /// shake: reading is no try. The box writes, the choice pops its menu, and a row that reads `edited as
+    /// JSON in the panel` asks for the panel and begins nothing.
+    private func performValue(_ face: RowFace) {
+        guard let editor, let record = editor.document[face.shape], let edited = editedRows(for: record), edited.classes.indices.contains(face.row) else { return }
+        let id = face.shape, row = face.row
+        func card() { openCard(valuesCardRequest(row: row, of: edited, closed: {}, tabbedOut: { _ in })) }
+        switch edited.classes[row] {
+        case .typed:
+            editor.beginEditing(id, at: face.at)
+        case .more, .fold:
+            if editor.isReadOnly(id) { card() } else { editor.beginEditing(id, at: face.at) }
+        case .json:
+            card()
+        case .box:
+            if let key = edited.shown.rows[row].path?.field { toggle(key, of: id) }
+        case .choice:
+            if editor.isReadOnly(id) { editor.refuseChanges(to: [id]) } else { popChoiceMenu(row: row, of: edited) }
+        case .still:
+            break
+        }
+    }
+
+    private func performOnType(_ face: RowFace) {
         guard let editor, let record = editor.document[face.shape], let subject = subject(of: record), subject.isType else { return }
         switch face.part {
         case .settings:
@@ -144,6 +194,8 @@ extension RowBook {
                   let block = rowsRect(of: record), let menu = RowMenus.options(of: field.kind) else { return }
             let geometry = RowGeometry(block: block, hasLead: hasWords(record), longestName: template.nameColumn)
             editor.popUpMenu(menu, below: geometry.valueRect(face.row))
+        case .name, .value:
+            break
         }
     }
 
@@ -199,6 +251,11 @@ func registerRowFaces(into registrar: inout PluginRegistrar) {
                          click: { face, editor in editor.rowBook?.perform(face) },
                          // Without it the second press of a fast pair would open the note for editing.
                          doubleClick: { face, editor in
-                             if face.part == .more || face.part == .options { editor.rowBook?.perform(face) }
+                             switch face.part {
+                             case .more, .options, .value: editor.rowBook?.perform(face)
+                             // A name only selects; its second press edits the words, as one on the note does.
+                             case .name: editor.open(face.shape, at: face.at, clickCount: 2)
+                             case .retry, .settings: break
+                             }
                          })
 }
