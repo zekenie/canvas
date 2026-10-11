@@ -27,7 +27,7 @@ It uses the canvas skill's `canvas` command and draws only with it. Read that sk
 5. **Verify.** `digest verify graph.json --board <id>` reads every saved result back against the plan (each shape and pill within a unit of its place, each arrow drawn, no shape restated) and asks the file for its titles. It says `verify ok` or what is off.
 6. **Tell the user** what you made and what is public (below).
 
-`digest all graph.json <target> [--mess N] [--promote off] [--prefer N] [--cap N] [--into "Title"] [--replace]` runs check, measure, plan, draw and verify in order and stops at the first that fails. If a step fails, the message says which script and what the app said (exit 1 refused, 4 not the plan). Don't fix a script by hand and run it alone: change the digest and plan again, because the later scripts are placed against the earlier ones. A drawn board's runs are each one undo step (Edit › Undo Draw), but the plan can't be resumed: run it again with `--replace` (it takes back what was drawn and draws it all; that works whether the user has undone some of it, all of it, or nothing), or plan again into a new place.
+`digest all graph.json <target> [--mess N] [--promote off] [--prefer N] [--cap N] [--view WxH] [--ranks rows|columns] [--into "Title"] [--replace]` runs check, measure, plan, draw and verify in order and stops at the first that fails. If a step fails, the message says which script and what the app said (exit 1 refused, 4 not the plan). Don't fix a script by hand and run it alone: change the digest and plan again, because the later scripts are placed against the earlier ones. A drawn board's runs are each one undo step (Edit › Undo Draw), but the plan can't be resumed: run it again with `--replace` (it takes back what was drawn and draws it all; that works whether the user has undone some of it, all of it, or nothing), or plan again into a new place.
 
 A warning that shapes landed outside the window's view is not a problem: a big drawing is bigger than the window, and the camera is the user's.
 
@@ -42,9 +42,17 @@ What it decides, on each board:
 
 - **Popular shapes first, on a board that needs it.** A board that is tidy enough with plain arrows (nothing crossing, nothing over a shape, by the dial) is left as it is. On any other, a shape that many arrows point at is *promoted*: it is made public, and each shape that points at it shows a pill for it beside itself. A shape that points at many is *fanned out*: each thing it points at is a pill beside it. "Many" is the dial's: 5 arrows at 0.1, 4 at 0, 9 at 0.5. The most arrows go first, until the board is tidy enough or no shape is popular.
 - **Then the judgment calls.** For shapes with fewer arrows it lays the board out both ways and keeps a move only when it clearly pays, up to a cap (a share of the board's shapes).
-- **No arrow runs too long.** One over the dial's length (1300 units at 0.1, about four notes) becomes a pill beside its start.
+- **No arrow runs too long.** One over the dial's length (1300 units at 0.1, about four notes) becomes a pill beside its start. Length is as the view sees it: an arrow may run further across a wide view than down it.
 
 `--promote off` (or `"promote": false` in the digest) does none of it. `--cap 0..1`, `--margin PILLS` and `--popular ARROWS` override the dial's, and `--prefer N` is how many pills' prices a hub's second pill in one frame must save (default 2: one pill is preferred, and a far group of users gets its own).
+
+## The view
+
+Every board is laid out to fill the window it will be seen in, when it is fit to that window: wider than tall for a wide one. As it plans, `digest` asks the app how much room the target board's window has for a board (`canvas boards` says it, as `view`; for a new file, the window in front's), and the plan's first line says the view it laid out for.
+
+- `--view 1312x772` says another view: for a board meant for a screen you can't ask. With no window and no `--view` it assumes 1440 x 960 and says so.
+- Shapes with a `rank` (layers, phases) run as rows or as columns, whichever the view shows larger. `"policy": {"ranks": "rows"}` in the digest says which, and `--ranks rows|columns` says it over the digest.
+- A drawing is shaped once, for the window as it was. It isn't laid out again when the window changes: draw it again (`--replace`) for that.
 
 ## What it makes public
 

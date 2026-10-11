@@ -3,6 +3,7 @@ import { q, lit, byTitle } from './util.mjs';
 import { LEAF_KINDS } from './model.mjs';
 
 export const NOTE_W = 300, HEADER_W = 360;
+export const HEADER_GAP = 80;   // between a board's header note and what is laid out under it
 export const TITLE_PILL = (title) => 27 + 10.2 * title.length;   // the title pill above a frame (an estimate; a frame is never narrower than its title)
 
 /** What the tool assumes until a measurement says otherwise: draw's own numbers, which `constants` of the measure JSON replace. */

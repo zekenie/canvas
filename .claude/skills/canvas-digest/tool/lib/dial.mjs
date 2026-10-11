@@ -13,7 +13,8 @@
 //   X/arrow   0      .04    .10    .16    .20       good enough: crossings per arrow at most                      = 0.2 mess
 //   Fx/arrow  0      .02    .05    .08    .10       good enough: frame-border crossings per arrow at most         = 0.1 mess
 //   NE/arrow  0      0      0      .12    .20       good enough: arrows over shapes per arrow at most             = 0.4 max(0, mess - 0.5)
-//   aspect    2      2.4    3      3.6    4         good enough: the board's aspect at most                       = 2 + 2 mess
+//   aspect    2      2.4    3      3.6    4         good enough: the board at most this many times too wide for   = 2 + 2 mess
+//                                                    the shape of the view it is laid out for, or too tall (cost.mjs)
 //
 // The default is 0.1: the owner found it almost good enough. 0.5 is the middle (mu 4, cap 25%, margin 2 pills, X 0.1, Fx 0.05, NE 0, aspect 3).
 export const DEFAULT_MESS = 0.1;

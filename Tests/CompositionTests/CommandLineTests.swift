@@ -487,6 +487,7 @@ edge "API" -> "Cache" channel: none
                                                   children: [p.id: CanvasDocument(shapes: [AnyShapeRecord(q)]),
                                                              q.id: CanvasDocument(shapes: [AnyShapeRecord(note)])]))
         expect(board.editor.showBoard(BoardID(owner: p.id)) && board.editor.showBoard(BoardID(owner: q.id)))
+        other.editor.viewportDidResize(to: CGSize(width: 1440, height: 900))   // the other's window has a size; the first's has none yet
         let server = try startCommandServer(boards: [board, other], frontmost: board)
         defer { server.stop() }
         let status = try JSON(text: canvas(server, ["status"]).output)
@@ -497,6 +498,12 @@ edge "API" -> "Cache" channel: none
         expectEqual(boards.first?["shapes"], 1, "the board shown's")
         expectEqual(boards.first?["fileShapes"], 3, "every board's")
         expectEqual(boards.last?["fileShapes"], 0)
+        // view: the room a window has for a board fit into it, the canvas less a fit's margin; none for a window with no size
+        let inset = Double(CanvasEditor.firstVisitInset)
+        expectEqual(boards.last?["view"], .array([.number(1440 - 2 * inset), .number(900 - 2 * inset)]), "what a first visit fits a board into")
+        expectEqual(boards.first?["view"], nil, "a window with no size says none")
+        other.editor.viewportDidResize(to: CGSize(width: 100, height: 2 * CanvasEditor.firstVisitInset))
+        expectEqual(try JSON(text: canvas(server, ["boards"]).output).arrayValue?.last?["view"], nil, "nor one with no room to spare")
         let text = try canvas(server, ["boards", "--format", "text"]).output
         expect(text.contains("shows") && text.contains(q.id.description), text)
 

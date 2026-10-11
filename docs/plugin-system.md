@@ -9030,8 +9030,11 @@ a command works on the one its window shows, `editor.board`, as the window does:
 `transact` and the undo step its change makes are that board's (a `draw` is one step, Draw, there,
 and undoing it from another board shows that one first). `canvas boards` says which, for each open
 file: `shows`, the board shown (`"root"`, or the id of the shape that owns it, as a `BoardID` is
-written), `showsPath`, the boards from the root down to it, `shapes`, how many it holds, and
-`fileShapes`, how many the file holds, on every board;
+written), `showsPath`, the boards from the root down to it, `shapes`, how many it holds,
+`fileShapes`, how many the file holds, on every board, and `view`, the room its window has for a
+board fit into it (`[width, height]` in points: what a first visit fits the root board's shapes
+into, whichever board the window shows, so what a tool that lays a board out shapes it for; left
+out while the window has no size);
 `canvas status` names the front file's as `frontmostShows`; and a board command's result names it
 in its `board` (`id`, `name`, `shows`, `showsPath`, as `boards` has them), read in the
 command's own job as it starts: a command that doesn't wait (`draw`) runs in that job, so no

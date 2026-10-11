@@ -66,6 +66,21 @@ private struct DigestRun {
     return DigestRun(process: process, out: out)
 }
 
+/// A script moved off its plan: the first of its shapes that isn't hard against its container's corner (a gap of 45 or more, so
+/// that 5 nearer is still inside the 40 a frame keeps clear, and draw places it) is 5 units nearer it. Nil when it has none.
+private func nudged(_ script: String) -> String? {
+    var text = script
+    var from = text.startIndex
+    while let gap = text.range(of: #"\(gap: [0-9]+\)"#, options: .regularExpression, range: from..<text.endIndex) {
+        if let before = Int(text[gap].dropFirst(6).dropLast()), before >= 45 {
+            text.replaceSubrange(gap, with: "(gap: \(before - 5))")
+            return text
+        }
+        from = gap.upperBound
+    }
+    return nil
+}
+
 /// A digest written to a file of the folder.
 private func digestFile(_ name: String, _ text: String, in folder: URL) throws -> URL {
     let file = folder.appendingPathComponent("\(name).digest.json")
@@ -234,6 +249,10 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
         expect(run.process.output.contains("public ("), "the summary says what is public: \(run.process.output)")
         let plan = try run.plan, report = try run.report
         expectEqual(plan["into"], "Acme map")
+        // every board is laid out for the window it is drawn in: the room `canvas boards` says the target's has (1440 x 900, less a fit's margin)
+        let room = [1440 - 2 * Double(CanvasEditor.firstVisitInset), 900 - 2 * Double(CanvasEditor.firstVisitInset)]
+        expectEqual(report["view"], ["w": .number(room[0]), "h": .number(room[1]), "from": "given"], "the plan is for the board's window")
+        expect(run.process.output.contains("laid out for a view of \(Int(room[0])) x \(Int(room[1]))\n"), run.process.output)
         expectEqual(plan["runs"]?.arrayValue?.first, "00-into.draw")
         try expectOnPlan(run, board: promoted, digestRoot: "Acme map", "Acme")
         try expectNoWarnings(run, "Acme")
@@ -330,6 +349,9 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
         let plan = try run.plan, report = try run.report
         expectEqual(plan["boards"]?.arrayValue?.count, 1)
         expectEqual(plan["into"], .null, "the digest is the new file's board")
+        // the window in front has no size here (and the new file's isn't open as the plan is made): a view is assumed, and said
+        expectEqual(report["view"]?["from"], "assumed")
+        expect(run.process.output.contains("(assumed: no view was given)"), run.process.output)
         try expectOnPlan(run, board: board, digestRoot: nil, "flat60")
         try expectNoWarnings(run, "flat60")
         expect((report["promotions"]?.arrayValue?.count ?? 0) > 0, "hubs promoted")
@@ -355,13 +377,9 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
         let out = folder.appendingPathComponent("out")
         let planned = try runDigest("plan", "acme", server: server, target: ["--into", "Acme map"], out: out)
         expectEqual(planned.process.status, 0, planned.process.output + planned.process.error)
-        // the second script moved off the plan: its first note is 5 units nearer its frame's corner
+        // the second script moved off the plan: a note of it is 5 units nearer its frame's corner
         let script = out.appendingPathComponent("runs/02-root-in-1.draw")
-        var text = try String(contentsOf: script, encoding: .utf8)
-        let gap = try require(text.range(of: #"\(gap: [0-9]+\)"#, options: .regularExpression))
-        let before = Int(text[gap].dropFirst(6).dropLast()) ?? 0
-        text.replaceSubrange(gap, with: "(gap: \(max(0, before - 5)))")
-        try text.write(to: script, atomically: true, encoding: .utf8)
+        try require(nudged(String(contentsOf: script, encoding: .utf8))).write(to: script, atomically: true, encoding: .utf8)
 
         let drawn = try runDigest("draw", "acme", server: server, target: ["--board", "\(board.number)"], out: out)
         expectEqual(drawn.process.status, 4, drawn.process.output + drawn.process.error)
@@ -399,10 +417,7 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
         let planned = try runDigest("plan", "acme", server: server, target: [], out: out)
         expectEqual(planned.process.status, 0, planned.process.output + planned.process.error)
         let script = out.appendingPathComponent("runs/02-root-in-1.draw")
-        var text = try String(contentsOf: script, encoding: .utf8)
-        let gap = try require(text.range(of: #"\(gap: [0-9]+\)"#, options: .regularExpression))
-        text.replaceSubrange(gap, with: "(gap: \(max(0, (Int(text[gap].dropFirst(6).dropLast()) ?? 0) - 5)))")
-        try text.write(to: script, atomically: true, encoding: .utf8)
+        try require(nudged(String(contentsOf: script, encoding: .utf8))).write(to: script, atomically: true, encoding: .utf8)
 
         let file = folder.appendingPathComponent("Tampered")
         let drawn = try runDigest("draw", "acme", server: server, target: ["--new-file", file.path], out: out)
@@ -586,9 +601,7 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
             var moved = false
             for name in names.dropFirst() where !moved {
                 let script = out.appendingPathComponent("runs/\(name)")
-                var text = try String(contentsOf: script, encoding: .utf8)
-                guard let gap = text.range(of: #"\(gap: [0-9]+\)"#, options: .regularExpression) else { continue }
-                text.replaceSubrange(gap, with: "(gap: \(max(0, (Int(text[gap].dropFirst(6).dropLast()) ?? 0) - 5)))")
+                guard let text = nudged(try String(contentsOf: script, encoding: .utf8)) else { continue }
                 try text.write(to: script, atomically: true, encoding: .utf8)
                 moved = true
             }
@@ -749,6 +762,21 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
         expect(second.output.contains("ready: board") && second.output.contains("replaces"), "it says up front that it replaces: \(second.output)")
         expect(second.output.contains("replace: took back the last drawing") && second.output.contains("verify ok"), second.output)
         expectEqual(editor.file.shapeCount, drawn, "drawn again in its place, once")
+
+        // --ranks says which way the root's bands run, through the driver to the plan: rows, then columns, each drawn in the last one's place
+        for way in ["rows", "columns"] {
+            let ranked = try run(ingest, ["--skip-read", "--ranks", way], environment: ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path, "PROJECT": project.path], timeout: 280)
+            expectEqual(ranked.status, 0, ranked.output + ranked.error)
+            let report = try json(project.appendingPathComponent("digest.out/report.json"))
+            let root = report["boards"]?["root"]?["algorithms"]?.arrayValue?.first { $0["container"] == "root" }
+            expectEqual(root?["how"], .string(way), "the root's bands as \(way)")
+            @MainActor func box(_ title: String) -> CGRect? { editor.document.shapes.first { editor.registry.title(of: $0) == title }?.box }
+            let apps = try require(box("Apps")), foundations = try require(box("Foundations"))
+            expect(way == "rows" ? apps.maxY < foundations.minY : apps.maxX < foundations.minX, "\(way): Apps \(apps), Foundations \(foundations)")
+        }
+        let sideways = try run(ingest, ["--skip-read", "--ranks", "sideways"], environment: ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path, "PROJECT": project.path])
+        expectEqual(sideways.status, 1, sideways.output)
+        expect(sideways.error.contains("--ranks is rows or columns"), sideways.error)
 
         // what would stop a draw is said before anything slow, and before a digest is made: a board that holds another drawing
         // (another project's ingestion has no record of this one), and a file that is there already

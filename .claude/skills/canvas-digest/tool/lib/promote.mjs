@@ -247,8 +247,23 @@ export async function runBoard(model, layouter, opts) {
   const finC = await layouter.layout(state), evC = evaluate(model, finC, mu);
   report.finalWarm = { cost: r4(evW.cost), X: evW.X, NE: evW.NE, Fx: evW.Fx, aspect: r4(evW.aspect) };
   report.finalCold = { cost: r4(evC.cost), X: evC.X, NE: evC.NE, Fx: evC.Fx, aspect: r4(evC.aspect) };
-  if (evC.cost < evW.cost - 1e-9) { cur = finC; ev = evC; report.final = 'cold'; } else { cur = finW; ev = evW; report.final = 'warm'; }
-  // a board taller or wider than the dial's good enough (aspect 2 + 2 mess): laid out once more with the air squeezed out and the frames in rows whatever it costs the arrows,
+  // the cheaper of the two, what each one's shape costs counted in (cost.mjs's shapeCost: how far the board is from the view's shape)
+  const whole = (e) => e.cost + e.shape;
+  if (whole(evC) < whole(evW) - 1e-9) { cur = finC; ev = evC; report.final = 'cold'; } else { cur = finW; ev = evW; report.final = 'warm'; }
+  // ... and the board itself laid out each way a container can be (its arrows down and across, stress as it comes and stretched to the view's shape), each measured
+  // as the whole board is, arrows over pills and all: what a container's own cost chose between them is a guess at this
+  report.finalWays = {};
+  // (only a container laid out layered or stress has the four ways: ranked children run the way they run, a tree or boxes with no arrows have one layout)
+  const rootWay = (l) => { const r = l.raws.get(layouter.rootCid); return r.algo === 'layered' ? (r.dir === 'RIGHT' ? 'across' : 'layered') : r.algo === 'stress' ? (r.k && r.k !== 1 ? 'stretched' : 'stress') : null; };
+  for (const way of rootWay(cur) ? ['layered', 'across', 'stress', 'stretched'] : []) {
+    layouter.force = new Map([[layouter.rootCid, way]]);
+    const finF = await layouter.layout(state), evF = evaluate(model, finF, mu);
+    layouter.force = null;
+    if (rootWay(finF) !== way) continue;   // a way there is none of here (a stress layout already the shape has no stretched one)
+    report.finalWays[way] = { cost: r4(evF.cost), shape: r4(evF.shape), X: evF.X, NE: evF.NE, aspect: r4(evF.aspect) };
+    if (whole(evF) < whole(ev) - 1e-9) { cur = finF; ev = evF; report.final = way; }
+  }
+  // a board further from the view's shape than the dial's good enough (aspect 2 + 2 mess: that many times too tall for it, or too wide): laid out once more with the air squeezed out and the frames in rows whatever it costs the arrows,
   // and kept if it is within the aspect and costs C no more than 10% more than the tall one (the tidy end is where a pile of frames in a column hides the big picture)
   if (ev.aspect > model.dial.good.aspect && layouter.opts.pack !== 'off') {
     const pack0 = layouter.opts.pack; layouter.opts.pack = 'squeeze';
@@ -269,6 +284,7 @@ export async function runBoard(model, layouter, opts) {
   // beside its start, and the board laid out again from where it is, until none is left (a pill changes its start's box, so a few passes;
   // each pass sets at least one more edge apart, so there are never more passes than edges)
   report.long = [];
+  layouter.hold = true;
   if (opts.promote && (opts.cap == null ? model.dial.capShare : opts.cap) > 0) {
     for (let pass = 0; pass <= model.edges.length; pass++) {
       const long = tooLong(model, cur, ev, model.dial.longest).filter((x) => !state.apart.has(x.key));
@@ -280,8 +296,9 @@ export async function runBoard(model, layouter, opts) {
     }
     report.longLeft = tooLong(model, cur, ev, model.dial.longest).length;
   }
+  layouter.hold = false;
   lap('final');
-  report.end = { cost: r4(cm(ev)), costSearch: r4(ev.cost), X: ev.X, NE: ev.NE, NEnote: ev.NEnote, NEpill: ev.NEpill, Fx: ev.Fx, aspect: r4(ev.aspect), arrows: ev.arrows, sharedArrows: ev.sharedArrows, pills: ev.pills, orphans: ev.orphans, len: r4(ev.len), good: ev.good };
+  report.end = { cost: r4(cm(ev)), costSearch: r4(ev.cost), X: ev.X, NE: ev.NE, NEnote: ev.NEnote, NEpill: ev.NEpill, Fx: ev.Fx, aspect: r4(ev.aspect), size: ev.size, arrows: ev.arrows, sharedArrows: ev.sharedArrows, pills: ev.pills, orphans: ev.orphans, len: r4(ev.len), good: ev.good };
   const nArr = Math.max(1, ev.arrows + ev.sharedArrows);
   const gd = model.dial.good;
   report.goodTerms = {   // what "good enough" asks at this mess (per arrow, and the aspect), and where the board is
@@ -289,7 +306,7 @@ export async function runBoard(model, layouter, opts) {
   };
   report.promoted = state.order.slice();
   report.fanned = state.fans.slice();
-  report.algorithms = cur.containers.map((c) => ({ container: c.container, algorithm: c.algorithm, warm: !!c.warm, children: c.children, arrows: c.arrows, costs: c.costs, w: c.w, h: c.h })).sort((a, b) => byTitle(a.container || '', b.container || ''));
+  report.algorithms = cur.containers.map((c) => ({ container: c.container, algorithm: c.algorithm, how: c.how || null, warm: !!c.warm, children: c.children, arrows: c.arrows, costs: c.costs, w: c.w, h: c.h })).sort((a, b) => byTitle(a.container || '', b.container || ''));
   report.fill = cur.fills;
   report.shared = cur.plan.groups.filter((g) => g.shared).map((g) => ({ target: g.target, container: g.container === 'b:' + board ? null : g.container.slice(2), host: g.host, users: g.edges.length, split: g.key !== g.base })).sort((a, b) => byTitle(a.target, b.target) || byTitle(a.container || '', b.container || ''));
   {   // per (frame, hub): the pills and the users of each (a shared group is one pill; a group not shared, a pill a user)
@@ -313,11 +330,13 @@ export async function runBoard(model, layouter, opts) {
 export function tooLong(model, layout, ev, max) {
   const plan = layout.plan, out = [];
   const edges = plan.direct.map((e) => ({ e, shared: false })).concat(plan.members.map((m) => ({ e: m.e, shared: true })));   // evaluate's order
+  const wide = Math.sqrt(Math.min(2, Math.max(0.5, layout.shape ? layout.shape.aspect : 1)));
   edges.forEach(({ e, shared }, i) => {
     const seg = ev.segs[i];
     if (!seg || !mayBeApart(model, e)) return;
-    const length = segLength(seg);
-    if (length > max) out.push({ key: e.from + SEP + e.to, from: e.from, to: e.to, length: Math.round(length), shared });
+    // as the view sees it: a view wider than it is tall shows more of an arrow that runs across than of one that runs down
+    const length = segLength(seg), seen = Math.hypot((seg.x2 - seg.x1) / wide, (seg.y2 - seg.y1) * wide);
+    if (seen > max) out.push({ key: e.from + SEP + e.to, from: e.from, to: e.to, length: Math.round(length), shared });
   });
   return out;
 }

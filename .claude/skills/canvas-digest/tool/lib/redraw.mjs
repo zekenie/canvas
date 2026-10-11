@@ -28,6 +28,18 @@ export function boardField(boards, which, field, also) {
   return v == null ? '' : v;
 }
 
+/**
+ * The room an open board's window has for a board fit to it, as `--view` takes it (`1312x772`), from `canvas boards`' `view`; '' when no
+ * such board is open (`front`: none is in front) or its window has no size. The board is `front` or an id.
+ */
+export function boardView(boards, which) {
+  const list = Array.isArray(boards) ? boards : [];
+  const w = String(which);
+  const board = w === 'front' ? list.find((b) => b.frontmost) : list.find((b) => String(b.id) === w);
+  const v = board && board.view;
+  return Array.isArray(v) && v[0] > 0 && v[1] > 0 ? `${Math.round(v[0])}x${Math.round(v[1])}` : '';
+}
+
 /** What is deleted to take a drawing back: its subboard, or each shape it put on the file's root. */
 const takes = (drawn) => drawn.takes || (drawn.into ? [drawn.into] : drawn.root || []);
 /** The subboards among them that a drawing went into (`--into`): the rest are shapes of the file's root board. */
