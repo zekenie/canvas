@@ -6,7 +6,7 @@ A digest is one JSON file. It says what the things are, which holds which, and w
 {
   "title": "Name of the whole",
   "text": "What the whole is, said on its first board",
-  "policy": {"mess": 0.1, "promote": true},
+  "policy": {"mess": 0.1, "promote": true, "ranks": "rows"},
   "nodes": [{"title": "…", "kind": "auto", "in": "…", "text": "…", "public": true, "rank": 0}],
   "edges": [{"from": "…", "to": "…", "weight": 1, "text": "…", "via": "reference", "direct": true}]
 }
@@ -20,6 +20,7 @@ A digest is one JSON file. It says what the things are, which holds which, and w
 | `text` | what the first board's header note says. Default `<title>. Drawn by canvas-digest.` |
 | `policy.mess` | the dial, 0 (tidy) to 1 (loose). Default 0.1. `--mess` on the command wins. |
 | `policy.promote` | `false` promotes no hub, whatever the dial. Default `true`. |
+| `policy.ranks` | `"rows"` or `"columns"`: which way shapes with a `rank` run (below). Left out, whichever the view shows larger. `--ranks` on the command wins. |
 
 ## Nodes
 
@@ -32,7 +33,7 @@ A node is a shape. The list is flat: a node says which node holds it with `in`.
 | `in` | the title of the frame or subboard that holds it. Left out, it is on the first board. |
 | `text` | a note's words. A note is as tall as its text needs. A subboard's is what the header note on its board says (default `<title>. Drawn by canvas-digest.`); a frame ignores it. |
 | `public` | `true` pins the node public (it will be a thing others point at through a pill); `false` means never promote it. Left out, the loop decides. |
-| `rank` | a number that puts the node in a row of its container's: the lowest rank on top, each row's shapes left to right by title, whatever the arrows ask. A frame alone in its row is as wide as the widest row, what it holds centred: layers as bands, phases of a plan. A shape with no rank among ranked ones goes in a row below them. |
+| `rank` | a number that puts the node in a row of its container's, or a column, whatever the arrows ask: rows with the lowest rank on top (each row's shapes left to right by title), or columns with the lowest at the left (each column's top to bottom), whichever the view shows larger (`policy.ranks` says which). A frame alone in its row is as wide as the widest row, what it holds centred, and one alone in its column as tall as the tallest, what it holds at its top: layers as bands, phases of a plan. Each band is laid out for its slot, wide and short in a row, narrow and tall in a column. A shape with no rank among ranked ones goes in a row (or a column) after them. |
 
 **Choosing kinds.**
 
@@ -78,8 +79,8 @@ All files go in the out folder (`--out`, default the digest's name with `.out`).
 |---|---|---|
 | `check` | the digest, `canvas kinds`, one `canvas query` for the titles in the file (with `--board`) and `canvas boards` (drawn as the board, `--board` without `--into`: whether it is empty) | `kinds.json`, `titles.json`, `titles.all.json` |
 | `measure` | the digest, `canvas measure` | `measure.draw` (what was measured), `measure.json` (the answer) |
-| `plan` | the digest, `measure.json` | `plan.json`, `report.json`, `runs/NN-<board>-<step>.draw` |
+| `plan` | the digest, `measure.json`, `canvas boards` (the room the target's window has for a board: the view every board is laid out for, unless `--view` says) | `plan.json`, `report.json`, `runs/NN-<board>-<step>.draw` |
 | `draw` | the plan and runs; `drawn.json` with `--replace` | the board; `results/NN-<board>-<step>.dry.json` and `.json`, what `canvas draw` said of each run; `state.json`; `target.id` for a new file; `drawn.json`, what this drawing makes (the board's file and id, the subboard, the titles), which a later `--replace` takes back; with `--replace`, `replace.draw` and `results/replace.json` |
 | `verify` | the plan, the saved results, one `canvas query` for the titles in the file | nothing |
 
-`plan.json` has each board's shapes (`x`, `y`, `w`, `h` from the board's header note), its pills, and its edges in the order they are drawn; for an edge into a shared pill, `share` and `host` name the shape whose pill it reuses. It names the subboard the digest goes in (`into`, null for a new file) and the scripts in order (`runs`). `report.json` has the promotions with their costs, where each board's loop stopped and why, and the public set with a reason for each. Read the report when the summary isn't what you expected.
+`plan.json` has each board's shapes (`x`, `y`, `w`, `h` from the board's header note), its pills, and its edges in the order they are drawn; for an edge into a shared pill, `share` and `host` name the shape whose pill it reuses. It names the subboard the digest goes in (`into`, null for a new file) and the scripts in order (`runs`). `report.json` has the promotions with their costs, where each board's loop stopped and why, the public set with a reason for each, the view the plan is for (`view`: its width and height, and whether it was `given` or `assumed`), and each board's size and how far that is from the view's shape (`end.size`, `end.aspect`: 1 is the view's own shape, or a board the view shows whole). Read the report when the summary isn't what you expected.

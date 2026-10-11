@@ -8,6 +8,7 @@ export function buildModel(digest, mess) {
   const warnings = [];
   const title = fold(digest.title || 'Digest');
   const policy = digest.policy || {};
+  if (policy.ranks != null && !['rows', 'columns'].includes(policy.ranks)) throw new Error(`policy.ranks is "rows" or "columns" (left out: whichever the view shows larger), not ${JSON.stringify(policy.ranks)}`);
   const nodes = new Map();
   const sorted = (digest.nodes || []).slice().sort((a, b) => byTitle(fold(a.title), fold(b.title)));
   for (const n of sorted) {
@@ -106,7 +107,7 @@ export function buildModel(digest, mess) {
   const mu = dl.mu;
   const model = {
     title, text: typeof digest.text === 'string' ? digest.text : '', policy, nodes, boards, boardDepth, kids, headers, edges, out, inn, warnings,
-    mu, dial: dl, promote: policy.promote !== false,
+    mu, dial: dl, promote: policy.promote !== false, ranks: policy.ranks || null,
     hasEdge: (a, b) => has.has(a + '\u0000' + b),
     node: (t) => nodes.get(t),
     boardIndex: new Map(boards.map((b, i) => [b, i])),

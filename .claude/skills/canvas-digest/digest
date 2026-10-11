@@ -19,6 +19,11 @@
 #                                 goes in a new subboard of it; without, it is the board itself, which must be empty (or --replace)
 #               --new-file PATH   a new board's file, made and opened (`canvas new`); the digest is its board
 #   PLAN FLAGS  --mess 0..1  --promote off  --prefer N  --cap 0..1  --margin PILLS  --popular ARROWS  --into TITLE
+#               --view WxH        the room the window has for a board fit to it, which every board is laid out for. Left out, it is
+#                                 the target board's window's (`canvas boards` says it, as view), or, for a new file, the window in
+#                                 front's; with no window to ask, one of 1440x960 is assumed, and the plan says so
+#               --ranks rows|columns   which way a digest's ranked shapes run (left out: the digest's policy.ranks, else whichever
+#                                 the view shows larger)
 #   --replace   draw in place of this digest's last drawing (OUT/drawn.json), when it is in the target board's file: it is
 #               taken back first (one undo step), and nothing else on the board is touched
 #   --out DIR   where the files go (default: GRAPH without .json, plus .out)
@@ -102,7 +107,7 @@ CMD=$1; GRAPH=$2; shift 2
 case $CMD in check|measure|plan|draw|verify|all|ready) ;; *) usage ;; esac
 [ "$CMD" = ready ] || [ -f "$GRAPH" ] || die "no digest at $GRAPH"
 GRAPH=$(abspath "$GRAPH")
-BOARD=; NEWFILE=; INTO=; OUT=; MESS=; PROMOTE=; PREFER=; CAP=; MARGIN=; POPULAR=; TIMEOUT=120; REPLACE=0
+BOARD=; NEWFILE=; INTO=; OUT=; MESS=; PROMOTE=; PREFER=; CAP=; MARGIN=; POPULAR=; VIEW=; RANKS=; TIMEOUT=120; REPLACE=0
 while [ $# -gt 0 ]; do
   if [ "$1" = --replace ]; then REPLACE=1; shift; continue; fi
   [ $# -ge 2 ] || { echo "digest: $1 takes a value" >&2; usage; }
@@ -118,6 +123,8 @@ while [ $# -gt 0 ]; do
     --cap) CAP=$2 ;;
     --margin) MARGIN=$2 ;;
     --popular) POPULAR=$2 ;;
+    --view) VIEW=$2 ;;
+    --ranks) RANKS=$2 ;;
     *) echo "digest: unknown option $1" >&2; usage ;;
   esac
   shift 2
@@ -250,6 +257,16 @@ step_measure() {
   echo "measure: $(wc -l < "$OUT/measure.draw" | tr -d ' ') statements measured by canvas measure"
 }
 
+# The view the boards are laid out for, as the tool's plan takes it (WxH; nothing: it assumes one): the one asked for, else the room the
+# target board's window has for a board fit to it, else (a new file, or no target) the window in front's. Asked of the app as the plan
+# is made, never kept: a window is the size it is now. With no canvas found (a plan from a measurement, with no board named), none is asked.
+view_for() {
+  if [ -n "$VIEW" ]; then printf '%s\n' "$VIEW"; return; fi
+  [ -n "${CANVAS:-}" ] || return 0
+  canvas_try "$OUT/boards.json" boards || return 0
+  tool view "$OUT/boards.json" "${BOARD:-front}"
+}
+
 step_plan() {
   # the file's titles as they are now, and a board the digest is to be drawn as (`all` has just checked them)
   if [ -n "$BOARD" ] && [ "$CMD" != all ]; then
@@ -267,6 +284,9 @@ step_plan() {
   if [ -n "$MARGIN" ]; then set -- "$@" --margin "$MARGIN"; fi
   if [ -n "$POPULAR" ]; then set -- "$@" --popular "$POPULAR"; fi
   if [ -n "$INTO" ]; then set -- "$@" --into "$INTO"; fi
+  if [ -n "$RANKS" ]; then set -- "$@" --ranks "$RANKS"; fi
+  _view=$(view_for) || exit 1
+  if [ -n "$_view" ]; then set -- "$@" --view "$_view"; fi
   _res=$(tool "$@") || exit 1
   echo "$_res"
   echo "files: $OUT/plan.json, $OUT/report.json, $(tool runs "$OUT/plan.json" | wc -l | tr -d ' ') scripts in $OUT/runs"

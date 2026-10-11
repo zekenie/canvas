@@ -6,7 +6,7 @@ import { planDigest, DEFAULTS } from './plan.mjs';
 import { verify, formatVerify } from './verify.mjs';
 import { compareRun } from './compare.mjs';
 import { replay, extract } from './replay.mjs';
-import { boardField, drawnRecord, sameFile, beyond, minus, foreign, replaceScript, hasTitle } from './redraw.mjs';
+import { boardField, boardView, drawnRecord, sameFile, beyond, minus, foreign, replaceScript, hasTitle } from './redraw.mjs';
 import { checkDigest } from './check.mjs';
 import { TOOL_DIR, fold } from './util.mjs';
 
@@ -16,6 +16,7 @@ export const USAGE = `digest tool (the driver, ./digest, runs these; the tool ne
   check-text <check.json>                                              what check found, as "error: ..." and "warning: ..." lines ("ok" for none)
   measure-script <digest.json>                                         the draw script for \`canvas measure -\`
   plan <digest.json> <measure.json> <outdir> [--mess 0..1] [--promote off] [--prefer N] [--cap 0..1] [--margin PILLS] [--popular ARROWS] [--into "Title"]
+                                             [--view WxH] [--ranks rows|columns|auto]
                                                                        writes <outdir>/plan.json, report.json and runs/NN-<board>-<step>.draw; --into puts the
                                                                        whole digest in a new subboard of that title (runs/00-into.draw makes it)
   compare <plan.json> <result.json> <state.json> [--name run] [--save true] [--text true]
@@ -27,6 +28,8 @@ export const USAGE = `digest tool (the driver, ./digest, runs these; the tool ne
   replay <plan.json> <resultsdir> [--titles titles.json]               the real runs' saved results (<resultsdir>/<run>.json), all of them, against the plan
   extract titles|root-titles|kinds|id|count|errors <answer.json>       what the driver reads out of canvas's JSON (or check's), printed as JSON
   board <boards.json> <front|id|file|name> id|path|fileShapes|shows [path]   one open board's field, from \`canvas boards\` ([path]: the file named, its links resolved)
+  view <boards.json> <front|id>                                        the room that board's window has for a board fit to it, as --view takes it (1312x772); nothing
+                                                                       when no such board is open or its window has no size
   drawn <plan.json> <path> <id> [shapes] [--over drawn.json --was N]   what drawing the plan makes, to keep as drawn.json (the board's file and id, the subboard, the titles,
                                                                        how many shapes the file held once drawn); --over: with the drawing it replaces, while it is drawn,
                                                                        and --was, how many shapes the file held before that one was taken back
@@ -51,12 +54,18 @@ THE MESS DIAL: --mess 0..1 (or "policy": {"mess": 0.5} in the digest; the flag w
   X/arrow     0     .04   .10   .16   .20    = 0.2 mess              good enough: crossings per arrow at most
   Fx/arrow    0     .02   .05   .08   .10    = 0.1 mess              good enough: frame-border crossings per arrow at most
   NE/arrow    0     0     0     .12   .20    = 0.4 max(0, mess-.5)   good enough: arrows over shapes per arrow at most
-  aspect      2     2.4   3     3.6   4      = 2 + 2 mess            good enough: aspect at most
+  aspect      2     2.4   3     3.6   4      = 2 + 2 mess            good enough: the board at most this many times too wide for the view's shape, or too tall
 The popular moves come in the same order at every mess; the dial says how far down them the loop goes. --cap, --margin and --popular override the dial's.
 --promote off: no hub is promoted, only the pills that cross boards or ask via: reference. --prefer N (default 2): each extra pill of a hub in one frame must save N pills' prices.
 A move promotes a node many point at (it is made public, and each user reaches it through a pill beside the user) or fans out a node that points at many (each of
 its uses is a pill beside it, and what they stand for is made public). After the popular ones, the loop stops when the board is good enough, when the best candidates
-cut the cost by no more than the margin, or at the cap (the report says which).`;
+cut the cost by no more than the margin, or at the cap (the report says which).
+
+THE VIEW: --view WxH is the room the window has for a board fit to it (\`canvas boards\` says each window's, as view; the driver hands on the target's). Every board
+is laid out toward that shape, so that it fills the view when it is fit to it: its containers' arrows run down or across, a stress layout is stretched, and ranked
+children run as rows or as columns, whichever the view shows larger (--ranks rows or columns says which outright, over the digest's policy.ranks). A board the view
+shows whole at its own size is left whatever shape it is. An arrow is too long as the view sees it: further across a wide view than down it. With no --view, a view
+of 1440 x 960 is assumed, and the summary says so.`;
 
 function parseFlags(args) {
   const pos = [], flags = {};
@@ -67,6 +76,18 @@ function parseFlags(args) {
 }
 
 const onOff = (v, d) => (v == null ? d : v === 'on' || v === 'true' || v === 'yes');
+/** --view 1440x900: the view's size, width by height. */
+function viewOf(v) {
+  if (v == null) return null;
+  const m = /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/.exec(v);
+  if (!m || !(+m[1] > 0) || !(+m[2] > 0)) throw new Error(`--view takes a width and a height, as in 1440x900, not ${v}`);
+  return { w: +m[1], h: +m[2] };
+}
+function ranksOf(v) {
+  if (v == null) return null;
+  if (!['auto', 'rows', 'columns'].includes(v)) throw new Error(`--ranks is auto, rows or columns, not ${v}`);
+  return v;
+}
 const num = (v) => (v == null ? null : +v);
 
 export async function run(args, io) {
@@ -86,9 +107,9 @@ export async function run(args, io) {
   if (cmd === 'plan') {
     const [, digestPath, measurePath, outdir] = pos;
     if (!outdir) throw new Error(USAGE);
-    for (const k of Object.keys(flags)) if (!['mess', 'promote', 'prefer', 'cap', 'margin', 'popular', 'into'].includes(k)) throw new Error(`unknown option --${k}\n${USAGE}`);
+    for (const k of Object.keys(flags)) if (!['mess', 'promote', 'prefer', 'cap', 'margin', 'popular', 'into', 'view', 'ranks'].includes(k)) throw new Error(`unknown option --${k}\n${USAGE}`);
     const digest = json(digestPath);
-    const opts = { promote: onOff(flags.promote, DEFAULTS.promote), cap: num(flags.cap), marginPills: num(flags.margin), popular: num(flags.popular), prefer: num(flags.prefer), mess: num(flags.mess), into: flags.into || null };
+    const opts = { promote: onOff(flags.promote, DEFAULTS.promote), cap: num(flags.cap), marginPills: num(flags.margin), popular: num(flags.popular), prefer: num(flags.prefer), mess: num(flags.mess), into: flags.into || null, view: viewOf(flags.view), ranks: ranksOf(flags.ranks) };
     const model = buildModel(digest);
     const sizes = sizesFrom(model, json(measurePath));
     const elk = await loadElk(io, TOOL_DIR);
@@ -123,6 +144,7 @@ export async function run(args, io) {
   }
   if (cmd === 'extract') { io.print(JSON.stringify(extract(pos[1], json(pos[2])))); return; }
   if (cmd === 'board') { io.print(String(boardField(json(pos[1]), pos[2], pos[3], pos[4]))); return; }
+  if (cmd === 'view') { const v = boardView(json(pos[1]), pos[2]); if (v) io.print(v); return; }
   if (cmd === 'drawn') { io.print(JSON.stringify(drawnRecord(json(pos[1]), pos[2] || null, pos[3], pos[4], flags.over ? json(flags.over) : null, flags.was), null, 1)); return; }
   if (cmd === 'has-title') { io.print(hasTitle(json(pos[1]), pos[2]) ? 'yes' : 'no'); return; }
   if (cmd === 'same-file') { io.print(sameFile(json(pos[1]), pos[2] || null, pos[3], pos[4] ? json(pos[4]) : null) ? 'yes' : 'no'); return; }
@@ -169,7 +191,9 @@ export function compareText(res) {
 export function summarize(r) {
   const rep = r.report, t = rep.totals;
   const shapes = r.plan.boards.reduce((s, b) => s + b.shapes.length, 0);
-  const lines = [`plan: ${r.plan.boards.length} board(s), ${shapes} shapes, ${t.pills} pills (${t.sharedArrows} arrows into shared ones), ${t.arrows} plain arrows; ${r.runs.length} runs; mess ${r.model.dial.mess}`];
+  const v = rep.view;
+  const lines = [`plan: ${r.plan.boards.length} board(s), ${shapes} shapes, ${t.pills} pills (${t.sharedArrows} arrows into shared ones), ${t.arrows} plain arrows; ${r.runs.length} runs; mess ${r.model.dial.mess}`
+    + (v ? `; laid out for a view of ${Math.round(v.w)} x ${Math.round(v.h)}` + (v.from === 'assumed' ? ' (assumed: no view was given)' : '') : '')];
   lines.push(`public (${rep.public.length}), all made by this run: ` + (rep.public.length ? rep.public.map((p) => `${p} (${rep.publicWhy[p]})`).join('; ') : 'none'));
   // the moves the plan keeps: one the loop took back again is in its board's demotions
   const back = new Set(Object.values(rep.boards).flatMap((x) => (x.demotions || []).map((d) => [d.board, d.mode, d.node].join('\u0000'))));
@@ -177,7 +201,7 @@ export function summarize(r) {
   const ins = kept.filter((p) => p.mode !== 'out'), outs = kept.filter((p) => p.mode === 'out');
   lines.push('stop: ' + Object.entries(rep.boards).map(([b, x]) => `${b === 'root' ? 'root' : b} ${x.stop}`).join(', ') + (ins.length ? `; promoted ${ins.length}: ${ins.map((p) => p.node).join(', ')}` : '') + (outs.length ? `; fanned out ${outs.length}: ${outs.map((p) => p.node).join(', ')}` : ''));
   const long = Object.values(rep.boards).reduce((s, x) => s + (x.long || []).length, 0), left = Object.values(rep.boards).reduce((s, x) => s + (x.longLeft || 0), 0);
-  if (long || left) lines.push(`long arrows: ${long} made pills of their own (over ${r.model.dial.longest} units)` + (left ? `; ${left} still longer after the last pass` : ''));
+  if (long || left) lines.push(`long arrows: ${long} made pills of their own (over ${r.model.dial.longest} units, as the view sees them)` + (left ? `; ${left} still longer after the last pass` : ''));
   for (const w of rep.warnings) lines.push('warning: ' + w);
   return lines.join('\n');
 }
