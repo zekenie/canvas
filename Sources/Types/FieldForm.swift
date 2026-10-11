@@ -56,8 +56,17 @@ public struct FieldForm: View {
         self.context = context
     }
 
+    private struct Identity: Hashable {
+        var shape: ShapeID
+        var path: FieldPath
+        var mode: FieldFormMode
+    }
+
     public var body: some View {
-        FieldFormHost(context: context, height: $height).frame(height: height)
+        // The form is for one note's field: another note, or another field, is a new view.
+        FieldFormHost(context: context, height: $height)
+            .id(Identity(shape: context.shape, path: context.path, mode: context.mode))
+            .frame(height: height)
     }
 }
 

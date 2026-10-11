@@ -384,6 +384,28 @@ private extension Resolved {
         expectEqual(r.values.value(at: r.path("shippingAddress")), nil, "nothing written")
         expectEqual(log.refusals.count, 0, "and nothing refused: a try is at a box or a choice")
     },
+    test("a type's read-only card follows its type: a member added shows a turn later, and a field the type loses closes the card") {
+        let r = try CardRig()
+        defer { r.close() }
+        expect(r.open("lineItems", mode: .kinds, shape: FieldFixtures.orderID))
+        expectEqual(try require(r.form).sheet.lines.compactMap(\.name), ["product", "quantity", "price"])
+        let grown = FieldFixtures.order.schema.replacingOccurrences(of: #""price": { "type": "number" }"#, with: #""price": { "type": "number" }, "sku": { "type": "string" }"#)
+        expect(grown != FieldFixtures.order.schema)
+        r.editor.transact("Change Schema") { $0.update(FieldFixtures.orderID) { $0[TypeSchemaProperty.self] = SchemaText(grown) } }
+        r.advance()
+        expectEqual(try require(r.form).sheet.lines.compactMap(\.name), ["product", "quantity", "price", "sku"])
+        let without = grown.replacingOccurrences(of: #""price": { "type": "number" }, "sku": { "type": "string" }"#, with: #""sku": { "type": "string" }"#)
+        expect(without != grown)
+        r.editor.transact("Change Schema") { $0.update(FieldFixtures.orderID) { $0[TypeSchemaProperty.self] = SchemaText(without) } }
+        r.advance()
+        expectEqual(try require(r.form).sheet.lines.compactMap(\.name), ["product", "quantity", "sku"], "a member the type lost goes")
+        let lost = without.replacingOccurrences(of: #""lineItems": {"#, with: #""lineItemsGone": {"#)
+        expect(lost != without)
+        r.editor.transact("Change Schema") { $0.update(FieldFixtures.orderID) { $0[TypeSchemaProperty.self] = SchemaText(lost) } }
+        r.advance()
+        expect(r.editor.card == nil && r.cards.openTarget == nil, "a field the type no longer has closes the card")
+        expectEqual(r.closed, 0, "without telling the row")
+    },
     test("a note made read-only while its card shows turns the form read-only and the card holds no step") {
         let log = RefusalLog()
         let r = try CardRig(log: log)

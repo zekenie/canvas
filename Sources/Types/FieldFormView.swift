@@ -262,7 +262,7 @@ public final class FieldFormView: NSView {
         var keep = starts
         for place in starts..<levels.count {
             var held = levels[place]
-            if mode == .kinds || isFold && place == 0 { keep = place + 1; continue }
+            if isFold && place == 0 { keep = place + 1; continue }
             guard let field = resolve(held.path, book: book) else { break }
             held.field = field
             held.kind = book.kind(of: field)

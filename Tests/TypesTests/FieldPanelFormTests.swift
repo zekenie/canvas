@@ -63,15 +63,25 @@ import Types
 
     /// The fields as forms one under the other, as a section places them, in the window.
     func host(_ fields: [String], shape: ShapeID? = nil, readOnly: Bool = false) throws {
-        let contexts = try fields.map { try context($0, shape: shape, readOnly: readOnly) }
-        let view = AnyView(VStack(alignment: .leading, spacing: 4) {
-            ForEach(contexts.indices, id: \.self) { FieldForm(contexts[$0]) }
-        }.frame(width: 300))
-        let hosting = NSHostingView(rootView: view)
+        let hosting = NSHostingView(rootView: try view(fields, shape: shape, readOnly: readOnly))
         hosting.frame = CGRect(x: 0, y: 0, width: 320, height: 500)
         window.contentView = hosting
         self.hosting = hosting
         window.spin(until: { self.forms.count == fields.count })
+        window.settle()
+    }
+
+    private func view(_ fields: [String], shape: ShapeID?, readOnly: Bool) throws -> AnyView {
+        let contexts = try fields.map { try context($0, shape: shape, readOnly: readOnly) }
+        return AnyView(VStack(alignment: .leading, spacing: 4) {
+            ForEach(contexts.indices, id: \.self) { FieldForm(contexts[$0]) }
+        }.frame(width: 300))
+    }
+
+    /// The same hosting view handed another note's fields, as a section is when the selection moves.
+    func rehost(_ fields: [String], shape: ShapeID) throws {
+        hosting?.rootView = try view(fields, shape: shape, readOnly: false)
+        window.spin(until: { self.forms.first?.shape == shape })
         window.settle()
     }
 
@@ -266,6 +276,18 @@ private let kinds = (a: FieldFixtures.everyKind.a, b: FieldFixtures.everyKind.b)
         expectEqual(try require(r.forms.first).sheet.lines.count, 1, "for another note")
         r.editor.transact("Delete") { $0.delete([r.note]) }
         expectEqual(r.editor.fieldCards?.panelOpen[r.note] == nil, true, "a deleted note's entry goes")
+    },
+    test("one hosting view handed another note's field is for that note, not the one it was made for") {
+        let r = try PanelRig(of: [FieldFixtures.orderID])
+        defer { r.close() }
+        let other = r.editor.addInstance("Another", of: [FieldFixtures.orderID], at: CGPoint(x: 40, y: 200))
+        try r.host(["giftNote"])
+        expectEqual(try require(r.forms.first).shape, r.note)
+        try r.rehost(["giftNote"], shape: other)
+        expectEqual(r.forms.count, 1)
+        expectEqual(try require(r.forms.first).shape, other)
+        r.editor.fieldWriter?.set("hello", at: r.path("giftNote"), of: other)
+        expectEqual(try require(r.forms.first).sheet.lines[0].cells[0].shown, "hello", "it shows the other note's value")
     },
     test("typing in one cell and on by Tab into the next of the same field is one step named for the field; a click between makes two; the JSON box's commit is one") {
         let r = try PanelRig(of: [FieldFixtures.kindsAID, FieldFixtures.kindsBID], extra: [kinds.a, kinds.b])
