@@ -120,6 +120,9 @@ public final class RowBook {
     #endif
     /// The one view over the rows of the shape being edited, if any.
     weak var rowsView: RowsView?
+    /// The instances the last change to what a list resolves to reached (`reached(by:)`), by the revision of the
+    /// commit that made it.
+    var chainReached: (revision: Int, ids: Set<ShapeID>)?
     /// The rows of the notes that are one, as shown (`shownRows`): kept by shape, their rects from the block's
     /// top-left so a drag lets go of nothing, and let go of for the shapes a commit changed other than by
     /// moving.
@@ -374,7 +377,9 @@ public final class RowBook {
         guard let editor, let index = editor.types else { return }
         if index.chainRevision != seenChain {
             dropTemplates(to: index.chainRevision)
-            editor.shapesDidChangeLayout(changed.union(index.affected(by: changed)))
+            let instances = index.affected(by: changed)
+            chainReached = (editor.revision, instances)
+            editor.shapesDidChangeLayout(changed.union(instances))
             rowsChanged()
         } else {
             renames += 1
@@ -397,11 +402,31 @@ extension RowBook: EditorService {
     /// A file put in place: every table goes. A shape another commit changed (other than by moving) or took
     /// lets go of its rows. (Everything else is told by the index and the sync.)
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
+        letGo(of: changes)
+        // The shape being edited may have grown, or its rows changed: the view over them follows.
+        rowsChanged()
+    }
+
+    private func letGo(of changes: ChangeSet) {
         if changes.replacedDocument { dropEverything() } else if !shown.isEmpty {
             for id in changes.added.union(changes.removed).union(changes.changed.subtracting(changes.moved)).union(changes.elsewhere) { shown[id] = nil }
         }
-        // The shape being edited may have grown, or its rows changed: the view over them follows.
-        rowsChanged()
+    }
+
+    /// The shapes a commit changes the texts of without changing them, for Find (`FieldFindPlugin`'s `affected`): the
+    /// instances of the types it changed, whose rows may show their values otherwise (a date's kind, a choice's
+    /// label, which rows fold). Find asks before it reads the shapes it names, and the types' own index is behind it
+    /// in the services' order, so this has the index hear the commit now (a second hearing returns at its first
+    /// line, so its turn costs nothing more): a shape read against the types as they were would be read again later
+    /// only if it changed. A commit that only moved shapes names nothing and wakes nothing.
+    public func reached(by changes: ChangeSet) -> Set<ShapeID> {
+        guard let editor else { return [] }
+        if !changes.replacedDocument, changes.added.isEmpty, changes.removed.isEmpty, changes.elsewhere.isEmpty,
+           changes.changed.count == changes.moved.count { return [] }
+        letGo(of: changes)
+        editor.types?.documentDidChange(changes, in: editor)
+        guard let reached = chainReached, reached.revision == editor.revision else { return [] }
+        return reached.ids
     }
 
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {

@@ -225,6 +225,58 @@ extension NestedWindow {
             }
         }
     },
+    test("a note that is a Person is found by a value, marked on its row, light and dark; and by a date's shown form once its type's field turns from Text to Date") {
+        let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
+        let size = CGSize(width: 800, height: 400)
+        h.editor.viewportDidResize(to: size)
+        let person = FieldFixtures.person
+        h.editor.addTypeNote(person.schema, title: person.title, frame: CGRect(x: 500, y: 80, width: 200, height: 200), id: person.id)
+        var ann = ShapeRecord(StickyNote(frame: CGRect(x: 40, y: 80, width: 200, height: 200), text: ""))
+        ann[IsAProperty.self] = [TypeLink(person.id)]
+        ann[FieldValuesProperty.self] = FieldValues(["name": "Ann Lee"])
+        let id = ann.id
+        h.editor.transact { $0.insert(AnyShapeRecord(ann)) }
+        let find = try require(h.editor.find)
+        find.open()
+        find.query = "lee"
+        try settled(find, h)
+        expectEqual(find.results.map(\.id), [id])
+        let row = try require(h.editor.rowBook?.rows(of: id).first { $0.name == "name" })
+        let rect = try require(find.rects(of: try require(find.results.first).first, in: id).first)
+        expect(row.rect.insetBy(dx: -2.5, dy: -1).contains(rect), "on the name's row: \(rect) in \(row.rect)")
+        for dark in [false, true] {
+            let lit = renderBitmap(h.editor, size: size, dark: dark)
+            find.close()
+            let plain = renderBitmap(h.editor, size: size, dark: dark)
+            find.open()
+            try settled(find, h)
+            let spot = CGPoint(x: row.valueRect.minX + 1, y: row.rect.minY + 3)
+            let (on, off) = (pixel(lit, at: spot), pixel(plain, at: spot))
+            let name = "\(dark ? "dark" : "light"): \(off) → \(on)"
+            expect(zip(on, off).prefix(3).map { abs($0 - $1) }.reduce(0, +) >= 90, "\(name): stands out")
+            expect(on[0] > on[1] && on[1] > on[2] && on[0] - on[2] >= 120, "\(name): orange")
+        }
+        find.close()
+        // A type whose field is Text, and then Date: the instance did not change, and is read as it shows now.
+        let event = ShapeID()
+        let text = #"{"type": "object", "properties": {"when": {"type": "string"}}}"#
+        h.editor.addTypeNote(text, title: "Event", frame: CGRect(x: 500, y: 300, width: 200, height: 60), id: event)
+        var meeting = ShapeRecord(StickyNote(frame: CGRect(x: 300, y: 80, width: 200, height: 200), text: ""))
+        meeting[IsAProperty.self] = [TypeLink(event)]
+        meeting[FieldValuesProperty.self] = FieldValues(["when": "2026-03-03"])
+        let held = meeting.id
+        h.editor.transact { $0.insert(AnyShapeRecord(meeting)) }
+        find.open()
+        find.query = "2026"
+        try settled(find, h)
+        expectEqual(find.results.map(\.id), [held])
+        h.editor.transact("Date") { $0.update(event) { $0[TypeSchemaProperty.self] = SchemaText(#"{"type": "object", "properties": {"when": {"type": "string", "format": "date"}}}"#) } }
+        let shown = FieldText.shown(.string("2026-03-03"), as: .date)
+        expectEqual(find.texts(of: held), [shown])
+        find.query = shown
+        try settled(find, h)
+        expectEqual(find.results.map(\.id), [held], "found by the date as it shows")
+    },
     test("a subboard's contents are found from the root, after the root's, each board's in turn") {
         let nest = NestedFile()
         let h = try EditorHarness { CanvasEditor(registry: try ShippedPlugins.registry(model: ScriptedLanguageModel()), file: nest.file, scheduler: $0) }

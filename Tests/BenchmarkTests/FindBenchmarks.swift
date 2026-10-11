@@ -8,6 +8,7 @@ import Mentions
 import StickyNotes
 import TestKit
 import Titles
+import Types
 
 // Find's budgets, on the generated boards: a keystroke (what it costs the main actor, and the search
 // off it), the index's first build (its longest slice of the main actor), what Find costs a commit
@@ -42,7 +43,7 @@ extension Budget {
 
 /// The shipped list without Find and what contributes to it.
 @MainActor func pluginsWithoutFind(_ pasteboard: NSPasteboard) -> [any CanvasPlugin] {
-    shippedPlugins(pasteboard).filter { ![PluginID.findInBoards, .titleFind, .mentionFind].contains($0.id) }
+    shippedPlugins(pasteboard).filter { ![PluginID.findInBoards, .titleFind, .mentionFind, .fieldFind].contains($0.id) }
 }
 
 /// Opens Find on a harness and builds its index to the end, a scheduler turn a slice.

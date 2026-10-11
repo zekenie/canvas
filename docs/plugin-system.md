@@ -6572,6 +6572,7 @@ a list without Find leaves them out:
 |---|---|---|
 | Titles' `TitleFindPlugin` | each title, named or derived (`registry.title(of:)`), on the kinds that hold `TitleProperty` or derive one | the pill's whole capsule, ringed (it may cut the title short); zoomed out, the cover |
 | Mentions' `MentionFindPlugin` | each `MentionTexts` placement's text (a  note's, an arrow's label), each mention its live name | from the render's own layout, which Find's asking keeps with the drawn text (`MentionTextMemo`; drawing keeps none); a hit in a name is the whole pill; `affected`: `rowsAffected(by:)`. Two contributions, one a look: the placements on a shape's surface, marked, and those `overCanvas` (an arrow's label), washed |
+| Types' `FieldFindPlugin` | each value a note that is one holds, as its row shows it (a row with more in it: every text under it, a line each) | the row's value as it hugs it, the fold's words for a folded field; its `affected` has Types' index hear the commit first (`RowBook.reached(by:)`) |
 
 ### The index, and the search off the main actor
 
@@ -10182,6 +10183,11 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   there; the field tells `editor.fieldChecks` it is the one typed in, so what is half typed is never red. Tab,
   ⇧Tab, ↑ and ↓ walk the rows, Return and Escape end editing, Space toggles a box and pops a choice's menu, and
   Return on a row with more in it asks for its card; a row that is not typed swallows every other key.
+- **⌘F finds a value.** Types' `FieldFindPlugin` (a plugin value of its own, after Find and Types) gives
+  [Find](#find) the texts of a note that is one's values as its rows show them, and a hit marks that row's value
+  (a match inside a row with more in it marks the row, a folded one the fold). Its `affected` is
+  `RowBook.reached(by:)`, which has the type index hear the commit before Find reads the instances of a type
+  that changed.
 - **Zoomed out** a kind's skeleton asks `context.showsTypeRowBars` (14% and up) and calls
   `context.fillTypeRowBars(of:in:)`: a bar for each row's name (as wide as its columns, never laid out), three
   dots for a fold, three bars while the model reads, one for `No fields` and a reason; below 14% no bar is drawn.
@@ -11814,6 +11820,7 @@ publishing           property public · property public → every shape · publi
 types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · service RowBook · layout input type-rows · ShapeFaces · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
 type-validation      ValidationRules
 type-details         ShapeDetails · ShapeDetails
+field-find           findable field value → every shape
 snapping             service SnapState · translation adjuster
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
 arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
