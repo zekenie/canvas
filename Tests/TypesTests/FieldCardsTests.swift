@@ -343,6 +343,7 @@ private extension Resolved {
         again.focus(FieldStop(line: 2, column: -1))
         again.activate(FieldStop(line: 2, column: -1))
         expectEqual(again.depth, 1, "tags opened inside the fold")
+        expectEqual(again.sheet.back, FieldWords.back("+4 more"), "named as the note's row names the fold: these rows are the note's own type's")
         expectEqual(r.editor.card?.stepName, "Change Tags", "the card holds that field's step now")
         r.window.type("a")
         r.window.pressReturn()

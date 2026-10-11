@@ -211,12 +211,14 @@ public final class FieldFormView: NSView {
         }
     }
 
-    /// `+12 more`, or `from Person` when one type brought every row: what the line back from inside it says.
+    /// What the line back from inside a fold says, as the fold's own row does (`RowList`): `from Person` when the type that
+    /// brought every row is not on the shape's own list (`from 2 types` for several), else `+12 more`.
     private func foldTitle() -> String {
-        if let first = foldFields.first, foldFields.allSatisfy({ $0.introducedBy == first.introducedBy }) {
-            return FieldWords.from(chipName(first.introducedBy).text)
-        }
-        return FieldWords.more(foldFields.count)
+        let own = Set(types)
+        guard !foldFields.isEmpty, foldFields.allSatisfy({ !own.contains($0.introducedBy) }) else { return FieldWords.more(foldFields.count) }
+        var sources: [ShapeID] = []
+        for field in foldFields where !sources.contains(field.introducedBy) { sources.append(field.introducedBy) }
+        return sources.count == 1 ? FieldWords.from(chipName(sources[0]).text) : FieldWords.fromTypes(sources.count)
     }
 
     // MARK: Reloading

@@ -162,6 +162,15 @@ private let items = FieldPath(field: "lineItems")
         expectEqual(s.editor.card?.anchor, row.rect, "hung from the row")
         let form = try require(s.cards.openForm)
         expect(s.window.firstResponder === form.cellEditor, "the card has the keyboard, in its first cell")
+        // The caret is in the card's first cell, a path inside the row's field: the row is not the one typed in, so its summary is
+        // still drawn behind the card.
+        expectEqual(s.editor.fieldChecks?.typing?.path, items.index(0).key("product"))
+        let rep = renderBitmap(s.editor, size: CGSize(width: 800, height: 600))
+        var ink = 0
+        for y in Int(row.rect.minY)..<Int(row.rect.maxY) {
+            for x in Int(row.valueRect.minX)..<Int(row.valueRect.maxX) where pixel(rep, at: CGPoint(x: x, y: y)).prefix(3).reduce(0, +) < 300 { ink += 1 }
+        }
+        expect(ink > 30, "`2 items ›` is drawn in its row while the card is under it (\(ink) dark pixels)")
         // Escape: the card goes and the row is the focus again.
         s.window.pressEscape()
         expect(s.cards.openTarget == nil)

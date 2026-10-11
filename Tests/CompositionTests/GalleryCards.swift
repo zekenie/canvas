@@ -5,15 +5,17 @@ import CoreGraphics
 import Foundation
 import Locking
 import Mentions
+import Selection
 import StickyNotes
 import TestKit
 import Types
 
 // The card a row with more in it opens, and the form in the panel (slices 11 and 12): the states of one track,
 // added to `galleryStates` (GalleryTypesLook.swift). Each builds board 5's Order from the shared fixtures
-// (`FieldFixtures`, in CanvasTesting), opens the card through `editor.fieldCards.open` and draws the canvas,
-// the card a subview of it, and the panel's states draw the form alone at 260 wide (`formPicture`). Until the rows on the note are merged the anchor is a rect `cardAnchor` lays in
-// the value column of the note's row; the card hangs from it as it will hang from the real row's value.
+// (`FieldFixtures`, in CanvasTesting), clicks a real row of a real note as a person does (`click`: the press and
+// release on the row's value, which begins the note's editing there and asks for the card on the next turn; on a
+// type's note, a locked note, the card opens at once) and draws the canvas, the card a subview of it, hung from
+// that row. A wrong cell is red from the real check. The panel's states draw the form alone at 260 wide (`formPicture`).
 
 private let stageSize = CGSize(width: 640, height: 400)
 private let tallStage = CGSize(width: 640, height: 480)
@@ -35,18 +37,12 @@ private let orderTypes = [FieldFixtures.person, FieldFixtures.address, FieldFixt
 
 /// A note that is each of the types, 320 wide at (40, 50), saying `words`.
 @MainActor
-private func instance(_ stage: GalleryStage, of types: [ShapeID], words: String = "Order for Ann: two mugs, ships Friday.", height: CGFloat = 220) -> ShapeID {
-    let note = stage.editor.add(StickyNote(frame: CGRect(x: 40, y: 50, width: 320, height: height), text: MentionText(plain: words)))
+private func instance(_ stage: GalleryStage, of types: [ShapeID], words: String = "Order for Ann: two mugs, ships Friday.", height: CGFloat = 220,
+                      at origin: CGPoint = CGPoint(x: 40, y: 50)) -> ShapeID {
+    let note = stage.editor.add(StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 320, height: height)), text: MentionText(plain: words)))
     stage.editor.addTypeLink(types[0], to: note)
     for type in types.dropFirst() { stage.editor.addTypeLink(type, to: note) }
     return note
-}
-
-/// The value column of a note's `row`th row, a stand-in for the row's value the card hangs from.
-@MainActor
-private func cardAnchor(on note: ShapeID, row: Int, in stage: GalleryStage) -> CGRect {
-    let frame = stage.editor.frame(inFile: note) ?? CGRect(x: 40, y: 50, width: 320, height: 220)
-    return CGRect(x: frame.minX + 128, y: frame.minY + 52 + CGFloat(row) * 24, width: 180, height: 22)
 }
 
 /// Order's values as board 5 draws them.
@@ -60,46 +56,60 @@ private func fillOrder(_ stage: GalleryStage, _ note: ShapeID, quantity: JSONVal
     writer?.set(true, at: FieldPath(field: "gift"), of: note)
 }
 
-/// Opens the card for `target` on `note`, hung from `rect` (the `row`th row's by default), and lets its turn pass.
+/// A click on a row of `note` (a named field's, or the `nth` fold's) as a person's: the select tool's press and release on the
+/// row's value (a fold's words), at the camera now. The note begins editing in that row and the card opens on the next turn;
+/// on a type's note and a locked note it opens at once. The card hangs from that real row.
 @MainActor
-private func open(_ stage: GalleryStage, _ note: ShapeID, _ target: FieldCardRequest.Target, row: Int = 0, mode: FieldFormMode = .values,
-                  folded: [Resolved.Field] = [], at rect: CGRect? = nil) throws {
-    let cards = try require(stage.editor.fieldCards)
-    let anchor = rect ?? cardAnchor(on: note, row: row, in: stage)
-    let request = FieldCardRequest(shape: note, target: target, mode: mode, isReadOnly: mode == .kinds, rowRect: anchor, folded: folded, closed: {}, tabbedOut: { _ in })
-    expect(cards.open(request), "the card opens")
+private func click(_ stage: GalleryStage, _ note: ShapeID, row name: String? = nil, fold nth: Int? = nil) throws {
+    let rows = try require(stage.editor.rowBook).rows(of: note)
+    let row: ShownRow
+    if let nth {
+        let folds = rows.filter { $0.path == nil }
+        row = try require(folds.indices.contains(nth) ? folds[nth] : nil, "a fold")
+    } else {
+        row = try require(rows.first { $0.name == name }, "a row \(name ?? "")")
+    }
+    let x = row.valueRect == .zero ? row.rect.minX + 8 : row.valueRect.minX + 8
+    let point = stage.viewPoint(CGPoint(x: x, y: row.rect.midY))
+    stage.press(at: point)
+    stage.release(at: point)
     stage.spin()
+    stage.spin()
+    expect(stage.editor.fieldCards?.openTarget != nil, "the click on \(name ?? "the fold") opened its card")
 }
 
+/// The card's form: the one the click opened.
 @MainActor
-private func field(_ name: String) -> FieldCardRequest.Target { .field(FieldPath(field: name)) }
+private func openForm(_ stage: GalleryStage) throws -> FieldFormView {
+    try require(stage.editor.fieldCards?.openForm, "an open card")
+}
 
-/// An Order with its values and its card open at `name`.
+/// An Order with its values and its card open at `name` (the row's words), clicked on its real row.
 @MainActor
-private func orderCard(_ stage: GalleryStage, _ name: String, row: Int, quantity: JSONValue = 1) throws -> GalleryOutput {
+private func orderCard(_ stage: GalleryStage, _ name: String, quantity: JSONValue = 1) throws -> GalleryOutput {
     addTypes(stage, orderTypes)
     let note = instance(stage, of: [FieldFixtures.orderID])
     fillOrder(stage, note, quantity: quantity)
-    try open(stage, note, field(name), row: row)
+    try click(stage, note, row: name)
     return .image(stage.picture())
 }
 
-/// A note of the kinds' types (KindsA and KindsB) with its card open at `name`.
+/// A note of one of the kinds' types (KindsA or KindsB), its card open at `name` by a click on the row; or the type's own note, read.
 @MainActor
-private func kindsCard(_ stage: GalleryStage, _ name: String, row: Int = 0, values: [(String, JSONValue)] = [], mode: FieldFormMode = .values) throws -> GalleryOutput {
+private func kindsCard(_ stage: GalleryStage, _ name: String, of kind: FieldFixtures.TypeText, values: [(String, JSONValue)] = [], mode: FieldFormMode = .values) throws -> GalleryOutput {
     let (a, b) = FieldFixtures.everyKind
-    addTypes(stage, [FieldFixtures.person, FieldFixtures.address, a, b], visible: mode == .kinds ? FieldFixtures.kindsBID : nil)
-    let note = mode == .kinds ? FieldFixtures.kindsBID : instance(stage, of: [FieldFixtures.kindsAID, FieldFixtures.kindsBID], words: "A note of every kind.")
+    addTypes(stage, [FieldFixtures.person, FieldFixtures.address, a, b], visible: mode == .kinds ? kind.id : nil)
+    let note = mode == .kinds ? kind.id : instance(stage, of: [kind.id], words: "A note of every kind.")
     for (key, value) in values { stage.editor.fieldWriter?.set(value, at: FieldPath(field: key), of: note) }
-    try open(stage, note, field(name), row: row, mode: mode)
+    try click(stage, note, row: name)
     return .image(stage.picture())
 }
 
 /// A type's note, with its card open at `name`, read.
 @MainActor
-private func typeCard(_ stage: GalleryStage, of type: FieldFixtures.TypeText, _ name: String, row: Int) throws -> GalleryOutput {
+private func typeCard(_ stage: GalleryStage, of type: FieldFixtures.TypeText, _ name: String) throws -> GalleryOutput {
     addTypes(stage, orderTypes + [FieldFixtures.everyKind.b], visible: type.id)
-    try open(stage, type.id, field(name), row: row, mode: .kinds)
+    try click(stage, type.id, row: name)
     return .image(stage.picture())
 }
 
@@ -112,109 +122,111 @@ private func tableType(columns: Int) -> FieldFixtures.TypeText {
 }
 
 @MainActor
-private func fieldsOf(_ stage: GalleryStage, _ type: ShapeID, _ range: (Resolved.Field) -> Bool) throws -> [Resolved.Field] {
-    try require(stage.editor.fieldBook).fields(types: [type]).fields.filter(range)
-}
-
-@MainActor
 let cardStates: [GalleryState] = [
     // Flow5
-    GalleryState("Flow5-p4-open-row", answers: "Flow5 p4", "the shipping address row's card under Address's chip: street, city, `add postcode`", size: stageSize) { stage in
-        try orderCard(stage, "shippingAddress", row: 1)
+    GalleryState("Flow5-p4-open-row", answers: "Flow5 p4", "a click on the shipping address row: its card under Address's chip, street, city, `add postcode`; the row outlined", size: stageSize) { stage in
+        try orderCard(stage, "shipping address")
     },
-    GalleryState("Flow5-p5-list", answers: "Flow5 p5", "line items as a table: the gray names, Mug and Plate, the `add` line", size: stageSize) { stage in
-        try orderCard(stage, "lineItems", row: 2)
+    GalleryState("Flow5-p5-list", answers: "Flow5 p5", "a click on line items: a table, the gray names, Mug and Plate, the `add` line", size: stageSize) { stage in
+        try orderCard(stage, "line items")
     },
-    GalleryState("Flow5-p6-wrong-cell", answers: "Flow5 p6", "the same with a quantity of 0: red and underlined once the check is merged (until then plain)", size: stageSize) { stage in
-        try orderCard(stage, "lineItems", row: 2, quantity: 0)
+    GalleryState("Flow5-p6-wrong-cell", answers: "Flow5 p6", "the same with a quantity of 0: the cell red and underlined from the real check, `2 items` red behind the card", size: stageSize) { stage in
+        try orderCard(stage, "line items", quantity: 0)
     },
     GalleryState("Flow5-p7-list-of-values", answers: "Flow5 p7", "tags: one column, a line each, the waiting line", size: stageSize) { stage in
-        try orderCard(stage, "tags", row: 4)
+        try orderCard(stage, "tags")
     },
     GalleryState("Flow5-p7-group", answers: "Flow5 p7", "a venue's two rows, name and city", size: stageSize) { stage in
-        try kindsCard(stage, "venue", row: 4, values: [("venue", ["name": "The Loft", "city": "Leeds"])])
+        try kindsCard(stage, "venue", of: FieldFixtures.everyKind.a, values: [("venue", ["name": "The Loft", "city": "Leeds"])])
     },
     GalleryState("Flow5-p7-choices", answers: "Flow5 p7", "roles: a check by each picked one, then `None`", size: stageSize) { stage in
-        try kindsCard(stage, "roles", row: 3, values: [("roles", ["engineer", "designer"])])
+        try kindsCard(stage, "roles", of: FieldFixtures.everyKind.a, values: [("roles", ["engineer", "designer"])])
     },
     GalleryState("Flow5-p7-pairs", answers: "Flow5 p7", "labels: a name and a value on each line, a line waiting", size: stageSize) { stage in
-        try kindsCard(stage, "labels", row: 5, values: [("labels", ["size": "L", "color": "red"])])
+        try kindsCard(stage, "labels", of: FieldFixtures.everyKind.b, values: [("labels", ["size": "L", "color": "red"])])
     },
     GalleryState("Flow5-p7-either", answers: "Flow5 p7", "a payment, a group or text: the two names across the top, the group's rows under the picked one", size: stageSize) { stage in
-        try kindsCard(stage, "payment", row: 6, values: [("payment", ["cardNumber": "4242"])])
+        try kindsCard(stage, "payment", of: FieldFixtures.everyKind.b, values: [("payment", ["cardNumber": "4242"])])
     },
-    GalleryState("Flow5-p7-more", answers: "Flow5 p7", "the fold's card: the twelve rows past eight, all in view", size: stageSize) { stage in
+    GalleryState("Flow5-p7-more", answers: "Flow5 p7", "a click on `+12 more ›`: the fold's card, the twelve rows past eight, all in view", size: stageSize) { stage in
         addTypes(stage, [FieldFixtures.wide(20)])
         let note = instance(stage, of: [FieldFixtures.wideID], words: "A type of twenty fields.", height: 260)
         for (place, name) in ["f9", "f12"].enumerated() { stage.editor.fieldWriter?.set(.string("value \(place + 1)"), at: FieldPath(field: name), of: note) }
-        let folded = Array(try fieldsOf(stage, FieldFixtures.wideID) { _ in true }.dropFirst(8))
-        try open(stage, note, .fold, row: 6, folded: folded)
+        try click(stage, note, fold: 0)
         return .image(stage.picture())
     },
-    GalleryState("Flow5-p7-from-type", answers: "Flow5 p7", "the fold of the rows an Employee inherits, under Person's chip", size: stageSize) { stage in
-        addTypes(stage, orderTypes)
+    GalleryState("Flow5-p7-from-type", answers: "Flow5 p7", "a click on `from Person`: the fold of the rows an Employee inherits, under Person's chip", size: stageSize) { stage in
+        let parent: FieldFixtures.TypeText = (FieldFixtures.personID, "Person", "A person has a name, an email, a phone and a birthday.", fieldsSchema(["name", "email", "phone", "birthday"]))
+        let child: FieldFixtures.TypeText = (FieldFixtures.employeeID, "Employee", "An employee has a role, a start date, a manager, a team, a desk and a badge.",
+                                             fieldsSchema(["role", "startDate", "manager", "team", "desk", "badge"]))
+        addTypes(stage, [parent, child])
         let note = instance(stage, of: [FieldFixtures.employeeID], words: "Bo Chen, from Leeds.")
         stage.editor.fieldWriter?.set("Bo Chen", at: FieldPath(field: "name"), of: note)
-        let folded = try fieldsOf(stage, FieldFixtures.employeeID) { $0.introducedBy == FieldFixtures.personID }
-        try open(stage, note, .fold, row: 2, folded: folded)
+        try click(stage, note, fold: 0)
         return .image(stage.picture())
     },
-    GalleryState("Flow5-p1-type-address", answers: "Flow5 p1", "on the Order type: Address's fields as names and kinds", size: stageSize) { stage in
-        try typeCard(stage, of: FieldFixtures.order, "shippingAddress", row: 3)
+    GalleryState("Flow5-p1-type-address", answers: "Flow5 p1", "a click on the Order type's shipping address row: Address's fields as names and kinds", size: stageSize) { stage in
+        try typeCard(stage, of: FieldFixtures.order, "shipping address")
     },
-    GalleryState("Flow5-p1-type-list", answers: "Flow5 p1", "on the Order type: the line items' members as names and kinds, the needed dots", size: stageSize) { stage in
-        try typeCard(stage, of: FieldFixtures.order, "lineItems", row: 4)
+    GalleryState("Flow5-p1-type-list", answers: "Flow5 p1", "a click on the Order type's line items row: the members as names and kinds, the needed dots", size: stageSize) { stage in
+        try typeCard(stage, of: FieldFixtures.order, "line items")
     },
 
     // No board draws these
-    GalleryState("card-back-line", "a row with more opened inside a card: the line back, `‹ shipping address`, under it Address's chip and rows", size: stageSize) { stage in
-        let (a, _) = FieldFixtures.everyKind
-        addTypes(stage, [FieldFixtures.person, FieldFixtures.address, a])
-        let note = instance(stage, of: [FieldFixtures.kindsAID], words: "A note of every kind.")
+    GalleryState("card-back-line", "a row with more opened inside a fold's card: the line back, `‹ +3 more`, under it Address's chip and rows", size: stageSize) { stage in
+        let bundle: FieldFixtures.TypeText = (rowsTypeID(60), "Bundle", "A bundle has eight text fields, tags, a venue and a shipping address.", """
+            {"type": "object", "properties": {"a1": {"type": "string"}, "a2": {"type": "string"}, "a3": {"type": "string"}, "a4": {"type": "string"},
+            "a5": {"type": "string"}, "a6": {"type": "string"}, "a7": {"type": "string"}, "a8": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "venue": {"type": "object", "properties": {"name": {"type": "string"}, "city": {"type": "string"}}},
+            "shippingAddress": {"$ref": "\(FieldFixtures.uri(of: FieldFixtures.addressID))"}}}
+            """)
+        addTypes(stage, [FieldFixtures.person, FieldFixtures.address, bundle])
+        let note = instance(stage, of: [bundle.id], words: "A bundle.", height: 260)
         stage.editor.fieldWriter?.set(["street": "12 Main St", "city": "Leeds"], at: FieldPath(field: "shippingAddress"), of: note)
-        let folded = try ["name", "tags", "venue", "shippingAddress"].map { name in
-            try require(try fieldsOf(stage, FieldFixtures.kindsAID) { $0.field.name == name }.first)
-        }
-        try open(stage, note, .fold, row: 6, folded: folded)
-        let form = try require(stage.editor.fieldCards?.openForm)
-        form.activate(FieldStop(line: 3, column: -1))
+        try click(stage, note, fold: 0)
+        let form = try openForm(stage)
+        let line = try require(form.sheet.lines.firstIndex { $0.name == "shipping address" }, "the shipping address line")
+        form.activate(FieldStop(line: line, column: -1))
         stage.spin()
         return .image(stage.picture())
     },
-    GalleryState("card-locked", "a locked note's card: to be read, the lines dimmed, no waiting line", size: stageSize) { stage in
+    GalleryState("card-locked", "a locked note's card: a click on line items opens it to be read, the lines dimmed, no waiting line", size: stageSize) { stage in
         addTypes(stage, orderTypes)
         let note = instance(stage, of: [FieldFixtures.orderID])
         fillOrder(stage, note)
         stage.editor.lock([note])
-        try open(stage, note, field("lineItems"), row: 2)
+        stage.editor.selection = nil
+        try click(stage, note, row: "line items")
         return .image(stage.picture())
     },
     GalleryState("card-empty-list", "a list with nothing in it: the waiting line alone", size: stageSize) { stage in
         addTypes(stage, orderTypes)
         let note = instance(stage, of: [FieldFixtures.orderID])
-        try open(stage, note, field("tags"), row: 4)
+        try click(stage, note, row: "tags")
         return .image(stage.picture())
     },
-    GalleryState("card-gone-type", "a field of a type that is gone: the chip dashed and italic, `No fields` under it", size: stageSize) { stage in
+    GalleryState("card-gone-type", "the type deleted under an open card: the chip dashed and italic, `No fields` under it", size: stageSize) { stage in
         addTypes(stage, orderTypes)
         let note = instance(stage, of: [FieldFixtures.orderID])
         stage.editor.fieldWriter?.set(["street": "12 Main St"], at: FieldPath(field: "shippingAddress"), of: note)
+        try click(stage, note, row: "shipping address")
         stage.editor.transact("Delete") { $0.delete([FieldFixtures.addressID]) }
-        try open(stage, note, field("shippingAddress"), row: 1)
+        stage.spin()
         return .image(stage.picture())
     },
-    GalleryState("card-above", "no room below its row: the card hangs above it", size: stageSize) { stage in
+    GalleryState("card-above", "no room below its row: the note low in the window, the card hangs above the row", size: stageSize) { stage in
         addTypes(stage, orderTypes)
-        let note = instance(stage, of: [FieldFixtures.orderID])
+        let note = instance(stage, of: [FieldFixtures.orderID], at: CGPoint(x: 40, y: 250))
         fillOrder(stage, note)
-        try open(stage, note, field("lineItems"), at: CGRect(x: 168, y: 340, width: 180, height: 22))
+        try click(stage, note, row: "line items")
         return .image(stage.picture())
     },
-    GalleryState("card-edge", "its row at the right edge: the card held 8 points inside the window", size: stageSize) { stage in
+    GalleryState("card-edge", "the note at the right edge: the card held 8 points inside the window", size: stageSize) { stage in
         addTypes(stage, orderTypes)
-        let note = instance(stage, of: [FieldFixtures.orderID])
+        let note = instance(stage, of: [FieldFixtures.orderID], at: CGPoint(x: 330, y: 50))
         fillOrder(stage, note)
-        try open(stage, note, field("lineItems"), at: CGRect(x: 520, y: 100, width: 110, height: 22))
+        try click(stage, note, row: "line items")
         return .image(stage.picture())
     },
     GalleryState("card-zoom-200", "the same card at 200%: its row is twice as large and the card is the size it was", size: stageSize) { stage in
@@ -222,7 +234,7 @@ let cardStates: [GalleryState] = [
         let note = instance(stage, of: [FieldFixtures.orderID])
         fillOrder(stage, note)
         stage.look(at: CGPoint(x: 20, y: 40), zoom: 2)
-        try open(stage, note, field("lineItems"), row: 2)
+        try click(stage, note, row: "line items")
         return .image(stage.picture())
     },
     GalleryState("card-zoom-50", "the same card at 50%", size: stageSize) { stage in
@@ -230,7 +242,7 @@ let cardStates: [GalleryState] = [
         let note = instance(stage, of: [FieldFixtures.orderID])
         fillOrder(stage, note)
         stage.look(at: CGPoint(x: -20, y: 0), zoom: 0.5)
-        try open(stage, note, field("lineItems"), row: 2)
+        try click(stage, note, row: "line items")
         return .image(stage.picture())
     },
     GalleryState("card-wide-table", "six columns: 144 points wider than four", size: stageSize) { stage in
@@ -239,7 +251,7 @@ let cardStates: [GalleryState] = [
         let note = instance(stage, of: [tableID], words: "A stock list.")
         let rows: [JSONValue] = (1...3).map { ["sku": .string("A\($0)"), "name": "Mug", "color": "red", "size": "L", "stock": .string("\($0 * 10)"), "note": "-"] }
         stage.editor.fieldWriter?.set(.array(rows), at: FieldPath(field: "rows"), of: note)
-        try open(stage, note, field("rows"), row: 0)
+        try click(stage, note, row: "rows")
         return .image(stage.picture())
     },
     GalleryState("card-forty-items", "forty line items: 360 tall, the focused line scrolled into view under the names", size: tallStage) { stage in
@@ -247,8 +259,8 @@ let cardStates: [GalleryState] = [
         let note = instance(stage, of: [FieldFixtures.orderID])
         let items: [JSONValue] = (1...40).map { ["product": .string("Item \($0)"), "quantity": .number(Double($0)), "price": 9.5] }
         stage.editor.fieldWriter?.set(.array(items), at: FieldPath(field: "lineItems"), of: note)
-        try open(stage, note, field("lineItems"), row: 2)
-        let form = try require(stage.editor.fieldCards?.openForm)
+        try click(stage, note, row: "line items")
+        let form = try openForm(stage)
         form.focus(FieldStop(line: 30, column: 0))
         stage.spin()
         return .image(stage.picture())
@@ -256,21 +268,20 @@ let cardStates: [GalleryState] = [
     GalleryState("card-fold-scrolled", "a fold of twenty rows: 320 tall, scrolled", size: tallStage) { stage in
         addTypes(stage, [FieldFixtures.wide(28)])
         let note = instance(stage, of: [FieldFixtures.wideID], words: "A type of twenty-eight fields.", height: 260)
-        let folded = Array(try fieldsOf(stage, FieldFixtures.wideID) { _ in true }.dropFirst(8))
-        try open(stage, note, .fold, row: 6, folded: folded)
-        let form = try require(stage.editor.fieldCards?.openForm)
+        try click(stage, note, fold: 0)
+        let form = try openForm(stage)
         form.focus(FieldStop(line: 17, column: 0))
         stage.spin()
         return .image(stage.picture())
     },
     GalleryState("card-type-either", "on a type's note: the two branch names across the top, the group's members", size: stageSize) { stage in
-        try kindsCard(stage, "payment", row: 6, mode: .kinds)
+        try kindsCard(stage, "payment", of: FieldFixtures.everyKind.b, mode: .kinds)
     },
     GalleryState("card-type-pairs", "on a type's note: pairs, `name` and `value` with their kinds", size: stageSize) { stage in
-        try kindsCard(stage, "labels", row: 5, mode: .kinds)
+        try kindsCard(stage, "labels", of: FieldFixtures.everyKind.b, mode: .kinds)
     },
     GalleryState("card-list-of-type", "on a type's note: rooms, each an Address: the table's names under Address's chip", size: stageSize) { stage in
-        try kindsCard(stage, "rooms", row: 3, mode: .kinds)
+        try kindsCard(stage, "rooms", of: FieldFixtures.everyKind.b, mode: .kinds)
     },
 
     // The form in the panel (`presentation: .panel`), alone, at the panel's width
@@ -289,11 +300,8 @@ let cardStates: [GalleryState] = [
         form.activate(FieldStop(line: 1, column: -1))
         return .image(stage.formPicture(form))
     },
-    GalleryState("panel-fields-problem", "a quantity of 0: the field and the item open by themselves and the cell is red (the check is handed in; no words in the form)", size: panelSize) { stage in
-        let item = FieldPath(field: "lineItems").index(1)
-        let problem = FieldProblem(path: item.key("quantity"), kind: .wrong, keyword: "minimum", place: ["line items", "Plate", "quantity"],
-                                   message: "line items › Plate › quantity is 0, and should be at least 1")
-        let form = try panelForm(stage, "lineItems", on: .order) { _ in FieldCheck(problems: [problem]) }
+    GalleryState("panel-fields-problem", "a quantity of 0: the field and the item open by themselves and the cell is red, from the real check (no words in the form)", size: panelSize) { stage in
+        let form = try panelForm(stage, "lineItems", on: .order, quantity: 0)
         return .image(stage.formPicture(form))
     },
     GalleryState("panel-fields-json", "a field no control suits: its JSON in a box, indented, monospaced", size: panelSize) { stage in
@@ -320,20 +328,20 @@ private enum PanelNote {
 /// The form for `field` of a note of `type`, with its values as board 5 draws them, in the stage's window (so a box can have
 /// the keyboard) at the panel's width.
 @MainActor
-private func panelForm(_ stage: GalleryStage, _ field: String, on type: PanelNote, check: (@MainActor (AnyShapeRecord) -> FieldCheck)? = nil) throws -> FieldFormView {
+private func panelForm(_ stage: GalleryStage, _ field: String, on type: PanelNote, quantity: JSONValue = 1) throws -> FieldFormView {
     let (a, b) = FieldFixtures.everyKind
     addTypes(stage, [FieldFixtures.person, FieldFixtures.address, FieldFixtures.order, a, b])
     let id = type == .order ? FieldFixtures.orderID : FieldFixtures.kindsBID
     let note = instance(stage, of: [id])
     if type == .order {
-        fillOrder(stage, note, quantity: check == nil ? 1 : 0)
+        fillOrder(stage, note, quantity: quantity)
     } else {
         stage.editor.fieldWriter?.set(["rate": 12.5, "tags": ["a", "b"], "on": true], at: FieldPath(field: "anything"), of: note)
     }
     let book = try require(stage.editor.fieldBook)
     let resolved = try require(book.fields(types: [id]).fields.first { $0.field.name == field }, field)
     let form = FieldFormView(editor: stage.editor, shape: note, root: .field(path: FieldPath(field: field), field: resolved, kind: book.kind(of: resolved)), mode: .values,
-                             isReadOnly: false, presentation: .panel, check: check)
+                             isReadOnly: false, presentation: .panel)
     form.frame = CGRect(x: 0, y: 0, width: panelSize.width, height: max(form.contentHeight, 1))
     stage.canvas.addSubview(form)
     return form

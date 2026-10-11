@@ -256,7 +256,7 @@ public enum FieldSheets {
     /// The level of `field` at `path`: rows, a column, a table, pairs, checks, or an either's branch, as its
     /// kind says (on a type's note, its members with their kinds); in the panel, the field's line and, open,
     /// what is under it. `drafts` are what the form keeps of each list and pairs by its path, a fresh one
-    /// where it has none; `open` is what the person opened or closed in the panel (a node with a problem at
+    /// where it has none; `open` is what the person opened or closed in the panel (a node with a wrong value at
     /// or under it is open until they say); `branch` picks an either's branch, else the one the value fits.
     @MainActor
     public static func sheet(path: FieldPath, field: Resolved.Field, kind: FieldKind, values: FieldValues, check: FieldCheck, book: FieldBook,
@@ -537,8 +537,10 @@ private struct SheetMaker {
 
     // MARK: The panel
 
+    /// Open by itself only for a wrong value inside: a needed field left empty is no error, and opening to show it would
+    /// only put an `add` line under an amber dot.
     private func isOpen(_ path: FieldPath) -> Bool {
-        open[path] ?? (check.mark(at: path) != nil)
+        open[path] ?? (check.mark(at: path) == .wrong)
     }
 
     /// The field's line and, open, what is under it.

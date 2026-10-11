@@ -25,7 +25,9 @@ extension RowBook {
     func drawValues(of record: AnyShapeRecord, template: RowTemplate, subject: RowSubject, in block: CGRect, isEditing: Bool, to cg: CGContext) {
         let kept = shownRows(of: record, subject: subject, template: template, block: block)
         let check = self.check(of: record)
-        let typed = editor?.fieldChecks?.typing.flatMap { $0.shape == record.id ? $0.path.field : nil }
+        // The row being typed in draws its own text: a caret in its field, which is a path of one step. A caret deeper (a cell
+        // of the card the row opened) leaves the row's summary to be drawn, behind the card.
+        let typed = editor?.fieldChecks?.typing.flatMap { $0.shape == record.id && $0.path.steps.count == 1 ? $0.path.field : nil }
         cg.saveGState()
         defer { cg.restoreGState() }
         cg.translateBy(x: block.minX, y: block.minY)

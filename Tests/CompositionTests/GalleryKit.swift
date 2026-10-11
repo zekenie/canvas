@@ -261,7 +261,7 @@ let galleryHighlightMaps: [(words: String, map: String)] = [
 /// Whether a picture says almost nothing: no colour but one fills more than `share` of its pixels'
 /// complement, sampled.
 @MainActor
-func isBlank(_ rep: NSBitmapImageRep, share: Double = 0.03) -> Bool {
+func isBlank(_ rep: NSBitmapImageRep, share: Double = 0.01) -> Bool {
     var counts: [UInt32: Int] = [:]
     var total = 0
     var pixel = [Int](repeating: 0, count: 4)
