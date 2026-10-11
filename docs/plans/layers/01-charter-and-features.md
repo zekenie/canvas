@@ -25,7 +25,7 @@ What the code shows (checked against `Package.swift`, the sources and the docs):
   - Jump To (⌘K) is the same sort of palette, but it reaches into Titles and Boards itself, so it lands in vertical.
   - Moving imports no concern at all, only foundation plus SlashCommands and TableOfContents (`Package.swift:251`), and is a vertical.
   - Snapping has Moving's profile exactly (no extension point, no property, no kind, nothing imports it, applies by capability) and is a **concern** (`Package.swift:228`). Its topic file gives no reason: "a concern on the core alone".
-- **The four have the same measured profile:** no `ShapeKind`, no `ExtensionPoint`, no `PropertyKey`, and no importer but their own tests. Every module tagged concern declares an extension point or a shape property, except Snapping. Every module tagged surface declares an extension point or is imported by another plugin module. Every kind declares a `ShapeKind`. So the tests below split today's modules cleanly, with only those four out of place.
+- **The four have the same measured profile:** no `ShapeKind`, no `ExtensionPoint`, no `PropertyKey`, and no importer outside the tests. Every module tagged concern declares an extension point or a shape property, except Snapping. Every module tagged surface declares an extension point or is imported by another plugin module. Every kind declares a `ShapeKind`. So the tests below split today's modules cleanly, with only those four out of place.
 
 Without a test, the next cross-cutting feature (a minimap toggle, an export command, a presenter mode) has no right answer. It goes wherever its imports happen to let it.
 
@@ -69,23 +69,27 @@ Each layer answers one question. Its import rule follows from that answer, and i
 1. **`Package.swift`:**
    - Retag four lines: `JumpTo`, `Moving`, `Snapping` and `Reordering` become `// layer: feature`.
    - Rewrite the comments above the JumpTo and Moving lines (drop "as Reordering is one: a vertical").
-   - Rewrite the header's layer list (`:13-56`) as the charter's "why it exists" and "test" columns, in the existing one-line-per-layer form. Keep the parseable target lines untouched.
+   - Rewrite the header's layer list (`:13-59`) as the charter's "why it exists" and "test" columns, in the existing one-line-per-layer form. Keep the parseable target lines untouched.
    - The `ships` table doesn't change: no plugin moves module and the order is the same.
 2. **`build.sh`:**
    - `MAY_USE`: add `feature "foundation surface concern"`, and add `feature` to the `test` list.
    - `PLUGIN_LAYER`: add `feature`.
    - The die message at `:135`: list feature among the plugin layers.
-   - **New audit checks**, after the import check, over each module's non-test sources. Reuse the `ID_DECL` scan (`:519`), which already finds declared `ShapeKind` and `PropertyKey` ids per module, plus a new scan for `ExtensionPoint`/`KeyedExtensionPoint` conformances (`(enum|struct) X: …ExtensionPoint` or `extension X: …ExtensionPoint`):
+   - **New audit checks**, after the import check, over each module's non-test sources. They need a new, type-aware scan. `ID_DECL` (`:519`) can't serve: it keeps only id → owner, so it can't tell a `ShapeKind` from a `PluginID`, and it drops `frame` (`ORDINARY_IDS`, `:518`), which is Frames' only kind, so a vertical test built on it would refuse Frames. The new scan:
+     - records, per module, whether it declares a `ShapeKind` and whether it declares a `PropertyKey`, from the same declaration forms `ID_DECL` matches, with the type captured and no `ORDINARY_IDS` exemption;
+     - records `ExtensionPoint`/`KeyedExtensionPoint` conformances anywhere in an `enum`'s, `struct`'s or `extension`'s inheritance clause.
+
+     The checks:
      - vertical: declares at least one `ShapeKind`, or fail with "a vertical is a kind: <M> declares none; a cross-cutting behavior is a feature".
      - feature: declares no `ShapeKind`, no extension point and no `PropertyKey`, or fail naming the one found and the layer it points to (kind → vertical, point → surface or concern, property → concern).
      - concern: declares an extension point or a `PropertyKey`, or fail with "a concern gives shapes a meaning; <M> declares neither: is it a feature?".
      - surface: declares an extension point or is a dependency of another plugin module, or fail with "nothing builds on <M>: is it a feature?".
      - "No module imports a feature" needs no new check: no layer but test lists `feature` in `MAY_USE`.
-3. **Sources:** update the header comments that call these modules verticals or concerns. JumpTo is `Sources/JumpTo/JumpTo.swift:10`, Moving is `Sources/Moving/Moving.swift:15-17`, Reordering's is `Examples/Reordering/Reordering.swift:11-14`, and Snapping's header is in `Sources/Snapping/`. No code changes.
+3. **Sources:** none. JumpTo's and Moving's headers already call them "a feature no kind opts into, and nothing imports" (`Sources/JumpTo/JumpTo.swift:10`, `Sources/Moving/Moving.swift:15-17`), and Reordering's and Snapping's name no layer. The "vertical" wording lives in `Package.swift`'s comments above JumpTo and Moving (`:243`, `:248`) and in jump-to.md and moving.md, which tactics 1 and 4 cover.
 4. **Docs.** Each subsystem's topic file goes in the same commit, per CLAUDE.md.
    - `docs/plugin-system.md`:
      - "Horizontal and vertical" (`:360-485`): a vertical is a kind. Add a "Features" paragraph: horizontal in reach, a leaf in the graph, the four modules, why Jump To isn't a surface (the one-contributor rule).
-     - "The module graph" table (`:513-526`): add the feature row, add a "why it exists" column, and change the vertical row's module list.
+     - "The module graph" table (`:508-521`): add the feature row, add a "why it exists" column, and change the vertical row's module list.
      - The audit list: add the four layer tests.
      - "Placing a new module": the seven questions above, as a short subsection.
    - `.claude/rules/build.md`, "Layers": add features, drop the "a feature no kind opts into and nothing imports" phrasing from the vertical list, add the four tests to the audit bullet.
@@ -108,7 +112,7 @@ Each layer answers one question. Its import rule follows from that answer, and i
 ## Risks and open questions
 
 - **The name `feature`.** The docs already use the phrase "a feature no kind opts into", so it reuses the project's own word. The alternatives considered, "behavior" and "command", are narrower than what's in the layer.
-- **Detecting extension points by text** mirrors how the id check already works, and fails safe: a missed conformance makes the audit refuse, never pass. If a point is ever declared through a typealias or a macro, the scan needs to learn that form.
+- **Detecting declarations by text** mirrors how the id check already works. It fails safe for the vertical, surface and concern tests: each requires a declaration, so a form the scan misses makes the audit refuse. It doesn't fail safe for the feature test, which forbids declarations: a kind or point declared in a form the scan misses (a typealias, a macro) would let a feature pass. Keep the scan's forms in one place in build.sh, and extend it when a new declaration form appears.
 
 ## Not in this commit
 

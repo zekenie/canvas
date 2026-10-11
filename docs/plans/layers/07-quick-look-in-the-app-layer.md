@@ -16,14 +16,14 @@
   - through `+ shipped`, which links Automation and QueryCommands, both on CanvasRPC.
 
   So the rule forbids only a direct `import CanvasRPC` in three files that have no reason to write one.
-- **The "no wire" rule is left over from an older graph.** The layer was born as `appex (foundation, ui, composition)` (commit `1698396`), back when the app's own rule differed by more. Composition is gone (`8c828bb`), and what's left of the difference is the wire.
+- **The "no wire" rule has never been more than that.** When the layer was born (commit `1698396`), the app's rule was foundation, ui, composition and wire, and the extension's foundation, ui and composition: the difference was the wire even then. Composition is gone (`8c828bb`), and the difference is still only a direct import of the wire.
 - **The build role is real, and keyed on the layer name:**
   - linked to start in `NSExtensionMain` (`build.sh:736`);
   - staged into two `.appex` bundles, with Info.plists, and signed with the sandbox entitlement (`:952-1023`);
   - checked to be the only such executable (`:961`);
   - built by `./build.sh` (`:620`) and kept in `tests` mode, which skips only the app (`:622`).
 
-  The app and the extension already share everything else that makes them "the product": `+ shipped`, `@_spi(Product)`, naming no plugin, `VISIBLE` excluding the list's modules (`:231, :471, :553-556`). Every one of those checks is written `(app|appex)`.
+  The app and the extension already share everything else that makes them "the product": `+ shipped`, `@_spi(Product)`, naming no plugin, `VISIBLE` excluding the list's modules. Each of those checks names both layers: as `(app|appex)` (`:231, :471, :556`), as `(foundation|app|appex)` (`:553`), or in the `SHIPPING_LAYER` table (`:45`, checked at `:140`).
 - **The charter (plan 01):** a layer answers one question about what a module may know. "Is it the product's executable?" is that question for both, and they answer it the same. *Which bundle it goes in* is a fact about packaging. It belongs beside the layer, not as a layer.
 - **The grammar already exists.** A target line can qualify its layer with `of <Module>` (`// layer: test of QueryLexicon`, parsed at `build.sh:87`). `// layer: app of InfiniteCanvas` reads as what it is, an executable the app carries, with no new syntax.
 
@@ -37,7 +37,7 @@
    - The `SUBJECT` check (`:257-264`) branches on the layer:
      - `test of M` stays as it is;
      - `app of A` requires A to be an `app` target with no `of` of its own, and does *not* require a dependency on it, since an executable can't depend on an executable.
-   - Replace each `(app|appex)` test with `app` (`:231, :471, :553, :556`): one place each, mechanical.
+   - Replace `(app|appex)` with `app` at `:231`, `:471` and `:556`, and `(foundation|app|appex)` with `(foundation|app)` at `:553`, where `@_spi(Product)` is allowed. One place each, mechanical. `SHIPPING_LAYER` drops appex in the step above.
    - The extension-specific tests use "app with a subject" in place of `== appex`:
      - the `NSExtensionMain` entry (`:736`);
      - the staging and signing (`:952-1023`);

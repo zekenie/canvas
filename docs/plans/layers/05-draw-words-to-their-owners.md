@@ -2,7 +2,7 @@
 
 **Commit title:** The plugins that own a meaning give canvas draw its words, as they give queries theirs: names from Titles, edges from Connections, checks from Validation, text from Mentions; DrawLexicon and the lexicon layer are gone
 
-**Depends on:** 03 (QueryLexicon gone) and 04 (draw's points in a surface). This is the last plan that touches the layer list.
+**Depends on:** 03 (QueryLexicon gone) and 04 (draw's points in a surface). It deletes the lexicon layer. Plans 06 and 07 also edit the layer docs, and may land before or after it.
 
 ## Complaint
 
@@ -24,7 +24,7 @@ Same as 03: let "modules define their own behavior instead of having these high 
 
 ## Tactics
 
-1. **Move the files.** Each keeps its plugin's type name and id: `title-names`, `port-edges`, `validation-checks` and `mention-texts`, which are written nowhere else.
+1. **Move the files.** Each keeps its plugin's type name and id: `title-names`, `port-edges`, `validation-checks` and `mention-texts`, which only the registry report's copies (`ShippedTests.swift:143-146`, the guide) and MentionTextsTests write.
    - `Sources/DrawLexicon/TitleNames.swift` → `Sources/Titles/`
    - `PortEdges.swift` → `Sources/Connections/`
    - `ValidationChecks.swift` → `Sources/Validation/`
@@ -67,7 +67,7 @@ Same as 03: let "modules define their own behavior instead of having these high 
 ## Verification
 
 - `./build.sh audit`. Then tag a module `lexicon` and see "unknown layer". Make Titles import Automation and see the language refusal. Put both back.
-- `TEST_FILTER=Names ./test.sh`, `TEST_FILTER=Edges`, `TEST_FILTER=Checks` and `TEST_FILTER=Texts`, for the four retagged targets.
+- The four retagged targets, run as the executables test.sh builds (`build/debug/TitleNamesTests/TitleNamesTests`, `PortEdgesTests`, `ValidationChecksTests`, `MentionTextsTests`). `TEST_FILTER` matches suite and test names, not targets.
 - Then a full `./test.sh`. Hold particularly:
   - CommandLineTests and SkillTests: draw's output is unchanged.
   - ShippedTests and the guide's report: unchanged, since ids and contributions are the same.
@@ -75,7 +75,7 @@ Same as 03: let "modules define their own behavior instead of having these high 
 
 ## Risks and open questions
 
-- **Connections grows** by about 312 lines and gains the draw engine. Its closure gains only DrawScript and Adornments' share (it already reaches Queries through Neighbors). That's in proportion: the rules were Connections' anyway.
+- **Connections grows** by about 312 lines and gains the draw engine. Its closure gains only Draw itself: it already reaches Adornments (through Publishing) and DrawScript, Queries, QueryLanguage and Topology (through Neighbors). That's in proportion: the rules were Connections' anyway.
 - **The narrowing sweep can make a test stop compiling**, if a test used an API through a path the grep missed. The compiler finds it, and the answer is to keep that symbol public.
 
 ## Not in this commit

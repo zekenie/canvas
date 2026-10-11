@@ -26,7 +26,7 @@ Reordering "feels like maybe it should not be in a vertical. Question if it even
   Both use only the core's API: the document, the registry's `containingKinds`, `PaintOrderAnchored`, and geometry. A `Transaction` already holds `registry` (`Transaction.swift:56`) and lends geometry through `shapes` (`:128`).
 - **So the restacking rules are split across two modules.** A future caller would have to copy the step logic: the command line restacking a shape, a keyboard shortcut, or a "send behind" in a container's own menu.
 - **What can't move into `Canvas` is the menu.** A context menu is a contribution to ContextMenus, a surface, and the core declares no menus (it only lends `menuForSecondaryClick`, which ContextMenus claims).
-- **Why Arrange isn't ContextMenus' own built-in item, the way Delete and Select All are:** those two run Selection's commands, and every list that has ContextMenus has them. Arrange is something a plugin list should be able to leave out ("delete one line to leave it out", `Package.swift:176`). It's also the guide's worked example of items on every shape, chosen by capability (`docs/plugin-system.md:3515`, "Every shape: Reordering"). So Reordering stays a module, in the feature layer (plan 01), and holds the menu and nothing else.
+- **Why Arrange isn't ContextMenus' own built-in item, the way Delete and Select All are:** those two run Selection's commands, and every list that has ContextMenus has them. Arrange is something a plugin list should be able to leave out (`Package.swift:176`: "one line here; delete it to leave it out"). It's also the guide's worked example of items on every shape, chosen by capability (`docs/plugin-system.md:3515`, "Every shape: Reordering"). So Reordering stays a module, in the feature layer (plan 01), and holds the menu and nothing else.
 
 Where each part should live, then:
 
@@ -50,14 +50,13 @@ Where each part should live, then:
    - `docs/plugin-system.md`:
      - "Every shape: Reordering" (`:3515`): the example shrinks to the menu over the core's operations. That makes it a better "smallest plugin" (it shows a feature contributing to a surface over core API).
      - Wherever the guide lists the core's restacking: add the two step operations and the several-shape forms.
-   - `.claude/rules/editor.md` or `containers.md`, whichever documents `Transaction`'s restacking (find the bullet that names `bringToFront`): add the new operations.
+   - `.claude/rules/containers.md:23`, the restacking bullet, and the guide wherever it names `bringToFront` (`docs/plugin-system.md:3528, :4767, :10556, :11288`): add the new operations.
    - `.claude/rules/context-menus.md`: the Reordering mention stays accurate (still Arrange, still `PaintOrderAnchored`).
 
 ## Verification
 
 - `./build.sh audit` passes.
-- `TEST_FILTER=restack ./test.sh` and `TEST_FILTER=Examples ./test.sh` run.
-- Then a full `./test.sh`.
+- `./test.sh`. To iterate, run the executables it builds, `build/debug/CanvasTests/CanvasTests` and `build/debug/ExamplesTests/ExamplesTests`. `TEST_FILTER` matches suite and test names ("Suite: test"), not targets, and fails when nothing matches.
 - In the app: Arrange on overlapping notes behaves as before, and Undo says "Undo Bring Forward".
 
 ## Risks and open questions

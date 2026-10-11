@@ -12,7 +12,7 @@ A plan for the module graph. Each file here is one commit: the complaint it answ
 | — | *(found on the way)* `Snapping` is tagged concern with the same profile as Moving | A feature | [01](01-charter-and-features.md) |
 | 4a | `InfiniteCanvas` belongs in `Canvas` | No: see "Considered and not planned" | — |
 | 4b | A layer with one member is wrong | No: layers are roles with rules, and five have one member | [01](01-charter-and-features.md) writes each layer's reason |
-| 4c | `HostSlots` should merge into `Canvas` | Yes, on different evidence than the spot check: its points are the core's. The most debatable plan, and independent of the rest | [06](06-host-slots-into-the-core.md) |
+| 4c | `HostSlots` should merge into `Canvas` | Yes, on different evidence than the spot check: its points are the core's, and 35 of the 39 modules over Canvas already reach it. A granularity call, independent of the rest | [06](06-host-slots-into-the-core.md) |
 | 5 | `appex` needn't be its own layer | Right about its import rule; its packaging becomes a qualifier | [07](07-quick-look-in-the-app-layer.md) |
 | 6 | Invert the lexicons so modules define their own words | Yes. Queries' points are already reachable. Draw's need the engine split out of Automation first | [03](03-query-words-to-their-owners.md), [04](04-draw-engine-out-of-automation.md), [05](05-draw-words-to-their-owners.md) |
 | — | "I wish every layer had a raison d'être" | The charter: one question per layer, an import rule that follows from it, and a test the audit holds | [01](01-charter-and-features.md) |

@@ -34,7 +34,7 @@
 
 - **What the hub costs:** every new concern with a query word edits QueryLexicon and adds another import to it. The words for Titles sit away from Titles' code. And the APIs the words read (`registry.titleIsDerived`, `TitleProperty.folded`, Validation's `cachedResult`, `MentionText.plainText`…) have to be public only so another module can reach them.
 
-**Where the selection's word goes.** Selection is a surface, and *below* Queries: Queries may import Selection with no cycle (Selection → Keyboard → Canvas), but Selection importing Queries would put the engine under 16 modules (measured). The rule is the one the guide already gives: an edge between two modules goes "from the module that owns a meaning to the one it builds on". The higher module, the one that knows both sides, holds the join. So `SelectionQueriesPlugin` moves into Queries, as a plugin value of its own, which a list can still leave out. This adds Selection and Keyboard to Queries' closure. Every concern that will import Queries already reaches Selection (Titles through Adornments, Validation through DetailPanel, Boards and Mentions directly). The only module that newly reaches Selection is QueryTranslation.
+**Where the selection's word goes.** Selection is a surface, and *below* Queries: Queries may import Selection with no cycle (Selection → Keyboard → Canvas), but Selection importing Queries would put the engine under 16 modules (measured). The rule is the one the guide already gives: an edge between two modules goes "from the module that owns a meaning to the one it builds on". The higher module, the one that knows both sides, holds the join. So `SelectionQueriesPlugin` moves into Queries, as a plugin value of its own, which a list can still leave out. This adds Selection and Keyboard to Queries' closure, and with Keyboard, HostSlots and CanvasRPC. Queries still can't import the wire, being a surface. Every concern that will import Queries already reaches Selection (Titles through Adornments, Validation through DetailPanel, Boards and Mentions directly). The only module that newly reaches Selection is QueryTranslation.
 
 **The rule this commit writes into the charter:**
 
@@ -56,7 +56,7 @@
    - Validation adds `Queries`.
    - Mentions adds `Queries`. It reaches Queries through Neighbors, but the audit wants every import declared. It already declares `Topology`.
    - Queries adds `Selection`.
-   - Add `QueryLanguage` wherever a moved file uses its types directly. Check each file's types: `TitleQueries` and `MentionQueries` are the likely ones.
+   - None of the five files imports QueryLanguage. They import Canvas, Queries and their owner, plus Topology for MentionQueries (Mentions already declares it). So no owner adds QueryLanguage.
    - Delete the `QueryLexicon` target.
 3. **`Package.swift`, the `ships` table:**
    - `"QueryLexicon.TitleQueriesPlugin"` → `"Titles.TitleQueriesPlugin"`, and likewise `Boards.`, `Mentions.`, `Validation.`, `Queries.SelectionQueriesPlugin`.
@@ -76,12 +76,13 @@
      - the shipped-list sentence ("(QueryLexicon's)");
      - the Testing paragraph ("QueryLexicon's tests use fixtures only" → each owner's).
    - `.claude/rules/titles.md`, `boards.md`, `mentions.md` and `validation.md`: one line each, for the word the module now gives. Also `selection.md`, if it names `SelectionQueriesPlugin`; otherwise `queries.md` covers it.
-   - `.claude/rules/build.md`, "Layers": QueryLexicon leaves the lexicon list and Queries' import list. Replace the "any concern may now contribute… the audit does not yet enforce" sentence with the rule above.
+   - `.claude/rules/build.md`, "Layers": QueryLexicon leaves the lexicon list and Queries' import list. Also `build.md:26` and `build.sh:255`'s comment, whose example of a test of a plugin is "TitleQueriesTests, of QueryLexicon" (now "of Titles"). Replace the "any concern may now contribute… the audit does not yet enforce" sentence with the rule above.
    - `docs/plugin-system.md`:
      - "Horizontal and vertical": the lexicon bullet and the surface bullet's "still come through QueryLexicon";
      - the module-graph table's lexicon row (DrawLexicon only, until 05);
-     - "What plugins add" (`:7067`);
-     - the Queries section.
+     - the Queries section's intro (`:7067`: "words for a concern still come through QueryLexicon, by convention");
+     - "What plugins add" (`:7368`, which names QueryLexicon at `:7372` and links into `Sources/QueryLexicon` at `:7386-7393`);
+     - the other mentions: `:344`, `:403`, `:8939`, `:12228-12259`.
    - `CLAUDE.md`: the map's queries line ("the lexicon's words" → "the words their owners give").
    - `Package.swift`'s header: the lexicon row names DrawLexicon only.
    - `README.md`, if its module list names QueryLexicon.
@@ -90,13 +91,13 @@
 ## Verification
 
 - `./build.sh audit` (the import check holds the new dependencies both ways).
-- `TEST_FILTER=Queries ./test.sh`, which catches the five moved test targets, QueriesTests and QueryCommandsTests.
+- The five moved test targets, QueriesTests and QueryCommandsTests. Run their executables as test.sh builds them (`build/debug/TitleQueriesTests/TitleQueriesTests`, and so on); `TEST_FILTER` matches suite and test names, not targets.
 - Then a full `./test.sh`. CompositionTests' QueryShippedTests and QueryPromptTests must pass unchanged, since the shipped vocabulary is identical. So must ShippedTests' registry report and the guide's copy of it (`Tests/CompositionTests/ShippedTests.swift`, "the guide shows the registry report as it is"). The report lists plugins by id and contribution, never by module, and both are unchanged.
 - In the app, with `canvas query ':selected'`, `canvas query '"Checkout"'` and `canvas query ':invalid'`: same answers as before.
 
 ## Risks and open questions
 
-- **Closure growth:** Titles gains three modules (Queries, DrawScript, QueryLanguage), which every module above Titles now compiles against. Validation gains four (those plus Topology). build.sh recompiles a dependent only when a dependency's `.swiftmodule` changes. Queries' interface has changed in 2 of the last 50 commits.
+- **Closure growth:** Titles gains three modules (Queries, DrawScript, QueryLanguage), which every module above Titles now compiles against. Validation gains four (those plus Topology). build.sh recompiles a module only when the `.swiftmodule` of something in its closure changes. Queries' public declarations changed in 3 of the last 50 commits (`8c828bb`, `8c4a345`, `e1127f8`).
 - **Narrowing APIs** made public only for the lexicon is deferred to plan 05, so one sweep covers both lexicons.
 
 ## Not in this commit

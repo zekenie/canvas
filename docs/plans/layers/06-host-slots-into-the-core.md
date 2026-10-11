@@ -4,7 +4,7 @@
 
 **Depends on:** 01 (the charter's module rule, which this applies). Independent of 02–05 and 07, and can land in any order after 01.
 
-**Confidence:** the lowest of the set. It's a module-granularity call, not a layering defect. Skipping it leaves every other plan intact. The case for and against is below so it can be decided on the merits.
+**Confidence:** moderate. It's a module-granularity call, not a layering defect, and skipping it leaves every other plan intact. The build-cost objection turns out to be almost entirely moot (see the closure numbers below). What's left against it is whether the core should name SwiftUI and the wire's types at all.
 
 ## Complaint
 
@@ -16,21 +16,21 @@
 
 **For merging:**
 
-- **Its points say they are the core's.** All seven declare `owner: .core` (e.g. `Sources/HostSlots/HostSlots.swift:29`), which is how the registry marks a point as always installed. They're the same sort of thing as the sixteen points in `Sources/Canvas/Plugins/CorePoints.swift` (`Overlays`, `Commands`, `KeyStrokes`, `SecondaryClickMenu`, …), split off by which framework their types come from: SwiftUI views and wire types. Someone asking "what can a plugin give the core and its host?" has to read two modules.
+- **Its points say they are the core's.** All seven declare `owner: .core` (e.g. `Sources/HostSlots/HostSlots.swift:29`), which is how the registry marks a point as always installed. They're the same sort of thing as the fifteen points in `Sources/Canvas/Plugins/CorePoints.swift` (and two in `PropertyTable.swift`) (`Overlays`, `Commands`, `KeyStrokes`, `SecondaryClickMenu`, …), split off by which framework their types come from: SwiftUI views and wire types. Someone asking "what can a plugin give the core and its host?" has to read two modules.
 - **The core already holds the other half of the host contract.** That's the `@_spi(Host)` API CanvasView calls (input, the cursor, drawing, the delegate). The plugin-facing half (HostSlots) and the window-facing half (`@_spi(Host)`) sit in different modules for no reason of their own.
 - **Nothing needs one side without the other.**
   - Nothing wants HostSlots without Canvas.
-  - Nothing gains from Canvas without HostSlots. What the split keeps out of the core, SwiftUI and CanvasRPC, isn't kept out of anything that runs: every executable links both, and Quick Look links the whole product.
+  - Nothing gains from Canvas without HostSlots. What the split keeps out of the core, SwiftUI and CanvasRPC, isn't kept out of anything the product runs: the app, Quick Look and the tests of what ships link both.
   - No layer forbids it: foundation may use the wire (`build.sh:29`).
-  - The split's only effect is the compile closure of the 31 modules that depend on Canvas but not HostSlots.
+  - **The split barely keeps anything out.** Of the 39 non-test modules over Canvas, 35 already have HostSlots in their closure, and with it its SwiftUI views and the wire's types: Keyboard, which Selection imports, imports HostSlots. It's kept out of only four: SlashCommands, Topology, Snapping and Queries. That drops to three once plan 03 has Queries import Selection. (Measured from `Package.swift`: 30 modules declare Canvas without declaring HostSlots, but most reach it anyway.)
 - **It removes two exceptions** the docs have to carry: "the one foundation module that imports SwiftUI" and "the one that imports the wire" (build.md, host-slots.md).
 - **The charter's module rule** (plan 01): split a module from another only when something must build without the other, or when a layer forbids an import the merged module would need. Neither holds here.
 
 **Against merging, and what it costs:**
 
-- **`Canvas` would depend on `CanvasRPC`.** CanvasRPC is 1,505 lines with no dependencies of its own, and changed in 2 of the last 50 commits. It joins every module's compile closure. The layer rules still stop any plugin outside the language layer from importing it, and the commands slot's sugar can't be called without naming its types. So, as now, only Automation registers commands.
+- **`Canvas` would depend on `CanvasRPC`.** CanvasRPC is 1,505 lines with no dependencies of its own, and changed in 2 of the last 50 commits. It's already in 35 of the 39 closures over Canvas; the merge adds the other four. The layer rules still stop any plugin outside the language layer from importing it, and the commands slot's sugar can't be called without naming its types. So, as now, only Automation registers commands.
 - **`Canvas` would import SwiftUI**, in the one moved file. The canvas itself stays AppKit. The core gains view-typed contributions, as it already has `NSView`-typed host API.
-- **A change to the host slots' interface recompiles every module**, instead of the 9 that import HostSlots today. HostSlots changed in 2 of the last 50 commits.
+- **A change to the host slots' interface would recompile every module over Canvas.** build.sh rebuilds a module when the `.swiftmodule` of anything in its closure changes, not just its direct dependencies' (`build.sh:684-685`). So such a change already rebuilds 35 of the 39, and the merge adds four. HostSlots changed in 2 of the last 50 commits.
 - **The alternative:** keep HostSlots and write its reason down ("the core's points that hold SwiftUI views or the wire's types, kept out of the core so the core is AppKit-and-model and wire-free"). That's coherent. It's rejected here only because nothing in the product relies on the core being free of either. If being free of them is a goal, take this alternative instead, as a docs-only change.
 
 ## Tactics
@@ -58,13 +58,13 @@
      It still loads for the right files, since the frontmatter names them.
    - `.claude/rules/build.md`, "Layers": the foundation list and the HostSlots parenthesis.
    - `docs/plugin-system.md`:
-     - "Host slots" (`:2667`, the source path);
-     - the module-graph table's foundation row;
+     - "Host slots" (`:2667`, the source path, and `:2725`, its tests);
+     - the module-graph table's foundation row (`:511`), and `:8929`;
      - "Horizontal and vertical" wherever it lists the foundation.
    - `CLAUDE.md`, two spots in the module-graph rule:
      - "Every plugin may use the foundation (Geometry, Canvas, HostSlots, …)" drops HostSlots;
      - "what a host takes of a plugin's goes through host slots" stays, since the concept keeps its name.
-   - Topic files that say a module "imports HostSlots": keyboard, detail-panel, language-models, boards, jump-to, command-line. Find them with `grep -rn HostSlots .claude docs`. Each becomes "contributes a host slot".
+   - No other topic file names the module: they say "host slot" and link host-slots.md, which keeps its name. The module's name appears in `build.md:43`, host-slots.md, and `docs/plugin-system.md` at `:511` (the module table), `:2667` ("Host slots"' source path), `:2725` (HostSlotsTests) and `:8929`. `grep -rn HostSlots .claude docs CLAUDE.md` should come back empty but for the concept's name.
 
 ## Verification
 

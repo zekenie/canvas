@@ -11,15 +11,15 @@ The lexicon finding: "dependency inversion around `QueryLexicon` and `DrawLexico
 ## Justification
 
 - **Automation is two modules in one** (5,016 lines; mapped file by file):
-  - **The engine, about 4,540 lines in 12 files:** parse with DrawScript, resolve names, edges and texts through its points, lay out with the solver, commit in one transaction, report a row per shape (Draw, Drawing, DrawCommit, DrawStandIns, DrawBoard, DrawLayout, DrawPoints, DrawTexts, DrawVocabulary, DrawObstacles, DrawQueries, Measure).
-  - **The command line, about 480 lines:** the commands point and its sugar, parameter schemas, `AutomationContext`, `AutomationError` and its mapping to `RPCError`, `hostCommands` and the JSON bridge (Automation.swift, the first half of Commands.swift, Show.swift, JSONBridge.swift).
+  - **The engine, about 4,420 lines in 12 files** (about 4,510 with the kinds listing): parse with DrawScript, resolve names, edges and texts through its points, lay out with the solver, commit in one transaction, report a row per shape (Draw, Drawing, DrawCommit, DrawStandIns, DrawBoard, DrawLayout, DrawPoints, DrawTexts, DrawVocabulary, DrawObstacles, DrawQueries, Measure).
+  - **The command line, about 500 lines:** the commands point and its sugar, parameter schemas, `AutomationContext`, `AutomationError` and its mapping to `RPCError`, `hostCommands` and the JSON bridge (Automation.swift, the first half of Commands.swift, Show.swift, JSONBridge.swift).
 - **The engine barely touches the wire.** It uses wire types in four places:
   - `Draw.swift:93`, `[String: JSON]` in a result row;
   - `DrawCommit.swift:149`, `JSON(value)`;
   - `Drawing.swift:366` and `:998`, `RPC.commandName` (`"canvas"`) in two hints that name other commands.
 
   Canvas's own `JSONValue` (`Sources/Canvas/Persistence/JSONValue.swift`) has the same six cases and is `Codable`.
-- **`AutomationError` is the engine's thrown type (about 190 throw sites), but the engine uses six of its fields:**
+- **`AutomationError` is the engine's thrown type** (157 `throw` statements in the engine files, 101 of them `throw AutomationError(`, and about 60 `throws(AutomationError)` signatures). **But the engine uses six of its fields:**
   - It reads message, reason, hint, line, statement and errors.
   - Column, length and `details` are QueryCommands' alone.
   - `invalidParams` only passes through, at `DrawCommit.swift:293`, and nothing on the engine side sets it.
@@ -62,14 +62,14 @@ The lexicon finding: "dependency inversion around `QueryLexicon` and `DrawLexico
   - `Show.swift` and `JSONBridge.swift` (QueryCommands' `QueryOutput.swift:62` uses the bridge);
   - the commands' parameter schemas, `DrawParams` and `MeasureParams` (`x-stdin` is the command line's).
 - Each command resolves its board (the `no_board` error stays here), calls Draw's entry point, encodes the result, and maps `DrawError` to `AutomationError` field for field, so `rpcError` writes exactly the wire error it writes today.
-- Its dependencies become exactly what's left imports. Expected: Canvas, CanvasRPC, Draw, HostSlots (dropping Adornments, Geometry, Queries, QueryLanguage, Topology, and DrawScript if no remaining file names its types). HostSlots drops out too if plan 06 has landed first, since `hostCommands` then comes from Canvas. The audit settles it.
+- Its dependencies become exactly what's left imports. Expected: Canvas, CanvasRPC, Draw, DrawScript (Show.swift names `ScriptError.Reason`, `:3, :42, :53`) and HostSlots, dropping Adornments, Geometry, Queries, QueryLanguage and Topology. HostSlots drops out too if plan 06 has landed first, since `hostCommands` then comes from Canvas. The audit settles it.
 - QueryCommands is unaffected. It uses the commands sugar, `AutomationContext`, `AutomationError` and the JSON bridge, none of draw.
 
 ## Tactics
 
 1. **Move the files** with `git mv`, so history follows: Draw, Drawing, DrawCommit, DrawStandIns, DrawBoard, DrawLayout, DrawPoints, DrawTexts, DrawVocabulary, DrawObstacles, DrawQueries and Measure → `Sources/Draw/`. Split `Commands.swift`: the kinds listing and `unplaceable` go to `Sources/Draw/Kinds.swift`. Leave `DrawParams` and `MeasureParams` in Automation, in a new `Sources/Automation/Params.swift`.
 2. **In the moved files:**
-   - `AutomationError` → `DrawError` (mechanical, about 190 sites; drop the `invalidParams:` argument at `DrawCommit.swift:293`).
+   - `AutomationError` → `DrawError`: mechanical, the 101 constructions and about 60 signatures. Drop the `invalidParams:` argument at `DrawCommit.swift:293`.
    - `JSON` → `JSONValue` at the two sites.
    - `RPC.commandName` → the run's `program` at the two sites.
    - `import CanvasRPC` lines go (Measure's is already unused).
@@ -78,7 +78,7 @@ The lexicon finding: "dependency inversion around `QueryLexicon` and `DrawLexico
 4. **Automation:**
    - The commands call the entry points.
    - Add `AutomationError.init(_ error: DrawError)`, which also maps nested `errors`.
-   - `PluginID.automation` stays, owning nothing now. Rewrite its comment (`Automation.swift:14-16`).
+   - `PluginID.automation` stays, and still owns the commands point (`AutomationCommands`, `Automation.swift:28`), which QueryCommands fills. Only the four draw points change owner (`DrawPoints.swift:31, :110, :166, :224`). Rewrite its comment (`Automation.swift:14-16`).
 5. **`Package.swift`:**
    - Add the `Draw` target among the surfaces.
    - Rewrite Automation's dependencies.
@@ -114,7 +114,7 @@ The lexicon finding: "dependency inversion around `QueryLexicon` and `DrawLexico
 ## Verification
 
 - `./build.sh audit`: Draw passes the surface test (it declares points, and Automation imports it), imports no concern and no wire, and Automation's imports equal its dependencies.
-- `TEST_FILTER=Automation ./test.sh` and the four DrawLexicon targets.
+- AutomationTests and the four DrawLexicon test targets, run as the executables test.sh builds (`build/debug/AutomationTests/AutomationTests`, and so on). `TEST_FILTER` matches suite and test names, not targets, and fails when nothing matches.
 - Then a full `./test.sh`. Hold particularly:
   - CompositionTests' **CommandLineTests**, **SkillTests**, **MeasureTests** and AutomationTests' **Draw\*Tests**, which pin `canvas draw`'s output and errors through the built `canvas`. They must pass with no change to their expectations.
   - **ShippedTests** and the guide test, with the new row.
@@ -131,7 +131,7 @@ The lexicon finding: "dependency inversion around `QueryLexicon` and `DrawLexico
   - `JSONValue` must encode exactly as `JSON` does. Both hold numbers as `.number(Double)` and encode them with the same call (`JSON.swift:63`, and JSONValue's `encode(to:)`). Their objects differ: `JSONObject` versus `[String: JSON]`. So compare the encoded result rows, key order included, before switching.
   - The error mapping must keep every field and the nesting `rpcError` produces.
 - **Public surface:** expose only what Automation and the concerns call. An engine that's a surface should have a public API someone designed, not a dump of everything that used to be internal.
-- **The size of the move** (about 4,540 lines). It's mechanical, but review it as `git mv` plus a small diff. Don't let logic changes ride along.
+- **The size of the move** (about 4,510 lines). It's mechanical, but review it as `git mv` plus a small diff. Don't let logic changes ride along.
 
 ## Not in this commit
 
