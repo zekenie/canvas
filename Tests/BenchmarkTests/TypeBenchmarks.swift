@@ -63,6 +63,24 @@ extension Budget {
     /// lookup and at most ten rects in one fill. Release, the thread's CPU, three runs alone at a load average of 3:
     /// +1.5, +1.6 and +1.7 ms (the design guessed 2); about three times the median.
     static let typeRowBars = 4.5
+    /// A keystroke in a row of one of 1,000 notes that are a Person among 10,000 shapes: the writer's commit and every
+    /// service hearing it (the thread's CPU, release; one shape, where a drag event's input is held to 1 ms): 0.21, 0.22 and
+    /// 0.22 ms in three runs alone at a load average of 1.2; about three times the median.
+    static let rowKeystroke = 0.7
+    /// What their values add to a frame of 150 notes that are a type of six fields, all filled, in full at 40%, over the
+    /// same notes with the type taken off (the same words and paper): +4.1, +4.4 and +4.3 ms in three runs alone (release, the
+    /// thread's CPU, load average 1.2; the design guessed 3 to 6). Held at the design's 9, twice the median, not three times it:
+    /// three times would be 13, past what the design allowed.
+    static let valueRowsFrame = 9.0
+}
+
+/// A type of six text fields, a note of `words` titled Person at `origin`.
+@MainActor private func sixFieldType(at origin: CGPoint) -> AnyShapeRecord {
+    var note = ShapeRecord(id: FieldFixtures.wideID, StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 200, height: 200)),
+                                                                 text: MentionText(plain: "A thing with six fields.")))
+    note[TypeSchemaProperty.self] = SchemaText(FieldFixtures.wide(6).schema)
+    note[TitleProperty.self] = "Person"
+    return AnyShapeRecord(note)
 }
 
 /// The generated board's notes made types (every fiftieth), and instances (every sixth that isn't):
@@ -364,6 +382,84 @@ extension Budget {
                 expect(type.next - plain.next < Budget.typePaper, "the paper added \(type.next - plain.next) ms to a frame of \(size) notes zoomed out")
             }
         }
+    },
+    test("a keystroke in a row of one of 1,000 notes that are a Person among 10,000 shapes is one commit of one shape; the frame after it is a frame") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        for size in sizes {
+            var shapes = generatedBoard(shapes: size).shapes
+            let type = sixFieldType(at: CGPoint(x: -400, y: 0))
+            let values = FieldValues(["f1": "Ann", "f2": "Lee", "f3": "ann@acme.com", "f4": "Leeds", "f5": "gift", "f6": "none"])
+            var instances: [ShapeID] = []
+            for index in shapes.indices where shapes[index].kind == StickyNote.kind && instances.count < 1_000 && shapes[index][TypeSchemaProperty.self] == nil {
+                shapes[index][IsAProperty.self] = [TypeLink(type.id)]
+                shapes[index][FieldValuesProperty.self] = values
+                instances.append(shapes[index].id)
+            }
+            shapes.append(type)
+            let editor = CanvasEditor(registry: try Registry(plugins: shippedPlugins(pasteboard)), document: CanvasDocument(shapes: shapes), scheduler: ManualScheduler())
+            editor.viewportDidResize(to: viewport)
+            let target = instances[instances.count / 2]
+            let writer = try require(editor.fieldWriter)
+            var n = 0
+            let keystroke = median(runs: 21, onThread: true) {
+                n += 1
+                writer.setTyped("Ann \(n)", as: .text, at: FieldPath(field: "f1"), of: target)
+            }
+            expect(writer.values(of: target).value(at: FieldPath(field: "f1")) == .string("Ann \(n)"), "the keystroke wrote")
+            let frame = try require(editor.shapeContext.frame(of: target))
+            editor.camera = camera(centering: frame, at: 1, in: viewport)
+            draw(editor, into: context, size: viewport)
+            let after = median(runs: 11, prepare: {
+                n += 1
+                writer.setTyped("Ann \(n)", as: .text, at: FieldPath(field: "f1"), of: target)
+            }, onThread: true) { draw(editor, into: context, size: viewport) }
+            report(String(format: "%6d shapes, %d notes that are a Person: a keystroke in a row %5.2f ms (budget %.1f), the frame after it %5.1f ms (budget %.0f)",
+                          size, instances.count, keystroke, Budget.rowKeystroke, after, Budget.frame))
+            if holdsToBudgets, size >= 10_000 {
+                expect(keystroke < Budget.rowKeystroke, "a keystroke in a row took \(keystroke) ms among \(size) shapes")
+                expect(after < Budget.frame, "the frame after a keystroke took \(after) ms among \(size) shapes")
+            }
+        }
+    },
+    test("150 notes that are a type of six fields, filled, in full at 40%, cost little more in a frame than the same notes with the type taken off") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let size = CGSize(width: 2_100, height: 1_000)
+        @MainActor func board(typed: Bool) throws -> CanvasEditor {
+            var shapes = (0..<150).map { i -> AnyShapeRecord in
+                let frame = CGRect(x: CGFloat(i % 15) * 340, y: CGFloat(i / 15) * 240, width: 200, height: 200)
+                var note = ShapeRecord(StickyNote(frame: frame, text: MentionText(plain: "Ann Lee, staff engineer.")))
+                if typed {
+                    note[IsAProperty.self] = [TypeLink(FieldFixtures.wideID)]
+                    note[FieldValuesProperty.self] = FieldValues(["f1": "Ann", "f2": "Lee", "f3": "ann@acme.com", "f4": "Leeds", "f5": "gift", "f6": "none"])
+                }
+                return AnyShapeRecord(note)
+            }
+            if typed { shapes.append(sixFieldType(at: CGPoint(x: 0, y: -400))) }
+            let editor = CanvasEditor(registry: try Registry(plugins: shippedPlugins(pasteboard)), document: CanvasDocument(shapes: shapes), scheduler: ManualScheduler())
+            editor.viewportDidResize(to: size)
+            editor.camera = Camera(origin: CGPoint(x: 0, y: 0), zoom: 0.4)
+            return editor
+        }
+        @MainActor func frames(_ editor: CanvasEditor) throws -> Double {
+            let context = try bitmapContext(size)
+            draw(editor, into: context, size: size)
+            draw(editor, into: context, size: size)
+            var step = 0.0
+            return median(runs: 11, prepare: { step = step == 0 ? 1 : 0; editor.camera = Camera(origin: CGPoint(x: step / 0.4, y: 0), zoom: 0.4) }, onThread: true) {
+                draw(editor, into: context, size: size)
+            }
+        }
+        let typed = try board(typed: true)
+        let first = try require(typed.document.shapes.first).id
+        expectEqual(try require(typed.rowBook).rows(of: first).count, 6)
+        let withValues = try frames(typed), without = try frames(try board(typed: false))
+        report(String(format: "150 notes that are a type of six fields, filled, in full at 40%%: a frame %5.2f ms, %5.2f more than the same notes untyped (%5.2f) (budget %.0f more)",
+                      withValues, withValues - without, without, Budget.valueRowsFrame))
+        if holdsToBudgets { expect(withValues - without < Budget.valueRowsFrame, "values' rows added \(withValues - without) ms to a frame of 150 notes in full") }
     },
     test("a frame of 150 type notes with their rows in full at 40%, and of 350 as skeletons at 20% with the rows' bars, costs little more than the same notes with none") {
         let pasteboard = NSPasteboard.withUniqueName()

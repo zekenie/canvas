@@ -21,12 +21,12 @@ private let tall = CGSize(width: 780, height: 560)
 private let wideStage = CGSize(width: 900, height: 560)
 
 /// A fixed id for the nth type of a state, so a type's color is the same in every run (`TypeColors`).
-private func rowsTypeID(_ n: Int) -> ShapeID {
+func rowsTypeID(_ n: Int) -> ShapeID {
     ShapeID(UUID(uuidString: String(format: "0E5B1B%02X-0000-4000-8000-0000000000%02X", n, n))!)
 }
 
 /// A type's JSON Schema of text fields, `date` ones where the names say so.
-private func fieldsSchema(_ names: [String], required: [String] = []) -> String {
+func fieldsSchema(_ names: [String], required: [String] = []) -> String {
     let properties = names.map { name in
         name.lowercased().contains("date") || name == "birthday" ? #""\#(name)": {"type": "string", "format": "date"}"# : #""\#(name)": {"type": "string"}"#
     }.joined(separator: ", ")
@@ -34,12 +34,12 @@ private func fieldsSchema(_ names: [String], required: [String] = []) -> String 
     return #"{"type": "object", "properties": {\#(properties)}\#(needed)}"#
 }
 
-private let personThree: FieldFixtures.TypeText = (FieldFixtures.personID, "Person", "A person has a name, an email and a birthday. It must have a name.",
+let personThree: FieldFixtures.TypeText = (FieldFixtures.personID, "Person", "A person has a name, an email and a birthday. It must have a name.",
                                                   fieldsSchema(["name", "email", "birthday"], required: ["name"]))
-private let employeeThree: FieldFixtures.TypeText = (FieldFixtures.employeeID, "Employee", "An employee is a person with a role, a start date and a team.",
+let employeeThree: FieldFixtures.TypeText = (FieldFixtures.employeeID, "Employee", "An employee is a person with a role, a start date and a team.",
                                                     fieldsSchema(["role", "startDate", "team"]))
 
-private extension CanvasEditor {
+extension CanvasEditor {
     /// A type note of the fixed texts, at `origin`, as wide and tall as the plan's boards draw it (laid out, it is as wide
     /// as its rows read at, and as tall as its words and rows).
     @discardableResult
@@ -57,7 +57,7 @@ private extension CanvasEditor {
 
 /// The whole canvas at its origin.
 @MainActor
-private func canvas(_ stage: GalleryStage, zoom: CGFloat = 1) -> GalleryOutput { .image(stage.render(at: .zero, zoom: zoom)) }
+func canvas(_ stage: GalleryStage, zoom: CGFloat = 1) -> GalleryOutput { .image(stage.render(at: .zero, zoom: zoom)) }
 
 /// The note made a type, and its read begun (the scheduler's next turn), with the call held out.
 @MainActor
@@ -78,7 +78,7 @@ private func settle(_ stage: GalleryStage, _ id: ShapeID) {
 }
 
 /// The nine fields of `text`, as the shared `wide` type writes them, titled and given a color of its own.
-private func wideType(_ count: Int, id: ShapeID, title: String, words: String) -> FieldFixtures.TypeText {
+func wideType(_ count: Int, id: ShapeID, title: String, words: String) -> FieldFixtures.TypeText {
     (id, title, words, FieldFixtures.wide(count).schema)
 }
 
