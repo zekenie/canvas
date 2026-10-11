@@ -12,7 +12,7 @@ A plan for the module graph. Each file here is one commit: the complaint it answ
 | — | *(found on the way)* `Snapping` is tagged concern with the same profile as Moving | A feature | [01](01-charter-and-features.md) |
 | 4a | `InfiniteCanvas` belongs in `Canvas` | No: see "Considered and not planned" | — |
 | 4b | A layer with one member is wrong | No: layers are roles with rules, and five have one member | [01](01-charter-and-features.md) writes each layer's reason |
-| 4c | `HostSlots` should merge into `Canvas` | Yes, but for a different reason than the spot check: its points are the core's | [06](06-host-slots-into-the-core.md) |
+| 4c | `HostSlots` should merge into `Canvas` | Yes, on different evidence than the spot check: its points are the core's. The most debatable plan, and independent of the rest | [06](06-host-slots-into-the-core.md) |
 | 5 | `appex` needn't be its own layer | Right about its import rule; its packaging becomes a qualifier | [07](07-quick-look-in-the-app-layer.md) |
 | 6 | Invert the lexicons so modules define their own words | Yes. Queries' points are already reachable. Draw's need the engine split out of Automation first | [03](03-query-words-to-their-owners.md), [04](04-draw-engine-out-of-automation.md), [05](05-draw-words-to-their-owners.md) |
 | — | "I wish every layer had a raison d'être" | The charter: one question per layer, an import rule that follows from it, and a test the audit holds | [01](01-charter-and-features.md) |
@@ -62,7 +62,7 @@ Gone: **lexicon** (QueryLexicon and DrawLexicon dissolve into the modules that o
 
 - **`InfiniteCanvas` into `Canvas`.** It's the `@main` executable, 127 lines. It imports CanvasUI, which imports Canvas, so the move is a cycle. It's also the one place every plugin is linked in (`+ shipped`), which a module every plugin imports can't be. A thin main is the right shape for a composition root.
 - **Folding the app layer into ui.** CanvasUI is a library that tests and the Quick Look extension import. `@main` and `+ shipped` have to be in an executable no one imports.
-- **One-member layers.** wire, ui, app and cli each have one member, and that's fine: their rules differ (what each may import, `+ shipped`, `@_spi(Product)`). Plan 01 writes those reasons down.
+- **One-member layers.** Five layers have one member today (wire, ui, app, appex, cli), and three will after plan 07 (wire, ui, cli). That's fine: a layer is a set of rules (what it may import, `+ shipped`, `@_spi(Product)`), not a group that needs company. appex goes because its rules are the app's, not because it's alone. Plan 01 writes each layer's reason down.
 - **Extracting Queries' points into a module of their own**, so a concern needn't import the engine. The point types are bound to the engine: internal initializers, and types only the engine builds (`QueryShape`, `QueryPreparation`, `ContributedPseudoClass`), so a split would mean exposing engine internals. Concerns may already import the engine, and build.sh recompiles a dependent only on an interface change. Plan 03 imports the engine.
 - **Jump To as a surface with a `JumpTargets` point that Titles fills.** One contributor, made only to change a layer (rule 2). Find is a surface because three plugins fill its point.
 - **Arrange as ContextMenus' own items**, like Delete and Select All. Those run Selection's commands, which every list with ContextMenus has. Arrange is something a list should be able to leave out (02).

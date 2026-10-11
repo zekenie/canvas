@@ -91,7 +91,7 @@
 
 - `./build.sh audit` (the import check holds the new dependencies both ways).
 - `TEST_FILTER=Queries ./test.sh`, which catches the five moved test targets, QueriesTests and QueryCommandsTests.
-- Then a full `./test.sh`. CompositionTests' QueryShippedTests and QueryPromptTests must pass unchanged, since the shipped vocabulary is identical.
+- Then a full `./test.sh`. CompositionTests' QueryShippedTests and QueryPromptTests must pass unchanged, since the shipped vocabulary is identical. So must ShippedTests' registry report and the guide's copy of it (`Tests/CompositionTests/ShippedTests.swift`, "the guide shows the registry report as it is"). The report lists plugins by id and contribution, never by module, and both are unchanged.
 - In the app, with `canvas query ':selected'`, `canvas query '"Checkout"'` and `canvas query ':invalid'`: same answers as before.
 
 ## Risks and open questions
