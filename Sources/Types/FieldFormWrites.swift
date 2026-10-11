@@ -20,7 +20,9 @@ extension FieldFormView {
 
     func defaultDraft(_ path: FieldPath) -> FieldDraft? {
         guard let book = editor.fieldBook, let writer, let field = book.field(at: path, types: types) else { return nil }
-        return FieldSheets.draft(at: path, kind: book.kind(of: field), values: writer.values(of: shape), isReadOnly: isReadOnly)
+        // An either's field has no kind of its own to say pairs: the sheet drew them or not, and the draft goes with that.
+        let drawn = sheet.lines.contains { $0.list == path && $0.isPair }
+        return FieldSheets.draft(at: path, kind: book.kind(of: field), values: writer.values(of: shape), isReadOnly: isReadOnly, drawnAsPairs: drawn)
     }
 
     /// What the form keeps of the list or pairs at `path`: made as it is first needed, then followed.

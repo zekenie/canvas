@@ -88,9 +88,11 @@ public struct FieldLine: Equatable {
     /// The list or pairs this is a line of (its path), and which slot of its draft: nil and -1 for a line that is not one.
     public var list: FieldPath?
     public var slot: Int
+    /// Whether `list` is pairs, as the sheet drew it: the form's draft for it is made the same way.
+    public var isPair: Bool
 
     public init(name: String? = nil, isNeeded: Bool = false, chip: ShapeID? = nil, cells: [FieldCell], depth: Int = 0, disclosure: Bool? = nil,
-                list: FieldPath? = nil, slot: Int = -1) {
+                list: FieldPath? = nil, slot: Int = -1, isPair: Bool = false) {
         self.name = name
         self.isNeeded = isNeeded
         self.chip = chip
@@ -99,6 +101,7 @@ public struct FieldLine: Equatable {
         self.disclosure = disclosure
         self.list = list
         self.slot = slot
+        self.isPair = isPair
     }
 }
 
@@ -221,6 +224,16 @@ public struct FieldDraft: Equatable {
     }
 }
 
+extension FieldKind {
+    /// A field's line in the panel has a triangle: more in it, and no JSON box or links (slice 14's).
+    fileprivate var opensInPanel: Bool {
+        switch self {
+        case .other, .pointers: false
+        default: hasMore
+        }
+    }
+}
+
 extension FieldDraft.Slot {
     var isStored: Bool { if case .stored = self { true } else { false } }
 }
@@ -234,8 +247,8 @@ public enum FieldFormRoot {
 public enum FieldSheets {
     /// The default draft of a level: what the form keeps for a list or pairs at `path`.
     @MainActor
-    public static func draft(at path: FieldPath, kind: FieldKind, values: FieldValues, isReadOnly: Bool) -> FieldDraft {
-        var pairs = false
+    public static func draft(at path: FieldPath, kind: FieldKind, values: FieldValues, isReadOnly: Bool, drawnAsPairs: Bool = false) -> FieldDraft {
+        var pairs = drawnAsPairs
         if case .pairs = kind { pairs = true }
         return FieldDraft(values.value(at: path), waiting: !isReadOnly, pairs: pairs)
     }
@@ -287,6 +300,11 @@ private struct SheetMaker {
     let open: [FieldPath: Bool]
     let locale: Locale
 
+    private func withValues(_ values: FieldValues) -> SheetMaker {
+        SheetMaker(values: values, check: check, book: book, types: types, mode: mode, isReadOnly: isReadOnly, presentation: presentation,
+                   drafts: drafts, open: open, locale: locale)
+    }
+
     // MARK: A level
 
     func level(path: FieldPath, field: Resolved.Field, kind: FieldKind, branch: Int?) -> FieldSheet {
@@ -323,7 +341,9 @@ private struct SheetMaker {
             let picked = min(max(branch ?? branchFitting(values.value(at: path), kinds), 0), 1)
             sheet.branches = zip(branches, kinds).map { label(of: $1, field: $0) }
             sheet.branch = picked
-            let inner = self.level(path: path, field: branches[picked], kind: kinds[picked], branch: nil)
+            // A branch the stored value does not fit shows empty: its cells read nothing, and typing replaces the value.
+            let shown = branchFitting(values.value(at: path), kinds) == picked ? self : withValues(values.setting(nil, at: path))
+            let inner = shown.level(path: path, field: branches[picked], kind: kinds[picked], branch: nil)
             sheet.chip = inner.chip
             sheet.layout = inner.layout
             sheet.lines = inner.lines
@@ -378,7 +398,7 @@ private struct SheetMaker {
         if mode == .kinds { return [kindsLine(field, kind: kind, path: path, depth: depth)] }
         let value = values.value(at: path)
         let cell = memberCell(field, kind: kind, path: path, value: value, stored: true)
-        guard presentation == .panel, kind.hasMore, kind != .other else {
+        guard presentation == .panel, kind.opensInPanel else {
             return [FieldLine(name: name, cells: [cell], depth: depth)]
         }
         let isOpen = isOpen(path)
@@ -500,7 +520,7 @@ private struct SheetMaker {
                                      isStored: isStored, isEditable: !isReadOnly)
             var valueCell = plainCell(plain, field: valueField, path: pairPath, value: kept, placeholder: "", stored: isStored)
             if let typed { valueCell.shown = typed }
-            return FieldLine(cells: [nameCell, valueCell], depth: depth, list: path, slot: place)
+            return FieldLine(cells: [nameCell, valueCell], depth: depth, list: path, slot: place, isPair: true)
         }
     }
 
@@ -524,7 +544,7 @@ private struct SheetMaker {
     /// The field's line and, open, what is under it.
     func panelSheet(path: FieldPath, field: Resolved.Field, kind: FieldKind) -> FieldSheet {
         var sheet = FieldSheet()
-        guard kind.hasMore, kind != .other else {
+        guard kind.opensInPanel else {
             sheet.lines = [singleLine(path: path, field: field, kind: kind)]
             return sheet
         }

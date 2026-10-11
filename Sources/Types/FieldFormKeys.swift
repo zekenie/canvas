@@ -211,6 +211,7 @@ extension FieldFormView: NSTextViewDelegate {
     func pickBranch(_ branch: Int) {
         guard sheet.branches.indices.contains(branch) else { return }
         levels[levels.count - 1].branch = branch
+        drafts[level.path] = nil
         focus = FieldStop(line: -1, column: branch)
         rebuild()
         focus(FieldStop(line: -1, column: branch))

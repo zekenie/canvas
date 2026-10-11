@@ -36,7 +36,8 @@ private let holder = #"""
     "roles": { "type": "array", "items": { "enum": ["engineer", "designer", "manager"] }, "uniqueItems": true },
     "six": { "type": "array", "items": { "type": "object", "properties": { "a": { "type": "string" }, "b": { "type": "string" }, "c": { "type": "string" }, "d": { "type": "string" }, "e": { "type": "string" }, "f": { "type": "string" } } } },
     "grid": { "type": "array", "items": { "type": "object", "properties": { "a": { "type": "string" }, "b": { "type": "string" }, "c": { "type": "string" }, "d": { "type": "string" }, "e": { "type": "string" }, "f": { "type": "string" }, "g": { "type": "string" }, "h": { "type": "string" }, "i": { "type": "string" } } } },
-    "payment": { "anyOf": [{ "type": "object", "properties": { "card": { "type": "string" } } }, { "type": "number" }] }
+    "payment": { "anyOf": [{ "type": "object", "properties": { "card": { "type": "string" } } }, { "type": "number" }] },
+    "meta": { "anyOf": [{ "type": "object", "additionalProperties": { "type": "string" } }, { "type": "string" }] }
   }
 }
 """#
@@ -314,6 +315,23 @@ private let holder = #"""
         expectEqual(f.form.sheet.lines.count, 3, "its line stays, with its value, while there is a name to type")
         f.window.pressDelete()
         expectEqual(f.form.sheet.lines.count, 2, "Backspace on an empty name removes the pair")
+    },
+    test("an either of pairs and text with nothing stored: the pairs shown are typed as pairs, and picking the other branch and back drops the draft") {
+        let f = try FormWindow("meta")
+        defer { f.close() }
+        expectEqual(f.form.sheet.layout, .pairs)
+        f.form.focus(f.at(0, 0))
+        f.window.type("size")
+        f.tab()
+        f.window.type("L")
+        expectEqual(f.value(f.path), ["size": "L"], "an object of pairs, not a list item")
+        f.form.focus(f.at(-1, 0))
+        f.right()
+        expectEqual(f.form.sheet.layout, .rows)
+        expectEqual(f.text(0), "", "text over the object, empty")
+        f.left()
+        expectEqual(f.form.sheet.layout, .pairs)
+        expectEqual(f.form.sheet.lines.map { $0.cells[0].shown }, ["size", ""])
     },
     test("pairs keep their lines while the form lives: a pair added after size stays last, and is first in a form made anew") {
         let f = try FormWindow("labels", stored: ["size": "L"])
