@@ -3,8 +3,8 @@ import CoreGraphics
 import DetailPanel
 import Selection
 
-// The card a row with more in it opens under itself. K0 holds only the request and the service's shape: a
-// card does not open. The core piece the real one stands on is generic and knows no field.
+// The card a row with more in it opens under itself. This file holds the request, the card's id and the
+// service that opens it. The core piece the card stands on is generic and knows no field.
 
 public struct FieldCardRequest {
     public enum Target: Hashable, Sendable {

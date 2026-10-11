@@ -286,6 +286,8 @@ public final class CanvasView: NSView {
         }
     }
 
+    /// A view in a window is released only by leaving it (`viewWillMove(toWindow:)`, which ends this), and
+    /// `watchPresses` needs a window, so a view that is released has no monitor.
     private func stopWatchingPresses() {
         guard let monitor = cardPressMonitor else { return }
         NSEvent.removeMonitor(monitor)
