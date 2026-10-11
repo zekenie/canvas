@@ -1709,8 +1709,8 @@ The checker is 2020-12's validation vocabulary (`type`, `enum`, `const`, the bou
 strings, arrays and objects, `required`, `dependentRequired`) and its applicators (`properties`,
 `patternProperties`, `additionalProperties`, `propertyNames`, `prefixItems`, `items`, `contains`,
 `allOf`, `anyOf`, `oneOf`, `not`, `if`/`then`/`else`, and `$ref` to any place in the same schema).
-`format` is an annotation, as 2020-12 has it, and so is any keyword it doesn't know
-(`x-canvas-owner`): neither is checked. It compares as JSON Schema does: strings code point for
+`format` is an annotation, as 2020-12 has it (unless a validator is given the formats to check,
+below), and so is any keyword it doesn't know (`x-canvas-owner`): neither is checked. It compares as JSON Schema does: strings code point for
 code point (so "é" and "e\u{301}" differ, where Swift's `==` equates them), numbers by value. A
 length is in code points too: a thumbs-up with a skin tone is two, so a message gives both counts
 when they differ, without naming the standard ("Title counts as 82 characters (41 shown)"). A
@@ -1718,6 +1718,21 @@ pattern is ECMA-262's, run by ICU (`NSRegularExpression`) once what ICU reads di
 ends the string (ICU's also matches before a final line break), `.` and `\s` are ECMA's, and `\d`,
 `\w` and `\b` are ASCII. A pattern ICU can't read at all (a lookbehind of no fixed length) refuses
 the plugin list, as one that's no regular expression does.
+
+A `SchemaViolation` also has a `detail`: its message without the place's name (`is 95 characters
+long, and should be at most 80.`), for a reader that says the place its own way. `message` is the
+name, a space and the detail. `detail` takes no part in `==` or `hash(into:)`, so a violation made
+by hand (its detail is its message) equals the validator's.
+
+A validator checks `format` only for the formats it is given: `SchemaValidator(schema, formats:
+.standard)` (both initializers take it, and a resource's formats are checked too). `standard` has
+the six a type's fields use, by the RFCs, each a scan of the characters: `email` (a dot-atom and a
+domain of labels; `bo@acme` fits, quoted forms don't), `date`, `date-time` and `time` (RFC 3339,
+the offset required), `uri` (a scheme, then RFC 3986's characters; a bare `acme.com` doesn't fit)
+and `uuid`. A value that breaks one is a `format` violation (`Email should be an email address, not
+"ann@".`), only for strings. Off by default: the core's kind schemas write `uuid` and `date-time`,
+and checking them would change what the schema rule says of every shape. Build a `SchemaFormats`
+of your own from a name and a `Format("a thing", fits:)` for any other.
 
 A `$ref` may also name a schema that isn't in this one, such as a type's `urn:uuid:…` kept in a file.
 `SchemaValidator(schema) { uri in … }` (the `resources:` parameter) asks its resolver for the schema
@@ -3742,6 +3757,12 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   read from its shape alone leaves `affected` out. A service that reads the table of contents as
   it hears of a commit, before the table of contents does, gets every row's marks read again,
   since only hearing of the commit says which it affects.
+
+  A rule's state can also change with no commit at all (a caret leaving a row, a type edited
+  after the engine heard the commit). `editor.validation?.recheck(ids)` checks those shapes
+  again: on the board shown at the next read, with the ring redrawn, on a board the engine keeps
+  when it is taken back. It tells the table of contents to make their rows again itself, since
+  the table of contents has asked `affected(by:)` by the time a later service can name them.
 - **Several marks** on one row stand side by side: the kind's, then every kind's, each in plugin
   order (`ContentsMarkContribution`, contributed for a kind, is a kind's own).
 - **`where`** keeps a mark for every shape to the kinds that opted into what it marks, as an
@@ -7454,7 +7475,7 @@ with words of their own). Without one, a query does without:
 `QueryTextFormats` one a media type (their report lines: `query names`, `query board names`, `query
 word :mentions`, `query text text/x-canvas-mentions`; `query engine` on queries'). QueryLexicon's
 five registrations, whole (each plugin's words are its own nested `enum Word: String`, and
-`ValidationQueriesPlugin` registers each of its two in a helper, whose `has` is below; `TypeQueriesPlugin` adds `:is-a(S)`, a transitive `namesTypes` relation over `TypeIndex.graph`, and reads a type where `is` is read as its title)
+`ValidationQueriesPlugin` registers each of its two in a helper, whose `has` is below; `TypeQueriesPlugin` adds `:is-a(S)`, a transitive `namesTypes` relation over `TypeIndex.graph`, reads a type where `is` is read as its title, and adds `:incomplete`, an `.onMain` word like `:invalid` that asks `FieldChecks.fullCheck(of:)` of the shapes that have types)
 ([TitleQueries.swift](../Sources/QueryLexicon/TitleQueries.swift),
 [BoardQueries.swift](../Sources/QueryLexicon/BoardQueries.swift),
 [MentionQueries.swift](../Sources/QueryLexicon/MentionQueries.swift),
@@ -10155,6 +10176,29 @@ anything else stays words.
   its label. What the prompts say of other schemas (`toSchemaReferences`, `toPromptReferences`,
   `highlightsReferences`) goes after each only in a request that names some.
 
+### The values a type's fields hold, checked
+
+A note that is an instance of types holds values for their fields (`fieldValues`), and
+`editor.fieldChecks` says what is wrong with them: `fullCheck(of:)` for a record is a `FieldCheck`, a
+list of problems each at a path a row names, of two classes. A **needed** field has no value (`required`,
+`dependentRequired`, or "at least one of"; a needed yes or no never counts, an unticked box is a
+value), and is no issue: amber on its row, no ring. A **wrong** value breaks a rule (`type`, `enum`,
+`pattern`, a bound, a `format`, a list limit), and is an error from a rule of Types' own, so the note
+is ringed, listed in the Issues tab and `:invalid`. A rule across fields that is broken is a wrong
+problem at the root, with no row.
+
+It is the core's validator run over the composed schema of the shape's types, made checkable
+(`FieldSchemas.checkable`) so it says what people mean: a value no field names is never wrong, an
+`if` on a field asks only once the field has a value, "at least one of" names every field it would take,
+and a pattern ICU cannot read is not the note's fault. The formats the plan lists (`email`, `date`,
+`date-time`, `time`, `uri`, `uuid`) are checked, as `SchemaFormats.standard`. One checker is kept for each
+distinct list of types and one answer for each shape asked; an answer is trusted while its inputs are
+the ones it was made from, so nothing is invalidated when a type changes. A type's edit reaches the
+shapes through `TypeIndex.onChange` and `ValidationEngine.recheck`.
+
+The caret is `typing`: the path of the field being typed in is left out of `check(of:)`, so a half-typed
+value is never red; it returns when the caret leaves.
+
 ### Keeping the words and the schema in step: `TypeSync`
 
 Edit the words and Claude rewrites the schema; edit the schema by hand and Claude rewrites the words
@@ -11753,7 +11797,7 @@ clipboard            service ClipboardState · command cut · shortcut ⌘X → 
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
 types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
-type-validation      ValidationRules
+type-validation      ValidationRules · ValidationRules · ValidationRules
 type-details         ShapeDetails · ShapeDetails · ShapeDetails
 snapping             service SnapState · translation adjuster
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
@@ -11772,7 +11816,7 @@ title-queries        query names
 board-queries        query board names
 mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
 validation-queries   query word :invalid · query word :warned
-type-queries         query word :is-a · query text text/x-canvas-type
+type-queries         query word :is-a · query text text/x-canvas-type · query word :incomplete
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
 neighbors            service NeighborState · outlines

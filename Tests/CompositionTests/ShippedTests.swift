@@ -73,7 +73,7 @@ import Validation
         locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
         publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
         types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape
-        type-validation      ValidationRules
+        type-validation      ValidationRules · ValidationRules · ValidationRules
         type-details         ShapeDetails · ShapeDetails · ShapeDetails
         snapping             service SnapState · translation adjuster
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
@@ -92,7 +92,7 @@ import Validation
         board-queries        query board names
         mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
         validation-queries   query word :invalid · query word :warned
-        type-queries         query word :is-a · query text text/x-canvas-type
+        type-queries         query word :is-a · query text text/x-canvas-type · query word :incomplete
         selection-queries    query word :selected
         query-commands       command line query · command line query-vocabulary
         neighbors            service NeighborState · outlines

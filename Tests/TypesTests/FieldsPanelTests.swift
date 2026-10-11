@@ -241,16 +241,18 @@ extension TypePanelWindow {
         panel.editor.transact { $0.update(FieldFixtures.personID) { $0[TypeSchemaProperty.self] = SchemaText(#"{"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}, "born": {"type": "string", "format": "date"}}}"#) } }
         panel.window.spin { panel.boxes.last?.string == "Mar 3, 2026" }
     },
-    test("a field says the problems at its own path only: a deeper one is the form's, at its own row") {
+    test("a field says the wrong problems at its own path only: a deeper one is the form's, at its own row, and a needed one is not said in words") {
         let editor = try fieldEditor()
         editor.addFieldTypes([FieldFixtures.everyKind.a])
         let book = try require(editor.fieldBook)
         let order = instanceRecord("", of: [FieldFixtures.kindsAID])
         let address = try require(book.fields(of: order).fields.first { $0.field.name == "shippingAddress" })
-        let own = FieldProblem(path: FieldPath(field: "shippingAddress"), kind: .needed, keyword: "required", place: ["shipping address"], message: "shipping address is needed")
+        let own = FieldProblem(path: FieldPath(field: "shippingAddress"), kind: .wrong, keyword: "type", place: ["shipping address"], message: "shipping address should be a group")
+        let needed = FieldProblem(path: FieldPath(field: "shippingAddress"), kind: .needed, keyword: "required", place: ["shipping address"], message: "shipping address is needed")
         let deeper = FieldProblem(path: FieldPath(field: "shippingAddress").key("city"), kind: .wrong, keyword: "minLength", place: ["shipping address", "city"], message: "city is too short")
         let elsewhere = FieldProblem(path: FieldPath(field: "price"), kind: .wrong, keyword: "minimum", place: ["price"], message: "price is too low")
         expectEqual(FieldsPanelModel.problems(of: address, in: FieldCheck(problems: [own, deeper, elsewhere])), [own])
+        expectEqual(FieldsPanelModel.problems(of: address, in: FieldCheck(problems: [needed])), [], "amber on the note, no words here")
         expectEqual(FieldsPanelModel.problems(of: address, in: FieldCheck(problems: [deeper])), [])
     },
     test("a yes or no in an either shows as true or false, which the box reads back; alone it is yes or no") {
@@ -278,12 +280,18 @@ extension TypePanelWindow {
         panel.window.settle()
         expectEqual(state.panelsDrawn, drawn + 1, "a keystroke")
     },
-    test("with K0's check nothing is said under a field") {
+    test("a wrong value is said under its field, once; a needed field left empty is said nowhere in words") {
         let panel = try TypePanelWindow()
         let id = panel.instance(of: [FieldFixtures.kindsAID], extra: [FieldFixtures.everyKind.a])
         panel.window.spin { panel.boxes.count == 3 }
         panel.editor.fieldWriter?.set("x", at: FieldPath(field: "price"), of: id)
         panel.window.settle()
-        expectEqual(try require(panel.editor.fieldChecks).check(of: try require(panel.editor.document[id])), .clean)
+        let record = try require(panel.editor.document[id])
+        let check = try require(panel.editor.fieldChecks).check(of: record)
+        let fields = try require(panel.editor.fieldBook).fields(of: record)
+        let price = try require(fields.field(named: "price")), name = try require(fields.field(named: "name"))
+        expectEqual(FieldsPanelModel.problems(of: price, in: check).map(\.kind), [.wrong])
+        expect(check.problems(at: FieldPath(field: "name")).contains { $0.kind == .needed }, "name is needed, by the check")
+        expectEqual(FieldsPanelModel.problems(of: name, in: check).count, 0, "and the panel says nothing of it in words")
     },
 ])

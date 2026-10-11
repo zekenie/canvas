@@ -64,10 +64,11 @@ public enum FieldsPanelModel {
         return rows
     }
 
-    /// The problems at the field's own path, in the check's order. Those deeper (in a group, an item) are
-    /// said at their own rows, by the form.
+    /// The wrong problems at the field's own path, in the check's order: what the section says in words
+    /// under a field. A needed field left empty is no error and is said nowhere in words. Those deeper
+    /// (in a group, an item) are said at their own rows, by the form.
     public static func problems(of field: Resolved.Field, in check: FieldCheck) -> [FieldProblem] {
-        check.problems(at: FieldPath(field: field.field.name))
+        check.problems(at: FieldPath(field: field.field.name)).filter { $0.kind == .wrong }
     }
 
     /// How a box shows what is stored: the kinds' own forms, except that a text keeps its line breaks, and
@@ -245,7 +246,7 @@ struct FieldProblems: View {
 
     var body: some View {
         ForEach(problems.indices, id: \.self) { place in
-            DetailStatusLine(DetailStatus(problems[place].message, tone: problems[place].kind == .wrong ? .error : .warning))
+            DetailStatusLine(DetailStatus(problems[place].message, tone: .error))
         }
     }
 }
