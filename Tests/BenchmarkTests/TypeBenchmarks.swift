@@ -61,8 +61,8 @@ extension Budget {
     /// What rows' bars add to a frame of typed notes drawn as skeletons at 20%, some 350 in view, over the same notes
     /// as plain skeletons: each skeleton's `NoteLayout` (the provider's lookups and its words' kept height), a template
     /// lookup and at most ten rects in one fill. Release, the thread's CPU, three runs alone at a load average of 3:
-    /// +1.5, +1.6 and +1.7 ms (the design guessed 2); about three times the median.
-    static let typeRowBars = 4.5
+    /// +1.5, +1.6 and +1.7 ms; held at the design's 2, which all three fit.
+    static let typeRowBars = 2.0
     /// A keystroke in a row of one of 1,000 notes that are a Person among 10,000 shapes: the writer's commit and every
     /// service hearing it (the thread's CPU, release; one shape, where a drag event's input is held to 1 ms): 0.21, 0.22 and
     /// 0.22 ms in three runs alone at a load average of 1.2; about three times the median.
