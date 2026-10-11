@@ -12,7 +12,7 @@ enum CheckFixtures {
     }
 
     static let contactID = id(1), deepID = id(2), pricingID = id(3), shopID = id(4), treeID = id(5), unionsID = id(6)
-    static let pairsID = id(7), ruleID = id(8), strictID = id(9), listsID = id(10), peerID = id(11), crewID = id(12), stampID = id(13)
+    static let pairsID = id(7), ruleID = id(8), strictID = id(9), listsID = id(10), peerID = id(11), crewID = id(12), stampID = id(13), momentsID = id(14)
 
     private static func uri(_ id: ShapeID) -> String { FieldFixtures.uri(of: id) }
 
@@ -202,6 +202,19 @@ enum CheckFixtures {
           "type": "array",
           "items": { "type": "object", "properties": { "label": { "type": "string" }, "price": { "type": "number" } }, "required": ["price"] }
         }
+      }
+    }
+    """#)
+
+    /// The formats the validator is given beyond email and date: a date and time, a time of day, a link and a UUID.
+    static let moments: FieldFixtures.TypeText = (momentsID, "Moments", "Times and links.", #"""
+    {
+      "type": "object",
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "time": { "type": "string", "format": "time" },
+        "site": { "type": "string", "format": "uri" },
+        "ref": { "type": "string", "format": "uuid" }
       }
     }
     """#)

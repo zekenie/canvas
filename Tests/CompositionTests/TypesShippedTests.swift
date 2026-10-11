@@ -21,6 +21,7 @@ import StickyNotes
 import TestKit
 import Titles
 import Types
+import Validation
 
 // Types as shipped: a note made a type with `/is-a type`, typed in its editor in the app's canvas view;
 // its words and its schema kept in step by the model; a mention of another type, a `$ref` to it;
@@ -464,5 +465,35 @@ private let petAnswer = """
         expectEqual(alone[IsAProperty.self]?.map(\.shape), [person])
         expectEqual(editor.types?.instances(of: person), [ann, alone.id])
         expectEqual(editor.types?.instances(of: copyOfPerson), [copyOfAnn])
+    },
+    test("a duplicate and a pasted copy of a wrong note hold its values and say the same: the same issues, the same check") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let person = editor.addTypeNote(FieldFixtures.person.schema, title: "Person", frame: CGRect(x: 400, y: 0, width: 200, height: 200), id: FieldFixtures.personID)
+        let ann = editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Ann"))
+        editor.addTypeLink(person, to: ann)
+        editor.transact("Values") { $0.update(ann) { $0[FieldValuesProperty.self] = FieldValues(["email": "ann@"]) } }
+        let checks = try require(editor.fieldChecks)
+        @MainActor func said(_ id: ShapeID) throws -> (messages: [String], problems: [String]) {
+            (editor.validation?.result(for: id)?.issues.map(\.message) ?? [], try require(editor.document[id]).map { checks.fullCheck(of: $0).problems.map(\.message) } ?? [])
+        }
+        let original = try said(ann)
+        expectEqual(original.messages, [#"email should be an email address, not "ann@""#])
+        expectEqual(original.problems.count, 2, "the email, and the name Person needs")
+        let duplicates = editor.duplicate([ann])
+        let duplicate = try require(duplicates.first)
+        expectEqual(editor.document[duplicate]?[FieldValuesProperty.self], editor.document[ann]?[FieldValuesProperty.self])
+        let duplicated = try said(duplicate)
+        expectEqual(duplicated.messages, original.messages)
+        expectEqual(duplicated.problems, original.problems)
+        editor.selectedShapeIDs = [ann]
+        editor.perform(.copy)
+        let before = editor.document
+        editor.perform(.paste)
+        let pasted = try require(editor.shapes(since: before).first).id
+        let copied = try said(pasted)
+        expectEqual(copied.messages, original.messages)
+        expectEqual(copied.problems, original.problems)
     },
 ])

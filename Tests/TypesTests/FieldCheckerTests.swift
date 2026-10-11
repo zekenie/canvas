@@ -167,6 +167,26 @@ private func line(_ product: String, _ quantity: JSONValue) -> JSONValue { ["pro
         expectEqual(try check(["qty": "17000000000000000"]), ["wrong /qty"])
         expectEqual(try check(["qty": 3]), [])
     },
+    test("a date or date-time typed as a full date is stored in a form its format accepts, and a part of a date breaks it; time, link and UUID likewise") {
+        let editor = try editor()
+        editor.addCheckTypes([CheckFixtures.moments])
+        let locale = Locale(identifier: "en_US_POSIX")
+        @MainActor func check(_ field: String, _ typed: String, as kind: PlainKind = .text) throws -> [String] {
+            let value = try require(FieldText.value(from: typed, as: kind, locale: locale))
+            return summary(editor.fullCheck(of: editor.addNote(of: [CheckFixtures.momentsID], [field: value])))
+        }
+        for typed in ["2026-03-03", "Mar 3, 2026", "3 Mar 2026"] {
+            expectEqual(try check("at", typed, as: .dateTime), [], "\(typed) stored as a date-time")
+        }
+        expectEqual(try check("at", "Jan 2024", as: .dateTime), ["wrong /at"])
+        expectEqual(try check("at", "2026-03", as: .dateTime), ["wrong /at"])
+        expectEqual(try check("time", "09:30:00Z"), [])
+        expectEqual(try check("time", "9:30"), ["wrong /time"])
+        expectEqual(try check("site", "https://acme.com/a?b=1"), [])
+        expectEqual(try check("site", "acme.com"), ["wrong /site"])
+        expectEqual(try check("ref", "123e4567-e89b-42d3-a456-426614174000"), [])
+        expectEqual(try check("ref", "123e4567"), ["wrong /ref"])
+    },
     test("a union that fits neither form is wrong at the field; an object form missing its needed member is wrong, at the field too") {
         let editor = try editor()
         let unions = CheckFixtures.unionsID
