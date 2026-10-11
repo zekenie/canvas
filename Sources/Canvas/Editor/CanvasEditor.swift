@@ -152,6 +152,18 @@ public final class CanvasEditor {
         return CGRect(x: 0, y: top, width: viewportSize.width, height: viewportSize.height - top)
     }
 
+    /// What the root board is called: the file's name, which only the host knows (a board's window
+    /// says it as it titles itself, `nameRoot(_:)`). Every other board is named by the shape that
+    /// owns it, which is a plugin's to read; the root has no owner, so whatever names boards reads
+    /// this for it. Empty until the host says, and headless. Observed apart from `document`, and set
+    /// only when it changes, so what shows it redraws as the file is renamed, never on a commit.
+    public private(set) var rootName = ""
+
+    /// The host's: what the root board is called from now on (`rootName`).
+    @_spi(Host) public func nameRoot(_ name: String) {
+        if name != rootName { rootName = name }
+    }
+
     /// A shape outlined as a target, whatever the tool (a connector tool sets it while aiming).
     /// Setting it to a shape that isn't there drops it.
     public var hintedShapeID: ShapeID? {

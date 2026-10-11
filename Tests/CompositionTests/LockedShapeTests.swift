@@ -2,7 +2,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Clipboard
-import Composition
 import Connections
 import CoreGraphics
 import Foundation
@@ -13,6 +12,7 @@ import Locking
 import Mentions
 import References
 import Selection
+import ShippedTesting
 import StickyNotes
 import Subboards
 import TestKit

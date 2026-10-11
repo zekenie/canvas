@@ -3,11 +3,12 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Composition
 import Foundation
+import HostSlots
 import LanguageModels
 import Locking
 import Mentions
+import ShippedTesting
 import StickyNotes
 import Subboards
 import TestKit
@@ -153,6 +154,6 @@ func scripted(_ text: String) -> String { text.replacingOccurrences(of: "\"", wi
 
 /// `draw`, as the app's command server runs it, in this process, on `editor`: a dry run, or not.
 @MainActor func drawnInProcess(_ script: String, on editor: CanvasEditor, dryRun: Bool) throws -> JSON {
-    let commands = ShippedPlugins.commands(in: editor.registry)
+    let commands = editor.registry.hostCommands
     return try awaitResult { try await commands.run("draw", ["script": .string(script), "dryRun": .bool(dryRun)], editor) }
 }

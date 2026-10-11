@@ -1,11 +1,18 @@
 import AppKit
 @_spi(Host) import Canvas
 import Geometry
+import HostSlots
 import Observation
 import SwiftUI
 
 /// How the app makes boards: its plugins and each window's content. Set once, before any board
 /// opens (`BoardDocument.configuration`).
+///
+/// What the plugins gave the host's slots (HostSlots) comes with the registry: how far down over
+/// the canvas the views over it reach on a board (the path over a subboard's canvas), which each
+/// board's editor is told so its fits leave it clear (`CanvasEditor.coveredTop`, from
+/// `registry.hostCoveredTop(on:)`), and what a window's subtitle says of the board shown
+/// (`registry.windowSubtitle(for:)`). `content` places the views themselves (`BoardChrome`).
 @MainActor
 public struct BoardConfiguration {
     /// The file type boards are saved as: the type the app's Info.plist exports, as `.canvasboard` files (not `.board`, which Apple's Freeform owns).
@@ -16,21 +23,9 @@ public struct BoardConfiguration {
     public var registry: Registry
     /// A board window's content: the canvas, and whatever goes around it.
     public var content: @MainActor (BoardWindowContent) -> AnyView
-    /// How far down over the canvas the content's own views reach on a board, in points (the path
-    /// over a subboard's canvas): what the editor's fits leave clear (`CanvasEditor.coveredTop`).
-    public var coveredTop: @MainActor (BoardID) -> CGFloat
-    /// What the board shown is called, for its window's subtitle: nil on the root, which the title
-    /// (the file's name) names. Read observed, so the subtitle follows it as another board is shown
-    /// or the board is renamed. CanvasUI doesn't know what names a board; the app says (Composition's
-    /// `ShippedPlugins.boardName(of:)`).
-    public var boardName: (@MainActor (CanvasEditor) -> String?)?
 
-    public init(registry: Registry, coveredTop: @escaping @MainActor (BoardID) -> CGFloat = { _ in 0 },
-                boardName: (@MainActor (CanvasEditor) -> String?)? = nil,
-                content: @escaping @MainActor (BoardWindowContent) -> AnyView) {
+    public init(registry: Registry, content: @escaping @MainActor (BoardWindowContent) -> AnyView) {
         self.registry = registry
-        self.coveredTop = coveredTop
-        self.boardName = boardName
         self.content = content
     }
 }
@@ -44,15 +39,13 @@ public struct BoardWindowContent {
 }
 
 /// A board window's own state, beside the board: whether the details and the minimap show
-/// (remembered per file on this Mac, with the cameras: `BoardViewMemory`), and what the file is
-/// called, for the root's crumb on the path.
+/// (remembered per file on this Mac, with the cameras: `BoardViewMemory`). What the file is called
+/// is the editor's (`rootName`), which the window keeps as it keeps its title.
 @MainActor
 @Observable
 public final class BoardViewState {
     public var showsDetails = true
     public var showsMinimap = true
-    /// The file's display name ("Untitled", "Plans"), kept by its window as the title is.
-    public var fileName = ""
     public init() {}
 }
 
@@ -115,7 +108,8 @@ public final class BoardDocument: NSDocument {
     public override init() {
         guard let configuration = Self.configuration else { preconditionFailure("set BoardDocument.configuration before any board opens") }
         editor = CanvasEditor(registry: configuration.registry)
-        editor.coveredTop = configuration.coveredTop
+        let registry = configuration.registry
+        editor.coveredTop = { registry.hostCoveredTop(on: $0) }
         codec = BoardCodec(registry: configuration.registry)
         Self.numbered += 1
         number = Self.numbered

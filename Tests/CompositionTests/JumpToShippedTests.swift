@@ -2,19 +2,20 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Composition
 import CoreGraphics
 import Frames
 import Geometry
+import HostSlots
 import JumpTo
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import TestKit
 import TextEditing
 import Titles
 
-// Jump To as the app wires it: the shipped list, the board's window with the chrome Composition puts
+// Jump To as the app wires it: the shipped list, the board's window with the chrome the window puts
 // round the canvas (the palette over it), Go › Jump To… and ⌘K, over the nested file (the root, Plans,
 // and Plans' untitled subboard).
 
@@ -168,7 +169,7 @@ extension NestedWindow {
         w.window.spin { w.paletteHasKeyboard }
         let field = try require(w.paletteField)
         let frame = w.onCanvas(field)
-        let covered = ShippedPlugins.coveredTop(on: w.nest.sBoard)
+        let covered = w.editor.registry.hostCoveredTop(on: w.nest.sBoard)
         expectClose(w.canvas.isFlipped ? frame.minY : w.canvas.bounds.height - frame.maxY, covered + 12, within: 1.5)
         expect(covered > 30, "the path's pill is there")
         let state = try require(w.editor.jumpTo)

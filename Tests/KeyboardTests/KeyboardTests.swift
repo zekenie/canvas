@@ -1,6 +1,7 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
+import HostSlots
 import Keyboard
 import TestKit
 
@@ -264,6 +265,14 @@ import TestKit
 ])
 
 @MainActor let registrationTests = Suite("Registering shortcuts", [
+    test("Keyboard says the toolbar's tip for a tool: its label and the key that switches to it, the label alone for a tool with no key") {
+        let registry = try Registry(plugins: [KeyboardPlugin(), TilesPlugin()])
+        let hand = try require(registry.tools.first { $0.id == .hand })
+        let tile = try require(registry.tools.first { $0.id == ToolID(placing: Tile.kind) })
+        expectEqual(registry.toolTip(for: hand), "\(hand.label) (H)")
+        expectEqual(registry.toolTip(for: tile), tile.label)
+        expectEqual(try Registry(plugins: [TilesPlugin()]).toolTip(for: hand), hand.label, "without Keyboard, a tool's tip is its label")
+    },
     test("a chord taken twice conflicts, whatever the letter's case, the Hand's H included") {
         expectThrows(RegistryError.conflict(point: "KeyboardShortcuts", key: "shortcut H", plugins: ["keyboard", "clash"])) {
             _ = try Registry(plugins: [KeyboardPlugin(), Contributor(id: "clash") { $0.shortcut("H", "Mine") { _ in } }])
@@ -318,7 +327,7 @@ import TestKit
                                                        .tool(ToolID(placing: Disc.kind)), .tool("zap"), .command("stamp"), .custom("Next")])
         expectEqual(registry.report, """
         core          tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
-        keyboard      service KeyboardState · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
+        keyboard      service KeyboardState · tool tips · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
         discs         shape disc · tool disc · shortcut D → tool disc · tool zap · shortcut Z → tool zap · command stamp · shortcut ⌘S → command stamp · shortcut ⇥ → Next
         """)
     },

@@ -2,12 +2,12 @@ import AppKit
 import Canvas
 import CanvasTesting
 import CanvasUI
-import Composition
 import Foundation
 import Geometry
 import LanguageModels
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import SwiftUI
 import TestKit
@@ -16,8 +16,7 @@ import TestKit
 /// on `pasteboard` (a test that copies passes its own).
 /// `extra`: plugins after the shipped list.
 @MainActor func configureBoards(pasteboard: NSPasteboard = .general, extra: [any CanvasPlugin] = []) throws {
-    BoardDocument.configuration = BoardConfiguration(registry: try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()) + extra),
-                                                     coveredTop: ShippedPlugins.coveredTop(on:), boardName: ShippedPlugins.boardName(of:)) { board in
+    BoardDocument.configuration = BoardConfiguration(registry: try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()) + extra)) { board in
         AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails, showsMinimap: board.view.showsMinimap,
                               view: board.view))
     }

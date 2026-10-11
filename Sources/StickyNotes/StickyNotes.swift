@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Connections
+import HostSlots
 import Keyboard
 import Mentions
 import Observation
@@ -55,7 +56,7 @@ extension PluginID {
     public static let stickyNotes: PluginID = "sticky-notes"
 }
 
-public struct StickyNotesPlugin: CanvasPlugin {
+public struct StickyNotesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .stickyNotes }
     public func register(into registrar: inout PluginRegistrar) {
@@ -79,6 +80,8 @@ public struct StickyNotesPlugin: CanvasPlugin {
             note.typeRows(drawnIn: { NoteLayout($0, in: $1).block })   // and a type's rows go under its words
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
+        // Six notes on how to use them, for the app's first board: linked where the list draws arrows.
+        registrar.welcomeBoard { registry in WelcomeBoard.document(linked: registry.kinds.contains(Arrow.kind)) }
     }
 }
 

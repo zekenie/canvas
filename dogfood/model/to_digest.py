@@ -3,7 +3,8 @@
 spec.py, if it has one.
     to_digest.py <digest.json>          PROJECT is the project's directory (this one when unset)
 
-The root holds the modules as cards in bands, a band a layer, top to bottom (each band's `rank`); a module's
+The root holds the modules as cards in bands, a band a layer, the top layer first (each band's `rank`: rows or
+columns, as the skill finds the view shows larger); a module's
 imports are edges between the cards. A module's board holds its files as notes in frames (spec.py's GROUPS, else
 by folder), and a module in FOLDER_BOARDS holds a card for each of those folders, whose board holds its files. Which
 file uses which is an edge, as heavy as the names it uses; one to a file on another board is a pill there, and that

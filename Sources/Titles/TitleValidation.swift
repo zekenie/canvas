@@ -15,7 +15,7 @@ import Validation
 /// its last from, which Validation checks again, on the board shown or once theirs is. Where shapes
 /// are is nothing it reads, so it ignores moves. A plugin of its own, so a list can have Titles
 /// without Validation (the registry refuses its rule where Validation isn't installed).
-public struct TitleValidationPlugin: CanvasPlugin {
+public struct TitleValidationPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "title-validation" }
 

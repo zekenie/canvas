@@ -532,7 +532,7 @@ extension CanvasEditor {
 
 /// Lays out and draws every adornment, and makes them pointable: the clickable ones are canvas
 /// buttons, and any is its shape's. Contributes none of its own.
-public struct AdornmentsPlugin: CanvasPlugin {
+public struct AdornmentsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .adornments }
 

@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import CanvasUI
 import CoreGraphics
+import HostSlots
 import JumpTo
 import Selection
 import SwiftUI
@@ -88,6 +89,14 @@ private final class PaletteWindow {
 private let arrowDown = "\u{F701}", arrowUp = "\u{F700}"
 
 @MainActor let paletteTests = Suite("Jump To's palette", [
+    test("the palette is one of the views the window puts over the canvas: over the whole of it, over the path, covering nothing a fit minds") {
+        let registry = try Registry(plugins: jumpPlugins())
+        expectEqual(registry.hostOverlays.map(\.alignment), [.top, .center], "Boards' path, then the palette over it")
+        let palette = try require(registry.hostOverlays.last)
+        expectEqual(palette.coveredTop(BoardID(owner: ShapeID())), 0)
+        let line = try require(registry.report.split(separator: "\n").first { $0.hasPrefix("jump-to ") })
+        expect(line.hasSuffix(" host overlay"), String(line))
+    },
     test("⌘K on the canvas opens it: a capsule at the top middle, 12 points down, its field with the keyboard and its placeholder, and nothing else") {
         let w = try PaletteWindow()
         expect(w.field == nil, "closed, it's nothing")

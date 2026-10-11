@@ -2,7 +2,6 @@ import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import Composition
 import Connections
 import CoreGraphics
 import Geometry
@@ -10,6 +9,7 @@ import LanguageModels
 import Locking
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import TableOfContents
 import TestKit

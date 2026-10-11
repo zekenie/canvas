@@ -3,8 +3,9 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Composition
+import HostSlots
 import LanguageModels
+import ShippedTesting
 import SwiftUI
 import TableOfContents
 import TestKit
@@ -38,7 +39,7 @@ final class DrawingWindow {
     /// Runs `canvas draw` on this board as the app's command server does, and says what it drew.
     @discardableResult
     func draw(_ script: String) throws -> JSON {
-        let commands = ShippedPlugins.commands(in: editor.registry)
+        let commands = editor.registry.hostCommands
         let spec = try require(commands.specs.first { $0.name == "draw" })
         let params = try spec.params(from: ["-"], standardInput: { script })
         return try awaitResult { try await commands.run(spec.name, .object(params), self.editor) }

@@ -220,7 +220,7 @@ public enum EdgeEnd: Hashable, Sendable, Codable {
 /// plugin list with a plugin that contributes to them (Ports, Mentions) needs it. Put it early (in
 /// the shipped list, right after Selection), so its service hears each commit before those that
 /// read it; one that hears a commit first brings it up to date (`catchUp`).
-public struct TopologyPlugin: CanvasPlugin {
+public struct TopologyPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .topology }
 

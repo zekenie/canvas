@@ -3,13 +3,13 @@ import AppKit
 import CanvasTesting
 import CanvasUI
 import Clipboard
-import Composition
 import CoreGraphics
 import Geometry
 import LanguageModels
 import Locking
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import SwiftUI
 import TableOfContents

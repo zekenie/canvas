@@ -14,7 +14,7 @@ import TableOfContents
 /// (`ContentsMoves`), placed the same way, several at once as one block. A feature no kind opts into and
 /// nothing imports, as Jump To and Reordering are: the commands go on every kind a drag moves, the kinds
 /// whose shapes have a box.
-public struct MovingPlugin: CanvasPlugin {
+public struct MovingPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "moving" }
 

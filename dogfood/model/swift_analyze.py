@@ -59,12 +59,28 @@ def package_name(repo):
     m = re.search(r'\bPackage\(\s*name:\s*"([^"]+)"', code)
     return m.group(1) if m else os.path.basename(os.path.abspath(repo))
 
+def shipped_modules(code):
+    """The modules of the plugins a package's product is made of, once each, in order, as this repo writes them: a
+    table `let ships = [` ... `]` of "Module.Type" strings, in code with no comments. None in a package without one."""
+    table = re.search(r'^let ships = \[\n(.*?)^\]', code, re.S | re.M)
+    out = []
+    for module in re.findall(r'"([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*"', table.group(1)) if table else []:
+        if module not in out:
+            out.append(module)
+    return out
+
 def parse_package(repo):
     """Every target in Package.swift: name, deps (targets and products, by name), path, kind, and its layer tag,
     a `// layer: <name>` comment after it, as this repo writes (`test of X` reads as test). A target written twice
-    (in #if branches) is read once; dependencies that aren't a literal list are left out, and said."""
+    (in #if branches) is read once; dependencies that aren't a literal list are left out, and said.
+
+    `deps` is what a target's line writes: what its design depends on, and what the board draws its arrows from.
+    `links` is what a compile of it reads: those, and, for a line whose list ends `+ shipped` (the product, and the
+    tests of it), every module of the plugins that ship, which link into it and which it may import though its line
+    names none of them. So the app's card has no arrow to every plugin, and its tests still type-check."""
     text = open(os.path.join(repo, 'Package.swift')).read()
     code = blank_comments(text)
+    shipped = shipped_modules(code)
     out, seen, pos = [], set(), 0
     pattern = re.compile(r'\.(' + '|'.join(TARGETS) + r')\(')
     while True:
@@ -78,12 +94,14 @@ def parse_package(repo):
         if not name or name.group(1) in seen:
             continue
         seen.add(name.group(1))
-        deps = []
+        deps, ships = [], False
         d = re.search(r'dependencies:\s*(\[)?', args)
         if d and d.group(1):
-            inner = args[d.end():_closing(args, d.end(), '[', ']') - 1]
+            closed = _closing(args, d.end(), '[', ']')
+            inner = args[d.end():closed - 1]
             for a, b in re.findall(r'\.(?:target|byName|product)\(\s*name:\s*"([^"]+)"[^)]*\)|"([^"]+)"', inner):
                 deps.append(a or b)
+            ships = re.match(r'\s*\+\s*shipped\b', args[closed:]) is not None
         elif d:
             print(f"Package.swift: {name.group(1)}'s dependencies aren't a list written out; left out", file=sys.stderr)
         path = re.search(r'path:\s*"([^"]+)"', args)
@@ -93,7 +111,7 @@ def parse_package(repo):
         if layer and re.match(r'test of \w+', layer):
             layer = 'test'
         kind = m.group(1)
-        out.append(dict(name=name.group(1), deps=deps, kind=kind, layer=layer,
+        out.append(dict(name=name.group(1), deps=deps, links=deps + [m for m in shipped if ships and m not in deps], kind=kind, layer=layer,
                         path=path.group(1) if path else ('Tests/' if kind == 'testTarget' else 'Sources/') + name.group(1),
                         test=kind == 'testTarget' or layer in ('test', 'testsupport')))
     return out

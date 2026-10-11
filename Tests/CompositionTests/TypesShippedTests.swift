@@ -5,17 +5,18 @@ import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import Clipboard
-import Composition
 import Connections
 import CoreGraphics
 import DetailPanel
 import Foundation
 import Frames
+import HostSlots
 import LanguageModels
 import Locking
 import Mentions
 import Publishing
 import Selection
+import ShippedTesting
 import SlashCommands
 import SwiftUI
 import StickyNotes
@@ -173,7 +174,7 @@ private let petAnswer = """
             let layout = try require(editor.detailPanel?.layout(for: try require(editor.document[shape])))
             expectEqual(layout.sections(in: .of(TypesTab.self)).map(\.section), ["types", "fields"])
         }
-        let host = NSHostingView(rootView: ShippedPlugins.detailPanel(editor: editor, onExit: {}))
+        let host = NSHostingView(rootView: try require(editor.registry.hostInspector).view(for: editor, onExit: {}))
         host.frame = CGRect(x: 0, y: 0, width: DetailStyle.idealWidth, height: 700)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: true)
         window.contentView = host

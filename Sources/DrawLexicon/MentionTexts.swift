@@ -12,7 +12,7 @@ import Mentions
 /// what the schema says beside the text's reference, `x-canvas-mentions`), so a text that admits only plates
 /// names the plate called Address, not a note called that. A whole mention an agent writes
 /// (`@[label](shape:ID)`, from a query's rows) is kept as written, as it always was.
-public struct MentionTextsPlugin: CanvasPlugin {
+public struct MentionTextsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "mention-texts" }
 

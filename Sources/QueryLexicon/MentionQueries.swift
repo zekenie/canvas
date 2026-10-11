@@ -17,7 +17,7 @@ import Topology
 /// shapes' names, a function of the records that `MentionState` keeps (`MentionLabels`), taken as
 /// a `QueryFileFact` (`MentionedNames`), so a query that searches note text (`[text*=…]`,
 /// `:contains`) is `readsOnlyTheFile` and a stand-in's own query may read it.
-public struct MentionQueriesPlugin: CanvasPlugin {
+public struct MentionQueriesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "mention-queries" }
 

@@ -13,7 +13,7 @@ extension PluginID {
 /// each range of the text: a match inside a row with more in it marks that row's summary, a match in a folded
 /// row the fold. A type's own note gives nothing (its kinds are not values) and a yes or no has no text.
 /// A plugin value of its own, after Find and Types, so a list without Find leaves it out.
-public struct FieldFindPlugin: CanvasPlugin {
+public struct FieldFindPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .fieldFind }
 

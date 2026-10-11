@@ -1,14 +1,16 @@
 import AppKit
-import Canvas
+@_spi(Host) import Canvas
 import CanvasRPC
 import Foundation
+import HostSlots
 import UniformTypeIdentifiers
 
 /// The app's end of the command line (`canvas`): it listens where `canvas` looks (`SocketPath`),
 /// tells it what the app is and what it runs (`describe`), and answers each request on the main
 /// actor. Three commands are its own, since they're about the app's boards, which only it knows:
 /// `status`, `boards` and `new`, which makes a board's file as Save As does and opens it. It's given
-/// the rest (`Commands`: the plugins' commands, from Composition), and runs each on the board its
+/// the rest (`Commands`: the plugins' commands, from the host's slot for them, HostSlots'
+/// `registry.hostCommands`), and runs each on the board its
 /// request names (`board`), or the one in front, whose editor it changes as anything else does, so
 /// the board's window shows each change as it's made. A file with boards inside shapes is worked on
 /// where its window is: the board it shows (`editor.board`), which `status` and `boards` name. A board command's result, when it's an object, says which
@@ -37,6 +39,13 @@ public final class CommandServer {
                     run: @escaping @MainActor (_ name: String, _ params: JSON, _ editor: CanvasEditor?) async throws(RPCError) -> JSON) {
             self.specs = specs
             self.run = run
+        }
+
+        /// The commands a plugin gives the host (`registry.hostCommands`: Automation's, every
+        /// plugin's command), none where the list has no such plugin.
+        @MainActor public init(registry: Registry) {
+            let commands = registry.hostCommands
+            self.init(specs: commands.specs, run: commands.run)
         }
     }
 
@@ -233,7 +242,7 @@ public final class CommandServer {
                     params: ["type": "object", "properties": [:], "additionalProperties": false],
                     examples: [CommandExample("\(RPC.commandName) status", "The app's version, its process, and its boards.")]),
         CommandSpec(name: RPC.boardsCommand, summary: "List the open boards: each one's id, name, file, which is in front, and what its window shows.",
-                    discussion: "A board command works on the board in front unless --board names another: by its id here (which lasts while the app runs), its file, or its name. A file can hold boards inside its shapes; a command works on the one its window shows: shows (\"root\", or the id of the shape that owns it) and showsPath, the boards from the root down to it. shapes counts that board's shapes, and fileShapes the file's, on every board.",
+                    discussion: "A board command works on the board in front unless --board names another: by its id here (which lasts while the app runs), its file, or its name. A file can hold boards inside its shapes; a command works on the one its window shows: shows (\"root\", or the id of the shape that owns it) and showsPath, the boards from the root down to it. shapes counts that board's shapes, and fileShapes the file's, on every board. view is the room its window has for a board fit into it, [width, height] in points (the canvas, less the margin a fit leaves), whichever board it shows: what a tool that lays a board out shapes it for; left out while the window has no size.",
                     scope: .app, params: ["type": "object", "properties": [:], "additionalProperties": false],
                     examples: [CommandExample("\(RPC.commandName) boards", "Every open board.")]),
         CommandSpec(name: RPC.newCommand, summary: "Make a new, empty board's file, open it, and say it as boards lists it.",
@@ -250,7 +259,7 @@ public final class CommandServer {
 
     /// A board as `boards` lists it: what a board command's result names it by (`shown`), which is
     /// in front, whether it's edited, how many shapes the board shown holds and how many the file
-    /// does, on every board, and its file.
+    /// does, on every board, its file, and the room its window has for a board fit into it (`view`).
     private static func listed(_ board: BoardDocument, frontmost: BoardDocument?) -> [String: JSON] {
         var entry = shown(board)
         entry["frontmost"] = .bool(board === frontmost)
@@ -258,7 +267,19 @@ public final class CommandServer {
         entry["shapes"] = .number(Double(board.editor.document.shapes.count))
         entry["fileShapes"] = .number(Double(board.editor.file.shapeCount))
         if let url = board.fileURL { entry["path"] = .string(url.path) }
+        if let room = fitRoom(of: board.editor) { entry["view"] = .array([.number(Double(room.width)), .number(Double(room.height))]) }
         return entry
+    }
+
+    /// The room a window has for a board fit into it, in view points: what a first visit fits the
+    /// root board's shapes into, at 100% at most (the view, `CanvasEditor.firstVisitInset` in from
+    /// its edges). It is the window's, whichever board of the file it shows now: a board inside a
+    /// shape has a little less, under what the host puts over it (`unobscuredViewport`), and a tool
+    /// that asks twice must be told the same. Nil while the view has no size, or none to spare.
+    static func fitRoom(of editor: CanvasEditor) -> CGSize? {
+        let room = CGRect(origin: .zero, size: editor.viewportSize).insetBy(dx: CanvasEditor.firstVisitInset, dy: CanvasEditor.firstVisitInset)
+        guard !room.isNull, room.width >= 1, room.height >= 1 else { return nil }
+        return room.size
     }
 
     /// A file and the board inside it its window shows, as `boards` lists them and a board

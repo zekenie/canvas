@@ -21,7 +21,7 @@ import Types
 /// up is O(1) and the answer is worked out off the main actor); the text format reads the names in it.
 /// `:incomplete` the editor: the check is the main actor's (the field book), asked in slices of only the
 /// shapes that have types.
-public struct TypeQueriesPlugin: CanvasPlugin {
+public struct TypeQueriesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "type-queries" }
 

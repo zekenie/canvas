@@ -1,6 +1,6 @@
 import AppKit
 import Boards
-import Canvas
+@_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
 import Selection
@@ -304,7 +304,8 @@ import TestKit
     let editor = try windowEditor(h.editor.file)
     let bounds = CGRect(x: 0, y: 0, width: 900, height: 120)
     let window = NSWindow(contentRect: bounds, styleMask: [.titled], backing: .buffered, defer: false)
-    let hosting = NSHostingView(rootView: BoardPath(editor: editor, rootName: "Plans"))
+    editor.nameRoot("Plans")
+    let hosting = NSHostingView(rootView: BoardPath(editor: editor))
     hosting.sizingOptions = []
     hosting.frame = bounds
     let root = NSView(frame: bounds)

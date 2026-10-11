@@ -179,7 +179,8 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var fx = hubFixture(4, 5);
     var d = digest(fx.nodes, fx.edges, { policy: { mess: 0.5 } });   // a pill costs 4 at 0.5, as the arithmetic below assumes
     var planOf0 = planOf;
-    planOf = function (dd, opts) { return planOf0(dd, Object.assign({ popular: 100000 }, opts || {})); };   // no node is popular here: every move is a judgment call
+    // no node is popular here: every move is a judgment call; and the view is square, where the hub's twenty arrows cross enough for promoting it to pay (in a wide view the frames go around the hub, and it does not)
+    planOf = function (dd, opts) { return planOf0(dd, Object.assign({ popular: 100000, view: { w: 1000, h: 1000 } }, opts || {})); };
     try {
     var r = await planOf(d);
     var rep = r.report.boards.root, mu = 4;
@@ -258,7 +259,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
 
   await test('two far-apart groups of users in a frame get a shared pill each: the host\'s edge plain and first, the others saying share: "<host>"', async function () {
     var fx = wideFixture(2, 4, 8);
-    var r2 = await planOf(digest(fx.nodes, fx.edges));
+    var r2 = await planOf(digest(fx.nodes, fx.edges), { view: { w: 800, h: 4000 } });   // a view five times as tall as wide: the frame runs down it, its two rings at its ends
     var pills = hubPills(r2, fx.users);
     eq(pills.map(function (x) { return x.users; }).sort(), [4, 4], 'two shared pills of four users: ' + JSON.stringify(pills));
     var lines = edgeLines(r2, 'root');
@@ -972,21 +973,52 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   });
 
   // ---- ranks, headers, and drawing again in place ----
-  await test('ranked frames are rows in rank order, each as wide as the widest, what they hold centred; an unranked shape goes below them', async function () {
+  // three ranked frames (Top 0, Mid 1, Low 2) and a note with no rank, with arrows that point up the ranks: a layered layout would put Low first; the ranks win
+  function rankedDigest() {
     var nodes = [{ title: 'Low', kind: 'frame', rank: 2 }, { title: 'Top', kind: 'frame', rank: 0 }, { title: 'Mid', kind: 'frame', rank: 1 }, note('Loose', null, 'no rank')];
     ['A', 'B', 'C', 'D'].forEach(function (x) { nodes.push(note('Top ' + x, 'Top', 'x')); });
     nodes.push(note('Mid A', 'Mid', 'x'), note('Low A', 'Low', 'x'), note('Low B', 'Low', 'x'));
-    // arrows that point up the ranks: a layered layout would put Low above Top; the ranks win
-    var edges = [{ from: 'Low A', to: 'Top A' }, { from: 'Low B', to: 'Mid A' }, { from: 'Mid A', to: 'Top B' }];
-    var r = await planOf(digest(nodes, edges), { promote: false });
-    var by = {}; rootOf(r.plan).shapes.forEach(function (s) { by[s.title] = s; });
-    assert(by.Top.y + by.Top.h < by.Mid.y && by.Mid.y + by.Mid.h < by.Low.y, 'top, mid, low: ' + [by.Top.y, by.Mid.y, by.Low.y]);
+    return digest(nodes, [{ from: 'Low A', to: 'Top A' }, { from: 'Low B', to: 'Mid A' }, { from: 'Mid A', to: 'Top B' }]);
+  }
+  function shapesOf(r) { var by = {}; rootOf(r.plan).shapes.forEach(function (s) { by[s.title] = s; }); return by; }
+  var isRows = function (by) { return by.Top.y + by.Top.h < by.Mid.y && by.Mid.y + by.Mid.h < by.Low.y; };
+  var isColumns = function (by) { return by.Top.x + by.Top.w < by.Mid.x && by.Mid.x + by.Mid.w < by.Low.x; };
+
+  await test('ranked frames as rows are in rank order, each as wide as the widest, what they hold centred; an unranked shape goes below them', async function () {
+    var r = await planOf(rankedDigest(), { promote: false, ranks: 'rows' });
+    var by = shapesOf(r);
+    assert(isRows(by), 'top, mid, low: ' + [by.Top.y, by.Mid.y, by.Low.y]);
     assert(by.Low.y + by.Low.h < by.Loose.y, 'the unranked note is below the bands');
     eq([by.Mid.w, by.Low.w], [by.Top.w, by.Top.w], 'every band as wide as the widest');
     eq([by.Mid.x, by.Low.x], [by.Top.x, by.Top.x], 'the bands are flush');
     var mid = by['Mid A'];
     assert(Math.abs((mid.x + mid.w / 2) - (by.Mid.x + by.Mid.w / 2)) <= 1, 'a narrow band\'s note is centred in it');
+    eq(r.report.boards.root.algorithms.find(function (a) { return a.container === 'root'; }).how, 'rows', 'the report says which way');
     checkPlan(r.plan);
+  });
+
+  await test('ranked frames as columns are in rank order left to right, each as tall as the tallest, what they hold at the top; an unranked shape goes after them', async function () {
+    var r = await planOf(rankedDigest(), { promote: false, ranks: 'columns' });
+    var by = shapesOf(r);
+    assert(isColumns(by), 'top, mid, low: ' + [by.Top.x, by.Mid.x, by.Low.x]);
+    assert(by.Low.x + by.Low.w < by.Loose.x, 'the unranked note is right of the bands');
+    eq([by.Mid.h, by.Low.h], [by.Top.h, by.Top.h], 'every band as tall as the tallest');
+    eq([by.Mid.y, by.Low.y], [by.Top.y, by.Top.y], 'the bands are flush');
+    eq(by['Mid A'].y - by.Mid.y, 40, 'a short band\'s note is at its top');
+    eq(r.report.boards.root.algorithms.find(function (a) { return a.container === 'root'; }).how, 'columns', 'the report says which way');
+    checkPlan(r.plan);
+  });
+
+  await test('ranked frames run whichever way the view shows larger: columns in a wide view, rows in a tall one, and a band is laid out to its slot', async function () {
+    var wide = await planOf(rankedDigest(), { promote: false, view: { w: 2400, h: 800 } }), tall = await planOf(rankedDigest(), { promote: false, view: { w: 800, h: 2400 } });
+    var w = shapesOf(wide), t = shapesOf(tall);
+    assert(isColumns(w), 'a wide view: columns');
+    assert(isRows(t), 'a tall view: rows');
+    // the band of four notes is laid out to its slot: narrower as a column of the wide view than as a row of it would be
+    var rowsOfWide = shapesOf(await planOf(rankedDigest(), { promote: false, view: { w: 2400, h: 800 }, ranks: 'rows' }));
+    assert(w.Top.w < rowsOfWide.Top.w, 'a column is narrower than the row: ' + w.Top.w + ' against ' + rowsOfWide.Top.w);
+    eq([wide.report.view.from, wide.report.view.w], ['given', 2400], 'the report says the view the plan is for');
+    checkPlan(wide.plan); checkPlan(tall.plan);
   });
 
   await test('a board\'s header says the digest\'s text (the first board) or its subboard\'s; without one it says what it is of', async function () {
@@ -1082,6 +1114,112 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(/^digest tool/.test(threw), 'svg is not a command');
     threw = ''; try { await clim.run(['plan', '/d.json', '/m.json', '/o', '--split', 'off'], { readText: io.readText, print: function () {} }); } catch (e) { threw = e.message; }
     assert(/unknown option --split/.test(threw), 'nor is --split a flag: ' + threw.slice(0, 60));
+  });
+
+  await test('a board is laid out to the shape of the view: wider than tall for a wide view, taller than wide for a tall one, and the report says how far off it is', async function () {
+    var d = fixture('acme');
+    var wide = await planOf(d, { view: { w: 1600, h: 800 } }), tall = await planOf(d, { view: { w: 800, h: 1600 } });
+    var sizeOf = function (r) { return r.report.boards.root.end.size; };
+    assert(sizeOf(wide)[0] > sizeOf(wide)[1], 'a wide view: ' + sizeOf(wide));
+    assert(sizeOf(tall)[1] > sizeOf(tall)[0], 'a tall view: ' + sizeOf(tall));
+    [wide, tall].forEach(function (r) { assert(r.report.boards.root.end.aspect <= 1.5, 'within half again of the view\'s shape: ' + r.report.boards.root.end.aspect); checkPlan(r.plan); });
+    // the same digest, the same view: the same plan
+    var again = await planOf(d, { view: { w: 1600, h: 800 } });
+    eq(JSON.stringify(again.plan), JSON.stringify(wide.plan), 'the same again');
+  });
+
+  await test('the view is the one given, else one assumed, and the summary says which; --view and --ranks are read, and a window\'s room from canvas boards', async function () {
+    var d = fixture('tree');
+    var b = await planOf(d, { view: { w: 500, h: 900 } }), c = await planOf(d);
+    eq([b.report.view.from, b.report.view.w, b.report.view.h], ['given', 500, 900], 'given');
+    eq([c.report.view.from, c.report.view.w, c.report.view.h], ['assumed', elkm.DEFAULT_VIEW.w, elkm.DEFAULT_VIEW.h], 'assumed');
+    assert(/laid out for a view of 500 x 900$/.test(clim.summarize(b).split('\n')[0]), clim.summarize(b).split('\n')[0]);
+    assert(/laid out for a view of 1440 x 960 \(assumed: no view was given\)$/.test(clim.summarize(c).split('\n')[0]), clim.summarize(c).split('\n')[0]);
+    var refusal = async function (flag, value) { try { await clim.run(['plan', '/d.json', '/m.json', '/o', flag, value], { readText: function () { return JSON.stringify(d); }, print: function () {} }); } catch (e) { return e.message; } return ''; };
+    assert(/--view takes a width and a height/.test(await refusal('--view', 'wide')), '--view wide is refused');
+    assert(/--ranks is auto, rows or columns/.test(await refusal('--ranks', 'diagonal')), '--ranks diagonal is refused');
+    // a window's room, from `canvas boards`: the board in front, or one by its id; nothing when there is none, or its window has no size
+    var redrawm = await import('../lib/redraw.mjs');
+    var boards = [{ id: 1, frontmost: false, view: [1312.5, 771.4] }, { id: 2, frontmost: true }];
+    eq(redrawm.boardView(boards, '1'), '1313x771', 'by id, in whole points');
+    eq(redrawm.boardView(boards, 'front'), '', 'the board in front has no size');
+    eq(redrawm.boardView(boards, '7'), '', 'no such board');
+    eq(redrawm.boardView([], 'front'), '', 'no board at all');
+    var out = []; await clim.run(['view', '/b.json', '1'], { readText: function () { return JSON.stringify(boards); }, print: function (x) { out.push(x); } });
+    eq(out, ['1313x771'], 'the command prints it as --view takes it');
+  });
+
+  await test('policy.ranks says which way ranked children run, and --ranks says it over the digest', async function () {
+    var d = Object.assign(rankedDigest(), { policy: { ranks: 'rows' } }), wide = { w: 2400, h: 800 };
+    assert(isRows(shapesOf(await planOf(d, { promote: false, view: wide }))), 'the digest says rows, in a view that would have columns');
+    assert(isColumns(shapesOf(await planOf(d, { promote: false, view: wide, ranks: 'columns' }))), 'the option says columns over it');
+    assert(isColumns(shapesOf(await planOf(d, { promote: false, view: wide, ranks: 'auto' }))), 'and auto leaves it to the view');
+    var threw = ''; try { model.buildModel(Object.assign(rankedDigest(), { policy: { ranks: 'sideways' } })); } catch (e) { threw = e.message; }
+    assert(/policy\.ranks is "rows" or "columns"/.test(threw), 'another word is refused: ' + threw);
+    eq(checkm.checkDigest(Object.assign(rankedDigest(), { policy: { ranks: 'sideways' } })).errors.length, 1, 'and check says so');
+  });
+
+  await test('how far off its shape a container is: the ratio of the two shapes; a board\'s header note counted; nothing for a board the view shows whole', async function () {
+    eq(elkm.offShape(300, 100, 1.5), 2, 'twice too wide');
+    eq(elkm.offShape(100, 300, 1.5), 4.5, 'four and a half times too tall');
+    eq(elkm.offShape(150, 100, 1.5), 1, 'the shape itself');
+    eq(elkm.offShapeOf(300, 100, { aspect: 1.5 }), 2, 'a shape with no view: the ratio');
+    eq(elkm.offShapeOf(300, 100, { aspect: 1.5, headW: 0, headH: 100 }), 1, 'the header\'s room is part of the board');
+    var view = { aspect: 1.5, viewW: 1500, viewH: 1000 };
+    eq(elkm.offShapeOf(900, 950, view), 1, 'a board the view shows whole, at its own size: any shape');
+    assert(Math.abs(elkm.offShapeOf(6000, 2000, view) - 2) < 1e-9, 'a board that outgrows the view: the ratio');
+    var part = elkm.offShapeOf(900, 1200, view);   // shown at 5/6 of its size, where the same room in the view's shape would be shown whole
+    assert(Math.abs(part - 1.44) < 1e-9 && part < elkm.offShape(900, 1200, 1.5), 'less than the ratio for a board a little too tall for the view: ' + part);
+  });
+
+  await test('a stress layout stretched to a shape keeps its order and comes out the shape; boxes pushed apart move only where they overlap', async function () {
+    var items = [], pos = [];
+    for (var i = 0; i < 9; i++) { items.push({ w: 200, h: 100 }); pos.push({ x: (i % 3) * 260, y: Math.floor(i / 3) * 200 }); }
+    var plain = elkm.stretched(items, pos, { aspect: 780 / 500 });
+    eq(plain.k, 1, 'already the shape: left alone');
+    var wide = elkm.stretched(items, pos, { aspect: 6 });
+    var box = elkm.normalize(items, wide.pos);
+    assert(wide.k > 1 && box.w / box.h > 3, 'stretched wide: ' + box.w + ' x ' + box.h + ', k ' + wide.k);
+    for (var a = 0; a < 9; a++) for (var b = 0; b < 9; b++) if (pos[a].x < pos[b].x) assert(wide.raw[a].x < wide.raw[b].x, 'left of stays left of');
+    for (var p = 0; p < 9; p++) for (var q = p + 1; q < 9; q++) {
+      var A = wide.pos[p], B = wide.pos[q];
+      assert(!(A.x < B.x + 200 && B.x < A.x + 200 && A.y < B.y + 100 && B.y < A.y + 100), 'nothing overlaps');
+    }
+    eq(elkm.stretch(items, elkm.stretch(items, pos, 4), 1 / 4).map(function (z) { return [Math.round(z.x), Math.round(z.y)]; }), pos.map(function (z) { return [z.x, z.y]; }), 'a stretch undone is where it was');
+    // pushApart: two boxes too near are pushed apart along the way they overlap least; a third, clear of both, stays
+    var three = [{ w: 200, h: 100 }, { w: 200, h: 100 }, { w: 200, h: 100 }], at = [{ x: 0, y: 0 }, { x: 150, y: 10 }, { x: 0, y: 600 }];
+    var out = elkm.pushApart(three, at, 40, 64);
+    eq(out[2], at[2], 'the box clear of the others has not moved');
+    assert(out[1].x - (out[0].x + 200) >= 40 - 1e-6, 'the two are 40 apart across: ' + JSON.stringify(out));
+    eq(elkm.pushApart(three, [{ x: 0, y: 0 }, { x: 240, y: 0 }, { x: 0, y: 164 }], 40, 64), [{ x: 0, y: 0 }, { x: 240, y: 0 }, { x: 0, y: 164 }], 'boxes already clear stay where they are');
+  });
+
+  await test('too long is as the view sees it: an arrow may run further across a wide view than down it', async function () {
+    var m = { node: function () { return { never: false }; } };
+    var across = { x1: 0, y1: 0, x2: 1200, y2: 0 }, down = { x1: 0, y1: 0, x2: 0, y2: 1200 };
+    var layout = function (aspect) { return { plan: { direct: [{ from: 'a', to: 'b' }, { from: 'c', to: 'd' }], members: [] }, shape: { aspect: aspect } }; };
+    var names = function (aspect) { return promm.tooLong(m, layout(aspect), { segs: [across, down] }, 1000).map(function (x) { return x.from; }); };
+    eq(names(1), ['a', 'c'], 'a square view: both are over 1000');
+    eq(names(2), ['c'], 'a view twice as wide as tall: the arrow across fits, the one down does not');
+    eq(names(0.5), ['a'], 'a view twice as tall as wide: the other way round');
+    eq(promm.tooLong(m, layout(2), { segs: [across, down] }, 1000)[0].length, 1200, 'the length said is the arrow\'s own');
+  });
+
+  await test('while too-long arrows are set apart every shape stays where it is: only what a grown box overlaps is pushed off it', async function () {
+    var x = await layouterOf(fixture('acme'));
+    x.L.setAnchors(x.layout);
+    x.L.hold = true; x.L.warm = true;
+    var same = await x.L.layout(x.state);
+    x.layout.boxes.forEach(function (b, t) { eq(same.boxes.get(t), b, t + ' has not moved'); });
+    // one arrow set apart: its start has a pill beside it now, and no shape has moved further than that pill is wide
+    var e = x.layout.plan.direct[0];
+    var st = Object.assign({}, x.state, { apart: new Set([e.from + '\u0000' + e.to]) });
+    var held = await x.L.layout(st);
+    var pill = held.pills.find(function (p) { return p.start === e.from && p.target === e.to; });
+    assert(pill, 'the arrow is a pill beside its start');
+    var reach = pill.w + 80 + 64 + 32;
+    held.boxes.forEach(function (b, t) { var was = x.layout.boxes.get(t); assert(Math.abs(b.x - was.x) <= reach && Math.abs(b.y - was.y) <= reach, t + ' moved ' + (b.x - was.x) + ', ' + (b.y - was.y)); });
+    x.L.hold = false;
   });
 
   io.print(results.length + ' passed, ' + failed + ' failed');

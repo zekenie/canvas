@@ -3,7 +3,6 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
-import Composition
 import Connections
 import CoreGraphics
 import DetailPanel
@@ -13,6 +12,7 @@ import LanguageModels
 import Locking
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import Subboards
 import TableOfContents

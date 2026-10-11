@@ -27,6 +27,7 @@ maps one onto the other.
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [TextEditing](#textediting)
 - [FuzzyMatching](#fuzzymatching)
+- [Host slots](#host-slots)
 - [The detail panel](#the-detail-panel)
 - [Context menus](#context-menus)
 - [The table of contents](#the-table-of-contents)
@@ -69,7 +70,7 @@ maps one onto the other.
 |---|---|---|
 | **Kind** | A plain value type holding a shape's data, defined by its list of properties. It names itself once, with `static let kind`. | `struct StickyNote: BoxShapeProps { frame, text }` |
 | **Definition** | Stateless behavior for a kind: how it draws, where it is, how it's hit, what else it can do. | `StickyNoteDefinition`, conforming to `ShapeDefinition` and `Editable` |
-| **Plugin** | A value that says what it adds, in `register(into:)`. | `struct StickyNotesPlugin: CanvasPlugin` |
+| **Plugin** | A value that says what it adds, in `register(into:)`. | `struct StickyNotesPlugin: ListedPlugin` (a `CanvasPlugin` the product's list can name) |
 | **Extension point** | A typed slot some plugin declares and other plugins fill. The type is the key. | `enum ValidationRules: ExtensionPoint` |
 
 Two more things hold them together:
@@ -121,7 +122,7 @@ extension PatchDefinition: CustomSkeleton {
     }
 }
 
-public struct PatchesPlugin: CanvasPlugin {
+public struct PatchesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "patches" }
 
@@ -213,12 +214,14 @@ TEST_FILTER=Patches ./test.sh
 `main.swift` doesn't pass to `runTests`, which would otherwise never run without a word. [Testing
 plugins](#testing-plugins) has the rest of the kit.
 
-**4. Ship it.** Three edits put it in the app:
+**4. Ship it.** One line puts it in the app, and a test pins what it adds:
 
-- `Package.swift`: add it to Composition's dependencies.
-- [`ShippedPlugins.swift`](../Sources/Composition/ShippedPlugins.swift): import it, and add
-  `PatchesPlugin()` to the list in `ShippedPlugins.plugins(pasteboard:model:)`. The list's order
-  is the toolbar's, and the order overlays draw in.
+- `Package.swift`: add `"Patches.PatchesPlugin",` to the table of what ships (`let ships = [`,
+  before the targets), where its order belongs: the list's order is the toolbar's, and the order
+  overlays draw in. Nothing imports the module to list it. The build puts the list in the app,
+  which makes each plugin by its name ([What ships](#what-ships)), which is why the plugin is a
+  `ListedPlugin`: a public struct that can be made with no arguments. The audit refuses a line
+  with nothing like that behind it.
 - [`ShippedTests.swift`](../Tests/CompositionTests/ShippedTests.swift) pins the toolbar and
   [the registry report](#the-registry): add the new tool, `"Patch (P)"`, and the plugin's line,
   `patches              shape patch · tool patch · shortcut P → tool patch`.
@@ -289,7 +292,10 @@ Once one plugin works, the question is which piece the next feature needs.
 | Give each shape of a kind a board of its own, saved, deleted and copied with it | `BoardOwning` on its definition, nothing to implement; `editor.showBoard(BoardID(owner:))` shows one | [Boards in a file](#boards-in-a-file) |
 | Make a double-click, Return or ⌘↓ on a kind's shape do something other than edit it (show its board) | `x.opens("Open") { shape, editor in ... }` (Selection's `ShapeOpening`) | [Selection](#selection) |
 | Make a kind's shapes open onto the boards they own: Open in its menu and panel, ⌘↑ back up, and a name on the path | `x.opensBoard(placeholder:systemImage:)` (Boards), on a `BoardOwning` kind | [Boards](#boards) |
-| Show where you are in a file's boards, and go up | `BoardPath(editor:rootName:)`, over the canvas; `editor.goUp(to:)`, `editor.name(of:root:)` | [Boards](#boards) |
+| Show where you are in a file's boards, and go up | `BoardPath(editor:)`, over the canvas; `editor.goUp(to:)`, `editor.name(of:)` | [Boards](#boards) |
+| Put a view of yours over the window's canvas, beside it as the inspector, a pane in Settings, or words in the window's subtitle or a tool's tip | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }`, `hostInspector`, `settingsPane`, `windowSubtitle`, `toolTips` | [Host slots](#host-slots) |
+| Show a view of yours in the detail panel where it has no one shape to show, or in its place while something of yours is open | `registrar.detailOverview { editor, onExit in … }`; `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }` | [The detail panel](#the-overview-and-takeovers) |
+| Say what a board is called over another plugin's list of it | `registrar.contentsHeading { editor in … }` (the table of contents'), `registrar.findHeading { board, editor in … }` (Find's) | [Boards](#boards) |
 | Put a board inside the board | `SubboardsPlugin`: the Subboard tool (B) places a card that opens onto a board of its own | [Subboards](#subboards) |
 | Hold shapes in a region of the board that moves them with it, locks them with it and keeps what's put down from sitting across its edge | `ShapeContaining` on a box kind's definition, nothing to implement; `FramesPlugin`, whose Frame tool (F) draws one | [Frames](#frames), [Containers](#containers) |
 | Draw a kind's shape with a drag, from the press to the pointer, and still say what a click places (and `canvas draw`) | `x.tool(label:systemImage:shortcut:placing:_:)`, a tool of your own with the kind's placement; `editor.place(_:in:)` at the release | [Frames](#frames) |
@@ -371,7 +377,7 @@ Getting around a file's [boards](#boards) is the example: one line,
 a Board tab in the panel and Open first in the context menu. Boards owns opening them, going back
 up, what a board is called and the path that shows where you are; the kind declares nothing, and
 the core only holds the boards and shows one. One horizontal may build on another: Boards imports
-ContextMenus, DetailPanel, Keyboard, Selection, TableOfContents and Titles.
+ContextMenus, DetailPanel, Find, Keyboard, Selection, TableOfContents and Titles.
 
 Selecting is a horizontal too, one that every kind is in unless it opts out
 (`backdrop.unselectable()`). [Selection](#selection) owns what's selected and the way back
@@ -439,7 +445,9 @@ Opting in goes in one of three directions:
   value of its own in the owner's module (`ValidationDetailsPlugin`, `ValidationContentsPlugin`,
   `MentionValidationPlugin` and `TitleValidationPlugin`): the registry refuses a contribution whose
   point's owner isn't installed, so a list with Validation and no panel installs `ValidationPlugin()`
-  alone.
+  alone. A surface shows itself on another the same way: the table of contents is the detail
+  panel's overview (`ContentsOverviewPlugin`), Find's panel its takeover (`FindPanelPlugin`), and
+  Boards heads both their lists with a board's name (`BoardContentsPlugin`, `BoardFindPlugin`).
 - **A lexicon imports a language and the concerns it gives words to.** A language knows no concern:
   [`canvas draw`](#the-command-line) (Automation's) and [queries](#queries) take what shapes are
   called, what an edge is, what's wrong with a shape drawn, what a board is called and what more a
@@ -455,9 +463,10 @@ Opting in goes in one of three directions:
   value for each concern (DrawLexicon's `TitleNamesPlugin`, `PortEdgesPlugin`,
   `ValidationChecksPlugin` and `MentionTextsPlugin`; QueryLexicon's `TitleQueriesPlugin`, `BoardQueriesPlugin`,
   `MentionQueriesPlugin`, `ValidationQueriesPlugin` and `SelectionQueriesPlugin`), so a list
-  without a concern leaves its words out. What names the shipped kinds stays in Composition, the
-  one module that depends on them all: `--ask`'s prompt (`QueryPrompt`), whose examples write
-  `sticky-note` and `subboard`.
+  without a concern leaves its words out. What names the shipped kinds is in no module: `--ask`'s
+  prompt, whose examples write `sticky-note` and `subboard`, is a text file of the product's
+  (`Shipped/ask-prompt.txt`), which the build puts in the product's executables and the core reads
+  back (`ShippedText`).
 
 No module joins two others but a lexicon. There's no bridge, a module that imports two others to
 join them where it isn't settled which should know the other (a `PatchTitles` bridge would give
@@ -500,27 +509,27 @@ Each target is one line, with its layer:
 | Layer | May depend on | Modules |
 |---|---|---|
 | wire | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
-| foundation | foundation | Geometry, Canvas (the core), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on) and FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) |
-| ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, `CanvasFocus`, and the command line's server) |
+| foundation | foundation, wire | Geometry, Canvas (the core), HostSlots ([what a window puts around its canvas](#host-slots), said by plugins and placed by the window: the one that imports SwiftUI, and the wire, for the commands the app's server runs), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on) and FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) |
+| ui | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, the chrome around the canvas, `CanvasFocus`, the Settings window, and the command line's server) |
 | surface | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, ProseMaps, Topology, Find, Queries, QueryTranslation, Placing, Neighbors |
 | concern | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Publishing, Connections, Mentions, Boards, Snapping, Transform, Types |
 | language | foundation, surface, language, wire | Automation, QueryCommands |
 | lexicon | foundation, surface, concern, language | DrawLexicon, QueryLexicon |
 | vertical | foundation, surface, concern | StickyNotes, Subboards, Frames, JumpTo, References, Moving, Reordering |
-| composition | foundation, surface, concern, language, lexicon, vertical, wire | Composition (the shipped plugin list) |
-| app | foundation, ui, composition, wire | InfiniteCanvas |
-| appex | foundation, ui, composition | CanvasQuickLook (an extension the app carries: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk)) |
+| app | foundation, ui, wire | InfiniteCanvas (it names no plugin: its plugins are [the list's](#what-ships), linked in and made by name, `+ shipped`) |
+| appex | foundation, ui | CanvasQuickLook (an extension the app carries: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk); `+ shipped`, as the app is) |
 | cli | wire | CanvasCLI (`canvas`, an executable: it knows the wire, never the app) |
-| testsupport, test | (see Package.swift) | TestKit, CanvasTesting, `*Tests` |
+| testsupport, test | (see Package.swift) | TestKit, CanvasTesting, ShippedTesting (the tests' way to the product's plugins), `*Tests` |
 
 What `./build.sh audit` enforces:
 
 - **No cycles.** The graph is sorted topologically; a cycle is printed as a path.
 - **Layers.** A horizontal can't import a vertical, and a vertical can't import another vertical
   or a language. A surface can't import a concern, a concern can't import a language, and a
-  language can't import a concern: only a lexicon joins a language to concerns. The app reaches
-  plugins only through Composition, and nothing but the app, its Quick Look extension and tests
-  sees CanvasUI.
+  language can't import a concern: only a lexicon joins a language to concerns. The app imports
+  no plugin: its plugins are the list's, made by name, and what it takes of one comes through the
+  registry ([Host slots](#host-slots)). Nothing but the app, its Quick Look extension and tests sees
+  CanvasUI.
 - **A test of a module tests it alone.** `<M>Tests`, or a test target that says it tests a plugin
   of M (`// layer: test of M`, as QueryLexicon's TitleQueriesTests does), may use only M, what M
   uses, and the test-support and ui modules, so a plugin's tests can't lean on a shipped kind.
@@ -550,6 +559,13 @@ What `./build.sh audit` enforces:
 - **The host API is fenced off.** What `CanvasView` calls on the editor (input, the cursor,
   drawing, the delegate) is `@_spi(Host)`. Only modules that `@_spi(Host) import Canvas` see it,
   and only the ui, testsupport and test layers may; a plugin that calls it doesn't compile.
+- **What ships is real.** Every line of the list names a public struct of that module that is a
+  `ListedPlugin`, once, in a module of a plugin layer; a target may end `+ shipped` only if it's the
+  app, its extension, or a test of what ships or its support, and what depends on a library that
+  does says so too; and the app and its extension import none of the list's modules.
+- **Loading the list whole is fenced off.** `ShippedList.plugins()`, which makes the plugins that
+  reach outside the process as the product has them (the model on the network, the clipboard on
+  the user's pasteboard), is `@_spi(Product)`, which only the app and its extension may import.
 - **No shadowing names.** A public type named like a module fails, and so does a public `Task` or
   `Span`, which would shadow Swift's in every module that imports it (a query's place in its text is
   a `QuerySpan` for that reason).
@@ -563,6 +579,57 @@ transitive dependency without declaring it is what the import check above catche
 
 **Adding a module** is [Your first plugin](#your-first-plugin), steps 2 to 4. Every non-app module
 is compiled by `./test.sh`, even before anything depends on it.
+
+### What ships
+
+Which plugins the product is made of, and in which order, is a table in `Package.swift`, before
+the targets. It's the only list of them, and no module imports the plugins to make it:
+
+```swift
+let ships = [
+    // First: every key is registered with Keyboard; the others build on Selection, and its
+    // handles draw below their view overlays.
+    "Keyboard.KeyboardPlugin", "Selection.SelectionPlugin",
+    // What connects to what (arrows, mentions), for the whole file: ...
+    "Topology.TopologyPlugin",
+    ...
+]
+```
+
+Each entry is `Module.Type`, a public struct that can be made with no arguments. The comments say
+why each sits where it does: the order is the toolbar's, the order overlays draw in, and each
+plugin after the ones whose points it fills.
+
+- **A plugin a list can name** is a `ListedPlugin`: a `CanvasPlugin` with an `init()`. Every
+  shipped plugin is one. A plugin that takes arguments (a test's fixture, one a function makes)
+  stays a `CanvasPlugin`, handed to a registry by whoever makes it.
+- **Made by name.** `build.sh` writes the table out as text and puts it in every executable that
+  is the product, as it does the product's text files (`Shipped/*.txt`, `ShippedText`). There the core's
+  `ShippedList` turns each line into the type, found in the binary by its mangled name with no
+  import, and makes one. Every library links whole, so a type is in the binary whether or not
+  anything names it. A line that isn't `Module.Type`, a name with no type behind it, or a type
+  that isn't a `ListedPlugin` is a `ShippedListError` that names the line.
+- **`+ shipped`.** A target whose line ends `+ shipped` is the product, or the tests of it: every
+  module the list names links into it, though nothing need import them. Five say it: the app and
+  its Quick Look extension, which import none of those modules and don't compile against them;
+  and CompositionTests, the benchmarks and their support (ShippedTesting), which import the ones
+  they call.
+- **What reaches outside the process.** Two listed plugins, made from nothing, reach outside: the
+  language model's (Claude, over the network, with the key from Settings) and the clipboard's (the
+  system's pasteboard). Each says so (`OutwardPlugin`). Only the product is made of them as they
+  come: `ShippedList.plugins()` is the app's and its extension's alone (`@_spi(Product)`).
+  Anything else calls `ShippedList.plugins(supplying:)` and hands over its own, and the list
+  refuses to load without them (`ShippedListError.notSupplied`), so a test can't reach the network
+  or the user's pasteboard by leaving an argument out. Any other listed plugin can be handed over
+  the same way, and takes its place in the list.
+- **Tests** get the product's plugins from ShippedTesting's `ShippedPlugins`:
+  `plugins(pasteboard:model:)`, `registry(pasteboard:model:)` and
+  `makeEditor(document:scheduler:pasteboard:model:)`, the list with a clipboard on the test's
+  pasteboard and the test's model, whose `model` has no default.
+
+`./build.sh graph` prints the list after the modules, and leaves what `+ shipped` links out of
+each line's dependencies: what ships is membership in the product, not one module's design
+depending on another's.
 
 ## A vertical plugin
 
@@ -1105,7 +1172,7 @@ extension TitlePill: Adornment {
     public static var order: Int { 50 }                                // a horizontal's feature
 }
 
-public struct TitlesPlugin: CanvasPlugin {
+public struct TitlesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .titles }
     public func register(into registrar: inout PluginRegistrar) {
@@ -2429,8 +2496,9 @@ What the shipped app's keys do:
   up the responder chain.
 - **Tooltips.** `registry.help(for: tool)` is a tool's label and its key, "Note (N)", and
   `registry.help("Enclosing Board", forCommand: .enclosingBoard)` a button's that runs a command,
-  "Enclosing Board (⌘↑)" (the list's way up, through Composition). The toolbar (CanvasUI) can't see
-  Keyboard, so the app hands it `ShippedPlugins.help(for:in:)`. Its picker (`ToolPicker`) is an
+  "Enclosing Board (⌘↑)" (the list's way up, Boards'). The toolbar (CanvasUI) can't see
+  Keyboard, so Keyboard gives the tips to [the host's slot for them](#host-slots)
+  (`registrar.toolTips`), which the toolbar reads (`registry.toolTip(for:)`). Its picker (`ToolPicker`) is an
   AppKit segmented control, since SwiftUI's segmented `Picker` dims none of its segments: one a
   tool, selected as the tool is current, and dimmed while the editor doesn't take the tool
   (`editor.isToolEnabled`, observed, so it follows a board shown, or a lock that lands above it).
@@ -2664,6 +2732,80 @@ thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on Test
   `leafScore(after:label:)` from its parent container's row, which costs one match of each group of
   its label, a few for a few pieces. A one-piece query has no path in it: that's `FuzzyMatcher` over
   the leaves.
+
+## Host slots
+
+A board's window puts things around its canvas that are plugins': the path of crumbs over its top,
+a palette, the inspector beside it, the window's subtitle, the panes of the Settings window, the
+toolbar's tips. And the app takes two more things from them: the board a new person is welcomed
+with, and the commands its command server runs. A plugin can't import the window (CanvasUI) or the
+app, and neither can import a plugin (the app and CanvasUI may use only the foundation and the
+wire). So what passes between them is declared beneath both, in a foundation library,
+[`Sources/HostSlots`](../Sources/HostSlots): seven extension points a plugin contributes to and the
+host reads. It's the one foundation module that imports SwiftUI, since its slots hold views, and the
+one that imports the wire (CanvasRPC), for the types the commands are said in; it knows no plugin
+and no window.
+
+Every point is the core's (`owner` is `.core`), so it's always installed: a plugin contributes from
+its own `register`, with no plugin value of its own for it, and a list without the plugin is a
+host without its piece. Nothing joins a plugin to the host: the list of what ships only names
+plugins ([What ships](#what-ships)).
+
+| Slot | A plugin says | The host reads | Shipped |
+|---|---|---|---|
+| Views over the canvas (`HostOverlays`, a list in plugin order, a later one over an earlier) | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }` | `registry.hostOverlays`, `registry.hostCoveredTop(on:)` | Boards' path (`.top`, covering its pill's height off the root), Jump To's palette |
+| The inspector (`HostInspectors`, at most one) | `registrar.hostInspector(isRequested:onDismiss:) { editor, onExit in … }` | `registry.hostInspector` | the detail panel |
+| The window's subtitle (`WindowSubtitles`, at most one) | `registrar.windowSubtitle { editor in … }` | `registry.windowSubtitle(for:)` | Boards: the board shown's name, none on the root |
+| Settings panes (`SettingsPanes`, in plugin order, a title once) | `registrar.settingsPane("Anthropic") { … }` | `registry.settingsPanes` | the Anthropic key's, when the model is Anthropic's |
+| Tool tips (`ToolTips`, at most one) | `registrar.toolTips { tool, registry in … }` | `registry.toolTip(for:)`, the tool's label without one | Keyboard: "Note (N)" |
+| The welcome board (`WelcomeBoards`, at most one) | `registrar.welcomeBoard { registry in … }`, a `CanvasDocument` made each time it's asked for | `registry.welcomeBoard`, what makes one, nil without | StickyNotes: six notes on how to use them, three linked where the list draws arrows |
+| The commands (`HostCommands`, at most one) | `registrar.hostCommands(specs:run:)`, both handed the built registry | `registry.hostCommands`: the specs, and how to run one by name | Automation: every plugin's command |
+
+A view a plugin gives is made for a window's canvas: it's handed that board's editor and `onExit`,
+which gives the keyboard back to the canvas (`CanvasFocus.take`), and follows the editor by itself.
+A view over the canvas is over the whole of it at its `alignment`, and takes clicks only where it
+draws. Not a `CanvasOverlay`, which the canvas draws into itself, in the world: these are the
+window's views.
+
+The window's side is CanvasUI's, and knows no plugin:
+
+- **`BoardChrome(editor:showsInspector:onExit:)`**, a view modifier the app applies to its canvas
+  (`CanvasRepresentable`, after its frame and toolbar): each registered view over the canvas, in
+  plugin order, then the registered inspector in an `.inspector`, with the toolbar button that
+  shows and hides it (Inspector; its tooltip "Show Inspector" or "Hide Inspector", as View › Show
+  Inspector is titled). A registry with no inspector gets none.
+- **The inspector follows what wants it.** An inspector may say it's wanted whether or not the
+  person has it shown (`isRequested`, read in a view's body, so on observable state), and what
+  hiding it meanwhile does (`onDismiss`). The window keeps the rule, for whatever is wanted: wanted
+  while hidden, it's shown; no longer wanted, it's hidden again if that's what showed it, and left
+  as the person had it otherwise; hidden by the person while wanted, what wanted it is dismissed
+  and the keyboard goes back to the canvas. The detail panel is wanted while [a takeover](#the-overview-and-takeovers)
+  is active and dismissing escapes it, so ⌘F shows a hidden inspector, closing Find hides it again,
+  and hiding the inspector closes Find, though the window has never heard of Find.
+- **What the canvas covers.** A view over the canvas says how far down it reaches on a board
+  (`coveredTop`: the path's pill, about 35 points inside a subboard). The window tells each board's
+  editor the most any says (`BoardDocument` sets `editor.coveredTop` from
+  `registry.hostCoveredTop(on:)`), so a fit leaves it clear. A headless editor is told nothing, and
+  covers nothing.
+- **The subtitle** is read observed by `BoardWindowController`, so it follows a switch of board or
+  a rename.
+- **`SettingsWindow(registry:)`** hosts the panes, one under another in plugin order, each made
+  afresh as the window opens; a pane says what it is itself, so none is headed.
+- **`ToolPicker(editor:)`** reads each tool's tip.
+- **`CommandServer.Commands(registry:)`** is the commands the server runs beyond its own
+  ([The command line](#the-command-line)): none where the list has no command line.
+
+The app's own side is two lines. It opens `registry.welcomeBoard`'s board the first time it's
+launched with nothing to open, and from Help › Welcome Board, an item it adds only where a plugin
+gives one; and it starts its command server on `CommandServer.Commands(registry:)`.
+
+Tests: HostSlotsTests hold the points with contributors of their own (order, the most covered, one
+inspector, one subtitle, a pane's title once, a tip's default, a welcome board made each time it's
+asked for and handed the registry, the commands read off the built registry and none without a
+contributor); CanvasUITests' `chromeTests` the chrome over a real canvas in an unshown window (each
+view where it says, the inspector's rule with a fixture that's wanted while a model says) and
+`toolPickerTests` the tips; each plugin's own tests what it gives; and CompositionTests the shipped
+seven (ShippedTests) and the window's behavior with Find (`findShippedTests`).
 
 ## The detail panel
 
@@ -3040,7 +3182,7 @@ panel out:
 import Canvas
 import DetailPanel
 
-public struct ValidationDetailsPlugin: CanvasPlugin {
+public struct ValidationDetailsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "validation-details" }
 
@@ -3276,39 +3418,50 @@ The panel can't give the keyboard to the canvas itself (it can't import CanvasUI
 passes `onExit`. `CanvasFocus` (CanvasUI) is the handle: `CanvasRepresentable(editor:focus:)` fills
 it, and `take()` makes the canvas its window's first responder.
 
-The app places the panel; the core and CanvasUI know nothing of it. Composition, which decides what
-ships, hands the app the view:
+The window places the panel, and knows nothing of it: the panel's plugin gives it as the window's
+inspector, [the host's slot for one](#host-slots), and says when it's wanted whether or not the
+person has it shown (while a takeover is active, below) and what hiding it meanwhile does (escapes
+that takeover):
 
 ```swift
-/// The detail panel, for the app to place beside the canvas. It follows the editor's selection;
-/// `onExit` must give the keyboard back to the canvas.
-public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
+registrar.hostInspector(isRequested: { $0.registry.activeDetailTakeover(in: $0) != nil },
+                        onDismiss: { $0.registry.activeDetailTakeover(in: $0)?.onEscape($0) }) { editor, onExit in
     DetailPanelView(editor: editor, onExit: onExit)
 }
 ```
 
-and [the app](../Sources/InfiniteCanvas/InfiniteCanvasApp.swift) puts it in an `.inspector`, which
-brings resizing, collapsing in narrow windows, and View › Show Inspector (⌃⌘I) with
-`InspectorCommands`:
+and [the app](../Sources/InfiniteCanvas/InfiniteCanvasApp.swift) applies CanvasUI's `BoardChrome` to
+its canvas, which puts the registered inspector in an `.inspector` (resizing, collapsing in narrow
+windows, and View › Show Inspector, ⌃⌘I) with its toolbar button, and the views plugins gave over
+the canvas (the path, [Jump To's](#jump-to) palette):
 
 ```swift
 CanvasRepresentable(editor: editor, focus: canvasFocus)
-    .focusedSceneValue(\.canvasFocus, canvasFocus)
-    .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: $showsDetails, rootName: name, onExit: canvasFocus.take))
+    .modifier(BoardChrome(editor: editor, showsInspector: $showsDetails, onExit: canvasFocus.take))
 ```
 
-where `boardChrome` (Composition) adds the path, [Jump To's](#jump-to) palette (an overlay, drawing
-nothing until it's open) and the `.inspector` that holds `detailPanel`.
+### The overview and takeovers
 
-### The takeover slot
+Two points say what the panel shows besides a shape's details. It reads both from the editor's
+registry, and never learns what either view is.
 
-`DetailPanelView(editor:onExit:overview:takeover:)` also takes a `DetailTakeover`: `isActive`
-(read in the panel's body, so on observable state: the panel redraws when it flips), `onEscape` and
-a content view. While it's active the panel shows the content in place of everything else: "No
-Details", the overview and every selection branch, in the panel's own environment, frame and
-width. Escape and ⌘. in the panel call `onEscape`, then `onExit` (a text view holding keys still
-hears Escape first). The panel doesn't know what it shows; Composition fills the slot with
-[Find](#find)'s panel, active while Find is open, `onEscape` closing it.
+- **The overview** (`DetailOverviews`, at most one: a second is a conflict) shows where the panel
+  has no one shape to show: in place of "No Selection", and under the header of several
+  (data-canvas's details panel takes an `emptyView` and a `multiSelectView` the same way). A plugin
+  gives it with `registrar.detailOverview { editor, onExit in … }`, and its view follows the
+  editor by itself. The table of contents gives its list (`ContentsOverviewPlugin`, below).
+- **A takeover** (`DetailTakeovers`, a list in plugin order: the first that's active shows) is
+  `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }`: `isActive` (read in the
+  panel's body, so on observable state: the panel redraws when it flips), `onEscape` and the view.
+  While it's active the panel shows the view in place of everything else, the overview and every
+  selection branch, in the panel's own environment, frame and width. Escape and ⌘. in the panel
+  call its `onEscape`, then `onExit` (a text view holding keys still hears Escape first).
+  [Find](#find) gives its panel, active while Find is open, `onEscape` closing it
+  (`FindPanelPlugin`).
+
+Each view is handed the panel's editor and its `onExit`, and is made as the panel is. Both points
+are the panel's, so each contributor is a plugin value of its own after `DetailPanelPlugin`: a
+list without the panel leaves it out, and one with the contributor and no panel is refused.
 
 ### Performance
 
@@ -3847,13 +4000,16 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   scope pinned by selecting rows or Show All was the board left's, and goes. Another board's rows
   replace this one's in one run, whatever's listed on either (the list's id is the board, the scope
   and how many times a commit has brought rows in at several places, `ContentsListID`).
-- **The heading.** The header says "Board" over the whole board. Whoever places the list can name
-  the board instead: `TableOfContentsView(editor:onExit:heading:)` takes
-  `heading: (CanvasEditor) -> ContentsHeading?`, a title, a symbol before it, and `up`, a command
+- **The heading.** The header says "Board" over the whole board. A plugin that knows what a board
+  is called can name it instead (the `ContentsHeadings` point, at most one: a second is a
+  conflict): `registrar.contentsHeading { editor in … }` returns a `ContentsHeading`, or nil for
+  the list's own: a title, a symbol before it, and `up`, a command
   the header offers as a button while it can run (`editor.canPerform`): an arrow turning up, not a
   chevron, which in a list's disclosure column reads as collapsing; `upTitle` names it to VoiceOver
-  ("Up" by default) and `upHelp` is its tooltip, the title and its key as a tool's is. The table of
-  contents doesn't know what a board is; the heading's maker does. Filtered, the header is
+  ("Up" by default) and `upHelp` is its tooltip, the title and its key as a tool's is. It's read in
+  the header's body (`ContentsState.heading`), so it reads observable state and the header alone
+  redraws as that changes. The table of contents doesn't know what a board is called; the
+  heading's maker does (Boards' `BoardContentsPlugin`: [Boards](#boards)). Filtered, the header is
   "Selection" with Show All, whatever the heading.
 - **Opening a row.** A double-click or Return on a row opens its shape, as Return on the canvas
   does: `ContentsState.open(_:)`, the list's primary action, selects it and runs Selection's
@@ -3995,26 +4151,30 @@ ContentsOutline(editor: editor, board: board, highlighted: next, maxHeight: 348)
 
 ### Hosting
 
-(The app's window wraps the canvas in `ShippedPlugins.boardChrome(editor:showsDetails:rootName:onExit:)`, a
-view modifier in Composition that adds the path, Jump To's palette (`JumpToPalette`, over the canvas,
-given `onExit` to give the keyboard back),
-the inspector with this panel and its toolbar button, and a hook that shows the inspector on
-request (each of Find's ⌘F, `FindState.focusRequest`, with the inspector hidden; and hides it again
-as Find closes, if it showed it: `revealedInspector`); it takes bindings and closures, never a CanvasUI type, and CompositionTests'
+(The app's window wraps the canvas in CanvasUI's `BoardChrome(editor:showsInspector:onExit:)`, a
+view modifier that places what the plugins gave [the host's slots](#host-slots): the path, Jump To's
+palette (`JumpToPalette`, over the canvas, given `onExit` to give the keyboard back),
+the inspector with this panel and its toolbar button, and the rule that shows the inspector while
+it's wanted (a takeover is active: Find, open, with the inspector hidden; and hides it again
+as Find closes, if that's what showed it); CompositionTests'
 `InspectorHost` applies the same modifier. The toolbar and the frame stay the app's.)
 
-`DetailPanelView` takes an optional overview, a view it shows where it has no shape to show: in
-place of "No Selection", and under the header of several (data-canvas's details panel takes an
-`emptyView` and a `multiSelectView` the same way). Neither horizontal knows the other; Composition,
-which decides what ships, joins them, and the app places the result in its `.inspector` as before:
+The detail panel has [an overview](#the-overview-and-takeovers), a view it shows where it has no
+one shape to show, and the table of contents gives its list as that, from a plugin value of its
+own, so TableOfContents imports DetailPanel (a surface on a surface) and the list of what ships names
+the plugin, after both:
 
 ```swift
-public static func detailPanel(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> some View {
-    DetailPanelView(editor: editor, onExit: onExit) {
-        TableOfContentsView(editor: editor, onExit: onExit)
+public struct ContentsOverviewPlugin: ListedPlugin {
+    public var id: PluginID { .contentsOverview }      // "contents-overview"
+    public func register(into registrar: inout PluginRegistrar) {
+        registrar.detailOverview { editor, onExit in TableOfContentsView(editor: editor, onExit: onExit) }
     }
 }
 ```
+
+A list without the panel leaves it out and keeps the list's state, which the path's crumbs' menus
+read too; a list with it and no panel is refused (`ownerNotInstalled`).
 
 Bringing shapes into view is Selection's `editor.reveal`, which the table of contents calls. It
 takes two generic things from the core: `editor.viewportSize`, which
@@ -6674,18 +6834,24 @@ a shape under a device pixel its pixel, once. A hit under a shape in front shows
 
 ### The panel, and the host
 
-`FindPanel(editor:onExit:heading:)` is Find's panel: its own header (no Back): the field, with
+`FindPanel(editor:onExit:)` is Find's panel: its own header (no Back): the field, with
 a spinner while the index is built; Done; the count with Previous and Next (tooltips from
 `registry.help(_:forCommand:)`: "Next (⌘G)"); and a row per shape with hits, the window of 200 around
-the current one in a lazy stack, under its board's heading (named by `heading`, which the placer
-supplies: Composition passes the path's names), each the kind's symbol in the kind's tint (`registry.label(of:)`), the text
+the current one in a lazy stack, under its board's heading (`FindState.heading(of:)`), each the kind's symbol in the kind's tint (`registry.label(of:)`), the text
 around its first hit with its hits semibold (cut on whole characters, never inside a surrogate
 pair), and its count when it has more than one; "No matches". Return steps unless an input method is
 composing in the field.
-Composition puts it in the detail panel's [takeover slot](#the-takeover-slot) while
-`editor.find?.isActive`, with `onEscape` closing Find, and `boardChrome` shows a hidden inspector
-when `focusRequest` changes (and hides it again as Find closes, if it showed it,
-`revealedInspector`); hiding the inspector while Find is open closes Find. `FindState` (`editor.find`, `@Observable`) is what views read: `isActive`,
+A board's heading is a plugin's to say (the `FindHeadings` point, at most one: a second is a
+conflict), `registrar.findHeading { board, editor in FindHeading(…) }`, a title and a symbol before
+it, so Find never learns what names a board: Boards' `BoardFindPlugin` gives the path's names
+([Boards](#boards)); without one the root's rows are headed "Board" and another board's have no name.
+`FindPanelPlugin` (id `find-panel`), a plugin value of Find's own after `FindPlugin` and
+`DetailPanelPlugin`, gives the panel as the detail panel's [takeover](#the-overview-and-takeovers) while
+`editor.find?.isActive`, with `onEscape` closing Find (a list without the detail panel leaves it
+out, and keeps Find's state, highlights and commands), and so the window shows a hidden inspector
+while Find is open (and hides it again as Find closes, if that's what showed it), and
+hiding the inspector while Find is open closes Find: the window's rule for any takeover
+([Host slots](#host-slots)), which Find knows nothing of. `FindState` (`editor.find`, `@Observable`) is what views read: `isActive`,
 `query`, `results`, `total`, `current`, `currentNumber`, `focusRequest`, `isIndexing`.
 
 ### What it costs
@@ -7529,7 +7695,7 @@ registrar.querySelection(Word.selected.rawValue, "the person has it selected", e
   `draw`'s own (DrawLexicon's [`TitleNamesPlugin`](#what-draw-takes-from-other-plugins)), so the two name shapes alike.
 - **Boards are named by Boards' rule**: the owner's name, else `placeholder` for its kind (asked once
   per kind), else its label (`registry.label(of:)`). `BoardQueriesPlugin`'s is `registry.boardPlaceholder(of:)`,
-  which [`editor.name(of:root:)`](#boards) reads, so a row's `inside` says what the path's crumbs say.
+  which [`editor.name(of:)`](#boards) reads, so a row's `inside` says what the path's crumbs say.
 - **A pseudo-class** (`:invalid`) takes no argument. `prepare` runs on the main actor in the turn the
   query takes up the file, taking what it needs there, O(1) or O(what it holds) (a set of ids, a
   service's value), and what it returns (any `Sendable`) is handed as it was to the rest: `seeds`, if
@@ -7587,9 +7753,9 @@ follow, while `TitleQueriesPlugin`, `ValidationQueriesPlugin` and `SelectionQuer
 nothing without Titles, Validation or Selection (every kind untitled, no shape invalid, nothing
 selected), as DrawLexicon's do without theirs. `QueryCommandsPlugin()` needs `AutomationPlugin()`,
 and `--ask` `QueryTranslationPlugin` and `LanguageModelsPlugin` (else `no_model`). The shipped list has them after
-DrawLexicon's: `QueriesPlugin(), QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule), TitleQueriesPlugin(), BoardQueriesPlugin(),
+DrawLexicon's: `QueriesPlugin(), QueryTranslationPlugin(), TitleQueriesPlugin(), BoardQueriesPlugin(),
 MentionQueriesPlugin(), ValidationQueriesPlugin(), SelectionQueriesPlugin()`, then
-`QueryCommandsPlugin()`; the prompt stays in Composition, since its examples name the shipped kinds.
+`QueryCommandsPlugin()`; the prompt is a text file of the product's (`Shipped/ask-prompt.txt`), since its examples name the shipped kinds.
 
 ### What it costs
 
@@ -7764,7 +7930,7 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
   `--timeout` that lets go of the model's call, a file closed under it answered `board_closed` at
   once); BoardsTests `:current-board` across a switch (no change set worked out, no snapshot left);
   and SkillTests every `query` and `query-error` block ([Testing plugins](#testing-plugins)).
-- **The prompt.** QueryPromptTests hold `QueryPrompt.system` to the language: each of its
+- **The prompt.** QueryPromptTests hold the prompt (`Shipped/ask-prompt.txt`) to the language: each of its
   `runnableExamples` answered on the story, each of its `illustrativeExamples` refused there with its
   reason, every query written after "→" listed, nothing that reads as a query left out of the lists,
   every `:word` the language's, a shipped plugin's or one the prompt says not to invent, the kinds,
@@ -7832,25 +7998,36 @@ registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .c
   owner of the board below it on the path selected, as one step back
   (`showBoard(_:selecting:)`), so ⌘[ comes back down. Off the root only, never mid-press, and not
   while a shape is being edited, where ⌘↑ is the text's; on the root its key passes.
-- **Names.** `editor.name(of: board, root:)` is what a board is called: its owner's title (Titles;
+- **Names.** `editor.name(of: board)` is what a board is called: its owner's title (Titles;
   a blank one is none), else its kind's placeholder, else its kind's label (`registry.label(of:)`);
-  `root` for the root (the file's name). `editor.symbol(of:)` is its kind's symbol (`opensBoard`'s,
-  else its label's), nil for the root. Composition's table-of-contents
-  heading and the path both read them. `registry.boardPlaceholder(of: kind)` is the placeholder a
+  the root, which no shape owns, is called what the file is, else "Board". Only the window knows
+  the file's name, so it's the core's to hold: `editor.rootName`, observed, empty until the host
+  says (`nameRoot(_:)`, host API, which a board's window calls as it titles itself), and Boards
+  reads it wherever it names the root. `editor.name(of:root:)` is the same with the root called
+  what the caller says. `editor.symbol(of:)` is its kind's symbol (`opensBoard`'s,
+  else its label's), nil for the root. The path, the table of contents' heading and Find's
+  headings all read them. `registry.boardPlaceholder(of: kind)` is the placeholder a
   kind opens its boards with (nil for a kind that doesn't), the registry's alone, which both read,
   and so does a [query](#queries): its rows name the boards a shape is inside by the same rule,
   through QueryLexicon's `BoardQueriesPlugin` (BoardsTests' "A board's placeholder" holds it).
-- **In the app** (Composition and the app's window): the table of contents' header names the
-  board shown, with its symbol and a way up (`ShippedPlugins.contentsHeading(for:rootName:)`, the
+- **Over other plugins' lists.** Boards names a board wherever another plugin lists one, each
+  from a plugin value of its own (a face), after `BoardsPlugin` and the list's plugin, so a list
+  without that plugin leaves it out. `BoardContentsPlugin` (id `board-contents`) heads the table
+  of contents (its `ContentsHeadings` point) with the
   board shown's crumb as a `ContentsHeading` with `up: .enclosingBoard`, called Enclosing Board as
   the Go menu calls it, its tooltip "Enclosing Board (⌘↑)", from Keyboard's
-  `registry.help(_:forCommand:)`; on the root the file's name, `detailPanel`'s `rootName`, as the
-  window and the path's root crumb have it, else "Board"); the window's subtitle names the board
-  shown, nothing on the root, where the title is the file's name (`BoardConfiguration.boardName`,
-  which the app fills with `ShippedPlugins.boardName(of:)`, the last crumb's title, and the window
+  `registry.help(_:forCommand:)`; on the root the file's name, as the
+  window and the path's root crumb have it, else "Board". `BoardFindPlugin` (id `board-find`)
+  heads each board's rows in [Find](#find)'s list (its `FindHeadings` point) with the board's name
+  and symbol. Boards imports TableOfContents and Find for them.
+- **In the window** ([the host's slots](#host-slots), which `BoardsPlugin` fills): the window's subtitle names the board
+  shown, nothing on the root, where the title is the file's name (`registrar.windowSubtitle`,
+  the last crumb's title, which the window
   controller reads observed, so it follows a switch or a rename);
-  the path is over the canvas (`ShippedPlugins.boardPath(editor:rootName:)`, the root's crumb the
-  file's display name, `BoardViewState.fileName`); and the Go menu has Back (⌘[), Enclosing Board
+  the path is over the top of the canvas (`registrar.hostOverlay(alignment: .top, coveredTop:)`
+  with `BoardPath(editor:)`, the root's crumb the
+  file's display name, which `BoardWindowController.synchronizeWindowTitleWithDocumentName` tells
+  the editor); and the Go menu has Back (⌘[), Enclosing Board
   (⌘↑) and Open Selection (⌘↓), sent to the board's window controller wherever the keyboard is, and dimmed
   while text has it, where the menu bar leaves those keys to the text (`MenuBar`: AppKit's menus
   take a disabled item's key and beep), so they move its caret. Jump To… (⌘K), JumpTo's, will follow
@@ -7859,13 +8036,14 @@ registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .c
 
 ### The path
 
-`BoardPath(editor:rootName:)` is where you are, as data-canvas shows it: a small capsule of
+`BoardPath(editor:)` is where you are, as data-canvas shows it: a small capsule of
 crumbs over the top middle of the canvas, root first, the board shown last, in a material pill 8
 points below the canvas's top edge (`BoardsStyle`). The host places it over the whole canvas, with
 `.overlay(alignment: .top)`, so a crumb's menu can stay inside it; only the pill and the menu take
 clicks. It shows nothing on the root. `BoardPath.coveredHeight(on:)` is how far down it reaches on
-a board (to the pill's bottom, about 35 points; none on the root), which the app tells the editor
-(`BoardConfiguration.coveredTop`, the editor's `coveredTop`), so a board's first visit, Zoom to
+a board (to the pill's bottom, about 35 points; none on the root), which the window tells the editor
+(the path's overlay says it, `coveredTop`, and the window hands the most any view over the canvas
+says to the editor's `coveredTop`), so a board's first visit, Zoom to
 Fit and `reveal` fit shapes below it, where their titles' pills aren't under it.
 
 ```
@@ -7880,7 +8058,8 @@ Fit and `reveal` fit shapes below it, where their titles' pills aren't under it.
                            └──────────────────────────┘
 ```
 
-- The root's crumb is `rootName` ("Board" when that's empty); the others are `name(of:)`. The
+- The root's crumb is the file's name (`editor.rootName`; "Board" when that's empty), and follows
+  a rename; the others are `name(of:)`. The
   board shown is bold and isn't a button. Each crumb is at most 180 points wide, truncated past it,
   with its name as its tooltip. The crumbs are separated by ›s, and nothing else marks them but the
   lock below (no caret for a crumb's menu, below: the owner found ⌄s beside the ›s busy).
@@ -8493,8 +8672,9 @@ untinted.
   the file's order.
 - **An empty query** lists "Recent" (up to five of this window's picks) and "Nearby" (up to five
   titled shapes in view on the board shown, nearest the middle of the view).
-- **The palette** is `JumpToPalette(editor:onExit:)`, which Composition's `boardChrome` places over
-  the canvas: closed it's nothing; open, a scrim (a clear button, so a click lands on it, closes the
+- **The palette** is `JumpToPalette(editor:onExit:)`, which the window places over
+  the canvas (`JumpToPlugin` gives it to [the host's slot](#host-slots) for views over the canvas,
+  after Boards', so it's over the path): closed it's nothing; open, a scrim (a clear button, so a click lands on it, closes the
   palette and isn't the canvas's), and a capsule below the part of the canvas the host leaves clear,
   taken as it opened (so below the path over a subboard), with an `EditingTextView` in one line. Its
   list is the app's one caret list (`CaretList` in a `CaretListWindow` made with `anchorRect:`,
@@ -9023,8 +9203,9 @@ The modules, one job each:
 | CanvasRPC | wire | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener, which answers each request as a main-actor task of its own (one that waits holds up neither the main actor nor another connection), each connection's answers in the order its requests came, and cancels the requests still running (not notifications) once its client hangs up. Knows no canvas, plugin or AppKit. |
 | CanvasCLI | cli | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
 | CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
-| Automation | language | The commands plugins give the command line (`AutomationCommands`), its own three, `draw`, `kinds` and `measure`, and the four points `draw` takes what it doesn't own from (on the query engine, Queries, a surface, to check a query a property holds). The app hands the commands to its server through Composition (`ShippedPlugins.commands(in:)`, async). |
+| Automation | language | The commands plugins give the command line (`AutomationCommands`), its own three, `draw`, `kinds` and `measure`, and the four points `draw` takes what it doesn't own from (on the query engine, Queries, a surface, to check a query a property holds). The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
 | DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
+| HostSlots | foundation | What a window puts around its canvas, and what the app takes from the plugins besides ([Host slots](#host-slots)): views over the canvas, the inspector, the subtitle, settings panes, tool tips, the welcome board and the commands the app's server runs, each a point of the core's that a plugin fills and the host (CanvasUI, the app) reads, since neither may import the other. On the wire (CanvasRPC), for the commands' types. |
 | FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | vertical | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
 | Moving | vertical | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Placing's solver (DrawScript's, over `ObstacleGrid`) as `draw` places a shape; no kind opts into it, and nothing imports it. |
@@ -9129,8 +9310,11 @@ a command works on the one its window shows, `editor.board`, as the window does:
 `transact` and the undo step its change makes are that board's (a `draw` is one step, Draw, there,
 and undoing it from another board shows that one first). `canvas boards` says which, for each open
 file: `shows`, the board shown (`"root"`, or the id of the shape that owns it, as a `BoardID` is
-written), `showsPath`, the boards from the root down to it, `shapes`, how many it holds, and
-`fileShapes`, how many the file holds, on every board;
+written), `showsPath`, the boards from the root down to it, `shapes`, how many it holds,
+`fileShapes`, how many the file holds, on every board, and `view`, the room its window has for a
+board fit into it (`[width, height]` in points: what a first visit fits the root board's shapes
+into, whichever board the window shows, so what a tool that lays a board out shapes it for; left
+out while the window has no size);
 `canvas status` names the front file's as `frontmostShows`; and a board command's result names it
 in its `board` (`id`, `name`, `shows`, `showsPath`, as `boards` has them), read in the
 command's own job as it starts: a command that doesn't wait (`draw`) runs in that job, so no
@@ -9201,7 +9385,7 @@ registrar.automationCommand("query", "Find the shapes of a file that a query mat
   60 s), else 10 s, unless `--timeout` says ([above](#the-command-line)). The protocol stays 2: a
   param's `x-timeout`, and an error's `column` and `length`, are what an older `canvas` passes over
   (it waits 10 s, and says `timed_out`). `Registry.runAutomationCommand(_:params:editor:)` and
-  `ShippedPlugins.commands(in:)` are async, and a test awaits them with TestKit's `awaitResult`.
+  `registry.hostCommands`' `run` are async, and a test awaits them with TestKit's `awaitResult`.
 
 ### draw
 
@@ -9744,7 +9928,7 @@ The language is taught by the canvas skill: SKILL.md's "Reading the board" tours
 ([QueryCommands.swift](../Sources/QueryCommands/QueryCommands.swift)), a language on Automation,
 Queries, QueryTranslation and the wire (the answer is the wire's JSON), which declares no point and
 knows no shipped kind: its help writes `<kind>` and `<title>`, and `--ask`'s prompt is
-`QueryTranslationPlugin`'s, which Composition supplies.
+`QueryTranslationPlugin`'s, which reads it from the product's files (`Shipped/ask-prompt.txt`).
 
 - **Params** (`QueryParams`): `query`, positional, read from standard input as `-` (`x-stdin`: a
   query is full of what shells mangle, so a heredoc with a quoted delimiter); `--ask <question>`
@@ -9857,8 +10041,8 @@ evaluated: the batch that follows the stored query is its first evaluation. `Tra
 `.person` (`--ask`'s: the selection in `<board>`, every word in `<vocabulary>`) or `.reference`: the
 selection is left out of `<board>` (it is the pill being typed into), every word that reads the
 editor (`QueryVocabulary.textForStoredQueries`, from each word's `readsEditor`) is left out of
-`<vocabulary>`, and one line, `referenceRule` (Composition's `QueryPrompt.referenceRule`, handed to
-the plugin beside the prompt), is added to the system prompt. The prompt's own examples still teach
+`<vocabulary>`, and one line, `referenceRule` (the product's `Shipped/ask-rule.txt`, which the
+plugin reads beside the prompt), is added to the system prompt. The prompt's own examples still teach
 `:selected` and `:current-board` and are not edited for this context (it is `--ask`'s byte for
 byte), so the filtered vocabulary and the rule line keep the model off them and the gate's repair
 catches the rest; a QueryPromptTests case holds that the rule line and the filtered vocabulary are
@@ -9876,17 +10060,24 @@ there for `.reference` and not for `.person`.
   cheaper model that clears the evaluation's bar (below), named on every request, while the
   editor's own model stays Haiku 4.5, which answers only a request that names none. `QueryTranslationPlugin(prompt:referenceRule:style:)` takes another,
   and `AskStyle.named(_:)` is a model's style by its id (the evaluation's `QUERY_MODEL`).
-- **The prompt** is Composition's `QueryPrompt.system`
-  ([QueryPrompt.swift](../Sources/Composition/QueryPrompt.swift)), handed to
-  `QueryTranslationPlugin(prompt:referenceRule:)` since its examples name the shipped kinds, edge types and words:
-  a raw string literal, the prompt byte for byte (as `SchemaPrompts`' are), with its query-like
-  examples in two lists, `runnableExamples` (each answered on the story file) and
-  `illustrativeExamples` (each refused there, with its listed reason), which QueryPromptTests hold
-  to the language. The canvas skill carries it byte for byte
+- **The prompt** is a text file of the product's,
+  [`Shipped/ask-prompt.txt`](../Shipped/ask-prompt.txt), the prompt byte for byte, and no module's,
+  since its examples name the shipped kinds, edge types and words, which no module knows all of.
+  The build puts every `Shipped/*.txt` in each executable that is the product (the app, its Quick
+  Look extension, the tests of what ships), as a section of the binary, and the core reads one back
+  by name (`ShippedText.named("ask-prompt")`): `QueryTranslationPlugin()`, made with no arguments,
+  reads the prompt and the rule line (`ask-rule.txt`, taken without its line break), and only an
+  executable that is the product can make one that way; anything else passes its own
+  (`init(prompt:referenceRule:style:)`). Its query-like examples are in two lists in
+  CompositionTests ([QueryPrompt.swift](../Tests/CompositionTests/QueryPrompt.swift)),
+  `runnableExamples` (each answered on the story file) and `illustrativeExamples` (each refused
+  there, with its listed reason), which QueryPromptTests hold to the language. The canvas skill
+  carries the prompt byte for byte
   ([`query-prompt.md`](../.claude/skills/canvas/query-prompt.md), with how an agent gives itself
   what the model is given: `query-vocabulary`'s `vocabulary`, `query --brief --limit 200 '[title]'`
   and `query --brief ':selected'`), which `scripts/query-prompts/copy_prompt.py` rewrites from the
-  literal and QueryPromptTests hold equal.
+  file and QueryPromptTests hold equal ([`Shipped/README.md`](../Shipped/README.md) says how to
+  change it).
 - **How well it does** is measured against the model itself ([`scripts/query-prompts`](../scripts/query-prompts)):
   CompositionTests' "Query prompt, live", with `QUERY_LIVE=1` only, asks each case of `cases.tsv`
   (on the story file and `QueryEvalBoard`, 59 shapes on six boards) as `--ask` asks it, scored by the
@@ -10361,7 +10552,10 @@ do throws(LanguageModelError) {
   saved and whose tooltip says where; Save, Remove, and Test, a five-token call; a status only for
   a test and for what failed, a symbol in its tone then the words, as the panel's status lines are,
   a failure in the warning's tone, as the panel shows the same failures; and a link, "Get a key"),
-  which Composition hands the app as `ShippedPlugins.settings()`, in its `SettingsWindow`: made
+  which the plugin gives as a pane of the Settings window ([the host's slot](#host-slots) for
+  panes, `registrar.settingsPane`) when the model it was handed is the Anthropic one, over that
+  model's key store, so the pane and the model read one key and a list given another model (a
+  test's) has no pane; the app's `SettingsWindow(registry:)` (CanvasUI) hosts the panes: made
   afresh each time the window opens, and sized before it goes in, so the window opens where it was
   left. A test that can't save the key typed stops there, a test's outcome reads again whether a
   key is saved (its file may have gone meanwhile), and Remove waits for a test to finish. A plugin that finds no key offers to
@@ -10755,7 +10949,7 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   `editor.viewportSize` is the view's size in view points, zero until it has one, and
   `editor.unobscuredViewport` the part of it nothing the host puts over the canvas covers (the view
   less `coveredTop`, host API, how far down the host's views reach on a board: the path's pill
-  inside a subboard, `BoardPath.coveredHeight(on:)`, which the app hands `BoardConfiguration`), what
+  inside a subboard, `BoardPath.coveredHeight(on:)`, which a board's window tells it from [the host's slots](#host-slots)), what
   a fit fits shapes into: a board's first visit, Zoom to Fit, Selection's `reveal`, and `canvas
   draw`'s `--reveal`, whose `view` is that part of it too.
 - **Zooming** is the core's commands, which View's items run (through
@@ -11299,7 +11493,7 @@ each of them:
 |---|---|
 | [Selection](#selection) | Opening a shape (`ShapeOpening`); Back crosses boards, and showing another board is a step; nothing is selected on arrival; `showBoard(_:selecting:)`; `goTo` goes to a shape on any board. |
 | [Boards](#boards) | Opening a kind's boards, ⌘↑, a board's name and symbol, and the path over the canvas. |
-| [The table of contents](#whats-listed-and-selecting) | Lists the board shown, keeps each board's rows, and takes its header from its placer (the board's crumb, in the app). A row may read shapes on other boards ([`elsewhere`](#rows-read-from-more-than-their-shape)). |
+| [The table of contents](#whats-listed-and-selecting) | Lists the board shown, keeps each board's rows, and takes its header from the plugin that names boards (Boards: the board's crumb). A row may read shapes on other boards ([`elsewhere`](#rows-read-from-more-than-their-shape)). |
 | [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked, and a rule's lookups (`MentionValidationPlugin`'s targets) find shapes there alone; a rule over a service's state (`TitleValidationPlugin`'s titles, the file's) names the shapes a commit changes the issues of on any board, checked once their board is shown. |
 | [Locking](#locking) | A shape whose board holds a locked shape isn't deleted; a locked owner is entered as any other. |
 | [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`, or `goInto` for a kind followed by opening it: a subboard); who mentions whom (Topology's), what each mentioned shape shows and the `@` picker's catalog are the file's (the board shown's first on a tie), so showing another board reads no mention text; so are the Mentioned In tab's and Show What Mentions' mentioners, the board shown's first. |
@@ -11878,33 +12072,37 @@ ShapeDetails: Boards.BoardTab (from subboards) and Types.BoardTab (from types) a
 The hook is generic: the core runs it without knowing what any point checks.
 
 Once built, it's frozen and handed to the editor. The app's list is
-`ShippedPlugins.plugins(pasteboard:model:)` in [Composition](../Sources/Composition/ShippedPlugins.swift),
-and a test checks it registers.
+the table of what ships in `Package.swift` ([What ships](#what-ships)), each plugin made by its name,
+and a test checks it loads and registers.
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
 core                 tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
-keyboard             service KeyboardState · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
+keyboard             service KeyboardState · tool tips · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
+sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link · welcome board
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
 framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · service ChipFade · overlay AdornmentOverlay · CanvasButtons · DecorationHits
-detail-panel         service DetailPanelState
+detail-panel         service DetailPanelState · host inspector
 context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
 slash-commands       service SlashCommandState
 table-of-contents    service ContentsState
+contents-overview    detail overview
 titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
 mentions             service MentionState · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
-board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard
+board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard · host overlay · window subtitle
+board-contents       contents heading
 find-in-boards       service FindState · overlay FindOverlay · command find · shortcut ⌘F → command find · command findNext · shortcut ⌘G → command findNext · command findPrevious · shortcut ⇧⌘G → command findPrevious
+find-panel           detail takeover
+board-find           find heading
 title-find           findable title → every shape
 mention-find         findable mention text → every shape · findable mention text over the canvas → every shape
-jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo
+jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo · host overlay
 transform            service TransformState
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
@@ -11922,7 +12120,7 @@ ports                property channel · service PortState · overlay PortOverla
 arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
 language-models      service LanguageModelState
 prose-maps           service ProseMapService · overlay ProseMapFrames
-automation           command line draw · command line show · command line kinds · command line measure
+automation           command line draw · command line show · command line kinds · command line measure · host commands
 title-names          draw names
 port-edges           draw edges
 validation-checks    draw checks
@@ -12172,7 +12370,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   `editor.propertyBinding(id, P.self)` are the bindings a section gets: write through them and check
   the document. For the view, host `DetailPanelView` in an `NSHostingView` in an unshown `NSWindow`,
   beside a `CanvasView` when focus matters (DetailPanelTests; CompositionTests' InspectorTests use
-  the app's wiring, `CanvasRepresentable` and `ShippedPlugins.detailPanel`). Give the editor the
+  the app's wiring, `CanvasRepresentable` and CanvasUI's `BoardChrome`). Give the editor the
   real `TaskScheduler`. SwiftUI's updates land on the main run loop, so wait for the state you
   expect with `window.spin { condition }` (CanvasTesting; it fails the test after 2 s), and use
   `window.settle()`, a few turns of the loop, where there's nothing to wait for or the point is
@@ -12627,7 +12825,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 
 | data-canvas | Here |
 |---|---|
-| `definePlugin({ id, shapes, tools, ... })` | `struct XPlugin: CanvasPlugin { var id; func register(into:) }`. A value; functions can generate plugins. |
+| `definePlugin({ id, shapes, tools, ... })` | `struct XPlugin: CanvasPlugin { var id; func register(into:) }` (a `ListedPlugin`, with an `init()`, for one the list names). A value; functions can generate plugins. |
 | `defineShape({ type, util, tools, toolbarItems, validate })` | `registrar.shape(XDefinition()) { x in x.tool(...); x.validate { ... } }`. The kind comes from the props type and is stamped on everything inside. |
 | `ShapeUtil` | `ShapeDefinition`: stateless, typed props, defaults from geometry. |
 | Static capabilities on the util (`layoutHostCapability`) | Capability protocols found by `as?` (`Editable`, `HandleProviding`, ...). |
@@ -12637,7 +12835,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 | Keyed / list registries, last write wins | `KeyedExtensionPoint` / `ExtensionPoint`; every collision is an error. |
 | `ValidationIndicatorLayer` | `ValidationOverlay`, through the core's overlay point. |
 | `toc: { component, filter, getParentShapeId }` on `defineShape`, `TocRegistry` | `x.contentsRow(when:nestedUnder:) { ContentsLabel(...) }`, sugar from the TableOfContents horizontal ([the table of contents](#the-table-of-contents)). |
-| `DetailsPanel`'s `emptyView` and `multiSelectView` (the TOC, whole or filtered to the selection) | `DetailPanelView`'s overview, which Composition fills with `TableOfContentsView`. |
+| `DetailsPanel`'s `emptyView` and `multiSelectView` (the TOC, whole or filtered to the selection) | `DetailPanelView`'s overview (its `DetailOverviews` point), which the table of contents' `ContentsOverviewPlugin` gives `TableOfContentsView`. |
 | `adornments:` on `definePlugin` (`AdornmentShapeUtil`, the `adornment-attachment` binding with its anchor, offset, gap and slot; `singletonPerHost`, `isEligibleHost`; `attachAdornment` and `toggleAdornment`) | An `Adornment` type (its place and its order band) and a label made from the shape's data, placed with `x.adornment`, `registrar.adornment(_:on:)` or `registrar.adornmentForEveryShape(_:where:)`, whose `where` can read another plugin's point (as the sticker read its referenceable registry). Never a record: nothing to attach, sync, cascade on delete, copy or migrate; one per type per shape by construction; laid out by [Adornments](#adornments), so none overlap. A fact one shows (locked, public) is an [added property](#something-the-user-turns-on) of the shape. |
 | `ToolIdle` / `ToolPointing` click-to-create | `Placement` (follow the pointer, or edit), used by place tools and the double-click claim. |
 | `toolbarItems` with a decorative `kbd` | A key registered with the Keyboard horizontal (`shortcut:`), collision-checked, that the canvas answers and the tooltip names. |
@@ -12651,7 +12849,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 | `generateBoardPreview` on the card | `context.drawBoardPreview(ofBoardOwnedBy:in:)`: every shape a silhouette in one gray, as the minimap draws, built a chunk a frame. |
 | `install*Lifecycle(editor)` side effects | `registrar.willDelete` inside transactions; `EditorService` for per-editor state. |
 | `module.json` + ESLint DAG + barrel `index.ts` | `Package.swift` with layers + `build.sh audit` + the compiler; `public` is the barrel. |
-| `plugins.config.ts` | `ShippedPlugins.plugins(pasteboard:model:)` in Composition. |
+| `plugins.config.ts` | The table of what ships in `Package.swift` (`let ships = [`), read when the app starts: [What ships](#what-ships). |
 | The query DSL's `#kebab-title` | A title in double quotes, `"Checkout"`, the whole title folded, case and all, as `draw` matches it; `#` takes a shape's id alone (`#Checkout` is `not_an_id`, hinted `"Checkout"` where a shape has that title). |
 | `.Class` (`node.`, `edge.`) | Refused: `.Task` is  `unsupported`, hinted toward the plugin's word that finds a type's shapes when the app has  one (a relation declared `namesTypes`), else `:contains("Task")`; a kind is its id, `sticky-note`. |
 | `:source-of`, `:target-of` | `:edge-to`, `:edge-from`, the words data-canvas moved to (#87), kept with `:downstream-of` and `:upstream-of`, over Topology's typed edges; the old words are refused with the word to write. |
@@ -12660,7 +12858,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 | Scope globs, `:on-page` | Containment in the selector: `"Payments" *`, `:top-level`, `:current-board`; `:on-page` is refused with `"Board" *`. |
 | `:selected`, dropped | Back: the engine runs in the live app, over what's selected as the query starts (QueryLexicon's `SelectionQueriesPlugin`). |
 | An unknown pseudo-class accepted and ignored | Refused, with the one like it or the rewrite (`KnownInventions`); every name is resolved against the registry, and every title and id against the file, before anything is answered. |
-| `nl-translate.ts`'s prompt, and the task's move from Haiku 4.5 to Sonnet 4.5 | `QueryPrompt.system`, ported where it still applies (the output contract, the direction procedure, "do not invent new ones"), taught on the story file and held to the language by tests; `--ask` runs on either model through `AskStyle`, and the live evaluation's bar picks the cheaper that clears it: Sonnet 5.5, in round 2. |
+| `nl-translate.ts`'s prompt, and the task's move from Haiku 4.5 to Sonnet 4.5 | the prompt (`Shipped/ask-prompt.txt`), ported where it still applies (the output contract, the direction procedure, "do not invent new ones"), taught on the story file and held to the language by tests; `--ask` runs on either model through `AskStyle`, and the live evaluation's bar picks the cheaper that clears it: Sonnet 5.5, in round 2. |
 
 ## Not built yet
 

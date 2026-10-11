@@ -152,7 +152,7 @@ extension PluginRegistrar {
 /// Makes the service that says what a shape offers and runs it. It contributes no command and
 /// claims no key: the plugins that offer commands (Titles' `/title`, Locking's `/lock`) are the
 /// ones that give a text view a list to open at a slash.
-public struct SlashCommandsPlugin: CanvasPlugin {
+public struct SlashCommandsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .slashCommands }
 

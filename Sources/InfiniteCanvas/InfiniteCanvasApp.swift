@@ -1,12 +1,14 @@
 import AppKit
-import Canvas
+@_spi(Product) import Canvas
 import CanvasUI
-import Composition
+import HostSlots
 import SwiftUI
 
 /// A document app: each board is a file (`BoardDocument`), in its own window, with the shipped
-/// plugins. AppKit runs it, so the menus and Open Recent are AppKit's; each window's content is
-/// SwiftUI.
+/// plugins: the product's list, which the build put in this executable, each plugin made by its
+/// name (`ShippedList`). The app imports none of them: what it takes of one comes through the
+/// registry (the host's slots). AppKit runs it, so the menus and Open Recent are AppKit's; each
+/// window's content is SwiftUI.
 @main
 @MainActor
 enum InfiniteCanvasApp {
@@ -17,16 +19,14 @@ enum InfiniteCanvasApp {
     static func main() {
         let registry: Registry
         do {
-            registry = try ShippedPlugins.registry(model: ShippedPlugins.anthropicModel)
-            BoardDocument.configuration = BoardConfiguration(registry: registry, coveredTop: ShippedPlugins.coveredTop(on:),
-                                                             boardName: ShippedPlugins.boardName(of:)) {
-                AnyView(ContentView(board: $0))
-            }
+            registry = try Registry(plugins: ShippedList.plugins())
+            BoardDocument.configuration = BoardConfiguration(registry: registry) { AnyView(ContentView(board: $0)) }
+            delegate.settings = SettingsWindow(registry: registry)
+            delegate.welcomeBoard = registry.welcomeBoard
         } catch {
-            fatalError("The shipped plugins don't register: \(error)")   // CompositionTests catches this first
+            fatalError("The shipped plugins don't load or don't register: \(error)")   // CompositionTests catches this first
         }
-        let commands = ShippedPlugins.commands(in: registry)
-        let server = CommandServer(commands: CommandServer.Commands(specs: commands.specs, run: commands.run))
+        let server = CommandServer(commands: CommandServer.Commands(registry: registry))
         do {
             try server.start()
             commandServer = server
@@ -36,7 +36,8 @@ enum InfiniteCanvasApp {
         }
         let app = NSApplication.shared
         app.delegate = delegate
-        BoardMenus.install(appName: "Infinite Canvas", helpItems: [
+        // Help › Welcome Board, where a plugin gives one.
+        BoardMenus.install(appName: "Infinite Canvas", helpItems: delegate.welcomeBoard == nil ? [] : [
             NSMenuItem(title: "Welcome Board", action: #selector(AppDelegate.showWelcomeBoard(_:)), keyEquivalent: ""),
         ])
         app.run()
@@ -46,7 +47,11 @@ enum InfiniteCanvasApp {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let hasShownWelcomeBoard = "hasShownWelcomeBoard"
-    private let settings = SettingsWindow { ShippedPlugins.settings() }
+    /// The Settings window, its panes the shipped plugins': set once the registry is made.
+    var settings: SettingsWindow?
+    /// What makes the welcome board (the host's slot for it: the notes plugin's), nil for none: set
+    /// once the registry is made.
+    var welcomeBoard: (@MainActor () -> CanvasDocument)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -62,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let defaults = UserDefaults.standard
         let firstTime = !defaults.bool(forKey: Self.hasShownWelcomeBoard)
         defaults.set(true, forKey: Self.hasShownWelcomeBoard)
-        return openNewBoard(with: firstTime ? WelcomeBoard.document() : CanvasDocument())
+        return openNewBoard(with: firstTime ? welcomeBoard?() ?? CanvasDocument() : CanvasDocument())
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -73,12 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Infinite Canvas › Settings… (⌘,; `BoardMenus.showSettings`): the one Settings window, its
     /// content made afresh each time it opens.
     @objc func showSettings(_ sender: Any?) {
-        settings.show()
+        settings?.show()
     }
 
     /// Help › Welcome Board: a new board with the welcome notes on it.
     @objc func showWelcomeBoard(_ sender: Any?) {
-        openNewBoard(with: WelcomeBoard.document())
+        if let welcomeBoard { openNewBoard(with: welcomeBoard()) }
     }
 
     @discardableResult
@@ -96,8 +101,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// A board window's content: the canvas (with the minimap in its corner, and, inside a subboard,
-/// the path over its top middle), the tools in the toolbar, and the details in an inspector.
+/// A board window's content: the canvas (with the minimap in its corner), the tools in the toolbar,
+/// and around it what the plugins gave the host's slots, placed by CanvasUI's `BoardChrome`: inside
+/// a subboard the path over its top middle, a palette, and the details in an inspector.
 struct ContentView: View {
     let editor: CanvasEditor
     let focus: CanvasFocus
@@ -113,9 +119,9 @@ struct ContentView: View {
         CanvasRepresentable(editor: editor, focus: focus, showsMinimap: view.showsMinimap)
             .frame(minWidth: 480, minHeight: 320)
             .toolbar {
-                ToolbarItem(placement: .principal) { ToolPicker(editor: editor, help: { ShippedPlugins.help(for: $0, in: editor.registry) }) }
+                ToolbarItem(placement: .principal) { ToolPicker(editor: editor) }
             }
             // Last: the path, the palette and the inspector go around the framed, toolbarred canvas.
-            .modifier(ShippedPlugins.boardChrome(editor: editor, showsDetails: $view.showsDetails, rootName: view.fileName, onExit: focus.take))
+            .modifier(BoardChrome(editor: editor, showsInspector: $view.showsDetails, onExit: focus.take))
     }
 }

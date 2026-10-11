@@ -8,7 +8,7 @@ import Selection
 /// (`registrar.querySelection`), not just a word: a change of the selection while the query runs
 /// changes nothing it answers. It reads the editor (`QueryReads.editor`), the selection being the
 /// person's.
-public struct SelectionQueriesPlugin: CanvasPlugin {
+public struct SelectionQueriesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "selection-queries" }
 

@@ -2,11 +2,11 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
-import Composition
 import Connections
 import Foundation
 import Frames
 import Geometry
+import HostSlots
 import LanguageModels
 import Mentions
 import Queries
@@ -14,6 +14,7 @@ import QueryCommands
 import QueryLanguage
 import QueryTranslation
 import Selection
+import ShippedTesting
 import StickyNotes
 import TestKit
 import Titles
@@ -637,7 +638,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let registry = try Registry(plugins: shippedPlugins(pasteboard))
-        let commands = ShippedPlugins.commands(in: registry)
+        let commands = registry.hostCommands
         for size in sizes {
             let document = generatedBoard(shapes: size)
             let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
@@ -774,6 +775,8 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
             let queries = try require(h.editor.queries)
             _ = queries.vocabulary
             h.editor.selectedShapeIDs = Array(document.shapes.prefix(3).map(\.id))
+            // The product's prompt, read out of this executable once, as the shipped translator reads it.
+            let system = try require(ShippedText.named(QueryTranslationPlugin.promptFile))
             // A question many names share a word with (the titles listed are those first), and one no
             // name shares a word with, which ranks every name there is.
             var lines: [String] = []
@@ -784,7 +787,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
                         let place = try await queries.whereThePersonIs(selectedLimit: AskStyle.selected)
                         let titles = try await queries.titles(for: question, limit: AskStyle.titles)
                         return AskRequest.request(question: question, vocabulary: queries.vocabulary.text, where: place, titles: titles,
-                                                  system: QueryPrompt.system, style: .shipped)
+                                                  system: system, style: .shipped)
                     }
                     mains.append(run.main)
                     offs.append(run.offMain)

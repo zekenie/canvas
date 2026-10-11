@@ -1,7 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import Composition
 import CoreGraphics
 import Geometry
 import LanguageModels
@@ -9,6 +8,7 @@ import Mentions
 import Publishing
 import Queries
 import References
+import ShippedTesting
 import StickyNotes
 import Subboards
 import TestKit

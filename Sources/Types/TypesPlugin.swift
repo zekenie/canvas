@@ -22,7 +22,7 @@ extension PluginID {
 /// (`TypeValidationPlugin`) and its panel (`TypeDetailsPlugin`) are plugin values of their own, so a
 /// list without Validation or the panel can install Types. It knows no kind: a kind hands it its
 /// words (`typeWords`).
-public struct TypesPlugin: CanvasPlugin {
+public struct TypesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .types }
 
@@ -82,7 +82,7 @@ public struct TypesPlugin: CanvasPlugin {
 /// warning. Neither has an `affected:`: a type's change reaches the notes through the service
 /// (`TypeIndex.onChange`, then `ValidationEngine.recheck`), since a rule's `affected:` hears a commit
 /// before the index does. After `TypesPlugin` and `ValidationPlugin`.
-public struct TypeValidationPlugin: CanvasPlugin {
+public struct TypeValidationPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "type-validation" }
 
@@ -108,7 +108,7 @@ public struct TypeValidationPlugin: CanvasPlugin {
 
 /// A type's Schema tab in the detail panel: its JSON, its issues and the sync's status. After
 /// `TypesPlugin` and `DetailPanelPlugin`.
-public struct TypeDetailsPlugin: CanvasPlugin {
+public struct TypeDetailsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "type-details" }
 

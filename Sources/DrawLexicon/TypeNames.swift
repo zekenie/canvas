@@ -11,7 +11,7 @@ import Types
 /// shapes are types (and, later, custom shapes); any other shape named is refused: `"Ann" is a
 /// sticky-note, which isn't a type or a shape`. A quoted title for a list is a one-item list
 /// (Automation's), several are JSON: `is: ["Person", "Employee card"]`.
-public struct TypeNamesPlugin: CanvasPlugin {
+public struct TypeNamesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "type-names" }
 

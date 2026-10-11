@@ -127,6 +127,19 @@ extension ContentsMoves: KeyedExtensionPoint {
     public static func uniqueKeys(of _: ContentsMoveContribution, for _: ShapeTarget) -> [AnyHashable] { ["moves"] }
 }
 
+/// What the list's header calls the board it lists, when it lists every shape, from the plugin that
+/// knows what a board is called (Boards', its `BoardContentsPlugin`: the path's crumb), so the list
+/// never learns. At most one: two are `RegistryError.conflict` at startup. Without one, or where it
+/// gives nil, the header is "Board".
+public enum ContentsHeadings {}
+
+extension ContentsHeadings: KeyedExtensionPoint {
+    public typealias Contribution = @MainActor (CanvasEditor) -> ContentsHeading?
+    public static var owner: PluginID { .tableOfContents }
+    public static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["heading"] }
+    public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "contents heading" }
+}
+
 /// What `ContentsMoves` stores: whether shapes dropped somewhere can go there, which the list asks
 /// as a drag moves over its rows (so it costs next to nothing: no layout), and the move itself,
 /// asked only of shapes `admits` took, all on one board, at least one not already where `place`
@@ -349,6 +362,17 @@ extension PluginRegistrar {
         contribute(ContentsMoveContribution(admits: admits, move: move), to: ContentsMoves.self)
     }
 
+    /// What the list's header calls the board it lists (`ContentsHeadings`), nil for the list's own,
+    /// "Board". Read in the header's body, so it reads observable state and the header alone redraws
+    /// as that changes:
+    ///
+    ///     registrar.contentsHeading { editor in
+    ///         editor.board.isRoot ? nil : ContentsHeading("Inside", systemImage: "folder", up: .enclosingBoard)
+    ///     }
+    public mutating func contentsHeading(_ heading: @escaping @MainActor (CanvasEditor) -> ContentsHeading?) {
+        contribute(heading, to: ContentsHeadings.self)
+    }
+
     /// A mark on every shape's row, where `make` gives one (nil for none), from the shape and the
     /// editor's services; `where` (a `ContentsKind`, asked once per kind) keeps it to the kinds
     /// that opted into what it marks, as Locking's lock goes only on kinds that can be locked:
@@ -518,7 +542,7 @@ extension EnvironmentValues {
 
 /// The table of contents' state. Contributes no rows of its own: a kind nobody describes is listed
 /// by its label and symbol (`registry.label(of:)`).
-public struct TableOfContentsPlugin: CanvasPlugin {
+public struct TableOfContentsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .tableOfContents }
 
@@ -533,7 +557,9 @@ enum ContentsStyle {
     /// The most of a row's text its tooltip shows (`ContentsLabel.help`): enough to tell apart rows
     /// that begin alike.
     static let helpLength = 200
-    /// The header's: between the up button, the heading's symbol and its title; the up button's width.
+    /// The header's: what it calls the board listed when no plugin says (`ContentsHeadings`); between
+    /// the up button, the heading's symbol and its title; the up button's width.
+    static let heading = "Board"
     static let headerSpacing: CGFloat = 4
     static let upWidth: CGFloat = 16
     /// The up button's: an arrow that turns up, a way out as Finder's enclosing folder is, not a disclosure.

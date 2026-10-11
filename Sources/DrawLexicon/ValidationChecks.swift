@@ -6,7 +6,7 @@ import Validation
 /// Validation finds (`registry.validationIssues(of:in:)`: every rule for its kind, the schema's
 /// bounds included), against the board as the script leaves it. An error is still drawn, and the
 /// board outlines it red.
-public struct ValidationChecksPlugin: CanvasPlugin {
+public struct ValidationChecksPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "validation-checks" }
 

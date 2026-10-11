@@ -1,11 +1,11 @@
 import AppKit
 @_spi(Host) import Canvas
-import Composition
 import Foundation
 import LanguageModels
 import Queries
 import QueryTranslation
 import Selection
+import ShippedTesting
 import TestKit
 
 // `--ask` against the real model (QUERY_LIVE=1 only: test.sh never sets it, and nothing else here

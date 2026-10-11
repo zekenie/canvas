@@ -89,12 +89,15 @@ extension ClipboardMenuGroup: MenuGroup {
 
 // MARK: The plugin
 
-/// `pasteboard` is where copies go and pastes come from: the system's, by default, shared by every
-/// board. Tests pass one of their own (`NSPasteboard.withUniqueName()`), so they never touch it.
-public struct ClipboardPlugin: CanvasPlugin {
+/// `pasteboard` is where copies go and pastes come from: the system's, made from nothing (as the
+/// product's list makes it), shared by every board. That reaches outside the process, so the plugin
+/// is an `OutwardPlugin`: anything but the app that loads the list hands over its own, and tests
+/// pass a pasteboard of their own (`NSPasteboard.withUniqueName()`), so they never touch the user's.
+public struct ClipboardPlugin: OutwardPlugin {
     let pasteboard: NSPasteboard
 
-    public init(pasteboard: NSPasteboard = .general) { self.pasteboard = pasteboard }
+    public init() { self.init(pasteboard: .general) }
+    public init(pasteboard: NSPasteboard) { self.pasteboard = pasteboard }
     public var id: PluginID { .clipboard }
 
     public func register(into registrar: inout PluginRegistrar) {

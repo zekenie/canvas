@@ -3,11 +3,12 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Composition
 import Connections
 import Foundation
+import HostSlots
 import LanguageModels
 import Mentions
+import ShippedTesting
 import StickyNotes
 import SwiftUI
 import TableOfContents
@@ -21,8 +22,8 @@ import Types
 
 /// The app's command server on a socket of the test's own, for these boards.
 @MainActor func startCommandServer(boards: [BoardDocument], frontmost: BoardDocument?) throws -> CommandServer {
-    let commands = ShippedPlugins.commands(in: try require(BoardDocument.configuration).registry)
-    let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
+    // As the app makes it: the commands the plugins gave the host's slot for them.
+    let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(registry: try require(BoardDocument.configuration).registry),
                                boards: { boards }, frontmost: { frontmost })
     try server.start()
     return server
@@ -180,7 +181,7 @@ edge "API" -> "Cache" channel: none
         defer { try? FileManager.default.removeItem(at: folder) }
         let opened = Opened()
         defer { for board in opened.boards { board.close() } }
-        let commands = ShippedPlugins.commands(in: try require(BoardDocument.configuration).registry)
+        let commands = try require(BoardDocument.configuration).registry.hostCommands
         let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
                                    boards: { [first] + opened.boards }, frontmost: { opened.boards.last ?? first }, show: { opened.boards.append($0) })
         try server.start()
@@ -465,6 +466,7 @@ edge "API" -> "Cache" channel: none
                                                   children: [p.id: CanvasDocument(shapes: [AnyShapeRecord(q)]),
                                                              q.id: CanvasDocument(shapes: [AnyShapeRecord(note)])]))
         expect(board.editor.showBoard(BoardID(owner: p.id)) && board.editor.showBoard(BoardID(owner: q.id)))
+        other.editor.viewportDidResize(to: CGSize(width: 1440, height: 900))   // the other's window has a size; the first's has none yet
         let server = try startCommandServer(boards: [board, other], frontmost: board)
         defer { server.stop() }
         let status = try JSON(text: canvas(server, ["status"]).output)
@@ -475,6 +477,12 @@ edge "API" -> "Cache" channel: none
         expectEqual(boards.first?["shapes"], 1, "the board shown's")
         expectEqual(boards.first?["fileShapes"], 3, "every board's")
         expectEqual(boards.last?["fileShapes"], 0)
+        // view: the room a window has for a board fit into it, the canvas less a fit's margin; none for a window with no size
+        let inset = Double(CanvasEditor.firstVisitInset)
+        expectEqual(boards.last?["view"], .array([.number(1440 - 2 * inset), .number(900 - 2 * inset)]), "what a first visit fits a board into")
+        expectEqual(boards.first?["view"], nil, "a window with no size says none")
+        other.editor.viewportDidResize(to: CGSize(width: 100, height: 2 * CanvasEditor.firstVisitInset))
+        expectEqual(try JSON(text: canvas(server, ["boards"]).output).arrayValue?.last?["view"], nil, "nor one with no room to spare")
         let text = try canvas(server, ["boards", "--format", "text"]).output
         expect(text.contains("shows") && text.contains(q.id.description), text)
 
@@ -588,7 +596,7 @@ final class Lingering {
 
 /// `draw`, as the app's command server runs it, in this process, on `editor`.
 @MainActor func drawInProcess(_ script: String, on editor: CanvasEditor) -> Result<JSON, RPCError> {
-    let commands = ShippedPlugins.commands(in: editor.registry)
+    let commands = editor.registry.hostCommands
     let result = try? awaitResult { () async -> Result<JSON, RPCError> in
         do throws(RPCError) {
             return .success(try await commands.run("draw", ["script": .string(script)], editor))

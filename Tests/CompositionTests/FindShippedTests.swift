@@ -2,12 +2,12 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Composition
 import Connections
 import Find
 import LanguageModels
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import Subboards
 import TestKit
@@ -286,6 +286,10 @@ extension NestedWindow {
         try settled(find, h)
         expectEqual(find.results.map(\.id), [nest.notes(on: 1).1, nest.notes(on: 2).1, nest.notes(on: 3).1])
         expectEqual(find.results.map(\.board), [.root, nest.sBoard, nest.tBoard])
+        // Each board's rows are headed as the path names the board: Boards', for Find's list.
+        h.editor.nameRoot("Roadmap")
+        expectEqual(find.results.map { find.heading(of: $0.board) },
+                    [FindHeading("Roadmap"), FindHeading("Plans", systemImage: "rectangle.stack"), FindHeading("Untitled Subboard", systemImage: "rectangle.stack")])
         find.step(forward: true)
         find.step(forward: true)
         expectEqual(h.editor.board, nest.tBoard, "two boards down")

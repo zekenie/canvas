@@ -27,7 +27,7 @@ extension ArrowEdge: EdgeType {
 /// to. An arrow bound at both ends is an edge (Topology's) of the `arrow` family, or of its
 /// channel's type, under it. It's a plugin of its own, so a list can have arrows without ports (as
 /// ArrowsTests do) or ports with a connector of its own (as PortsTests do).
-public struct ArrowPortsPlugin: CanvasPlugin {
+public struct ArrowPortsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .arrowPorts }
 
