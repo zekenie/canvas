@@ -1,6 +1,6 @@
 # 04 · `canvas draw`'s engine is a surface, Draw; Automation is the command line over it
 
-**Commit title:** canvas draw's engine is a surface any plugin may run, Draw, as Queries is the query engine; Automation is the command line's commands over it, and the wire stays out of the engine
+**Commit title:** canvas draw's engine is a surface any plugin may run, Draw, as Queries is the query engine; Automation is the command line's commands over it, and the wire stays out of the engine; where Placing exists, Draw takes it in
 
 **Depends on:** 01 (the charter). **Unblocks:** 05, where concerns fill draw's points themselves.
 
@@ -32,7 +32,11 @@ The lexicon finding: "dependency inversion around `QueryLexicon` and `DrawLexico
 
   HostSlots is used only by `hostCommands`, which stays on the command side. So the engine can be a surface: it knows no concern, and once it's out of a language, concerns may fill its points.
 - **This is the split queries already made.** `Queries` is the engine (a surface any plugin may run) and `QueryCommands` is the language (`canvas query` over the wire). `e1127f8` moved Queries to surface for exactly this reason. Draw is the same shape and was never split, which is the only reason DrawLexicon still has a job.
-- **The engine is useful past the command line.** Moving already places a shape "as `canvas draw` places one" by calling DrawScript's solver itself (`Sources/Moving/Landing.swift`). Once the engine is a surface, a feature can run draw's placement instead of re-deriving it. That's not done here.
+- **Draw's placement has a copy outside the engine, and the layers are the only reason.** A plugin that puts shapes down places them "as `canvas draw` places one", and while the engine is in a language, no plugin may import it:
+  - on main, Moving keeps its own copy over DrawScript's solver (`Surroundings`, `Sources/Moving/Landing.swift`), since Moving can't import a language;
+  - the types work (zekenie/canvas#18, branch `claude/types-cut`) moves that copy into a surface of its own, `Placing`, so Types' New type can use it too, since a concern can import neither Moving nor Automation.
+
+  With two copies, every change to how shapes land is made twice. That branch already made one twice, for notes laid out taller than they store: `ShapeItem.room` in `DrawLayout`, and the box Moving hands Placing (`Block.box`, from `editor.frame(inFile:)`). Once the engine is a surface, any plugin may import it, so the copy belongs in Draw (the index's rule 5: nothing has to build without the other, and no layer forbids the import). Types imports Draw anyway once its `is:` word is its own, as plan 05 does for draw's other words.
 
 ## Design
 
@@ -64,6 +68,13 @@ The lexicon finding: "dependency inversion around `QueryLexicon` and `DrawLexico
 - Each command resolves its board (the `no_board` error stays here), calls Draw's entry point, encodes the result, and maps `DrawError` to `AutomationError` field for field, so `rpcError` writes exactly the wire error it writes today.
 - Its dependencies become exactly what's left imports. Expected: Canvas, CanvasRPC, Draw, DrawScript (Show.swift names `ScriptError.Reason`, `:3, :42, :53`) and HostSlots, dropping Adornments, Geometry, Queries, QueryLanguage and Topology. HostSlots drops out too if plan 06 has landed first, since `hostCommands` then comes from Canvas. The audit settles it.
 - QueryCommands is unaffected. It uses the commands sugar, `AutomationContext`, `AutomationError` and the JSON bridge, none of draw.
+
+**Placing**, where it exists (the types work has landed):
+
+- Draw takes it in. `Surroundings`, `Landing` and `PlacingStyle` move to `Sources/Draw/Surroundings.swift` as they are and stay public: Draw's placement for plugins (beside a shape, in a frame, anywhere), beside the script engine. Their dependencies (Canvas, DrawScript, Geometry) are already Draw's.
+- Moving and Types import Draw where they imported Placing, and the `Placing` module goes.
+- What it does doesn't change, including where it differs from a script's `in "F"` on purpose: where F has room, `/move-to F` puts a shape in F itself, not in a frame nested in F.
+- Where Placing doesn't exist yet, nothing moves here, and Moving keeps its copy. When the types work is resumed on top of this commit, that copy goes into Draw instead of into a new `Placing` module.
 
 ## Tactics
 
@@ -110,6 +121,11 @@ The lexicon finding: "dependency inversion around `QueryLexicon` and `DrawLexico
      - the module-graph rule's parenthesis ("the query engine, Queries, and the English-to-query translator, QueryTranslation, are surfaces every plugin may run") adds the draw engine, Draw;
      - the map's command-line line names Draw.
    - **The canvas skill does not change.** No message changes, and SkillTests hold that.
+9. **Placing, where it exists:**
+   - `git mv Sources/Placing/Surroundings.swift Sources/Draw/Surroundings.swift` and delete `Sources/Placing`. Only its comments change: it's Draw's placement for plugins now, beside `DrawLayout`, not a surface of its own.
+   - `import Placing` → `import Draw` in Moving (`Dropping.swift`, `Landing.swift`, `Move.swift`), Types (`TypeLinks.swift`) and `Tests/PlacingTests/SurroundingsTests.swift`.
+   - `Package.swift`: delete the Placing target. Moving's and Types' dependencies swap `Placing` for `Draw`. PlacingTests depends on `Draw` in place of `Placing` and is tagged `// layer: test of Draw`, named after the part of Draw it tests; its other dependencies (Canvas, CanvasTesting, TestKit) are in Draw's closure or testsupport.
+   - Docs: `.claude/rules/placing.md` (its `paths:` name `Sources/Draw/Surroundings.swift`, and "Placing is a surface" becomes Draw's placement for plugins); `moving.md`, `types.md` and `build.md` where they name the module; `docs/plugin-system.md`'s module table (the surface row drops Placing) and its other mentions. The placing line in CLAUDE.md's map names no module and stays.
 
 ## Verification
 
@@ -124,6 +140,7 @@ The lexicon finding: "dependency inversion around `QueryLexicon` and `DrawLexico
   - a script with an error on line 3 (same line, reason and hint as before);
   - `build/canvas measure`, `kinds` and `show --root`.
 - `./build.sh bench`: the benchmarks reach draw through `hostCommands` and should not move.
+- Where Placing was taken in: PlacingTests, MovingTests, TypesTests and CompositionTests' `typesShippedTests` pass unchanged, and in the app `/move-near`, `/move-to` and `/is-a`'s New type land shapes where they did.
 
 ## Risks and open questions
 
@@ -132,10 +149,11 @@ The lexicon finding: "dependency inversion around `QueryLexicon` and `DrawLexico
   - The error mapping must keep every field and the nesting `rpcError` produces.
 - **Public surface:** expose only what Automation and the concerns call. An engine that's a surface should have a public API someone designed, not a dump of everything that used to be internal.
 - **The size of the move** (about 4,510 lines). It's mechanical, but review it as `git mv` plus a small diff. Don't let logic changes ride along.
+- **Moving's closure grows**, where Placing is taken in: Draw brings Adornments, Queries, QueryLanguage and Topology to it. Moving is a leaf, so only Moving recompiles more often, and plan 06 weighs closure growth the same way.
 
 ## Not in this commit
 
 - Moving DrawLexicon's words into their owners, and deleting the lexicon layer: plan 05.
 - A `DrawTests` target holding the engine's tests directly. AutomationTests cover the engine through the commands today, and splitting them is a follow-up.
-- Moving letting Draw place its shapes instead of DrawScript's solver: a possible follow-up.
+- One reading of what's in the way for both placements. A script's (`ObstacleIndex`, `DrawLayout`) and `Surroundings` each file a board's solids in an `ObstacleGrid`. Once both are in Draw, sharing that reading is a follow-up; this commit only moves files.
 - Splitting `command-line.md` into an engine topic file: worth doing if the file is unwieldy, but it's a docs decision of its own.
