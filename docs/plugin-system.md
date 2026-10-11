@@ -10169,6 +10169,15 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   second press of a fast pair does not begin an edit. While the words are edited a kind's editing view lays
   Types' `RowsView` over its rows (`context.service(RowBook.self)?.makeRowsView(for:host:)`, as
   `NoteEditor` does) and a press there is the rows': the same clicks, and no caret moved.
+- **Typing in a row.** A note that is one has two places for the caret in its one editing session, the words
+  and a row. `NoteEditor` hosts Types' `RowsView` over the rows (`makeRowsView`) and hands it the press that began
+  the session (`rows.begin(at:clickCount:)`: a typed value's field takes the keyboard, the caret where it was
+  pressed). A typed value (text, a number, a date, either of two such kinds) is edited by a one-line field,
+  each keystroke a commit through `editor.fieldWriter` (one undo step a field, `Change Email`), stored as
+  `FieldText` says (`9.50` is 9.5, `02134` is text, `3/3/26` is the day) and shown as typed while the caret is
+  there; the field tells `editor.fieldChecks` it is the one typed in, so what is half typed is never red. Tab,
+  ⇧Tab, ↑ and ↓ walk the rows, Return and Escape end editing, Space toggles a box and pops a choice's menu, and
+  Return on a row with more in it asks for its card; a row that is not typed swallows every other key.
 - **Zoomed out** a kind's skeleton asks `context.showsTypeRowBars` (14% and up) and calls
   `context.fillTypeRowBars(of:in:)`: a bar for each row's name (as wide as its columns, never laid out), three
   dots for a fold, three bars while the model reads, one for `No fields` and a reason; below 14% no bar is drawn.

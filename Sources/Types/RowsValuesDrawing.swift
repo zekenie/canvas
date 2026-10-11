@@ -148,13 +148,14 @@ extension RowBook {
     /// The rect that hugs a row's value, from the block's top-left like the shown rows: what the outline of a
     /// focused row and of the row whose card is open goes round. At least `fieldFocusMinimum` wide, at most the
     /// value column.
-    func hug(_ row: ShownRow) -> CGRect {
+    func hug(_ row: ShownRow, focused: Bool = false) -> CGRect {
         let value = row.valueRect
         var width: CGFloat
         switch row.content {
         case .text(let text): width = FieldLines.width(of: text, .value)
         case .empty(let words): width = FieldLines.width(of: words, .empty)
-        case .choice(let label): width = FieldLines.width(of: label ?? FieldWords.add(row.name), label == nil ? .empty : .value)
+        case .choice(let label):
+            width = FieldLines.width(of: label ?? FieldWords.add(row.name), label == nil ? .empty : .value) + (focused ? Self.choiceMarkRoom : 0)
         case .box: width = TypesStyle.boxSize
         case .summary(let text): width = FieldLines.width(of: text, .value) + Self.chevronRoom
         case .gone(let target):
@@ -180,12 +181,33 @@ extension RowBook {
                 isOpen = false
             }
             guard isOpen else { continue }
-            if row.path == nil {
-                let words = row.name + (row.valueRect == .zero ? " ›" : "")
-                outline(CGRect(x: row.rect.minX - 2, y: row.rect.minY + 1, width: FieldLines.width(of: words, .kind) + 4, height: row.rect.height - 2), to: cg)
-            } else {
-                outline(hug(row), to: cg)
-            }
+            outline(focusRect(of: row, class: nil), to: cg)
+        }
+    }
+
+    /// What the `▾` after a focused choice takes.
+    static var choiceMarkRoom: CGFloat { FieldLines.width(of: "▾", .kind) + TypesStyle.partGap }
+
+    /// What the outline of a focused row or of the row whose card is open goes round: a value as it hugs it, a
+    /// fold's words (`+12 more ›` at the left, `4 fields ›` at the right).
+    func focusRect(of row: ShownRow, class kind: RowClass?) -> CGRect {
+        guard row.path == nil else { return hug(row, focused: { if case .choice = kind { true } else { false } }()) }
+        let outset = TypesStyle.fieldFocusOutset
+        if row.valueRect == .zero {
+            let width = FieldLines.width(of: row.name + " ›", .kind)
+            return CGRect(x: row.rect.minX - 2, y: row.rect.minY + 1, width: width + 4, height: row.rect.height - 2)
+        }
+        guard case .fold(let value) = row.content else { return row.rect }
+        let width = FieldLines.width(of: value + " ›", .kind)
+        return CGRect(x: row.valueRect.maxX - width - outset, y: row.rect.minY + 1, width: width + 2 * outset, height: row.rect.height - 2)
+    }
+
+    /// A focused row's outline, and the `▾` of a focused choice inside it.
+    func drawFocus(_ rect: CGRect, of row: ShownRow, class kind: RowClass, to cg: CGContext) {
+        outline(rect, to: cg)
+        if case .choice = kind {
+            let mark = FieldLines.line("▾", .kind)
+            FieldLines.draw(mark, at: rect.maxX - TypesStyle.fieldFocusOutset - mark.width, midY: row.rect.midY, in: cg)
         }
     }
 

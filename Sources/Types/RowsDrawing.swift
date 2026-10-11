@@ -30,10 +30,16 @@ extension TypesStyle {
     static let waveAmplitude: CGFloat = 1.25
     /// The outline round a row's value that has the caret or whose card is open: this thick, this far out,
     /// at least this wide, with these corners.
-    static let fieldFocusWidth: CGFloat = 1.5
-    static let fieldFocusOutset: CGFloat = 4
-    static let fieldFocusMinimum: CGFloat = 44
+    public static let fieldFocusWidth: CGFloat = 1.5
+    public static let fieldFocusOutset: CGFloat = 4
+    public static let fieldFocusMinimum: CGFloat = 44
     static let fieldFocusCorner: CGFloat = 4
+    /// A row's field: its text starts this far in from the outline, and this far down in the row's height less the
+    /// outline's, so its glyphs fall on the render's.
+    static let fieldInset = CGSize(width: fieldFocusOutset, height: 2.0)
+    /// TextKit sets a text view's text at a whole point from its edges; the half a point more that centers a line of this
+    /// font in a row's field is the field's own offset.
+    static let fieldLift: CGFloat = 0.5
 
     /// A note's paper is light in both appearances, so the rows' inks are fixed colors, as the highlights
     /// are: the note's ink, and its strengths.

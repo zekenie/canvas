@@ -51,6 +51,27 @@ enum RowMenus {
     }
 }
 
+extension RowMenus {
+    /// The menu of a choice: the options in the schema's order, a check by the one stored, a separator, and None
+    /// last. A pick hands over the option's value, None nil (the field is cleared).
+    static func choice(options: [FieldOption], current: JSONValue?, pick: @escaping @MainActor (JSONValue?) -> Void) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        func add(_ title: String, ticked: Bool, _ run: @escaping @MainActor () -> Void) {
+            let action = TypeMenuAction(run)
+            let item = NSMenuItem(title: title, action: #selector(TypeMenuAction.fire), keyEquivalent: "")
+            item.target = action
+            item.representedObject = action          // the item holds its target weakly
+            item.state = ticked ? .on : .off
+            menu.addItem(item)
+        }
+        for option in options { add(option.label, ticked: option.value == current) { pick(option.value) } }
+        menu.addItem(.separator())
+        add(FieldWords.none, ticked: false) { pick(nil) }
+        return menu
+    }
+}
+
 extension RowBook {
     /// Where a failed read's action words are (`Retry`, `Settings…`), world units; nil with none. For tests and
     /// the gallery.
