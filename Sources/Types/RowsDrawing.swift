@@ -351,22 +351,27 @@ extension RowBook {
         cg.fill(CGRect(x: rect.minX - TypesStyle.tickInset, y: rect.minY + 4, width: TypesStyle.tickWidth, height: rect.height - 8))
     }
 
-    /// A type's row at the right: its kind's label, the chip of the type it names, and `›`, from the right.
+    /// A type's row at the right: its kind's label, the chip of the type it names, and `›`, from the right. An
+    /// inherited row is faint all through: its kind at the strength of its name, its chip and its `›` too.
     private func drawKind(of field: FieldRowTemplate, in value: CGRect, midY: CGFloat, types: TypeIndex?, to cg: CGContext) {
+        let style: FieldLines.Style = field.isFaint ? .faint : .kind
         var right = value.maxX
         if field.opensOnType {
-            let chevron = FieldLines.line("›", .kind)
+            let chevron = FieldLines.line("›", style)
             FieldLines.draw(chevron, at: right - chevron.width, midY: midY, in: cg)
             right -= chevron.width + TypesStyle.partGap
         }
         if let chip = field.chip, let types {
             let label = TypeChips.label(for: TypeLink(chip), in: types)
             let size = label.contentSize
+            cg.saveGState()
+            if field.isFaint { cg.setAlpha(TypesStyle.faintStrength) }
             label.draw(at: CGPoint(x: right - size.width, y: midY - size.height / 2), in: cg)
+            cg.restoreGState()
             right -= size.width + (field.label.isEmpty ? 0 : TypesStyle.partGap)
         }
         guard !field.label.isEmpty else { return }
-        let words = FieldLines.line(field.label, .kind, cutTo: max(0, right - value.minX))
+        let words = FieldLines.line(field.label, style, cutTo: max(0, right - value.minX))
         FieldLines.draw(words, at: right - words.width, midY: midY, in: cg)
     }
 }

@@ -221,6 +221,8 @@ private let petFields = #"{"type": "object", "properties": {"name": {"type": "st
         let drawn = b.draw()
         let faint = darkest(drawn, in: rows[0].nameRect), full = darkest(drawn, in: rows[2].nameRect)
         expect(faint > full + 40, "an inherited name is fainter: \(faint) against \(full)")
+        let faintKind = darkest(drawn, in: rows[0].valueRect), fullKind = darkest(drawn, in: rows[2].valueRect)
+        expect(faintKind > fullKind + 15, "an inherited row's kind is fainter too: \(faintKind) against \(fullKind)")
         let tick = { (row: ShownRow) in CGRect(x: row.rect.minX - TypesStyle.tickInset, y: row.rect.minY + 6, width: TypesStyle.tickWidth, height: row.rect.height - 12) }
         for row in rows.prefix(2) { expect(has(drawn, personBlue, in: tick(row), within: 24), "\(row.name)'s tick is Person's blue, in the padding") }
         for row in rows.suffix(2) { expectEqual(ink(drawn, in: tick(row).insetBy(dx: -3, dy: 0)), 0, "\(row.name) has no tick") }
