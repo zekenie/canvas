@@ -5,6 +5,7 @@ import Foundation
 import TestKit
 import Titles
 import Types
+import Validation
 
 // The service (`editor.fieldChecks`): what it keeps and when it makes a check again, `typing`, what a type's
 // change reaches, and the shapes that are not checked.
@@ -108,6 +109,17 @@ private func filled(_ quantity: Double = 3) -> JSONObject {
         expect(after.message.hasPrefix("Either rule:"), after.message)
         expectEqual(checks.checksMade - made, 1)
     },
+    test("a rename reaches a note with no values whose rule across fields names its type") {
+        let editor = try editor()
+        let rule = CheckFixtures.ruleID
+        let empty = editor.addNote(of: [rule])
+        let message = { try require(editor.fullCheck(of: empty).problems.first { $0.path.isRoot }).message }
+        expect(try message().hasPrefix("Exclusive rule:"), "an empty note fits both forms of the oneOf")
+        editor.transact("Rename") { $0.update(rule) { $0[TitleProperty.self] = "Either" } }
+        let renamed = try message()
+        expect(renamed.hasPrefix("Either rule:"), renamed)
+        expect(editor.issues(empty).contains { $0.message.hasPrefix("Either rule:") }, "the Issues line follows")
+    },
     test("a type another type refers to reaches its notes: an edit to Address, to what a type builds on, and two refs deep") {
         let editor = try editor()
         let note = editor.addNote(of: [CheckFixtures.shopID], ["address": ["city": "Oslo"], "boss": ["name": "Bo", "email": "bo@acme.com"]])
@@ -201,6 +213,24 @@ private func filled(_ quantity: Double = 3) -> JSONObject {
         editor.replaceFile(with: file, showing: .root)
         expectEqual(summary(editor.fullCheck(of: note)), ["needed /name", "wrong /email"])
         expect(checks.checksMade > made, "the answers were dropped with the old file")
+    },
+    test("a board switch with a field being typed in checks its shape again: taken back, the wrong value rings") {
+        let pocket = ShapeID(), note = ShapeID()
+        var inside = instanceRecord("", of: [person], id: note)
+        inside[FieldValuesProperty.self] = FieldValues(["name": "A", "email": "ann@"])
+        let personType = typeRecord(FieldFixtures.person.schema, words: FieldFixtures.person.words, title: "Person", id: person)
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 0, y: 0, width: 100, height: 100)))), personType]),
+                              children: [pocket: CanvasDocument(shapes: [inside])])
+        let editor = try typeEditor(file: file, more: [PocketsPlugin()])
+        let checks = try require(editor.fieldChecks)
+        expect(editor.showBoard(BoardID(owner: pocket)))
+        expectEqual(editor.issues(note).count, 1)
+        checks.typing = (note, FieldPath(field: "email"))
+        expectEqual(editor.issues(note), [], "the half-typed value is not red")
+        expect(editor.showBoard(.root))
+        expect(checks.typing == nil, "a switch clears it")
+        expect(editor.showBoard(BoardID(owner: pocket)))
+        expectEqual(editor.issues(note).count, 1, "the answer kept with the board was made with the path left out")
     },
     test("a commit that only moves shapes reads no record and checks nothing") {
         let editor = try editor()

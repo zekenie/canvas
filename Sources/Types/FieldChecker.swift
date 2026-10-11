@@ -56,8 +56,8 @@ final class FieldChecker {
     /// What the resolver was given, for each type it was asked for (nil: the type was gone).
     private let inputs: [ShapeID: ResourceInput?]
     private let rowIndex: [String: Int]
-    /// The check of no values: every untouched note of the list shares it.
-    private(set) lazy var emptyCheck: FieldCheck = check(FieldValues())
+    /// The check of no values: every untouched note of the list shares it. Kept with the rename count it was made at.
+    private var emptyKept: (names: Int, check: FieldCheck)?
 
     /// Most problems one answer keeps, however many a note has; the cap keeps one of each class.
     static let capacity = 100
@@ -83,6 +83,16 @@ final class FieldChecker {
             (rule.source, validator(SchemaValue.object(rule.members).json.objectValue ?? [:]))
         }
         inputs = resources.met
+    }
+
+    /// The check of no values, shared by every untouched note of the list. A rule across fields that fails on an
+    /// empty note says its type's name, and a rename leaves this checker current: that answer is made again
+    /// when `names` (the count of renames) has moved, and one that names nothing is kept.
+    func emptyCheck(names: Int) -> FieldCheck {
+        if let emptyKept, emptyKept.names == names || !emptyKept.check.problems.contains(where: { $0.path.isRoot }) { return emptyKept.check }
+        let made = check(FieldValues())
+        emptyKept = (names, made)
+        return made
     }
 
     private static func object(_ value: JSONValue) -> JSONObject { value.objectValue ?? [:] }

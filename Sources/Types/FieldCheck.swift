@@ -19,7 +19,7 @@ public struct FieldProblem: Hashable, Sendable {
     public var keyword: String
     /// The rows' names from the note down: `["line items", "Plate", "quantity"]`.
     public var place: [String]
-    /// In words, with the place: `line items › Plate › quantity must be at least 1`.
+    /// In words, with the place: `line items › Plate › quantity is 0, and should be at least 1`.
     public var message: String
 
     public init(path: FieldPath, kind: FieldClass, keyword: String, place: [String], message: String) {

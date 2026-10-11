@@ -119,7 +119,7 @@ public final class FieldChecks {
                 #endif
                 check = checker.check(values)
             } else {
-                check = checker.emptyCheck
+                check = checker.emptyCheck(names: names)
             }
         } else {
             check = .clean
@@ -277,6 +277,8 @@ extension FieldChecks: EditorService {
     /// checkers and the references, which are another file's.
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         var moved = typingStorage != nil
+        // The board left holds this shape's answer, made with the path left out: it is checked again when taken back.
+        if let left = typingStorage?.shape { editor.validation?.recheck([left]) }
         typingStorage = nil
         if change.isFileReplaced {
             answers = [:]
