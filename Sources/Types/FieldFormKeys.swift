@@ -171,7 +171,7 @@ extension FieldFormView: NSTextViewDelegate {
     private func open(_ cell: FieldCell, from stop: FieldStop) {
         guard let book = editor.fieldBook else { return }
         let kind = book.kind(of: cell.field)
-        if kind == .other { return FieldCards.revealInPanel(shape, in: editor) }
+        if kind == .other { return FieldCards.revealInPanel(shape, in: editor, mode: mode) }
         guard presentation == .card, mode == .kinds ? kind.opensOnType : kind.hasMore else { return }
         var title = FieldName.words(of: cell.field.field)
         if title.isEmpty { title = level.title }

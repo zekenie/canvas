@@ -201,8 +201,7 @@ public final class FieldFormView: NSView {
     /// Asks `FieldSheets` again for the level shown and draws it; the editor keeps its text unless its own
     /// cell's stored value changed under it.
     public func reload() {
-        guard editor.document[shape] != nil else { return }
-        revalidate()
+        guard editor.document[shape] != nil, revalidate() else { return }
         reconcileDrafts()
         rebuild()
     }
@@ -222,9 +221,10 @@ public final class FieldFormView: NSView {
         reload()
     }
 
-    /// The field a level shows is still the type's, with a kind that has a form; else the levels above it, else gone.
-    private func revalidate() {
-        guard let book = editor.fieldBook else { return }
+    /// The field a level shows is still the type's, with a kind that has a form; else the levels above it, else
+    /// gone (`onGone`, and false: there is nothing to show).
+    private func revalidate() -> Bool {
+        guard let book = editor.fieldBook else { return true }
         if !isReadOnly, editor.isReadOnly(shape), mode == .values {
             isReadOnly = true
             onReadOnly?()
@@ -246,11 +246,16 @@ public final class FieldFormView: NSView {
             levels[place] = held
             keep = place + 1
         }
+        if keep == 0 {
+            onGone?()
+            return false
+        }
         if keep < levels.count {
             levels.removeSubrange(keep...)
             focus = levels.last?.from
         }
-        if !isFold, keep == 0 || !hasForm(levels[0].kind) { onGone?() }
+        if !isFold, !hasForm(levels[0].kind) { onGone?() }
+        return true
     }
 
     /// The field a path names at a level, through the root field's own path.
