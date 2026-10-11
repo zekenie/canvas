@@ -309,8 +309,8 @@ private let galleryTypesLookStates: [GalleryState] = [
     },
 ]
 
-/// The types cut's states, for the suite: the look's, and one array a track (`GalleryRows`, `GalleryValues`, `GalleryCards`, `GalleryChecks`), so no two tracks touch one line.
-@MainActor let galleryStates: [GalleryState] = galleryTypesLookStates + rowStates + valueStates + cardStates + checkStates
+/// The types cut's states, for the suite: the look's, and one array a track (`GalleryRows`, `GalleryValues`, `GalleryPanel`, `GalleryCards`, `GalleryChecks`), so no two tracks touch one line.
+@MainActor let galleryStates: [GalleryState] = galleryTypesLookStates + rowStates + valueStates + panelStates + cardStates + checkStates
 
 @MainActor let galleryTests = Suite("Gallery", galleryDirectory == nil ? [
     test("one state renders in both appearances, and no state names a file twice") {

@@ -76,6 +76,7 @@ public struct StickyNotesPlugin: CanvasPlugin {
             note.typeWords(\.text, drawnIn: { $0.mentionTexts(in: $1).first }, fitting: { StickyNoteDefinition().derive(&$0) })   // and types: its text says what one holds,
             note.canBeType()                                   // and `/is-a type` makes it one
             note.typeable()                                    // and `/is-a` makes it an instance of one
+            note.typeRows(drawnIn: { NoteLayout($0, in: $1).block })   // and a type's rows go under its words
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
     }
@@ -92,6 +93,8 @@ extension StickyNoteDefinition: ShapeDefinition {
         context.fillWithShadow(NoteStyle.path(layout.frame), isType ? NoteStyle.typePaper : NoteStyle.color)
         let placements = shape.mentionTexts(placedIn: layout.words)
         if isType, let words = placements.first { context.fillTypeHighlights(of: shape, in: words) }
+        // Its rows, if it has any (a plain note has no block), under the editor too.
+        if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
         // While editing, the editing view draws the text instead.
         guard !context.isEditing else { return }
         for placement in placements { context.drawMentionText(placement) }
@@ -125,7 +128,7 @@ extension StickyNoteDefinition: DerivedProps {
 extension StickyNoteDefinition: Editable {
     func makeEditingView(for shape: ShapeRecord<StickyNote>, context: EditContext<StickyNote>) -> EditingView {
         let editor = NoteEditor(text: shape.props.text, stored: shape.frame, frame: context.frame ?? shape.frame, context: context)
-        return EditingView(view: editor, firstResponder: editor.textView)
+        return EditingView(view: editor, firstResponder: editor.first ?? editor.textView)
     }
 }
 
@@ -208,6 +211,11 @@ final class NoteEditor: NSView, NSTextViewDelegate {
     private let context: EditContext<StickyNote>
     private weak var sync: TypeSync<TypeSchemaProperty>?
     private weak var types: TypeIndex?
+    /// Over the note's rows: a press there is the rows', not the text's (Types'), and a row is a second place for
+    /// the caret.
+    private var rows: RowsView?
+    /// What takes the keyboard when editing begins, if not the words: a row, where the press that began it was on one.
+    private(set) var first: NSResponder?
     /// The text as this view last wrote or showed it: a note that says otherwise was written from
     /// outside (the model's answer).
     private var known: MentionText
@@ -245,6 +253,18 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         textView.onPointer = { [weak self] point in self?.hover(at: point) }
         clipsToBounds = true
         addSubview(textView)
+        // The rows, if the note has any, are under the words and over the text view: a press on them is theirs.
+        let context = self.context
+        let host = RowsHost(origin: { context.frame?.origin }, end: { context.end() },
+                            keepInView: { [weak self] rect in
+                                guard let self, let rows = self.rows else { return }
+                                context.keepInView(self.convert(rect, from: rows))
+                            },
+                            focusWords: { [weak self] in self?.focusWords() })
+        if let view = context.service(RowBook.self)?.makeRowsView(for: context.shapeID, host: host) {
+            rows = view
+            addSubview(view)
+        }
         // A note too short for its text (saved before notes grew with it, or drawn with a `size:`)
         // grows to it as editing begins, as typing would grow it, so what was cut off can be read and
         // edited; the write joins the editing session's step. Never shorter than it is: a note drawn
@@ -258,8 +278,16 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         // pill, the pill; elsewhere the caret, or for a double-click the word. The view's bounds,
         // and so the text view's, are world units with the note's frame at their origin. Begun
         // without one (Return, placing a note), the text view puts the caret where it always has.
+        // A press on a row's value begins in that row (Types' rows view says: a typed value's field, a row with
+        // more in it focused); anywhere else the words take it.
         if let start = context.startPoint {
-            textView.placeSelection(at: CGPoint(x: start.x - frame.minX, y: start.y - frame.minY), selectingWord: context.startClickCount >= 2)
+            let inEditor = CGPoint(x: start.x - frame.minX, y: start.y - frame.minY)
+            if let rows, !rows.isHidden, rows.frame.contains(inEditor),
+               let responder = rows.begin(at: CGPoint(x: inEditor.x - rows.frame.minX, y: inEditor.y - rows.frame.minY), clickCount: context.startClickCount) {
+                first = responder
+            } else {
+                textView.placeSelection(at: inEditor, selectingWord: context.startClickCount >= 2)
+            }
         }
         follow()
     }
@@ -281,6 +309,7 @@ final class NoteEditor: NSView, NSTextViewDelegate {
             note.text = text
             note.frame.size.height = NoteStyle.fittedHeight(of: shown, width: note.frame.width, keeping: note.frame.height)
         }
+        rows?.reposition()
         context.hoverPopover(nil)
         keepCaretInView()
     }
@@ -306,9 +335,27 @@ final class NoteEditor: NSView, NSTextViewDelegate {
     override func setBoundsSize(_ newSize: NSSize) {
         super.setBoundsSize(newSize)
         if textView.frame.size != newSize { textView.setFrameSize(newSize) }
+        rows?.reposition()
+    }
+
+    /// The caret back in the words, at their end.
+    private func focusWords() {
+        window?.makeFirstResponder(textView)
+        textView.setSelectedRange(NSRange(location: textView.textStorage?.length ?? 0, length: 0))
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.moveDown(_:)), let rows, self.textView.selectedRange().length == 0 {
+            // ↓ from the last line goes to the first row: the caret first moves as it always has, and if it stayed
+            // on its line there was no line below.
+            let selection = self.textView.selectedRange(), line = self.textView.caretFrame?.minY
+            self.textView.moveDown(nil)
+            if self.textView.caretFrame?.minY == line {
+                self.textView.setSelectedRange(selection)
+                if !rows.focusFirstRow() { self.textView.moveDown(nil) }
+            }
+            return true
+        }
         guard commandSelector == #selector(cancelOperation(_:)) else { return false }
         context.end()
         return true

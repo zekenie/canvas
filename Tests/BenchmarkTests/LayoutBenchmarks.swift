@@ -8,12 +8,13 @@ import Mentions
 import Selection
 import StickyNotes
 import TestKit
+import Titles
 import Types
 
 // Laying shapes out larger than they store (`LaidOutBox`, `LayoutBenchmarks.swift`): stretches that
 // name gauges, standing in for typed notes. The first frame asks each shape's kind once and keeps the
 // size, a changed gauge has them laid out again at the next frame, and a drag asks nobody. And notes
-// with rows (a test provider standing in for Types'), reported.
+// with rows, through Types: every sixth note, or every note, an instance of a type of four fields.
 
 extension Budget {
     /// What 10,000 stretches laid out by a hundred gauges add to their board's first frame, over the
@@ -34,6 +35,21 @@ extension Budget {
     /// with no gauge named is reported beside it and holds it too). Three runs alone: 3.6, 2.9 and 2.9
     /// ms at a load average of 12, three times the median.
     static let layoutDragInput = 9.0
+    /// What rows on every sixth note add to the first frame of the 10,000-shape board, over the same
+    /// board with none typed: each typed note's words measured once, at the width its rows give it, and
+    /// the provider asked for each (some 7,000 notes). Release, the thread's CPU, three runs alone at a
+    /// load average of 5.5 to 7: +72, +45 and +52 ms; three times the median, about.
+    static let typedBoardFirstFrame = 150.0
+    /// The same with every note typed, the worst board there is: held so that measuring twice, or laying
+    /// out twice, shows. +299, +283 and +277 ms (the words measured once is nearly all of it, some 40
+    /// microseconds a note).
+    static let allTypedBoardFirstFrame = 850.0
+    /// A field added to the type every sixth note is an instance of: the commit (the index, the
+    /// announcement) and the frame after, over the same edit on a board where no note is one. The words
+    /// are kept. +16, +10 and +10 ms.
+    static let typeEditReach = 30.0
+    /// The same with every note an instance of it: +66, +63 and +51 ms.
+    static let typeEditReachAll = 190.0
 }
 
 private let viewport = CGSize(width: 1200, height: 800)
@@ -57,22 +73,6 @@ private let viewport = CGSize(width: 1200, height: 800)
 private func fit(_ document: CanvasDocument) -> Camera {
     let bounds = document.shapes.compactMap(\.box).reduce(CGRect.null) { $0.union($1) }
     return Camera(fitting: bounds, in: viewport, inset: 0)
-}
-
-/// Gives rows to the notes it is told of, as Types will to the notes that are instances: the same
-/// extent for each, until it is changed.
-@MainActor private final class BenchRows {
-    var ids: Set<ShapeID> = []
-    var extent = RowsExtent(minimumWidth: 320, height: 96)
-}
-
-private struct BenchRowsPlugin: CanvasPlugin {
-    let rows: BenchRows
-    var id: PluginID { "bench-note-rows" }
-    func register(into registrar: inout PluginRegistrar) {
-        let rows = rows
-        registrar.layoutInput(TypeRows.extent) { record, _ in rows.ids.contains(record.id) ? rows.extent : nil }
-    }
 }
 
 /// The generated board with a token ahead of every note's words, so no words were measured before in
@@ -206,7 +206,7 @@ private struct BenchRowsPlugin: CanvasPlugin {
             expect(results[0].frame < Budget.frame, "the frame after a drag event of \(count) grown stretches took \(results[0].frame) ms")
         }
     },
-    test("notes with rows, through a test provider: the board first shown, and the frame after the rows of all of them change (reported)") {
+    test("notes with rows, through Types: the board first shown, and the frame after a field is added to their type") {
         let context = try bitmapContext(viewport)
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -214,39 +214,68 @@ private struct BenchRowsPlugin: CanvasPlugin {
             // Every sixth note, every note (the worst case), and none (the control): each run a board of
             // its own, with words nobody has measured, zoomed to fit it, where it is skeletons and every
             // shape's geometry is worked out, the notes' with their words measured.
-            var results: [(name: String, first: Double, change: Double, remeasured: Double)] = []
+            var results: [(name: String, first: Double, edit: Double)] = []
             for (name, every) in [("no note", 0), ("every sixth note", 6), ("every note", 1)] {
-                var firsts: [Double] = [], changes: [Double] = [], remeasures: [Double] = []
+                var firsts: [Double] = [], edits: [Double] = []
                 for run in 0..<5 {
-                    let rows = BenchRows()
-                    let document = notesBoard(size, token: "\(name) \(run) \(UUID().uuidString.prefix(8))")
+                    var document = notesBoard(size, token: "\(name) \(run) \(UUID().uuidString.prefix(8))")
                     let notes = document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id)
-                    if every > 0 { rows.ids = Set(notes.enumerated().filter { $0.offset % every == 0 }.map(\.element)) }
-                    let registry = try Registry(plugins: shippedPlugins(pasteboard) + [BenchRowsPlugin(rows: rows)])
+                    let type = typeNote(fields: 4)
+                    let typed = every == 0 ? [] : notes.enumerated().filter { $0.offset % every == 0 }.map(\.element)
+                    let instances = Set(typed)
+                    document = CanvasDocument(shapes: document.shapes.map { record in
+                        guard instances.contains(record.id), var note = record.typed(as: StickyNote.self) else { return record }
+                        note[IsAProperty.self] = [TypeLink(type.id)]
+                        return AnyShapeRecord(note)
+                    } + [type])
+                    let registry = try Registry(plugins: shippedPlugins(pasteboard))
                     let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
                     h.editor.viewportDidResize(to: viewport)
                     h.editor.camera = fit(document)
+                    #if DEBUG
+                    let measured = NoteWordsCounts.measured
+                    // The notes that have rows and words: the board's own types (a hundred or so) and their instances.
+                    let withRows = document.shapes.filter { record in
+                        guard let note = record.typed(as: StickyNote.self), !note.props.text.stored.isEmpty else { return false }
+                        return record[TypeSchemaProperty.self] != nil || !(record[IsAProperty.self] ?? []).isEmpty
+                    }.count
+                    #endif
                     firsts.append(threadCPUTime { draw(h.editor, into: context, size: viewport) }.milliseconds)
-                    if every > 0 { expect(h.editor.shapeContext.frame(of: rows.ids.first!)?.width ?? 0 >= 320, "laid out with its rows") }
-                    // A type edit reaches them all: their rows are another height (the words kept), then
-                    // another width (the words measured again).
-                    rows.extent = RowsExtent(minimumWidth: 320, height: 144)
-                    changes.append(threadCPUTime {
-                        h.editor.shapesDidChangeLayout(rows.ids)
+                    if let first = typed.first { expect(h.editor.shapeContext.frame(of: first)?.width ?? 0 >= TypesStyle.rowsMinimumWidth, "laid out with its rows") }
+                    #if DEBUG
+                    expectEqual(NoteWordsCounts.measured - measured, withRows, "each note's with rows words measured once, and no other note's")
+                    draw(h.editor, into: context, size: viewport)
+                    expectEqual(NoteWordsCounts.measured - measured, withRows, "the second frame measures nothing")
+                    #endif
+                    // A field added to their type: their rows are another height, their words kept.
+                    edits.append(threadCPUTime {
+                        h.editor.transact("Add Field") { $0.update(type.id) { $0[TypeSchemaProperty.self] = SchemaText(FieldFixtures.wide(5).schema) } }
                         draw(h.editor, into: context, size: viewport)
                     }.milliseconds)
-                    rows.extent = RowsExtent(minimumWidth: 360, height: 144)
-                    remeasures.append(threadCPUTime {
-                        h.editor.shapesDidChangeLayout(rows.ids)
-                        draw(h.editor, into: context, size: viewport)
-                    }.milliseconds)
+                    #if DEBUG
+                    expectEqual(NoteWordsCounts.measured - measured, withRows, "the rows changed, the words were not measured again")
+                    #endif
                 }
-                results.append((name, firsts.sorted()[2], changes.sorted()[2], remeasures.sorted()[2]))
+                results.append((name, firsts.sorted()[2], edits.sorted()[2]))
             }
             for result in results {
-                report(String(format: "%6d shapes, rows on %@: the first frame %6.1f ms (%+6.1f over no rows), the frame after their rows change %6.1f, after their width changes %6.1f (reported)",
-                              size, result.name, result.first, result.first - results[0].first, result.change, result.remeasured))
+                report(String(format: "%6d shapes, rows on %@: the first frame %6.1f ms (%+6.1f over no rows), the commit and frame after a field is added to their type %6.1f (%+6.1f)",
+                              size, result.name, result.first, result.first - results[0].first, result.edit, result.edit - results[0].edit))
+            }
+            if holdsToBudgets, size >= 10_000 {
+                expect(results[1].first - results[0].first < Budget.typedBoardFirstFrame, "rows on every sixth note of \(size) shapes added \(results[1].first - results[0].first) ms to the first frame")
+                expect(results[2].first - results[0].first < Budget.allTypedBoardFirstFrame, "rows on every note of \(size) shapes added \(results[2].first - results[0].first) ms to the first frame")
+                expect(results[1].edit - results[0].edit < Budget.typeEditReach, "a field added to a type every sixth note is an instance of took \(results[1].edit - results[0].edit) ms more")
+                expect(results[2].edit - results[0].edit < Budget.typeEditReachAll, "a field added to a type every note is an instance of took \(results[2].edit - results[0].edit) ms more")
             }
         }
     },
 ])
+
+/// A type note of four text fields.
+@MainActor private func typeNote(fields count: Int) -> AnyShapeRecord {
+    var note = ShapeRecord(StickyNote(frame: CGRect(x: -400, y: -400, width: 200, height: 200)))
+    note[TypeSchemaProperty.self] = SchemaText(FieldFixtures.wide(count).schema)
+    note[TitleProperty.self] = "Wide"
+    return AnyShapeRecord(note)
+}

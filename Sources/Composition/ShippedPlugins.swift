@@ -91,6 +91,8 @@ public enum ShippedPlugins {
             // After Mentions, Titles and Validation, and after every plugin whose every-shape commands
             // a note lists before `/is-a` (Publishing's `/public` among them); its rules and its panel.
             TypesPlugin(), TypeValidationPlugin(), TypeDetailsPlugin(),
+            // What ⌘F finds in a note that is one: its values. After Find and Types, its two owners.
+            FieldFindPlugin(),
             // What a drag moves snaps to the shapes in view: their edges, their middles and the spaces
             // between them.
             SnappingPlugin(),

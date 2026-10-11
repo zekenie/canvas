@@ -37,10 +37,10 @@ private let paperSpot = CGPoint(x: 220, y: 220)
 }
 
 /// An editor with one note, a type or not, titled or not, at `zoom`.
-@MainActor private func paperEditor(isType: Bool, text: String = "", title: String? = nil, zoom: CGFloat = 1) throws -> (CanvasEditor, ShapeID) {
+@MainActor private func paperEditor(isType: Bool, text: String = "", title: String? = nil, zoom: CGFloat = 1, frame: CGRect = paperFrame) throws -> (CanvasEditor, ShapeID) {
     let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
     editor.camera = Camera(origin: .zero, zoom: zoom)
-    var note = ShapeRecord(StickyNote(frame: paperFrame, text: MentionText(plain: text)))
+    var note = ShapeRecord(StickyNote(frame: frame, text: MentionText(plain: text)))
     if isType { note[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter) }
     note[TitleProperty.self] = title
     let record = AnyShapeRecord(note)
@@ -72,11 +72,13 @@ private let yellow = [255, 222, 115]
         expectPaper(pixel(render(plain, dark: true), at: paperSpot), yellow, "plain, dark")
     },
     test("its text is the note's ink on the paper, as on the yellow; its shadow and shape are a plain note's") {
-        let words = "Where the words are"
-        let (type, _) = try paperEditor(isType: true, text: words), (plain, _) = try paperEditor(isType: false, text: words)
-        let textBox = paperFrame.insetBy(dx: 16, dy: 16).offsetBy(dx: 0, dy: -4)
+        // A type with words has `No fields` under them, so it reads at 320 wide: both are stored that wide, and
+        // the paper is the same frame as the yellow.
+        let words = "Where the words are", wide = CGRect(x: 50, y: 50, width: 320, height: 200), canvas = CGSize(width: 420, height: 300)
+        let (type, _) = try paperEditor(isType: true, text: words, frame: wide), (plain, _) = try paperEditor(isType: false, text: words, frame: wide)
+        let textBox = wide.insetBy(dx: 16, dy: 16).offsetBy(dx: 0, dy: -4).intersection(CGRect(x: 0, y: 0, width: 420, height: 130))
         for dark in [false, true] {
-            let onPaper = render(type, dark: dark), onYellow = render(plain, dark: dark)
+            let onPaper = render(type, dark: dark, size: canvas), onYellow = render(plain, dark: dark, size: canvas)
             expectEqual(darkInk(onPaper, in: textBox) > 20, true, "ink on the paper, dark \(dark)")
             // The darkest pixel is the ink's own.
             var inkPaper = 255, inkYellow = 255
@@ -88,7 +90,7 @@ private let yellow = [255, 222, 115]
             }
             expect(abs(inkPaper - inkYellow) <= 6, "the same ink: \(inkPaper), \(inkYellow), dark \(dark)")
             // Outside the note, its shadow and corners: as a plain note's.
-            for point in [CGPoint(x: 49, y: 150), CGPoint(x: 150, y: 253), CGPoint(x: 252, y: 150), CGPoint(x: 150, y: 46), CGPoint(x: 46, y: 46)] {
+            for point in [CGPoint(x: 49, y: 150), CGPoint(x: 150, y: 253), CGPoint(x: 372, y: 150), CGPoint(x: 150, y: 46), CGPoint(x: 46, y: 46)] {
                 expectEqual(pixel(onPaper, at: point), pixel(onYellow, at: point), "outside the note at \(point), dark \(dark)")
             }
         }

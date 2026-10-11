@@ -41,6 +41,10 @@ public struct TypeSyncFailure: Equatable, Sendable {
     /// model's schema was cut off: no Retry (it would be again), so the person edits the JSON.
     public static let tooLongMessage = "Schema too long to rewrite"
 
+    /// What a type says when it has words to be read and the editor has no language model at all (a
+    /// list of plugins without one): no Retry, nothing to try again.
+    public static let noModelMessage = "No language model"
+
     /// The side the sync was to write, from the other, the side the person edited.
     public var writing: TypeSide
     public var message: String
@@ -125,7 +129,8 @@ struct TypeSyncSides: Equatable, Sendable {
 ///   to anything but the two sides (a move, a lock, a rename), nor an agent's write
 ///   (`ChangeSet.byAgent`: the command line's `draw`), whose sides are taken as in step, as a shape
 ///   seen for the first time is (a call out, or an edit waiting, stops). A shape that becomes a type
-///   by the person's edit (`/is-a type`) waits as an edit does: its words are ahead of its new schema. An
+///   by the person's edit (`/is-a type`) waits as an edit does: its words are ahead of its new schema, and
+///   it syncs on the scheduler's next turn, with no wait (the note shows at once what it is doing). An
 ///   edit syncs when it's committed (`commit`: the words done, editing them ended however it ended,
 ///   Return, Escape and the keyboard going to the panel among them, `editingDidEnd`, which commits
 ///   only an edit still waiting; ⌘↩ in the panel's JSON, or the keyboard leaving it), else
@@ -143,7 +148,8 @@ struct TypeSyncSides: Equatable, Sendable {
 ///   is kept as typed), takes the model's out of what it writes back, and names an untitled shape by
 ///   it, in the same step.
 /// - Never while the schema isn't a JSON object (the person is halfway through it), for a read-only
-///   shape (locked, or in a locked frame), for one with neither fields nor words, or without a model.
+///   shape (locked, or in a locked frame), or for one with neither fields nor words. Without a model
+///   (a list of plugins with none) a side to write fails, saying so (`TypeSyncFailure.noModelMessage`).
 /// - A shape seen for the first time (on a board opened or read again, pasted, placed) is taken as
 ///   in step: that pair is its last sync, and the model is told it (`previous_prompt`,
 ///   `previous_schema`) as it would be one this session's, so a field taken out of an opened type's
@@ -229,6 +235,8 @@ public final class TypeSync<Schema: SyncedSchema> {
     /// leaves in step, which it syncs as services hear the write (inside the write's undo step).
     @ObservationIgnored private var writing: (id: ShapeID, pair: TypeSyncSides)?
     @ObservationIgnored private var calls = 0
+    /// Told a shape's id when something a rows' spot reads of it changes (`onSpotChange`).
+    @ObservationIgnored private var spotObservers: [@MainActor (ShapeID) -> Void] = []
     /// The kinds that hold `Schema` and have words: every other shape is passed over at once.
     @ObservationIgnored private let kinds: Set<ShapeKind>
     @ObservationIgnored nonisolated(unsafe) private var keyObserver: (any NSObjectProtocol)?
@@ -256,6 +264,22 @@ public final class TypeSync<Schema: SyncedSchema> {
     public func status(of id: ShapeID) -> TypeSyncStatus {
         access(keyPath: \.[status: id])
         return statuses[id] ?? .idle
+    }
+
+    /// Told a shape's id whenever something a rows' spot reads of it changes with no commit of its own
+    /// to show it: its status, and whether an edit is waiting (`isWaiting`).
+    public func onSpotChange(_ body: @escaping @MainActor (ShapeID) -> Void) { spotObservers.append(body) }
+
+    /// An edit of the shape's is waiting to sync: on the idle timer, for the list at the caret to
+    /// close, or for the next turn.
+    public func isWaiting(_ id: ShapeID) -> Bool { shapes[id]?.isWaiting == true }
+
+    /// A read has answered for the shape: its words at the last sync are not empty (`see` blanks them
+    /// for words never answered).
+    public func hasAnswered(_ id: ShapeID) -> Bool { synced[id].map { !Self.trimmed($0.words).isEmpty } ?? false }
+
+    private func spotChanged(_ id: ShapeID) {
+        for body in spotObservers { body(id) }
     }
 
     /// The person is done with an edit (the words no longer edited; ⌘↩ or the keyboard leaving in
@@ -305,8 +329,11 @@ public final class TypeSync<Schema: SyncedSchema> {
     }
 
     private func edited(_ id: ShapeID) {
+        guard shapes[id] != nil else { return }
+        let flipped = shapes[id]?.isWaiting != true
         shapes[id]?.isWaiting = true
         wait(id)
+        if flipped { spotChanged(id) }
     }
 
     /// Waits `idleDelay` from now for an edit waiting to sync, unless the person is choosing from
@@ -321,11 +348,13 @@ public final class TypeSync<Schema: SyncedSchema> {
 
     private func sync(_ id: ShapeID) {
         guard var shape = shapes[id] else { return }
+        let wasWaiting = shape.isWaiting
         shape.timer?.cancel()
         shape.timer = nil
         shape.isWaiting = false
         shape.wantsSync = shape.call != nil
         shapes[id] = shape
+        if wasWaiting { spotChanged(id) }
         if shape.call == nil { start(id) }
     }
 
@@ -343,7 +372,7 @@ public final class TypeSync<Schema: SyncedSchema> {
         guard let editor, shapes[id] != nil, let last = synced[id], let record = editor.file.record(id), let now = sides(of: record) else { return }
         // A new try: an old failure no longer says where things are.
         setStatus(.idle, of: id)
-        guard let model = editor.languageModel, !editor.isReadOnly(inFile: id) else { return }
+        guard !editor.isReadOnly(inFile: id) else { return }
         let document = SchemaReadings.reading(of: now.schema, for: id).document
         guard document.error == nil, let root = document.root, root.isObject else { return }
         let words = Self.trimmed(now.words)
@@ -371,6 +400,11 @@ public final class TypeSync<Schema: SyncedSchema> {
             // In step: a schema laid out anew says what it said.
             if now.schema != last.schema, words == Self.trimmed(last.words) { synced[id]?.schema = now.schema }
             inStep(id)
+            return
+        }
+        // A side to write and no model at all: said, where it would have been asked.
+        guard let model = editor.languageModel else {
+            setStatus(.failed(TypeSyncFailure(writing: writes, TypeSyncFailure.noModelMessage, remedy: .editByHand)), of: id)
             return
         }
         calls += 1
@@ -495,6 +529,7 @@ public final class TypeSync<Schema: SyncedSchema> {
     /// the person edits or commits.
     private func stop(_ id: ShapeID) {
         guard var shape = shapes[id] else { return }
+        let wasWaiting = shape.isWaiting
         shape.timer?.cancel()
         shape.timer = nil
         shape.isWaiting = false
@@ -503,6 +538,7 @@ public final class TypeSync<Schema: SyncedSchema> {
         shape.wantsSync = false
         shapes[id] = shape
         setStatus(.idle, of: id)
+        if wasWaiting { spotChanged(id) }
     }
 
     // MARK: Status, observed a shape at a time
@@ -510,6 +546,7 @@ public final class TypeSync<Schema: SyncedSchema> {
     private func setStatus(_ status: TypeSyncStatus, of id: ShapeID) {
         guard (statuses[id] ?? .idle) != status else { return }
         withMutation(keyPath: \.[status: id]) { statuses[id] = status == .idle ? nil : status }
+        spotChanged(id)
     }
 
     /// Only a key: one key path per shape, under which Observation keeps the observers of that
@@ -629,6 +666,8 @@ extension TypeSync: EditorService {
                 // and the sync takes the words from it. The last sync is said to have had the words
                 // and an empty schema, which also undoes `see`'s blanking of an empty one's words.
                 if Self.trimmed(now.words) == Self.trimmed(now.schema) { synced[id] = TypeSyncSides(words: now.words, schema: "{}") }
+                // And read at once, on the next turn: a draw or an undo that follows lands first.
+                commitOnNextTurn(id)
             }
             return
         }
@@ -667,6 +706,13 @@ extension TypeSync: EditorService {
     /// is asked again but by Retry or an edit.
     public func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) {
         guard shapes[id]?.isWaiting == true else { return }
+        commitOnNextTurn(id)
+    }
+
+    /// Commits an edit still waiting on the scheduler's next turn, and nothing if it isn't then (an
+    /// undo stopped the shape, a draw took it afresh).
+    private func commitOnNextTurn(_ id: ShapeID) {
+        guard let editor else { return }
         _ = editor.scheduler.schedule(after: .zero) { [weak self] in
             guard let self, shapes[id]?.isWaiting == true else { return }
             commit(id)

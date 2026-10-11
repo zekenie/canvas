@@ -10,12 +10,23 @@ extension StickyNoteDefinition: CustomSkeleton {
     /// Its laid-out frame in its yellow (a type's, in its white paper, which follows the appearance: resolved
     /// here, in the frame's), square (its 4-point corners are under a point and a half on screen
     /// here) and with no shadow, and its text greeked (`SkeletonTextBars`, each mention as wide as
-    /// its pill): two fills, whatever it says. Its outline is its frame's, as the core draws it.
+    /// its pill): two fills, whatever it says; a note with rows adds a third, their bars (`fillTypeRowBars`), and its
+    /// words' stop above them. Its outline is its frame's, as the core draws it.
     func renderSkeleton(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
         let frame = context.shapes.frame(of: shape)
-        context.cg.setFillColor(shape[TypeSchemaProperty.self] != nil ? NoteStyle.typePaperCG : NoteStyle.skeletonFill)
+        let isType = shape[TypeSchemaProperty.self] != nil
+        context.cg.setFillColor(isType ? NoteStyle.typePaperCG : NoteStyle.skeletonFill)
         context.cg.fill(frame)
-        let box = frame.insetBy(dx: NoteStyle.padding, dy: NoteStyle.padding)
+        var box = frame.insetBy(dx: NoteStyle.padding, dy: NoteStyle.padding)
+        // A note with rows: their bars, and the words' bars stop above them. The zoom is asked first, so below
+        // `skeletonRowsZoom` a note's skeleton is what it was and no lookup is added.
+        if context.showsTypeRowBars, isType || shape[IsAProperty.self] != nil {
+            let layout = NoteLayout(shape, in: context.shapes)
+            if let block = layout.block {
+                box = layout.words
+                context.fillTypeRowBars(of: shape, in: block)
+            }
+        }
         context.fillSkeletonText(SkeletonTextBars(shape.props.text.runs, in: box, metrics: NoteStyle.skeletonText))
     }
 }

@@ -130,7 +130,7 @@ public enum FieldSummary: Equatable, Sendable {
 
     /// Whether a stored value is the shape of a kind: a list for the kinds of lists, an object for the
     /// kinds of groups, a scalar for the rest.
-    private static func fits(_ value: JSONValue, _ kind: FieldKind) -> Bool {
+    static func fits(_ value: JSONValue, _ kind: FieldKind) -> Bool {
         switch (kind, value) {
         case (.choices, .array), (.list, .array), (.listOfGroups, .array), (.listOfTypeFields, .array), (.pointers, .array): true
         case (.group, .object), (.typeFields, .object), (.pairs, .object): true

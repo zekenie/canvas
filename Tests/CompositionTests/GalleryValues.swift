@@ -1,133 +1,280 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import Composition
-import Connections
 import CoreGraphics
-import DetailPanel
+import Find
 import Foundation
 import Locking
 import Mentions
 import Selection
 import StickyNotes
-import SwiftUI
 import TestKit
 import Titles
 import Types
 
-// Values in the panel (slice 10, the writer's: the Fields section): the states of one track, added to
-// `galleryStates` (GalleryTypesLook.swift). The board's types are the shared fixtures (`FieldFixtures`, fixed
-// ids and texts), so a state looks the same in the rows, the card, the panel and here.
+// The gallery's states for a note that is one (slice 11): its values in its rows as the plan's boards draw
+// them, the row being typed in, a choice focused and its menu, the marks of the check (the look alone, through
+// `rowBook.checks`: the whole panel with its ring is the check's own states), a value found, and the rows
+// zoomed out and many. The types sit far off the stage, so a note is alone in view and its chip says what it is.
+// Named for the board panel each answers: Main, Flow2 to Flow5.
 
-extension GalleryStage {
-    /// The panel of `id`, selected, on its Types tab, as an unshown window draws it at 2x in this appearance.
-    func panelPicture(of id: ShapeID, size: CGSize = CGSize(width: 320, height: 520)) throws -> NSBitmapImageRep {
-        let record = try require(editor.document[id])
-        try require(editor.detailPanel).choose(.of(TypesTab.self), for: record.kind)
-        editor.selection = id
-        let host = NSHostingView(rootView: ShippedPlugins.detailPanel(editor: editor, onExit: {}))
-        host.frame = CGRect(origin: .zero, size: size)
-        let panelWindow = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: true)
-        panelWindow.contentView = host
-        panelWindow.appearance = appearance
-        panelWindow.settle()
-        spin(0.15)
-        panelWindow.settle()
-        let scale: CGFloat = 2
-        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale), pixelsHigh: Int(size.height * scale),
-                                   bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                   colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-        rep.size = size
-        appearance.performAsCurrentDrawingAppearance { host.cacheDisplay(in: host.bounds, to: rep) }
-        return rep
-    }
+private let single = CGSize(width: 440, height: 340)
+private let tallNote = CGSize(width: 440, height: 440)
+private let wideStage = CGSize(width: 900, height: 520)
 
-    /// The fixtures' types as notes down the right of the stage, Employee a Person.
-    func addFieldTypes(_ types: [FieldFixtures.TypeText]) {
-        for (place, type) in types.enumerated() {
-            editor.addTypeNote(type.schema, text: .init(plain: type.words), title: type.title,
-                               frame: CGRect(x: 400, y: 20 + CGFloat(place) * 70, width: 120, height: 60), id: type.id)
-        }
-    }
+/// The types go here: out of every state's view.
+private let farOff = CGPoint(x: 3000, y: 3000)
 
-    /// A note that is each of `types`.
-    func addInstance(_ text: String, of types: [ShapeID]) -> ShapeID {
-        let id = editor.add(StickyNote(frame: CGRect(x: 40, y: 40, width: 200, height: 160), text: .init(plain: text)), title: text)
-        for type in types { editor.addTypeLink(type, to: id) }
+/// Flow3 p2's Employee: the controls of the plan's second panel, in its order.
+private let employeeControls: FieldFixtures.TypeText = (
+    rowsTypeID(40), "Employee", "An employee has a name, an email, a birthday, a start date, whether they work remotely, and a role.",
+    #"""
+    {"type": "object", "properties": {
+      "name": {"type": "string"}, "email": {"type": "string", "format": "email"}, "birthday": {"type": "string", "format": "date"},
+      "startDate": {"type": "string", "format": "date"}, "remote": {"type": "boolean"},
+      "role": {"enum": ["engineer", "designer", "manager"]}
+    }, "required": ["name"]}
+    """#)
+
+private let speaker: FieldFixtures.TypeText = (rowsTypeID(41), "Speaker", "A speaker has a talk and a topic.", fieldsSchema(["talk", "topic"]))
+
+/// Person with a phone: Flow4 p3.
+private let personWithPhone: FieldFixtures.TypeText = (FieldFixtures.personID, "Person", "A person has a name, an email, a birthday and a phone.",
+                                                       fieldsSchema(["name", "email", "birthday", "phone"], required: ["name"]))
+
+extension CanvasEditor {
+    /// A note that is each of the types, 200 x 200 at `origin`, saying `words` and holding `values`.
+    @discardableResult
+    func instance(of types: [ShapeID], words: String = "", _ values: JSONObject = [:], at origin: CGPoint = CGPoint(x: 100, y: 60),
+                  id: ShapeID = ShapeID()) -> ShapeID {
+        var note = ShapeRecord(id: id, StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 200, height: 200)), text: MentionText(plain: words)))
+        note[IsAProperty.self] = types.map(TypeLink.init)
+        if !values.isEmpty { note[FieldValuesProperty.self] = FieldValues(values) }
+        transact { $0.insert(AnyShapeRecord(note)) }
         return id
     }
+
+    /// The types, off the stage.
+    func offstage(_ types: [FieldFixtures.TypeText]) {
+        for (place, type) in types.enumerated() { put(type, at: CGPoint(x: farOff.x + CGFloat(place) * 300, y: farOff.y)) }
+    }
 }
 
-private let friendship: FieldFixtures.TypeText = (ShapeID(UUID(uuidString: "0E5B1A08-0000-4000-8000-0000000000A8")!), "Friendship", "A friendship is since when, and whether it is close.",
-                                                  #"{"type": "object", "properties": {"since": {"type": "number"}, "close": {"type": "boolean"}}}"#)
+/// A problem at a path.
+private func problem(_ path: FieldPath, _ kind: FieldClass) -> FieldProblem {
+    FieldProblem(path: path, kind: kind, keyword: "gallery", place: [], message: "")
+}
 
-/// A type of sixty number fields, `field1` to `field60`.
-private let sixty: FieldFixtures.TypeText = (ShapeID(UUID(uuidString: "0E5B1A09-0000-4000-8000-0000000000A9")!), "Sixty", "Sixty fields.",
-                                             #"{"type": "object", "properties": {"# + (1...60).map { #""field\#($0)": {"type": "\#($0 % 3 == 0 ? "string" : "number")"}"# }.joined(separator: ", ") + "}}")
+/// The rows' view of the note being edited, if any.
+@MainActor
+private func rowsView(_ stage: GalleryStage) -> RowsView? { stage.canvas.descendants(RowsView.self).first }
+
+/// The world point on a row's value, `dx` in.
+@MainActor
+private func valuePoint(_ stage: GalleryStage, _ id: ShapeID, _ name: String, dx: CGFloat = 6) throws -> CGPoint {
+    _ = stage.render(at: .zero)
+    let row = try require(stage.editor.rowBook?.rows(of: id).first { $0.name == name }, "a row \(name)")
+    return CGPoint(x: row.valueRect.minX + dx, y: row.rect.midY)
+}
+
+/// Begins editing a note on a row's value, as a click there does.
+@MainActor
+private func type(into stage: GalleryStage, _ id: ShapeID, _ name: String) throws {
+    let point = try valuePoint(stage, id, name)
+    stage.editor.selection = id
+    expect(stage.editor.beginEditing(id, at: point))
+}
 
 @MainActor
-private func order(_ stage: GalleryStage, values: [(FieldPath, JSONValue)]) throws -> ShapeID {
-    stage.addFieldTypes([FieldFixtures.person, FieldFixtures.address, FieldFixtures.order])
-    let id = stage.addInstance("Order 1042", of: [FieldFixtures.orderID])
-    for (path, value) in values { expect(try require(stage.editor.fieldWriter).set(value, at: path, of: id)) }
-    return id
-}
-
-private let orderValues: [(FieldPath, JSONValue)] = [
-    (FieldPath(field: "shippingAddress"), ["street": "12 Mill Lane", "city": "Leeds", "postcode": "LS1 4AB"]),
-    (FieldPath(field: "lineItems"), [["product": "Plate", "quantity": 2, "price": 4.5], ["product": "Mug", "quantity": 1, "price": 6]]),
-    (FieldPath(field: "status"), "paid"),
-    (FieldPath(field: "tags"), ["kitchen", "gift"]),
-    (FieldPath(field: "gift"), true),
+let valueStates: [GalleryState] = [
+    GalleryState("Flow2-p2-empty", answers: "Flow2 p2", "Ann's note is a Person: `add name`, `add email`, `add birthday`, faint italic", size: single) { stage in
+        stage.editor.offstage([personThree])
+        stage.editor.instance(of: [FieldFixtures.personID], words: "Ann Lee, staff engineer since 2021.")
+        stage.editor.selection = nil
+        return canvas(stage)
+    },
+    GalleryState("Main-p5-filled", answers: "Main 5", "the name filled, the email empty, the birthday a date as it reads: `Mar 3, 1990`", size: single) { stage in
+        stage.editor.offstage([personThree])
+        stage.editor.instance(of: [FieldFixtures.personID], words: "Ann Lee, staff engineer since 2021.", ["name": "Ann Lee", "birthday": "1990-03-03"])
+        return canvas(stage)
+    },
+    GalleryState("Flow3-p1-typing", answers: "Flow3 p1", "the name row typed in: its value in a thin outline, the other rows faint (the caret is not drawn offscreen)", size: single) { stage in
+        stage.editor.offstage([personThree])
+        let id = stage.editor.instance(of: [FieldFixtures.personID], words: "Ann Lee, staff engineer since 2021.", ["name": "Ann Lee"])
+        try type(into: stage, id, "name")
+        return canvas(stage)
+    },
+    GalleryState("Flow3-p2-controls", answers: "Flow3 p2", "Employee: text, dates, a ticked box, and the role focused: `designer ▾` outlined", size: tallNote) { stage in
+        stage.editor.offstage([employeeControls])
+        let id = stage.editor.instance(of: [employeeControls.id], words: "Bo Park, designer.",
+                                       ["name": "Bo Park", "email": "bo@acme.com", "birthday": "1988-06-12", "startDate": "2024-01-15", "remote": true, "role": "designer"],
+                                       at: CGPoint(x: 100, y: 40))
+        try type(into: stage, id, "name")
+        for _ in 0..<8 where rowsView(stage)?.focusedRow != "role" { stage.window.press("\t", code: 48) }
+        expectEqual(rowsView(stage)?.focusedRow, "role")
+        return canvas(stage)
+    },
+    GalleryState("Flow3-p2-menu", answers: "Flow3 p2", "a click on the role: the menu it pops, a check by the stored one, a separator, None (outline)", isText: true) { stage in
+        stage.editor.offstage([employeeControls])
+        let id = stage.editor.instance(of: [employeeControls.id], words: "Bo Park, designer.", ["name": "Bo Park", "role": "designer"], at: CGPoint(x: 100, y: 40))
+        stage.editor.selection = nil
+        let point = stage.viewPoint(try valuePoint(stage, id, "role"))
+        stage.press(at: point)
+        stage.release(at: point)
+        let menu = try require(stage.editor.menuToPopUp, "a menu")
+        return .text(menu.menu.outline.joined(separator: "\n") + "\n")
+    },
+    GalleryState("Flow4-p2-two-types", answers: "Flow4 p2", "a note that is an Employee and a Speaker: Person's three rows, Employee's three, the speaker's two, each field once", size: tallNote) { stage in
+        stage.editor.offstage([personThree, employeeThree, speaker])
+        stage.editor.addTypeLink(FieldFixtures.personID, to: FieldFixtures.employeeID)
+        stage.editor.instance(of: [FieldFixtures.employeeID, speaker.id], words: "Bo Park, designer, speaking in May.", ["name": "Bo Park", "talk": "Forms on a canvas"], at: CGPoint(x: 100, y: 40))
+        return canvas(stage)
+    },
+    GalleryState("Flow4-p3-new-row", answers: "Flow4 p3", "Person gained a phone: Ann's note has an empty `add phone` row, her values as they were", size: single) { stage in
+        stage.editor.offstage([personThree])
+        stage.editor.instance(of: [FieldFixtures.personID], words: "Ann Lee, staff engineer since 2021.", ["name": "Ann Lee", "email": "ann@acme.com"])
+        stage.editor.transact { $0.update(FieldFixtures.personID) { $0[TypeSchemaProperty.self] = SchemaText(personWithPhone.schema) } }
+        return canvas(stage)
+    },
+    GalleryState("Flow4-p4-type-gone", answers: "Flow4 p4", "the Person type deleted: the note keeps its values and shows the type's dashed chip, no rows", size: single) { stage in
+        stage.editor.offstage([personThree])
+        stage.editor.instance(of: [FieldFixtures.personID], words: "Ann Lee, staff engineer since 2021.", ["name": "Ann Lee"])
+        stage.editor.transact("Delete") { $0.delete([FieldFixtures.personID]) }
+        return canvas(stage)
+    },
+    GalleryState("Flow5-p2-order", answers: "Flow5 p2", "an Order: the address and its items summarized, the status, the tags, a ticked box, `add gift note`; the customer's stored name, plain until pointers", size: tallNote) { stage in
+        stage.editor.offstage([FieldFixtures.order, FieldFixtures.person, FieldFixtures.address])
+        stage.editor.instance(of: [FieldFixtures.orderID], words: "Ann's order.", orderValues, at: CGPoint(x: 100, y: 40))
+        return canvas(stage)
+    },
+    GalleryState("Flow5-p7-values-a", answers: "Flow5 p7", "KindsA filled: text, number, date, box, choice, choices, list, group, another type's fields: every cell of the plan's `On a note` column", size: tallNote) { stage in
+        stage.editor.offstage([FieldFixtures.everyKind.a, FieldFixtures.address])
+        stage.editor.instance(of: [FieldFixtures.kindsAID], words: "A note of every kind.", [
+            "name": "Ann", "price": 9.5, "due": "2026-03-03", "done": true, "status": "paid", "roles": ["engineer", "designer"], "tags": ["gift", "mugs"],
+            "venue": ["name": "The Loft", "city": "Leeds"], "shippingAddress": ["street": "12 Main St", "city": "Leeds"],
+        ], at: CGPoint(x: 100, y: 40))
+        return canvas(stage)
+    },
+    GalleryState("Flow5-p7-values-b", answers: "Flow5 p7", "KindsB filled: a link, links, a list of groups, a list of Address's fields, either, pairs, what no control suits, either with a group, an integer", size: tallNote) { stage in
+        stage.editor.offstage([FieldFixtures.everyKind.b, FieldFixtures.person, FieldFixtures.address])
+        stage.editor.instance(of: [FieldFixtures.kindsBID], words: "A note of the other kinds.", [
+            "customer": "Bo Park", "guests": ["Ann Lee", "Bo Park"], "lineItems": [["product": "Mug", "quantity": 2], ["product": "Plate", "quantity": 1]],
+            "rooms": [["street": "12 Main St", "city": "Leeds"]], "size": 12, "labels": ["size": "L", "colour": "red"], "anything": ["note": "x"],
+            "payment": ["cardNumber": "4111"], "count": 3,
+        ], at: CGPoint(x: 100, y: 40))
+        return canvas(stage)
+    },
+    GalleryState("values-fold", answers: "Flow5 p7", "twenty fields: `+12 more ›` from the left edge; ten, four of them Person's: `from Person` and `4 fields ›`", size: wideStage) { stage in
+        let parent: FieldFixtures.TypeText = (FieldFixtures.personID, "Person", "A person has a name, an email, a phone and a birthday.", fieldsSchema(["name", "email", "phone", "birthday"]))
+        let child: FieldFixtures.TypeText = (FieldFixtures.employeeID, "Employee", "An employee has a role, a start date, a manager, a team, a desk and a badge.",
+                                             fieldsSchema(["role", "startDate", "manager", "team", "desk", "badge"]))
+        stage.editor.offstage([wideType(20, id: FieldFixtures.wideID, title: "Wide", words: "Twenty text fields."), parent, child])
+        stage.editor.addTypeLink(FieldFixtures.personID, to: FieldFixtures.employeeID)
+        stage.editor.instance(of: [FieldFixtures.wideID], words: "Twenty fields.", ["f1": "one", "f2": "two"], at: CGPoint(x: 60, y: 30))
+        stage.editor.instance(of: [FieldFixtures.employeeID], words: "Bo Park.", ["role": "designer", "name": "Bo Park"], at: CGPoint(x: 480, y: 30))
+        return canvas(stage)
+    },
+    GalleryState("values-long", "a long value is cut with an ellipsis at the column; a long list is cut and counted: `gift, mugs +2 ›`", size: single) { stage in
+        stage.editor.offstage([FieldFixtures.everyKind.a, FieldFixtures.address])
+        stage.editor.instance(of: [FieldFixtures.kindsAID], words: "Long values.", [
+            "name": "A name that goes on and on past the end of the value column and keeps going",
+            "tags": ["gift", "mugs", "plates", "candles", "bowls", "spoons", "forks", "knives", "glasses"],
+        ], at: CGPoint(x: 100, y: 40))
+        return canvas(stage)
+    },
+    GalleryState("values-focused-more", answers: "Flow5 p4", "a row with more in it focused: outlined, no card (the card is the form's)", size: single) { stage in
+        stage.editor.offstage([FieldFixtures.everyKind.a, FieldFixtures.address])
+        let id = stage.editor.instance(of: [FieldFixtures.kindsAID], words: "A note.", ["tags": ["gift", "mugs"], "venue": ["name": "The Loft", "city": "Leeds"]], at: CGPoint(x: 100, y: 40))
+        try type(into: stage, id, "tags")
+        stage.spin(0.05)
+        return canvas(stage)
+    },
+    GalleryState("values-locked", "a locked note: the same rows", size: single) { stage in
+        stage.editor.offstage([personThree])
+        let id = stage.editor.instance(of: [FieldFixtures.personID], words: "Ann Lee.", ["name": "Ann Lee", "birthday": "1990-03-03"])
+        stage.editor.lock([id])
+        stage.editor.selection = nil
+        return canvas(stage)
+    },
+    GalleryState("values-mark-wrong", answers: "Flow3 p3", "the look of a wrong value alone: `ann@` red with its wavy line (no ring: the check's own state draws the whole panel)", size: single) { stage in
+        stage.editor.offstage([personThree])
+        stage.editor.instance(of: [FieldFixtures.personID], words: "Ann Lee, staff engineer since 2021.", ["name": "Ann Lee", "email": "ann@", "birthday": "1990-03-03"])
+        stage.editor.rowBook?.checks = { _ in FieldCheck(problems: [problem(FieldPath(field: "email"), .wrong)]) }
+        stage.editor.selection = nil
+        return canvas(stage)
+    },
+    GalleryState("values-mark-needed", answers: "Flow5 p6", "needed with no value: `add customer` amber; a wrong value inside a row: `2 items` red and underlined, its `›` gray", size: tallNote) { stage in
+        stage.editor.offstage([FieldFixtures.order, FieldFixtures.person, FieldFixtures.address])
+        var values = orderValues
+        values["customer"] = nil
+        values["lineItems"] = [["product": "Mug", "quantity": 0], ["product": "Plate", "quantity": 1]]
+        stage.editor.instance(of: [FieldFixtures.orderID], words: "Ann's order.", values, at: CGPoint(x: 100, y: 40))
+        stage.editor.rowBook?.checks = { _ in
+            FieldCheck(problems: [problem(FieldPath(field: "customer"), .needed), problem(FieldPath(field: "lineItems").index(0).key("quantity"), .wrong),
+                                  problem(FieldPath(field: "giftNote"), .needed)])
+        }
+        stage.editor.selection = nil
+        return canvas(stage)
+    },
+    GalleryState("values-mark-fold", "a fold carries the worst mark of what it folds: `+12 more ›` red, and in the second note amber", size: wideStage) { stage in
+        stage.editor.offstage([wideType(20, id: FieldFixtures.wideID, title: "Wide", words: "Twenty text fields.")])
+        let wrong = stage.editor.instance(of: [FieldFixtures.wideID], words: "A wrong one folded.", ["f15": "x"], at: CGPoint(x: 60, y: 30))
+        let needed = stage.editor.instance(of: [FieldFixtures.wideID], words: "A needed one folded.", ["f1": "x"], at: CGPoint(x: 480, y: 30))
+        stage.editor.rowBook?.checks = { record in
+            record.id == wrong ? FieldCheck(problems: [problem(FieldPath(field: "f15"), .wrong)]) : FieldCheck(problems: [problem(FieldPath(field: "f12"), .needed)])
+        }
+        _ = needed
+        stage.editor.selection = nil
+        return canvas(stage)
+    },
+    GalleryState("values-gone-type", "an Order whose Address is gone: the dashed chip in the shipping address row, its value kept", size: tallNote) { stage in
+        stage.editor.offstage([FieldFixtures.order, FieldFixtures.person, FieldFixtures.address])
+        stage.editor.instance(of: [FieldFixtures.orderID], words: "Ann's order.", orderValues, at: CGPoint(x: 100, y: 40))
+        stage.editor.transact("Delete") { $0.delete([FieldFixtures.addressID]) }
+        return canvas(stage)
+    },
+    GalleryState("values-found", "⌘F: a value found, its row's value marked", size: single) { stage in
+        stage.editor.offstage([personThree])
+        stage.editor.instance(of: [FieldFixtures.personID], words: "Ann Lee, staff engineer since 2021.", ["name": "Ann Lee", "birthday": "1990-03-03"])
+        let find = try require(stage.editor.find)
+        find.open()
+        find.query = "lee"
+        while find.isIndexing { stage.scheduler.advance(by: .zero) }
+        _ = try awaitResult { await find.settled() }
+        let out = canvas(stage)
+        find.close()
+        return out
+    },
+    GalleryState("values-zoomed-out", "notes that are one at 30%: two bars a row, the value's bar missing where the row is empty, red where it is wrong", size: CGSize(width: 560, height: 360)) { stage in
+        stage.editor.offstage([FieldFixtures.order, FieldFixtures.person, FieldFixtures.address])
+        stage.editor.instance(of: [FieldFixtures.orderID], words: "Ann's order.", orderValues, at: CGPoint(x: 40, y: 40))
+        let ann = stage.editor.instance(of: [FieldFixtures.personID], words: "Ann Lee.", ["name": "Ann Lee", "email": "ann@"], at: CGPoint(x: 400, y: 40))
+        stage.editor.rowBook?.checks = { record in record.id == ann ? FieldCheck(problems: [problem(FieldPath(field: "email"), .wrong)]) : .clean }
+        stage.editor.selection = nil
+        return canvas(stage, zoom: 0.3)
+    },
+    GalleryState("values-many", "a hundred and fifty notes that are one, at 40%: each draws its rows", size: CGSize(width: 1000, height: 800)) { stage in
+        stage.editor.offstage([personThree])
+        let people = ["Ann Lee", "Bo Park", "Cy Wu", "Di Fox", "Ed Roe"]
+        var records: [AnyShapeRecord] = []
+        for place in 0..<150 {
+            var note = ShapeRecord(StickyNote(frame: CGRect(x: 30 + CGFloat(place % 10) * 250, y: 30 + CGFloat(place / 10) * 210, width: 200, height: 160),
+                                              text: MentionText(plain: people[place % people.count])))
+            note[IsAProperty.self] = [TypeLink(FieldFixtures.personID)]
+            var values: JSONObject = ["name": .string(people[place % people.count])]
+            if place % 3 == 0 { values["email"] = .string("p\(place)@acme.com") }
+            note[FieldValuesProperty.self] = FieldValues(values)
+            records.append(AnyShapeRecord(note))
+        }
+        stage.editor.transact("Add Notes") { transaction in records.forEach { transaction.insert($0) } }
+        stage.editor.selection = nil
+        return canvas(stage, zoom: 0.4)
+    },
 ]
 
-@MainActor let valueStates: [GalleryState] = [
-    GalleryState("Flow3-p4-arrow-fields", answers: "Flow3 p4", "an arrow that is a Friendship: its Types tab with the `Types` row and `FIELDS`: `since [2019]`, `close [x]`") { stage in
-        stage.addFieldTypes([friendship])
-        let arrow = stage.editor.add(Arrow(start: .free(CGPoint(x: 40, y: 300)), end: .free(CGPoint(x: 340, y: 300)), text: "friends"))
-        stage.editor.addTypeLink(friendship.id, to: arrow)
-        let writer = try require(stage.editor.fieldWriter)
-        writer.setTyped("2019", as: .number(integer: false), at: FieldPath(field: "since"), of: arrow)
-        writer.set(true, at: FieldPath(field: "close"), of: arrow)
-        return .image(try stage.panelPicture(of: arrow, size: CGSize(width: 320, height: 260)))
-    },
-    GalleryState("Flow5-p2-order-panel", answers: "Flow5 p2", "the Order in the panel: customer, shipping address, line items, status paid, tags, gift ticked, gift note empty (a field with more in it is a summary line until the form lands)") { stage in
-        .image(try stage.panelPicture(of: try order(stage, values: orderValues)))
-    },
-    GalleryState("fields-panel-every-kind", "one field of each kind the panel draws: text, number, date, yes or no, a choice, an either, and the lines for the rest") { stage in
-        stage.addFieldTypes([FieldFixtures.person, FieldFixtures.address, FieldFixtures.everyKind.a, FieldFixtures.everyKind.b])
-        let id = stage.addInstance("Everything", of: [FieldFixtures.kindsAID, FieldFixtures.kindsBID])
-        let writer = try require(stage.editor.fieldWriter)
-        writer.set("Launch", at: FieldPath(field: "name"), of: id)
-        writer.setTyped("9.50", as: .number(integer: false), at: FieldPath(field: "price"), of: id)
-        writer.setTyped("3/3/26", as: .date, at: FieldPath(field: "due"), of: id)
-        writer.set(true, at: FieldPath(field: "done"), of: id)
-        writer.set("shipped", at: FieldPath(field: "status"), of: id)
-        writer.set("12", at: FieldPath(field: "size"), of: id)
-        return .image(try stage.panelPicture(of: id, size: CGSize(width: 320, height: 760)))
-    },
-    GalleryState("fields-panel-empty", "an Order with no values: every field blank") { stage in
-        .image(try stage.panelPicture(of: try order(stage, values: [])))
-    },
-    GalleryState("fields-panel-unnamed", "a note that was a Person and is none: its values dimmed with a minus each, no header") { stage in
-        stage.addFieldTypes([FieldFixtures.person])
-        let id = stage.addInstance("Ann", of: [])
-        let writer = try require(stage.editor.fieldWriter)
-        writer.set("Ann Lee", at: FieldPath(field: "name"), of: id)
-        writer.set("ann@acme.com", at: FieldPath(field: "email"), of: id)
-        writer.set("Annie", at: FieldPath(field: "nickname"), of: id)
-        return .image(try stage.panelPicture(of: id, size: CGSize(width: 320, height: 170)))
-    },
-    GalleryState("fields-panel-read-only", "a locked Order: boxes read-only and dimmed, the menu and checkbox off") { stage in
-        let id = try order(stage, values: orderValues)
-        stage.editor.lock([id])
-        return .image(try stage.panelPicture(of: id))
-    },
-    GalleryState("fields-panel-many", "sixty fields, no fold: the panel scrolls", size: CGSize(width: 560, height: 360)) { stage in
-        stage.addFieldTypes([sixty])
-        let id = stage.addInstance("Many", of: [sixty.id])
-        let writer = try require(stage.editor.fieldWriter)
-        for place in stride(from: 1, through: 60, by: 7) { writer.set(place % 3 == 0 ? JSONValue.string("v\(place)") : JSONValue.number(Double(place)), at: FieldPath(field: "field\(place)"), of: id) }
-        return .image(try stage.panelPicture(of: id, size: CGSize(width: 320, height: 700)))
-    },
+/// Board 5's Order, as panel 2 reads it.
+private let orderValues: JSONObject = [
+    "customer": "Ann Lee", "shippingAddress": ["street": "12 Main St", "city": "Leeds"],
+    "lineItems": [["product": "Mug", "quantity": 2], ["product": "Plate", "quantity": 1]],
+    "status": "paid", "tags": ["gift", "mugs"], "gift": true,
 ]

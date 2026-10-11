@@ -39,12 +39,6 @@ extension TypesStyle {
     static let formNameInk = NSColor.secondaryLabelColor
     static let formValueInk = NSColor.labelColor
     static let formFaintInk = NSColor.tertiaryLabelColor
-    /// A needed field with nothing in it, and a value that breaks a rule: shared by rows, card and panel.
-    public static let neededInk = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 1.0, green: 0.72, blue: 0.25, alpha: 1) : NSColor(srgbRed: 0.72, green: 0.42, blue: 0.0, alpha: 1)
-    }
-    public static let wrongInk = NSColor.systemRed
 
     /// The chip: its height, its text, its padding, and a dashed one's (a type that is gone).
     static let formChipHeight: CGFloat = 18
