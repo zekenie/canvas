@@ -54,7 +54,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [plugins and kinds](.claude/rules/plugins-and-kinds.md): plugin values and the frozen registry; kinds, their definitions and capabilities; translating and placing sessions.
 - [properties and schemas](.claude/rules/properties-and-schemas.md): property lists (`SchemaDefined`), kinds' JSON Schemas, `KindSchema`, added properties.
 - [shape references](.claude/rules/shape-references.md): values that bind or name other shapes, and what deletes, copies, cuts and draws do to them.
-- [editor](.claude/rules/editor.md): what `CanvasEditor` lends every plugin: layout inputs and laid-out frames, outlines and their standoff, read-only shapes, drawing offsets, the glide, skeleton levels, commands and zoom, keys, the hand, the translation adjuster, service hooks, edge scrolling.
+- [editor](.claude/rules/editor.md): what `CanvasEditor` lends every plugin: layout inputs and laid-out frames, outlines and their standoff, read-only shapes, drawing offsets, the glide, skeleton levels, cards, commands and zoom, keys, the hand, the translation adjuster, service hooks, edge scrolling.
 - [editing](.claude/rules/editing.md): editing in place (`Editable`, the editing view, `EditContext`), and an editor's text held to its shape's render.
 - [undo](.claude/rules/undo.md): steps, groups and coalescing, `DocumentDelta`, one history across boards.
 - [boards in a file](.claude/rules/boards-in-a-file.md): `CanvasFile`, board revisions, the delete cascade, `transact(on:)`, and showing a board.
@@ -94,7 +94,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [boards](.claude/rules/boards.md): opening boards, Enclosing Board, the path's crumbs and their menus.
 - [snapping](.claude/rules/snapping.md): what a drag snaps to, and its guides.
 - [transform](.claude/rules/transform.md): turning a shape into another kind: channels, sources and targets, the menu item and the command, frame into subboard.
-- [types](.claude/rules/types.md): a note that holds a JSON Schema is a type, named by its title; `/is-a type` and Remove Type, New type from `/is-a`, what a shape is (`is`, the `is-a` edge, `/is-a`, the type chips and the Types tab), the file's types and what is what (`TypeIndex`), the words kept in step with the schema by the model (`TypeSync`), references, the Schema tab's JSON and completions, highlights.
+- [types](.claude/rules/types.md): a note that holds a JSON Schema is a type, named by its title; `/is-a type` and Remove Type, New type from `/is-a`, what a shape is (`is`, the `is-a` edge, `/is-a`, the type chips and the Types tab), the file's types and what is what (`TypeIndex`), the words kept in step with the schema by the model (`TypeSync`), references, the Schema tab's JSON and completions, highlights, the card a row with more in it opens and the form in it.
 
 **Languages** (what agents read and write)
 - [command line](.claude/rules/command-line.md): `canvas`, the wire, `CommandServer`, Automation's commands, `canvas draw`, the canvas skill.

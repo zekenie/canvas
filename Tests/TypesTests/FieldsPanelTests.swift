@@ -37,9 +37,19 @@ extension TypePanelWindow {
         return select(instanceRecord("", of: types))
     }
 
-    /// The boxes of words in the panel, top to bottom: no field editors, no JSON.
+    /// The boxes of words in the panel, top to bottom: no field editors, no JSON, and not the one editor a
+    /// field's form keeps (`FieldFormView`'s: `fieldPanelFormTests` hold that).
     var boxes: [NSTextView] {
-        hosting.descendants(NSTextView.self).filter { !$0.isFieldEditor && $0.font?.isFixedPitch == false }.sorted { frame(of: $0).minY < frame(of: $1).minY }
+        hosting.descendants(NSTextView.self).filter { !$0.isFieldEditor && $0.font?.isFixedPitch == false && !isInForm($0) }
+            .sorted { frame(of: $0).minY < frame(of: $1).minY }
+    }
+    private func isInForm(_ view: NSView) -> Bool {
+        var above = view.superview
+        while let next = above {
+            if next.className.contains("FieldFormView") { return true }
+            above = next.superview
+        }
+        return false
     }
     var popups: [NSPopUpButton] { hosting.descendants(NSPopUpButton.self) }
     /// SwiftUI's checkboxes, top to bottom.

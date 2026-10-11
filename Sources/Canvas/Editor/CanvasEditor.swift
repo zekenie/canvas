@@ -24,12 +24,16 @@ public protocol CanvasEditorDelegate: AnyObject {
     /// A menu is waiting to be popped up (`menuToPopUp`): pop it up on the next turn of the run loop
     /// and say so (`menuDidPopUp`).
     func editorMenuToPopUpDidChange(_ editor: CanvasEditor)
+    /// `card` changed (shown, taken down, moved, resized): show it over what the canvas hosts, under the
+    /// popover, give its `firstResponder` the keyboard, or take it down and give the keyboard back.
+    func editorCardDidChange(_ editor: CanvasEditor)
 }
 
 @_spi(Host) extension CanvasEditorDelegate {
     public func editorBoardDidChange(_ editor: CanvasEditor) {}
     public func editorPopoverDidChange(_ editor: CanvasEditor) {}
     public func editorMenuToPopUpDidChange(_ editor: CanvasEditor) {}
+    public func editorCardDidChange(_ editor: CanvasEditor) {}
     public func editorEditingSelectedText(_ editor: CanvasEditor) -> String? { nil }
 }
 
@@ -115,6 +119,7 @@ public final class CanvasEditor {
             dismissPopover()
             setNeedsDisplay()
             tellSkeletonLevel()
+            cardFollowsCamera()
             sessionFollowsCamera()
         }
     }
@@ -262,6 +267,7 @@ public final class CanvasEditor {
             guard skeletonZoom != oldValue else { return }
             setNeedsDisplay()
             tellSkeletonLevel()
+            cardFollowsCamera()
         }
     }
     /// How far, in view points, the outline of a closed shape (the selection's, a hover's, the hint)
@@ -302,6 +308,8 @@ public final class CanvasEditor {
     @ObservationIgnored var waitingPopover: CanvasPopover?
     @ObservationIgnored var popoverTimer: ScheduledTask?
     @ObservationIgnored var popoverWarmth: ScheduledTask?
+    // The card showing (Cards.swift).
+    @ObservationIgnored var shownCard: CanvasCard?
     // The menu waiting to be popped up (MenuPopUp.swift).
     @ObservationIgnored var menuWaiting: (menu: NSMenu, rect: CGRect)?
     /// An animation's frame is moving the camera: `zoomPercentage` stays its target's.
@@ -588,6 +596,7 @@ public final class CanvasEditor {
         isReplacingFile = true
         defer { isReplacingFile = false }
         dismissPopover()
+        closeCard(.board)
         menuWaiting = nil
         if let running = session {
             _ = running.cancel(in: self)
@@ -756,6 +765,7 @@ public final class CanvasEditor {
         for id in changes.removed where drawingOffsets[id] != nil { drawingOffsets[id] = nil }
         // A shape gliding that something changes is where it is now.
         if !glides.isEmpty { endGlides(changes.shapeIDs.filter { glides[$0] != nil }) }
+        if let shape = shownCard?.shape, changes.removed.contains(shape) { closeCard(.shapeGone) }
         // Services drop what no longer names a shape, as the hint's setter does.
         for service in serviceOrder { service.documentDidChange(changes, in: self) }
         hintedShapeID = hintedID
@@ -845,6 +855,7 @@ public final class CanvasEditor {
         // A step is the board's it was made on: the one under way closes here.
         undoHistory.close()
         dismissPopover()
+        closeCard(.board)
         leftCameras[board] = left
         leftOrder.removeAll { $0 == board }
         leftOrder.append(board)
@@ -1114,6 +1125,7 @@ public final class CanvasEditor {
         editingShapeID = id
         undoHistory.editingBegan(stepName: (registry.definition(for: record.kind) as? any Editable)?.editingStepName)
         dismissPopover()
+        closeCard(.editing)
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
         return true
@@ -1135,6 +1147,9 @@ public final class CanvasEditor {
     /// `discarding: false` (a draw) never asks.
     public func endEditing(discarding: Bool = true) {
         guard let id = editingShapeID else { return }
+        // While the editing view still stands, so the keyboard goes back to it, and the host then
+        // takes it from there.
+        closeCard(.editing)
         let mayDiscard = discarding && !undoHistory.isInAction
         editingShapeID = nil
         editingStartPoint = nil

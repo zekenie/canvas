@@ -220,4 +220,49 @@ final class ChildPanel: NSPanel {
         write(8)
         expectEqual(steps(), 7, "typing in text doesn't end it")
     },
+    test("a card's step stays open through a click in the window and the keyboard moving between the views of the card") {
+        let f = try BoardWindowFixture()
+        let box = f.addBox()
+        let probe = CardProbe(frame: .zero)
+        let first = Stop(frame: CGRect(x: 0, y: 0, width: 50, height: 20)), second = Stop(frame: CGRect(x: 60, y: 0, width: 50, height: 20))
+        probe.addSubview(first)
+        probe.addSubview(second)
+        let log = ClosingLog()
+        expect(f.h.editor.showCard(probeCard("c", about: box, anchor: CGRect(x: 0, y: 0, width: 100, height: 20), stepName: "Change Fields", probe: probe, closings: log)))
+        @MainActor func write(_ x: CGFloat) {
+            f.h.editor.transact(nil, coalescing: "c") { $0.update(box, as: Box.self) { $0.frame.origin.x = x } }
+        }
+        expect(f.window.firstResponder === probe)
+        write(1)
+        f.window.sendEvent(f.window.mouse(.leftMouseDown, at: CGPoint(x: 450, y: 450), time: 1))
+        f.window.makeFirstResponder(first)
+        write(2)
+        f.window.makeFirstResponder(second)
+        f.window.sendEvent(f.window.mouse(.leftMouseDown, at: CGPoint(x: 450, y: 450), time: 1.1))
+        f.window.press(" ")
+        write(3)
+        expectEqual(f.h.editor.document[box]?.box?.origin.x, 3)
+        f.h.editor.undo()
+        expectEqual(f.h.editor.document[box]?.box?.origin.x, 0, "one step put all three back")
+        expectEqual(log.closings, [.undo])
+    },
+    test("Edit › Undo is named for a card's step while the keyboard is on a view of the card that is not text") {
+        let f = try BoardWindowFixture()
+        let box = f.addBox()
+        let probe = CardProbe(frame: .zero)
+        let log = ClosingLog()
+        expect(f.h.editor.showCard(probeCard("c", about: box, anchor: CGRect(x: 0, y: 0, width: 100, height: 20), stepName: "Change Tags", probe: probe, closings: log)))
+        expect(f.window.firstResponder === probe)
+        f.h.editor.transact(nil, coalescing: "c") { $0.update(box, as: Box.self) { $0.frame.origin.x = 5 } }
+        expect(f.menuItem("undo:") == ("Undo Change Tags", true), "\(f.menuItem("undo:"))")
+        expect(f.target(of: "undo:") === f.window)
+        f.window.undo(nil)
+        expectEqual(f.h.editor.document[box]?.box?.origin.x, 0)
+        expectEqual(log.closings, [.undo])
+    },
 ])
+
+/// A view of a card that takes the keyboard: one of its fields.
+private final class Stop: NSView {
+    override var acceptsFirstResponder: Bool { true }
+}

@@ -16,7 +16,9 @@ import AppKit
 /// (`seal()`), so a field's run of writes ends there. A click in a window of another kind (the color
 /// panel a color well opens, whose picks write to the board through the panel's field) ends runs
 /// too, in every board's window, but not one in a board's child window (a list of picks a text
-/// shows beside itself, a pick being part of the typing).
+/// shows beside itself, a pick being part of the typing). A card's step (`editor.showCard`) is not a
+/// run: `seal()` leaves it, so a click or the keyboard moving between the card's fields doesn't end
+/// it; it ends with the card, or with a commit from elsewhere.
 @MainActor
 public final class BoardWindow: NSWindow {
     /// The editor whose board this window shows.

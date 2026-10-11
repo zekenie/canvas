@@ -16,7 +16,10 @@ extension CanvasEditor {
     }
 
     /// The view's new size, in view points.
-    @_spi(Host) public func viewportDidResize(to size: CGSize) { viewportSize = size }
+    @_spi(Host) public func viewportDidResize(to size: CGSize) {
+        viewportSize = size
+        cardFollowsCamera()
+    }
 
     /// A press begins an undo step: everything it commits, through its release, is one. While the
     /// hand is held (`isHandHeld`), it pans, as the Hand's does.
@@ -30,6 +33,9 @@ extension CanvasEditor {
         }
         guard !currentTool.ignoresPress(pointer, in: self) else { return }
         dismissPopover()
+        // Before the press's step opens, so the card's closes at depth 0. A press on the rect it hangs
+        // from is its plugin's to answer.
+        if !pressIsOnCard(pointer.world) { closeCard(.pressedElsewhere) }
         menuWaiting = nil
         tracker.resetVelocity()
         stopCameraMotion()
@@ -57,6 +63,7 @@ extension CanvasEditor {
     /// step that commits nothing, and editing goes on.
     private func beginPan(_ pointer: Pointer) {
         dismissPopover()
+        if !pressIsOnCard(pointer.world) { closeCard(.pressedElsewhere) }
         menuWaiting = nil
         tracker.resetVelocity()
         stopCameraMotion()

@@ -11400,6 +11400,50 @@ drop commits nothing more and glides nothing: the transcript and renders Composi
 the proof of concept are as they were. A file is written as it always was until a shape is in a
 container ([format 5](#boards-on-disk)).
 
+### Cards
+
+A card is a plugin's view shown under a rect of the board: white, like a menu, 4 points under the rect
+it hangs from, sized in view points (zooming doesn't scale it), following the camera, taking clicks
+and keys. A shape's row that holds more than a row can show (a list, a group of fields) opens into
+one. The core knows nothing of what is in it: it hands the host an `NSView` and a size to ask for.
+
+```swift
+let card = CanvasCard(id: "tags", about: note, anchor: rowRect, view: listView, firstResponder: listView,
+                      stepName: "Change Tags",
+                      size: { room in listView.fittingSize(in: room) },     // at most `room`, in view points
+                      didClose: { reason in … })                            // .pressedElsewhere, .undo, …
+editor.showCard(card)                                                       // false: its shape is drawn as a skeleton
+editor.transact(nil, coalescing: card.id) { … }                             // one step, "Change Tags", until it closes
+editor.moveCard(to: newRowRect)                                             // its row moved
+editor.closeCard()                                                          // .asked
+```
+
+One card shows at a time; a second replaces the first. It sits above the editing view and everything
+the canvas hosts but the hover popover, and never nearer than 8 points to the canvas's edge or under
+what the host covers of its top (`unobscuredViewport`): above its rect when there is no room below, and
+cut to the room, its view scrolling itself. The keyboard goes to its `firstResponder`; a key or a menu
+command its view does not take stops at the card (no tool letter, no Delete, no Select All reaches
+the board), and Edit › Undo is still the window's. It closes, each time with its reason
+(`CanvasCardClosing`, heard by `didClose` after the host has taken it down and the keyboard is back):
+
+- a press anywhere in the window outside it and the rect it hangs from, a pan's too (`.pressedElsewhere`);
+  a press on that rect is left to the plugin that showed the card, which hears its own click;
+- editing beginning or ending (`.editing`; a plugin that begins editing and shows a card shows the
+  card after), another board or file shown (`.board`), Undo or Redo (`.undo`);
+- the zoom taking its shape to skeletons (`.skeleton`; a shape being edited is drawn in full, so its
+  card stays), its shape deleted by a commit (`.shapeGone`), and its rect leaving the view
+  (`.leftView`, as the caret list closes when its anchor leaves the visible text).
+
+A scroll or a pinch over it does not move the board, and neither closes it. A commit from elsewhere
+leaves it open.
+
+**A card's step.** With a `stepName` its commits are one undo step, that name, from the card showing
+until it closes: `transact(nil, coalescing: card.id)`, from outside any action (inside a press or a
+`group` the commit is that action's). The panel's `seal()` and the window's mouse-downs do not end it;
+any other commit does, and is a step of its own, and the card's next commit is another step by the
+same name. Closing the card closes the step. `editor.setCardStep(_:)` changes the name (nil holds
+none), which closes the step held.
+
 ## Undo
 
 Undo is the core's ([`UndoHistory.swift`](../Sources/Canvas/Editor/UndoHistory.swift),
@@ -11417,6 +11461,7 @@ steps, and says what one gesture is when the editor can't see it. It's tldraw's 
 | A key on the canvas; a command (`editor.perform`: every menu item's, ⌘Z's and Delete's); `editor.undoHistory.group("Name") { ... }` | One each. These actions nest; the outermost is the step. A key's step takes what its repeats commit while it's held (`KeyStroke.isRepeat`, the same key with the same keys held), until it's let go (`editor.keyUp`, or `keysReleased`: the canvas lost the keyboard) or anything else happens (another key, a press, a commit, `seal()`, undo, a save), so a held arrow key's nudges are one step. |
 | An editing session (a note typed into): its view's commits (`EditContext`) until editing ends, with what the view saves as it closes | One, "Typing"; with the action that began it, if one did (placing a note and typing into it are one step, as tldraw's one mark). |
 | A run of commits under one key at no action's depth: `transact(coalescing: key)` (a panel field typed into, a slider dragged) | One, until another commit, an action, or `editor.undoHistory.seal()`. |
+| A [card](#cards)'s commits, `transact(coalescing: card.id)`, while it shows with a step name | One, named by the card, from it showing until it closes; `seal()` does not end it, any other commit does. |
 | Any other commit | One. |
 
 Any other commit while a shape is being edited closes the editing step first; an action that

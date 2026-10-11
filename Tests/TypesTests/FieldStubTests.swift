@@ -5,7 +5,7 @@ import TestKit
 import Types
 
 // The services other tracks fill, as K0 leaves them: the writer is a plain transaction named for the field,
-// the card does not open (the check is `FieldCheckerTests`' and `FieldChecksTests`'). What each answers now is what the track that fills it keeps.
+// (the check is `FieldCheckerTests`' and `FieldChecksTests`', the card `FieldCardsTests`'). What each answers now is what the track that fills it keeps.
 
 private let email = FieldPath(field: "email"), name = FieldPath(field: "name")
 
@@ -155,18 +155,12 @@ private let email = FieldPath(field: "email"), name = FieldPath(field: "name")
         expectEqual(checks.typing == nil, true)
         expectEqual(checks.check(of: record), .clean)
     },
-    test("the card does not open") {
-        let editor = try fieldEditor()
-        let id = ann(editor)
-        let cards = try require(editor.fieldCards)
+    test("a card request is a value: its targets are hashable, and the fold's rows and the row's place are optional") {
+        let id = ann(try fieldEditor())
         let request = FieldCardRequest(shape: id, target: .field(email), mode: .values, isReadOnly: false, rowRect: CGRect(x: 0, y: 0, width: 200, height: 22),
                                        closed: {}, tabbedOut: { _ in })
-        expect(!cards.open(request))
-        expect(cards.openTarget == nil)
-        expectEqual(cards.openFolded, nil)
-        cards.close()
-        let fold = FieldCardRequest(shape: id, target: .fold, mode: .kinds, isReadOnly: true, rowRect: .zero, folded: [], rowRectNow: { nil }, closed: {}, tabbedOut: { _ in })
-        expect(!cards.open(fold))
+        expectEqual(request.folded.count, 0)
+        expect(request.rowRectNow == nil)
         expectEqual(FieldCardRequest.Target.field(email), .field(email))
         expectEqual(Set([FieldCardRequest.Target.fold, .field(email), .field(email)]).count, 2, "a target is hashable")
     },
