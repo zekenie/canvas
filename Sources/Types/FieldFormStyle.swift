@@ -8,7 +8,7 @@ import DetailPanel
 
 extension TypesStyle {
     /// A line, in the card and in the panel.
-    static let formRowHeight: CGFloat = 22
+    public static let formRowHeight: CGFloat = 22
     /// The card's padding above and below the lines, and at the sides.
     static let formPadY: CGFloat = 6
     static let formPadX: CGFloat = 10
@@ -61,4 +61,10 @@ extension TypesStyle {
     static let formFocusWidth: CGFloat = 1.5
     static let formFocusRadius: CGFloat = 4
     static let formDimmed: CGFloat = 0.45
+    /// The panel's JSON box: monospaced, 76 tall at least, growing to twelve lines, then it scrolls.
+    public static let formJSONFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    public static let formJSONMinHeight: CGFloat = 76
+    public static let formJSONMaxLines = 12
+    public static let formJSONPad: CGFloat = 5
+    static let formJSONRadius: CGFloat = 5
 }

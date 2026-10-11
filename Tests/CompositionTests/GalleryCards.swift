@@ -12,7 +12,7 @@ import Types
 // The card a row with more in it opens, and the form in the panel (slices 11 and 12): the states of one track,
 // added to `galleryStates` (GalleryTypesLook.swift). Each builds board 5's Order from the shared fixtures
 // (`FieldFixtures`, in CanvasTesting), opens the card through `editor.fieldCards.open` and draws the canvas,
-// the card a subview of it. Until the rows on the note are merged the anchor is a rect `cardAnchor` lays in
+// the card a subview of it, and the panel's states draw the form alone at 260 wide (`formPicture`). Until the rows on the note are merged the anchor is a rect `cardAnchor` lays in
 // the value column of the note's row; the card hangs from it as it will hang from the real row's value.
 
 private let stageSize = CGSize(width: 640, height: 400)
@@ -272,4 +272,104 @@ let cardStates: [GalleryState] = [
     GalleryState("card-list-of-type", "on a type's note: rooms, each an Address: the table's names under Address's chip", size: stageSize) { stage in
         try kindsCard(stage, "rooms", row: 3, mode: .kinds)
     },
+
+    // The form in the panel (`presentation: .panel`), alone, at the panel's width
+    GalleryState("panel-fields-closed", "the form in the panel closed: one line, a triangle and the summary", size: panelSize) { stage in
+        let form = try panelForm(stage, "shippingAddress", on: .order)
+        return .image(stage.formPicture(form))
+    },
+    GalleryState("panel-fields-open", "the same opened: its rows under it, indented", size: panelSize) { stage in
+        let form = try panelForm(stage, "shippingAddress", on: .order)
+        form.activate(FieldStop(line: 0, column: -1))
+        return .image(stage.formPicture(form))
+    },
+    GalleryState("panel-fields-list-of-groups", "line items in the panel: a line an item, the first opened to its rows, the `add` line", size: panelSize) { stage in
+        let form = try panelForm(stage, "lineItems", on: .order)
+        form.activate(FieldStop(line: 0, column: -1))
+        form.activate(FieldStop(line: 1, column: -1))
+        return .image(stage.formPicture(form))
+    },
+    GalleryState("panel-fields-problem", "a quantity of 0: the field and the item open by themselves and the cell is red (the check is handed in; no words in the form)", size: panelSize) { stage in
+        let item = FieldPath(field: "lineItems").index(1)
+        let problem = FieldProblem(path: item.key("quantity"), kind: .wrong, keyword: "minimum", place: ["line items", "Plate", "quantity"],
+                                   message: "line items › Plate › quantity is 0, and should be at least 1")
+        let form = try panelForm(stage, "lineItems", on: .order) { _ in FieldCheck(problems: [problem]) }
+        return .image(stage.formPicture(form))
+    },
+    GalleryState("panel-fields-json", "a field no control suits: its JSON in a box, indented, monospaced", size: panelSize) { stage in
+        let form = try panelForm(stage, "anything", on: .kindsB)
+        return .image(stage.formPicture(form))
+    },
+    GalleryState("panel-fields-not-json", "the box with `{` in it after ⌘↩: kept, nothing written, `Not JSON` under it", size: panelSize) { stage in
+        let form = try panelForm(stage, "anything", on: .kindsB)
+        form.focusFirst()
+        form.jsonEditor.selectAll(nil)
+        form.jsonEditor.insertText("{", replacementRange: form.jsonEditor.selectedRange())
+        stage.window.press("\r", code: 36, modifiers: .command)
+        return .image(stage.formPicture(form))
+    },
 ]
+
+private let panelSize = CGSize(width: 260, height: 200)
+
+/// What a panel state's note is an instance of.
+private enum PanelNote {
+    case order, kindsB
+}
+
+/// The form for `field` of a note of `type`, with its values as board 5 draws them, in the stage's window (so a box can have
+/// the keyboard) at the panel's width.
+@MainActor
+private func panelForm(_ stage: GalleryStage, _ field: String, on type: PanelNote, check: (@MainActor (AnyShapeRecord) -> FieldCheck)? = nil) throws -> FieldFormView {
+    let (a, b) = FieldFixtures.everyKind
+    addTypes(stage, [FieldFixtures.person, FieldFixtures.address, FieldFixtures.order, a, b])
+    let id = type == .order ? FieldFixtures.orderID : FieldFixtures.kindsBID
+    let note = instance(stage, of: [id])
+    if type == .order {
+        fillOrder(stage, note, quantity: check == nil ? 1 : 0)
+    } else {
+        stage.editor.fieldWriter?.set(["rate": 12.5, "tags": ["a", "b"], "on": true], at: FieldPath(field: "anything"), of: note)
+    }
+    let book = try require(stage.editor.fieldBook)
+    let resolved = try require(book.fields(types: [id]).fields.first { $0.field.name == field }, field)
+    let form = FieldFormView(editor: stage.editor, shape: note, root: .field(path: FieldPath(field: field), field: resolved, kind: book.kind(of: resolved)), mode: .values,
+                             isReadOnly: false, presentation: .panel, check: check)
+    form.frame = CGRect(x: 0, y: 0, width: panelSize.width, height: max(form.contentHeight, 1))
+    stage.canvas.addSubview(form)
+    return form
+}
+
+extension GalleryStage {
+    /// The form alone, as the panel would hold it, `width` wide and as tall as it is, on the panel's background, in this appearance.
+    func formPicture(_ form: FieldFormView, width: CGFloat = 260) -> NSBitmapImageRep {
+        let scale: CGFloat = 2
+        let size = CGSize(width: width, height: ceil(form.contentHeight) + 16)
+        form.frame = CGRect(x: 8, y: 8, width: width - 16, height: ceil(form.contentHeight))
+        form.layoutSubtreeIfNeeded()
+        form.appearance = appearance
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale), pixelsHigh: Int(size.height * scale),
+                                   bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                   colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        rep.size = size
+        if let graphics = NSGraphicsContext(bitmapImageRep: rep) {
+            appearance.performAsCurrentDrawingAppearance {
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = graphics
+                NSColor.windowBackgroundColor.setFill()
+                CGRect(origin: .zero, size: size).fill()
+                NSGraphicsContext.restoreGraphicsState()
+            }
+            graphics.flushGraphics()
+        }
+        // The form draws into the bitmap at its own place in its superview, so it is moved to the corner for it.
+        let host = form.superview
+        form.removeFromSuperview()
+        let frame = NSView(frame: CGRect(origin: .zero, size: size))
+        form.frame.origin = CGPoint(x: 8, y: 8)
+        frame.addSubview(form)
+        appearance.performAsCurrentDrawingAppearance { frame.cacheDisplay(in: frame.bounds, to: rep) }
+        form.removeFromSuperview()
+        host?.addSubview(form)
+        return rep
+    }
+}

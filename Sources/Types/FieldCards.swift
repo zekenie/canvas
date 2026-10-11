@@ -60,7 +60,7 @@ public final class FieldCards {
     private weak var editor: CanvasEditor?
     /// What the person opened or closed in the panel's forms, for the session, by shape and path: SwiftUI makes the
     /// forms' views again whenever the selection changes. A shape's entry goes when a commit removes the shape.
-    var panelOpen: [ShapeID: [FieldPath: Bool]] = [:]
+    public internal(set) var panelOpen: [ShapeID: [FieldPath: Bool]] = [:]
     private var forms: [WeakForm] = []
     private var pass: ScheduledTask?
     private var session: Session?

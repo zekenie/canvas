@@ -53,6 +53,10 @@ public final class FieldFormView: NSView {
     public internal(set) var focus: FieldStop?
     /// The one text editor, over the focused text cell.
     public let cellEditor = FieldCellEditor()
+    /// Whether the JSON editor is over a box: the focused `Other` field's, while it can be edited.
+    public var isShowingJSONEditor: Bool { !jsonClip.isHidden }
+    /// The one editor of the panel's JSON box, over the box of the focused `Other` field.
+    public let jsonEditor = FieldJSONEditor()
 
     var levels: [FormLevel]
     var foldFields: [Resolved.Field] = []
@@ -62,6 +66,13 @@ public final class FieldFormView: NSView {
     let grid: FieldGridView
     let header: FieldHeaderView
     let cellClip = NSScrollView()
+    let jsonClip = NSScrollView()
+    /// What is typed in a JSON box and not yet done, by the field's path; the paths whose draft is not JSON.
+    var jsonDrafts: [FieldPath: String] = [:]
+    public internal(set) var jsonErrors: Set<FieldPath> = []
+    var jsonStop: FieldStop?
+    var jsonPath: FieldPath?
+    var isLeavingJSON = false
     var metrics = FormMetrics()
     /// The cell the editor is over, and the path it told the check it is typing in.
     var editorStop: FieldStop?
@@ -116,6 +127,18 @@ public final class FieldFormView: NSView {
         cellClip.documentView = cellEditor
         cellClip.isHidden = true
         grid.addSubview(cellClip)
+        jsonClip.drawsBackground = false
+        jsonClip.hasVerticalScroller = true
+        jsonClip.autohidesScrollers = true
+        jsonClip.scrollerStyle = .overlay
+        jsonClip.hasHorizontalScroller = false
+        jsonClip.borderType = .noBorder
+        jsonClip.documentView = jsonEditor
+        jsonClip.isHidden = true
+        grid.addSubview(jsonClip)
+        jsonEditor.delegate = self
+        jsonEditor.onCommit = { [weak self] in self?.commitJSON() }
+        jsonEditor.onLeave = { [weak self] in self?.editorLeft() }
         scroll.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(self, selector: #selector(linesScrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         cellEditor.delegate = self
@@ -334,6 +357,11 @@ public final class FieldFormView: NSView {
 
     /// Puts the editor over the focused text cell, or takes it away.
     func syncEditor() {
+        if let stop = focus, let cell = cell(at: stop), case .json = cell.control, cell.isEditable, !isReadOnly {
+            syncJSON()
+            return
+        }
+        hideJSON()
         guard let stop = focus, let cell = cell(at: stop), isTypedControl(cell.control), cell.isEditable, !isReadOnly else {
             hideEditor()
             return
@@ -379,7 +407,7 @@ public final class FieldFormView: NSView {
         if !isRebuilding { refreshMarks() }
     }
 
-    private func hideEditor() {
+    func hideEditor() {
         let wasEditing = editorStop != nil
         editorStop = nil
         if window?.firstResponder === cellEditor { window?.makeFirstResponder(self) }
@@ -413,6 +441,7 @@ public final class FieldFormView: NSView {
         super.viewWillMove(toWindow: newWindow)
         if newWindow == nil, window != nil {
             editorStop = nil
+            jsonStop = nil
             stopTyping()
         }
     }
@@ -420,7 +449,7 @@ public final class FieldFormView: NSView {
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
-        if let stop = focus, let cell = cell(at: stop), isTypedControl(cell.control) { editorStop = nil; syncEditor() }
+        if let stop = focus, let cell = cell(at: stop), isTypedControl(cell.control) || cell.control == .json { editorStop = nil; jsonStop = nil; syncEditor() }
         else if focus != nil { window?.makeFirstResponder(self) }
     }
 
@@ -436,7 +465,15 @@ public final class FieldFormView: NSView {
         if let stop, !sheet.stops.contains(stop) { return }
         focus = stop
         syncEditor()
-        if stop != nil, editorStop == nil, let window, window.firstResponder !== self { window.makeFirstResponder(self) }
+        // The keyboard is where the focus is, if it was somewhere else (a click on a control beside the form, and back).
+        if let window {
+            if editorStop != nil, window.firstResponder !== cellEditor {
+                window.makeFirstResponder(cellEditor)
+            } else if jsonStop != nil, window.firstResponder !== jsonEditor {
+                window.makeFirstResponder(jsonEditor)
+            }
+        }
+        if stop != nil, editorStop == nil, jsonStop == nil, let window, window.firstResponder !== self { window.makeFirstResponder(self) }
         if let stop { scrollToVisible(stop) }
         grid.needsDisplay = true
         needsDisplay = true

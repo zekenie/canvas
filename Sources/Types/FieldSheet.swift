@@ -405,7 +405,7 @@ private struct SheetMaker {
             return FieldCell(path: path, field: field, control: .label(text), value: value, shown: text, mark: mark, isStored: stored)
         case .other:
             if presentation == .panel {
-                let json = value.map { FieldText.shown($0, asOneOf: [], locale: locale) } ?? ""
+                let json = value.map(FieldJSON.pretty) ?? ""
                 return FieldCell(path: path, field: field, control: .json, value: value, shown: json, mark: mark, isStored: stored, isEditable: !isReadOnly)
             }
             return FieldCell(path: path, field: field, control: .more(.json), value: value, shown: FieldSummary.json.text, mark: mark, isStored: stored)

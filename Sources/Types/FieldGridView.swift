@@ -30,7 +30,7 @@ final class FieldGridView: NSView {
     }
 
     func lineRect(_ line: Int) -> CGRect {
-        CGRect(x: 0, y: CGFloat(line) * TypesStyle.formRowHeight, width: max(bounds.width, form.metrics.gridWidth), height: TypesStyle.formRowHeight)
+        CGRect(x: 0, y: form.top(ofLine: line), width: max(bounds.width, form.metrics.gridWidth), height: form.height(ofLine: line))
     }
 
     /// Where a line's content starts: past its panel indent and the column the triangles hang in.
@@ -43,8 +43,13 @@ final class FieldGridView: NSView {
     /// A cell's place: after the name in rows, its share of the line in a table or pairs, past the check's place
     /// in a list of choices, else the line's width.
     func cellRect(line: Int, column: Int) -> CGRect {
-        let row = TypesStyle.formRowHeight, held = form.sheet.lines[line], y = CGFloat(line) * row
+        let row = TypesStyle.formRowHeight, held = form.sheet.lines[line], y = form.top(ofLine: line)
         var x = contentX(held)
+        // A JSON box is the whole width, under its name's row.
+        if let box = form.jsonCell(of: held) {
+            let top = y + (held.name == nil ? 0 : row)
+            return CGRect(x: x, y: top, width: max(rightEdge - x, 0), height: form.boxHeight(for: form.jsonText(of: box)))
+        }
         if held.cells.count > 1 {
             let share = (rightEdge - x) / CGFloat(held.cells.count)
             return CGRect(x: x + CGFloat(column) * share, y: y, width: share - (column == held.cells.count - 1 ? 0 : TypesStyle.formGap - 2), height: row)
@@ -59,7 +64,8 @@ final class FieldGridView: NSView {
 
     func nameRect(_ line: Int) -> CGRect {
         let held = form.sheet.lines[line]
-        return CGRect(x: contentX(held), y: CGFloat(line) * TypesStyle.formRowHeight, width: form.metrics.nameWidth, height: TypesStyle.formRowHeight)
+        let width = form.jsonCell(of: held) == nil ? form.metrics.nameWidth : max(rightEdge - contentX(held), 0)
+        return CGRect(x: contentX(held), y: form.top(ofLine: line), width: width, height: TypesStyle.formRowHeight)
     }
 }
 
@@ -110,6 +116,12 @@ extension FieldFormView {
             focus(stop)
             let held = grid.cellRect(line: stop.line, column: stop.column)
             cellEditor.placeSelection(at: CGPoint(x: point.x - held.minX + cellClip.documentVisibleRect.minX, y: cellEditor.textContainerInset.height + 2))
+            return
+        }
+        if let cell = cell(at: stop), cell.control == .json, cell.isEditable, !isReadOnly {
+            focus(stop)
+            let held = grid.cellRect(line: stop.line, column: stop.column)
+            jsonEditor.placeSelection(at: CGPoint(x: point.x - held.minX, y: point.y - held.minY + jsonClip.documentVisibleRect.minY))
             return
         }
         activate(stop)
@@ -203,7 +215,7 @@ extension FieldFormView {
             }
             return
         }
-        let first = max(Int(floor(dirty.minY / row)), 0), last = min(Int(floor(dirty.maxY / row)), sheet.lines.count - 1)
+        let first = max(line(atY: dirty.minY), 0), last = min(line(atY: dirty.maxY), sheet.lines.count - 1)
         guard first <= last else { return }
         for place in first...last { drawLine(place) }
         if let stop = focus, stop.line >= 0, stop.line <= last, stop.line >= first { drawFocus(stop) }
@@ -212,7 +224,8 @@ extension FieldFormView {
     private func drawLine(_ place: Int) {
         let held = sheet.lines[place]
         let row = grid.lineRect(place)
-        if let isOpen = held.disclosure { drawTriangle(isOpen, at: CGPoint(x: TypesStyle.formPadX + CGFloat(held.depth) * TypesStyle.formIndent + 3, y: row.midY)) }
+        let nameRow = CGRect(x: row.minX, y: row.minY, width: row.width, height: TypesStyle.formRowHeight)
+        if let isOpen = held.disclosure { drawTriangle(isOpen, at: CGPoint(x: TypesStyle.formPadX + CGFloat(held.depth) * TypesStyle.formIndent + 3, y: nameRow.midY)) }
         if let name = held.name {
             let rect = grid.nameRect(place)
             var space = rect
@@ -222,10 +235,10 @@ extension FieldFormView {
             var x = rect.minX + took + 6
             if held.isNeeded {
                 TypesStyle.neededInk.setFill()
-                NSBezierPath(ovalIn: CGRect(x: x, y: row.midY - TypesStyle.formDot / 2, width: TypesStyle.formDot, height: TypesStyle.formDot)).fill()
+                NSBezierPath(ovalIn: CGRect(x: x, y: nameRow.midY - TypesStyle.formDot / 2, width: TypesStyle.formDot, height: TypesStyle.formDot)).fill()
                 x += TypesStyle.formDot + 6
             }
-            if let chip = held.chip { drawChip(chip, at: CGPoint(x: x, y: row.midY - TypesStyle.formChipHeight / 2)) }
+            if let chip = held.chip { drawChip(chip, at: CGPoint(x: x, y: nameRow.midY - TypesStyle.formChipHeight / 2)) }
         }
         for column in held.cells.indices { drawCell(held.cells[column], line: place, column: column, held: held) }
     }
@@ -237,7 +250,9 @@ extension FieldFormView {
         let wrong = cell.mark == .wrong, needed = cell.mark == .needed
         let atRight = mode == .kinds
         switch cell.control {
-        case .text, .oneOf, .json:
+        case .json:
+            drawJSON(cell, in: rect, line: line)
+        case .text, .oneOf:
             guard !isEditing else { return }
             let align: NSTextAlignment = cell.alignsRight ? .right : .left
             if cell.shown.isEmpty {
@@ -267,6 +282,35 @@ extension FieldFormView {
         case .label(let text):
             drawText(text, in: rect, ink: text == FieldWords.none ? TypesStyle.formFaintInk : TypesStyle.formNameInk, italic: text == FieldWords.none,
                      align: atRight ? .right : .left)
+        }
+    }
+
+    /// The panel's box: a rounded outline (red when the value is wrong, accent while it has the keyboard) around the JSON, in
+    /// the monospaced face, the first twelve lines; under it `Not JSON` while what was typed does not parse. The editor
+    /// is over it while it has the keyboard.
+    private func drawJSON(_ cell: FieldCell, in box: CGRect, line: Int) {
+        let isEditing = jsonStop == FieldStop(line: line, column: 0) && !jsonClip.isHidden
+        let text = jsonText(of: cell)
+        let outline = NSBezierPath(roundedRect: box.insetBy(dx: 0.5, dy: 0.5), xRadius: TypesStyle.formJSONRadius, yRadius: TypesStyle.formJSONRadius)
+        NSColor.textBackgroundColor.withAlphaComponent(0.5).setFill()
+        outline.fill()
+        (cell.mark == .wrong ? TypesStyle.wrongInk : isEditing ? NSColor.controlAccentColor : NSColor.separatorColor).setStroke()
+        outline.lineWidth = 1
+        outline.stroke()
+        if !isEditing {
+            let inner = box.insetBy(dx: TypesStyle.formJSONPad, dy: TypesStyle.formJSONPad)
+            if text.isEmpty {
+                drawText(cell.placeholder, in: CGRect(x: inner.minX, y: inner.minY, width: inner.width, height: TypesStyle.formJSONLineHeight), ink: TypesStyle.formFaintInk,
+                         font: TypesStyle.formJSONFont, italic: true)
+            } else {
+                let style = NSMutableParagraphStyle()
+                style.lineBreakMode = .byClipping
+                let attributes: [NSAttributedString.Key: Any] = [.font: TypesStyle.formJSONFont, .foregroundColor: cell.isEditable || !isReadOnly ? ink : ink.withAlphaComponent(0.7), .paragraphStyle: style]
+                NSAttributedString(string: text, attributes: attributes).draw(with: inner, options: [.usesLineFragmentOrigin])
+            }
+        }
+        if jsonErrors.contains(cell.path) {
+            drawText(FieldWords.notJSON, in: CGRect(x: box.minX, y: box.maxY, width: box.width, height: TypesStyle.formRowHeight), ink: TypesStyle.wrongInk)
         }
     }
 

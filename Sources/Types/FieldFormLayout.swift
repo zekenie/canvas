@@ -17,6 +17,9 @@ struct FormMetrics {
     var gridWidth: CGFloat = 0
     var linesHeight: CGFloat = 0
     var bottomPad: CGFloat = 0
+    /// Where each line starts and, last, where the lines end: only while a line holds a JSON box, which is
+    /// taller than a row; empty otherwise, and a line is a row.
+    var offsets: [CGFloat] = []
 }
 
 extension FieldFormView {
@@ -33,10 +36,8 @@ extension FieldFormView {
         return height
     }
 
-    private var linesHeightOfSheet: CGFloat {
-        let rows = sheet.lines.isEmpty && presentation == .card ? 1 : sheet.lines.count
-        return CGFloat(rows) * TypesStyle.formRowHeight
-    }
+    /// What the lines take, as `computeMetrics` last worked it out.
+    private var linesHeightOfSheet: CGFloat { metrics.linesHeight }
 
     private var bottomPadOfSheet: CGFloat { presentation == .card ? TypesStyle.formPadY : 0 }
 
@@ -102,7 +103,15 @@ extension FieldFormView {
         }
         metrics.headerHeight = y
         metrics.bottomPad = bottomPadOfSheet
-        metrics.linesHeight = linesHeightOfSheet
+        if sheet.lines.contains(where: { jsonCell(of: $0) != nil }) {
+            var offsets: [CGFloat] = [0]
+            offsets.reserveCapacity(sheet.lines.count + 1)
+            for held in sheet.lines { offsets.append(offsets[offsets.count - 1] + height(of: held)) }
+            metrics.offsets = offsets
+            metrics.linesHeight = offsets[offsets.count - 1]
+        } else {
+            metrics.linesHeight = CGFloat(sheet.lines.isEmpty && presentation == .card ? 1 : sheet.lines.count) * TypesStyle.formRowHeight
+        }
         metrics.gridWidth = max(width, tableWidth)
         metrics.nameWidth = nameColumn(width: width)
         return metrics
@@ -163,18 +172,60 @@ extension FieldFormView {
         nameColumnKept = nil
     }
 
+    // MARK: Lines of different heights
+
+    /// The JSON box a line holds, if it does: the panel's `Other`.
+    func jsonCell(of held: FieldLine) -> FieldCell? {
+        guard let cell = held.cells.first, case .json = cell.control else { return nil }
+        return cell
+    }
+
+    /// What a JSON box shows: what is typed in it, kept until it is committed, else the stored value as JSON.
+    func jsonText(of cell: FieldCell) -> String { jsonDrafts[cell.path] ?? cell.shown }
+
+    /// A box for `text`: 76 tall, growing to twelve lines.
+    func boxHeight(for text: String) -> CGFloat {
+        let lines = min(max(text.split(separator: "\n", omittingEmptySubsequences: false).count, 1), TypesStyle.formJSONMaxLines)
+        return max(TypesStyle.formJSONMinHeight, CGFloat(lines) * TypesStyle.formJSONLineHeight + 2 * TypesStyle.formJSONPad)
+    }
+
+    /// A line is a row, but for a JSON box: its name's row (if it has one), the box, and a row under it saying `Not JSON`.
+    func height(of held: FieldLine) -> CGFloat {
+        guard let cell = jsonCell(of: held) else { return TypesStyle.formRowHeight }
+        return (held.name == nil ? 0 : TypesStyle.formRowHeight) + boxHeight(for: jsonText(of: cell)) + (jsonErrors.contains(cell.path) ? TypesStyle.formRowHeight : 0)
+    }
+
+    func top(ofLine line: Int) -> CGFloat {
+        metrics.offsets.isEmpty ? CGFloat(line) * TypesStyle.formRowHeight : metrics.offsets[line]
+    }
+
+    func height(ofLine line: Int) -> CGFloat {
+        metrics.offsets.isEmpty ? TypesStyle.formRowHeight : metrics.offsets[line + 1] - metrics.offsets[line]
+    }
+
+    /// The line a y of the grid is in: a division, or a search of the tops while a box makes them uneven.
+    func line(atY y: CGFloat) -> Int {
+        guard !metrics.offsets.isEmpty else { return Int(floor(y / TypesStyle.formRowHeight)) }
+        var low = 0, high = metrics.offsets.count - 2
+        while low < high {
+            let middle = (low + high + 1) / 2
+            if metrics.offsets[middle] <= y { low = middle } else { high = middle - 1 }
+        }
+        return y < 0 ? -1 : low
+    }
+
     // MARK: Hit testing
 
     /// The stop a point of the grid (its coordinates) lands on: a cell, else its line; nil for nothing.
     func stop(atGrid point: CGPoint) -> FieldStop? {
-        let line = Int(floor(point.y / TypesStyle.formRowHeight))
-        guard point.y >= 0, sheet.lines.indices.contains(line) else { return nil }
-        let held = sheet.lines[line]
-        if held.disclosure != nil { return FieldStop(line: line, column: -1) }
-        for column in held.cells.indices where grid.cellRect(line: line, column: column).insetBy(dx: -2, dy: 0).contains(point) {
-            return stopOfCell(line: line, column: column)
+        let place = line(atY: point.y)
+        guard point.y >= 0, sheet.lines.indices.contains(place) else { return nil }
+        let held = sheet.lines[place]
+        if held.disclosure != nil { return FieldStop(line: place, column: -1) }
+        for column in held.cells.indices where grid.cellRect(line: place, column: column).insetBy(dx: -2, dy: 0).contains(point) {
+            return stopOfCell(line: place, column: column)
         }
-        return held.cells.count == 1 ? stopOfCell(line: line, column: 0) : nil
+        return held.cells.count == 1 ? stopOfCell(line: place, column: 0) : nil
     }
 
     /// The stop a cell is, if it takes the keyboard: its own, or its line's.
@@ -189,4 +240,6 @@ extension TypesStyle {
     /// A table's names, above its lines.
     static let formNamesHeight: CGFloat = 20
     static let formNamesFont = NSFont.systemFont(ofSize: 11)
+    /// A line of the JSON box.
+    public static let formJSONLineHeight: CGFloat = ceil(NSLayoutManager().defaultLineHeight(for: formJSONFont))
 }

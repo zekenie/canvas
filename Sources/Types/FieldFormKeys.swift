@@ -7,11 +7,22 @@ import Canvas
 
 extension FieldFormView: NSTextViewDelegate {
     public func textDidChange(_ notification: Notification) {
-        guard !isLoadingEditor, (notification.object as AnyObject?) === cellEditor else { return }
+        guard !isLoadingEditor else { return }
+        if (notification.object as AnyObject?) === jsonEditor { return jsonTyped() }
+        guard (notification.object as AnyObject?) === cellEditor else { return }
         typedInCell()
     }
 
     public func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        if textView === jsonEditor {
+            // Tab leaves the box; Esc and everything else are the text's own, and the panel's.
+            switch selector {
+            case #selector(NSResponder.insertTab(_:)): tab(forward: true)
+            case #selector(NSResponder.insertBacktab(_:)): tab(forward: false)
+            default: return false
+            }
+            return true
+        }
         guard textView === cellEditor else { return false }
         switch selector {
         case #selector(NSResponder.insertTab(_:)): tab(forward: true)
