@@ -5,6 +5,7 @@ import Foundation
 import SwiftUI
 import TableOfContents
 import TestKit
+import Titles
 import Types
 import Validation
 
@@ -129,11 +130,31 @@ private struct ProbePlugin: CanvasPlugin {
         let shop = editor.addNote(of: [CheckFixtures.shopID], ["address": ["city": "Oslo"]]), purchase = editor.addNote(of: [order])
         _ = editor.validation?.results
         probe.asked = []
-        editor.transact("Write Schema") { $0.update(address) { $0[TypeSchemaProperty.self] = SchemaText(FieldFixtures.address.schema + " ") } }
+        editor.transact("Write Schema") { $0.update(address) { $0[TypeSchemaProperty.self] = SchemaText(FieldFixtures.address.schema.replacingOccurrences(of: #""city": { "type": "string" }"#, with: #""city": { "type": "string", "maxLength": 3 }"#)) } }
         _ = editor.validation?.results
         let asked = Set(probe.asked)
         for reached in [address, place, order, purchase, CheckFixtures.shopID, shop] { expect(asked.contains(reached), "\(reached) is asked again") }
         for other in [person, ann] { expect(!asked.contains(other), "\(other) is not") }
+    },
+    test("an edit that changes nothing the check reads asks the types it reaches and not their notes, and a note whose answer names a type still follows") {
+        let probe = Probe()
+        let editor = try editor(more: [ProbePlugin(probe: probe)])
+        editor.addCheckTypes([CheckFixtures.shop])
+        let checks = try require(editor.fieldChecks)
+        let place = editor.addNote(of: [address], ["city": "Oslo"]), purchase = editor.addNote(of: [order]), shop = editor.addNote(of: [CheckFixtures.shopID], ["address": ["city": "Oslo"]])
+        let clash = editor.addNote(of: [CheckFixtures.ruleID], ["a": 3, "b": 4])
+        _ = editor.validation?.results
+        let made = checks.checksMade
+        probe.asked = []
+        editor.transact("Write Schema") { $0.update(address) { $0[TypeSchemaProperty.self] = SchemaText(FieldFixtures.address.schema + " ") } }
+        _ = editor.validation?.results
+        let asked = Set(probe.asked)
+        for reached in [address, order, CheckFixtures.shopID] { expect(asked.contains(reached), "\(reached) is asked again") }
+        for kept in [place, purchase, shop, clash] { expect(!asked.contains(kept), "\(kept) keeps its answer") }
+        expectEqual(checks.checksMade, made)
+        editor.transact("Rename") { $0.update(CheckFixtures.ruleID) { $0[TitleProperty.self] = "Either" } }
+        _ = editor.validation?.results
+        expect(messages(editor, clash).contains { $0.hasPrefix("Either rule:") }, "\(messages(editor, clash))")
     },
     test("a type deleted warns the type that refers to it, by name, and no note; undoing the delete clears it") {
         let editor = try editor()

@@ -6,6 +6,7 @@ import CoreGraphics
 import Foundation
 import Mentions
 import StickyNotes
+import TableOfContents
 import TestKit
 import Titles
 import Types
@@ -39,6 +40,19 @@ extension Budget {
     /// note: the one note checked again, nothing else. 0.008 ms (0.008, 0.006 and 0.020, of 0.23 for the commit and the
     /// read); held at the design's ceiling, since the difference is below what a run moves by.
     static let fieldChecksKeystroke = 0.2
+    /// A schema edit to the type 10,000 notes holding six values are instances of (a limit changed), the commit and the
+    /// read after it: the type's check built once, each note checked again and the rules asked of all. Some 53 ms (52.8, 52.4
+    /// and 56.6 alone, load average 4; 80 to 105 at load 12), 85 with the table of contents' rows read after it (84.8, 86.9,
+    /// 88.0): three times the median, under the design's 250 ms ceiling.
+    static let fieldChecksTypeEdit = 160.0
+    /// The same edit when it changes nothing the check reads (a description): the reached notes whose check is still current
+    /// keep their answer and are not named, so only the types are read again. Some 2.7 ms (2.6, 2.7 and 2.9; 57 to 73 ms
+    /// when every reached note was named, over the design's 40 ms ceiling).
+    static let fieldChecksTypeEditUnread = 8.0
+    /// A drag of 1,000 typed notes holding values (the commit and the read after it) over the same drag of untyped ones: no
+    /// answer is made (debug builds count them) and none is looked at; the difference is the typed notes' other services (the
+    /// is-a edges move with them). 0.94, 1.02 and 0.90 ms of some 5.9 (load average 4).
+    static let fieldChecksDrag = 3.0
 }
 
 /// A type of six fields for the notes to hold: a name needed, a count of at least 0, an email, a date, a choice, tags.
@@ -223,5 +237,85 @@ private func values(_ n: Int) -> FieldValues {
                           size, typed, typed - plain, Budget.fieldChecksKeystroke))
             if holdsToBudgets, size >= 10_000 { expect(typed - plain < Budget.fieldChecksKeystroke, "a keystroke added \(typed - plain) ms") }
         }
+    },
+    test("a schema edit to the type 10,000 notes holding six values are instances of, the commit and the read after it: one that changes a limit, and one the check does not read") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        for size in sizes {
+            let registry = try Registry(plugins: shippedPlugins(pasteboard))
+            // As many instances as the board has shapes: the board's plain notes (some 6,000 of 10,000) and notes added to them.
+            let (base, type, existing) = board(shapes: size, typed: size, holding: true)
+            var shapes = base.shapes
+            for n in existing.count..<size {
+                var note = ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(n % 100) * 130, y: -200 - CGFloat(n / 100) * 130, width: 100, height: 100), text: MentionText(plain: "Extra \(n)")))
+                note[IsAProperty.self] = [TypeLink(type)]
+                note[FieldValuesProperty.self] = values(n)
+                shapes.append(AnyShapeRecord(note))
+            }
+            let document = CanvasDocument(shapes: shapes)
+            // `fresh` writes the schema once (the first edit of a run compiles nothing more than a later one would), reads everything once.
+            @MainActor func edit(read contents: Bool, changing limit: Bool) throws -> Double {
+                let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())
+                let list = try require(editor.tableOfContents)
+                _ = editor.validation?.results
+                if contents { _ = list.entries }
+                var n = 0
+                return median(runs: 5, prepare: { n += 1 }, onThread: true) {
+                    let text = limit ? recordSchema.replacingOccurrences(of: #""minimum": 0"#, with: #""minimum": \#(n % 2)"#)
+                                     : recordSchema.replacingOccurrences(of: #""required""#, with: #""description": "edit \#(n)", "required""#)
+                    editor.transact("Write Schema") { $0.update(type) { $0[TypeSchemaProperty.self] = SchemaText(text) } }
+                    _ = editor.validation?.results
+                    if contents { _ = list.entries }
+                }
+            }
+            let limit = try edit(read: false, changing: true), limitRows = try edit(read: true, changing: true)
+            let other = try edit(read: false, changing: false), otherRows = try edit(read: true, changing: false)
+            report(String(format: "%6d instances holding six values, a schema edit, the commit and the read after it: a limit %7.1f ms (budget %.0f), with the table of contents read %7.1f; one the check does not read %7.1f ms (budget %.0f), with the table of contents read %7.1f",
+                          size, limit, Budget.fieldChecksTypeEdit, limitRows, other, Budget.fieldChecksTypeEditUnread, otherRows))
+            if holdsToBudgets, size >= 10_000 {
+                expect(limit < Budget.fieldChecksTypeEdit, "an edit to a limit took \(limit) ms")
+                expect(other < Budget.fieldChecksTypeEditUnread, "an edit the check does not read took \(other) ms")
+            }
+        }
+    },
+    test("a drag of a thousand typed notes holding values, the commit and the read after it, checks nothing and costs little more than the same drag of untyped ones") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        for size in sizes {
+            let registry = try Registry(plugins: shippedPlugins(pasteboard))
+            let count = min(1_000, size / 10)
+            @MainActor func drag(untyped: Bool) throws -> Double {
+                let board = board(shapes: size, typed: count, holding: true, untyped: untyped)
+                let editor = CanvasEditor(registry: registry, document: board.document, scheduler: ManualScheduler())
+                _ = editor.validation?.results
+                if !untyped { for id in board.notes { _ = editor.document[id].map { editor.fieldChecks?.check(of: $0) } } }
+                #if DEBUG
+                let made = editor.fieldChecks?.checksMade
+                #endif
+                var step = 0
+                let ms = median(runs: 11, prepare: { step += 1 }, onThread: true) {
+                    editor.transact("Drag") { $0.translate(Set(board.notes), by: CGPoint(x: step % 2 == 0 ? -1 : 1, y: 0)) }
+                    _ = editor.validation?.results
+                }
+                #if DEBUG
+                expectEqual(editor.fieldChecks?.checksMade, made, "a drag checks nothing")
+                #endif
+                return ms
+            }
+            let typed = try drag(untyped: false), plain = try drag(untyped: true)
+            report(String(format: "%6d shapes, a drag of %d typed notes holding values: the commit and the read after it %6.2f ms, %6.2f over the same untyped (budget %.1f)",
+                          size, count, typed, typed - plain, Budget.fieldChecksDrag))
+            if holdsToBudgets, size >= 10_000 { expect(typed - plain < Budget.fieldChecksDrag, "a drag of typed notes added \(typed - plain) ms") }
+        }
+    },
+    test("10,000 emails, dates, links and UUIDs go through the validator's formats: reported") {
+        let formats = ["email": "bo@acme.com", "date": "2026-03-03", "uri": "https://acme.com/a?b=1", "uuid": "123e4567-e89b-42d3-a456-426614174000",
+                       "date-time": "2026-03-03T09:30:00Z", "time": "09:30:00Z"]
+        let validator = SchemaValidator(JSONSchema(["type": "object", "properties": .object(formats.keys.reduce(into: [:]) { $0[$1] = ["type": "string", "format": .string($1)] })]), formats: .standard)
+        let value = JSONValue.object(formats.mapValues { .string($0) })
+        var wrong = 0
+        let ms = median(runs: 11, onThread: true) { for _ in 0..<10_000 { wrong += validator.violations(of: value).count } }
+        expectEqual(wrong, 0, "every value fits its format")
+        report(String(format: "10,000 notes of %d formats each through the validator %6.2f ms, %.3f µs a value", formats.count, ms, ms * 1000 / 10_000 / Double(formats.count)))
     },
 ])

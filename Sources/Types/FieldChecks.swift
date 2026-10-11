@@ -209,6 +209,16 @@ public final class FieldChecks {
             }
             frontier = next
         }
+        // An instance whose answer's checker is still current once asked (the edit changed nothing the check reads of
+        // it: a description, a title, a field it doesn't have) keeps its answer, and the rules aren't asked of it again.
+        // The price: each reached list is made current inside the commit and not at the next read.
+        if let book {
+            let revision = index.chainRevision
+            reached = reached.filter { id in
+                guard !changed.contains(id), !named.contains(id), let answer = answers[id], let kept = answer.checker else { return true }
+                return checker(for: answer.links, revision: revision, book: book, index: index) !== kept
+            }
+        }
         editor.validation?.recheck(reached)
         editor.setNeedsDisplay()
     }
