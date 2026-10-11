@@ -116,7 +116,12 @@ extension RowBook {
     /// kind, or the first of two that reads it), each keystroke is a commit and typing in one field is one
     /// undo step named for it.
     func write(_ text: String, key: String, of shape: ShapeID, kinds: [PlainKind]) {
-        editor?.fieldWriter?.set(stored(text, kinds: kinds), at: FieldPath(field: key), of: shape)
+        let path = FieldPath(field: key)
+        if kinds.count == 1 {
+            editor?.fieldWriter?.setTyped(text, as: kinds[0], at: path, of: shape)
+        } else {
+            editor?.fieldWriter?.set(stored(text, kinds: kinds), at: path, of: shape)
+        }
     }
 
     /// What typed text is stored as in a field of these kinds (`FieldText`): nil clears the field.

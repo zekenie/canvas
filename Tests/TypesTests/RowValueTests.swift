@@ -15,8 +15,8 @@ private struct Bench {
     let editor: CanvasEditor
     var book: RowBook { editor.rowBook! }
 
-    init() throws {
-        editor = try rowFieldEditor()
+    init(more: [any CanvasPlugin] = []) throws {
+        editor = try rowFieldEditor(more: more)
         editor.addFieldSlips([FieldFixtures.everyKind.a, FieldFixtures.everyKind.b])
     }
 
@@ -217,6 +217,18 @@ private let locale = Locale(identifier: "en_US")
         let after = try require(t.book.rows(of: b).first).rect
         expectEqual(t.book.rowsShown, count, "a drag builds no row")
         expectEqual(after, before.offsetBy(dx: 100, dy: 50), "the rects are where the shape now is")
+    },
+    test("a value written on a board that is not shown lets that shape's kept rows go") {
+        let t = try Bench(more: [PocketsPlugin()])
+        let pocket = t.editor.add(Pocket(CGRect(x: 0, y: 900, width: 100, height: 100)))
+        let a = t.note([FieldFixtures.personID], ["name": "Ann"])
+        expectEqual(try t.content(a, "name"), .text("Ann"))
+        let built = t.book.rowsShown
+        expect(t.editor.showBoard(BoardID(owner: pocket)), "the pocket's board is shown")
+        t.editor.transact(on: .root, "Rename") { $0.update(a) { $0[FieldValuesProperty.self] = FieldValues(["name": "Anna"]) } }
+        expect(t.editor.showBoard(.root), "and back")
+        expectEqual(try t.content(a, "name"), .text("Anna"), "read again, not kept")
+        expectEqual(t.book.rowsShown, built + 1, "that shape's rows were built again, once")
     },
     test("a type's schema changing builds every instance's rows again") {
         let t = try Bench()
