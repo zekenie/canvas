@@ -127,6 +127,26 @@ let scripted = CommandSpec(
         expectEqual(parseError(["n", "--at"])?.message, "--at needs a value: <x,y>")
         expectEqual(parseError(["n", "--start-arrowhead=maybe"])?.message, "--start-arrowhead is on or off: true or false, not maybe")
     },
+    test("a board command that works with none too says --board's default is the board in front, if any; the member is written only when true, and an older description has none") {
+        let optional = CommandSpec(name: "peek", summary: "Look.", scope: .board, boardOptional: true)
+        let required = CommandSpec(name: "poke", summary: "Poke.", scope: .board)
+        expectEqual(optional.boardOptional, true)
+        expectEqual(required.boardOptional, nil, "a command that needs its board says nothing")
+        // Help wraps its lines: read it as one.
+        func flat(_ spec: CommandSpec) -> String { spec.help().split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        expect(flat(optional).contains("Default: the board in front, if any."), optional.help())
+        expect(flat(required).contains("Default: the board in front."), required.help())
+        expect(!flat(required).contains("if any"), required.help())
+        let written = try JSON(encoding: optional).compactText
+        expect(written.contains(#""boardOptional":true"#), written)
+        expect(!(try JSON(encoding: required).compactText).contains("boardOptional"))
+        expectEqual(try JSON(text: written).decode(CommandSpec.self), optional)
+        let older = try JSON(text: #"{"name": "poke", "summary": "Poke.", "scope": "board", "params": {"type": "object"}, "positionals": [], "examples": []}"#)
+        expectEqual(try older.decode(CommandSpec.self).boardOptional, nil, "absent decodes as nil")
+        var described = optional
+        described.scope = .app
+        expect(!described.arguments.contains { $0.name == "board" }, "an app command takes none")
+    },
     test("an app command takes no --board") {
         var app = sample
         app.scope = .app

@@ -115,6 +115,22 @@ public enum MentionResolution: Hashable, Sendable {
     }
 
     public var isLive: Bool { appearance != nil }
+
+    /// What a mention shows: a live target's label, else the name it holds, else, holding none, what
+    /// its tooltip says ("Deleted", "Not available").
+    @MainActor public func shownLabel(stored: String) -> String {
+        if let appearance { return appearance.label }
+        return stored.isEmpty ? help ?? "" : stored
+    }
+
+    /// Why a mention isn't live, for a tooltip: nil while it is.
+    @MainActor var help: String? {
+        switch self {
+        case .live: nil
+        case .missing: MentionStyle.missingHelp
+        case .unavailable: MentionStyle.unavailableHelp
+        }
+    }
 }
 
 // MARK: Sugar

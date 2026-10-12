@@ -31,11 +31,17 @@ import Topology
 @MainActor
 @Observable
 public final class MentionState {
-    @ObservationIgnored private unowned let editor: CanvasEditor
+    @ObservationIgnored unowned let editor: CanvasEditor
     public var registry: Registry { editor.registry }
 
     /// How each shape that's mentioned (anywhere in the file) or observed shows now.
-    @ObservationIgnored private var resolutions: [ShapeID: MentionResolution] = [:]
+    @ObservationIgnored var resolutions: [ShapeID: MentionResolution] = [:]
+    /// The kinds that lay out by the names their mentions show (`registrar.mentionLayout`), and the
+    /// shapes of them given names other than the ones their text holds (`MentionLayout.names`).
+    @ObservationIgnored lazy var layoutKinds: Set<ShapeKind> = Set(registry.kinds.filter {
+        !registry.contributions(to: MentionLayouts.self, for: $0).isEmpty
+    })
+    @ObservationIgnored var laidOutByNames: Set<ShapeID> = []
     /// +1 for a target each time its resolution changes, observed a target at a time.
     @ObservationIgnored private var revisions: [ShapeID: Int] = [:]
     /// +1 for a target each time what mentions it may have changed (`backlinkRevision`), and the
@@ -100,6 +106,7 @@ public final class MentionState {
         heardRevision = editor.revision
         trackMentioned()
         readCatalog()
+        layOutMentioners()
         following = topology?.follow { [weak self] change in self?.follow(change) }
     }
 
@@ -109,6 +116,13 @@ public final class MentionState {
     /// Resolves every shape that's mentioned anywhere in the file.
     private func trackMentioned() {
         for edge in topology?.edges(ofType: mentionEdges) ?? [] { track(edge.target) }
+    }
+
+    /// Lays out every shape that mentions anything, as the names show now: what a file put in place
+    /// holds names written before renames that were never written to it.
+    private func layOutMentioners() {
+        guard !layoutKinds.isEmpty else { return }
+        refreshLayout(of: Set(topology?.edges(ofType: mentionEdges).map(\.carrier) ?? []))
     }
 
     // MARK: Reading
@@ -423,8 +437,15 @@ public final class MentionState {
     /// are (`/move-to`'s frames and subboards), so after the nearest on the board shown and the
     /// boards it's inside come those on the other boards, the nearest board first (`farther`). With
     /// none of either, which is every text but a command line's, nothing more is asked of a shape.
+    ///
+    /// `among`, if given, is a set of shapes the caller has already found (a field that points at
+    /// notes of one type: the notes that are one), which a shape must be in too. It does what `kinds`
+    /// does for a set no kind names: only the given shapes of the catalog are ranked, so a typed query
+    /// ranks them alone, and an empty one reads them whole and lists as many as a typed one, nearest on
+    /// the board shown first, then on every other board. A shape of it that isn't in the catalog (kept
+    /// aside, named by no mention) is dropped. With `kinds` too, the shapes of both.
     public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owner: ShapeID?,
-                                            kinds: Set<ShapeKind>? = nil,
+                                            kinds: Set<ShapeKind>? = nil, among: [ShapeID]? = nil,
                                             admitting rule: (@MainActor (ShapeID) -> Bool)? = nil) -> MentionCandidates {
         refreshStale()
         let document = editor.document, file = editor.file, registry = registry
@@ -435,16 +456,28 @@ public final class MentionState {
         // they are, not the catalog.
         let scopeMembers = admitsAll ? nil : self.members(of: S.self)
         let kindMembers = kinds.map { self.members(ofKinds: $0) }
-        let members = (kindMembers ?? scopeMembers)?.ids
+        // What the caller gave, in the catalog and of the kinds, once each (`given`); else the kinds' members.
+        let given: (ids: [ShapeID], contains: (ShapeID) -> Bool)?
+        if let among {
+            var seen = Set<ShapeID>()
+            let ids = among.filter { catalog.contains($0) && (kindMembers?.contains($0) ?? true) && seen.insert($0).inserted }
+            let kept = seen
+            given = (ids, { kept.contains($0) })
+        } else if let kindMembers {
+            given = (kindMembers.ids, kindMembers.contains)
+        } else {
+            given = nil
+        }
+        let members = (given?.ids ?? scopeMembers?.ids)
         /// Whether what's ranked is the scope's members, which it admitted as they were kept.
-        let scopeAdmitted = kindMembers == nil && scopeMembers != nil
+        let scopeAdmitted = given == nil && scopeMembers != nil
         /// Whether the scope admits a shape in the catalog: every one, for `AnyMentionable`.
         func admits(_ id: ShapeID) -> Bool {
             admitsAll || (document[id] ?? file.record(id)).map { S.admits($0, in: registry) } ?? false
         }
         /// Whether a shape in the catalog can be listed: of the kinds, if there are any, the scope
         /// admits it, and the rule, if there is one.
-        func listable(_ id: ShapeID) -> Bool { (kindMembers?.contains(id) ?? true) && admits(id) && (rule?(id) ?? true) }
+        func listable(_ id: ShapeID) -> Bool { (given?.contains(id) ?? true) && admits(id) && (rule?(id) ?? true) }
         let shapes = editor.shapeContext
         let origin = owner.flatMap { shapes.geometry(of: $0)?.bounds }.map { CGPoint(x: $0.midX, y: $0.midY) }
         func distance(_ id: ShapeID) -> Double? {
@@ -459,7 +492,7 @@ public final class MentionState {
             var taken = Set(recentShown.map(\.id))
             if let owner { taken.insert(owner) }
             // A command's kinds are few shapes, each somewhere it can go: every one, as many as a query lists.
-            let room = kindMembers == nil ? MentionRanking.nearbyShown : MentionRanking.maxMatches
+            let room = given == nil ? MentionRanking.nearbyShown : MentionRanking.maxMatches
             var nearby = origin.map { nearest(to: $0, count: room, excluding: taken, members: members, admits: listable, distance: distance) } ?? []
             taken.formUnion(nearby)
             for inside in editor.boardPath.reversed().lazy.compactMap(\.owner) where nearby.count < room {
@@ -468,8 +501,8 @@ public final class MentionState {
                     taken.insert(inside)
                 }
             }
-            if let kindMembers, nearby.count < room {
-                nearby += farther(kindMembers.ids, count: room - nearby.count, excluding: taken, admits: listable)
+            if let given, nearby.count < room {
+                nearby += farther(given.ids, count: room - nearby.count, excluding: taken, admits: listable)
             }
             return MentionCandidates(recent: recentShown, nearby: nearby.map { candidate($0, matched: []) }, matches: [])
         }
@@ -640,6 +673,7 @@ public final class MentionState {
             removeEntry(id)
             stale.remove(id)
         }
+        forgetLayout(of: changes.removed)
         for id in changes.added where !changes.moved.contains(id) { stale.insert(id) }
         for id in changes.changed where !changes.moved.contains(id) { stale.insert(id) }
         var changedTargets: Set<ShapeID> = []
@@ -648,7 +682,17 @@ public final class MentionState {
         // brought, or a write to a board that isn't shown changed.
         for id in changes.elsewhere { resolveAgain(id, into: &changedTargets) }
         stale.formUnion(changes.elsewhere)
-        lastAffected = changedTargets.reduce(into: Set<ShapeID>()) { $0.formUnion(mentionerSet(of: $1)) }
+        let affected = changedTargets.reduce(into: Set<ShapeID>()) { $0.formUnion(mentionerSet(of: $1)) }
+        // The shapes that lay out by names: those whose names changed, and those whose text did (a
+        // paste of a rename's stale names, an edit, an undo), on any board.
+        if !layoutKinds.isEmpty {
+            refreshLayout(of: affected)
+            // A pure move changes no text, so a drag costs nothing here.
+            refreshLayout(of: changes.added.lazy.filter { !changes.moved.contains($0) })
+            refreshLayout(of: changes.changed.lazy.filter { !changes.moved.contains($0) })
+            refreshLayout(of: changes.elsewhere)
+        }
+        lastAffected = affected
         // A mentioner whose mentions show another name now quotes it.
         for mentioner in lastAffected { noteTargets(of: mentioner, into: &backlinksChanged) }
         if changes.replacedDocument { readCatalog() }                   // a board or file put in place: read now, not at the first `@`
@@ -850,9 +894,11 @@ extension MentionState: EditorService {
         backlinksRead = []
         guard change.isFileReplaced else { return }
         resolutions = [:]
+        forgetLayout(of: Array(laidOutByNames))
         trackMentioned()
         for target in observersByTarget.keys { track(target) }
         readCatalog()
+        layOutMentioners()
     }
 }
 

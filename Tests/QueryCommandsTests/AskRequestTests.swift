@@ -15,8 +15,8 @@ import TestKit
 
 /// The `--ask` harness: the shelf, a scripted model, and what the person picked.
 @MainActor func askHarness(_ model: ScriptedLanguageModel, desk: Desk = Desk(), askStyle: AskStyle = .shipped,
-                           file: CanvasFile = shelf()) throws -> EditorHarness {
-    try shelfHarness(commandPlugins(model: model, desk: desk, askStyle: askStyle), file: file)
+                           file: CanvasFile = shelf(), more: [any CanvasPlugin] = []) throws -> EditorHarness {
+    try shelfHarness(commandPlugins(model: model, desk: desk, askStyle: askStyle) + more, file: file)
 }
 
 @MainActor let askRequestTests = Suite("--ask's request", [
@@ -190,4 +190,61 @@ import TestKit
         expectEqual(request.effort, nil)
         expectEqual(request.fallbacks, nil)
     },
+    test("what plugins tell of the file goes after the titles, each under its own tag, in order; an empty one is left out; a second try keeps them") {
+        let model = ScriptedLanguageModel(answers: ["chor", "chore"])
+        let seen = Asked()
+        let facts = Contributor(id: "facts") { registrar in
+            registrar.queryAskFact(tag: "fields") { _, question in
+                seen.questions.append(question)
+                return "Chore: caption (text)"
+            }
+            registrar.queryAskFact(tag: "nothing") { _, _ in "  " }
+            registrar.queryAskFact(tag: "extra") { editor, _ in "\(editor.document.shapes.count) shapes" }
+        }
+        let h = try askHarness(model, file: shelf(), more: [facts])
+        _ = try answered(["query", "--ask", "  the chores\n"], on: h)
+        expectEqual(model.requests.count, 2, "the first query was refused: a second try")
+        let tail = """
+
+            <fields>
+            Chore: caption (text)
+            </fields>
+
+            <extra>
+            3 shapes
+            </extra>
+            """
+        for request in model.requests {
+            let text = try require(request.messages.first?.text)
+            expect(text.contains("</titles>\n\n<fields>"), "after the titles")
+            expect(text.hasSuffix(tail), text)
+            expect(!text.contains("<nothing>"), "an empty fact is left out")
+        }
+        expectEqual(seen.questions, ["the chores"], "asked once, not once a try, with the question as asked, trimmed")
+        expectEqual(AskFacts.reservedTags, Set(AskRequest.Tag.allCases.map(\.rawValue)), "every tag the request uses is reserved")
+    },
+    test("a tag the request uses, or that is no word, is refused, and so is one fact twice") {
+        for tag in AskRequest.Tag.allCases.map(\.rawValue) + ["", "Two Words", "x1"] {
+            do {
+                _ = try Registry(plugins: commandPlugins() + [Contributor(id: "bad") { $0.queryAskFact(tag: tag) { _, _ in "x" } }])
+                expect(false, "\"\(tag)\" was taken")
+            } catch let error as RegistryError {
+                expect("\(error)".contains("QueryAskFacts"), "\(error)")
+            }
+        }
+        do {
+            _ = try Registry(plugins: commandPlugins() + [Contributor(id: "one") { $0.queryAskFact(tag: "fields") { _, _ in "x" } },
+                                                         Contributor(id: "two") { $0.queryAskFact(tag: "fields") { _, _ in "y" } }])
+            expect(false, "two facts under one tag")
+        } catch let error as RegistryError {
+            expect("\(error)".contains("ask fact fields"), "\(error)")
+        }
+        let report = try Registry(plugins: commandPlugins() + [Contributor(id: "one") { $0.queryAskFact(tag: "fields") { _, _ in "x" } }]).report
+        expect(report.contains("ask fact fields"), report)
+    },
 ])
+
+/// What the facts were asked.
+@MainActor private final class Asked {
+    var questions: [String] = []
+}

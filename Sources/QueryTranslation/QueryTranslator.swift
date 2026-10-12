@@ -143,7 +143,7 @@ public final class QueryTranslator {
     public let referenceRule: String
     public let style: AskStyle
     /// Weak: a question in flight never keeps a closed file's editor alive. Nor does a call hold it
-    /// in a local across its awaits: what a question needs of it is taken at once (`inputs()`), so
+    /// in a local across its awaits: what a question needs of it is taken at once (`inputs(for:)`), so
     /// the editor can go while a model call is out, and what cancels with it stops that call.
     private weak var editor: CanvasEditor?
 
@@ -154,13 +154,17 @@ public final class QueryTranslator {
         self.editor = editor
     }
 
-    /// What a question needs of the editor, taken at once: its queries, its model and its scheduler,
-    /// none of which holds the editor, so the call that took them doesn't either.
-    private func inputs() throws(QueryTranslationError) -> (queries: QueryState, model: any LanguageModel, scheduler: any Scheduler) {
+    /// What a question needs of the editor, taken at once: its queries, its model, its scheduler and what
+    /// plugins tell of the file for this question (`QueryAskFacts`: each asked once, in the registry's order,
+    /// on the main actor, with the editor and the question), none of which holds the editor, so the call that
+    /// took them doesn't either.
+    private func inputs(for question: String) throws(QueryTranslationError)
+        -> (queries: QueryState, model: any LanguageModel, scheduler: any Scheduler, facts: [(tag: String, text: String)]) {
         guard let editor else { throw .cancelled }
         guard let queries = editor.queries else { throw .noQueries }
         guard let model = editor.languageModel else { throw .noModel }
-        return (queries, model, editor.scheduler)
+        let facts = editor.registry.contributions(to: QueryAskFacts.self).map { (tag: $0.value.tag, text: $0.value.text(for: editor, question: question)) }
+        return (queries, model, editor.scheduler, facts)
     }
 
     /// What is said when a stored query uses a word that reads the person or the editor
@@ -180,13 +184,13 @@ public final class QueryTranslator {
     /// `unusable`, `tooSlow` past the deadline, and `cancelled` when the caller's task is.
     public func ask(_ question: String, limit: Int = QueryBudget.rows, countOnly: Bool = false,
                     properties: QueryRequest.Properties = .all) async throws(QueryTranslationError) -> AskOutcome {
-        let (queries, model, scheduler) = try inputs()
-        let translator = self
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        let (queries, model, scheduler, facts) = try inputs(for: question)
+        let translator = self
         // What `canvas query` asks: edges are read once the answers they wait on have come.
         let request = QueryRequest("", limit: limit, countOnly: countOnly, properties: properties, settle: QueryBudget.settleWait)
         return try await bounded(on: scheduler) { (bounds: AskBounds) async throws(QueryTranslationError) -> AskOutcome in
-            let talk = try await translator.converse(question, context: .person, queries: queries, model: model, bounds: bounds) { (text: String) async throws(QueryError) -> QueryResult in
+            let talk = try await translator.converse(question, context: .person, queries: queries, model: model, facts: facts, bounds: bounds) { (text: String) async throws(QueryError) -> QueryResult in
                 var asked = request
                 asked.text = text
                 return try await queries.run(asked)
@@ -209,12 +213,12 @@ public final class QueryTranslator {
     /// the file's (`checkNames`), so a wrong title is repaired, never returned. Nothing is evaluated.
     /// Refused as `ask` is.
     public func translate(_ words: String, about context: TranslationContext = .person) async throws(QueryTranslationError) -> TranslatedQuery {
-        let (queries, model, scheduler) = try inputs()
-        let translator = self
         let words = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        let (queries, model, scheduler, facts) = try inputs(for: words)
+        let translator = self
         do throws(QueryTranslationError) {
             return try await bounded(on: scheduler) { (bounds: AskBounds) async throws(QueryTranslationError) -> TranslatedQuery in
-                let talk = try await translator.converse(words, context: context, queries: queries, model: model, bounds: bounds) { (text: String) async throws(QueryError) -> String in
+                let talk = try await translator.converse(words, context: context, queries: queries, model: model, facts: facts, bounds: bounds) { (text: String) async throws(QueryError) -> String in
                     let plan = try queries.check(text)
                     if context == .reference, let word = plan.editorWords.first {
                         throw Self.refusal(forEditorWord: word)
@@ -276,7 +280,7 @@ public final class QueryTranslator {
     /// The request, the model's answers, and the query each wrote, validated by `validate`, within
     /// `bounds`.
     private func converse<Checked: Sendable>(_ question: String, context: TranslationContext, queries: QueryState, model: any LanguageModel,
-                                             bounds: AskBounds, validate: (String) async throws(QueryError) -> Checked)
+                                             facts: [(tag: String, text: String)], bounds: AskBounds, validate: (String) async throws(QueryError) -> Checked)
         async throws(QueryTranslationError) -> Talk<Checked> {
         let place: QueryWhere, titles: [QueryTitle]
         do throws(QueryError) {
@@ -289,7 +293,7 @@ public final class QueryTranslator {
         let prompt = reference && !referenceRule.isEmpty ? system + "\n" + referenceRule : system
         let vocabulary = reference ? queries.vocabulary.textForStoredQueries : queries.vocabulary.text
         var request = AskRequest.request(question: question, vocabulary: vocabulary, where: place, titles: titles, system: prompt, style: style,
-                                         selection: !reference)
+                                         selection: !reference, facts: facts)
         var tokens = (input: 0, output: 0), answers: [String] = []
         var repaired: String?
         for attempt in 1...2 {

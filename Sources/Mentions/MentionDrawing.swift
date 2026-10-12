@@ -3,19 +3,25 @@ import Canvas
 import TextEditing
 
 /// Where a shape draws one mention text on the canvas: what it says, its box (world units), its
-/// style, and at most how many lines. Made from the shape alone: its props or its added values.
+/// style, and at most how many lines. Made from the shape alone (its props or its added values), or
+/// with what its geometry says of where it is (`ShapeContext`: an arrow's label sits on its body).
 @MainActor
 public struct MentionTextPlacement {
     public let text: MentionText
     public let box: CGRect
     public let style: MentionTextStyle
     public let lines: Int?
+    /// Whether the text is drawn over the canvas itself and not on the shape's own surface (an
+    /// arrow's label, on the board's background, whose color follows the appearance): Find washes a
+    /// hit in it, where on a surface it marks it as a highlighter does.
+    public let overCanvas: Bool
 
-    public init<S>(_ text: ScopedMentionText<S>, in box: CGRect, style: MentionTextStyle, lines: Int? = nil) {
+    public init<S>(_ text: ScopedMentionText<S>, in box: CGRect, style: MentionTextStyle, lines: Int? = nil, overCanvas: Bool = false) {
         self.text = MentionText(text)
         self.box = box
         self.style = style
         self.lines = lines
+        self.overCanvas = overCanvas
     }
 
     /// The box the text is laid out in: as tall as `lines` lines, if that's less than the box.
@@ -48,13 +54,17 @@ extension MentionTexts: KeyedExtensionPoint {
     public static func check(_ registry: Registry) throws { try MentionTextFormat.checkBounds(in: registry) }
 }
 
-/// What `MentionTexts` keeps for a kind: its placements, from a shape.
+/// What `MentionTexts` keeps for a kind: its placements, from a shape and the shapes around it.
 @MainActor
 public struct MentionTextContribution {
-    let place: @MainActor (AnyShapeRecord) -> [MentionTextPlacement]
+    let place: @MainActor (AnyShapeRecord, ShapeContext) -> [MentionTextPlacement]
 
     init<P: ShapeProps>(_: P.Type, _ place: @escaping @MainActor (ShapeRecord<P>) -> [MentionTextPlacement]) {
-        self.place = { $0.typed(as: P.self).map(place) ?? [] }
+        self.place = { record, _ in record.typed(as: P.self).map(place) ?? [] }
+    }
+
+    init<P: ShapeProps>(_: P.Type, _ place: @escaping @MainActor (ShapeRecord<P>, ShapeContext) -> [MentionTextPlacement]) {
+        self.place = { record, context in record.typed(as: P.self).map { place($0, context) } ?? [] }
     }
 }
 
@@ -68,6 +78,15 @@ extension ShapeRegistrar {
     public mutating func mentionText(_ place: @escaping @MainActor (ShapeRecord<Definition.Props>) -> [MentionTextPlacement]) {
         contribute(MentionTextContribution(Definition.Props.self, place), to: MentionTexts.self)
     }
+
+    /// Where this kind draws mention text, which depends on the shapes around it (an arrow's label
+    /// is on its body, between the shapes it joins): read through the context, as a geometry's
+    /// lookups are, and from the kept geometry (`context.geometry(of:)`), so it's worked out once.
+    ///
+    ///     arrow.mentionText { arrow, shapes in ArrowLabels.placements(of: arrow, in: shapes) }
+    public mutating func mentionText(_ place: @escaping @MainActor (ShapeRecord<Definition.Props>, ShapeContext) -> [MentionTextPlacement]) {
+        contribute(MentionTextContribution(Definition.Props.self, place), to: MentionTexts.self)
+    }
 }
 
 extension PluginRegistrar {
@@ -78,10 +97,11 @@ extension PluginRegistrar {
 }
 
 extension Registry {
-    /// Where a shape draws mention text: its kind's placements, none for a kind without.
-    public func mentionTextPlacements(of shape: AnyShapeRecord) -> [MentionTextPlacement] {
+    /// Where a shape draws mention text: its kind's placements, none for a kind without. `context`
+    /// is where the shape is (the editor's `shapeContext`).
+    public func mentionTextPlacements(of shape: AnyShapeRecord, in context: ShapeContext) -> [MentionTextPlacement] {
         guard !shape.isOpaque else { return [] }
-        return contributions(to: MentionTexts.self, for: shape.kind).first?.place(shape) ?? []
+        return contributions(to: MentionTexts.self, for: shape.kind).first?.place(shape, context) ?? []
     }
 }
 
@@ -92,13 +112,28 @@ extension RenderContext {
     /// name it holds, dashed. Text without mentions draws exactly as a plain string with the style's
     /// attributes. What it draws is kept (`MentionTextMemo`), by what it says and how each mention
     /// shows, so a frame of texts that didn't change builds nothing.
+    ///
+    /// A text that is one pill and nothing else (a value that points at a shape) is drawn straight
+    /// into the context, where string drawing would put its image (`MentionTextLayout.onlyPill`),
+    /// named as its shape is now like any other: string drawing draws an attachment's image into a
+    /// bitmap of its own and then draws that bitmap, afresh each frame, which costs several times
+    /// what the pill does. Where the pill lies on whole pixels the two are the same pixels; elsewhere
+    /// string drawing's is that bitmap shifted a part of a pixel, so softer.
     public func drawMentionText(_ placement: MentionTextPlacement) {
         let box = placement.laidOutBox
         let string: NSAttributedString
         if placement.hasMentions {
             let context = self
             var resolver = MentionResolver(registry: shapes.registry, lookup: { context.shape(inFile: $0) })
-            string = MentionTextMemo.shared.entry(for: placement, resolver: &resolver, drawing: true).string
+            let entry = MentionTextMemo.shared.entry(for: placement, resolver: &resolver, drawing: true)
+            if let only = entry.onlyPill(in: box.size, style: placement.style) {
+                only.pill.layout.draw(in: only.frame.offsetBy(dx: box.minX, dy: box.minY), of: cg)
+                #if DEBUG
+                MentionDrawingCounts.pillsDrawnStraight += 1
+                #endif
+                return
+            }
+            string = entry.string
         } else {
             string = placement.style.attributedString(placement.text, width: placement.box.width) { _ in .missing }
         }
@@ -138,7 +173,7 @@ extension CanvasEditor {
     /// shown, so they have none. Laid out only for the shape asked about, and kept with its text.
     public func mentionPills(of shape: ShapeID) -> [MentionPillFrame] {
         guard let record = document[shape] else { return [] }
-        let placements = registry.mentionTextPlacements(of: record)
+        let placements = registry.mentionTextPlacements(of: record, in: shapeContext)
         guard !placements.isEmpty else { return [] }
         var resolver = MentionResolver(registry: registry, lookup: { [unowned self] in self.shape(inFile: $0) })
         var frames: [MentionPillFrame] = []
@@ -206,6 +241,7 @@ final class MentionTextMemo {
         let color: NSColor
         let lineHeight: CGFloat?
         let surface: MentionSurface
+        let alignment: NSTextAlignment
         let width: CGFloat
     }
 
@@ -218,8 +254,21 @@ final class MentionTextMemo {
         /// when a range's rects are first asked (Find's hits) and kept with the text, so they are a
         /// lookup. Drawing keeps none: it uses one already kept, else lays one out for the call.
         private var layout: StringDrawingLayout?
+        /// Its one pill, if it is one pill and nothing else, and where it's drawn in a box of the
+        /// last size asked: worked out from the pill alone, with no layout.
+        private var only: (size: CGSize, pill: MentionTextLayout.OnlyPill?)?
 
         init(string: NSAttributedString) { self.string = string }
+
+        /// The text's one pill and where string drawing shows it in a box of `size` (from the box's
+        /// top-left), when the text is one pill that drawing can place without laying text out
+        /// (`MentionTextLayout.onlyPill`); nil for any other text.
+        func onlyPill(in size: CGSize, style: MentionTextStyle) -> MentionTextLayout.OnlyPill? {
+            if let only, only.size == size { return only.pill }
+            let pill = MentionTextLayout.onlyPill(of: string, in: size, style: style)
+            only = (size, pill)
+            return pill
+        }
 
         /// Where its pills are, laid out in a box of `size` (from the box's top-left), as string
         /// drawing shows them.
@@ -298,7 +347,7 @@ final class MentionTextMemo {
         }
         let style = placement.style
         let key = Key(stored: placement.text.stored, resolutions: resolutions, font: style.font, color: style.color,
-                      lineHeight: style.lineHeight, surface: style.surface, width: placement.box.width)
+                      lineHeight: style.lineHeight, surface: style.surface, alignment: style.alignment, width: placement.box.width)
         if let slot = index[key], let found = slots[slot] {
             touch(slot)
             if drawing { markDrawn(slot) }
@@ -390,13 +439,14 @@ extension MentionFrames: CanvasOverlay {
 
 #if DEBUG
 /// How often the canvas has built mention text and laid out its pills, how many text layouts the
-/// memo has kept (Find's, never drawing's), and how many texts it keeps (debug builds), so tests can
-/// hold a frame to what changed.
+/// memo has kept (Find's, never drawing's), how many texts of one pill it has drawn straight into
+/// the context, and how many texts it keeps (debug builds), so tests can hold a frame to what changed.
 @MainActor
 public enum MentionDrawingCounts {
     public static var stringsBuilt = 0
     public static var layoutsBuilt = 0
     public static var layoutsKept = 0
+    public static var pillsDrawnStraight = 0
     public static var kept: Int { MentionTextMemo.shared.count }
     public static var capacity: Int { MentionTextMemo.shared.capacity }
 }
@@ -455,6 +505,38 @@ enum MentionTextLayout {
             pills.append(Pill(target: pill.target, frame: frame, isLive: pill.resolution.isLive))
         }
         return pills
+    }
+
+    /// A text's one pill, and where string drawing shows it (from the box's top-left, down is +y).
+    struct OnlyPill {
+        let pill: MentionAttachment
+        let frame: CGRect
+    }
+
+    /// The one pill of a `string` that is one pill and nothing else, and where string drawing shows
+    /// it in a box of `size`: what `pills(of:in:style:)` answers for it, from the pill alone, with
+    /// no layout made. Only for text in fixed lines set from the left, where that is arithmetic
+    /// (the line is the style's, the pill at its left, as far above its bottom as in a line of
+    /// text); nil for any other string or style, for a line taller than the box and for a pill
+    /// wider than it, which string drawing draws as it does.
+    static func onlyPill(of string: NSAttributedString, in size: CGSize, style: MentionTextStyle) -> OnlyPill? {
+        guard string.length == 1, let line = style.lineHeight, isSetFromTheLeft(style),
+              let pill = string.attribute(.attachment, at: 0, effectiveRange: nil) as? MentionAttachment else { return nil }
+        let bounds = pill.bounds
+        // The line fits as `StringDrawingLayout.lines(fitting:)` says one does.
+        guard line <= size.height + 0.01, bounds.width <= size.width else { return nil }
+        return OnlyPill(pill: pill, frame: CGRect(x: 0, y: line - gapBelow(bounds, style: style) - bounds.height,
+                                                  width: bounds.width, height: bounds.height))
+    }
+
+    /// Whether a line of the style's text starts at the box's left: set left, or the natural way
+    /// where that is left to right.
+    private static func isSetFromTheLeft(_ style: MentionTextStyle) -> Bool {
+        switch style.alignment {
+        case .left: true
+        case .natural: NSParagraphStyle.defaultWritingDirection(forLanguage: nil) == .leftToRight
+        default: false
+        }
     }
 
     /// Where string drawing shows each of `ranges` of `string` in a box of `size`: a rect a line,

@@ -42,6 +42,11 @@ import TestKit
         expectCanonical("[due>=2026-10-01]", "[due>=2026-10-01]")
         expectCanonical("[status=a(b),c)]", "[status=a(b),c)]")
     },
+    test("members inside an attribute, printed bare after the name") {
+        expectCanonical("[ meta.owner ]", "[meta.owner]")
+        expectCanonical("[meta.owner = Ann i]", "[meta.owner=Ann i]")
+        expectCanonical(#"[meta.size.unit^='kg']"#, #"[meta.size.unit^="kg"]"#)
+    },
     test("ids in capitals") {
         expectCanonical("#7c1e2a04-4b9e-4e0c-9d8c-5b0e7f3a2c11", "#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11")
     },
@@ -60,6 +65,7 @@ import TestKit
             "box, card", #""Payments" > *"#, #""Payments" card"#,
             "[rank]", "[rank=3]", "[rank!=3]", #"[status^="in"]"#, "[status$=x]", "[status*=x]", "[status~=x]", "[status|=x]",
             "[rank<3]", "[rank<=3]", "[rank>3]", "[rank>=3]", #"[status="x" i]"#, "[status=x s]",
+            "[meta.owner]", "[meta.size>=3]", #"[meta.owner.name~="Ann" i]"#, "[meta.owner!=x]",
             ":not(card)", #":is("A", "B")"#, ":where(*)", #":inside("Payments")"#, #":has("B")"#, #":has(> "B", card)"#,
             ":top-level", ":current-board",
             #":edge-to("Auth")"#, #":edge-from("A", wire)"#, ":connected-to(card, only wire|pipe)", ":downstream-of(*)", ":upstream-of(*)",

@@ -41,6 +41,7 @@ final class FakeApp {
                 "required": ["script"],
             ], positionals: ["script"]),
             CommandSpec(name: "touch", summary: "Touch a board.", scope: .board),
+            CommandSpec(name: "peek", summary: "Look at a board, if one is there.", scope: .board, boardOptional: true),
             CommandSpec(name: "fail", summary: "Fail.", scope: .app, params: ["type": "object", "properties": ["lines": ["type": "boolean"],
                                                                                                           "at": ["type": "boolean"],
                                                                                                           "wide": ["type": "boolean"]]]),
@@ -378,6 +379,17 @@ final class FakeApp {
         expectEqual(try JSON(text: typed.output), ["script": #"box "A""#])
         let help = try canvas(["--socket", app.path, "help", "recite"])
         expect(help.output.contains("Usage: canvas recite <script>|-"), help.output)
+    },
+    test("help says --board's default for a command that works with none too: the board in front, if any") {
+        let app = try FakeApp()
+        defer { app.stop() }
+        let peek = try canvas(["--socket", app.path, "help", "peek"])
+        expectEqual(peek.status, 0, peek.error)
+        func flat(_ text: String) -> String { text.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        expect(flat(peek.output).contains("Default: the board in front, if any."), peek.output)
+        let touch = try canvas(["--socket", app.path, "help", "touch"])
+        expect(flat(touch.output).contains("Default: the board in front."), touch.output)
+        expect(!flat(touch.output).contains("if any"), touch.output)
     },
     test("standard input that can't be read, or is closed, or isn't UTF-8, is a usage error, exit 2, not a crash or a wait") {
         let app = try FakeApp()

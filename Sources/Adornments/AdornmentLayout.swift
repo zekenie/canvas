@@ -38,6 +38,9 @@ public enum AdornmentLayout {
     public static let maxRun: CGFloat = 200
     /// How far past its edge a point is still on an adornment.
     public static let hitMargin: CGFloat = 3
+    /// The least width of the place an open shape's adornments are laid out from (a wire's label, or
+    /// its middle): a shorter one is widened about its center, so a row of chips has room.
+    public static let minAnchorWidth: CGFloat = 120
     /// Below this zoom adornments shrink with the shapes.
     public static let fullSizeZoom: CGFloat = 0.25
 
@@ -54,12 +57,22 @@ public enum AdornmentLayout {
         /// when its full one would leave the row's left end's text cut short or out, and it gives the
         /// text more room (or, while none shows anyway, the most it can).
         public var compact: Compact?
-        public init(_ placement: AdornmentPlacement, width: CGFloat, isText: Bool, lead: CGFloat = 0, compact: Compact? = nil) {
+        /// The group of labels it is one of (one contribution's, at the row's left end, in order and
+        /// next to each other in the items), nil for an adornment on its own. Every one but the
+        /// group's last is shown whole or not at all; the first not shown, and those after it, fold
+        /// into one "+N" chip, `overflowWidth` wide (the "+N" for it and those after it), shown only
+        /// if it fits whole.
+        public var group: Int?
+        public var overflowWidth: CGFloat
+        public init(_ placement: AdornmentPlacement, width: CGFloat, isText: Bool, lead: CGFloat = 0, compact: Compact? = nil,
+                    group: Int? = nil, overflowWidth: CGFloat = 0) {
             self.placement = placement
             self.width = width
             self.isText = isText
             self.lead = lead
             self.compact = compact
+            self.group = group
+            self.overflowWidth = overflowWidth
         }
 
         /// What an item's compact face needs: only its width, since the right end places whole.
@@ -105,6 +118,8 @@ public enum AdornmentLayout {
         let isFromRight: Bool
         /// The item's compact face is the one placed here.
         var isCompact = false
+        /// The item and the rest of its group are folded into one "+N" chip, which is placed here.
+        var isOverflow = false
 
         /// From the top-left corner.
         func frame(width: CGFloat) -> CGRect { isFromRight ? frame.offsetBy(dx: width, dy: 0) : frame }
@@ -160,7 +175,7 @@ public enum AdornmentLayout {
 
     private static func leftText(_ items: [Item], _ slots: [Slot?]) -> LeftText {
         var text = LeftText()
-        for i in items.indices where items[i].placement == .aboveTopLeft && items[i].isText {
+        for i in items.indices where items[i].placement == .aboveTopLeft && items[i].isText && items[i].group == nil {
             guard let slot = slots[i] else {
                 text.isWhole = false
                 continue
@@ -204,14 +219,66 @@ public enum AdornmentLayout {
         }
         // The row's left end, rightward from the left edge, in the room the right end leaves.
         var left: CGFloat = 0
+        var folded: Int?
         for i in items.indices where items[i].placement == .aboveTopLeft {
+            let item = items[i]
+            if let group = item.group, group == folded { continue }
             let room = width + right - left
-            let shown: CGFloat? = items[i].isText ? (room >= minTextRoom + items[i].lead ? min(items[i].width, room) : nil)
-                                                  : (items[i].width <= room ? items[i].width : nil)
+            var shown: CGFloat?
+            if let group = item.group {
+                // Whole, but for the group's last, which is cut short like any text; else folded.
+                let isLast = !(i + 1 < items.count && items[i + 1].group == group)
+                if item.width <= room {
+                    shown = item.width
+                } else if isLast, item.isText, room >= minTextRoom + item.lead {
+                    shown = room
+                } else {
+                    // Fold from here; if the "+N" doesn't fit whole, fold the chips shown before it too,
+                    // the later first, until it does, so what folds never goes unsaid. Not even the
+                    // group's first chip's "+N" fitting, the run ends.
+                    var at = i
+                    var start = left
+                    var available = room
+                    while items[at].overflowWidth > available {
+                        guard at > 0, items[at - 1].group == group, let before = slots[at - 1] else { break }
+                        at -= 1
+                        start = before.frame.minX
+                        available = width + right - start
+                    }
+                    // With no room for even that, none of the group is shown: chips with no word of
+                    // those left out would say less than none.
+                    for j in at..<i { slots[j] = nil }
+                    guard items[at].overflowWidth <= available else { break }
+                    slots[at] = Slot(frame: CGRect(x: start, y: rowY, width: items[at].overflowWidth, height: rowHeight), isFromRight: false, isOverflow: true)
+                    left = start + items[at].overflowWidth + spacing
+                    folded = group
+                    continue
+                }
+            } else {
+                // Text before a group leaves the group's "+N" chip its width, so a long title can't
+                // hide every chip: the title keeps what it needs to be shown at all (`minTextRoom`).
+                var available = room
+                if item.isText, let reserved = reservation(after: i, in: items) {
+                    available = max(min(room, minTextRoom + item.lead), room - reserved)
+                }
+                shown = item.isText ? (available >= minTextRoom + item.lead ? min(item.width, available) : nil)
+                                    : (item.width <= available ? item.width : nil)
+            }
             guard let shown else { break }
             slots[i] = Slot(frame: CGRect(x: left, y: rowY, width: shown, height: rowHeight), isFromRight: false)
             left += shown + spacing
         }
+    }
+
+    /// What text at the row's left end leaves for the group after it: the "+N" chip that stands for
+    /// all of it, and the gap before it. Nil with no group after.
+    private static func reservation(after index: Int, in items: [Item]) -> CGFloat? {
+        var i = index + 1
+        while i < items.count {
+            if items[i].placement == .aboveTopLeft, items[i].group != nil { return spacing + items[i].overflowWidth }
+            i += 1
+        }
+        return nil
     }
 
     /// How far a point is outside an adornment laid out in `frame` (negative inside it), in view
@@ -227,8 +294,9 @@ public enum AdornmentLayout {
     /// from their shapes, at `scale` world units per point. Up by the corner's reach below the top
     /// edge, down by the row's above it, left by the corner's overhang, and right by the longest run.
     public static func area(showing visible: CGRect, scale: CGFloat) -> CGRect {
-        CGRect(x: visible.minX - cornerOverhang * scale, y: visible.minY - cornerHeight / 2 * scale,
-               width: visible.width + (cornerOverhang + maxRun) * scale,
+        let reachLeft = cornerOverhang + minAnchorWidth / 2
+        return CGRect(x: visible.minX - reachLeft * scale, y: visible.minY - cornerHeight / 2 * scale,
+               width: visible.width + (reachLeft + maxRun) * scale,
                height: visible.height + (cornerHeight / 2 + rowGap + rowHeight) * scale)
     }
 

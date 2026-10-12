@@ -289,6 +289,53 @@ private func eased(_ t: CGFloat) -> CGFloat {
         expectEqual(h.editor.holder(of: inSmall), small)
         expectEqual(h.origin(of: inSmall), CGPoint(x: 394, y: 160))
     },
+    test("a stretch is judged by its laid-out frame: stored outside and laid out mostly inside goes in, nudged by the frame; stored inside and laid out mostly outside goes out") {
+        let h = try settleHarness([StretchesPlugin()])
+        let held = h.add(Corral(pen))
+        let gauge = h.add(StretchGauge(CGRect(x: 900, y: 900, width: 60, height: 40), width: 300, height: 60))
+        let coming = h.add(Stretch(CGRect(x: 30, y: 150, width: 100, height: 60), gauge: gauge))         // stored 30% in, laid out 77%
+        expectEqual(h.settle([coming]), .settled(nudges: [coming: CGPoint(x: 86, y: 0)]), "to the gap inside the edge its frame hangs over")
+        expectEqual(h.editor.holder(of: coming), held)
+        expectEqual(h.origin(of: coming), CGPoint(x: 116, y: 150))
+        let going = h.add(Stretch(CGRect(x: 440, y: 250, width: 100, height: 60), gauge: gauge))        // stored 60% in, laid out 20%
+        expectEqual(h.settle([going]), .settled(nudges: [going: CGPoint(x: 76, y: 0)]), "out, as far as its frame reaches")
+        expectEqual(h.editor.holder(of: going), nil)
+        expectEqual(h.origin(of: going), CGPoint(x: 516, y: 250))
+        expectEqual(h.editor.document[going]?.box?.size, CGSize(width: 100, height: 60), "nothing about the frame is stored")
+    },
+    test("a stretch laid out too big for a container can't be in it, though it is mostly inside, and a gauge that grows later settles nothing") {
+        let h = try settleHarness([StretchesPlugin()])
+        let held = h.add(Corral(pen))
+        let gauge = h.add(StretchGauge(CGRect(x: 900, y: 900, width: 60, height: 40), width: 450, height: 60))
+        let big = h.add(Stretch(CGRect(x: 120, y: 150, width: 100, height: 60), gauge: gauge))
+        expectEqual(h.settle([big]), .settled(nudges: [big: CGPoint(x: 0, y: -126)]), "450 wide in 400: nudged out, the shortest way")
+        expectEqual(h.editor.holder(of: big), nil)
+        let member = h.add(Stretch(CGRect(x: 150, y: 150, width: 100, height: 60)))
+        h.editor.put([member], in: held)
+        let revision = h.editor.revision
+        h.editor.transact("Gauge") { $0.update(gauge, as: StretchGauge.self) { $0.props.width = 300 } }
+        h.editor.transact("Grow") { $0.update(member, as: Stretch.self) { $0.props.gauge = GaugeLink(gauge) } }
+        h.editor.transact("Gauge") { $0.update(gauge, as: StretchGauge.self) { $0.props.width = 600 } }
+        expectEqual(h.editor.shapeContext.frame(of: member)?.width, 600, "grown over the corral's edge")
+        expectEqual(h.editor.holder(of: member), held, "it stays in")
+        expectEqual(h.origin(of: member), CGPoint(x: 150, y: 150), "where it is: nothing nudged it")
+        expectEqual(h.editor.revision, revision + 3, "the three commits and no settling of its own")
+    },
+    test("a corral settling what it reaches goes by laid-out frames: a member that hangs over only by its grown part is nudged in, and one reached only by its grown part is taken in") {
+        let h = try settleHarness([StretchesPlugin()])
+        let held = h.add(Corral(pen))
+        let gauge = h.add(StretchGauge(CGRect(x: 900, y: 900, width: 60, height: 40), width: 150, height: 60))
+        let member = h.add(Stretch(CGRect(x: 400, y: 150, width: 100, height: 60), gauge: gauge))    // stored inside, laid out to x 550
+        h.editor.put([member], in: held)
+        expectEqual(h.editor.transact { $0.settle(container: held) }, [member: CGPoint(x: -66, y: 0)])
+        expectEqual(h.origin(of: member), CGPoint(x: 334, y: 150))
+        expectEqual(h.editor.holder(of: member), held)
+        let wide = h.add(StretchGauge(CGRect(x: 900, y: 900, width: 60, height: 40), width: 300, height: 60))
+        let reached = h.add(Stretch(CGRect(x: 40, y: 250, width: 50, height: 40), gauge: wide))      // stored clear of the corral, laid out into it
+        expectEqual(h.editor.transact { $0.settle(container: held) }, [reached: CGPoint(x: 76, y: 0)])
+        expectEqual(h.editor.holder(of: reached), held)
+        expectEqual(h.origin(of: reached), CGPoint(x: 116, y: 250))
+    },
 ])
 
 @MainActor private func dropHarness(_ log: RefusalLog = RefusalLog(), _ more: [any CanvasPlugin] = []) throws -> EditorHarness {
@@ -571,5 +618,39 @@ private func eased(_ t: CGFloat) -> CGFloat {
         h.enter(pocket)
         expect(!h.editor.isGliding(a))
         expectEqual(h.editor.drawingOffset(of: a), .zero)
+    },
+    test("a corral dropped settles its members by their laid-out frames: one grown past its edge is nudged in, one grown past what the corral can hold leaves, and the drag is one step") {
+        let h = try dropHarness(RefusalLog(), [StretchesPlugin()])
+        let held = h.add(Corral(pen))
+        let gauge = h.add(StretchGauge(CGRect(x: 900, y: 900, width: 60, height: 40), width: 250, height: 60))
+        let huge = h.add(StretchGauge(CGRect(x: 900, y: 950, width: 60, height: 40), width: 450, height: 60))
+        let grown = h.add(Stretch(CGRect(x: 350, y: 150, width: 100, height: 60), gauge: gauge))     // stored inside, laid out to x 600
+        let toobig = h.add(Stretch(CGRect(x: 150, y: 300, width: 100, height: 60), gauge: huge))     // wider than the corral
+        h.editor.put([grown, toobig], in: held)
+        h.press(at: CGPoint(x: 150, y: 120))
+        h.drag(to: CGPoint(x: 152, y: 120))
+        h.drag(to: CGPoint(x: 200, y: 120))                                                          // the corral 50 to the right
+        h.release()
+        expectEqual(h.editor.document[held]?.box?.origin, CGPoint(x: 150, y: 100))
+        expectEqual(h.editor.holder(of: grown), held, "nudged in, not left out")
+        expectEqual(h.origin(of: grown), CGPoint(x: 284, y: 150), "carried to 400, its frame 100 over the edge: back 100 and the gap")
+        expectEqual(h.editor.holder(of: toobig), nil, "wider than the corral, it can't be in it")
+        expectEqual(h.editor.undoHistory.undoName, "Move")
+        h.editor.undo()
+        expectEqual(h.editor.holder(of: toobig), held, "and the drag is one step")
+        expectEqual(h.origin(of: grown), CGPoint(x: 350, y: 150))
+    },
+    test("the hint outlines the container the laid-out frame would go into, which the stored box wouldn't, and the drop puts it there") {
+        let h = try dropHarness(RefusalLog(), [StretchesPlugin()])
+        let held = h.add(Corral(pen))
+        let gauge = h.add(StretchGauge(CGRect(x: 900, y: 900, width: 60, height: 40), width: 300, height: 60))
+        let a = h.add(Stretch(CGRect(x: 30, y: 150, width: 100, height: 60), gauge: gauge))
+        h.press(at: CGPoint(x: 60, y: 180))
+        h.drag(to: CGPoint(x: 62, y: 180))
+        h.drag(to: CGPoint(x: 80, y: 180))                              // at 50: half of its box, 83% of its frame
+        expectEqual(h.editor.hintedShapeID, held)
+        h.release()
+        expectEqual(h.editor.holder(of: a), held)
+        expectEqual(h.origin(of: a), CGPoint(x: 116, y: 150))
     },
 ])

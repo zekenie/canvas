@@ -41,6 +41,7 @@ enum QueryPrompt {
         "[locked]", "[locked=false]", #"[title=""]"#, #"sticky-note[title=""]"#, "sticky-note:not([title])", #"arrow[channel=""]"#,
         "[channel=note-link]", #"[title="api gateway" i]"#, #"[text*="retry"]"#, #"[text^="TODO"]"#,
         #"[text$="?"]"#, #"[title^="API"]"#, #"[text*="rate limit"]"#, #"[text*="@Checkout"]"#,
+        #"[fieldValues.started<"2025-01-01"]"#, #"[fieldValues.teams.name="search"]"#,
         // Text.
         #":contains("retry")"#, #":contains("tokens")"#,
         // Inside.
@@ -49,7 +50,9 @@ enum QueryPrompt {
         // Edges.
         ":dangling", ":invalid", ":edge-to(sticky-note[locked])", ":edge-to(*)", #":edge-to(:is("Auth", "Checkout"))"#,
         #":edge-to("Auth", arrow)"#, #":edge-from("API gateway", note-link|mention)"#, #":edge-to("Payments", only arrow)"#,
-        #":edge-from("API gateway", arrow)"#, #":edge-from("Warehouse")"#, #"sticky-note:mentions("Checkout")"#, #":mentioned-by("Checkout")"#,
+        #":edge-from("API gateway", arrow)"#, #":edge-from("Warehouse")"#, #"sticky-note:mentions("Checkout")"#, #":mentioned-by("Checkout")"#, #"sticky-note:is-a("Person")"#,
+        "sticky-note[schema]", #":is-a("Person")"#, #"sticky-note:is-a("Employee card")"#, #":edge-from("Ann", is-a)"#,
+        ":incomplete", #":is-a("Person"):incomplete"#, #":is-a("Order"):edge-to("Ann", field-link)"#, #":edge-to("Ann", mention)"#,
         #""Checkout":mentioned-by("API gateway")"#, #":connected-to("Checkout")"#, #":component-of("Warehouse")"#, #":upstream-of("Auth")"#,
         ":edge-from(:selected, arrow)", #"arrow:between("Auth", "API gateway")"#, ":start-of(arrow[channel=note-link])",
         ":end-of(arrow[channel=note-link])",
@@ -71,7 +74,7 @@ enum QueryPrompt {
         ("#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11", .unknownID), ("note", .unknownKind), ("#Checkout", .notAnID),
         // Attributes.
         ("[rank=3]", .unknownAttribute), ("[status!=done]", .unknownAttribute), ("[tags~=backend]", .unknownAttribute),
-        ("[rank>3]", .unknownAttribute), ("[rank<=3]", .unknownAttribute), ("[due<2026-10-01]", .unknownAttribute),
+        ("[rank>3]", .unknownAttribute), ("[rank<=3]", .unknownAttribute), (#"[due<"2026-10-01"]"#, .unknownAttribute),
         // Inside.
         (#""Sprint 3" sticky-note"#, .unknownTitle), (#""A":has(> "B")"#, .unknownTitle), (#""A":has("B")"#, .unknownTitle), (#""A" > "B""#, .unknownTitle), (#""B" > *"#, .unknownTitle),
         ("sticky-note :selected", .straySpace),
@@ -83,6 +86,8 @@ enum QueryPrompt {
         (":edge-to", .badArgument), (":edge-from", .badArgument),
         // Combining.
         (":not(S)", .unknownKind), (":is(S1, S2)", .unknownKind),
+        // Types.
+        (#":edge-from("Order 12", field-link)"#, .unknownTitle),
         // Rules: the words not to invent.
         (":parent-of", .unknownPseudoClass), (":child-of", .unknownPseudoClass), (":root", .unsupported), (":empty", .unsupported),
         (":first-child", .unsupported),

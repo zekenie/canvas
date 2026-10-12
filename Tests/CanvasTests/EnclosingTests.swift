@@ -66,8 +66,8 @@ extension SlingDefinition: ShapeReferencing {
      Contributor(id: "placed") { $0.service { _ in PlacedLog() } }]
 }
 
-@MainActor private func enclosingHarness(_ refusals: RefusalLog = RefusalLog()) throws -> EditorHarness {
-    try EditorHarness(plugins: enclosingPlugins(refusals))
+@MainActor private func enclosingHarness(_ refusals: RefusalLog = RefusalLog(), _ more: [any CanvasPlugin] = []) throws -> EditorHarness {
+    try EditorHarness(plugins: enclosingPlugins(refusals) + more)
 }
 
 extension EditorHarness {
@@ -103,6 +103,17 @@ extension EditorHarness {
         h.editor.redo()
         expectEqual(h.stack, [pen, a, b, far])
         expectEqual(h.editor.holder(of: b), pen)
+    },
+
+    test("around a stretch it holds the frame it is laid out in, padded, and not the box it stores") {
+        let h = try enclosingHarness(RefusalLog(), [StretchesPlugin()])
+        let gauge = h.add(StretchGauge(CGRect(x: 900, y: 900, width: 60, height: 40), width: 300, height: 200))
+        let stretch = h.add(Stretch(CGRect(x: 100, y: 100, width: 100, height: 80), gauge: gauge))
+        let box = h.add(Box(CGRect(x: 450, y: 150, width: 50, height: 50)))
+        let pen = try require(h.corral(around: [stretch, box]))
+        expectEqual(h.box(pen), CGRect(x: 80, y: 80, width: 440, height: 240), "its 300 by 200, the box beside it, 20 past them")
+        expectEqual(h.editor.holder(of: stretch), pen)
+        expectEqual(h.box(stretch), CGRect(x: 100, y: 100, width: 100, height: 80), "the stretch stores what it did")
     },
 
     test("never under the minimum size, grown about its middle") {

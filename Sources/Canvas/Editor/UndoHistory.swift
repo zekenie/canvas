@@ -27,6 +27,9 @@ public enum UndoEvent: Sendable, Equatable {
 ///   began it (placing a note and typing into it are one step);
 /// - a run of commits under one coalescing key at no action's depth (`transact(coalescing:)`: a
 ///   panel field typed into), until another commit, an action or `seal()`;
+/// - a card's commits (`transact(coalescing: card.id)` while a card with a step name shows,
+///   `CanvasEditor.showCard`), from the moment it shows until it closes, which `seal()` does not end
+///   and any other commit does;
 /// - otherwise, each commit.
 ///
 /// A step that comes to nothing (a drag put back with Escape) is dropped. Opening a step clears
@@ -61,6 +64,8 @@ public final class UndoHistory {
         /// A key's action committed it, and the key may be held: its repeats are part of it, until
         /// it's let go or anything else happens.
         case held(KeyStroke)
+        /// A card's commits, under its id: from the card showing until it closes.
+        case kept(AnyHashable)
     }
 
     private struct OpenStep {
@@ -97,6 +102,8 @@ public final class UndoHistory {
     private var editingName: String?
     /// The key the canvas last had a stroke of, until it's let go (`keyReleased`).
     private var keyDown: KeyStroke?
+    /// The card showing that holds a step: its id and the name of its step (`keep`).
+    private var keptRun: (key: AnyHashable, name: String)?
 
     init() {}
 
@@ -188,6 +195,22 @@ public final class UndoHistory {
         case .run?, .held?: if depth == 0 { close() }
         default: break
         }
+    }
+
+    /// A card with a step name shows: commits under `key` are one step called `name` until `letGo`. A
+    /// step kept under another key or name closes. Opens nothing, so the press a card is shown in keeps
+    /// its own step.
+    func keep(_ key: AnyHashable, named name: String) {
+        if case .kept(let kept)? = open?.holder, kept != key || keptRun?.name != name { close() }
+        keptRun = (key, name)
+    }
+
+    /// The card holds no step now (it closed, or its step name went): the step it held closes. Never
+    /// another holder's, since this runs inside the commit that deleted the card's shape, when the open
+    /// step may be that commit's.
+    func letGo() {
+        if case .kept? = open?.holder { close() }
+        keptRun = nil
     }
 
     /// A save point: closes the open step, whatever holds it. Later commits of the same press, run or
@@ -298,6 +321,12 @@ public final class UndoHistory {
                 close()
                 openStep(.editing)
                 open?.editingName = editingName
+            }
+        } else if let key, let kept = keptRun, kept.key == key {
+            if open?.holder != .kept(key) {
+                close()
+                openStep(.kept(key))
+                open?.firstName = kept.name
             }
         } else if let key {
             if open?.holder != .run(key) {

@@ -107,13 +107,19 @@ extension Drawing {
 
         // What it did.
         var changed: [(line: Int, name: String, record: AnyShapeRecord)] = []
+        // Each row a plugin may report on: where it is in `changes`, the shape, what its statement wrote.
+        var reported: [(row: Int, line: Int, name: String, record: AnyShapeRecord, written: JSONObject?)] = []
         var outside = 0
         for item in items {
             guard let now = transaction.document[item.record.id] else {
                 throw DrawError(item.statement, .internal, "\(subject(of: item)) isn't on the board after all")
             }
+            // Where it is and how much room it takes once the run has committed: its origin as the
+            // transaction leaves it, at the size the layout gave it (`ShapeItem.room`), which is what
+            // `canvas measure` says of the statement.
+            let at = now.box.map { CGRect(origin: $0.origin, size: item.room) }
             var row = DrawChange(line: item.statement.line, did: .created, kind: item.kind.rawValue,
-                                 title: naming?.name(now, registry), at: now.box)
+                                 title: naming?.name(now, registry), at: at)
             if let existing = item.existing {
                 if item.rename != nil {
                     row.did = .renamed
@@ -129,12 +135,13 @@ extension Drawing {
                 warnings.append(DrawWarning(line: item.statement.line,
                                             "created \(quoted(title)); the board has \(quoted(nearMiss)) — to change that one, write its title exactly"))
             }
-            if let view, let at = now.box {
+            if let view, let at {
                 row.inView = view.intersects(at)
                 if !view.intersects(at), item.free != nil, row.did != .unchanged { outside += 1 }
             }
             if !item.pushedPast.isEmpty { row.pushedPast = item.pushedPast }
             if row.did != .unchanged { changed.append((item.statement.line, subject(of: item), now)) }
+            reported.append((changes.count, item.statement.line, subject(of: item), now, row.did == .unchanged ? nil : item.written))
             changes.append(row)
         }
         for (edge, connected) in edgeRows {
@@ -147,8 +154,11 @@ extension Drawing {
             for key in edging?.attributes ?? [] {
                 if let value = properties[key], value != .null { row.attributes[key] = value }
             }
+            let edgeName = "\(Keyword.edge.rawValue) \(edge.edge.written)"
+            reported.append((changes.count, edge.statement.line, edgeName, record,
+                             connected.did == .unchanged ? nil : edge.settings.filter { registry.drawValueWriters[$0.key] != nil }))
             changes.append(row)
-            if connected.did != .unchanged { changed.append((edge.statement.line, "\(Keyword.edge.rawValue) \(edge.edge.written)", record)) }
+            if connected.did != .unchanged { changed.append((edge.statement.line, edgeName, record)) }
             warnings += facingAway(edge, ends: connected.ends, in: transaction.shapes)
         }
 
@@ -156,6 +166,15 @@ extension Drawing {
         for item in items {
             guard let now = transaction.document[item.record.id] else { continue }
             warnings += namingWarnings(of: now, item, in: transaction)
+        }
+        if let reporting = registry.drawReporting {
+            for shape in reported {
+                let report = reporting.report(shape.record, shape.written, transaction.shapes)
+                if !report.problems.isEmpty { changes[shape.row].problems = report.problems }
+                for issue in report.warnings {
+                    warnings.append(DrawWarning(line: shape.line, "\(shape.name): \(issue.message)", severity: issue.isError ? .error : .warning, attribute: issue.field))
+                }
+            }
         }
         for (line, name, record) in changed {
             for issue in issues(of: record, in: transaction.shapes) {
@@ -201,7 +220,7 @@ extension Drawing {
                         warnings: inout [DrawWarning]) throws(DrawError) {
         guard !registry.containingKinds.isEmpty else { return }
         let id = item.record.id
-        let before = transaction.document[id]?.box
+        let before = transaction.document[id]?.box.map { CGRect(origin: $0.origin, size: item.room) }
         switch transaction.settle([id]) {
         case .refused(let container):
             let named = transaction.document[container].map { self.named($0) } ?? "a container"
@@ -220,7 +239,7 @@ extension Drawing {
                 warnings.append(DrawWarning(line: item.statement.line,
                                             "\(others == 1 ? "a shape" : "\(others) shapes") over the edge of \(subject(of: item)) \(others == 1 ? "was" : "were") nudged wholly in or out of it"))
             }
-            guard let before, own != .zero, let after = transaction.document[id]?.box else { return }
+            guard let before, own != .zero, let after = transaction.document[id]?.box.map({ CGRect(origin: $0.origin, size: item.room) }) else { return }
             // Said of each container whose edge it was over as it was put down.
             for container in transaction.document.shapes where container.id != id && registry.isContainer(container) {
                 guard let edge = container.box, Self.overlaps(before, edge), !before.contains(edge), !edge.contains(before) else { continue }
@@ -301,8 +320,13 @@ extension Drawing {
         // says as written (its heads, by its arrow) has the last word: made again, the connection
         // keeps every one of them, or one says otherwise.
         if !edge.settings.isEmpty {
+            // A value a property's writer joins with what the arrow holds (the connection as the maker left it).
+            var settings = edge.settings
+            for (key, written) in edge.settings {
+                if let writer = registry.drawValueWriters[key] { settings[key] = writer.merge(written, made.propertiesJSON?[key]) }
+            }
             do throws(ShapePropertiesError) {
-                made = try registry.shape(made, setting: edge.settings)
+                made = try registry.shape(made, setting: settings)
             } catch {
                 throw DrawError(statement, .invalidValue, "\(written) can't have those attributes: \(error)")
             }

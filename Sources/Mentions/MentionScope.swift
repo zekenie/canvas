@@ -29,7 +29,7 @@ extension AnyMentionable: MentionScope {
 }
 
 /// Only shapes of one kind, which must be mentionable: a vertical's own text restricted to its own
-/// kind (`ScopedMentionText<Only<SchemaCard>>`). Its schema says which kind, from the kind itself.
+/// kind (`ScopedMentionText<Only<Plate>>`). Its schema says which kind, from the kind itself.
 public enum Only<Kind: ShapeProps> {}
 
 extension Only: MentionScope {
@@ -180,7 +180,7 @@ public enum MentionAdmission: Hashable, Sendable {
 
 extension Registry {
     /// Whether text whose schema says `scope` beside its reference to mention text
-    /// (`MentionTextFormat.annotationKey`'s value: `{"kinds": ["schema-card"]}` for `Only`,
+    /// (`MentionTextFormat.annotationKey`'s value: `{"kinds": ["plate"]}` for `Only`,
     /// `{"scope": "Blockers"}` for a declared scope, nil for neither) may mention a shape, as
     /// `MentionScope.admits` says for the text's type: for what reads a text's schema and has no
     /// type to ask, an agent's script among them. A scope it can't read admits every mentionable

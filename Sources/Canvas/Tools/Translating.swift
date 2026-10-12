@@ -211,8 +211,9 @@ extension TranslatingSession: Session {
         // Judged as the release settles them: by the container each came from, the hint showing
         // where they'd go only when every group would go there.
         var groups: [ShapeID?: [CGRect]] = [:]
+        let context = editor.shapeContext
         for id in roots {
-            guard let record = document[id], let box = record.box else { continue }
+            guard let record = document[id], let box = context.frame(of: record) else { continue }
             groups[document.container(of: record, containingKinds: kinds), default: []].append(box)
         }
         let found = ContainerRule.sites(sites, excluding: [], in: document, containingKinds: kinds)

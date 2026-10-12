@@ -45,6 +45,16 @@ enum MentionStyle {
     static let missingDash: [CGFloat] = [2, 2]
     static let missingLabel: CGFloat = 0.65
 
+    /// An outlined pill (a value that points at a shape): white, with the text's color at this strength as a
+    /// hairline this wide.
+    static let outlinedFill = NSColor.white
+    static let outlinedStroke: CGFloat = 0.2
+    static let outlinedStrokeWidth: CGFloat = 0.5
+    /// Its metrics, in ems: taller than a text pill's, ends fully round, the label as large as the text's.
+    static let outlinedHeight: CGFloat = 1.2
+    static let outlinedPadding: CGFloat = 0.55
+    static let outlinedLabelSize: CGFloat = 0.9
+
     /// Below this many device pixels per point (25% zoom on a 1× screen), a pill draws only its
     /// fill (or its dashed outline): its text couldn't be read there.
     static let minDetailScale: CGFloat = 0.25
@@ -53,6 +63,9 @@ enum MentionStyle {
     /// shows when it holds no name.
     static let missingHelp = "Deleted"
     static let unavailableHelp = "Not available"
+
+    /// What the root board is called where a list names a shape's board: no owner gives it a name.
+    static let rootBoardName = "Board"
 
     // MARK: The picker
 

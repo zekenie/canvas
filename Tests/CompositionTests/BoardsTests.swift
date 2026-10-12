@@ -9,7 +9,6 @@ import LanguageModels
 import Locking
 import Mentions
 import Queries
-import Schemas
 import Selection
 import ShippedTesting
 import StickyNotes
@@ -17,6 +16,7 @@ import TableOfContents
 import TestKit
 import Titles
 import Topology
+import Types
 import Validation
 
 // The shipped plugins on a file with boards, until a kind of their own owns one: CanvasTesting's
@@ -153,8 +153,7 @@ extension ChangeSetWatcher: EditorService {
         expect(h.enter(pocket))
         h.editor.transact { $0.update(note) { $0[TitleProperty.self] = "Inner" } }
         h.editor.lock([note])
-        let card = h.add(SchemaCard(frame: CGRect(x: 300, y: 0, width: 240, height: 89)))
-        h.editor.transact { $0.update(card, as: SchemaCard.self) { $0.props.schema = "{ \"type\": " } }
+        let card = h.editor.addTypeNote("{ \"type\": ", frame: CGRect(x: 300, y: 0, width: 200, height: 200))
         let frames = h.editor.adornmentFrames(of: note)
         expectEqual(frames.count, 2, "the title's pill and the lock")
         let rows = try require(h.editor.tableOfContents).entries.map(\.id)
@@ -172,26 +171,28 @@ extension ChangeSetWatcher: EditorService {
         expectEqual(watch.workedOut, [false, false, false, false])
         #endif
     },
-    test("a schema card's answer that lands while its board isn't shown is written there, and undoing it shows that board") {
+    test("a type note's answer that lands while its board isn't shown is written there, and undoing it shows that board") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let model = ScriptedLanguageModel()
         let (file, pocket, _) = pocketWithNote()
         let h = try shippedWithPockets(file, pasteboard: pasteboard, model: model)
         expect(h.enter(pocket))
-        let card = h.add(SchemaCard(frame: CGRect(x: 300, y: 0, width: 240, height: 89)))
-        h.editor.transact("Change Description") { $0.update(card, as: SchemaCard.self) { $0.props.setPrompt("a person: name and email") } }
+        let card = h.editor.addTypeNote(TypeSchemaProperty.starter, frame: CGRect(x: 300, y: 0, width: 200, height: 200))
+        h.editor.transact("Typing") { $0.update(card, as: StickyNote.self) { $0.props.text = "a person: name and email" } }
         h.editor.goBack()
         expectEqual(h.editor.board, .root)
         let schema = #"{ "title": "Person", "type": "object", "properties": { "name": { "type": "string" }, "email": { "type": "string" } } }"#
         model.queue(schema)
-        h.scheduler.advance(by: SchemaSync.idleDelay)
-        spinRunLoop(until: { h.file.record(card)?.typed(as: SchemaCard.self)?.props.schema.text == schema })
+        h.scheduler.advance(by: TypeSync<TypeSchemaProperty>.idleDelay)
+        let kept = #"{ "type": "object", "properties": { "name": { "type": "string" }, "email": { "type": "string" } } }"#
+        spinRunLoop(until: { h.editor.schemaText(card) == kept })
+        expectEqual(h.file.record(card)?[TitleProperty.self], "Person", "named by the model's title, its schema keeping none")
         expectEqual(h.editor.board, .root, "nothing is shown for it")
         expectEqual(h.editor.undoHistory.undoName, "Update Schema")
         h.editor.undo()
         expectEqual(h.editor.board, BoardID(owner: pocket))
-        expectEqual(h.editor.document[card]?.typed(as: SchemaCard.self)?.props.schema.text, SchemaCard.starter)
+        expectEqual(h.editor.document[card]?[TypeSchemaProperty.self]?.text, TypeSchemaProperty.starter)
     },
     test("a locked note inside a copied pocket pastes locked, and holds the pocket from being cut") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -214,15 +215,14 @@ extension ChangeSetWatcher: EditorService {
         expectEqual(inside.map(\.copiedFrom), [note])
         expect(inside.allSatisfy(\.isLocked), "the copy of a locked note is locked")
     },
-    test("a schema card cut from a pocket and pasted on the root is the same card there: its row and its issues go with it, and the pocket's list, taken back, doesn't have it") {
+    test("a type note cut from a pocket and pasted on the root is the same note there: its row and its issues go with it, and the pocket's list, taken back, doesn't have it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let (file, pocket, note) = pocketWithNote()
         let h = try shippedWithPockets(file, pasteboard: pasteboard)
         let contents = try require(h.editor.tableOfContents)
         expect(h.enter(pocket))
-        let card = h.add(SchemaCard(frame: CGRect(x: 300, y: 0, width: 240, height: 89)))
-        h.editor.transact { $0.update(card, as: SchemaCard.self) { $0.props.schema = "{ \"type\": " } }
+        let card = h.editor.addTypeNote("{ \"type\": ", frame: CGRect(x: 300, y: 0, width: 200, height: 200))
         let issues = h.editor.validation?.result(for: card)?.issues ?? []
         expect(!issues.isEmpty, "a schema that isn't JSON")
         expectEqual(contents.entries.map(\.id), [note, card])

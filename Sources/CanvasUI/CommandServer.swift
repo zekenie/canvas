@@ -122,6 +122,8 @@ public final class CommandServer {
             var target: BoardDocument?
             switch spec.scope {
             case .board:
+                // A command that works with no board too runs on none when none is named, in front or the only one.
+                if reference == nil, spec.boardOptional == true, frontmost() == nil, boards().count != 1 { break }
                 switch board(reference) {
                 case .success(let board): target = board
                 case .failure(let error): return .failure(error)

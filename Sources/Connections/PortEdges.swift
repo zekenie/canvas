@@ -236,7 +236,7 @@ enum EdgeChannels {
     // MARK: Messages
 
     /// What some ends connect on, as a message says it: `a sticky-note connects on note-link, a
-    /// schema-card on schema-link`; by side, `a sticky-note has note-link ports on its top, right,
+    /// subboard on subboard-link`; by side, `a sticky-note has note-link ports on its top, right,
     /// bottom and left`; `a frame has no ports`. An end that's a stand-in is named for what it
     /// stands for, the shape the script wrote; by side, as what it is, with its own sides (`a
     /// reference for a sticky-note has note-link ports on its left and right`).

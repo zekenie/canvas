@@ -425,9 +425,9 @@ import TestKit
         defer { pasteboard.releaseGlobally() }
         let h = try harness(pasteboard, [Contributor(id: "own") { r in r.contextMenu(Box.self) { MenuItem("Own") { _ in } } }])
         let box = h.add(Box(slot(0)))
-        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Own", "—", "Cut", "Copy", "—", "Delete"])
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Own", "—", "Cut", "Copy", "Duplicate", "—", "Delete"])
         h.editor.copy([box])
-        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Own", "—", "Cut", "Copy", "Paste", "—", "Delete"])
+        expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Own", "—", "Cut", "Copy", "Duplicate", "Paste", "—", "Delete"])
     },
     test("on empty canvas, Paste shows once there's something to paste, and lands centered where the menu was asked for; ⌘V keeps its place") {
         let pasteboard = privatePasteboard()
@@ -459,7 +459,7 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [box])
         let before = h.editor.document
         let menu = try require(h.secondaryClick(at: CGPoint(x: 60, y: 70)))
-        expectEqual(menu.outline, ["Cut", "Copy", "Paste", "—", "Delete"])
+        expectEqual(menu.outline, ["Cut", "Copy", "Duplicate", "Paste", "—", "Delete"])
         try menu.choose("Paste")
         let copy = try require(h.editor.shapes(since: before).first)
         expectEqual(copy.copiedFrom, box)
@@ -489,7 +489,7 @@ import TestKit
         expectEqual(h.editor.selectedShapeIDs, [ticket])
         h.editor.selectedShapeIDs = [ticket, box]
         let menu = try require(h.secondaryClick(at: middle(0)))
-        expectEqual(menu.outline, ["Cut", "Copy", "—", "Delete"])
+        expectEqual(menu.outline, ["Cut", "Copy", "Duplicate", "—", "Delete"])
         try menu.choose("Cut")
         expectEqual(h.editor.document.shapes.map(\.id), [ticket])
         expectEqual(try require(h.secondaryClick(at: middle(0))).outline, ["Paste", "—", "Delete"])

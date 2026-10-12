@@ -221,16 +221,36 @@ struct ContributedPseudoClass: Sendable {
     let seeds: (@Sendable (any Sendable) -> Set<ShapeID>)?
     let matches: @Sendable (QueryShape, any Sendable) -> QueryVerdict
     let onMain: (@MainActor (AnyShapeRecord, BoardID, any Sendable, QueryMainContext) -> Bool)?
+    /// What a row it matched says of why (`ShapeProblem`), on the main actor, for the rows a query
+    /// returns alone.
+    let problems: (@MainActor (AnyShapeRecord, BoardID, any Sendable, QueryMainContext) -> [ShapeProblem])?
 }
 
-/// A word a plugin adds to queries: a pseudo-class (`:selected`) or a relation over edges of
-/// exactly some types (`:mentions(S)`), with what it means in a line and a query that uses it.
-/// Only the sugar makes one (`registrar.queryPseudoClass`, `registrar.queryRelation`).
+/// A relation a plugin answers from what it keeps of the file (`:is-a(S)`), type-erased: `related`
+/// says, for a shape, the shapes it stands in the relation to directly, with what `prepare` took on
+/// the main actor; `seeds` is every shape that has any, which are the only shapes that can match.
+struct ContributedFileRelation: Sendable {
+    /// Whether a shape is also related to what the shapes it's related to are, however far.
+    let transitive: Bool
+    /// Whether its argument names types: what `.Name` is refused toward.
+    let namesTypes: Bool
+    let prepare: @MainActor (QueryFilePreparation) -> any Sendable
+    let seeds: @Sendable (any Sendable) -> Set<ShapeID>
+    let related: @Sendable (ShapeID, any Sendable) -> [ShapeID]
+}
+
+/// A word a plugin adds to queries: a pseudo-class (`:selected`), a relation over edges of exactly
+/// some types (`:mentions(S)`) or a relation answered from a fact of the file (`:is-a(S)`), with
+/// what it means in a line and a query that uses it. Only the sugar makes one
+/// (`registrar.queryPseudoClass`, `registrar.queryRelation`).
 public struct QueryWordDeclaration: Sendable {
     enum Meaning: Sendable {
         case pseudoClass(ContributedPseudoClass)
         /// `.outgoing`: the result → S; `.incoming`: S → the result.
         case relation(types: [EdgeTypeID], direction: EdgeDirection)
+        /// The result is related, directly or (`transitive`) through other shapes, to a shape S
+        /// matches, as the plugin's `related` says.
+        case fileRelation(ContributedFileRelation)
     }
 
     let word: String
@@ -241,7 +261,7 @@ public struct QueryWordDeclaration: Sendable {
     var reads: QueryReads {
         switch meaning {
         case .pseudoClass(let behavior): behavior.reads
-        case .relation: .file
+        case .relation, .fileRelation: .file
         }
     }
     /// Whether it's the person's selection (`registrar.querySelection`): what `--ask` says is
@@ -284,6 +304,12 @@ extension QueryWords: KeyedExtensionPoint {
                let other = registry.contributions(to: QueryWords.self).first(where: { $0.value.isSelection && $0.value.word != word }) {
                 throw refuse("the person's selection, which :\(other.value.word) (\(other.pluginID)) says already")
             }
+            if case .fileRelation(let relation) = declared.value.meaning, relation.namesTypes,
+               let other = registry.contributions(to: QueryWords.self).first(where: { other in
+                   if case .fileRelation(let theirs) = other.value.meaning { theirs.namesTypes && other.value.word != word } else { false }
+               }) {
+                throw refuse("a relation that names types, which :\(other.value.word) (\(other.pluginID)) is already")
+            }
             guard case .relation(let types, _) = declared.value.meaning else { continue }
             guard !types.isEmpty else { throw refuse("a relation over no edge type") }
             for type in types where !registry.declaresEdgeType(type) {
@@ -305,6 +331,93 @@ extension QueryWords: KeyedExtensionPoint {
 struct QueryWordKey: Hashable, CustomStringConvertible {
     let word: String
     var description: String { ":\(word)" }
+}
+
+// MARK: Paths
+
+/// The first member of a path into an attribute that no shape of the file can hold: its place in the
+/// path (`index`), and the members that could be there.
+public struct QueryPathUnknown: Sendable {
+    public var index: Int
+    public var known: [String]
+
+    public init(index: Int, known: [String]) {
+        self.index = index
+        self.known = known
+    }
+}
+
+/// What a plugin knows of the members an object attribute holds (Types' fields of `fieldValues`), asked
+/// of a path a query tests on that attribute, on the main actor as the query is run. Only the sugar makes
+/// one (`registrar.queryPathCheck`).
+public struct QueryPathChecking: Sendable {
+    let attribute: String
+    let check: @MainActor ([String], CanvasEditor) -> QueryPathUnknown?
+}
+
+/// What says which members an attribute can hold: at most one plugin an attribute.
+public enum QueryPathChecks {}
+
+extension QueryPathChecks: KeyedExtensionPoint {
+    public typealias Contribution = QueryPathChecking
+    public static var owner: PluginID { .queries }
+    public static func uniqueKeys(of checking: QueryPathChecking, for _: ShapeTarget) -> [AnyHashable] {
+        [QueryPointKey(name: "query path \(checking.attribute)")]
+    }
+    public static func summary(of checking: QueryPathChecking, for _: ShapeTarget) -> String { "query path \(checking.attribute)" }
+
+    /// The attribute is a word a query can write bare, in brackets.
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        for checking in registry.contributions(to: QueryPathChecks.self) where !isIdentifier(checking.value.attribute) {
+            throw .invalid(point: "QueryPathChecks", reason: "\(checking.pluginID) checks paths into the attribute \"\(checking.value.attribute)\", which a query can't write: a letter or _, then letters, digits, - and _")
+        }
+    }
+}
+
+// MARK: Facts for `--ask`
+
+/// A block a translator of English into queries is sent about the file, under a tag of its own (`fields`): made on
+/// the main actor as the question is asked, bounded by its plugin. Never one of the request's own tags
+/// (`AskFacts.reservedTags`). Only the sugar makes one (`registrar.queryAskFact`).
+public struct QueryAskFact: Sendable {
+    public let tag: String
+    let text: @MainActor (CanvasEditor, _ question: String) -> String
+
+    /// The block's text for `question`, on the main actor; empty for nothing to say (the block is left out).
+    @MainActor public func text(for editor: CanvasEditor, question: String) -> String { text(editor, question) }
+}
+
+/// What tells a translator more of the file: one plugin a tag.
+public enum QueryAskFacts {}
+
+/// What the request to a translator already uses as tags (`AskRequest.Tag` is this one: written here, never as
+/// strings, because a module may not write another module's plugin id as a literal and `titles` is Titles').
+public enum AskFacts {
+    public enum Tag: String, CaseIterable, Sendable {
+        case question, vocabulary, board, titles, error
+    }
+
+    public static let reservedTags = Set(Tag.allCases.map(\.rawValue))
+}
+
+extension QueryAskFacts: KeyedExtensionPoint {
+    public typealias Contribution = QueryAskFact
+    public static var owner: PluginID { .queries }
+    public static func uniqueKeys(of fact: QueryAskFact, for _: ShapeTarget) -> [AnyHashable] { [QueryPointKey(name: "ask fact \(fact.tag)")] }
+    public static func summary(of fact: QueryAskFact, for _: ShapeTarget) -> String { "ask fact \(fact.tag)" }
+
+    /// A tag is a word, and none of the request's own.
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        for fact in registry.contributions(to: QueryAskFacts.self) {
+            let tag = fact.value.tag
+            guard !tag.isEmpty, tag.allSatisfy({ $0.isLowercase && $0.isLetter }) else {
+                throw .invalid(point: "QueryAskFacts", reason: "\(fact.pluginID) tells --ask something under the tag \"\(tag)\", which is no word: lower-case letters")
+            }
+            guard !AskFacts.reservedTags.contains(tag) else {
+                throw .invalid(point: "QueryAskFacts", reason: "\(fact.pluginID) tells --ask something under the tag \"\(tag)\", which the request uses itself")
+            }
+        }
+    }
 }
 
 // MARK: Text formats
@@ -371,22 +484,39 @@ extension PluginRegistrar {
         contribute(QueryBoardNaming(placeholder: placeholder), to: QueryBoardNames.self)
     }
 
+    /// What an object attribute's members can be, for a query's `[attribute.a.b]`: `check` is given the
+    /// path's members and the editor on the main actor, and says the first member no shape of the file can
+    /// hold (nil: nothing to say), so the answer warns `unknown_field`. At most one plugin an attribute.
+    public mutating func queryPathCheck(attribute: String, _ check: @escaping @MainActor ([String], CanvasEditor) -> QueryPathUnknown?) {
+        contribute(QueryPathChecking(attribute: attribute, check: check), to: QueryPathChecks.self)
+    }
+
+    /// A block `--ask` sends about the file under `tag` (`<tag>`, the text, `</tag>`), after the titles: `text` is
+    /// given the editor and the question on the main actor as the question is asked, and is bounded by the plugin
+    /// (an empty text leaves the block out). One plugin a tag, none of the request's own.
+    public mutating func queryAskFact(tag: String, _ text: @escaping @MainActor (CanvasEditor, _ question: String) -> String) {
+        contribute(QueryAskFact(tag: tag, text: text), to: QueryAskFacts.self)
+    }
+
     /// `:word`, a pseudo-class with no argument, meaning `summary` ("the person has it selected"),
     /// as `example` uses it. `prepare` runs on the main actor in the turn the query takes up the file
     /// (take what's needed there, O(1) or O(what it holds)); `seeds`, the only shapes that can
     /// match, if it knows them; `matches` anywhere, for each shape a query tests; and `onMain` for a
     /// shape `matches` leaves to the main actor (`.onMain`), asked in slices about the shape as the
     /// app has it then. It reads the editor (`QueryReads.editor`): a plan that holds it isn't
-    /// `readsOnlyTheFile`.
+    /// `readsOnlyTheFile`. `problems` says what a row it matched has to answer for (a `ShapeProblem`
+    /// each: a field and why), asked on the main actor in slices of only the rows a query returns,
+    /// and listed on those rows as `problems`.
     public mutating func queryPseudoClass<Prepared: Sendable>(
         _ word: String, _ summary: String, example: String,
         prepare: @escaping @MainActor (QueryPreparation) -> Prepared,
         seeds: (@Sendable (Prepared) -> Set<ShapeID>)? = nil,
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
-        onMain: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> Bool)? = nil
+        onMain: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> Bool)? = nil,
+        problems: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> [ShapeProblem])? = nil
     ) {
         contributePseudoClass(word, summary, example: example, reads: .editor, prepare: { prepare($0) }, seeds: seeds, matches: matches,
-                              onMain: onMain)
+                              onMain: onMain, problems: problems)
     }
 
     /// As above, for a word whose verdict reads only the file (`reads: .file`): `prepare` is given
@@ -400,7 +530,7 @@ extension PluginRegistrar {
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict
     ) {
         contributePseudoClass(word, summary, example: example, reads: .file, prepare: { prepare($0.file) }, seeds: seeds, matches: matches,
-                              onMain: nil)
+                              onMain: nil, problems: nil)
     }
 
     private mutating func contributePseudoClass<Prepared: Sendable>(
@@ -408,7 +538,8 @@ extension PluginRegistrar {
         prepare: @escaping @MainActor (QueryPreparation) -> Prepared,
         seeds: (@Sendable (Prepared) -> Set<ShapeID>)?,
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
-        onMain: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> Bool)?
+        onMain: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> Bool)?,
+        problems: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> [ShapeProblem])?
     ) {
         let erasedPrepare: @MainActor (QueryPreparation) -> any Sendable = { prepare($0) }
         let erasedMatches: @Sendable (QueryShape, any Sendable) -> QueryVerdict = { shape, prepared in matches(shape, prepared as! Prepared) }
@@ -418,8 +549,12 @@ extension PluginRegistrar {
         if let onMain {
             erasedOnMain = { record, board, prepared, context in onMain(record, board, prepared as! Prepared, context) }
         }
+        var erasedProblems: (@MainActor (AnyShapeRecord, BoardID, any Sendable, QueryMainContext) -> [ShapeProblem])?
+        if let problems {
+            erasedProblems = { record, board, prepared, context in problems(record, board, prepared as! Prepared, context) }
+        }
         let pseudoClass = ContributedPseudoClass(reads: reads, prepare: erasedPrepare, seeds: erasedSeeds, matches: erasedMatches,
-                                                 onMain: erasedOnMain)
+                                                 onMain: erasedOnMain, problems: erasedProblems)
         contribute(QueryWordDeclaration(word: word, summary: summary, example: example, meaning: .pseudoClass(pseudoClass)),
                    to: QueryWords.self)
     }
@@ -438,7 +573,7 @@ extension PluginRegistrar {
             },
             seeds: { ($0 as! SelectedShapes).set },
             matches: { shape, taken in (taken as! SelectedShapes).set.contains(shape.record.id) ? .yes : .no },
-            onMain: nil)
+            onMain: nil, problems: nil)
         contribute(QueryWordDeclaration(word: word, summary: summary, example: example, meaning: .pseudoClass(pseudoClass), isSelection: true),
                    to: QueryWords.self)
     }
@@ -451,6 +586,30 @@ extension PluginRegistrar {
         contribute(QueryWordDeclaration(word: word, summary: summary, example: example,
                                         meaning: .relation(types: types, direction: direction)),
                    to: QueryWords.self)
+    }
+
+    /// `:word(S)`, a relation answered from what a plugin keeps of the file (a `QueryFileFact`, taken
+    /// by `prepare` in the turn the query takes up the file), meaning `summary`, as `example` uses
+    /// it: a result is related, as `related` says (the shapes `shape` is related to directly), to a
+    /// shape S matches. With `transitive`, also through other shapes, however many, breadth first
+    /// and cycle-safe (a shape in a cycle is related to itself); an answer is worked out once per
+    /// query. `seeds` is every shape that has anything `related`: the only shapes that can match.
+    /// It reads only the file (`reads: .file`), so a plan that holds it is `readsOnlyTheFile`. A
+    /// relation with `namesTypes` is the word `.Name` is refused toward (`unsupported`, hinted
+    /// `:word("Name")`); at most one word is.
+    public mutating func queryRelation<Prepared: Sendable>(
+        _ word: String, _ summary: String, example: String, reads _: QueryFileReads,
+        transitive: Bool, namesTypes: Bool = false,
+        prepare: @escaping @MainActor (QueryFilePreparation) -> Prepared,
+        seeds: @escaping @Sendable (Prepared) -> Set<ShapeID>,
+        related: @escaping @Sendable (ShapeID, Prepared) -> [ShapeID]
+    ) {
+        let relation = ContributedFileRelation(
+            transitive: transitive, namesTypes: namesTypes,
+            prepare: { prepare($0) },
+            seeds: { seeds($0 as! Prepared) },
+            related: { shape, prepared in related(shape, prepared as! Prepared) })
+        contribute(QueryWordDeclaration(word: word, summary: summary, example: example, meaning: .fileRelation(relation)), to: QueryWords.self)
     }
 
     /// How strings whose schema says `contentMediaType: mediaType` read in queries and rows: `read`

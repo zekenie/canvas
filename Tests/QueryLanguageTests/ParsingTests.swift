@@ -51,6 +51,19 @@ import TestKit
         expectEqual(stripped(try parse("card,\n:glows")), list(complex(compound(kind("card"))), complex(compound(nil, pseudo("glows")))),
                     "after a comma, a new selector starts")
     },
+    test("an attribute's members: [a.b.c] reads as the attribute and the path inside it") {
+        expectEqual(stripped(try parse("[meta.owner]")), single(nil, attribute("meta", in: ["owner"])))
+        expectEqual(stripped(try parse("[meta.size.unit=kg]")), single(nil, attribute("meta", in: ["size", "unit"], .equals, .bare("kg"))))
+        expectEqual(stripped(try parse(#"chore[ meta.owner ~= "Ann" i ]"#)),
+                    single(kind("chore"), attribute("meta", in: ["owner"], .hasWord, .quoted("Ann"), .insensitive)))
+        expectEqual(stripped(try parse("[x-y_z.é.a-b>=2]")), single(nil, attribute("x-y_z", in: ["é", "a-b"], .greaterOrEqual, .bare("2"))))
+        let test = try parse("[meta.owner]").selectors[0].compounds[0].filters[0]
+        guard case .attribute(let read) = test else { throw RequireFailed() }
+        expectEqual(read.name, "meta")
+        expectEqual(read.path, ["owner"])
+        expectEqual(read.span, at(0, 12), "the span holds the whole path")
+        expectEqual(stripped(try parse(#"["a.b"]"#)), single(nil, attribute("a.b")), "a quoted name with a dot is one name, with no path")
+    },
     test("attribute tests take every operator, a value bare or quoted, a flag, and a quoted name") {
         for op in Operator.allCases {
             expectEqual(stripped(try parse("[rank\(op.rawValue)3]")), single(nil, attribute("rank", op, .bare("3"))), op.rawValue)

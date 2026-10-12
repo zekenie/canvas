@@ -97,6 +97,7 @@ extension QueryVocabulary {
         func one(_ problem: QueryError) -> QueryError {
             guard let premise = problem.premise, let verdict = holds(premise.claim, kindOf: kindOf, titled: titled) else { return problem }
             var settled = problem.settled { _ in verdict }
+            if verdict, case .typeWord(let name) = premise.claim, let word = typeWord { settled.hint = ":\(word)(\(quoted(name)))" }
             if !verdict, settled.hint == nil, case .holdShapes = premise.claim { settled.hint = containersListed }
             return settled
         }
@@ -114,7 +115,9 @@ extension QueryVocabulary {
                 titles.insert(fold(title))
             case .holdShapes(let compounds)?:
                 for compound in compounds { if case .title(let title, _)? = compound.head { titles.insert(fold(title)) } }
-            case .namedKind?, nil:
+            case .typeWord(let name)? where typeWord != nil && naming != nil:
+                titles.insert(fold(name))
+            case .typeWord?, .namedKind?, nil:
                 break
             }
         }
@@ -139,7 +142,19 @@ extension QueryVocabulary {
         case .namedKind(let name):
             guard let entry = kind(ShapeKind(rawValue: name)) else { return true }
             return naming != nil && entry.names != QueryNameSource.none
+        case .typeWord(let name):
+            // A word that finds a type's shapes, and a shape titled so for it to name.
+            guard typeWord != nil, naming != nil else { return false }
+            return titled.map { !($0[fold(name)] ?? []).isEmpty }
         }
+    }
+
+    /// The word that names types (the relation declared `namesTypes`), if the app has one: what
+    /// `.Task` is written as, `:is-a("Task")`.
+    var typeWord: String? {
+        contributedWords.values.first { declared in
+            if case .fileRelation(let relation) = declared.meaning { relation.namesTypes } else { false }
+        }?.word
     }
 
     /// Whether a compound can hold shapes, by its head: a kind that holds shapes (with a title or

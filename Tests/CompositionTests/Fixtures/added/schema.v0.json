@@ -1,0 +1,1 @@
+"{\n  \"type\": \"object\",\n  \"properties\": {\n    \"home\": {\"$ref\": \"urn:uuid:5b0e7c1a-3d2f-4e6b-8a9c-1f2e3d4c5b6a\"}\n  }\n}"

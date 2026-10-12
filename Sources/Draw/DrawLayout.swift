@@ -22,7 +22,7 @@ extension Drawing {
         let target = target, context = target.shapes, document = target.document, registry = registry
         for index in items.indices where !items[index].moves {
             guard let box = items[index].existing?.box else { throw broken(items[index], "it has no frame") }
-            items[index].placed = CGRect(origin: box.origin, size: items[index].size)
+            items[index].placed = CGRect(origin: box.origin, size: items[index].room)
         }
 
         // What's in the way: board shapes that stay, those restated in place at their new size.
@@ -30,7 +30,7 @@ extension Drawing {
         for item in items where item.moves { if let id = item.existing?.id { excluded.insert(id) } }
         var resized: [ShapeID: CGRect] = [:]
         for item in items where !item.moves {
-            if let existing = item.existing, let placed = item.placed, placed != existing.box, context.solidBounds(of: existing.id) != nil {
+            if let existing = item.existing, let placed = item.placed, placed != context.frame(of: existing.id), context.solidBounds(of: existing.id) != nil {
                 resized[existing.id] = placed
             }
         }
@@ -49,8 +49,8 @@ extension Drawing {
                 kinds.isEmpty ? [] : Set(document.descendants(of: existing.id, containingKinds: kinds).compactMap { document.index(of: $0) })
             } ?? []
             carried.formUnion(carries)
-            free.append(LayoutProblem.Free(line: item.statement.line, name: subject(of: item), size: item.size, gap: item.shape.gap,
-                                           overlapAllowed: item.shape.overlapAllowed, current: item.existing?.box, carries: carries,
+            free.append(LayoutProblem.Free(line: item.statement.line, name: subject(of: item), size: item.room, gap: item.shape.gap,
+                                           overlapAllowed: item.shape.overlapAllowed, current: item.existing.flatMap { context.frame(of: $0.id) }, carries: carries,
                                            implied: item.standsFor != nil))
         }
 
@@ -99,7 +99,7 @@ extension Drawing {
                             refs.append(fixedShape(existing, rect: placed, gap: them.shape.gap))
                         }
                         if target.part?.isCorner == true {
-                            outline = Drawing.outline(of: them.record, at: CGRect(origin: .zero, size: them.size), in: registry)
+                            outline = Drawing.outline(of: them.record, at: CGRect(origin: .zero, size: them.room), in: registry)
                         }
                     case .shape(let record):
                         guard let geometry = context.geometry(of: record.id), !geometry.bounds.isNull, geometry.bounds.isFinite else {
@@ -171,7 +171,7 @@ extension Drawing {
             guard let box = items[index].free else { continue }
             var rect = solution.rects[box]
             // Where it already is, but for what arithmetic in another order leaves over.
-            if let current = items[index].existing?.box, Self.isNearly(rect, current) { rect = current }
+            if let current = items[index].existing.flatMap({ context.frame(of: $0.id) }), Self.isNearly(rect, current) { rect = current }
             guard rect.isFinite, rect.width > 0, rect.height > 0 else { throw broken(items[index], "it was placed nowhere (\(rect))") }
             items[index].placed = rect
             items[index].zones = solution.zones[box].map { document.shapes[$0.id].id }
@@ -259,7 +259,8 @@ extension Drawing {
         for index in items.indices {
             let item = items[index]
             var record = item.record
-            record.box = item.placed
+            // Written at the size it is stored at; the room it takes is the layout's (`ShapeItem.room`).
+            record.box = item.placed.map { CGRect(origin: $0.origin, size: item.size) }
             guard record.box?.isFinite == true else { throw broken(item, "its frame isn't finite") }
             if let title = item.title, item.existing != nil, item.rename == nil { try keepsName(record, title, item) }
             if let existing = item.existing, record != existing, target.isReadOnly(existing), target.isReadOnly(record) {
@@ -269,7 +270,7 @@ extension Drawing {
             items[index].record = record
             // Resized where it stays, over what's around it: not one a container the script moves
             // takes along, which doesn't stay where it is.
-            if let existing = item.existing, !item.moves, let placed = item.placed, placed.size != existing.box?.size, !item.shape.overlapAllowed,
+            if let existing = item.existing, !item.moves, let placed = item.placed, placed.size != context.frame(of: existing.id)?.size, !item.shape.overlapAllowed,
                !(document.index(of: existing.id).map(carried.contains) ?? false) {
                 // Over a container's edge, it's put down again, wholly in or out (`Transaction.settle`),
                 // and so is what a container resized holds, or reaches beside it: said then.

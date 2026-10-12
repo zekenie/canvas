@@ -71,6 +71,16 @@ import TestKit
         expect(h.admits("move-to", on: s, snug))
     },
 
+    test("/move-to takes no corral too small to hold the frame the shape is laid out in, though it holds the box it stores") {
+        let g = ShapeID(), s = ShapeID(), small = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(AnyShapeRecord(ShapeRecord(id: g, CanvasTesting.Gauge(at(1000, 1000), width: 300, height: 100))),
+                                                         AnyShapeRecord(ShapeRecord(id: s, Stretch(at(0, 0), gauge: g))), corral(small, at(300, 0, 200, 200)))),
+                                  [StretchesPlugin()])
+        expect(!h.admits("move-to", on: s, small), "300 wide laid out, 200 wide to go in")
+        h.editor.transact("Gauge") { $0.update(g, as: CanvasTesting.Gauge.self) { $0.props.width = 150 } }
+        expect(h.admits("move-to", on: s, small), "150 wide, it goes")
+    },
+
     test("/move-to takes no corral on a board the app can't show: one a box owns") {
         let s = ShapeID(), b = ShapeID(), z = ShapeID()
         let h = try movingHarness(CanvasFile(root: board(box(s, 0, 0), box(b, 300, 0)), children: [b: board(corral(z, at(0, 0, 400, 300)))]))

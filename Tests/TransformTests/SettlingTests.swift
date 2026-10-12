@@ -7,6 +7,22 @@ import Transform
 // A shape turned is put down anew, by the in-or-out rule (`Transaction.settle`), as a placement is: one
 // that turns into a larger shape may hang over the container it's in, or reach into another.
 
+/// A box in a corral, which turns into a stretch naming a gauge on the board 300 wide and 100 tall.
+@MainActor private func stretchTurningHarness(container o: ShapeID, box k: ShapeID, gauge g: ShapeID) throws -> EditorHarness {
+    let turning = plugin("stretch-turning") { r in
+        r.turnable(into: Stretch.self, through: BoxChannel.self, label: "Stretch") { id, transaction in
+            guard let frame = transaction.document[id]?.box else { return }
+            transaction.turn(id, into: Stretch(frame, gauge: g))
+        }
+    }
+    let records: [AnyShapeRecord] = [
+        corral(o, CGRect(x: 0, y: 0, width: 600, height: 400)),
+        box(k, x: 400, y: 100, in: o),
+        AnyShapeRecord(ShapeRecord(id: g, CanvasTesting.Gauge(CGRect(x: 800, y: 800, width: 60, height: 40), width: 300, height: 100)))]
+    let more: [any CanvasPlugin] = [StretchesPlugin(), boxesTurnIntoDiscs(), turning]
+    return try EditorHarness(plugins: transformPlugins(more), file: CanvasFile(root: CanvasDocument(shapes: records)))
+}
+
 @MainActor let transformSettlingTests = Suite("Turning and the in-or-out rule", [
     test("a turned shape poking out of the corral it's in is nudged back inside, in the turn's own step, and glides there") {
         let o = ShapeID(), k = ShapeID()
@@ -45,6 +61,16 @@ import Transform
         expectEqual(h.editor.document[k]?.box, CGRect(x: -106, y: 0, width: pocketSize.width, height: pocketSize.height))
         expectEqual(h.editor.holder(of: k), nil)
         expect(h.editor.isGliding(k))
+    },
+
+    test("a shape turned into one laid out larger than it stores is shifted back into its corral by the frame it is laid out in") {
+        let o = ShapeID(), k = ShapeID(), g = ShapeID()
+        let h = try stretchTurningHarness(container: o, box: k, gauge: g)
+        expect(h.editor.transforms?.turn([k], into: Stretch.kind) == true)
+        // Stored 40 wide it would be inside; laid out 300 wide from x = 400 it reaches 700, and 16 inside the edge is 584.
+        expectEqual(h.editor.document[k]?.box, CGRect(x: 284, y: 100, width: 40, height: 30), "shifted by its frame")
+        expectEqual(h.editor.shapeContext.frame(of: k), CGRect(x: 284, y: 100, width: 300, height: 100))
+        expectEqual(h.editor.holder(of: k), o, "still in its corral")
     },
 
     test("one that fits where it is isn't nudged, and doesn't glide") {

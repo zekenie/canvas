@@ -93,16 +93,20 @@ public struct AutomationPlugin: ListedPlugin {
                 (a note as tall as its text at its width), how far its title's pill and chips reach above it, and, \
                 for each edge that says via:, the size of the reference draw would put beside its start; and the \
                 constants placement is done with (every named gap, the step between references, how far in a \
-                frame's content sits, the smallest sizes). Where shapes go is ignored. It reads nothing on a board, \
-                changes nothing and opens no undo step, so a tool can lay shapes out before it draws them.
+                frame's content sits, the smallest sizes). Where shapes go is ignored. It changes nothing and opens \
+                no undo step, so a tool can lay shapes out before it draws them. Every shape is new, whatever a board \
+                holds. With a board (the one in front, or --board), an is: finds a type of that board's file as draw \
+                does, and the shape is measured with its rows; with none open, only a type the script draws. A name \
+                it can't find (an is:, a mention) is a warning, and the shape is measured without it, or with the \
+                text as written.
                 """,
-            scope: .app, params: MeasureParams.self, positionals: ["script"],
+            scope: .board, boardOptional: true, params: MeasureParams.self, positionals: ["script"],
             examples: [
                 CommandExample("\(canvas) measure - < plan.txt", "Read the script from standard input, and say how big each shape would be."),
             ]
         ) { params, context throws(AutomationError) in
             do throws(DrawError) {
-                return try measure(script: params.script, program: canvas, in: context.registry)
+                return try measure(script: params.script, program: canvas, in: context.registry, namesBeyond: context.editor)
             } catch {
                 throw AutomationError(error)
             }

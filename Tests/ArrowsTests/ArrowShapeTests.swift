@@ -4,7 +4,7 @@ import CanvasTesting
 import Connections
 import CoreGraphics
 import Geometry
-import Keyboard
+import Mentions
 import Selection
 import TableOfContents
 import TestKit
@@ -22,7 +22,7 @@ import TestKit
         expectClose(geometry.end, CGPoint(x: 448.25, y: 180))
     },
     test("arrows bind to any closed shape, analytic hit tests included, and never to arrows") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+        let h = try EditorHarness(plugins: arrowsPlugins())
         let disc = h.add(Disc(CGRect(x: 460, y: 80, width: 200, height: 140)))
         let a = h.add(Box(boxA))
         let arrow = h.add(Arrow(start: .bound(ArrowBinding(shapeID: a, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)),
@@ -156,7 +156,7 @@ import TestKit
             }
             shapes.append(AnyShapeRecord(ShapeRecord(Arrow(start: bound(box.id), end: bound(next.id)))))
         }
-        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+        let registry = try Registry(plugins: arrowsPlugins())
         let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes), scheduler: $0) }
         let elapsed = threadCPUTime {
             for i in 0..<10 { h.move(to: CGPoint(x: 20 + CGFloat(i) * 60, y: 20)) }
@@ -166,7 +166,7 @@ import TestKit
         expect(elapsed / 10 < .milliseconds(25), "\(elapsed / 10) per move")
     },
     test("an arrow says how wide its line is, 3.5 world units whatever it holds, and a box that it has none") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+        let h = try EditorHarness(plugins: arrowsPlugins())
         let free = Arrow(start: .free(CGPoint(x: 20, y: 60)), end: .free(CGPoint(x: 140, y: 60)), bend: 30, startArrowhead: true, text: "calls")
         // The document is a value: read it after the shapes are added, not before.
         let arrowID = h.add(free), boxID = h.add(Box(boxA))
@@ -177,8 +177,7 @@ import TestKit
     test("a tinted outline of an arrow covers it, line and heads, as wide as it's drawn and a point more: 2.75 view points at 50%, 8 at 200%") {
         let tint = NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)
         let tinted = TintedOutlinesBox()
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin(),
-                                            Contributor(id: "lights") { r in r.outlines { _ in Outlines(tinted: tinted.groups) } }])
+        let h = try EditorHarness(plugins: arrowsPlugins(more: [Contributor(id: "lights") { r in r.outlines { _ in Outlines(tinted: tinted.groups) } }]))
         let id = h.add(Arrow(start: .free(CGPoint(x: 20, y: 60)), end: .free(CGPoint(x: 140, y: 60)), startArrowhead: true, endArrowhead: true))
         tinted.groups = [TintedOutlines(color: tint, shapes: [id])]
         let size = CGSize(width: 320, height: 240)

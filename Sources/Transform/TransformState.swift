@@ -94,7 +94,7 @@ public final class TransformState {
         var shifts: [ShapeID: CGPoint] = [:]
         for id in ids {
             let document = transaction.document
-            guard let record = document[id], let box = record.box, let container = document.container(of: record, containingKinds: kinds),
+            guard let record = document[id], let box = transaction.shapes.frame(of: record), let container = document.container(of: record, containingKinds: kinds),
                   let edge = document[container]?.box else { continue }
             let room = edge.insetBy(dx: Settlement.gap, dy: Settlement.gap)
             guard box.width <= room.width, box.height <= room.height else { continue }

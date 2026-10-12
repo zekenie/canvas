@@ -1,12 +1,15 @@
 import Canvas
+import Queries
 
 // What `canvas draw` needs from concerns it doesn't own, each an extension point with at most one
 // contribution, from the plugins that own the concerns (AutomationTests bind them to fixtures of
 // their own): what a shape is called (DrawNames, Titles'), what an edge is (DrawEdges,
-// Connections'), what's wrong with a shape drawn (DrawChecks, Validation's), and how text of a
-// media type is written (DrawTextFormats, one for each media type, Mentions' for mention text).
+// Connections'), what's wrong with a shape drawn (DrawChecks, Validation's), how text of a
+// media type is written (DrawTextFormats, one for each media type, Mentions' for mention text) and
+// how a value a script writes joins what a shape holds (DrawValueWriters, one for each property).
 // Without one, `draw` does without: no titles (a titled statement is `no_names`), no edges
-// (`no_edges`), only the schemas' bounds checked, and text kept as written.
+// (`no_edges`), only the schemas' bounds checked, text kept as written and a value replacing what
+// the shape holds.
 
 // MARK: Names
 
@@ -186,7 +189,14 @@ public struct DrawTextContext {
     /// `$ref` left unfollowed, so what's written beside the reference (an annotation a kind adds to
     /// a shared definition) is there to read.
     public let schema: JSONObject
+    /// The shape whose attribute the string is, if it is a shape's: a new one has its id already, so
+    /// a text that names a shape can refuse the shape itself (a type that is its own type).
+    public let owner: ShapeID?
     let lookup: DrawTextLookup
+
+    /// A service of the editor the script draws on (Types' index, say), for a text that must read what only a
+    /// service knows: nil without its plugin. Read-only use: a format writes nothing but its string.
+    public func service<S: EditorService>(_ type: S.Type) -> S? { lookup.editor.service(type) }
 
     /// The shape called `name`, as a title names one in the script, among those `admits` takes (nil:
     /// it does; a string says why it doesn't, as a clause that follows the kind: `which can't be
@@ -197,6 +207,15 @@ public struct DrawTextContext {
     /// that but none `admits` is `invalid_value`, saying why. What's thrown is a refusal as the
     /// script's own are, which the run says on the statement's line.
     public func shape(called name: String, admitting admits: @MainActor (AnyShapeRecord) -> String? = { _ in nil }) throws(DrawError) -> DrawTextShape {
+        try lookup.shape(called: name, admitting: { record, _ in admits(record) })
+    }
+
+    /// As above, for a rule that needs what the script writes on a shape it draws or restates: `admits`
+    /// is also given the keys of the properties its statement writes, which its record, as the
+    /// statement starts it, doesn't have yet (empty for a shape the script doesn't mention). A type
+    /// the script draws with `schema:` is one, though its record has none until the statement is read.
+    public func shape(called name: String,
+                      admitting admits: @MainActor (AnyShapeRecord, _ writing: Set<String>) -> String?) throws(DrawError) -> DrawTextShape {
         try lookup.shape(called: name, admitting: admits)
     }
 }
@@ -237,6 +256,74 @@ extension DrawTextFormats: KeyedExtensionPoint {
     }
 }
 
+// MARK: Reports
+
+/// What a plugin says of a shape a run made, changed or restated, beside its validation issues: warnings
+/// about what its statement wrote, and the shape's `problems` (what its values still need and what is
+/// wrong with them), which the shape's row carries.
+public struct DrawShapeReport: Sendable {
+    public var warnings: [DrawIssue]
+    public var problems: [ShapeProblem]
+
+    public init(warnings: [DrawIssue] = [], problems: [ShapeProblem] = []) {
+        self.warnings = warnings
+        self.problems = problems
+    }
+}
+
+/// How a plugin reports on a shape: `written` is what the statement wrote for each of its properties, by
+/// key, after the value writers wrote them and before they joined what the shape held (nil for a shape
+/// whose statement changed nothing: a restated one is reported on, never warned about), and `shapes` the
+/// board as the script leaves it. Only the sugar makes one (`registrar.drawReports`).
+@MainActor
+public struct DrawReporting {
+    let report: @MainActor (AnyShapeRecord, _ written: JSONObject?, ShapeContext) -> DrawShapeReport
+}
+
+/// What reports on each shape and edge a run made, changed or restated, as the script leaves the board:
+/// at most one plugin.
+public enum DrawReports {}
+
+extension DrawReports: KeyedExtensionPoint {
+    public typealias Contribution = DrawReporting
+    public static var owner: PluginID { .drawEngine }
+    public static func uniqueKeys(of _: DrawReporting, for _: ShapeTarget) -> [AnyHashable] { [DrawPointKey(name: label)] }
+    public static func summary(of _: DrawReporting, for _: ShapeTarget) -> String { label }
+    static let label = "draw reports"
+}
+
+// MARK: Value writers
+
+/// How a property's value a script writes is made what the shape keeps, for a property whose owner
+/// says so: `write` turns the value as written into what it stores (names into ids: it may ask
+/// `context.shape(called:)`, as a text format does), and `merge` joins it with what the shape holds
+/// now (nil for a new shape, or one without it). Only the sugar makes one (`registrar.drawValueWriter`).
+@MainActor
+public struct DrawValueWriting {
+    let key: String
+    let write: @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue
+    let merge: @MainActor (_ written: JSONValue, _ held: JSONValue?) -> JSONValue
+}
+
+/// What writes a property's values in `canvas draw`: at most one plugin for each property key.
+public enum DrawValueWriters {}
+
+extension DrawValueWriters: KeyedExtensionPoint {
+    public typealias Contribution = DrawValueWriting
+    public static var owner: PluginID { .drawEngine }
+    public static func uniqueKeys(of writer: DrawValueWriting, for _: ShapeTarget) -> [AnyHashable] {
+        [DrawPointKey(name: "draw value \(writer.key)")]
+    }
+    public static func summary(of writer: DrawValueWriting, for _: ShapeTarget) -> String { "draw value \(writer.key)" }
+
+    /// A key a script can write: not blank.
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        for writer in registry.contributions(to: DrawValueWriters.self).map(\.value) where writer.key.isEmpty {
+            throw .invalid(point: "DrawValueWriters", reason: "a property key can't be blank")
+        }
+    }
+}
+
 /// The one key each draw point's contribution claims: "draw names" in a conflict.
 struct DrawPointKey: Hashable, CustomStringConvertible {
     let name: String
@@ -246,10 +333,29 @@ struct DrawPointKey: Hashable, CustomStringConvertible {
 // MARK: Sugar (what the concerns write)
 
 extension PluginRegistrar {
+    /// Reports on each shape and edge `canvas draw` makes, changes or restates, once the script's shapes
+    /// are all in the transaction (so a type drawn further down is read): `problems` go on the shape's
+    /// row, `warnings` among the run's, with the statement's line. At most one plugin reports.
+    public mutating func drawReports(_ report: @escaping @MainActor (AnyShapeRecord, _ written: JSONObject?, ShapeContext) -> DrawShapeReport) {
+        contribute(DrawReporting(report: report), to: DrawReports.self)
+    }
+
+    /// Writes the values of the property `key` in `canvas draw`: `write` gets the value as the script
+    /// wrote it (JSON) and what it may ask (`DrawTextContext`), and returns what the property stores,
+    /// or throws a refusal, which `draw` says on the statement's line; `merge` joins that with what the
+    /// shape holds now (`held`: nil for a new shape, or one without a value), and its result is what
+    /// the shape is set to, so a script run again changes nothing. Without a writer a value replaces
+    /// what the shape holds. At most one plugin writes each property.
+    public mutating func drawValueWriter(for key: PropertyKey,
+                                         write: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue = { value, _ in value },
+                                         merge: @escaping @MainActor (_ written: JSONValue, _ held: JSONValue?) -> JSONValue) {
+        contribute(DrawValueWriting(key: key.rawValue, write: write, merge: merge), to: DrawValueWriters.self)
+    }
+
     /// Names shapes for `canvas draw`: `name` is what a shape is called (folded, as `fold` folds a
     /// title; nil for none, or blank), `namingProperty` the property of a kind's schema a title is
     /// written to (nil: its shapes can't be given one), `isDerived` whether the kind works a name out
-    /// by itself (a schema card's, from its schema's `"title"`), and `fold` how a title a script writes
+    /// by itself (`title { … }`; no shipped kind's), and `fold` how a title a script writes
     /// is folded before it's matched (nil: it's blank). At most one plugin names shapes.
     public mutating func drawNames(name: @escaping @MainActor (AnyShapeRecord, Registry) -> String?,
                                    namingProperty: @escaping @MainActor (ShapeKind, Registry) -> String?,
@@ -308,6 +414,13 @@ extension Registry {
     public var drawNaming: DrawNaming? { contributions(to: DrawNames.self).first?.value }
     var drawEdging: DrawEdging? { contributions(to: DrawEdges.self).first?.value }
     var drawCheck: DrawCheck? { contributions(to: DrawChecks.self).first?.value }
+
+    var drawReporting: DrawReporting? { contributions(to: DrawReports.self).first?.value }
+
+    /// The writers of values, by property key.
+    var drawValueWriters: [String: DrawValueWriting] {
+        Dictionary(contributions(to: DrawValueWriters.self).map { ($0.value.key, $0.value) }, uniquingKeysWith: { first, _ in first })
+    }
 
     /// The formats that write text, by media type.
     var drawTextFormats: [String: DrawTextFormatting] {

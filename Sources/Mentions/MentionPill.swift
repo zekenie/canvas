@@ -10,7 +10,8 @@ import Canvas
 /// bottom just above the font's descender, the kind's symbol (in a slot as wide whatever the symbol,
 /// so the pill is as wide as its label makes it) then the label, no wider than 16 em (or its text,
 /// if narrower), a longer label ending in "…". Live, it's the text's color at 10% on
-/// a shape's surface, the system's on a neutral one; selected, the selection's colors; naming a
+/// a shape's surface, the system's on a neutral one, white with a hairline outline and no symbol
+/// on an outlined one; selected, the selection's colors; naming a
 /// shape that isn't there or can't be mentioned, a dashed outline and the name it holds, in
 /// italic, with no symbol.
 @MainActor
@@ -34,7 +35,7 @@ public final class MentionAttachment: NSTextAttachment {
         self.resolution = resolution
         self.style = style
         widthLimit = width
-        layout = MentionPillLayout(label: Self.shownLabel(resolution, stored: storedLabel), resolution: resolution, style: style,
+        layout = MentionPillLayout(label: resolution.shownLabel(stored: storedLabel), resolution: resolution, style: style,
                                    isSelected: false, widthLimit: width)
         super.init(data: nil, ofType: nil)
         draw()
@@ -60,26 +61,13 @@ public final class MentionAttachment: NSTextAttachment {
 
     /// What it reads: its target's live label, else the name it holds, else, holding none, what
     /// its tooltip says.
-    public var shownLabel: String { Self.shownLabel(resolution, stored: storedLabel) }
-
-    private static func shownLabel(_ resolution: MentionResolution, stored: String) -> String {
-        if let appearance = resolution.appearance { return appearance.label }
-        return stored.isEmpty ? help(resolution) ?? "" : stored
-    }
+    public var shownLabel: String { resolution.shownLabel(stored: storedLabel) }
 
     /// The name to write it with: its live label, else the one it holds.
     public var writtenLabel: String { resolution.appearance?.label ?? storedLabel }
 
     /// Why it isn't live, for a tooltip: nil while it is.
-    public var help: String? { Self.help(resolution) }
-
-    private static func help(_ resolution: MentionResolution) -> String? {
-        switch resolution {
-        case .live: nil
-        case .missing: MentionStyle.missingHelp
-        case .unavailable: MentionStyle.unavailableHelp
-        }
-    }
+    public var help: String? { resolution.help }
 
     /// How it's laid out now.
     public private(set) var layout: MentionPillLayout
@@ -135,17 +123,18 @@ public struct MentionPillLayout {
     @MainActor
     init(label: String, resolution: MentionResolution, style: MentionTextStyle, isSelected: Bool, widthLimit: CGFloat?) {
         let em = style.font.pointSize
-        let height = (MentionStyle.pillHeight * em).rounded()
-        let padding = MentionStyle.pillPadding * em
+        let isOutlined = style.surface == .outlined
+        let height = ((isOutlined ? MentionStyle.outlinedHeight : MentionStyle.pillHeight) * em).rounded()
+        let padding = (isOutlined ? MentionStyle.outlinedPadding : MentionStyle.pillPadding) * em
         let appearance = resolution.appearance
         isLive = appearance != nil
         self.label = label
-        cornerRadius = MentionStyle.cornerRadius * em
-        strokeWidth = MentionStyle.missingStrokeWidth
-        dash = MentionStyle.missingDash
+        cornerRadius = isOutlined ? height / 2 : MentionStyle.cornerRadius * em
+        strokeWidth = isLive ? MentionStyle.outlinedStrokeWidth : MentionStyle.missingStrokeWidth
+        dash = isLive ? [] : MentionStyle.missingDash
         minDetailScale = MentionStyle.minDetailScale
 
-        var font = NSFont.systemFont(ofSize: MentionStyle.labelSize * em, weight: .medium)
+        var font = NSFont.systemFont(ofSize: (isOutlined ? MentionStyle.outlinedLabelSize : MentionStyle.labelSize) * em, weight: .medium)
         if !isLive, let italic = NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(.italic), size: font.pointSize) { font = italic }
         labelFont = font
 
@@ -153,7 +142,7 @@ public struct MentionPillLayout {
         fill = colors.fill
         stroke = colors.stroke
         labelColor = colors.label
-        if let appearance,
+        if let appearance, style.surface != .outlined,
            let image = NSImage(systemSymbolName: appearance.systemImage, accessibilityDescription: nil)?
                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: MentionStyle.symbolSize * em, weight: .semibold)
                    .applying(NSImage.SymbolConfiguration(paletteColors: [colors.symbol]))) {
@@ -161,9 +150,9 @@ public struct MentionPillLayout {
         } else {
             symbol = nil
         }
-        // A live pill's symbol has its slot, whichever symbol it is (or none, if it can't be found).
+        // A live pill's symbol has its slot, whichever symbol it is (or none, if it can't be found); an outlined one has no symbol.
         let slot = MentionStyle.symbolSlot * em
-        let symbolWidth = isLive ? slot + MentionStyle.symbolGap * em : 0
+        let symbolWidth = isLive && style.surface != .outlined ? slot + MentionStyle.symbolGap * em : 0
         let measured = ceil((label as NSString).size(withAttributes: [.font: font]).width)
         let natural = ceil(padding * 2 + symbolWidth + measured)
         let widest = min(MentionStyle.maxWidth * em, widthLimit ?? .infinity)
@@ -185,8 +174,8 @@ public struct MentionPillLayout {
     @MainActor
     private static func colors(for appearance: MentionAppearance?, style: MentionTextStyle, isSelected: Bool)
         -> (fill: NSColor?, stroke: NSColor?, label: NSColor, symbol: NSColor) {
-        let base = style.surface == .shape ? style.color : NSColor.labelColor
-        let strength = style.surface == .shape ? style.color.usingColorSpace(.deviceRGB)?.alphaComponent ?? 1 : 1
+        let base = style.surface == .neutral ? NSColor.labelColor : style.color
+        let strength = style.surface == .neutral ? 1 : style.color.usingColorSpace(.deviceRGB)?.alphaComponent ?? 1
         if appearance == nil {
             let stroke = base.withAlphaComponent(MentionStyle.missingStroke * strength)
             let label = base.withAlphaComponent(MentionStyle.missingLabel * strength)
@@ -200,6 +189,8 @@ public struct MentionPillLayout {
                     base.withAlphaComponent(MentionStyle.shapeSymbol * strength))
         case .neutral:
             return (.quaternaryLabelColor, nil, .labelColor, appearance?.tint ?? .secondaryLabelColor)
+        case .outlined:
+            return (MentionStyle.outlinedFill, base.withAlphaComponent(MentionStyle.outlinedStroke * strength), base, base)
         }
     }
 
@@ -224,6 +215,21 @@ public struct MentionPillLayout {
         paragraph.lineBreakMode = .byTruncatingTail
         (label as NSString).draw(with: labelRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
                                  attributes: [.font: labelFont, .foregroundColor: labelColor, .paragraphStyle: paragraph])
+    }
+
+    /// Draws the pill straight into `cg`, a context with y down (the canvas's), in `frame`: what
+    /// its attachment's image shows there, with no image made. Its parts go onto the context one
+    /// by one, where an image goes on whole: the same wherever the context's alpha is 1.
+    @MainActor
+    func draw(in frame: CGRect, of cg: CGContext) {
+        cg.saveGState()
+        cg.translateBy(x: frame.minX, y: frame.maxY)
+        cg.scaleBy(x: 1, y: -1)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: false)
+        draw(in: CGRect(origin: .zero, size: frame.size))
+        NSGraphicsContext.restoreGraphicsState()
+        cg.restoreGState()
     }
 
     /// Device pixels per point where it's being drawn now: the canvas's zoom times the screen's.

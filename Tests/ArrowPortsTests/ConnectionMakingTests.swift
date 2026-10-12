@@ -227,7 +227,7 @@ let sideMiddles: [(side: PortSide, anchor: CGPoint)] = [(.top, CGPoint(x: 0.5, y
         expect(board.registry.arrowMayBind(wired, .end, to: b))
         expect(!board.registry.arrowMayBind(wired, .end, to: c), "the disc doesn't take the wire")
         expect(board.registry.arrowMayBind(plain, .end, to: c))
-        let noRules = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+        let noRules = try Registry(plugins: PortBoard.plugins().filter { ![PluginID.ports, .arrowPorts, "channels"].contains($0.id) })
         expect(noRules.arrowMayBind(wired, .end, to: c))
     },
 ])

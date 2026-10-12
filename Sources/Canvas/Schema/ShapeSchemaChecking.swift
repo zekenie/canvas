@@ -60,7 +60,7 @@ extension Registry {
     /// `ShapeProperty.isNone`). It throws for a kind no plugin registers, a property the kind doesn't
     /// have, and a value that doesn't read as its property's type; one that breaks only its schema's
     /// bounds reads (`schemaViolations(of:)` finds it). A kind whose props hold something that
-    /// follows from the rest puts it in step (`DerivedProps`: a schema card's height), so the shape
+    /// follows from the rest puts it in step (`DerivedProps`: a note's height), so the shape
     /// may differ there from what the object says. The shape is in no document yet.
     public func shape(_ kind: ShapeKind, properties: JSONObject, id: ShapeID = ShapeID()) throws(ShapePropertiesError) -> AnyShapeRecord {
         guard let definition = definition(for: kind) else { throw .unknownKind(kind) }
@@ -108,7 +108,7 @@ extension Registry {
     /// members it leaves out take their defaults, not the shape's. Everything the object doesn't
     /// name stays exactly as it was (it isn't written out and read back, so a date keeps its
     /// fractions of a second), but for what the kind derives from what's set (`DerivedProps`: a
-    /// schema card's height, put in step when any of its own properties is set); and so do the
+    /// note's height, put in step when any of its own properties is set); and so do the
     /// shape's id, its place in the stack, its metadata and its values kept aside
     /// (`keptProperties`), which can't be set. It throws as `shape(_:properties:)` does, and for a
     /// shape kept aside (`isOpaque`) or a value kept aside (`unreadable`); nothing changes in any

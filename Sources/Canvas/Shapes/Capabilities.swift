@@ -1,4 +1,27 @@
 import AppKit
+import Geometry
+
+/// A box kind whose shapes may be laid out larger than the box they store (a note with rows no
+/// record holds). The laid-out frame has the stored box's origin and is never smaller than it
+/// either way: the core takes the larger of each side. Everything that asks how much room the
+/// shape takes goes by it (`ShapeContext.frame(of:)`); the kind's geometry, outline and editing
+/// frame are it unless the kind says otherwise. A kind that holds shapes (`ShapeContaining`) can't
+/// be one: a container's edge is its box.
+///
+/// The size must follow from the shape's record but for where it is, and from its layout inputs
+/// (`context.layoutInput(_:of:)`), and from nothing else: the editor keeps it until a commit changes
+/// the shape other than by moving it, or `editor.shapesDidChangeLayout` names it. Conform in an
+/// extension, like every capability.
+public protocol LaidOutBox: ShapeDefinition where Props: BoxShapeProps {
+    func laidOutSize(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGSize
+}
+
+extension LaidOutBox {
+    public func geometry(of shape: ShapeRecord<Props>, in context: ShapeContext) -> ShapeGeometry {
+        let frame = context.frame(of: shape, laidOutBy: self)
+        return ShapeGeometry(outline: frame.polygon, bounds: frame)
+    }
+}
 
 /// Edited in place: from an editing placement, or by any plugin that calls `editor.beginEditing`
 /// (Selection's double-click and Return). The view is laid over the shape's editing frame (a box
@@ -31,6 +54,10 @@ extension Editable {
 
 extension Editable where Props: BoxShapeProps {
     public func editingFrame(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGRect? { shape.frame }
+}
+
+extension Editable where Self: LaidOutBox {
+    public func editingFrame(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGRect? { context.frame(of: shape) }
 }
 
 @MainActor
@@ -142,7 +169,7 @@ public struct ShapeTranslation<Props: ShapeProps> {
 }
 
 /// Props that hold something following from the rest, which the kind's own setters keep in step
-/// (a schema card's height, which `setPrompt` fits to its description). A shape made from properties
+/// (a note's height, which its setters fit to its text). A shape made from properties
 /// written somewhere else, `Registry.shape(_:properties:)`, or given some of its own that way,
 /// `shape(_:setting:)` (the command line's `draw`), goes through `derive` before anything else is
 /// done with it, so it's in step as the setters would have left it, and so does one handed to

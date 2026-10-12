@@ -27,7 +27,7 @@ Read `docs/plugin-system.md` first; it's the guide to the plugin system, with th
 - Changing how a kind's props encode, even adding a member with a default, needs a migration and a new fixture in `Tests/CompositionTests/Fixtures/kinds` (an added property's value has migrations of its own, and fixtures in `Fixtures/added`); never edit a fixture ([boards on disk](.claude/rules/boards-on-disk.md)).
 - A change to `canvas draw` or `canvas query`, their messages, the shipped kinds, the query words or edge types, or the `--ask` prompt changes the canvas skill (`.claude/skills/canvas`) too: SkillTests and QueryPromptTests hold them together ([command line](.claude/rules/command-line.md), [queries](.claude/rules/queries.md)).
 - Arrows mirror tldraw's arc arrows: check tldraw before changing arrow behavior and call out any intentional deviation, and never regenerate the proof-of-concept fixtures from the app to make a change pass ([arrows](.claude/rules/arrows.md)).
-- UI constants live in each module's `@MainActor` style enum (`Style`, `ArrowStyle`, `NoteStyle`, ...), a kind's skeleton's beside its full look's (`NoteStyle.skeletonFill`, `SubboardStyle.skeletonBorderWidth`, `SchemaStyle.skeletonEdge`, `ArrowStyle.skeletonLineWidth`). The core's are internal (`Style.skeletonZoom`, `Style.skeleton`, `Style.skeletonText`, `Style.drawingPad`): a plugin goes by `editor.drawsSkeletons`, never the number, and one that simplifies further farther out reads `context.zoom`. Pure geometry (Geometry, `ArrowGeometry`) is nonisolated, so its constants live on those types.
+- UI constants live in each module's `@MainActor` style enum (`Style`, `ArrowStyle`, `NoteStyle`, `TypesStyle`, ...), a kind's skeleton's beside its full look's (`NoteStyle.skeletonFill`, `SubboardStyle.skeletonBorderWidth`, `ReferenceStyle.skeletonFill`, `ArrowStyle.skeletonLineWidth`). The core's are internal (`Style.skeletonZoom`, `Style.skeleton`, `Style.skeletonText`, `Style.drawingPad`): a plugin goes by `editor.drawsSkeletons`, never the number, and one that simplifies further farther out reads `context.zoom`. Pure geometry (Geometry, `ArrowGeometry`) is nonisolated, so its constants live on those types.
 - Never print, log or write the Anthropic API key ([language models](.claude/rules/language-models.md)).
 
 ## Tests
@@ -54,7 +54,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [plugins and kinds](.claude/rules/plugins-and-kinds.md): plugin values and the frozen registry; kinds, their definitions and capabilities; translating and placing sessions.
 - [properties and schemas](.claude/rules/properties-and-schemas.md): property lists (`SchemaDefined`), kinds' JSON Schemas, `KindSchema`, added properties.
 - [shape references](.claude/rules/shape-references.md): values that bind or name other shapes, and what deletes, copies, cuts and draws do to them.
-- [editor](.claude/rules/editor.md): what `CanvasEditor` lends every plugin: outlines and their standoff, read-only shapes, drawing offsets, the glide, skeleton levels, commands and zoom, keys, the hand, the translation adjuster, service hooks, edge scrolling.
+- [editor](.claude/rules/editor.md): what `CanvasEditor` lends every plugin: layout inputs and laid-out frames, outlines and their standoff, read-only shapes, drawing offsets, the glide, skeleton levels, cards, commands and zoom, keys, the hand, the translation adjuster, service hooks, edge scrolling.
 - [editing](.claude/rules/editing.md): editing in place (`Editable`, the editing view, `EditContext`), and an editor's text held to its shape's render.
 - [undo](.claude/rules/undo.md): steps, groups and coalescing, `DocumentDelta`, one history across boards.
 - [boards in a file](.claude/rules/boards-in-a-file.md): `CanvasFile`, board revisions, the delete cascade, `transact(on:)`, and showing a board.
@@ -76,27 +76,29 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [adornments](.claude/rules/adornments.md): pills and chips on shapes: placing them, their places, drawing and pointing.
 - [context menus](.claude/rules/context-menus.md): a shape's items, the canvas's items, right-clicks and Control-clicks.
 - [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text.
-- [topology](.claude/rules/topology.md): edges and edge types, their sources, stand-ins and the views through them, provided answers, the one delivery of every change (`follow`) and settling, containment as one tree, snapshots for other threads.
+- [topology](.claude/rules/topology.md): edges and edge types (a child under another plugin's), their sources, stand-ins and the views through them, provided answers, the one delivery of every change (`follow`) and settling, containment as one tree, snapshots for other threads.
 - [language models](.claude/rules/language-models.md): the model plugins ask, the Anthropic key and Settings, `--ask`'s model.
-- [prose maps](.claude/rules/prose-maps.md): which words of a text say which part of a lower-level text (a schema card's highlights): targets, maps, asking the model, the request.
+- [prose maps](.claude/rules/prose-maps.md): which words of a text say which part of a lower-level text (a type's highlights): targets, maps, asking the model, the request.
+- [placing](.claude/rules/placing.md): where a box of shapes lands, beside a shape, in a frame or anywhere, placed as `canvas draw` places one: `Surroundings`, `Landing`; Moving's solver, for any plugin that puts shapes down.
 - [find](.claude/rules/find.md): ⌘F: the `FindableTexts` point and its contributors, the index, the search off the main actor, scope and order, the highlights, the panel in the detail panel's place.
-- [neighbors](.claude/rules/neighbors.md): hovering a shape, on the canvas or in the table of contents, outlines what's connected to it in a color for each way (the lights, each a color and a query, contributed by the plugin that owns the edges); the subject, asking and asking again, where a match is drawn, rings, and the core's tinted outlines it hands.
+- [neighbors](.claude/rules/neighbors.md): hovering a shape, on the canvas or in the table of contents, outlines what's connected to it in a color for each way (the lights, each a color and a query, contributed by the plugin that owns the edges; a pointer lights as a mention); the subject, asking and asking again, where a match is drawn, rings, and the core's tinted outlines it hands.
 
 **Concerns**
-- [validation](.claude/rules/validation.md): rules and issues, the schema rule, what each commit re-checks, rings, where issues show.
-- [titles](.claude/rules/titles.md): named and derived titles, the pill, the cover zoomed out, `TitleHeader`, `/title`, shared titles.
+- [validation](.claude/rules/validation.md): rules and issues (and where in a value one is), the schema rule, what each commit re-checks and `recheck`, rings, where issues show.
+- [titles](.claude/rules/titles.md): named and derived titles, the pill and the looks other plugins give it, the cover zoomed out, `TitleHeader`, `/title`, shared titles.
 - [clipboard](.claude/rules/clipboard.md): cut, copy and paste; boards and containers copied whole; cut and paste as a move.
 - [locking](.claude/rules/locking.md): locked shapes, read-only, the chip, `/lock`.
 - [publishing](.claude/rules/publishing.md): public shapes (what another shape may stand for), the two dials, the chip and its count, refusing while held, `/public`, Referenced In.
 - [connections](.claude/rules/connections.md): ports, channels and the connector.
 - [arrows](.claude/rules/arrows.md): tldraw's arc arrows, their labels and binding rules, and the proof-of-concept parity tests.
-- [mentions](.claude/rules/mentions.md): mentions in text: pills, the `@` picker, mention edges, Mentioned In, mentions' warnings.
+- [mentions](.claude/rules/mentions.md): mentions in text: pills, the `@` picker (its lines with their board), one token alone (`MentionToken`), mention edges, Mentioned In, layout by names, mentions' warnings.
 - [boards](.claude/rules/boards.md): opening boards, Enclosing Board, what a board is called (the root, as the file is) and where that heads other plugins' lists, the path's crumbs and their menus.
 - [transform](.claude/rules/transform.md): turning a shape into another kind: channels, sources and targets, the menu item and the command, frame into subboard.
+- [types](.claude/rules/types.md): a note that holds a JSON Schema is a type, named by its title: making one (`/is-a type`, Remove Type, New type), the file's types (`TypeIndex`), what a shape is (`is`, the `is-a` edge, the chips, the Types tab), a note that is one (its `fieldValues`, the chain and the field book, the rows it and its type have under their words and typing in them, the card a row with more in it opens and its form, the Fields section of the Types tab, the one writer that changes a value), Checks (needed, wrong, a warning), pointers to other notes (the pill, the picker, `field-link`), the title from a field, Agents (what `canvas draw`, `canvas query`, `--ask` and `canvas measure` read and write of all that), and the model's part (`TypeSync`: words and schema kept in step; highlights).
 
 **Languages** (what agents read and write)
-- [command line](.claude/rules/command-line.md): `canvas`, the wire, `CommandServer`, Automation's commands, Draw (the engine of `canvas draw`), the canvas skill.
-- [queries](.claude/rules/queries.md): the query language, what a query sees and where it runs, the words their owners give, `canvas query` and `--ask`.
+- [command line](.claude/rules/command-line.md): `canvas`, the wire, `CommandServer`, Automation's commands (`measure` reads a board's types), Draw (the engine of `canvas draw`: `is:`, a note's values joined, `@[Title]` pointers, what each shape's values still need), the canvas skill.
+- [queries](.claude/rules/queries.md): the query language, what a query sees and where it runs, the words their owners give (`:is-a`, `:incomplete`, paths into a note's values), `canvas query` and `--ask` (what it is told of types and fields).
 - [digest](.claude/rules/digest.md): the canvas-digest skill: a large body of connected information laid out as boards by a tool outside the app (`digest`, jsc), measured with `canvas measure`, drawn with `canvas draw`; the digest format, the plan, what it makes public, the dry-run gate, drawing again in place; the codebase ingestion (`dogfood/model/ingest`) built on it.
 
 **Features** (cross-cutting behaviors; no kind opts in and no plugin imports one)
@@ -106,7 +108,6 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - Reordering (`Examples/`) has no file of its own: it is in [context menus](.claude/rules/context-menus.md).
 
 **Verticals** (the kinds)
-- [schema cards](.claude/rules/schema-cards.md): a JSON Schema and its description, kept in step by the model; references, the panel's JSON and completions, highlights.
 - [subboards](.claude/rules/subboards.md): a card that owns a board.
 - [frames](.claude/rules/frames.md): a region that holds shapes, the Frame tool, and Create Frame.
 - [references](.claude/rules/references.md): a pill that stands for a public shape: its props and writers, its look in every state, what it stands for, going to the original, its row and panel.

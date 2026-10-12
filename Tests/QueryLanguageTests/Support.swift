@@ -44,6 +44,11 @@ func attribute(_ name: String, _ op: Operator? = nil, _ value: Literal? = nil, _
     .attribute(AttributeTest(name: name, op: op, value: value, flag: flag, span: nowhere))
 }
 
+/// `[name.a.b op value flag]`: members inside the attribute.
+func attribute(_ name: String, in path: [String], _ op: Operator? = nil, _ value: Literal? = nil, _ flag: CaseFlag? = nil) -> Filter {
+    .attribute(AttributeTest(name: name, path: path, op: op, value: value, flag: flag, span: nowhere))
+}
+
 func pseudo(_ name: String, _ argument: PseudoArgument = .none) -> Filter {
     .pseudo(PseudoClass(name: name, argument: argument, span: nowhere, nameSpan: nowhere))
 }
@@ -117,7 +122,7 @@ func stripped(_ term: TypeTerm) -> TypeTerm { TypeTerm(name: term.name, only: te
 
 /// A refusal, pinned: its reason, message, hint and span, and where `located` puts it; and a better
 /// hint that waits on the caller (`better`), for compounds it takes to hold shapes (`holding`, as
-/// written canonically).
+/// written canonically), or for a word that names a type (`typeWord`, the name as written).
 struct Refused {
     var query: String
     var reason: QueryError.Reason
@@ -125,19 +130,21 @@ struct Refused {
     var hint: String?
     var better: String?
     var holding: [String]?
+    var typeWord: String?
     var offset: Int?
     var length: Int?
     var line = 1
     var column: Int?
 
     init(_ query: String, _ reason: QueryError.Reason, _ message: String, hint: String? = nil, better: String? = nil, holding: [String]? = nil,
-         at offset: Int? = nil, _ length: Int? = nil, line: Int = 1, column: Int? = nil) {
+         typeWord: String? = nil, at offset: Int? = nil, _ length: Int? = nil, line: Int = 1, column: Int? = nil) {
         self.query = query
         self.reason = reason
         self.message = message
         self.hint = hint
         self.better = better
         self.holding = holding
+        self.typeWord = typeWord
         self.offset = offset
         self.length = length
         self.line = line
@@ -158,6 +165,8 @@ struct Refused {
         expectEqual(error.premise?.hint, expected.better, "the better hint: \(what)", file: file, line: line)
         let holding: [String]? = if case .holdShapes(let compounds)? = error.premise?.claim { compounds.map(\.canonical) } else { nil }
         expectEqual(holding, expected.holding, "what the better hint takes to hold shapes: \(what)", file: file, line: line)
+        let typeWord: String? = if case .typeWord(let name)? = error.premise?.claim { name } else { nil }
+        expectEqual(typeWord, expected.typeWord, "the type a hint may write as a word: \(what)", file: file, line: line)
         expectEqual(error.span?.offset, expected.offset, what, file: file, line: line)
         expectEqual(error.span?.length, expected.length, what, file: file, line: line)
         expectEqual(error.errors, [], "reading stops at the first: \(what)", file: file, line: line)

@@ -74,4 +74,19 @@ import Titles
         expect(a[0] - a[2] > b[0] - b[2] + 30, "the cover tinted: \(a) against \(b)")
         expectEqual(pixel(tinted, at: below), pixel(plain, at: below), "the rest of the shape as it was")
     },
+    test("a shape whose pill a look hides gives Find no title text, and the text comes back when the look stops hiding") {
+        let scheduler = ManualScheduler()
+        let hider = looks(id: "hider") { shape, _ in shape[Starred.self] == true ? TitlePillLook(hidesPill: true) : nil }
+        let editor = try titleEditor([starPlugin, hider, CardsPlugin(), CardTitlesPlugin(), FindPlugin(), TitleFindPlugin()], scheduler: scheduler)
+        let plaque = editor.add(Plaque(plaqueFrame), named: "Front desk")
+        let card = editor.add(Card(CGRect(x: 300, y: 100, width: 80, height: 60), text: "Desk lamp"))
+        editor.star(plaque)
+        let find = try search("desk", in: editor, scheduler)
+        expectEqual(find.results.map(\.id), [card], "the hidden pill's title is not found")
+        expectEqual(find.texts(of: plaque), [])
+        editor.star(plaque, nil)
+        let again = try search("front", in: editor, scheduler)
+        expectEqual(again.results.map(\.id), [plaque], "found again once the look stops hiding, with no other change")
+        expectEqual(again.texts(of: plaque), ["Front desk"])
+    },
 ])

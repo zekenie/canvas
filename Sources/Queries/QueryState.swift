@@ -1,4 +1,5 @@
 import Canvas
+import DrawScript
 import QueryLanguage
 import Topology
 
@@ -55,6 +56,8 @@ public final class QueryState {
     /// How many derived names, and words' verdicts, queries have asked the main actor.
     public private(set) var derivedTitlesAsked = 0
     public private(set) var verdictsAsked = 0
+    /// How many shapes' problems queries have asked the main actor (a row's `problems`).
+    public private(set) var problemsAsked = 0
     /// How many times a query has walked every shape it ranges over.
     public private(set) var universeWalks = 0
     /// How many compounds started from their anchors' edges.
@@ -145,8 +148,30 @@ public final class QueryState {
         }
         timings.main += .cpu(checked)
         result.timings = timings
+        result.warnings += unknownFields(in: plan)
         if let pending { result.warnings.append(.pending(pending)) }
         return result
+    }
+
+    /// What the plugins that know an attribute's members say of the paths the plan tests into it: a path
+    /// naming one no shape of the file can hold is `unknown_field`, with the member the nearest of those
+    /// that could be there when one is near. Asked of the main actor (the plugin reads the file's types) once a
+    /// path, and only for a query that has one.
+    private func unknownFields(in plan: QueryPlan) -> [QueryWarning] {
+        guard let editor, !plan.paths.isEmpty else { return [] }
+        let checks = Dictionary(registry.contributions(to: QueryPathChecks.self).map { ($0.value.attribute, $0.value) },
+                                uniquingKeysWith: { first, _ in first })
+        var warnings: [QueryWarning] = []
+        for path in plan.paths {
+            guard let unknown = checks[path.attribute]?.check(path.members, editor), path.members.indices.contains(unknown.index) else { continue }
+            let before = ([path.attribute] + path.members.prefix(unknown.index)).joined(separator: ".")
+            var message = "No type in the file has \(before).\(path.members[unknown.index])."
+            if let near = Suggestions.closest(to: path.members[unknown.index], among: unknown.known, limit: 1).first {
+                message += " Did you mean \(before).\(near)?"
+            }
+            warnings.append(QueryWarning(.unknownField, message))
+        }
+        return warnings
     }
 
     /// Answers many queries about one file, ids only: what a plugin that keeps answers asks. The
@@ -315,6 +340,7 @@ public final class QueryState {
         recordsEncoded += performed.stats.recordsEncoded
         derivedTitlesAsked += facts.titlesAsked
         verdictsAsked += facts.verdictsAsked
+        problemsAsked += facts.problemsAsked
         universeWalks += performed.stats.universeWalks
         seededFromAnchors += performed.stats.seeded
         #endif
@@ -349,12 +375,19 @@ public final class QueryState {
         let graph = views[edges.first ?? .resolved] ?? topology.snapshot()
         let shown = editor.board, path = editor.boardPath, revision = editor.revision, editing = editor.editingShapeID
         let preparation = QueryPreparation(editor: editor, file: QueryFilePreparation(snapshot: graph, registry: registry, editor: editor))
-        var prepared: [String: any Sendable] = [:], verdicts: [String: MainFacts.Verdict] = [:]
+        var prepared: [String: any Sendable] = [:], verdicts: [String: MainFacts.Verdict] = [:], problemers: [String: MainFacts.Problemer] = [:]
         for word in words.sorted() {
-            guard case .pseudoClass(let behavior)? = vocabulary.contributedWords[word]?.meaning else { continue }
-            let value = behavior.prepare(preparation)
-            prepared[word] = value
-            if let onMain = behavior.onMain { verdicts[word] = MainFacts.Verdict(ask: onMain, prepared: value) }
+            switch vocabulary.contributedWords[word]?.meaning {
+            case .pseudoClass(let behavior)?:
+                let value = behavior.prepare(preparation)
+                prepared[word] = value
+                if let onMain = behavior.onMain { verdicts[word] = MainFacts.Verdict(ask: onMain, prepared: value) }
+                if let problems = behavior.problems { problemers[word] = MainFacts.Problemer(ask: problems, prepared: value) }
+            case .fileRelation(let relation)?:
+                prepared[word] = relation.prepare(preparation.file)
+            case .relation?, nil:
+                continue
+            }
         }
         var read: [String: any Sendable] = [:]
         for mediaType in formats.sorted() {
@@ -365,7 +398,7 @@ public final class QueryState {
         #endif
         let snapshot = QuerySnapshot(file: file, topology: graph, topologies: views, shown: shown, shownPath: path, revision: revision, editing: editing,
                                      words: prepared, formats: read, token: live.token())
-        let facts = MainFacts(editor: editor, revision: revision, derived: vocabulary.naming?.derived, verdicts: verdicts)
+        let facts = MainFacts(editor: editor, revision: revision, derived: vocabulary.naming?.derived, verdicts: verdicts, problemers: problemers)
         return (Handover(snapshot), facts)
     }
 }

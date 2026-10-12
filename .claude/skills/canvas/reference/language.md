@@ -103,9 +103,8 @@ A kind is drawable when a tool places it. These are the shipped ones:
 
 | kind | size | named by | what it says | edges |
 |---|---|---|---|---|
-| `sticky-note` | 200x200 | its title, a pill above its top-left corner | `text:` | `note-link`, all four sides |
-| `schema-card` | 240x52 | its schema's "title", a pill above its top-left corner: never a title of its own | `prompt:`, in words, on the card; `schema:` in its panel | `schema-link`, all four sides |
-| `subboard` | 240x160 | its title, drawn on its card | nothing else: its board is its own | every channel (`subboard-link`, `note-link`, `schema-link`), all four sides |
+| `sticky-note` | 200x200 | its title, a pill above its top-left corner | `text:`; a type's `schema:` in its panel | `note-link`, all four sides |
+| `subboard` | 240x160 | its title, drawn on its card | nothing else: its board is its own | every channel (`subboard-link`, `note-link`), all four sides |
 | `frame` | 640x400 | its title, a pill above its top-left corner | nothing else: it holds what's drawn `in` it | none |
 | `reference` | 120x32 | nothing: it has no title, so a script can't name one (an edge to a shape on another board draws one, [Through a reference](#through-a-reference)) | `query:`, a query in the query language; `all:` | none |
 
@@ -118,12 +117,13 @@ A shape is referred to by its title and nothing else. There are no ids in a scri
 - **A title is always quoted.** It's folded as the app folds titles: runs of spaces and new lines become one space, and the ends are trimmed. A title that folds to nothing is refused; leave it out for an untitled shape. Keep titles to one line. One longer than 80 characters is kept but warned about.
 - **Matching is exact** on the folded form, and case matters. `"deploy"` is not `"Deploy"`.
 - **Names are read as the file has them when the run starts**, every board of it, plus the titles the script itself draws. A rename takes effect from the next run.
-- **A schema card is called by its schema's `"title"`**, and can't be given a title of its own: `schema-card "Order"` is `untitlable`, and so is `title:` on one. Draw it untitled, with the title in `schema:`, and call it by that title from the next run on (not in the same script: another statement can't name a shape drawn without a title). Restated with a schema whose title is another, it's renamed (`did: "renamed"`, with `was`), held to the rules of a rename (`duplicate` for a title that's taken); a schema with no title left is `renames`, since a script can't take a title away.
-- **A schema card refers to another in words by its title, and in its schema by its id.** Its prompt mentions the card, `@[Address]` ([A text that mentions shapes](#a-text-that-mentions-shapes): a prompt may mention schema cards only), and its schema points to it with `{\"$ref\": \"urn:uuid:<id, lowercase>\"}` where that field goes, the id being the card's, which `canvas query`'s rows give (a fragment after it, `#/$defs/zip`, points to a part of it). Write both, as the app keeps them: the mention in words, the `$ref` in JSON. Only the `$ref` takes an id.
+- **A type is a note with a `schema:`**, called by its title as any note is: its name is the note's title, never a `"title"` in its schema. `sticky-note[schema]` finds the types.
+- **A type refers to another in words by its title, and in its schema by its id.** Its text mentions the type, `@[Address]` ([A text that mentions shapes](#a-text-that-mentions-shapes): a mention of a type is a reference to it, a mention of any other shape only words), and its schema points to it with `{\"$ref\": \"urn:uuid:<id, lowercase>\"}` where that field goes, the id being the type's, which `canvas query`'s rows give (a fragment after it, `#/$defs/zip`, points to a part of it). Write both, as the app keeps them: the mention in words, the `$ref` in JSON. Only the `$ref` takes an id.
+- **A kind with no title can't be named.** A reference is drawn without one: `reference "Saved"` is `untitlable`.
 
 ```draw-error
 // reason: untitlable
-schema-card "Order" schema: "{\"title\": \"Order\", \"type\": \"object\"}"
+reference "Saved" query: "sticky-note"
 ```
 
 ### Make or update
@@ -140,17 +140,10 @@ A new shape starts as what its kind's tool places. Then comes its title, then it
 
 Two statements about one title in one script (two shape statements, or one and a rename to that title) is `duplicate`. A statement placed against its own title is `circular`. The exception is `delete "X"` followed by a shape statement for "X": deletes happen first, so that pair redraws a shape.
 
-This names nothing, so it makes a schema card with no title of its own, called by the title in its schema:
+A type is a note drawn with a `schema:`, what it holds in words in its `text:` and as JSON in its schema, a quoted string, so each quote is escaped:
 
 ```draw
-schema-card left of "Ingest" prompt: "A row, by its id." schema: "{\"title\": \"Row\", \"type\": \"object\", \"properties\": {\"id\": {\"type\": \"string\"}}}"
-```
-
-From the next run on, the board has a shape called "Row". A schema with no title would take that name away, so a statement that gives it one is refused:
-
-```draw-error
-// reason: renames
-schema-card "Row" schema: "{\"type\": \"object\"}"
+sticky-note "Row" left of "Ingest" text: "A row, by its id." schema: "{\"type\": \"object\", \"properties\": {\"id\": {\"type\": \"string\"}}}"
 ```
 
 ## Attributes
@@ -161,7 +154,7 @@ An attribute is `key: value`. Each key appears once in a statement; the second i
 
 | key | value | what it does |
 |---|---|---|
-| `size:` | `<width>x<height>` (`x` or `×`), or `[w, h]`; both above 0, and at most 100000; for a kind with a smallest, at least that (`canvas kinds`' `smallest`). Or a width alone, `<width>x` | The shape's size in world units. A new shape defaults to what its tool places; a restated one keeps its size. A width alone leaves the height to the kind: a note's or a schema card's fitted to its text at that width, any other kind's as it was (a new one's as its tool places it). Under the kind's smallest it's `invalid_value`, with the size to write. |
+| `size:` | `<width>x<height>` (`x` or `×`), or `[w, h]`; both above 0, and at most 100000; for a kind with a smallest, at least that (`canvas kinds`' `smallest`). Or a width alone, `<width>x` | The shape's size in world units. A new shape defaults to what its tool places; a restated one keeps its size. A width alone leaves the height to the kind: a note's fitted to its text at that width, any other kind's as it was (a new one's as its tool places it). Under the kind's smallest it's `invalid_value`, with the size to write. |
 | `gap:` | `none`, `tight`, `normal`, `wide`, or a number from 0 to 100000 | This shape's default gap in every placement it's in, from either end. See [Gaps](#gaps). |
 | `overlap:` | `allow` | This shape may overlap others. It's never pushed, and it's never part of a list. |
 | `style:` | a name, or several joined by `,` or `and` | The styles it takes, in order. See [Styles](#styles). |
@@ -182,8 +175,10 @@ Every other key is one of the kind's properties, named as its schema names it; `
 
 The shipped kinds' attributes:
 
-- **sticky-note**: `text` (what it says: past eight lines or so the note grows taller to fit it, from its top. A `size:` with a height holds as drawn only until its text changes, typed by the user or set again by a script without `size:`: then it's as tall as its text again, never under 200, and opening it to edit grows it to its text. So don't use a note as a zone of a set height. A width alone, `size: 320x`, makes it that wide and as tall as its text there, in one run), `locked`, `public`.
-- **schema-card**: `prompt` (what the schema should hold, in words: the card shows it, as a note shows its text, and grows to fit it; with none it's blank; it may mention other schema cards by their titles, and only them), `schema` (a JSON Schema, as text: its properties in the order written, shown in the card's panel), `locked`, `public`. What a script writes is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write a prompt and a schema that agree.
+- **sticky-note**: `text` (what it says: past eight lines or so the note grows taller to fit it, from its top. A `size:` with a height holds as drawn only until its text changes, typed by the user or set again by a script without `size:`: then it's as tall as its text again, never under 200, and opening it to edit grows it to its text. So don't use a note as a zone of a set height. A width alone, `size: 320x`, makes it that wide and as tall as its text there, in one run), `schema` (below), `is` (below), `fieldValues` (below), `locked`, `public`.
+- **A note's `schema`** (a JSON Schema, as text: its properties in the order written, shown in the note's panel, its Schema tab) makes the note a type, not public unless `public: true` is written beside it, its `text` what the type holds in words, named by the note's title. What a script writes is taken as written: the Claude sync that rewrites one side when the user edits the other isn't asked, so write text and a schema that agree.
+- **A note's `is`** (the types it is, by their titles: `is: "Person"`, or several as a JSON list, `is: ["Person", "Employee card"]`, in the order added) makes it an instance of those types; a later one wins where two say the same, and the same type twice is once (the first). A title names a type anywhere in the file, or one the script draws (a note given a `schema:` in the same run), and a shape that isn't a type is `invalid_value`, "which isn't a type or a shape"; so is naming a type already built on the shape (a cycle). A type may be an instance of types itself. An edge takes `is:` too (`edge "A" -> "B" is: "Friendship"`): an arrow can be an instance of a type, which the user adds with `/is-a` in its label. Quoted text for any list of text is a list of that one item.
+- **A note's `fieldValues`** (what it holds for the fields of its types) is one JSON object, a member for each field, by the field's key: `fieldValues: {"status": "paid"}`, on the statement's line. A statement joins it with what the note holds: an object's members are set one by one, at every depth (`{"shipping": {"city": "Leeds"}}` keeps the street), a list is replaced whole, and `null` clears the member it's written at; `fieldValues: null` takes every value off. A value that is empty (`""`, `null`, `[]`, `{}`, or a list or group of nothing but those) is not kept, at any depth, and an object of only those leaves the note with none; `false` and `0` are values. An edge takes `fieldValues:` too, joined the same way. A member no field of the note's types names is kept and warned about (`"emial" isn't a field of Order`). The check reads the note's types wherever they are, and a type the same script draws. A query reads it by path: `[fieldValues.status="paid"]`. A string that is exactly `@[Title]`, at any depth, is a link to the shape called Title, found as a mention's is and refused as one is; `\\@[` writes `@[` as text, and `@[` inside longer text is text. A note's title is its statement's name: its values never title it.
 - **subboard**: `locked` (locking a subboard locks what's on its board, at any depth), `public`.
 - **frame**: `locked` (locking a frame locks what's in it, at any depth), `public`.
 - **reference**: `query` (a query in the query language: the pill stands for what it finds, and one the app can't read is `invalid_value` with its message), `all` (`true` stands for every match, `false`, the default, for the first in file order), `locked`. What it names and the words typed into it are the user's, from picking a shape and typing: a script can't write them (`unknown_attribute`). A reference is never public, and has no title. A direct one, standing for the shape on the far side of an edge, is what an edge between boards draws for itself ([Through a reference](#through-a-reference)).
@@ -206,10 +201,10 @@ sticky-note "Vendor contacts" left of "Row" size: 360x text: "Files: data-ops at
 
 ### A text that mentions shapes
 
-A note's `text` and a schema card's `prompt` are mention text, and `build/canvas kinds` says so after their type (`text (@[Title] mentions)`). In one, `@[Title]` mentions the shape called Title: the app shows a pill with that shape's name, live (renamed, it follows), and keeps the shape's id, which a script never writes or sees. Nightly schedule's text above mentions Load, which an earlier script drew. A mention is found by its title, exactly as every title in a script is (folded; case matters), with these rules:
+A note's `text` and an arrow's `text` (an edge's) are mention text, and `build/canvas kinds` says so after their type (`text (@[Title] mentions)`). In one, `@[Title]` mentions the shape called Title: the app shows a pill with that shape's name, live (renamed, it follows), and keeps the shape's id, which a script never writes or sees. Nightly schedule's text above mentions Load, which an earlier script drew. A mention is found by its title, exactly as every title in a script is (folded; case matters), with these rules:
 
 - **Which shape.** Among the shapes the text may mention (below), the first of these that has one called that decides: a shape the script itself draws or restates with that title, or renames to it with `title:` (one drawn further down the script counts, so two notes can mention each other); the board the script draws on ([Which board](#which-board)); the board the window shows; any other board of the file the app can show. Two or more in that place are `ambiguous_title`, each listed with its kind and where it is (or, on several boards, the boards); none anywhere is `unknown_title`, with the titles it's like. A shape the script deletes, or the board it takes, counts for nothing: a title only such a shape has is `unknown_title` too (`names "Old", which this script deletes`).
-- **Which shapes a text may mention.** A note's text, any shape that can be mentioned: notes, subboards, frames and schema cards (not an arrow, nor a reference). A schema card's prompt, schema cards only, so `@[Address]` there is the card called Address, never a note called that. Shapes that can't are passed over, as if they weren't called that: if they're all that is, the text is refused (`invalid_value`) saying what the shape is and why (`"Ingest" is a sticky-note, which this text can't mention: it mentions only schema-card shapes`).
+- **Which shapes a text may mention.** A note's text, or an arrow's, any shape that can be mentioned: notes (types among them), subboards and frames (not an arrow, nor a reference). A text that mentions only some kinds passes over shapes of the others, as if they weren't called that: if they're all that is, the text is refused (`invalid_value`) saying what the shape is and why.
 - **No placement, no board.** A title in a text doesn't say where a shape goes or which board the script draws on, and a mention of a shape on another board, however deep, is no reason for `several_boards`: the pill finds the shape wherever it is. Only a statement's own titles and `in` put the run on a board.
 - **Written as the title it is.** The pill holds the shape's title as it is now (or will be, for a shape the script renames), whatever way the script wrote it (`@[  Load ]`). A title with a `]` or a backslash in it is written with a backslash before each, which a script's string spells twice: `@[a\\]b]` for a title `a]b`. `@[]`, with no title in it, is refused (`invalid_value`).
 - **The rest is text.** Everything else is kept as written, byte for byte: an `@` alone, an `@[` with no `]` before the line ends, a `]` closing nothing. To write the characters `@[` as text, write `\\@[` in a script's string: the text keeps `\@[`, whose backslash makes them plain.
@@ -526,12 +521,12 @@ Both ends are titles: shapes on the board, or shapes the same script draws; one 
 | `via:` | `reference`: the kind of shape the edge goes through ([Through a reference](#through-a-reference)) |
 | `share:` | `true`, or the title of a shape: the edge's reference is one that's there already ([Through a reference](#through-a-reference)) |
 | `channel:` | a channel's id, or `none` for a plain arrow |
-| `text:` | what the arrow says, quoted, set on its line (`text: "calls"`) |
+| `text:` | what the arrow says, quoted, set on its line (`text: "calls"`); it may mention shapes by title (`text: "calls @[Cache]"`) |
 | `labelPosition:` | where its text sits along it: `0` at its start, `1` at its end, `0.5` (halfway) by default |
 | `bend:` | how far its middle is pushed off the straight line, in world units; `0` is straight |
 | `locked:` | `true` or `false` |
 
-Beside `from:`, `to:`, `via:`, `share:` and `channel:`, an edge's attributes are the arrow's, as `build/canvas kinds arrow` lists them, written as a shape's are. Its heads aren't among them: the arrow you write (`->`, `<->`) says them, and `startArrowhead:` or `endArrowhead:` saying otherwise is `invalid_value`. Text goes after `text:`; a quoted string right after the edge is `syntax`. An edge takes no placement (it goes where its ends are) and no style. Chains (`edge "A" -> "B" -> "C"`) are refused: write each edge on a line of its own.
+Beside `from:`, `to:`, `via:`, `share:` and `channel:`, an edge's attributes are the arrow's, as `build/canvas kinds arrow` lists them, written as a shape's are. Its heads aren't among them: the arrow you write (`->`, `<->`) says them, and `startArrowhead:` or `endArrowhead:` saying otherwise is `invalid_value`. Text goes after `text:`; a quoted string right after the edge is `syntax`. An arrow's text is mention text, as a note's is ([A text that mentions shapes](#a-text-that-mentions-shapes)): the label shows each `@[Title]` as a live pill. An edge takes no placement (it goes where its ends are) and no style. Chains (`edge "A" -> "B" -> "C"`) are refused: write each edge on a line of its own.
 
 ### Sides
 
@@ -546,19 +541,18 @@ A channel is what kind of connection an edge is. Each kind has ports on some cha
 | kind | channels | sides |
 |---|---|---|
 | `sticky-note` | `note-link` | all four |
-| `schema-card` | `schema-link` | all four |
-| `subboard` | `subboard-link`, `note-link`, `schema-link` | all four |
+| `subboard` | `subboard-link`, `note-link` | all four |
 | `frame` | none | none |
 | `reference` | none | none |
 
-A subboard has ports on every channel, its own first: a note or a schema card connects to one on its own channel, a subboard to either on theirs, and two subboards on `subboard-link`. A note and a schema card share no channel.
+A subboard has ports on every channel, its own first: a note connects to one on its own channel, a subboard to a note on the note's, and two subboards on `subboard-link`.
 
 `build/canvas kinds` lists each kind's channels by side, under `edges`. How an edge's channel is chosen:
 
 - **`channel: <id>`**: that channel. The start's kind must have ports on it, and the end's kind must accept it. Otherwise it's `no_channel`, and the message says what each end takes, side by side. A word that isn't a channel is `invalid_value`, and the hint lists the channels.
 - **`channel: none`**: a plain arrow, on no channel, between any two shapes, from and to any sides.
-- **Unwritten**: the first of the start's channels (on the `from:` side, if named) that the end accepts (on the `to:` side, if named). If there's none, and neither kind has ports on any channel (two frames), it's a plain arrow, from and to any sides named. If there's none and either kind does have ports, it's `no_channel`: `"Ingest" and "Row" share no channel: a sticky-note connects on note-link, a schema-card on schema-link`, or `"Ingest" and "Sprint" share no channel: a sticky-note connects on note-link, a frame has no ports`, with the hint `channel: none draws a plain arrow between them anyway`.
-- **A side a kind has no port on** is refused. With `channel:` written, it's `invalid_value`, and the message says which sides the kind does have ports on. With the channel unwritten, no channel fits that side, so it's `no_channel`. Notes, schema cards and subboards have ports on all four sides, so every side is fine for them; this is for a kind with ports on fewer.
+- **Unwritten**: the first of the start's channels (on the `from:` side, if named) that the end accepts (on the `to:` side, if named). If there's none, and neither kind has ports on any channel (two frames), it's a plain arrow, from and to any sides named. If there's none and either kind does have ports, it's `no_channel`: `"Ingest" and "Sprint" share no channel: a sticky-note connects on note-link, a frame has no ports`, with the hint `channel: none draws a plain arrow between them anyway`.
+- **A side a kind has no port on** is refused. With `channel:` written, it's `invalid_value`, and the message says which sides the kind does have ports on. With the channel unwritten, no channel fits that side, so it's `no_channel`. Notes and subboards have ports on all four sides, so every side is fine for them; this is for a kind with ports on fewer.
 - **An edge from a shape to itself** on a channel is refused. With `channel: none` it's a short straight arrow inside the shape (from its middle, or between the sides named), not a loop around it. To show a loop, draw it through a second shape.
 - **A reference at one end** (an edge [through a reference](#through-a-reference)) is judged as the shape it stands for, on its own left and right sides: the channel is the one a drag from that shape's port to it would find, so an edge to a public note is on `note-link`. A `channel:` written still wins when both ends take it, and `channel: none` draws a plain arrow into the reference as ever.
 
@@ -580,9 +574,15 @@ edge "Ingest" -> "Clean" text: "raw rows"
 edge "Clean" -> "Load" text: "deduplicated" labelPosition: 0.3
 ```
 
+An edge's text mentions shapes as a note's does, and a run again says `unchanged`:
+
+```draw
+edge "Backfill" -> "Load" text: "after @[Nightly schedule]"
+```
+
 ```draw-error
 // reason: no_channel
-edge "Ingest" -> "Row"
+edge "Ingest" -> "Sprint"
 ```
 
 ### Drawing one again
@@ -826,9 +826,14 @@ An illustration (not the board on this page):
    {"line": 7, "did": "connected", "kind": "arrow", "from": "Ingest", "to": "Clean", "channel": "note-link"},
    {"line": 8, "did": "created", "kind": "reference", "at": [[1180, 434], [106, 32]], "inView": true},
    {"line": 8, "did": "connected", "kind": "arrow", "from": "Load", "to": "Cutoff", "channel": "note-link", "via": "reference"},
-   {"line": 9, "did": "unchanged", "kind": "sticky-note", "title": "Load"}
+   {"line": 9, "did": "unchanged", "kind": "sticky-note", "title": "Load"},
+   {"line": 10, "did": "updated", "kind": "sticky-note", "title": "Order 12", "at": [[400, 300], [320, 236]], "inView": true,
+    "problems": [{"field": "customer", "path": "/customer", "class": "needed", "message": "customer is needed"},
+                 {"field": "lineItems", "path": "/lineItems/0/quantity", "class": "wrong", "message": "line items › Mug › quantity must be at least 1"}]}
  ],
- "warnings": [{"line": 4, "message": "\"Backfill\" was pushed right past \"Vendor\" to keep clear of it, …", "severity": "warning"}],
+ "warnings": [{"line": 4, "message": "\"Backfill\" was pushed right past \"Vendor\" to keep clear of it, …", "severity": "warning"},
+              {"line": 10, "message": "\"Order 12\": \"emial\" isn't a field of Order", "severity": "warning", "attribute": "fieldValues"},
+              {"line": 10, "message": "\"Order 12\": line items › Mug › quantity must be at least 1", "severity": "error", "attribute": "lineItems"}],
  "dryRun": true}
 ```
 
@@ -838,11 +843,13 @@ An illustration (not the board on this page):
 - **`inView`**: whether the shape landed in the window (on a board the window doesn't show, in the part of it the window shows when it's opened).
 - **`pushedPast`**: what the shape was pushed past to keep clear ([Keeping clear](#keeping-clear)).
 - **`was`**: a renamed shape's old title.
+- **`problems`**: on a shape whose types say something of its values, what it still needs and what's wrong, field by field: `field` (its key), `path` (where in `fieldValues`, as `/lineItems/0/quantity`), `class` (`needed`, `wrong`, or `warning` for a link to a note that's gone) and `message`, as the panel says it. A rule across fields has neither `field` nor `path`. On every row of such a shape, `unchanged` too; none when there's nothing. The check reads the types wherever they are, and a type the same script draws or restates.
 - **`dryRun`**: `true` on a dry run, when nothing was changed.
 
 The run succeeds with these **warnings**, each with its `severity`, the `line` of the statement it's about (all but the count of shapes out of view have one), and the `attribute` it's about, when it's about one:
 
-- every validation issue on each shape made or changed, errors included, like a schema card's `A schema must be a JSON object.` An `error` means the board outlines that shape in red;
+- every validation issue on each shape made or changed, errors included, like a type's `A schema must be a JSON object.` An `error` means the board outlines that shape in red; a value that's wrong for its field is one, an error on the field's key;
+- a `fieldValues` member no field of the shape's types names (`"emial" isn't a field of Order`), kept;
 - every schema bound a value breaks, like a title over 80 characters;
 - every push;
 - sides that face away;
@@ -858,18 +865,22 @@ As text, for a person at a terminal, each row leads with its line and what it di
 
 ## Measuring a script
 
-`build/canvas measure <script>|-` takes a script as `draw` does and says how big its shapes would be, without drawing anything. It is for a tool that lays shapes out before it draws them, and has nothing to do with writing a script by hand. It reads nothing on any board and changes none, opens no undo step, and takes no `--board`. Where shapes go is ignored: placements, `in` and `delete` do nothing, and a placement against a shape that isn't there isn't an error. A script `draw` can't read is refused with `draw`'s own messages. The answer is one JSON object:
+`build/canvas measure <script>|-` takes a script as `draw` does and says how big its shapes would be, without drawing anything. It is for a tool that lays shapes out before it draws them, and has nothing to do with writing a script by hand. It changes nothing and opens no undo step. Every shape is new, whatever the board holds. With a board (the one in front, or `--board`), an `is:` finds a type of that board's file as `draw` does; with none open, only one the script draws. A name it can't find (an `is:`, a mention) is a warning, and the shape is measured without it, or with the text as written. Where shapes go is ignored: placements, `in` and `delete` do nothing, and a placement against a shape that isn't there isn't an error. A script `draw` can't read is refused with `draw`'s own messages. The answer is one JSON object:
 
 ```json
 {"shapes": [{"line": 1, "title": "Checkout v2", "kind": "sticky-note", "size": [300, 200], "above": 27}],
  "references": [{"line": 4, "for": "Hub", "size": [91, 32]}],
  "constants": {"gaps": {"none": 0, "tight": 40, "normal": 80, "wide": 160}, "defaultGap": 80, "listStep": 64, "referenceStep": 16,
-               "horizontalClearance": 40, "verticalClearance": 64, "frameInset": 40, "smallest": {"frame": [96, 64]}}}
+               "horizontalClearance": 40, "verticalClearance": 64, "frameInset": 40, "smallest": {"frame": [96, 64]}},
+ "warnings": [{"line": 3, "message": "\"Order 13\": is: there's no shape called \"Ordr\"; measured without it"}],
+ "board": {"id": 1, "name": "Orders", "shows": "root", "showsPath": ["root"]}}
 ```
 
-- **`shapes`**: a row for each shape statement, with its `line` and `kind`. `size` is `[width, height]` as `draw` would make it: the kind's own size or the one written, and a note's or a schema card's height from its text (a width alone, `size: 300x`, the height that follows). `title` is the one `draw` would report (a schema card's is its schema's); `above` is how far the shape's title row and chips reach above its top edge, in world units at 100% zoom (27 for a shape with a title: 9 clear, 18 tall; 0 for one with none, or too narrow to show it).
-- **`references`**: a row for each edge that says `via:`, with its `line`, `for`, the end the reference stands for, and `size`, the pill `draw` would make for that title (at most 280 wide). An edge without `via:` has none: whether it goes through a reference depends on the boards, which `measure` doesn't read.
+- **`shapes`**: a row for each shape statement, with its `line` and `kind`. `size` is `[width, height]` as `draw` would make it: the kind's own size or the one written, and a note's height from its text (a width alone, `size: 300x`, the height that follows). `title` is the one `draw` would report; `above` is how far the shape's title row and chips reach above its top edge, in world units at 100% zoom (27 for a shape with a title: 9 clear, 18 tall; 0 for one with none, or too narrow to show it).
+- **`references`**: a row for each edge that says `via:`, with its `line`, `for`, the end the reference stands for, and `size`, the pill `draw` would make for that title (at most 280 wide). An edge without `via:` has none: whether it goes through a reference depends on the boards, which `measure` doesn't place on.
 - **`constants`**: what placement is done with, read from the same source `draw` is. `gaps` are the named gaps (`gap: tight`); `defaultGap` how far apart a placement holds two boxes when nothing says (a reference from its start); `listStep` the step between the members of a list, and `referenceStep` between the references beside one shape; `horizontalClearance` and `verticalClearance` what two boxes pushed apart are left; `frameInset` how far `in "F"` puts what it holds from F's top-left corner; `smallest` the least size of each kind that has one, which a `size:` under is refused.
+- **`warnings`**: each a `line` and a `message`, for a name `measure` couldn't find; left out when there are none.
+- **`board`**: with a board, the one it read, as `boards` lists it; none without.
 
 ## Errors
 
@@ -892,7 +903,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `unknown_kind` | The first word isn't a kind the app has. `node "Web"`, with the drawable kinds listed, and the one like it named (`note`: `did you mean sticky-note?`) | Use a kind from `build/canvas kinds`. |
 | `not_placeable` | The kind exists but no tool places it, like an arrow. | Draw an arrow as `edge "A" -> "B"`. |
 | `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, locked:, public:, text:` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
-| `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on schema-link`) · a head its arrow doesn't say (`edge "A" -> "B": startArrowhead: true isn't what the edge as written says`) · a mention in a text of a shape it can't mention (`"Row": prompt: "Ingest" is a sticky-note, which this text can't mention: it mentions only schema-card shapes`), or `@[]` with no title (its hint, like `unknown_title`'s, says how to write the characters `@[`; the others' say how to mend the mention) · `via:` with a kind that stands for nothing (`edge "A" -> "B": via: tile isn't a kind of shape that stands for others`, the hint listing the kinds that do) or for a shape that can't be stood for (`edge "Ingest" -> "Clean": via: reference can't stand for "Clean": only a public shape can be stood for`) · `via:` over an edge drawn straight (`the edge "A" -> "B" is drawn straight to "B"`) or through a reference to the other end · a side named for a reference that has no port on it (`to: top: a reference has no ports on its top`) · `share:` with a value that isn't `true` or a title (`share: false`), on an edge drawn straight (`edge "A" -> "B": share: is for an edge that goes through a reference, and this one is drawn straight`), naming the edge's own start, or a shape that has no reference for the end (`edge "Draft" -> "Cutoff": share: "Retry" has no reference to "Cutoff" beside it`) or isn't in the start's container | Write a value of the kind the hint names. For `share:`, draw the host's edge above the line, or write `share: true`, or leave `share:` out. |
+| `invalid_value` | The value doesn't fit the key. `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on subboard-link`) · a head its arrow doesn't say (`edge "A" -> "B": startArrowhead: true isn't what the edge as written says`) · a mention in a text of a shape it can't mention, or `@[]` with no title (its hint, like `unknown_title`'s, says how to write the characters `@[`; the others' say how to mend the mention) · `via:` with a kind that stands for nothing (`edge "A" -> "B": via: tile isn't a kind of shape that stands for others`, the hint listing the kinds that do) or for a shape that can't be stood for (`edge "Ingest" -> "Clean": via: reference can't stand for "Clean": only a public shape can be stood for`) · `via:` over an edge drawn straight (`the edge "A" -> "B" is drawn straight to "B"`) or through a reference to the other end · a side named for a reference that has no port on it (`to: top: a reference has no ports on its top`) · `share:` with a value that isn't `true` or a title (`share: false`), on an edge drawn straight (`edge "A" -> "B": share: is for an edge that goes through a reference, and this one is drawn straight`), naming the edge's own start, or a shape that has no reference for the end (`edge "Draft" -> "Cutoff": share: "Retry" has no reference to "Cutoff" beside it`) or isn't in the start's container | Write a value of the kind the hint names. For `share:`, draw the host's edge above the line, or write `share: true`, or leave `share:` out. |
 | `duplicate` | Something is written twice. `"locked" is written twice (true, false)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice | Keep one. |
 | `unknown_title` | No shape has that title. `right of "Injest"`, with up to 3 near titles · `board` on an empty board · a mention in a text, `"Plan": text: there's no shape called "Lod"` · a title only a shape the script deletes has, `"Plan": text: names "Old", which this script deletes` | Write the title exactly (`did you mean "Ingest"?`). On an empty board, leave one shape unplaced instead. If a text meant the characters `@[`, write `\\@[`. |
 | `ambiguous_title` | Two or more shapes have the title, each listed with its kind and where it is · the title is on two boards, neither the one the window shows: `"Retry" is on 2 boards: "Payments"'s board and "Billing"'s board` · a mention in a text of a title two shapes have where it's first found (`the board has 2 shapes called "Address": …`) | Ask the user to rename one. Titles only work as names while each is used once. For two boards, say which with `in "Payments"`. |
@@ -901,7 +912,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `board_shown` | A delete would take the board the window shows, or one above it: `"Payments" holds the board the window shows, so it can't be deleted` | `build/canvas show --root` (or a board above it) first, if the user wants it gone. |
 | `ambiguous_edge` | `"A" -> "B" is drawn 2 times` (straight, or through references) | Write `delete edge "A" -> "B"` above the line, then draw it once. |
 | `untitlable` | The kind can't be given a title: `a <kind>'s title is worked out from what it is`, or `a <kind> has no title` | Leave the title out, and don't plan to name it later. |
-| `renames` | The change would take away the name of a shape whose name comes from what it is: a schema card's schema with no title left, `this would leave "Row" without a title` | Keep a schema card's title in its schema. |
+| `renames` | The change would take away the name of a shape whose name comes from what it is (`this would leave "Row" without a title`); no shipped kind's name is | Keep what names it. |
 | `wrong_kind` | The title belongs to a shape of another kind. `"Ingest" is a sticky-note` | Use its kind, or change it with `delete "Ingest"` and a new statement in the same script. |
 | `read_only` | The shape or connection is locked, or in a locked frame, or on a locked subboard's board (at any depth), and the change would really change it; or a new shape or edge would go in a locked frame, or on a board that's read-only. `"Ship" is read-only (locked, say), so it can't be deleted` · `one of "Ingest"'s connections is read-only (locked, say), so "Ingest" can't be deleted with it` · a subboard whose board holds a locked shape, deleted · `the reference that delete edge "A" -> "B" leaves with no arrow is read-only (locked, say), so it can't be deleted` · `"Sprint" is read-only (locked, say), so nothing goes in it` (a frame, or a subboard with `in`) · `"N" would go in "Sprint", which is read-only (locked, say)` · `"N" would go on "Plans"'s board, which is read-only (locked, say)` · `edge "A" -> "B" would go on "Plans"'s board, which is read-only (locked, say)` | Tell the user. Leave it, or ask them to unlock it. |
 | `unplaced` | Nothing says where a shape sits. `"Between" does not say where it sits vertically: right of "Ingest" and left of "Load" would put it in different places` · `exactly one new shape may say nothing about where it goes, but 2 do: "Idea one" and "Idea two"` · `"N" says nothing about where it sits horizontally` | Add a placement for that axis (the hint names one), or place all but one shape. |
@@ -909,7 +920,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `no_room` | The placements can't all hold. `"Squeeze" is right of "Ingest" and left of "Clean", and there's no room between them` · `… clear of "Q"` · `"N" is inside "Z" top-left, and there's no room left in "Z"` · `"Wide" is in "Sprint", and there's no room left in "Sprint"` | Drop or change a placement, or ask for a smaller gap. Shapes on the board don't move, so to make room, restate them with placements. |
 | `circular` | `"Loop" is placed against itself`, or in itself (`in`), or two shapes wait on each other: `"N" is level with "A" and "B", but "B" is placed vertically against "N" in turn` | Place one of them against something else. |
 | `unordered` | Two shapes would overlap and nothing says which side of the other either sits on. `"North" and "Far north" overlap, and nothing says which side of the other either one sits on` · `"N" is on "P" and can't move, but it overlaps "Q"` | Place one against the other, place it elsewhere, or say `overlap: allow`. Held on an empty zone, the hint says so: place it elsewhere, or, if the zone is meant to hold shapes, put a first one `inside` it. |
-| `no_channel` | The edge's ends share no channel, on the sides named if any, or the channel written isn't one both ends take. `"Ingest" and "Row" share no channel: a sticky-note connects on note-link, a schema-card on schema-link` · `a connection on note-link can't end where it starts` | Connect like to like (or to a subboard), name a side that has the port, or say `channel: none`. |
+| `no_channel` | The edge's ends share no channel, on the sides named if any, or the channel written isn't one both ends take. `"Ingest" and "Sprint" share no channel: a sticky-note connects on note-link, a frame has no ports` · `a connection on note-link can't end where it starts` | Connect like to like (or to a subboard), name a side that has the port, or say `channel: none`. |
 | `cannot_connect` | The app won't connect that end at all, and the message names the end. | Connect a different shape. |
 | `no_edges` | No plugin in this app draws connections. | Draw shapes only. |
 | `no_names` | No plugin in this app names shapes, so titles can't be matched. | Titled statements can't work in this app. |
@@ -1038,7 +1049,7 @@ delete edge "Ingest" -> "Load"
 - `size`: what its tool places, like `"200x200"`.
 - `smallest`: the smallest its shapes are drawn, like `"96x64"` (a frame's), the same for its tool and resizing; a `size:` under it is `invalid_value`. Absent where any size goes.
 - `holds`: what its shapes hold, for `in` to name: `board` (a subboard's, a board of its own) or `shapes` (a frame's, on the board it's on); absent for neither.
-- `attributes`: each attribute a script can set, with a compact type. The types are a set's words joined by `|`, `true|false`, `number ≥ 0`, `integer`, `text`, `text (≤ 80)`, `date (YYYY-MM-DD or date-time)`, and JSON shapes like `JSON [{done, text}]` (members in alphabetical order; an id nobody writes, like a list item's, isn't listed). A text a plugin writes says what it takes after its type, in brackets: `text (@[Title] mentions)` for a note's `text` and a schema card's `prompt`, so a value's refusal hint (`text: takes text (@[Title] mentions)`) says it too. Keys a script can't set, like the frame, aren't listed.
+- `attributes`: each attribute a script can set, with a compact type. The types are a set's words joined by `|`, `true|false`, `number ≥ 0`, `integer`, `text`, `text (≤ 80)`, `date (YYYY-MM-DD or date-time)`, and JSON shapes like `JSON [{done, text}]` (members in alphabetical order; an id nobody writes, like a list item's, isn't listed). A text a plugin writes says what it takes after its type, in brackets: `text (@[Title] mentions)` for a note's `text`, so a value's refusal hint (`text: takes text (@[Title] mentions)`) says it too. Keys a script can't set, like the frame, aren't listed.
 - `edges`: the channels an edge from it can take, by side.
 
 `--schema` adds each kind's full JSON Schema. As text, for a person at a terminal, each kind's attributes and edges are listed under its row.

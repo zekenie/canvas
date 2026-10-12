@@ -24,6 +24,7 @@ func rulesPlugin(_ runs: RuleRuns) -> Contributor {
         registrar.validate(Card.self) { card, _ in
             runs.count += 1
             if card.props.text.hasPrefix("bad") { return [.error("It's bad.")] }
+            if card.props.text.hasPrefix("deep") { return [.error("Line 1 is bad.", field: "lines", path: "/lines/0"), .warning("Mind it.", field: "lines")] }
             if card.props.text.hasPrefix("meh") { return [.warning("It's so-so.")] }
             return []
         }

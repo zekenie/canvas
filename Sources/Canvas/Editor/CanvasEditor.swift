@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import Geometry
@@ -20,11 +21,19 @@ public protocol CanvasEditorDelegate: AnyObject {
     /// The text selected in the editing view, if it shows text and some is selected: what
     /// `editingSelectedText` answers.
     func editorEditingSelectedText(_ editor: CanvasEditor) -> String?
+    /// A menu is waiting to be popped up (`menuToPopUp`): pop it up on the next turn of the run loop
+    /// and say so (`menuDidPopUp`).
+    func editorMenuToPopUpDidChange(_ editor: CanvasEditor)
+    /// `card` changed (shown, taken down, moved, resized): show it over what the canvas hosts, under the
+    /// popover, give its `firstResponder` the keyboard, or take it down and give the keyboard back.
+    func editorCardDidChange(_ editor: CanvasEditor)
 }
 
 @_spi(Host) extension CanvasEditorDelegate {
     public func editorBoardDidChange(_ editor: CanvasEditor) {}
     public func editorPopoverDidChange(_ editor: CanvasEditor) {}
+    public func editorMenuToPopUpDidChange(_ editor: CanvasEditor) {}
+    public func editorCardDidChange(_ editor: CanvasEditor) {}
     public func editorEditingSelectedText(_ editor: CanvasEditor) -> String? { nil }
 }
 
@@ -110,6 +119,7 @@ public final class CanvasEditor {
             dismissPopover()
             setNeedsDisplay()
             tellSkeletonLevel()
+            cardFollowsCamera()
             sessionFollowsCamera()
         }
     }
@@ -226,9 +236,20 @@ public final class CanvasEditor {
     /// Each shape's geometry and extent, and the paint order, kept from frame to frame: the shown
     /// board's.
     @ObservationIgnored var shapeIndex = ShapeIndex()
+    /// What geometries read that no record holds (`setLayoutInput`).
+    @ObservationIgnored let layoutInputs = LayoutInputs()
+    /// The sizes shapes are laid out at, by shape id, for the whole file (`LaidOutBox`).
+    @ObservationIgnored let laidOutSizes = LaidOutSizes()
+    /// What the editor's own contexts lay shapes out with: those inputs, its services and its file.
+    @ObservationIgnored lazy var layoutSource = LayoutSource(
+        inputs: layoutInputs, sizes: laidOutSizes, lend: { [unowned self] in resolveService($0) },
+        shape: { [unowned self] in storedDocument[$0] ?? Self.shape($0, inFile: storedFile, registry: registry) })
+    /// Moves whenever shapes were laid out again without a commit (`shapesDidChangeLayout`). What
+    /// keeps something worked out from geometry keys it by this beside `revision`.
+    @ObservationIgnored public internal(set) var layoutRevision = 0
     /// The indexes of the boards shown lately, for when they're shown again (while they haven't
     /// changed).
-    @ObservationIgnored private var warmIndexes = BoardStash<ShapeIndex>()
+    @ObservationIgnored var warmIndexes = BoardStash<ShapeIndex>()
     /// Where the camera was on each board shown this session, as it was left.
     @ObservationIgnored private var leftCameras: [BoardID: Camera] = [:]
     /// The boards left this session, in the order they were last left (`boardsLeft`).
@@ -258,6 +279,7 @@ public final class CanvasEditor {
             guard skeletonZoom != oldValue else { return }
             setNeedsDisplay()
             tellSkeletonLevel()
+            cardFollowsCamera()
         }
     }
     /// How far, in view points, the outline of a closed shape (the selection's, a hover's, the hint)
@@ -298,6 +320,10 @@ public final class CanvasEditor {
     @ObservationIgnored var waitingPopover: CanvasPopover?
     @ObservationIgnored var popoverTimer: ScheduledTask?
     @ObservationIgnored var popoverWarmth: ScheduledTask?
+    // The card showing (Cards.swift).
+    @ObservationIgnored var shownCard: CanvasCard?
+    // The menu waiting to be popped up (MenuPopUp.swift).
+    @ObservationIgnored var menuWaiting: (menu: NSMenu, rect: CGRect)?
     /// An animation's frame is moving the camera: `zoomPercentage` stays its target's.
     @ObservationIgnored var isAnimationFrame = false
     // The press under way, for scrolling at the canvas's edges (EdgeScrolling.swift): where it was, in
@@ -371,7 +397,7 @@ public final class CanvasEditor {
     }
 
     var currentTool: any Tool { tools[currentToolID]! }
-    public var shapeContext: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera, index: shapeIndex) }
+    public var shapeContext: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera, index: shapeIndex, layout: layoutSource) }
 
     /// Redraw. The core redraws for everything it owns (the document, camera, tool, sessions); a
     /// plugin whose drawn state changes some other way (its own state, a timer) calls this.
@@ -408,7 +434,7 @@ public final class CanvasEditor {
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
         isTransacting = true
         var transaction = Transaction(document: document, board: board, isBoardReadOnly: isBoardReadOnly, registry: registry, camera: camera,
-                                      keys: stackingKeys, file: fileAccess)
+                                      keys: stackingKeys, file: fileAccess, layout: layoutSource)
         let result: T
         do {
             defer { isTransacting = false }
@@ -448,7 +474,8 @@ public final class CanvasEditor {
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
         isTransacting = true
         var transaction = Transaction(document: storedFile[target], board: target, isBoardReadOnly: registry.isReadOnly(board: target, in: storedFile),
-                                      registry: registry, camera: leftCameras[target] ?? camera, keys: stackingKeys, file: fileAccess)
+                                      registry: registry, camera: leftCameras[target] ?? camera, keys: stackingKeys, file: fileAccess,
+                                      layout: layoutSource)
         let result: T
         do {
             defer { isTransacting = false }
@@ -573,13 +600,16 @@ public final class CanvasEditor {
     /// by what the press, services or an editing view commit as they end, which goes to the file it
     /// replaces and is no step. Every board's revision changes but those whose shapes are as they
     /// were (`CanvasFile.restamp(after:)`), so nothing kept about a board of the old file is taken for
-    /// the new one's; the cameras boards were left with are kept.
+    /// the new one's; the cameras boards were left with are kept. A menu waiting to be popped up
+    /// (`popUpMenu`) is dropped.
     @_spi(Host) public func replaceFile(with newFile: CanvasFile, showing requested: BoardID? = nil) {
         precondition(!isTransacting, "a file can't be replaced inside a transaction")
         Self.expectAccepted(newFile, by: registry)
         isReplacingFile = true
         defer { isReplacingFile = false }
         dismissPopover()
+        closeCard(.board)
+        menuWaiting = nil
         if let running = session {
             _ = running.cancel(in: self)
             session = nil
@@ -594,6 +624,7 @@ public final class CanvasEditor {
         // After what services saved as they heard it: a board the file had then has a revision past it.
         newFile.restamp(after: storedFile)
         warmIndexes.removeAll()
+        laidOutSizes.forgetAll()
         if target == board {
             var changes = ChangeSet(from: storedDocument, to: newFile[board])
             changes.elsewhere = newFile.shapesChanged(from: storedFile, except: board)
@@ -633,7 +664,7 @@ public final class CanvasEditor {
         for (board, ids) in byBoard {
             // Refused by nothing: a read-only board's hidden shapes go too.
             var transaction = Transaction(document: old[board], board: board, isBoardReadOnly: false, registry: registry, camera: camera,
-                                          keys: stackingKeys, file: access)
+                                          keys: stackingKeys, file: access, layout: nil)
             transaction.discard(Set(ids))
             newFile.set(transaction.document, for: board, changes: transaction.changes)
             removed.formUnion(transaction.changes.boardsRemoved)
@@ -741,10 +772,12 @@ public final class CanvasEditor {
         // Before services hear the commit, which may have locked the board's owner (a commit on the
         // board above, `transact(on:)`) or put another file in place.
         let becameReadOnly = noteBoardReadOnly()
+        forgetLaidOutSizes(after: changes)
         shapeIndex.documentDidChange(changes, in: newDocument, registry: registry)
         for id in changes.removed where drawingOffsets[id] != nil { drawingOffsets[id] = nil }
         // A shape gliding that something changes is where it is now.
         if !glides.isEmpty { endGlides(changes.shapeIDs.filter { glides[$0] != nil }) }
+        if let shape = shownCard?.shape, changes.removed.contains(shape) { closeCard(.shapeGone) }
         // Services drop what no longer names a shape, as the hint's setter does.
         for service in serviceOrder { service.documentDidChange(changes, in: self) }
         hintedShapeID = hintedID
@@ -834,6 +867,7 @@ public final class CanvasEditor {
         // A step is the board's it was made on: the one under way closes here.
         undoHistory.close()
         dismissPopover()
+        closeCard(.board)
         leftCameras[board] = left
         leftOrder.removeAll { $0 == board }
         leftOrder.append(board)
@@ -898,11 +932,11 @@ public final class CanvasEditor {
         let contents = file[target]
         let arrival = arrivalCamera(for: target) {
             let index = ShapeIndex()
-            return index.bounds(in: ShapeContext(document: contents, registry: registry, camera: Camera(), index: index))
+            return index.bounds(in: ShapeContext(document: contents, registry: registry, camera: Camera(), index: index, layout: layoutSource))
         }
         let index = ShapeIndex(), clear = unobscuredViewport(on: target)
         return BoardReading(board: target, document: contents,
-                            shapes: ShapeContext(document: contents, registry: registry, camera: arrival, index: index), index: index,
+                            shapes: ShapeContext(document: contents, registry: registry, camera: arrival, index: index, layout: layoutSource), index: index,
                             view: clear.isEmpty ? nil : arrival.toWorld(clear), isBoardReadOnly: isReadOnly(board: target))
     }
 
@@ -1103,6 +1137,7 @@ public final class CanvasEditor {
         editingShapeID = id
         undoHistory.editingBegan(stepName: (registry.definition(for: record.kind) as? any Editable)?.editingStepName)
         dismissPopover()
+        closeCard(.editing)
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
         return true
@@ -1124,6 +1159,9 @@ public final class CanvasEditor {
     /// `discarding: false` (a draw) never asks.
     public func endEditing(discarding: Bool = true) {
         guard let id = editingShapeID else { return }
+        // While the editing view still stands, so the keyboard goes back to it, and the host then
+        // takes it from there.
+        closeCard(.editing)
         let mayDiscard = discarding && !undoHistory.isInAction
         editingShapeID = nil
         editingStartPoint = nil

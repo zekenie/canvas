@@ -278,7 +278,7 @@ private struct Resolver {
         var readers: [AttributeReader] = [], refusal: QueryError?
         for (entry, attribute) in having {
             do throws(QueryError) {
-                let typed = try typedTest(test, attribute: attribute, of: entry)
+                let typed = test.path.isEmpty ? try typedTest(test, attribute: attribute, of: entry) : try pathTest(test, attribute: attribute)
                 let source: AttributeReader.Source = attribute.isName ? .names : .property(attribute.shape)
                 if let index = readers.firstIndex(where: { $0.source == source && $0.test == typed }) {
                     readers[index] = AttributeReader(kinds: readers[index].kinds.union([entry.kind]), source: source, test: typed)
@@ -300,6 +300,7 @@ private struct Resolver {
         }
         uses.attributes.insert(test.name)
         uses.readsText = true
+        if !test.path.isEmpty { uses.notePath(attribute: test.name, members: test.path) }
         let tested = node(.attribute(name: test.name, readers: readers), span: test.span)
         return test.op == .notEquals ? node(.not(planList([tested])), span: test.span) : tested
     }
@@ -313,10 +314,16 @@ private struct Resolver {
         if entries.contains(where: { $0.schema.properties[name] != nil && $0.schema.holdsPlace(name) }) {
             return QueryError(.notBuilt, "\(name) is where the shape is; where shapes are isn't in the language yet.", span: span)
         }
-        if name.contains(".") {
-            return QueryError(.notBuilt, "\(name) is an attribute inside an attribute, which a query can't read yet.", span: span)
+        // A quoted name that is an attribute and a path (`["meta.owner"]`): the path is written bare.
+        let parts = name.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        if parts.count > 1, parts.allSatisfy(isIdentifier), vocabulary.kinds.contains(where: { $0.attribute(parts[0]) != nil }) {
+            var bare = test
+            bare.name = parts[0]
+            bare.path = Array(parts.dropFirst())
+            return QueryError(.unknownAttribute, "No attribute is called \(name).",
+                              hint: "A member inside an attribute is written without quotes: \(bare.canonical).", span: span)
         }
-        if !vocabulary.kinds.contains(where: { $0.attribute(name) != nil }), let error = peopleWord(test, in: compound) { return error }
+        if test.path.isEmpty, !vocabulary.kinds.contains(where: { $0.attribute(name) != nil }), let error = peopleWord(test, in: compound) { return error }
         let attributes: [String]
         let message: String
         switch kinds {
@@ -338,7 +345,7 @@ private struct Resolver {
 
     /// The words people write in brackets for what a query says otherwise: `[kind=chore]` for the
     /// kind `chore`, `[id=…]` for `#…`, `[name=…]` for the names point's attribute, `[board=…]` for
-    /// what's on a board, and `[class=…]`, planned. Nil for any other. A hint made from the value is
+    /// what's on a board, and `[class=…]`, refused toward the app's word for a type's shapes. Nil for any other. A hint made from the value is
     /// only for `=`: `[board!=root]` is every shape but those on top, so the value's own form would
     /// ask the opposite.
     func peopleWord(_ test: AttributeTest, in compound: Compound) -> QueryError? {
@@ -406,8 +413,10 @@ private struct Resolver {
                               premise: HintPremise(.holdShapes([Compound(head: owner, span: span)]), hint: owner.canonical + " > " + inside),
                               span: span)
         case .class:
-            return QueryError(.notBuilt, "Shapes aren't typed by schemas yet, so \(test.name) names nothing.",
-                              hint: value.map { "Name a kind, or find the word: :contains(\(quoted($0)))." }, span: span)
+            // A word the app may give a meaning (`HintPremise.Claim.typeWord`); without one, a plain refusal.
+            return QueryError(.unsupported, "A type isn't an attribute: a shape is found by its kind, its title, its id, an attribute or a word.",
+                              hint: value.map { "Name a kind, or find the word: :contains(\(quoted($0)))." },
+                              premise: value.map { HintPremise(.typeWord($0), hint: nil) }, span: span)
         }
     }
 
@@ -496,7 +505,7 @@ private struct Resolver {
         case .object:
             guard !op.isEquality else {
                 throw QueryError(.notBuilt, "\(name) is an object: comparing a whole object isn't in the language yet.",
-                                 hint: "[\(name)] asks whether it says anything.", span: span)
+                                 hint: "[\(name)] asks whether it says anything; [\(name).member] tests what is inside it.", span: span)
             }
             throw refuseOperator(use: nil)
         case .json:
@@ -504,6 +513,38 @@ private struct Resolver {
             let value: JSONValue = literal.isBare ? (Self.json(text) ?? .string(text)) : .string(text)
             return TypedTest(comparison: .equals(.json(value)), ignoringCase: ignoringCase)
         }
+    }
+
+    /// `[a.b.c op value flag]`: a test of what's at the members inside an object attribute, typed
+    /// later by the value found there (`PathTest`). Only an attribute whose value is an object (or
+    /// any JSON) has members. The literal needs nothing now but an ordering's: a number or a date.
+    func pathTest(_ test: AttributeTest, attribute: QueryVocabulary.AttributeEntry) throws(QueryError) -> TypedTest {
+        let name = attribute.name, span = test.span
+        switch attribute.shape {
+        case .object, .json:
+            break
+        default:
+            let what = attribute.shape.what(compactType: attribute.compactType)
+            throw QueryError(.unknownAttribute, "\(name) is \(what), so it has no members.", hint: "[\(name)] tests it.", span: span)
+        }
+        guard let op = test.op, let literal = test.value else {
+            return TypedTest(comparison: .path(PathTest(members: test.path, op: nil, literal: "", ignoringCase: false)), ignoringCase: false)
+        }
+        let written = test.path.joined(separator: ".")
+        if op.isOrdering {
+            if let flag = test.flag {
+                var plain = test
+                plain.flag = nil
+                throw QueryError(.unsupportedOperator, "The \(flag.rawValue) flag compares text; \(op.rawValue) compares numbers and dates.",
+                                 hint: "Leave it out: \(plain.canonical).", span: span)
+            }
+            guard PathTest.number(literal.text) != nil || QueryDates.value(of: literal.text) != nil else {
+                throw QueryError(.invalidValue, "\"\(literal.text)\" isn't a number or a date.",
+                                 hint: "\(name).\(written) is compared by its value: a number, or a date as \"2026-10-01\".", span: span)
+            }
+        }
+        let path = PathTest(members: test.path, op: op, literal: literal.text, ignoringCase: test.flag == .insensitive)
+        return TypedTest(comparison: .path(path), ignoringCase: path.ignoringCase)
     }
 
     /// `~=`'s value on a list: an item, read as the list's items take one.
@@ -655,6 +696,20 @@ private struct Resolver {
             uses.pseudoClasses.insert(declared.word)
             if declared.reads.contains(.editor) { uses.noteEditorWord(":\(declared.word)") }
             return node(.pseudo(word: declared.word), span: pseudo.span)
+        case .fileRelation:
+            let list: SelectorList
+            do throws(QueryError) {
+                list = try SelectorList(argumentOf: pseudo)
+            } catch {
+                var refusal = error
+                if refusal.reason == .badArgument { refusal.hint = declared.example }
+                problem(refusal)
+                return nil
+            }
+            // The fact may rest on edges still arriving (a stand-in's), so it waits for them as an edge word does.
+            uses.edges = true
+            uses.pseudoClasses.insert(declared.word)
+            return self.list(list, container: false).map { node(.fileRelation(word: declared.word, anchor: $0), span: pseudo.span) }
         case .relation(let types, let direction):
             let list: SelectorList
             do throws(QueryError) {
@@ -716,7 +771,7 @@ private struct Resolver {
         case .id, .title: .found
         case .all, .kinds: .kinds
         case .topLevel, .currentBoard: .captured
-        case .not, .is, .inside, .has, .parentIn, .ancestorIn, .edges, .relation, .dangling, .and: .structure
+        case .not, .is, .inside, .has, .parentIn, .ancestorIn, .edges, .relation, .fileRelation, .dangling, .and: .structure
         case .contains: .read
         case .attribute(_, let readers):
             readers.contains { reader in

@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import TableOfContents
 
 extension PluginID {
     public static let validation: PluginID = "validation"
@@ -16,15 +17,23 @@ public struct ValidationIssue: Hashable, Sendable {
     public var severity: Severity
     /// Set when the issue is about one field of the shape rather than the whole shape.
     public var field: String?
-    public init(_ message: String, severity: Severity, field: String? = nil) {
+    /// Where in the field's value, as a JSON Pointer (`/lineItems/0/quantity`), when the value has
+    /// parts; nil for the field as a whole or for an issue about the whole shape.
+    public var path: String?
+    public init(_ message: String, severity: Severity, field: String? = nil, path: String? = nil) {
         self.message = message
         self.severity = severity
         self.field = field
+        self.path = path
     }
     /// Makes the shape invalid.
-    public static func error(_ message: String, field: String? = nil) -> ValidationIssue { ValidationIssue(message, severity: .error, field: field) }
+    public static func error(_ message: String, field: String? = nil, path: String? = nil) -> ValidationIssue {
+        ValidationIssue(message, severity: .error, field: field, path: path)
+    }
     /// Flags the shape, which stays valid.
-    public static func warning(_ message: String, field: String? = nil) -> ValidationIssue { ValidationIssue(message, severity: .warning, field: field) }
+    public static func warning(_ message: String, field: String? = nil, path: String? = nil) -> ValidationIssue {
+        ValidationIssue(message, severity: .warning, field: field, path: path)
+    }
 }
 
 public struct ValidationResult: Equatable, Sendable {
@@ -69,6 +78,12 @@ public struct ValidationContext {
     let lookups: Lookups
     /// The editor whose shapes are checked, if any.
     let editor: CanvasEditor?
+
+    /// The file as these shapes read it (`ShapeContext.reading`): the editor's committed one, or a
+    /// transaction's mid-way (`validationIssues(of:in:)`), nil where nothing is laid out. For a rule
+    /// that answers from what a service keeps of the committed file and must not where the file is
+    /// not. No lookup is noted: the rule asks the reading's own `isChanged`.
+    public var reading: LayoutReading? { shapes.reading }
 
     public func shape(_ id: ShapeID) -> AnyShapeRecord? {
         if lookups.ignoringMoves { lookups.steady.insert(id) } else { lookups.placed.insert(id) }
@@ -280,21 +295,43 @@ public final class ValidationEngine {
     /// check again; those on a board it keeps, checked again once that board is taken back.
     private func name(_ changes: ChangeSet) -> Set<ShapeID> {
         guard !affectedByRules.isEmpty else { return [] }
+        var ids: Set<ShapeID> = []
+        for affected in affectedByRules { ids.formUnion(affected(changes, editor)) }
+        return mark(ids)
+    }
+
+    /// Of `ids`, those on the board shown, returned, to check again; the ones on a board it keeps are
+    /// filed there, to be checked once that board is taken back.
+    private func mark(_ ids: Set<ShapeID>) -> Set<ShapeID> {
         var here: Set<ShapeID> = []
         let document = editor.document, file = editor.file, keptBoards = kept.boards
-        for affected in affectedByRules {
-            for id in affected(changes, editor) {
-                if document[id] != nil {
-                    here.insert(id)
-                } else if !keptBoards.isEmpty, let board = file.board(containing: id), keptBoards.contains(board) {
-                    kept.modify(board) { kept in
-                        kept.unchecked.insert(id)
-                        kept.namedAway.insert(id)
-                    }
+        for id in ids {
+            if document[id] != nil {
+                here.insert(id)
+            } else if !keptBoards.isEmpty, let board = file.board(containing: id), keptBoards.contains(board) {
+                kept.modify(board) { kept in
+                    kept.unchecked.insert(id)
+                    kept.namedAway.insert(id)
                 }
             }
         }
         return here
+    }
+
+    /// Checks these shapes again though no commit named them: for a rule that reads something outside
+    /// the shape and the shapes it looks up, which changed: a service's state (a field's caret left, a
+    /// type was edited). On the board shown, they are unchecked now; on a board it keeps, when that
+    /// board is taken back. Redraws, and has the table of contents make their rows again.
+    public func recheck(_ ids: Set<ShapeID>) {
+        guard !ids.isEmpty else { return }
+        let here = mark(ids)
+        board?.unchecked.formUnion(here)
+        // What `affected(by:)` names for this revision, so a service that hears the commit after
+        // this engine still sees them.
+        if named.revision == editor.revision { named.ids.formUnion(here) } else { named = (editor.revision, here) }
+        guard !here.isEmpty else { return }
+        editor.contentsDidChange(for: here)
+        editor.setNeedsDisplay()
     }
 
     private func refreshIfNeeded() {

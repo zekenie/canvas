@@ -6,8 +6,7 @@ import TableOfContents
 
 /// Titles, as a plugin: what a shape is called, a trait any kind can opt into. A kind's title is
 /// kept by Titles, in the `title` property it adds to the kinds that opt in (`TitleProperty`), where
-/// someone names the shape (a note, a subboard); or derived from what the kind keeps itself (a
-/// schema card's, its schema's `"title"`). Any shape of a titled kind may have none. A titled shape shows its title in a
+/// someone names the shape (a note, a subboard); or derived from what the kind keeps itself (`title { … }`). Any shape of a titled kind may have none. A titled shape shows its title in a
 /// pill just outside its top-left corner (`TitlePill`, an adornment), an untitled one there its
 /// kind's placeholder, dimmed, where the kind gives one to grab, and its row in the table of
 /// contents is called by its title; `TitleHeader` renames it in the detail panel, and `/title` from
@@ -101,13 +100,91 @@ public struct TitleContribution {
     }
 }
 
+/// How one shape's pill looks, where its kind's own look (`title(symbolInPill:placeholderInPill:)`)
+/// is not the whole of it: a plugin gives the pill of the shapes that hold its property a look, so a
+/// concern changes how a kind's pill reads without knowing the kind. Each field is nil (or false)
+/// for "as the kind has it".
+public struct TitlePillLook {
+    /// An SF Symbol first in the pill, in place of the kind's.
+    public var symbol: String?
+    /// The pill's color (Adornments').
+    public var tint: AdornmentTint?
+    /// What an untitled shape's pill says, dimmed; the pill then shows where the kind gave none.
+    public var placeholder: String?
+    /// What the shape's skeleton is drawn on, for its cover's ink, in place of the kind's.
+    public var coverSurface: NSColor?
+    /// No pill at all.
+    public var hidesPill: Bool
+
+    public init(symbol: String? = nil, tint: AdornmentTint? = nil, placeholder: String? = nil, coverSurface: NSColor? = nil, hidesPill: Bool = false) {
+        self.symbol = symbol
+        self.tint = tint
+        self.placeholder = placeholder
+        self.coverSurface = coverSurface
+        self.hidesPill = hidesPill
+    }
+}
+
+/// The extension point for pill looks: any number of plugins contribute, and the fields merge (the
+/// first non-nil of each, in plugin order, a kind's own before the concerns'; `hidesPill` if any
+/// says so). Not keyed.
+public enum TitlePillLooks {}
+
+extension TitlePillLooks: ExtensionPoint {
+    public typealias Contribution = TitlePillLookContribution
+    public static var owner: PluginID { .titles }
+
+    /// "title pill look → every shape", "title pill look → note".
+    public static func summary(of contribution: TitlePillLookContribution, for target: ShapeTarget) -> String {
+        "title pill look → \(target == .any ? "every shape" : "\(target)")"
+    }
+}
+
+/// What a pill look may read besides the shape and its title: the editor's services, where an editor is
+/// asking (the pill's label, Find's texts). None for a cover, which is asked for every titled skeleton in
+/// view each frame, so a look that needs a service answers nil there and a cover wants only its
+/// `coverSurface`.
+@MainActor
+public struct TitleLookContext {
+    private enum Source {
+        case adornment(AdornmentContext), editor(CanvasEditor), none
+    }
+
+    private let source: Source
+
+    /// The service where an editor is asking; nil for a cover, and for a service the editor has none of.
+    public func service<S: EditorService>(_ type: S.Type) -> S? {
+        switch source {
+        case .adornment(let context): context.service(type)
+        case .editor(let editor): editor.service(type)
+        case .none: nil
+        }
+    }
+
+    /// The pill: its label is made with an adornment's context.
+    init(_ context: AdornmentContext) { source = .adornment(context) }
+    /// Find: the editor it indexes.
+    init(_ editor: CanvasEditor) { source = .editor(editor) }
+    private init() { source = .none }
+    /// A cover's.
+    static var none: TitleLookContext { TitleLookContext() }
+}
+
+/// What `TitlePillLooks` stores: the added property a concern's contribution goes by (nil for a
+/// kind's own, asked of its shapes) and what it says of a shape, its title and the context it is asked in.
+@MainActor
+public struct TitlePillLookContribution {
+    let key: PropertyKey?
+    let look: @MainActor (AnyShapeRecord, String?, TitleLookContext) -> TitlePillLook?
+}
+
 // Sugar, so opting in is one line and never names the extension point.
 extension ShapeRegistrar {
     /// Gives this kind a title that Titles keeps: its shapes hold one (`TitleProperty`, nil until
     /// they're named), and its schema gains it, bounds and all, so a title too long draws a warning.
     /// A titled shape shows it in a pill above its top-left corner, unless `pill` is false (for a
     /// kind that draws its own), after the kind's symbol (`registry.label(of:)`) if `symbolInPill`
-    /// (for a kind whose look doesn't say what it is: a schema card's `{}`), and it names the
+    /// (for a kind whose look doesn't say what it is: a subboard's `rectangle.stack`), and it names the
     /// shape's row in the table of contents, unless `contents` is false (for a kind whose row says
     /// more). An untitled shape shows no pill, unless the kind gives one to grab:
     /// `placeholderInPill`, what the pill says there, dimmed ("Frame"), laid out as a title is. Zoomed
@@ -143,7 +220,32 @@ extension ShapeRegistrar {
     }
 }
 
+extension ShapeRegistrar {
+    /// This kind's own pill look, asked of each of its shapes with its title (nil when untitled): see
+    /// `TitlePillLook`. Asked where the pill's label is made, when a commit names the shape, where Find
+    /// reads its title, and for the cover of a titled skeleton in view, never per frame otherwise.
+    public mutating func titlePillLook(_ look: @escaping @MainActor (ShapeRecord<Definition.Props>, _ title: String?) -> TitlePillLook?) {
+        contribute(TitlePillLookContribution(key: nil) { record, title, _ in record.typed(as: Definition.Props.self).flatMap { look($0, title) } },
+                   to: TitlePillLooks.self)
+    }
+}
+
 extension PluginRegistrar {
+    /// A concern's pill look, asked of the shapes of every kind that holds `P` (opted into it) and of
+    /// no other kind: Types gives the notes that hold a schema the look of a type's pill.
+    public mutating func titlePillLook<P: ShapeProperty>(forShapesHolding _: P.Type,
+                                                         _ look: @escaping @MainActor (AnyShapeRecord, _ title: String?) -> TitlePillLook?) {
+        contribute(TitlePillLookContribution(key: P.key) { record, title, _ in look(record, title) }, to: TitlePillLooks.self)
+    }
+
+    /// As `titlePillLook(forShapesHolding:_:)`, for a look that reads a service of the editor
+    /// (`TitleLookContext`). Asked where the pill's label is made and where Find reads the title, with
+    /// the editor's services; for a cover with none, where it answers from the shape alone.
+    public mutating func titlePillLook<P: ShapeProperty>(forShapesHolding _: P.Type,
+                                                         _ look: @escaping @MainActor (AnyShapeRecord, _ title: String?, TitleLookContext) -> TitlePillLook?) {
+        contribute(TitlePillLookContribution(key: P.key, look: look), to: TitlePillLooks.self)
+    }
+
     /// A title Titles keeps, for a kind another plugin registers, as `title()` on a kind's
     /// own registrar.
     public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil,
@@ -181,8 +283,7 @@ extension Registry {
         contributions(to: ShapeTitles.self, for: shape.kind).first?.title(shape)
     }
 
-    /// Whether a kind's titles are derived from what the kind keeps (`title { … }`: a schema card's,
-    /// from its schema), rather than only named by someone (`title()`); false for a kind without
+    /// Whether a kind's titles are derived from what the kind keeps (`title { … }`), rather than only named by someone (`title()`); false for a kind without
     /// titles. A kind whose shapes can be named opts into `TitleProperty` (`properties(for:)` has its
     /// key), and may be both: named, and derived for the shapes nobody named.
     public func titleIsDerived(_ kind: ShapeKind) -> Bool {
@@ -206,29 +307,75 @@ extension TitlePill: Adornment {
     public static var order: Int { 50 }
 }
 
+private struct TitleKey: Hashable { let kind: ShapeKind }
+private struct PillLooksKey: Hashable { let kind: ShapeKind }
+
 extension Registry {
     /// Whether a kind's shapes show their title in a pill: it's titled, and not with `pill: false`.
     func showsTitlePill(_ kind: ShapeKind) -> Bool {
-        contributions(to: ShapeTitles.self, for: kind).first?.showsPill == true
+        titleContribution(for: kind)?.showsPill == true
     }
 
     /// What a shape's title pill says: its title, after its kind's symbol (`label(of:)`) where the
     /// kind asks for it (`symbolInPill`); on an untitled shape, the kind's placeholder, dimmed, where
     /// it gives one (`placeholderInPill`); else nothing.
-    func titlePill(of shape: AnyShapeRecord) -> AdornmentLabel? {
-        guard let titles = contributions(to: ShapeTitles.self, for: shape.kind).first, titles.showsPill else { return nil }
-        let symbol = titles.symbolInPill ? label(of: shape.kind).systemImage : nil
-        if let title = titles.title(shape) { return AdornmentLabel(title, systemImage: symbol) }
-        return titles.pillPlaceholder.map { AdornmentLabel(placeholder: $0, systemImage: symbol) }
+    func titlePill(of shape: AnyShapeRecord, in context: TitleLookContext) -> AdornmentLabel? {
+        guard let titles = titleContribution(for: shape.kind), titles.showsPill else { return nil }
+        let title = titles.title(shape)
+        let look = titlePillLook(of: shape, title: title, in: context)
+        if look?.hidesPill == true { return nil }
+        let symbol = look?.symbol ?? (titles.symbolInPill ? label(of: shape.kind).systemImage : nil)
+        var pill: AdornmentLabel
+        if let title {
+            pill = AdornmentLabel(title, systemImage: symbol)
+        } else if let placeholder = TitleProperty.folded(look?.placeholder) ?? titles.pillPlaceholder {
+            pill = AdornmentLabel(placeholder: placeholder, systemImage: symbol)
+        } else {
+            return nil
+        }
+        if let tint = look?.tint { pill = pill.tinted(tint) }
+        return pill
+    }
+
+    /// The contributions that give a kind's pill a look: its own and those of the concerns whose
+    /// property it holds, found once per kind, since a cover asks for every titled skeleton in view
+    /// on every frame.
+    private func titleContribution(for kind: ShapeKind) -> TitleContribution? {
+        memo(TitleKey(kind: kind)) { contributions(to: ShapeTitles.self, for: kind).first }
+    }
+
+    private func pillLooks(for kind: ShapeKind) -> [TitlePillLookContribution] {
+        memo(PillLooksKey(kind: kind)) {
+            let held = properties(for: kind)
+            return contributions(to: TitlePillLooks.self, for: kind).filter { $0.key.map(held.contains) ?? true }
+        }
+    }
+
+    /// What the plugins that give a shape's pill a look say of it, merged: the first of each field
+    /// in plugin order, a kind's own first; nil when none does. A concern's contribution is asked of
+    /// the kinds that hold its property and no other.
+    func titlePillLook(of shape: AnyShapeRecord, title: String?, in context: TitleLookContext) -> TitlePillLook? {
+        var merged: TitlePillLook?
+        for contribution in pillLooks(for: shape.kind) {
+            guard let look = contribution.look(shape, title, context) else { continue }
+            guard var result = merged else { merged = look; continue }
+            result.symbol = result.symbol ?? look.symbol
+            result.tint = result.tint ?? look.tint
+            result.placeholder = result.placeholder ?? look.placeholder
+            result.coverSurface = result.coverSurface ?? look.coverSurface
+            result.hidesPill = result.hidesPill || look.hidesPill
+            merged = result
+        }
+        return merged
     }
 
     /// What a shape's cover says (`TitleCoverStyle`) and what its kind's skeleton is drawn on: its
     /// title, for a kind that shows one in a pill; nil for an untitled shape (a placeholder is its
     /// pill's alone), and a kind with no pill.
     func titleCover(of shape: AnyShapeRecord) -> (title: String, surface: NSColor?)? {
-        guard let titles = contributions(to: ShapeTitles.self, for: shape.kind).first, titles.showsPill,
+        guard let titles = titleContribution(for: shape.kind), titles.showsPill,
               let title = titles.title(shape) else { return nil }
-        return (title, titles.coverSurface)
+        return (title, titlePillLook(of: shape, title: title, in: .none)?.coverSurface ?? titles.coverSurface)
     }
 }
 
@@ -243,10 +390,10 @@ public struct TitlesPlugin: ListedPlugin {
         registrar.declare(TitleProperty.self)
         // The pill, on every shape whose kind's title shows one: Titles places it, and defines no kind.
         registrar.adornmentForEveryShape(TitlePill.self, where: { $0.registry.showsTitlePill($0.kind) }) { shape, context in
-            context.registry.titlePill(of: shape)
+            context.registry.titlePill(of: shape, in: TitleLookContext(context))
         }
         // `/title Groceries` typed on a line of a shape's text: names the shape, on the kinds that can
-        // be named. A derived title (a schema card's) isn't Titles' to set, and is renamed where it's
+        // be named. A derived title isn't Titles' to set, and is renamed where it's
         // derived from; a pill in the line is its name, "@Label", as the argument's text reads it.
         registrar.slashCommandsForEveryShape(where: { $0.holds(TitleProperty.self) }) {
             SlashCommand("title", argument: "title") { shape, arguments in shape[TitleProperty.self] = arguments.text }

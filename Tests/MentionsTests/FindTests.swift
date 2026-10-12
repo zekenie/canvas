@@ -28,6 +28,52 @@ import Titles
     return find
 }
 
+/// A kind whose text is drawn over the canvas itself, with no surface of its own, as an arrow's label
+/// is: one placement, `overCanvas`.
+struct Banner: BoxShapeProps {
+    static let kind: ShapeKind = "banner"
+    static let properties = Properties<Banner> {
+        Property("frame", \.frame).required()
+        Property("text", \.text)
+    }
+    var frame: CGRect
+    var text: MentionText
+    init(_ frame: CGRect, text: MentionText = "") {
+        self.frame = frame
+        self.text = text
+    }
+}
+
+extension Banner {
+    init() { self.init(.zero) }
+}
+
+struct BannerDefinition {}
+
+extension BannerDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Banner>, in context: RenderContext) {
+        for placement in shape.mentionTexts(in: context.shapes) { context.drawMentionText(placement) }
+    }
+}
+
+extension ShapeRecord where Props == Banner {
+    /// Centered in its geometry's bounds, which the context says (as an arrow's label is placed by
+    /// its geometry): the placement a kind that needs the shapes around it gives.
+    @MainActor func mentionTexts(in shapes: ShapeContext) -> [MentionTextPlacement] {
+        let bounds = shapes.geometry(of: id)?.bounds ?? props.frame
+        let style = MentionTextStyle(font: .systemFont(ofSize: 16), color: .black, lineHeight: 19, alignment: .center)
+        return [MentionTextPlacement(props.text, in: bounds.insetBy(dx: JotStyle.padding, dy: JotStyle.padding), style: style, overCanvas: true)]
+    }
+}
+
+struct BannersPlugin: CanvasPlugin {
+    var id: PluginID { "banners" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        registrar.shape(BannerDefinition()) { banner in banner.mentionText { banner, shapes in banner.mentionTexts(in: shapes) } }
+    }
+}
+
 /// The leftmost and rightmost columns of dark ink in a band of a picture, between two x's.
 @MainActor private func inkExtent(_ rep: NSBitmapImageRep, band: ClosedRange<CGFloat>, from: CGFloat, to: CGFloat) -> ClosedRange<CGFloat>? {
     var low: CGFloat?, high: CGFloat?
@@ -110,5 +156,35 @@ import Titles
         expect(marked != before && marked[2] < before[2], "marked: \(marked) against \(before)")
         let ink = try require(inkExtent(image, band: (word.minY + 3)...(word.maxY - 3), from: word.minX, to: word.maxX))
         expect(ink.upperBound > ink.lowerBound, "the text is still dark over the mark")
+    },
+    test("text drawn over the canvas (an arrow's label) is washed where text on a shape's surface is marked: the same words, each in the contribution of its look") {
+        let h = try mentionHarness([FindPlugin(), MentionFindPlugin(), BannersPlugin()])
+        h.editor.add(Plate(CGRect(x: 600, y: 100, width: 120, height: 80)), titled: "Groceries", id: idA)
+        let said = MentionText([.text("Ask "), .mention(idA, label: "Old"), .text(" first")])
+        let banner = h.add(Banner(CGRect(x: 100, y: 20, width: 300, height: 60), text: said))
+        let jot = h.add(Jot(CGRect(x: 100, y: 200, width: 300, height: 120), text: said))
+        let find = try search("ask", in: h)
+        expectEqual(Set(find.results.map(\.id)), [banner, jot])
+        expectEqual(find.texts(of: banner), ["Ask Groceries first"], "one text: the other contribution has no placement over the canvas to read")
+        expectEqual(find.texts(of: jot), ["Ask Groceries first"], "and none on a surface")
+        let hit = FindHit(text: 0, range: 0..<3)
+        let onBanner = try require(find.rects(of: hit, in: banner).first), onJot = try require(find.rects(of: hit, in: jot).first)
+        let size = CGSize(width: 800, height: 400)
+        // One hit is the current one, marked deeper; each shape is looked at where it's an ordinary hit.
+        let current = try require(find.currentHit).shape
+        let first = renderBitmap(h.editor, size: size)
+        find.step(forward: true)
+        let second = renderBitmap(h.editor, size: size)
+        find.close()
+        let plain = renderBitmap(h.editor, size: size)
+        @MainActor func ordinary(_ shape: ShapeID, _ rect: CGRect) -> (marked: [Int], plain: [Int]) {
+            let point = CGPoint(x: rect.minX + 1, y: rect.minY + 1)
+            return (pixel(shape == current ? second : first, at: point), pixel(plain, at: point))
+        }
+        // A marker multiplies orange over what it marks, so blue falls to a quarter; a wash lays a
+        // translucent orange over it, so blue stays above half.
+        let washed = ordinary(banner, onBanner), highlighted = ordinary(jot, onJot)
+        expect(washed.marked != washed.plain && washed.marked[2] * 2 > washed.plain[2], "washed: \(washed.marked) over \(washed.plain)")
+        expect(highlighted.marked[2] * 2 < highlighted.plain[2], "marked: \(highlighted.marked) over \(highlighted.plain)")
     },
 ])

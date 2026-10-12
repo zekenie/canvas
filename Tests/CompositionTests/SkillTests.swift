@@ -270,13 +270,17 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
 
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let commands = registry.hostCommands
-        let script = "sticky-note \"A\" text: \"x\"\nsticky-note \"B\" public: true\nedge \"A\" -> \"B\" via: reference"
+        let script = "sticky-note \"A\" text: \"x\"\nsticky-note \"B\" public: true\nedge \"A\" -> \"B\" via: reference\nsticky-note \"C\" is: \"Nobody\""
         let answer = try awaitResult { try await commands.run("measure", ["script": .string(script)], nil) }
         let start = try require(reference.range(of: "## Measuring a script")), end = try require(reference.range(of: "## Errors"))
         let section = String(reference[start.lowerBound..<end.lowerBound])
         var members = Set(answer.objectValue?.keys.map { $0 } ?? [])
         for row in answer["shapes"]?.arrayValue ?? [] { members.formUnion(row.objectValue?.keys.map { $0 } ?? []) }
         for row in answer["references"]?.arrayValue ?? [] { members.formUnion(row.objectValue?.keys.map { $0 } ?? []) }
+        for row in answer["warnings"]?.arrayValue ?? [] { members.formUnion(row.objectValue?.keys.map { $0 } ?? []) }
+        expect(members.contains("warnings"), "a name measure can't find is a warning: \(members.sorted())")
+        // `board` is the app's, for a board command run on one; held by MeasureTests, where a board is in front.
+        expect(section.contains("`board`"), "...and it says the board it read")
         members.formUnion(answer["constants"]?.objectValue?.keys.map { $0 } ?? [])
         expect(members.count >= 15, "measure answers: \(members.sorted())")
         for member in members.sorted() { expect(section.contains("`\(member)`"), "the reference's section on measure names \(member)") }
@@ -286,7 +290,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         let examples = try skillExamples(in: "\(skillFolder)/reference/query.md")
         /// How `matches:` writes each of the story's shapes.
         let labels = ["P": #""Payments""#, "A": #""API gateway""#, "U": #""Auth""#, "N1": "(sticky-note)", "W": #""Warehouse""#,
-                      "S": #""Order""#, "V": "(schema-card)", "R1": "(arrow)", "R2": "(arrow)", "L": #""Ledger""#, "C": #""Checkout""#,
+                      "S": #""Order""#, "V": "(sticky-note)", "R1": "(arrow)", "R2": "(arrow)", "L": #""Ledger""#, "T1": #""Person""#, "T2": #""Employee card""#, "I": #""Ann""#, "C": #""Checkout""#,
                       "F": #""Refunds""#, "N2": "(sticky-note)", "Y": #""Refund policy""#]
         for row in StoryQuery.table {
             let said = "row \(row.number), \(row.query)"

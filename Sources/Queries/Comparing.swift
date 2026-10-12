@@ -1,5 +1,6 @@
 import Canvas
 import Foundation
+import QueryLanguage
 
 // Comparing an attribute's value with a test, as the property's schema types it (§1.8): text as text
 // (`i` ignoring case, no diacritics folded), numbers as numbers (one that isn't finite, stored as
@@ -12,6 +13,7 @@ extension TypedTest {
     /// Whether a property's value passes: `value` as the shape has it, its text read through its
     /// format (nil when the shape has none), and `shape` what the property's schema says it is.
     func holds(_ value: JSONValue?, shape: KindSchema.PropertyShape) -> Bool {
+        if case .path(let path) = comparison { return path.holds(value) }
         let value = value == .null ? nil : value
         if case .boolean(let fallback) = shape {
             let actual = value?.boolValue ?? fallback
@@ -38,6 +40,8 @@ extension TypedTest {
         case .prefix, .suffix, .substring, .word, .dash:
             guard let text = value.stringValue else { return false }
             return holds(text: text)
+        case .path:
+            return false
         }
     }
 
@@ -146,8 +150,20 @@ extension TypedTest {
     /// `low`, `<=` before `high` (or at it, for a point), `>` from `high` (past it, for a point),
     /// `>=` from `low`.
     private func compare<T: Comparable>(_ value: T, low: T, high: T) -> Bool {
+        let op: Operator? = switch comparison {
+        case .less: .less
+        case .lessOrEqual: .lessOrEqual
+        case .greater: .greater
+        case .greaterOrEqual: .greaterOrEqual
+        default: nil
+        }
+        return op.map { Self.ordering($0, value, low: low, high: high) } ?? false
+    }
+
+    /// An ordering's rule, for a test of an attribute and for a path's: see the instance's.
+    static func ordering<T: Comparable>(_ op: Operator, _ value: T, low: T, high: T) -> Bool {
         let point = low == high
-        switch comparison {
+        switch op {
         case .less: return value < low
         case .lessOrEqual: return point ? value <= high : value < high
         case .greater: return point ? value > high : value >= high
@@ -157,7 +173,7 @@ extension TypedTest {
     }
 
     /// A day's length: dates are compared in UTC, where every day has 24 hours.
-    private static let day: TimeInterval = 86_400
+    static let day: TimeInterval = 86_400
 
     /// The instant a date property holds (ISO 8601, as a board writes it).
     static func instant(_ value: JSONValue) -> Date? {

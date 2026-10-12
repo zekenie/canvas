@@ -4,18 +4,15 @@ import CanvasTesting
 import Connections
 import CoreGraphics
 import Find
-import Keyboard
-import Selection
-import TableOfContents
+import Mentions
 import TestKit
 
-// Arrows' labels for Find (`ArrowFindPlugin`): the label's text, and where each hit is drawn, from
-// the label's own layout.
+// Arrows' labels for Find: mention text, which Mentions' Find searches (`MentionFindPlugin`): the
+// label's text as it reads, and where each hit is drawn, from the render's own layout, washed.
 
-/// A free arrow from (100, 200) to (500, 200) labelled `text`, with Find and arrows' labels.
-@MainActor private func labelledArrow(_ text: String) throws -> (EditorHarness, ShapeID) {
-    let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin(),
-                                        FindPlugin(), ArrowFindPlugin()])
+/// A free arrow from (100, 200) to (500, 200) labelled `text`, with Find and Mentions' texts.
+@MainActor private func labelledArrow(_ text: MentionText) throws -> (EditorHarness, ShapeID) {
+    let h = try EditorHarness(plugins: arrowsPlugins(more: [FindPlugin(), MentionFindPlugin()]))
     let id = h.add(Arrow(start: .free(CGPoint(x: 100, y: 200)), end: .free(CGPoint(x: 500, y: 200)), text: text))
     return (h, id)
 }

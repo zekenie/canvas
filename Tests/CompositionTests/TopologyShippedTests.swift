@@ -5,17 +5,17 @@ import Connections
 import CoreGraphics
 import LanguageModels
 import Mentions
-import Schemas
 import ShippedTesting
 import StickyNotes
 import Subboards
 import TestKit
 import Topology
+import Types
 
-// Topology over the shipped plugins: arrows drawn on notes' and schemas' channels, a plain arrow,
+// Topology over the shipped plugins: arrows drawn on notes' and subboards' channels, a plain arrow,
 // and mentions across a subboard, as one graph of the whole file.
 
-private let noteLink = EdgeTypeID(rawValue: NoteLink.id.rawValue), schemaLink = EdgeTypeID(rawValue: SchemaLink.id.rawValue)
+private let noteLink = EdgeTypeID(rawValue: NoteLink.id.rawValue)
 private let subboardLink = EdgeTypeID(rawValue: SubboardLink.id.rawValue)
 
 /// An arrow bound at both ends, imprecisely, at the centers, on `channel` (nil: on none).
@@ -35,27 +35,27 @@ private func note(_ x: CGFloat, _ y: CGFloat, _ text: MentionText) -> ShapeRecor
 @MainActor let topologyShippedTests = Suite("Topology, as shipped", [
     test("the edge types: arrow, with each channel under it, mention, and Topology's own stands-for") {
         let types = try ShippedPlugins.registry(model: ScriptedLanguageModel()).edgeTypes
-        expectEqual(Set(types.declared), ["arrow", noteLink, subboardLink, schemaLink, "mention", StandingEdge.id])
+        expectEqual(Set(types.declared), ["arrow", noteLink, subboardLink, "mention", FieldLinkEdge.id, "is-a", StandingEdge.id])
         expectEqual(types.parent(of: StandingEdge.id), nil)
         expectEqual(types.parent(of: noteLink), "arrow")
         expectEqual(types.parent(of: subboardLink), "arrow")
-        expectEqual(types.parent(of: schemaLink), "arrow")
         expectEqual(types.parent(of: "arrow"), nil)
         expectEqual(types.parent(of: "mention"), nil)
+        expectEqual(types.parent(of: FieldLinkEdge.id), "mention", "Types' pointer, under the mention it is a kind of")
     },
 
-    test("arrows on notes' and schemas' channels, a plain arrow, and mentions across a subboard: one graph of the file, by type") {
+    test("arrows on notes' and subboards' channels, a plain arrow, and mentions across a subboard: one graph of the file, by type") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let sub = ShapeRecord(Subboard(frame: CGRect(x: 0, y: 600, width: 240, height: 160)))
         let a = note(0, 0, MentionText([.text("In "), .mention(sub.id, label: "Sub")])), b = note(400, 0, "B")
         let deep = note(0, 0, MentionText([.text("See "), .mention(a.id, label: "A"), .text(" and "), .mention(a.id, label: "A")]))
-        let card = ShapeRecord(SchemaCard(frame: CGRect(x: 0, y: 300, width: 240, height: 89)))
-        let other = ShapeRecord(SchemaCard(frame: CGRect(x: 400, y: 300, width: 240, height: 89)))
-        let linked = arrow(a.id, b.id, on: NoteLink.id), schemas = arrow(card.id, other.id, on: SchemaLink.id), plain = arrow(a.id, card.id, on: nil)
+        let card = ShapeRecord(Subboard(frame: CGRect(x: 0, y: 300, width: 240, height: 160)))
+        let other = ShapeRecord(Subboard(frame: CGRect(x: 400, y: 300, width: 240, height: 160)))
+        let linked = arrow(a.id, b.id, on: NoteLink.id), boards = arrow(card.id, other.id, on: SubboardLink.id), plain = arrow(a.id, card.id, on: nil)
         let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(a), AnyShapeRecord(b), AnyShapeRecord(card), AnyShapeRecord(other),
-                                                            AnyShapeRecord(sub), linked, schemas, plain]),
-                              children: [sub.id: CanvasDocument(shapes: [AnyShapeRecord(deep)])])
+                                                            AnyShapeRecord(sub), linked, boards, plain]),
+                              children: [sub.id: CanvasDocument(shapes: [AnyShapeRecord(deep)]), card.id: CanvasDocument(), other.id: CanvasDocument()])
         let h = try EditorHarness { scheduler in
             CanvasEditor(registry: try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel()), file: file, scheduler: scheduler)
         }
@@ -65,7 +65,7 @@ private func note(_ x: CGFloat, _ y: CGFloat, _ text: MentionText) -> ShapeRecor
                     "what a note connects to, and how: its link, the plain arrow, what it mentions and what mentions it, from another board")
         expectEqual(topology.neighbors(of: a.id, .incoming), ["mention": [deep.id]])
         expectEqual(topology.edges(carriedBy: deep.id), [Edge(type: "mention", source: deep.id, target: a.id, carrier: deep.id, slot: "text", count: 2)])
-        expectEqual(topology.edges(ofType: .within("arrow")).map(\.carrier), [linked.id, schemas.id, plain.id], "the family: every arrow")
+        expectEqual(topology.edges(ofType: .within("arrow")).map(\.carrier), [linked.id, boards.id, plain.id], "the family: every arrow")
         expectEqual(topology.edges(ofType: .only("arrow")).map(\.carrier), [plain.id], "the plain arrow alone")
         expectEqual(topology.edges(ofType: .only("mention")).map(\.carrier), [a.id, deep.id])
         expectEqual(topology.end(deep.id), .live(BoardID(owner: sub.id)))

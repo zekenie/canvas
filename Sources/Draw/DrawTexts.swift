@@ -24,9 +24,11 @@ final class DrawTextLookup {
         let record: AnyShapeRecord
         /// What it's called once the script has run.
         let title: String
+        /// The properties the statement writes on it (by key), which its record doesn't have yet.
+        let writes: Set<String>
     }
 
-    private let editor: CanvasEditor
+    let editor: CanvasEditor
     private let target: BoardReading
     private let naming: DrawNaming?
     /// By title, folded: each title of a shape statement, and each title a statement renames a
@@ -65,11 +67,11 @@ final class DrawTextLookup {
         var own: [String: Own] = [:], titles: [String] = []
         for index in items.indices {
             guard let title = items[index].title, itemByTitle[title] == index else { continue }
-            own[title] = Own(id: items[index].record.id, record: items[index].record, title: renamed[index] ?? title)
+            own[title] = Own(id: items[index].record.id, record: items[index].record, title: renamed[index] ?? title, writes: Set(items[index].shape.attributes.map(\.key)))
             titles.append(title)
         }
         for (index, new) in renamed.sorted(by: { $0.key < $1.key }) where own[new] == nil {
-            own[new] = Own(id: items[index].record.id, record: items[index].record, title: new)
+            own[new] = Own(id: items[index].record.id, record: items[index].record, title: new, writes: Set(items[index].shape.attributes.map(\.key)))
             titles.append(new)
         }
         self.own = own
@@ -78,7 +80,20 @@ final class DrawTextLookup {
 
     // MARK: Asking
 
-    func shape(called written: String, admitting admits: @MainActor (AnyShapeRecord) -> String?) throws(DrawError) -> DrawTextShape {
+    func shape(called written: String, admitting admits: @MainActor (AnyShapeRecord, Set<String>) -> String?) throws(DrawError) -> DrawTextShape {
+        do throws(DrawError) {
+            return try find(called: written, admitting: admits)
+        } catch {
+            // What the file's names say of a title, not what is wrong with how it is written.
+            guard [ScriptError.Reason.unknownTitle.rawValue, ScriptError.Reason.ambiguousTitle.rawValue, ScriptError.Reason.invalidValue.rawValue].contains(error.reason),
+                  error.reason != Drawing.skipped else { throw error }
+            var named = error
+            named.fromNameLookup = true
+            throw named
+        }
+    }
+
+    private func find(called written: String, admitting admits: @MainActor (AnyShapeRecord, Set<String>) -> String?) throws(DrawError) -> DrawTextShape {
         guard let naming else {
             throw DrawError("titles name shapes, and nothing here gives shapes names", reason: ScriptError.Reason.noNames.rawValue,
                             hint: "leave titles out: without a plugin that names shapes, no shape can be named or found by name")
@@ -89,7 +104,7 @@ final class DrawTextLookup {
         // What's called that and isn't admitted: the first of them, by where it is, and why not.
         var refused: (kind: ShapeKind, why: String)?
         if let entry = own[title] {
-            guard let why = admits(entry.record) else { return DrawTextShape(id: entry.id, title: entry.title) }
+            guard let why = admits(entry.record, entry.writes) else { return DrawTextShape(id: entry.id, title: entry.title) }
             refused = (entry.record.kind, why)
         } else if unresolved.contains(title) {
             throw DrawError("", reason: Drawing.skipped)
@@ -101,7 +116,7 @@ final class DrawTextLookup {
         func admitted(_ places: [Place]) -> [Place] {
             places.filter { place in
                 guard let record = file.record(place.id) else { return false }
-                guard let why = admits(record) else { return true }
+                guard let why = admits(record, []) else { return true }
                 if refused == nil { refused = (record.kind, why) }
                 return false
             }
@@ -167,15 +182,15 @@ final class DrawTextLookup {
 
     /// The titles a text may name, as "did you mean" picks from: the file's, in the order it lists
     /// them, then those the script draws.
-    private func admittedTitles(_ admits: @MainActor (AnyShapeRecord) -> String?, taken: Set<BoardID>) -> [String] {
+    private func admittedTitles(_ admits: @MainActor (AnyShapeRecord, Set<String>) -> String?, taken: Set<BoardID>) -> [String] {
         let file = editor.file
         let names = names()
         let inFile = (names?.titles ?? []).filter { title in
             names?.places[title]?.contains { place in
-                !deleted.contains(place.id) && !taken.contains(place.board) && file.record(place.id).map { admits($0) == nil } == true
+                !deleted.contains(place.id) && !taken.contains(place.board) && file.record(place.id).map { admits($0, []) == nil } == true
             } == true
         }
-        return inFile + ownTitles.filter { title in own[title].map { admits($0.record) == nil } == true }
+        return inFile + ownTitles.filter { title in own[title].map { admits($0.record, $0.writes) == nil } == true }
     }
 }
 
@@ -186,15 +201,44 @@ extension Drawing {
     /// (the value itself where no format writes any). A refusal is said on the statement's line, as
     /// `prefix` (`"Plan": text`) says what it's about, then `suffix`; one a statement it depends on
     /// leaves to that statement's own error (`Drawing.skipped`) is passed on as it is.
-    func writtenTexts(_ value: JSONValue, of key: String, _ vocabulary: KindVocabulary, prefix: String, suffix: String = "",
+    func writtenTexts(_ value: JSONValue, of key: String, _ vocabulary: KindVocabulary, owner: ShapeID? = nil, prefix: String, suffix: String = "",
                       _ statement: Statement) throws(DrawError) -> JSONValue {
         guard let textWriter else { return value }
         do throws(DrawError) {
-            return try textWriter.written(value, of: key, in: vocabulary)
+            return try textWriter.written(value, of: key, in: vocabulary, owner: owner)
         } catch {
             guard error.reason != Self.skipped else { throw error }
-            throw DrawError("\(prefix): \(error.message)\(suffix)", reason: error.reason, hint: error.hint,
-                            line: statement.line, statement: statement.text)
+            throw error.said("\(prefix): \(error.message)\(suffix)", on: statement)
+        }
+    }
+}
+
+extension DrawError {
+    /// This refusal as a statement says it: the message it is given, on the statement's line, and still the lookup's if it was.
+    func said(_ message: String, on statement: Statement) -> DrawError {
+        var said = DrawError(message, reason: reason, hint: hint, line: statement.line, statement: statement.text)
+        said.fromNameLookup = fromNameLookup
+        return said
+    }
+}
+
+extension Drawing {
+    /// The value a script wrote for a property whose owner has a value writer (`registrar.drawValueWriter`),
+    /// written as that writer says (names into ids): `written`, and `set`, what the shape is set to. `held` is
+    /// what the shape holds now (nil for a new shape): given, `set` is `written` joined with it, as the
+    /// writer says; nil, `set` is `written` alone, for a caller that joins it later (an edge's connection
+    /// exists only once it is made). A property with no writer takes the value as it is. A refusal is said on
+    /// the statement's line as `writtenTexts` says one.
+    func writtenValue(_ value: JSONValue, of key: String, _ vocabulary: KindVocabulary, owner: ShapeID?, joining held: JSONValue??,
+                      prefix: String, suffix: String = "", _ statement: Statement) throws(DrawError) -> (written: JSONValue, set: JSONValue) {
+        guard let writer = registry.drawValueWriters[key], let textWriter else { return (value, value) }
+        do throws(DrawError) {
+            let written = try writer.write(value, textWriter.context(of: key, in: vocabulary, owner: owner))
+            guard let held else { return (written, written) }
+            return (written, writer.merge(written, held))
+        } catch {
+            guard error.reason != Self.skipped else { throw error }
+            throw error.said("\(prefix): \(error.message)\(suffix)", on: statement)
         }
     }
 }
@@ -206,30 +250,35 @@ struct DrawTextWriter {
     let formats: [String: DrawTextFormatting]
     let lookup: DrawTextLookup
 
+    /// What a value writer is given for the property `key` of the kind `vocabulary` reads.
+    func context(of key: String, in vocabulary: KindVocabulary, owner: ShapeID?) -> DrawTextContext {
+        DrawTextContext(registry: registry, schema: vocabulary.properties[key]?.objectValue ?? [:], owner: owner, lookup: lookup)
+    }
+
     /// `value`, a script's for the property `key` of the kind `vocabulary` reads, with each string in
     /// it whose schema says its content is of a media type a format writes, written by the format:
     /// the property's own, and any inside a value that's an object or a list (by its `properties`,
     /// `additionalProperties`, `prefixItems` and `items`, `$ref`s followed). What isn't a string of
     /// such a schema is as it was. It throws what a format throws, as it's thrown; the caller says
     /// where.
-    func written(_ value: JSONValue, of key: String, in vocabulary: KindVocabulary) throws(DrawError) -> JSONValue {
+    func written(_ value: JSONValue, of key: String, in vocabulary: KindVocabulary, owner: ShapeID?) throws(DrawError) -> JSONValue {
         guard vocabulary.textKeys.contains(key), let declared = vocabulary.properties[key] else { return value }
-        return try written(value, declared: declared, in: vocabulary.schema)
+        return try written(value, declared: declared, in: vocabulary.schema, owner: owner)
     }
 
-    private func written(_ value: JSONValue, declared: JSONValue, in schema: KindSchema) throws(DrawError) -> JSONValue {
+    private func written(_ value: JSONValue, declared: JSONValue, in schema: KindSchema, owner: ShapeID?) throws(DrawError) -> JSONValue {
         let resolved = schema.resolved(declared)
         switch value {
         case .string(let text):
             guard let mediaType = resolved["contentMediaType"]?.stringValue, let format = formats[mediaType] else { return value }
-            return .string(try format.write(text, DrawTextContext(registry: registry, schema: declared.objectValue ?? [:], lookup: lookup)))
+            return .string(try format.write(text, DrawTextContext(registry: registry, schema: declared.objectValue ?? [:], owner: owner, lookup: lookup)))
         case .object(let members):
             var written = members
             for name in members.keys.sorted() {
                 guard let declared = resolved["properties"]?[name] ?? resolved["additionalProperties"].flatMap({ $0.objectValue == nil ? nil : $0 }) else {
                     continue
                 }
-                written[name] = try self.written(members[name]!, declared: declared, in: schema)
+                written[name] = try self.written(members[name]!, declared: declared, in: schema, owner: owner)
             }
             return .object(written)
         case .array(let items):
@@ -237,7 +286,13 @@ struct DrawTextWriter {
             let prefix = resolved["prefixItems"]?.arrayValue ?? []
             for index in items.indices {
                 guard let declared = prefix.indices.contains(index) ? prefix[index] : resolved["items"] else { continue }
-                written[index] = try self.written(items[index], declared: declared, in: schema)
+                written[index] = try self.written(items[index], declared: declared, in: schema, owner: owner)
+            }
+            // A list that is `uniqueItems` holds each once, the first of those that say the same (two titles
+            // of one shape come out as one id).
+            if resolved["uniqueItems"]?.boolValue == true {
+                var seen: Set<JSONValue> = []
+                written = written.filter { seen.insert($0).inserted }
             }
             return .array(written)
         default:

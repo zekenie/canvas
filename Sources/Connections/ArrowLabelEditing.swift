@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Geometry
+import Mentions
 import Selection
 import TextEditing
 
@@ -16,7 +17,7 @@ extension ArrowDefinition: Editable {
     }
 
     func editingFrame(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGRect? {
-        ArrowLabels.frame(of: shape.props, on: arrowGeometry(shape.props, in: context), editing: true)
+        ArrowLabels.frame(of: shape.props, on: arrowGeometry(shape.props, in: context), names: context.mentionNames(of: shape.id), editing: true)
     }
 }
 
@@ -71,17 +72,21 @@ extension ArrowLabelDragSession: Session {
 
 /// A text view laid over the label being edited: its frame in view points and its bounds in world
 /// units, the label's frame at their origin, so AppKit scales it by the zoom and the text lays out
-/// as the canvas draws it (`ArrowStyle.labelAttributes`, centered), its padding in from the label's
+/// as the canvas draws it (`ArrowStyle.labelText`, centered), its padding in from the label's
 /// edges. Each change is written to the arrow, which the label grows with, and the canvas lays the
-/// view over the label again. Escape and ⌘↩ end editing; Return is a new line, as in tldraw.
+/// view over the label again. Escape and ⌘↩ end editing; Return is a new line, as in tldraw, unless
+/// the line is a slash command, which it runs. The text is mention text (`MentionTextView`): an
+/// `@` lists the shapes to mention, each a pill, and a `/` on an empty line lists the commands the
+/// arrow offers (`/lock`, ...), as a note's text does.
 final class ArrowLabelEditor: NSView, NSTextViewDelegate {
-    let textView: EditingTextView
+    let textView: MentionTextView<AnyMentionable>
     private let context: EditContext<Arrow>
 
     init(arrow: ShapeRecord<Arrow>, context: EditContext<Arrow>) {
         self.context = context
         let frame = context.frame ?? .zero
-        textView = EditingTextView(frame: CGRect(origin: .zero, size: frame.size))
+        textView = MentionTextView(frame: CGRect(origin: .zero, size: frame.size), text: arrow.props.text, style: ArrowStyle.labelText,
+                                   owner: context.shapeID, mentions: context.service(MentionState.self))
         super.init(frame: .zero)
         textView.isRichText = false
         textView.allowsUndo = true
@@ -91,8 +96,7 @@ final class ArrowLabelEditor: NSView, NSTextViewDelegate {
         // TextKit 2 sets a line's glyphs a point lower in it than string drawing does, so the text
         // starts a point higher than the render's, as a note's editor does.
         textView.textContainerInset = NSSize(width: ArrowStyle.labelPadding, height: ArrowStyle.labelPadding - 1)
-        textView.typingAttributes = ArrowStyle.labelAttributes
-        textView.textStorage?.setAttributedString(NSAttributedString(string: arrow.props.text, attributes: ArrowStyle.labelAttributes))
+        textView.typingAttributes = ArrowStyle.labelText.attributes
         textView.insertionPointColor = ArrowStyle.color
         textView.spelling = .app
         textView.delegate = self
@@ -119,7 +123,7 @@ final class ArrowLabelEditor: NSView, NSTextViewDelegate {
     /// empty (tldraw's onEditStart, which writes it as editing begins: here an edit that types
     /// nothing changes nothing, and leaves no step to undo).
     func textDidChange(_ notification: Notification) {
-        let text = textView.string
+        let text = textView.mentionText
         context.update { arrow in
             guard arrow.text != text else { return }
             if !arrow.hasText { arrow.labelPosition = ArrowLabelLayout.defaultPosition }

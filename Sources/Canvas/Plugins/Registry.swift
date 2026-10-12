@@ -37,6 +37,11 @@ public struct Registry {
     /// Those drawn as a line (`StrokedShape`), found once: a tinted outline of an open shape is
     /// stroked to cover its line, and asks only these.
     let strokedShapes: [ShapeKind: any StrokedShape]
+    /// Kinds laid out past their box (`LaidOutBox`), found once: every shape's frame asks.
+    let laidOutBoxes: [ShapeKind: any LaidOutBox]
+    /// What provides each layout input (`registrar.layoutInput`), by the key's name, found once: a
+    /// shape laid out asks for its inputs.
+    let layoutProviders: [String: LayoutProvider]
     /// Every plugin's rule for which shapes can't change (`registrar.readOnlyShapes`), found once:
     /// a transaction asks them about every shape it changes.
     private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
@@ -49,6 +54,9 @@ public struct Registry {
     private let schemas: [ShapeKind: JSONSchema]
     /// The same, compiled to check its shapes against (`schemaViolations(of:)`).
     let schemaValidators: [ShapeKind: SchemaValidator]
+
+    /// What `memo(_:_:)` keeps.
+    private let memos = RegistryMemos()
 
     public init(plugins: [any CanvasPlugin]) throws(RegistryError) {
         let plugins: [any CanvasPlugin] = [CorePlugin()] + plugins
@@ -81,9 +89,18 @@ public struct Registry {
         referencingKinds = Set(definitions.filter { $0.value is any ShapeReferencing }.keys)
         boardOwningKinds = Set(definitions.filter { $0.value is any BoardOwning }.keys)
         containingKinds = Set(definitions.filter { $0.value is any ShapeContaining }.keys)
+        laidOutBoxes = definitions.compactMapValues { $0 as? any LaidOutBox }
+        // A container's edge is its box: what it holds is judged by it, and a resize edits it.
+        if let kind = laidOutBoxes.keys.filter(containingKinds.contains).min(by: { $0.rawValue < $1.rawValue }) {
+            throw .invalid(point: "Shapes", reason: "\(kind) holds shapes, so it can't be laid out past its box")
+        }
         customSkeletons = definitions.compactMapValues { $0 as? any CustomSkeleton }
         skeletonOutlines = definitions.compactMapValues { $0 as? any CustomSkeletonOutline }
         strokedShapes = definitions.compactMapValues { $0 as? any StrokedShape }
+        layoutProviders = Dictionary((byPoint[ObjectIdentifier(CorePoints.LayoutProviders.self)] ?? []).map {
+            let provider = $0.value as! LayoutProvider
+            return (provider.name, provider)
+        }, uniquingKeysWith: { first, _ in first })
         readOnlyRules = (byPoint[ObjectIdentifier(CorePoints.ReadOnlyRules.self)] ?? []).map { $0.value as! CorePoints.ReadOnlyRules.Contribution }
         placingTools = Set((byPoint[ObjectIdentifier(CorePoints.Tools.self)] ?? []).compactMap {
             let tool = $0.value as! ToolRegistration
@@ -175,6 +192,18 @@ public struct Registry {
         return (forKind[point]?[kind] ?? forAnyKind[point] ?? []).map { $0.value as! P.Contribution }
     }
 
+    /// A value a plugin works out of this registry once, per key, since the registry never changes:
+    /// what a per-shape or per-frame question would otherwise work out again each time (a kind's
+    /// contributions filtered, say). The key names the value and its kind: a plugin's own type and
+    /// the kind.
+    public func memo<Key: Hashable, Value>(_ key: Key, _ make: () -> Value) -> Value {
+        let key = AnyHashable(key)
+        if let known = memos.values[key] { return known as! Value }
+        let made = make()
+        memos.values[key] = made
+        return made
+    }
+
     /// For a point that takes one contribution per kind, plus one for every kind (keyed by
     /// `[target]`, as a rule is): each installed kind's own, else every kind's. A kind with neither
     /// isn't in it. Worked out on each call: keep what it returns, as the registry never changes.
@@ -187,6 +216,9 @@ public struct Registry {
     public var kinds: [ShapeKind] { contributions(to: CorePoints.Shapes.self).map(\.value.kind) }
 
     public func definition(for kind: ShapeKind) -> (any ShapeDefinition)? { definitions[kind] }
+
+    /// Whether a kind's shapes may be laid out past their box (`LaidOutBox`).
+    public func isLaidOutBox(_ kind: ShapeKind) -> Bool { laidOutBoxes[kind] != nil }
 
     /// A shape's outline as its kind draws it (its kind's `indicatorPath`), in world units: on the
     /// shape's own edge, which the core grows outward before it strokes a selection, a hover or the
@@ -415,6 +447,7 @@ struct RawContribution {
         case let service as ServiceRegistration: "service \(service.name)"
         case let overlay as any CanvasOverlay: "overlay \(type(of: overlay))"
         case let command as CommandRegistration: "command \(command.command)"
+        case let provider as LayoutProvider: "layout input \(provider.name)"
         case let declaration as PropertyDeclaration:
             "property \(declaration.codec.key)" + (declaration.codec.version > 0 ? " v\(declaration.codec.version)" : "")
         case let optIn as PropertyOptIn: "property \(optIn.key) → \(target == .any ? "every shape" : "\(target)")"
@@ -438,4 +471,10 @@ struct RawContribution {
     private static func keys<K: KeyedExtensionPoint>(of value: Any, for target: ShapeTarget, claimedIn _: K.Type) -> [AnyHashable] {
         K.uniqueKeys(of: value as! K.Contribution, for: target)
     }
+}
+
+/// The values `Registry.memo(_:_:)` keeps: a class, so the registry's copies share them.
+@MainActor
+private final class RegistryMemos {
+    var values: [AnyHashable: Any] = [:]
 }

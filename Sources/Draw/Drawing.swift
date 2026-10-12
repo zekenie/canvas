@@ -27,6 +27,9 @@ struct ShapeItem {
     /// How big it is, once drawn: as written, else what setting its attributes left it (a schema
     /// card as tall as its description), else as it is, or as its tool places it.
     var size: CGSize
+    /// How much room it takes once drawn: its laid-out size, which is `size` for a kind laid out as it
+    /// stores. What the layout places and a row reports; `size` is what is written and compared.
+    var room: CGSize
     /// What each placement's targets are, placement by placement.
     var targets: [[Found]] = []
     /// Its place among the layout's free boxes, if it moves.
@@ -36,6 +39,9 @@ struct ShapeItem {
     /// What it was pushed past, by name: only what it was kept clear of itself, not what a shape
     /// it moved along with was.
     var pushedPast: [String] = []
+    /// What its statement wrote for each property a value writer joins (`DrawValueWriters`), by key, as the
+    /// writer wrote it and before it joined what the shape held: what a report warns about.
+    var written: JSONObject = [:]
     /// A board shape whose title is nearly this new one's.
     var nearMiss: String?
     /// The board shapes it sits on as zones where it's placed, in paint order: each wholly holds
@@ -181,11 +187,22 @@ struct Drawing {
     /// What writes the texts a script gives properties of a media type some plugin writes, nil
     /// where none does.
     private(set) var textWriter: DrawTextWriter?
+    /// The editor a measure reads names and types from, when it is given a board: the open file's, which a title in a
+    /// script's value is found in and whose types its shapes are laid out by (read, never written). The run's own board
+    /// is a scratch one.
+    let namesBeyond: CanvasEditor?
+    /// Whether this run only measures: a name it can't find is a warning and the shape is measured without it.
+    let measuring: Bool
+    /// What measuring found to say (`MeasureResult.warnings`): each a line and a message.
+    private(set) var measureWarnings: [(line: Int, message: String)] = []
 
-    init(_ script: Script, editor: CanvasEditor, on target: BoardReading, fileNames: FileNames? = nil, program: String) throws(DrawError) {
+    init(_ script: Script, editor: CanvasEditor, on target: BoardReading, fileNames: FileNames? = nil, namesBeyond: CanvasEditor? = nil,
+         measuring: Bool = false, program: String) throws(DrawError) {
         let registry = editor.registry
         self.editor = editor
         self.program = program
+        self.namesBeyond = namesBeyond
+        self.measuring = measuring
         self.target = target
         self.fileNames = fileNames
         self.registry = registry
@@ -226,8 +243,8 @@ struct Drawing {
         }
         // Every title the script draws, restates or renames to is known: a text may name them now.
         let formats = registry.drawTextFormats
-        if !formats.isEmpty {
-            let lookup = DrawTextLookup(editor: editor, target: target, naming: naming, items: items, itemByTitle: itemByTitle,
+        if !formats.isEmpty || !registry.drawValueWriters.isEmpty {
+            let lookup = DrawTextLookup(editor: namesBeyond ?? editor, target: target, naming: naming, items: items, itemByTitle: itemByTitle,
                                         unresolved: unresolved, deleted: deletedShapes, fileNames: fileNames)
             textWriter = DrawTextWriter(registry: registry, formats: formats, lookup: lookup)
         }
@@ -242,6 +259,22 @@ struct Drawing {
             do throws(DrawError) { try check(style) } catch { keep(error) }
         }
         guard errors.isEmpty else { throw collected(errors) }
+        layOut()
+    }
+
+    /// Works out how much room each shape takes once drawn (`ShapeItem.room`): the frame its kind lays
+    /// it out in, with the script's own shapes read as the file's (a type and its instance drawn
+    /// together, a stretch and the gauge it names), and a board shape the script doesn't restate read as
+    /// it is, but for those it deletes, which are not there. Only the size is kept: a shape is placed
+    /// where the layout says, so its origin is its own. What draw places and reports, and `canvas measure` answers with, so the two agree.
+    private mutating func layOut() {
+        let beyond = namesBeyond.map { editor in { @MainActor (id: ShapeID) in editor.shape(inFile: id) } }
+        let context = target.shapes.layingOut(with: items.map(\.record), removing: deletedShapes, alsoReading: beyond)
+        for index in items.indices {
+            var sized = items[index].record
+            sized.box = CGRect(origin: items[index].existing?.box?.origin ?? .zero, size: items[index].size)
+            items[index].room = context.frame(of: sized)?.size ?? items[index].size
+        }
     }
 
     /// Keeps a statement's error with the others (but one that only follows from another's).
@@ -517,7 +550,7 @@ struct Drawing {
         }
         if let title { itemByTitle[title] = items.count }
         items.append(ShapeItem(statement: statement, shape: shape, kind: kind, title: title, existing: existing, record: base, size: size,
-                               nearMiss: nearMiss))
+                               room: size, nearMiss: nearMiss))
     }
 
     /// The kind a statement's first word names, if its tool places it: a kind drawn by a gesture
@@ -634,7 +667,24 @@ struct Drawing {
             } catch {
                 throw DrawError(statement, .invalidValue, "\(subject): \(error.message)\(from)", hint: error.hint)
             }
-            settings[key] = try writtenTexts(value, of: key, vocabulary, prefix: "\(subject): \(key)", suffix: from, statement)
+            let joined: (written: JSONValue, set: JSONValue)
+            do throws(DrawError) {
+                let texts = try writtenTexts(value, of: key, vocabulary, owner: item.record.id, prefix: "\(subject): \(key)", suffix: from, statement)
+                // A property whose owner says how a value joins what the shape holds (Types' `fieldValues`) is
+                // set to the join, so a statement names only what it changes.
+                joined = try writtenValue(texts, of: key, vocabulary, owner: item.record.id, joining: .some(item.existing?.propertiesJSON?[key]),
+                                          prefix: "\(subject): \(key)", suffix: from, statement)
+            } catch {
+                // Measuring says a name it can't find, and measures the shape without it, or with the value as written when the
+                // kind takes that.
+                guard measuring, error.fromNameLookup else { throw error }
+                let asWritten = (try? registry.shape(item.record, setting: [key: value])) != nil
+                measureWarnings.append((statement.line, error.message + (asWritten ? "; measured as written" : "; measured without it")))
+                if asWritten { settings[key] = value }
+                continue
+            }
+            settings[key] = joined.set
+            if registry.drawValueWriters[key] != nil { items[index].written[key] = joined.written }
         }
         for name in shape.styles {
             guard let style = script.styles.first(where: { $0.name == name }) else { continue }
@@ -647,7 +697,11 @@ struct Drawing {
         // What a restated shape already has isn't a change, though it's written without what reading
         // it makes afresh (the id of an item in a list): a script run again changes nothing.
         if let existing = item.existing {
-            settings = settings.filter { key, value in !Self.alreadyHas(existing, key, value, in: registry) }
+            settings = settings.filter { key, value in
+                // A joined value that comes to nothing, over a shape that holds nothing, changes nothing.
+                if value == .null, registry.drawValueWriters[key] != nil, existing.propertiesJSON?[key] == nil { return false }
+                return !Self.alreadyHas(existing, key, value, in: registry)
+            }
         }
         // Every shape a script makes is built by the registry, as the kind's schema reads it. Given a
         // width alone (`size: 300x`), it's built at that width, and what the kind works out from the
@@ -662,7 +716,7 @@ struct Drawing {
         if !settings.isEmpty || item.existing == nil { built = try record(built, setting: settings, item, vocabulary) }
         items[index].record = built
         try references(of: built, item)
-        // A size the kind works out from what was set (a note's or a schema card's height, from its text) is
+        // A size the kind works out from what was set (a note's height, from its text) is
         // the one it's placed at, unless the statement says one; with a width alone, the height it works
         // out at that width (any other kind's height as it was).
         if let widthAlone, let height = built.box?.height {
@@ -675,7 +729,7 @@ struct Drawing {
             var sized = items[index].record
             sized.box = CGRect(origin: box.origin, size: items[index].size)
             if vocabulary.namingProperty == nil {
-                // A title only worked out (a schema card's, from its schema) is renamed by changing
+                // A title only worked out (`title { … }`) is renamed by changing
                 // what it's worked out from: said as a rename, and held to what a rename is.
                 if let now = try renamed(sized, title, item) {
                     try claim(now, for: existing, statement, subject: subject)
@@ -888,7 +942,7 @@ struct Drawing {
         }
     }
 
-    /// The title a restated shape of a kind whose titles are only worked out (a schema card's, from
+    /// The title a restated shape of a kind whose titles are only worked out (`title { … }`, from
     /// its schema's "title") has once changed, if that's another; refused if it has none, as a
     /// script can't take a title away.
     private func renamed(_ record: AnyShapeRecord, _ title: String, _ item: ShapeItem) throws(DrawError) -> String? {
@@ -971,7 +1025,9 @@ struct Drawing {
             } catch {
                 throw DrawError(statement, .invalidValue, "\(written): \(error.message)", hint: error.hint)
             }
-            settings[key] = try writtenTexts(value, of: key, connector, prefix: "\(written): \(key)", statement)
+            // Written now; joined with what the arrow holds when it is made (`DrawCommit`).
+            let texts = try writtenTexts(value, of: key, connector, prefix: "\(written): \(key)", statement)
+            settings[key] = try writtenValue(texts, of: key, connector, owner: nil, joining: nil, prefix: "\(written): \(key)", statement).written
         }
         let pairs = edge.bothHeads ? [(from, to), (to, from)] : [(from, to)]
         if let earlier = edges.first(where: { other in

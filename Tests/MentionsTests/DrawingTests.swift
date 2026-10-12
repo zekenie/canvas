@@ -11,7 +11,8 @@ import TestKit
 // whatever a test hands it in the same box, so a test can hold the canvas to string drawing.
 
 /// A white box whose text may mention shapes: drawn in the jot's style (16 points in fixed 19-point
-/// lines), or `loose`, in the font's own lines, and in at most `lines` lines (0: as many as fit).
+/// lines), or `loose`, in the font's own lines, or in another of `ScrapStyle.looks`, and in at most
+/// `lines` lines (0: as many as fit).
 struct Scrap: BoxShapeProps {
     static let kind: ShapeKind = "scrap"
     static let properties = Properties<Scrap> {
@@ -19,16 +20,19 @@ struct Scrap: BoxShapeProps {
         Property("text", \.text)
         Property("loose", \.loose)
         Property("lines", \.lines)
+        Property("look", \.look)
     }
     var frame: CGRect
     var text: MentionText = ""
     var loose = false
     var lines = 0
-    init(_ frame: CGRect, text: MentionText = "", loose: Bool = false, lines: Int = 0) {
+    var look = 0
+    init(_ frame: CGRect, text: MentionText = "", loose: Bool = false, lines: Int = 0, look: Int = 0) {
         self.frame = frame
         self.text = text
         self.loose = loose
         self.lines = lines
+        self.look = look
     }
 }
 
@@ -43,12 +47,26 @@ enum ScrapStyle {
     static let loose = MentionTextStyle(font: .systemFont(ofSize: 16), color: NSColor(white: 0.12, alpha: 1))
 
     static func style(loose: Bool) -> MentionTextStyle { loose ? Self.loose : JotStyle.text }
+
+    /// The looks a scrap's `look` names, each in fixed lines: the jot's; a value that points at a shape, as a
+    /// type's row draws one (14 points in 20-point lines, outlined), and that in red; a panel's (neutral);
+    /// and the jot's, centered.
+    static let looks: [MentionTextStyle] = [
+        JotStyle.text,
+        MentionTextStyle(font: .systemFont(ofSize: 14), color: NSColor(white: 0.12, alpha: 1), lineHeight: 20, surface: .outlined),
+        MentionTextStyle(font: .systemFont(ofSize: 14), color: NSColor(srgbRed: 0.74, green: 0.10, blue: 0.10, alpha: 1), lineHeight: 20, surface: .outlined),
+        MentionTextStyle(font: .systemFont(ofSize: 13), color: .labelColor, lineHeight: 18, surface: .neutral),
+        MentionTextStyle(font: .systemFont(ofSize: 16), color: NSColor(white: 0.12, alpha: 1), lineHeight: 19, alignment: .center),
+    ]
+    static let centered = 4
+
+    static func style(of scrap: Scrap) -> MentionTextStyle { scrap.loose ? loose : looks[scrap.look] }
 }
 
 extension ShapeRecord where Props == Scrap {
     @MainActor var placements: [MentionTextPlacement] {
         [MentionTextPlacement(props.text, in: props.frame.insetBy(dx: ScrapStyle.padding, dy: ScrapStyle.padding),
-                              style: ScrapStyle.style(loose: props.loose), lines: props.lines > 0 ? props.lines : nil)]
+                              style: ScrapStyle.style(of: props), lines: props.lines > 0 ? props.lines : nil)]
     }
 }
 
@@ -138,7 +156,36 @@ private let pictureSize = CGSize(width: 240, height: 240)
         let state = editor.mentionState
         return ScrapStyle.style(loose: loose).attributedString(text, width: paper.width - 2 * ScrapStyle.padding) { state.resolve($0) }
     }
+
+    /// A scrap's text as the canvas builds it, and the picture of string drawing drawing that where the scrap draws its own.
+    func stringDrawing(of scrap: Scrap, scale: CGFloat) -> NSBitmapImageRep {
+        let state = editor.mentionState
+        let string = ScrapStyle.style(of: scrap).attributedString(scrap.text, width: scrap.frame.width - 2 * ScrapStyle.padding) { state.resolve($0) }
+        Easel.draw = { draw(string, in: $0) }
+        defer { Easel.draw = nil }
+        return picture(of: Easel(scrap.frame), scale: scale)
+    }
+
+    /// `scrap` moved down so its first pill's top is on a whole point: a text of one pill then lies on whole pixels at
+    /// 1× and 2×, zoomed by whole numbers (a pill is whole points wide and tall, and sits a part of a point down its line).
+    func onWholePoints(_ scrap: Scrap) throws -> Scrap {
+        let id = place(scrap)
+        defer { editor.delete(id) }
+        let top = try require(editor.mentionPills(of: id).first).frame.minY
+        var moved = scrap
+        moved.frame.origin.y += top.rounded(.up) - top
+        return moved
+    }
 }
+
+#if DEBUG
+/// How many texts of one pill `body` draws straight into the context.
+@MainActor private func drawnStraight(_ body: () throws -> Void) rethrows -> Int {
+    let before = MentionDrawingCounts.pillsDrawnStraight
+    try body()
+    return MentionDrawingCounts.pillsDrawnStraight - before
+}
+#endif
 
 /// The same string, each pill a blank of its size: laid out alike, with no pill drawn.
 @MainActor private func withBlankPills(_ string: NSAttributedString) -> NSAttributedString {
@@ -502,6 +549,114 @@ private func draw(_ string: NSAttributedString, in box: CGRect) {
         _ = renderBitmap(board.editor, size: size)
         expectEqual(MentionDrawingCounts.stringsBuilt, built, "skeletons at 30% build none")
         expectEqual(MentionDrawingCounts.kept, capacity, "and keep what the memo keeps")
+        #endif
+    },
+    test("a text that is one pill is drawn straight into the context: on whole pixels, the pixels string drawing draws of it, at 1× and 2× and zoomed in, on every surface, live and missing") {
+        let board = try DrawingBoard()
+        board.editor.delete(idC)
+        for look in 0..<ScrapStyle.centered {
+            for (text, state) in [(mentioning([.mention(idA, label: "Old")]), "live"), (mentioning([.mention(idC, label: "Garden party")]), "missing")] {
+                let scrap = try board.onWholePoints(Scrap(paper, text: text, look: look))
+                for scale in [1, 2] as [CGFloat] {
+                    for zoom in [1, 2] as [CGFloat] {
+                        board.editor.camera = Camera(origin: .zero, zoom: zoom)
+                        var drawn: NSBitmapImageRep?
+                        #if DEBUG
+                        expectEqual(drawnStraight { drawn = board.picture(of: scrap, scale: scale) }, 1, "look \(look), \(state): drawn straight")
+                        expectEqual(drawnStraight { _ = board.stringDrawing(of: scrap, scale: scale) }, 0)
+                        #endif
+                        let picture = drawn ?? board.picture(of: scrap, scale: scale)
+                        let expected = board.stringDrawing(of: scrap, scale: scale)
+                        // A pill that is see-through (the shape surface's tint, a missing one's dashes) may differ by a level or
+                        // two of rounding where its parts meet: an image is composited whole, its parts here one by one.
+                        let surface = ScrapStyle.looks[look].surface
+                        let most = surface == .outlined && state == "live" ? 0 : 2
+                        let largest = largestDifference(picture, expected)
+                        expect(largest <= most, "look \(look), \(state), \(scale)× at \(zoom * 100)%: differs by \(largest)")
+                        // (A missing pill on a neutral surface takes the system's colors as it is laid out, which on this white
+                        // paper may be white: whatever it shows, the two show the same.)
+                        guard surface != .neutral || state == "live" else { continue }
+                        let empty = board.picture(of: Scrap(scrap.frame), scale: scale)
+                        expect(!differences(picture, empty).isEmpty, "it drew the pill")
+                    }
+                }
+                board.editor.camera = Camera(origin: .zero, zoom: 1)
+            }
+        }
+    },
+    test("off whole pixels, zoomed in and out, a text that is one pill is drawn in the frame mentionPills says") {
+        let board = try DrawingBoard()
+        board.editor.delete(idC)
+        for look in 0..<ScrapStyle.centered {
+            for text in [mentioning([.mention(idA, label: "Old")]), mentioning([.mention(idC, label: "Garden party")])] {
+                if ScrapStyle.looks[look].surface == .neutral, text.mentioned == [idC] { continue }
+                for (zoom, offset) in [(1, CGPoint(x: 0.3, y: 0.3)), (0.4, CGPoint(x: 0.7, y: 1.3)), (1.37, CGPoint(x: 0.2, y: 0.9))] as [(CGFloat, CGPoint)] {
+                    board.editor.camera = Camera(origin: .zero, zoom: zoom)
+                    let scrap = Scrap(paper.offsetBy(dx: offset.x, dy: offset.y), text: text, look: look)
+                    let id = board.place(scrap)
+                    let frames = board.editor.mentionPills(of: id).map { MentionPillFrame(target: $0.target, frame: board.editor.camera.toView($0.frame), isLive: $0.isLive) }
+                    let drawn = renderBitmap(board.editor, size: pictureSize, scale: 2)
+                    board.editor.delete(id)
+                    let empty = board.picture(of: Scrap(scrap.frame), scale: 2)
+                    expectEqual(frames.count, 1)
+                    expectPills(frames, match: differences(drawn, empty))
+                }
+            }
+        }
+    },
+    test("a text that is one pill shows the name its shape has now at every frame, with nothing asked of what draws it: a rename and its undo, a deletion") {
+        let board = try DrawingBoard()
+        let scrap = try board.onWholePoints(Scrap(paper, text: mentioning([.mention(idA, label: "Old")]), look: 1))
+        let id = board.place(scrap)
+        let before = renderBitmap(board.editor, size: pictureSize, scale: 2)
+        let frame = try require(board.editor.mentionPills(of: id).first).frame
+        #if DEBUG
+        let built = MentionDrawingCounts.stringsBuilt
+        expectEqual(drawnStraight { _ = renderBitmap(board.editor, size: pictureSize, scale: 2) }, 1)
+        expectEqual(MentionDrawingCounts.stringsBuilt, built, "kept from the frame before")
+        #endif
+        board.editor.rename(idA, "Groceries for the week")
+        let after = renderBitmap(board.editor, size: pictureSize, scale: 2)
+        let renamed = try require(board.editor.mentionPills(of: id).first).frame
+        expect(renamed.width > frame.width, "\(renamed.width) after \(frame.width)")
+        expect(changed(before, after, in: renamed) > 0)
+        #if DEBUG
+        expectEqual(MentionDrawingCounts.stringsBuilt, built + 1, "built once, for the new name")
+        #endif
+        board.editor.undo()
+        expectEqual(largestDifference(renderBitmap(board.editor, size: pictureSize, scale: 2), before), 0, "the rename undone: as it was")
+        board.editor.redo()
+        expectEqual(largestDifference(renderBitmap(board.editor, size: pictureSize, scale: 2), after), 0, "and redone")
+        board.editor.delete(id)
+        expectEqual(largestDifference(after, board.stringDrawing(of: scrap, scale: 2)), 0, "the new name, as string drawing draws it")
+        let again = board.place(scrap)
+        board.editor.delete(idA)
+        let gone = renderBitmap(board.editor, size: pictureSize, scale: 2)
+        expectEqual(board.editor.mentionPills(of: again).map(\.isLive), [false])
+        expect(changed(after, gone, in: renamed) > 0, "dashed, with the name it holds")
+        board.editor.delete(again)
+        expect(largestDifference(gone, board.stringDrawing(of: scrap, scale: 2)) <= 2, "as string drawing draws a missing one")
+    },
+    test("text that is more than one pill, in the font's own lines, not set from the left, or in a box too short for its line is string drawing's") {
+        let board = try DrawingBoard()
+        let one = mentioning([.mention(idA, label: "Old")])
+        let short = CGRect(x: paper.minX, y: paper.minY, width: paper.width, height: 2 * ScrapStyle.padding + 12)
+        let scraps = [
+            Scrap(paper, text: mentioning([.mention(idA, label: "Old"), .text(" ")])),
+            Scrap(paper, text: mentioning([.mention(idA, label: "Old"), .mention(idB, label: "B")])),
+            Scrap(paper, text: one, loose: true),
+            Scrap(paper, text: one, look: ScrapStyle.centered),
+            Scrap(short, text: one),
+        ]
+        for (place, scrap) in scraps.enumerated() {
+            var drawn: NSBitmapImageRep?
+            #if DEBUG
+            expectEqual(drawnStraight { drawn = board.picture(of: scrap) }, 0, "scrap \(place)")
+            #endif
+            expectEqual(largestDifference(drawn ?? board.picture(of: scrap), board.stringDrawing(of: scrap, scale: 2)), 0, "scrap \(place)")
+        }
+        #if DEBUG
+        expectEqual(drawnStraight { _ = board.picture(of: Scrap(paper, text: one)) }, 1, "the same pill alone, in fixed lines from the left")
         #endif
     },
     test("a pill's image is drawn afresh at every scale, never kept as a bitmap") {

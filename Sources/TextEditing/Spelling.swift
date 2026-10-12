@@ -1,7 +1,7 @@
 import AppKit
 
 /// How words typed in the app are checked, the same for every text that checks them
-/// (`EditingTextView.spelling`: a note's, a schema card's description, an arrow's label, a title, the
+/// (`EditingTextView.spelling`: a note's, an arrow's label, a title, the
 /// panel's boxes of words) and kept between launches: Edit › Spelling and Grammar's Check Spelling
 /// While Typing (on until it's turned off), Check Grammar With Spelling (off until it's turned on) and
 /// Correct Spelling Automatically (as System Settings has it, until it's turned on or off here). A

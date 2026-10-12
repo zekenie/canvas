@@ -130,8 +130,8 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         let answers: [(query: String, letters: String)] = [
             (#""Refund policy":inside("Payments")"#, "Y"),               // is Refund policy inside Payments? yes
             (#"sticky-note"Checkout""#, "C"),                            // the notes titled Checkout
-            (#"sticky-note[title=""]"#, "N2, N1"),                       // the notes with no title
-            ("sticky-note:not([title])", "N2, N1"),                      // the same
+            (#"sticky-note[title=""]"#, "N2, N1, V"),                    // the notes with no title
+            ("sticky-note:not([title])", "N2, N1, V"),                   // the same
             (#"arrow[channel=""]"#, "R2"),                               // a plain arrow, on no channel
             (#":contains("tokens")"#, "C"),                              // anything about tokens: Checkout's text
             (#":contains("retry")"#, "N2"),                              // where is retry written? "Retry on 502"
@@ -149,6 +149,8 @@ private func groups(of pattern: String, in text: String) -> [String]? {
             (":start-of(arrow[channel=note-link])", "A"),                // where does the note-link arrow start? API gateway
             (":end-of(arrow[channel=note-link])", "U"),                  // where does the note-link arrow end? Auth
             (#""Payments" sticky-note[locked]:mentions("Checkout")"#, ""), // locked notes in Payments that mention Checkout: none
+            (#":is-a("Person"):incomplete"#, "I"),                        // which people still need something? Ann: her required name
+            (#":is-a("Order"):edge-to("Ann", field-link)"#, ""),         // which orders are for Ann? the story has no links
             (":selected", "U"),                                          // these, the selected ones
         ]
         for (query, letters) in answers {
@@ -201,7 +203,7 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         defer { story.pasteboard.releaseGlobally() }
         let language = Set(Word.allCases.map(\.rawValue))
         let plugins = Set(story.queries.vocabulary.words.filter { $0.from != .queries }.map(\.word))
-        expectEqual(plugins, ["mentions", "mentioned-by", "invalid", "warned", "selected"], "the shipped plugins' words")
+        expectEqual(plugins, ["mentions", "mentioned-by", "invalid", "warned", "is-a", "incomplete", "selected"], "the shipped plugins' words")
         // Those it says not to invent are illustrative examples on their own, each refused with its reason.
         let invented = Set(QueryPrompt.illustrativeExamples.map(\.query).filter { $0.hasPrefix(":") && !$0.contains("(") }.map { String($0.dropFirst()) })
             .subtracting(language)
@@ -252,7 +254,7 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         expect(fenced == QueryPrompt.system, "the fenced text is Shipped/ask-prompt.txt: python3 scripts/query-prompts/copy_prompt.py copies it")
         // Its paragraphs before the prompt say how to write a query without --ask: with its inputs.
         let before = lines[..<begin].joined(separator: "\n")
-        for input in ["query-vocabulary", "--brief --limit 200 '[title]'", "--brief ':selected'", "<vocabulary>", "<titles>", "<board>"] {
+        for input in ["query-vocabulary", "--brief --limit 200 '[title]'", "--brief ':selected'", "<vocabulary>", "<titles>", "<board>", "<fields>", "--fields schema"] {
             expect(before.contains(input), "query-prompt.md says how to get \(input)")
         }
     },
@@ -266,6 +268,38 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         expectEqual(QueryPrompt.referenceRule + "\n", rule, "which the translator takes without the break")
         expectEqual(QueryPrompt.system, prompt)
         expectEqual(ShippedText.named("no-such-text"), nil, "a name the folder has no file of")
+    },
+    test("the request built by the shipped list carries <fields> after <titles>, the file's types and their fields, and none for a file with no types") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let model = ScriptedLanguageModel(answers: ["sticky-note", "sticky-note"])
+        let h = try QueryStory.harness(pasteboard: pasteboard, model: model)
+        let translator = try require(h.editor.queryTranslator)
+        _ = try awaitResult { try await translator.translate("which employees started?", about: .person) }
+        _ = try awaitResult { try await translator.translate("notes", about: .reference) }
+        for request in model.requests {
+            let text = try require(request.messages.first?.text)
+            let titles = try require(text.range(of: "</titles>\n\n<fields>\n"), "after the titles: " + text)
+            let end = try require(text.range(of: "\n</fields>"))
+            expect(end.lowerBound > titles.upperBound && text.hasSuffix("</fields>"), "and last")
+            let fields = String(text[titles.upperBound..<end.lowerBound]).split(separator: "\n").map(String.init)
+            for line in ["Person: name (text)", "Employee card builds on Person: desk (text), started (date), teams (list) {name (text)}"] {
+                expect(fields.contains(line), "the story's \(line): \(fields)")
+            }
+            expect(fields.contains { $0.hasPrefix("Order: id (text)") } && fields.contains { $0.hasPrefix("Warehouse: id (text)") }, "Order and Warehouse: \(fields)")
+            expect(!text.contains("2024-05-01") && !text.contains("platform"), "no value leaves the machine")
+        }
+        // The question's words rank the types: employees' first for a question that names them.
+        expect(try require(model.requests.first?.messages.first?.text).contains("<fields>\nEmployee card builds on Person"), "ranked by the question")
+        // A file with no types sends no block, nor its tags.
+        let bare = ScriptedLanguageModel(answers: ["sticky-note"])
+        let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: bare)
+        let untyped = QueryStory.ids("W, S, V, T1, T2")
+        let whole = QueryStory.file(in: registry)
+        let file = CanvasFile(root: CanvasDocument(shapes: whole.root.shapes.filter { !untyped.contains($0.id) }), children: whole.children)
+        let plain = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+        _ = try awaitResult { try await plain.editor.queryTranslator?.translate("notes") }
+        expect(try require(bare.requests.first?.messages.first?.text).contains("<fields>") == false, "no types, no block")
     },
     test("a stored query's request carries the rule line and a vocabulary without the words that read the editor, and a person's carries neither") {
         let pasteboard = NSPasteboard.withUniqueName()

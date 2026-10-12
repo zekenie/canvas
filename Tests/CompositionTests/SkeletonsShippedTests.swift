@@ -9,13 +9,13 @@ import Geometry
 import LanguageModels
 import Locking
 import Mentions
-import Schemas
 import Selection
 import ShippedTesting
 import StickyNotes
 import Subboards
 import TestKit
 import Titles
+import Types
 
 // Skeletons as shipped: below 35% every shipped kind draws its skeleton, which says nothing but
 // what a shape is called (Titles' cover, on it), and no adornment is shown on it (a title's pill,
@@ -24,7 +24,7 @@ import Titles
 // skeleton looks like; here, the pieces together.
 
 /// A subboard, a titled note that mentions it, another note with an arrow to it, a locked empty
-/// note and a schema card: every word on the board said through `say`, but the titles (a cover
+/// note and a type note: every word on the board said through `say`, but the titles (a cover
 /// says its shape's), so two boards that say the same number of letters, in different letters,
 /// differ only where text is drawn.
 @MainActor
@@ -40,9 +40,9 @@ private struct SkeletonBoard {
     /// Between the notes, where the arrow runs.
     static let arrowRect = CGRect(x: 610, y: 180, width: 80, height: 40)
 
-    /// `card`: the schema card's id, if not `self.card`. Readings of cards are kept by id, whatever
-    /// the editor (`SchemaReadings`), so two boards that say different things each need a card of
-    /// their own, or each would read as a card whose text changed (and draw bars by its id).
+    /// `card`: the type note's id, if not `self.card`. Readings of schemas are kept by id, whatever
+    /// the editor (`SchemaReadings`), so two boards that say different things each need a type of
+    /// their own, or each would read as a type whose schema changed.
     func place(on editor: CanvasEditor, card cardID: ShapeID? = nil, _ say: (String) -> String = { $0 }) throws {
         var subboard = ShapeRecord(id: subboard, Subboard(frame: Self.subboardFrame))
         subboard[TitleProperty.self] = "Roadmap"
@@ -57,10 +57,9 @@ private struct SkeletonBoard {
         let arrow = ShapeRecord(id: arrow, Arrow(start: bound(self.note), end: bound(self.other)))
         var locked = ShapeRecord(id: locked, StickyNote(frame: Self.lockedFrame, text: MentionText(plain: "")))
         locked[LockedProperty.self] = true
-        var card = SchemaCard(frame: CGRect(origin: CGPoint(x: 400, y: 400), size: SchemaCard.defaultSize))
-        card.schema.text = #"{"title": "Pet", "type": "object", "properties": {"\#(say("name"))": {"type": "string"}, "\#(say("species"))": {"type": "string"}}, "required": ["\#(say("name"))"]}"#
-        card.setPrompt(SchemaPromptText(plain: say("A pet and its name")))
-        let schema = ShapeRecord(id: cardID ?? self.card, card)
+        let schema = typeNote(#"{"type": "object", "properties": {"\#(say("name"))": {"type": "string"}, "\#(say("species"))": {"type": "string"}}, "required": ["\#(say("name"))"]}"#,
+                              text: MentionText(plain: say("A pet and its name")), title: "Pet",
+                              frame: CGRect(x: 400, y: 400, width: 200, height: 200), id: cardID ?? self.card)
         editor.transact { t in
             t.insert(subboard)
             t.insert(note)
@@ -154,6 +153,11 @@ private let viewSize = CGSize(width: 320, height: 200)
         expectEqual(editor.adornmentFrames(of: board.note), [], "and no pill above it")
         let text = editor.camera.toView(try require(editor.titleCover(of: board.note)).rect).insetBy(dx: -1, dy: -1).integral
         let covered = renderBitmap(editor, size: viewSize)
+        // The type note is white paper there, its title on it, and no pill above it.
+        let paper = pixel(covered, at: CGPoint(x: 125, y: 125))
+        expect(paper.prefix(3).allSatisfy { $0 >= 253 }, "a type's note is white at 30%: \(paper)")
+        expectEqual(editor.titleCover(of: board.card)?.text, "Pet")
+        expectEqual(editor.adornmentFrames(of: board.card), [], "and no pill above it")
         editor.transact { $0.update(board.note) { $0[TitleProperty.self] = nil } }
         expect(changedPixels(covered, renderBitmap(editor, size: viewSize), in: text) > 30, "the note's title, drawn on it")
         editor.transact { $0.update(board.note) { $0[TitleProperty.self] = "Groceries" } }
@@ -178,6 +182,9 @@ private let viewSize = CGSize(width: 320, height: 200)
         for id in [board.note, board.other, board.card] {
             expect(changedPixels(fullA, fullB, in: board.rect(of: id, in: editor)) > 20, "\(editor.document[id]?.kind.rawValue ?? "?") says its words")
         }
+        let fullPaper = pixel(fullA, at: CGPoint(x: 200, y: 195))
+        expect(fullPaper.prefix(3).allSatisfy { $0 >= 253 }, "and white in full at 35%: \(fullPaper)")
+        expect(editor.adornmentFrames(of: board.card).contains { $0.adornment == .of(TitlePill.self) }, "with its pill")
         for id in [board.note, board.subboard] {
             let pill = try require(editor.adornmentFrames(of: id).first { $0.adornment == .of(TitlePill.self) }).rect
             expect(changedPixels(fullA, fullB, in: editor.camera.toView(pill)) > 10, "\(editor.document[id]?.kind.rawValue ?? "?")'s pill says its title")
