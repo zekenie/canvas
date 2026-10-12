@@ -936,9 +936,10 @@ app)
     # that's running keeps its own): macOS checks an executable it hasn't seen the first time it
     # runs, which costs a launch a quarter of a second, and an app that didn't change skips that.
     typeset -a bundled=()
+    integer replaced=0      # how many of the bundle's files this build replaced
     install_changed() {  # copies the file $1 to $2, in the bundle, if they differ
         bundled+=$2
-        cmp -s -- $1 $2 || { cp -- $1 $2.new && mv -f -- $2.new $2 }
+        cmp -s -- $1 $2 || { cp -- $1 $2.new && mv -f -- $2.new $2 && replaced+=1 }
     }
     mkdir -p $APP/Contents/MacOS $APP/Contents/Helpers
     install_changed $OUT/InfiniteCanvas/InfiniteCanvas $APP/Contents/MacOS/InfiniteCanvas
@@ -1099,7 +1100,73 @@ PLIST
             install_changed $file $installed
         done
     done
-    for file in $APP/**/*(.DN); do (( ${bundled[(Ie)$file]} )) || rm -f -- $file; done
+    for file in $APP/**/*(.DN); do (( ${bundled[(Ie)$file]} )) || { rm -f -- $file; replaced+=1 }; done
+    # Copies of the app that are gone. Every checkout's build is a copy of the app, and macOS
+    # registers one, with its Quick Look extensions, when it's opened; removing a worktree
+    # unregisters nothing. LaunchServices hands Quick Look one copy's extension, whichever it picks,
+    # and when it picks a copy that's gone it hands over none, however many copies that are still
+    # there have theirs registered: a board file shows as its JSON. So a build that changed the app,
+    # and the first one here, unregisters every registered copy whose folder is gone: LaunchServices
+    # takes a second to list them, which a build that changed nothing doesn't spend. When one of
+    # them had extensions, what was handed none has to ask again: a host (the Finder) asks only when
+    # an extension is registered, so the copies still there register theirs again, and Quick Look's
+    # thumbnail agent keeps to what it found until it restarts, so it's restarted (launchd starts it
+    # again the next time a thumbnail is asked for).
+    forget_copies_gone() {
+        : > build/.copies
+        local lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+        [[ -x $lsregister ]] || return 0
+        # Each copy LaunchServices has of the app (a bundle with its identifier, above) on a volume
+        # that's mounted, a line: whether it has extensions, a tab, its path. And `unread` when the
+        # dump has no bundle's path or identifier where this looks for them: its form is documented
+        # nowhere, and reading nothing from it would be this bug again, unsaid.
+        local copies line copy holder appex had_extensions=0
+        typeset -a gone=() there=()
+        copies=$($lsregister -dump Bundle 2> /dev/null | awk '
+            function copy() {
+                if (id == "com.example.InfiniteCanvas" && path != "" && !unmounted) print (plugins ? "extensions" : "none") "\t" path
+                path = ""; id = ""; plugins = 0; unmounted = 0
+            }
+            /^-+$/ { copy(); next }
+            /^path: / && path == "" { paths++; path = $0; sub(/^path: +/, "", path); sub(/ \(0x[0-9a-f]+\)$/, "", path) }
+            /^identifier: / && id == "" { ids++; id = $0; sub(/^identifier: +/, "", id) }
+            /^mount state: / && !/: +mounted$/ { unmounted = 1 }
+            /^plugin Identifiers: / { plugins = 1 }
+            END { copy(); if (NR && !(paths && ids)) print "unread" }') || return 0
+        for line in ${(f)copies}; do
+            if [[ $line == unread ]]; then
+                print -u2 "build.sh: lsregister's dump isn't in the form forget_copies_gone reads, so copies of the app that are gone stay registered (they can hide its Quick Look extensions)"
+                return 0
+            fi
+            copy=${line#*$'\t'}
+            if [[ -e $copy ]]; then
+                if [[ $line == extensions$'\t'* ]]; then there+=$copy; fi
+                continue
+            fi
+            # Gone, and not only out of reach: the nearest folder above it that's there can be
+            # listed (one the shell isn't let into, Desktop or Documents without permission, can't).
+            holder=${copy:h}
+            while [[ ! -e $holder ]]; do holder=${holder:h}; done
+            ls -- $holder > /dev/null 2>&1 || continue
+            gone+=$copy
+            if [[ $line == extensions$'\t'* ]]; then had_extensions=1; fi
+        done
+        (( ${#gone} )) || return 0
+        if ! $lsregister -u $gone > /dev/null 2>&1; then
+            print -u2 "build.sh: lsregister -u failed, so ${#gone} of the app's copies whose folders are gone stay registered"
+            return 0
+        fi
+        print "Unregistered ${#gone} of the app's copies whose folders are gone"
+        (( had_extensions )) || return 0
+        for copy in $there; do
+            for appex in $copy/Contents/PlugIns/*.appex(N); do pluginkit -a $appex > /dev/null 2>&1 || true; done
+        done
+        # The agent alone, its path from the start: a bare name would match any command line with
+        # the name in it (a `log stream` watching the agent).
+        pkill -KILL -U $UID -f '^/System/Library/Frameworks/QuickLookThumbnailing\.framework/Support/com\.apple\.quicklook\.ThumbnailsAgent' || true
+        print "One had Quick Look extensions: the copies still here registered theirs again, and Quick Look's thumbnail agent was restarted"
+    }
+    if (( replaced )) || [[ ! -e build/.copies ]]; then forget_copies_gone; fi
     print "Built $APP, with its Quick Look extensions, and build/$CLI_NAME (its command line)"
     ;;
 esac
