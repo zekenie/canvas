@@ -79,6 +79,8 @@ public final class FieldCards {
 
     public init(editor: CanvasEditor) {
         self.editor = editor
+        // A service may reach another as it is made; the check is registered ahead of this one.
+        editor.fieldChecks?.onTypingChange { [weak self] in self?.checkDidMove() }
     }
 
     // MARK: Opening

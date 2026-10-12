@@ -54,8 +54,6 @@ func registerTypePanel(into registrar: inout PluginRegistrar) {
         DetailSection(in: TypesTab.self, id: "types") { $types in TypesList(types: $types) }
             .enabledWhileReadOnly()
     }
-    // The Types rows' fields and values, after them.
-    registerFieldsPanel(into: &registrar)
 }
 
 // The section's commit holds the sync weakly: a text view that loses the keyboard as its window

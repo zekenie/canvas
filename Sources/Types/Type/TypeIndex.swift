@@ -162,23 +162,6 @@ public final class TypeIndex {
     /// types changed), which `chainRevision` alone does not tell a view.
     func observeChanges() { access(keyPath: \.changeCount) }
 
-    /// The types a `$ref` in the schema of `id` can point to, as its JSON's completions offer them:
-    /// every other titled type of the file, by its name (what its mentions show), its fields counted,
-    /// in the order of their names.
-    public func referenceTargets(from id: ShapeID) -> [JSONCompletionOffer] {
-        var found: [(name: String, type: ShapeID, detail: String)] = []
-        for (type, entry) in entries where type != id {
-            guard let name = entry.name else { continue }
-            let shown = SchemaReadings.reading(of: entry.schema, for: type).shown
-            found.append((name, type, TypePanelText.subtitle(shown) ?? ""))
-        }
-        found.sort { a, b in
-            let order = a.name.localizedStandardCompare(b.name)
-            return order == .orderedSame ? a.type.description < b.type.description : order == .orderedAscending
-        }
-        return found.map { TypeCompletions.type($0.type, named: $0.name, detail: $0.detail) }
-    }
-
     // MARK: What may be what
 
     /// Whether `/is-a` may make `owner` an instance of `target`: `target` is a type (a shape of a kind

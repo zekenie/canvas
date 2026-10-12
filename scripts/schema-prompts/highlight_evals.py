@@ -3,7 +3,7 @@
 parts of its schema? The highlights are a prose map (Sources/ProseMaps), so the request is put
 together as the app puts it: every target's frame, the model, its effort and max_tokens out of
 Sources/ProseMaps/ProseMapPrompt.swift (`frame`, `model`, `effort`, `maxTokens`), with the schema's
-guide in it and what's said of other schemas after it out of Sources/Types/SchemaPrompts.swift
+guide in it and what's said of other schemas after it out of Sources/Types/Sync/SchemaPrompts.swift
 (`highlightsGuide`, `highlightsReferences`), so there's one copy.
 
     python3 highlight_evals.py --check                  # read the prompt and settings; no call
@@ -36,7 +36,7 @@ sys.path.insert(0, HERE)
 from highlight_cases import CASES, NEVER  # noqa: E402
 
 API_URL = "https://api.anthropic.com/v1/messages"
-SWIFT = os.path.normpath(os.path.join(HERE, "..", "..", "Sources", "Types", "SchemaPrompts.swift"))
+SWIFT = os.path.normpath(os.path.join(HERE, "..", "..", "Sources", "Types", "Sync", "SchemaPrompts.swift"))
 FRAME_SWIFT = os.path.normpath(os.path.join(HERE, "..", "..", "Sources", "ProseMaps", "ProseMapPrompt.swift"))
 
 

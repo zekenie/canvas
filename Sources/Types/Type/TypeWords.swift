@@ -7,6 +7,12 @@ import Mentions
 // writing them changes besides: a note's height), and Types reads, writes and highlights them
 // through `TypeWords` alone. Nothing in Types names a note.
 
+// Types' id is here, under the points it owns (this one and `TypeRowsPlaces`), not beside
+// `TypesPlugin`, which every part of the module is under.
+extension PluginID {
+    public static let types: PluginID = "types"
+}
+
 /// Each kind's words (`TypeWordsContribution`), one per kind: what the sync writes a type's schema
 /// from and back, where its highlights are drawn, and where a popover's words are found.
 public enum TypeWords {}

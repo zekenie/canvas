@@ -84,6 +84,14 @@ typeset -A LITERAL SHIPS
 typeset -a SHIPPED_PLUGINS=()
 typeset -A SHIPPED_AT
 integer lineno=0 in_ships=0 ships_read=0
+# The parts of a module (`let parts: ... = [` ... `]`): the modules that have them (PARTED), each one's
+# parts in the order written (PARTS), what a part, as Module/Part, uses (PART_USES), and where it's
+# written.
+typeset -a PARTED=()
+typeset -A PARTS PART_USES PART_AT
+integer in_parts=0 parts_read=0
+PARTS_OPEN='let parts: KeyValuePairs<String, [String]> = ['
+PARTS_ROW_RE='^[[:space:]]*"([A-Za-z][A-Za-z0-9]*)/([A-Za-z][A-Za-z0-9]*)": \[(("[A-Za-z][A-Za-z0-9]*"(, "[A-Za-z][A-Za-z0-9]*")*)?)\],[[:space:]]*$'
 TARGET_RE='^[[:space:]]*\.(target|executableTarget)\(name: "([A-Za-z][A-Za-z0-9]*)", dependencies: \[(("[A-Za-z][A-Za-z0-9]*"(, "[A-Za-z][A-Za-z0-9]*")*)?)\]( \+ shipped)?(, path: "([^"]+)")?\),[[:space:]]*// layer: ([a-z]+)( of ([A-Za-z][A-Za-z0-9]*))?[[:space:]]*$'
 SHIPS_ROW_RE='^[[:space:]]*("[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]*",[[:space:]]*)+$'
 while IFS= read -r line || [[ -n $line ]]; do
@@ -101,9 +109,25 @@ while IFS= read -r line || [[ -n $line ]]; do
         elif [[ -n ${line//[[:space:]]/} ]]; then
             die "Package.swift:$lineno: a line of what ships is plugins as \"Module.Type\", each followed by a comma, or a comment on its own:\n    $line"
         fi
+    elif (( in_parts )); then
+        if [[ $line == ']' ]]; then
+            in_parts=0
+        elif [[ $line =~ $PARTS_ROW_RE ]]; then
+            module=$match[1] part=$match[2]
+            (( ${+PART_AT[$module/$part]} )) && die "Package.swift:$lineno: $module/$part is a part twice (also on line $PART_AT[$module/$part])"
+            PART_USES[$module/$part]=${${match[3]//\"/}//,/}
+            PART_AT[$module/$part]=$lineno
+            (( ${+PARTS[$module]} )) || PARTED+=$module
+            PARTS[$module]="${PARTS[$module]:+$PARTS[$module] }$part"
+        elif [[ -n ${line//[[:space:]]/} ]]; then
+            die "Package.swift:$lineno: a line of the parts is \"Module/Part\": [\"A\", \"B\"], the parts of that module it uses, or a comment on its own:\n    $line"
+        fi
     elif [[ $line == 'let ships = [' ]]; then
         (( ships_read )) && die "Package.swift:$lineno: what ships is written once"
         in_ships=1 ships_read=1
+    elif [[ $line == "$PARTS_OPEN" ]]; then
+        (( parts_read )) && die "Package.swift:$lineno: the parts are written once"
+        in_parts=1 parts_read=1
     elif [[ $line =~ $TARGET_RE ]]; then
         name=$match[2]
         (( ${+DEPS[$name]} )) && die "Package.swift:$lineno: $name is declared twice"
@@ -121,10 +145,13 @@ while IFS= read -r line || [[ -n $line ]]; do
         die "Package.swift:$lineno: this target doesn't match the one-line form at the top of the file:\n    $line"
     elif [[ $line == *'ships = '* ]]; then
         die "Package.swift:$lineno: what ships opens with exactly \`let ships = [\`, on a line of its own:\n    $line"
+    elif [[ $line == 'let parts'* ]]; then
+        die "Package.swift:$lineno: the parts open with exactly \`$PARTS_OPEN\`, on a line of its own:\n    $line"
     fi
 done < Package.swift
 (( ${#NAMES} )) || die "no targets in Package.swift"
 (( in_ships )) && die "Package.swift: what ships never closes (a line that is only \`]\`)"
+(( in_parts )) && die "Package.swift: the parts never close (a line that is only \`]\`)"
 (( ${#SHIPPED_PLUGINS} )) || die "Package.swift lists no plugin that ships (\`let ships = [\` ... \`]\`, before the targets)"
 
 # The modules the list names, once each, in its order: what `+ shipped` links.
@@ -189,6 +216,37 @@ for dir in {Sources,Examples,Tests}/*(/N); do
     [[ ${DIR[${dir:t}]:-} == $dir ]] || die "$dir isn't a target in Package.swift"
 done
 for file in {Sources,Examples,Tests}/*.swift(N); do die "$file isn't in any target's directory"; done
+
+# The parts of a module that has them (Package.swift's table): folders of its directory, in an order
+# they could be built in. A part uses only parts written above it, so there is no cycle, and names
+# all of what those use, so its line says everything it compiles with (the build type-checks it with
+# exactly those: build_job's `parts`). Every folder of such a module is a part, so no source is in
+# none; the sources beside the folders are the module's own, and may use every part.
+for module in $PARTED; do
+    (( ${+DEPS[$module]} )) || die "Package.swift:$PART_AT[$module/${PARTS[$module]%% *}]: parts of $module, which isn't a module here"
+    typeset -a above=()
+    for part in ${=PARTS[$module]}; do
+        at=Package.swift:$PART_AT[$module/$part]
+        [[ -d $DIR[$module]/$part ]] || die "$at: $module/$part is a part, but there's no folder $DIR[$module]/$part"
+        srcs=($DIR[$module]/$part/**/*.swift(N))
+        (( ${#srcs} )) || die "$at: $module/$part has no Swift sources in $DIR[$module]/$part"
+        typeset -a uses=(${=PART_USES[$module/$part]})
+        typeset -aU distinct=($uses)
+        (( ${#uses} == ${#distinct} )) || die "$at: $module/$part names a part twice"
+        for used in $uses; do
+            (( ${above[(Ie)$used]} )) ||
+                die "$at: $module/$part uses $used, which isn't a part of $module written above it (a part uses only parts above it)"
+            for under in ${=PART_USES[$module/$used]}; do
+                (( ${uses[(Ie)$under]} )) ||
+                    die "$at: $module/$part uses $used, which uses $under, so its line names $under too (a line says all its part compiles with)"
+            done
+        done
+        above+=$part
+    done
+    for dir in $DIR[$module]/*(/N); do
+        (( ${above[(Ie)${dir:t}]} )) || die "$dir isn't a part of $module in Package.swift's table: every folder of a module that has parts is one"
+    done
+done
 
 # --- 3. Topological order (stable, in manifest order); a cycle is printed as a path -------------
 typeset -a ORDER
@@ -650,7 +708,7 @@ zsystem flock -u $AUDIT_LOCK
 # --- 6. Read-only modes ---------------------------------------------------------------------------
 MODE=${1:-app}
 case $MODE in
-audit) print "audit passed: ${#NAMES} modules, acyclic, layers respected, SwiftPM agrees, imports and ids match Package.swift, ${#SHIPPED_PLUGINS} plugins ship"; exit 0 ;;
+audit) print "audit passed: ${#NAMES} modules, acyclic, layers respected, SwiftPM agrees, imports and ids match Package.swift, ${#SHIPPED_PLUGINS} plugins ship${PARTED:+ (the parts of ${(j:, :)PARTED} are checked by a build, not here)}"; exit 0 ;;
 graph)
     # A line's own dependencies; what + shipped links is the product's membership, not a design
     # dependency, so it's said once, as the list, after the modules.
@@ -660,6 +718,10 @@ graph)
         print "${(r:12:)LAYER[$name]} ${(r:17:)name} -> ${${LITERAL[$name]:-(nothing)}// /, }${SHIPS[$name]:+ + shipped}    <- ${${(j:, :)users}:-(nothing)}"
     done
     print "\nshipped (${#SHIPPED_PLUGINS} plugins, in order): ${(j:, :)SHIPPED_PLUGINS}"
+    for module in $PARTED; do
+        print "\nparts of $module, each with the parts it uses:"
+        for part in ${=PARTS[$module]}; do print "  ${(r:10:)part} -> ${${PART_USES[$module/$part]:-(nothing)}// /, }"; done
+    done
     exit 0 ;;
 dot)
     print "digraph modules {\n  rankdir=BT; node [shape=box];"
@@ -741,6 +803,11 @@ keep_changed() {
 #              swiftc -g does when it compiles and links at once).
 #   link       an executable, from its objects and every library it depends on, and, for one that
 #              is the product, the product's text files (SHIPPED_TEXTS).
+#   parts      for a module that has parts (Package.swift's table), each part type-checked with only
+#              its own sources and those of the parts its line names, in the table's order, stopping
+#              at the first that fails: a part that names anything else of the module doesn't
+#              compile, as a module that names one it doesn't depend on doesn't. Nothing is made, and
+#              nothing waits for it; a part is checked again when a source it compiles with changed.
 # What comes out the same as before isn't replaced (keep_changed), so an edit that leaves a module's
 # interface as it was (inside a function) compiles none of the modules that depend on it, and one
 # that changes nothing it compiles to (a touch, a checkout) links nothing again either. Every
@@ -807,6 +874,22 @@ build_job() {
         fi
         print -r -- "$RAN_WITH" > $STAMP
         print compiled ;;
+    parts)
+        local part used
+        for part in ${=PARTS[$name]}; do
+            local with=()
+            for used in $part ${=PART_USES[$name/$part]}; do with+=($DIR[$name]/$used/**/*.swift(N)); done
+            INPUTS=($with); for dep in ${=VISIBLE[$name]}; do INPUTS+=($OUT/$dep/$dep.swiftmodule); done
+            local check=($SWIFTC -parse-as-library -typecheck -module-name $name $includes $with)
+            STAMP=$dir/.part.$part
+            up_to_date $check && continue
+            if ! $check; then
+                print -u2 "build.sh: $name/$part doesn't compile with only the parts it uses (${${PART_USES[$name/$part]:-none}// /, }): it names something of another part of $name, or of the sources beside the parts. Package.swift's table of parts says what each may use."
+                return 1
+            fi
+            as_begun $name $srcs || return 1
+            print -r -- "$RAN_WITH" > $STAMP
+        done ;;
     link)
         local libs=() objects=($dir/objects/*.o(Nn)) debugger=() entry=()
         # An app extension has no main: it starts in Foundation's NSExtensionMain, as Xcode links one.
@@ -862,6 +945,7 @@ for name in $ORDER; do
         add_job ${name}:object ${^visible}:interface
         add_job ${name}:link ${name}:object ${^closure}:object
     fi
+    (( ${+PARTS[$name]} )) && add_job ${name}:parts ${^deps}:interface
 done
 
 # Runs the jobs, as many at once as there are cores (BUILD_JOBS to change that), each as soon as

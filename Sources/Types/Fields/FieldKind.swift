@@ -110,8 +110,9 @@ extension FieldKind {
 
     private static let eitherLimit = 22
 
-    /// A pointer's `contentMediaType`: a string that is a link to a note.
-    public static let pointerMediaType = "text/x-canvas-link"
+    /// A pointer's `contentMediaType`: a string that is a link to a note (`MetaSchema.linkMediaType`, which
+    /// the meta-schema offers first).
+    public static let pointerMediaType = MetaSchema.linkMediaType
 
     /// The schema of a pointer to a note of `type`: a string of that media type whose `contentSchema` is a
     /// bare `$ref` to the type (`SchemaReferences.uri`). The one place that writes the pointer's JSON.

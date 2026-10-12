@@ -3,7 +3,7 @@ paths:
   - "Sources/Canvas/Shapes/Capabilities.swift"
   - "Sources/StickyNotes/**"
   - "Tests/StickyNotesTests/**"
-  - "Sources/Types/RowsView.swift"
+  - "Sources/Types/Rows/RowsView.swift"
   - "Tests/CanvasTesting/EditableCard.swift"
   - "Sources/TextEditing/EditingTextView.swift"
   - "Sources/Mentions/MentionTextView.swift"

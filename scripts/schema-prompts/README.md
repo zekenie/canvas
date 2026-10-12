@@ -21,8 +21,8 @@ job. Not a framework: a script, a CSV of cases, a CSV of results, read by eye.
   every request, the plan's "every existing case runs again", so the round below says what that cost.
 
 Nothing the app sends is copied here: `evals.py` reads the system prompts, each direction's
-`max_tokens`, what each says of other schemas, the model and its effort out of `Sources/Types/SchemaPrompts.swift`, and `gen_cases.py` a new type's schema out of
-`Sources/Types/TypeSchema.swift`, so the evals send exactly what the app does (a schema written
+`max_tokens`, what each says of other schemas, the model and its effort out of `Sources/Types/Sync/SchemaPrompts.swift`, and `gen_cases.py` a new type's schema out of
+`Sources/Types/Type/TypeSchema.swift`, so the evals send exactly what the app does (a schema written
 from nothing is sent with the new type's schema as `previous_schema`, as `TypeSync` sends it). Its
 user message and parse rule copy `SchemaPrompts.toSchema`, `toPrompt` and `parse`; when to call and
 what's written is `TypeSync`.

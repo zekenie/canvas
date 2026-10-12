@@ -88,6 +88,7 @@ public final class FieldChecks {
     @ObservationIgnored private var references: TypeReferences?
     @ObservationIgnored private var recent: (links: [TypeLink], revision: Int, checker: FieldChecker?)?
     @ObservationIgnored private var typingStorage: (shape: ShapeID, path: FieldPath)?
+    @ObservationIgnored private var typingObservers: [@MainActor () -> Void] = []
     /// Moves when any type was renamed: an answer that names a type is made again.
     @ObservationIgnored private var names = 0
     /// The shapes whose answer names a type.
@@ -432,9 +433,13 @@ public final class FieldChecks {
             editor?.validation?.recheck(shapes)
             editor?.setNeedsDisplay()
             // An open form shows the answer less the cell with the caret: it looks again, a turn later.
-            editor?.fieldCards?.checkDidMove()
+            for told in typingObservers { told() }
         }
     }
+
+    /// Calls `body` after each change of `typing`, which moves what `check(of:)` says with no commit: the forms'
+    /// service (`FieldCards`, registered after this one) has its open forms look again.
+    func onTypingChange(_ body: @escaping @MainActor () -> Void) { typingObservers.append(body) }
 
     /// Moves when any answer or `typing` changes.
     public private(set) var revision = 0

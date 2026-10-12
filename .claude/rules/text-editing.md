@@ -1,7 +1,7 @@
 ---
 paths:
   - "Sources/TextEditing/**"
-  - "Sources/Types/RowField.swift"
+  - "Sources/Types/Rows/RowField.swift"
   - "Tests/TextEditingTests/**"
 ---
 

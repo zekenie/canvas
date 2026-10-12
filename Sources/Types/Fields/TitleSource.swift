@@ -4,19 +4,6 @@ import Canvas
 // is one. Pure: it reads a chain's resolution (`Resolved`) and nothing else, so the writer, the pill's look
 // and the type's own check ask the same question and get the same answer.
 
-/// A root `properties` key: a field, or a directive (`$title`). The one place the split is written.
-public enum SchemaDirectives {
-    /// A field's key does not start `$`. (A bare `$` is neither a field nor a directive, as `Chain` has it.)
-    public static func isField(_ key: String) -> Bool {
-        !key.hasPrefix("$")
-    }
-
-    /// `title` for `$title`; nil for a field's key and for a bare `$`.
-    public static func name(_ key: String) -> String? {
-        key.hasPrefix("$") && key.count > 1 ? String(key.dropFirst()) : nil
-    }
-}
-
 /// Which field titles a note that is one: the chain's `title` directive, resolved.
 public struct TitleSource: Equatable, Sendable {
     /// The field's key.

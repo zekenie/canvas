@@ -676,6 +676,51 @@ plugin after the ones whose points it fills.
 each line's dependencies: what ships is membership in the product, not one module's design
 depending on another's.
 
+### The parts of a module
+
+A module that has grown too large to hold in mind is not split into modules (nothing must build
+without the rest, and every name one piece shares with the next would become public to every
+importer). It is split into **parts**: folders of its directory, with the rule between them that
+holds between modules. `Package.swift` has a table of them after what ships, a line a part, each
+with the parts of the same module it uses:
+
+```swift
+let parts: KeyValuePairs<String, [String]> = [
+    "Types/JSON": [],
+    "Types/Type": ["JSON"],
+    "Types/Fields": ["JSON", "Type"],
+    "Types/Checks": ["JSON", "Type", "Fields"],
+    "Types/Sync": ["JSON", "Type"],
+    "Types/IsA": ["JSON", "Type", "Fields", "Sync"],
+    "Types/Form": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA"],
+    "Types/Rows": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form"],
+    "Types/Engines": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form", "Rows"],
+]
+```
+
+The lines are in an order the parts could be built in: a part uses only parts written above it, so
+there is no cycle, and names all of what those use, so a line says everything its part compiles
+with. Every folder of a module that has parts is one, and the sources beside the folders (Types'
+`TypesPlugin.swift`, the plugin values that install all of it) may use every part.
+
+The compiler holds it. For such a module the build runs one job more, which type-checks each part
+with only its own sources and those of the parts its line names, and a part that names anything
+else of the module doesn't compile. With a file `Probe.swift` in `Fields` that takes a `RowBook`:
+
+```
+Sources/Types/Fields/Probe.swift:1:31: error: cannot find type 'RowBook' in scope
+build.sh: Types/Fields doesn't compile with only the parts it uses (JSON, Type): it names something
+of another part of Types, or of the sources beside the parts. Package.swift's table of parts says
+what each may use.
+```
+
+The fix is one a forbidden import between modules has: move the declaration down to a part both
+can use, have the lower part take a closure the higher one registers for (`TypeIndex.onChange`,
+`FieldChecks.onTypingChange`), or, where the order allows it, say the use on the line. The check
+needs the module's dependencies built, so `./build.sh` and `./test.sh` run it and `./build.sh audit`
+does not; `./build.sh graph` prints the parts after the list of what ships. Types is the one module
+in parts today ([Types](#types-shapes-that-hold-a-schema)).
+
 ## A vertical plugin
 
 [Patches](#your-first-plugin) is a whole vertical. What each part of it does:
@@ -3273,7 +3318,7 @@ no lines, and no tab. So a note whose title runs past 80 characters has an Issue
 
 [Types](#types-shapes-that-hold-a-schema) gives every shape that holds a schema (a note made a type) a Schema tab, where its
 schema is written (what it holds in words is the note's own text). `registerTypePanel` (in
-[TypePanel.swift](../Sources/Types/TypePanel.swift)) is one `details(of:)` call, over the added
+[TypePanel.swift](../Sources/Types/IsA/TypePanel.swift)) is one `details(of:)` call, over the added
 property every type holds:
 
 ```swift
@@ -7731,7 +7776,7 @@ registrations, whole (each plugin's words are its own nested `enum Word: String`
 [MentionQueries.swift](../Sources/Mentions/MentionQueries.swift),
 [ValidationQueries.swift](../Sources/Validation/ValidationQueries.swift),
 [SelectionQueries.swift](../Sources/Queries/SelectionQueries.swift), and
-[TypeQueries.swift](../Sources/Types/TypeQueries.swift)):
+[TypeQueries.swift](../Sources/Types/Engines/TypeQueries.swift)):
 
 ```swift
 // TitleQueriesPlugin: a shape is called what Titles calls it; a named title read off the record anywhere,
@@ -9873,9 +9918,9 @@ Draw knows no title, port, validity or mention. `draw` takes each from a point D
 | `DrawValueWriters` | `registrar.drawValueWriter(for:write:merge:)` | The value a script writes for a property, as `write` gets it (JSON, strings still as written, with the same `DrawTextContext`) and returns what the property stores, or a refusal said on the statement's line; then `merge(written, held)`, with what the shape holds now (nil for a new one; for an edge, the connection as its maker left it), is what the shape is set to, so a script run again changes nothing. One writer a property key | A value replaces what the shape holds | FieldValuesPlugin |
 | `DrawReports` | `registrar.drawReports { record, written, shapes in … }` | Each shape and edge row of the run, once every statement is in the transaction, with what its statement wrote for each property that has a value writer (nil for an `unchanged` row) and the board as the script leaves it: a `DrawShapeReport` of warnings (`DrawIssue`s, said with the statement's line) and `problems` (Queries' `ShapeProblem`: `field`, `path`, `class`, `message`) that go on the shape's row | No `problems`, no warnings from it | FieldValuesPlugin |
 
-`TypeNamesPlugin` ([TypeNames.swift](../Sources/Types/TypeNames.swift)) writes `is: "Employee card"`, on a shape and on an edge, as the id of the type that title names (`TypeLink.mediaType`), admitting what `TypeIndex.canBeNamed(_:registry:writing:)` says, a pure function of the record and the registry (a type that is no pill), and refuses any other shape "which isn't a type or a shape", and the shape itself (`DrawTextContext.owner`); a quoted value for a list of text is a list of that one item (Draw's, `KindVocabulary.value(of:)`), several are JSON.
+`TypeNamesPlugin` ([TypeNames.swift](../Sources/Types/Engines/TypeNames.swift)) writes `is: "Employee card"`, on a shape and on an edge, as the id of the type that title names (`TypeLink.mediaType`), admitting what `TypeIndex.canBeNamed(_:registry:writing:)` says, a pure function of the record and the registry (a type that is no pill), and refuses any other shape "which isn't a type or a shape", and the shape itself (`DrawTextContext.owner`); a quoted value for a list of text is a list of that one item (Draw's, `KindVocabulary.value(of:)`), several are JSON.
 
-`FieldValuesPlugin` ([FieldValuesDraw.swift](../Sources/Types/FieldValuesDraw.swift)) writes `fieldValues: {…}` as a note's or arrow's own value joined with what it holds, member by member at every depth: a list is replaced whole, `null` clears the member it is written at, an object left empty is pruned (`FieldValuesMerge.merged`, pure, then `FieldValues.pruned`), and an object that sets nothing over a text or a list held leaves it, as the one writer does, and reports on each shape a run draws: its row's `problems` (what its values still need and what's wrong, by the check of the run, over types the script draws too) and each member of the written object no field of its types names.
+`FieldValuesPlugin` ([FieldValuesDraw.swift](../Sources/Types/Engines/FieldValuesDraw.swift)) writes `fieldValues: {…}` as a note's or arrow's own value joined with what it holds, member by member at every depth: a list is replaced whole, `null` clears the member it is written at, an object left empty is pruned (`FieldValuesMerge.merged`, pure, then `FieldValues.pruned`), and an object that sets nothing over a text or a list held leaves it, as the one writer does, and reports on each shape a run draws: its row's `problems` (what its values still need and what's wrong, by the check of the run, over types the script draws too) and each member of the written object no field of its types names.
 
 The other four registrations, whole but for `PortEdgesPlugin`'s policy and the clauses
 `MentionTextsPlugin` says ([TitleNames.swift](../Sources/Titles/TitleNames.swift),
@@ -10294,6 +10339,9 @@ one the script deletes), or on a board the app can't show.
 Types ([`Sources/Types`](../Sources/Types)) is a concern: a shape that holds a JSON Schema is a
 **type**, named by its title, and what it holds is said twice, in words (the shape's own text) and
 as the schema, which the editor's language model keeps saying the same thing (`TypeSync`, below).
+It is one module in nine parts, a folder each (`JSON`, `Type`, `Fields`, `Checks`, `Sync`, `IsA`,
+`Form`, `Rows`, `Engines`), and a part names only what is in the parts it uses
+([The parts of a module](#the-parts-of-a-module)).
 Types knows no kind. A kind opts in with the sugar its plugin calls, as StickyNotes does for a note:
 
 ```swift

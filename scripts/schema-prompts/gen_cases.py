@@ -30,7 +30,7 @@ def fmt(value, indent=0):
 
 def swift_starter():
     """A new type's schema, `TypeSchemaProperty.starter`, read out of the Swift: what the app sends for one."""
-    path = os.path.normpath(os.path.join(HERE, "..", "..", "Sources", "Types", "TypeSchema.swift"))
+    path = os.path.normpath(os.path.join(HERE, "..", "..", "Sources", "Types", "Type", "TypeSchema.swift"))
     with open(path, encoding="utf-8") as f:
         m = re.search(r'static let starter = """\n(.*?)\n([ ]*)"""', f.read(), re.S)
     if not m:

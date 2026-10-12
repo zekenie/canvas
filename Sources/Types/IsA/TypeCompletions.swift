@@ -186,6 +186,25 @@ public enum TypeCompletions {
     }
 }
 
+extension TypeIndex {
+    /// The types a `$ref` in the schema of `id` can point to, as its JSON's completions offer them:
+    /// every other titled type of the file, by its name (what its mentions show), its fields counted,
+    /// in the order of their names.
+    public func referenceTargets(from id: ShapeID) -> [JSONCompletionOffer] {
+        var found: [(name: String, type: ShapeID, detail: String)] = []
+        for type in types where type != id {
+            guard let name = name(of: type), let schema = schemaText(of: type) else { continue }
+            let shown = SchemaReadings.reading(of: schema, for: type).shown
+            found.append((name, type, TypePanelText.subtitle(shown) ?? ""))
+        }
+        found.sort { a, b in
+            let order = a.name.localizedStandardCompare(b.name)
+            return order == .orderedSame ? a.type.description < b.type.description : order == .orderedAscending
+        }
+        return found.map { TypeCompletions.type($0.type, named: $0.name, detail: $0.detail) }
+    }
+}
+
 /// UTF-16 offsets (`NSString`'s) as UTF-8 ones: the other way is `SchemaCodeColors.UTF16Offsets`.
 enum TextOffsets {
     /// The UTF-8 offset of UTF-16 offset `target`, counted a scalar at a time from the text's start:
