@@ -126,7 +126,7 @@ import Types
         }
         expect(!registry.properties(for: Frame.kind).contains(FieldValuesProperty.key))
     },
-    test("the welcome board, and a board of every shipped kind, read back as they were") {
+    test("the sample board, and a board of every shipped kind, read back as they were") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         var shapes: [AnyShapeRecord] = []
@@ -135,7 +135,7 @@ import Types
             shapes.append(record(try codec.decodeProps(data, kind: kind, version: try require(codec.version(of: kind)))))
         }
         // As an editor has them: with the defaults of what their kinds opt into.
-        for document in [WelcomeBoard.document(), CanvasDocument(shapes: shapes)].map(registry.fillingDefaults) {
+        for document in [SampleBoard.document(), CanvasDocument(shapes: shapes)].map(registry.fillingDefaults) {
             let loaded = try codec.decode(try codec.encode(document))
             expectEqual(loaded.document, document)
             expect(loaded.report.isEmpty, "\(loaded.report)")

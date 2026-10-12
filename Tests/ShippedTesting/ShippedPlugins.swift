@@ -31,8 +31,8 @@ public enum ShippedPlugins {
         try Registry(plugins: plugins(pasteboard: pasteboard, model: model))
     }
 
-    /// An editor of the shipped plugins, on the welcome board unless `document` says.
-    public static func makeEditor(document: CanvasDocument = WelcomeBoard.document(), scheduler: any Scheduler = TaskScheduler(),
+    /// An editor of the shipped plugins, on the sample board (`SampleBoard`) unless `document` says.
+    public static func makeEditor(document: CanvasDocument = SampleBoard.document(), scheduler: any Scheduler = TaskScheduler(),
                                   pasteboard: NSPasteboard = .general, model: any LanguageModel) -> CanvasEditor {
         do {
             return CanvasEditor(registry: try registry(pasteboard: pasteboard, model: model), document: document, scheduler: scheduler)

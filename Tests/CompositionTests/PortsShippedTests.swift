@@ -339,11 +339,11 @@ extension EditorHarness {
         expectEqual(try require(json["shapes"]?.arrayValue).map { $0["added"] }, [nil, nil, nil])
         let withoutArrowPorts = try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()).filter { $0.id != "arrow-ports" })
         expectEqual(try BoardCodec(registry: withoutArrowPorts).encode(h.editor.document), data)
-        // Between notes, the welcome board's arrows add none either.
-        let welcome = try JSONDecoder().decode(JSONValue.self, from: BoardCodec(registry: h.editor.registry).encode(
+        // Between notes, the sample board's arrows add none either.
+        let sample = try JSONDecoder().decode(JSONValue.self, from: BoardCodec(registry: h.editor.registry).encode(
             ShippedPlugins.makeEditor(scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel()).document))
-        let welcomeArrows = try require(welcome["shapes"]?.arrayValue).filter { $0["kind"]?.stringValue == Arrow.kind.rawValue }
-        expectEqual(welcomeArrows.map { $0["added"] }, [nil, nil, nil])
+        let sampleArrows = try require(sample["shapes"]?.arrayValue).filter { $0["kind"]?.stringValue == Arrow.kind.rawValue }
+        expectEqual(sampleArrows.map { $0["added"] }, [nil, nil, nil])
     },
     test("a click or a double-click on a note's dot does nothing: no arrow, no note placed, the selection as it was; pressed, it shows the closed hand") {
         let pasteboard = NSPasteboard.withUniqueName()

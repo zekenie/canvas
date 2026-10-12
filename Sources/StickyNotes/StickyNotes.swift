@@ -79,8 +79,6 @@ public struct StickyNotesPlugin: ListedPlugin {
             note.typeRows(drawnIn: { NoteLayout($0, in: $1).block })   // and a type's rows go under its words
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
-        // Six notes on how to use them, for the app's first board: linked where the list draws arrows.
-        registrar.welcomeBoard { registry in WelcomeBoard.document(linked: registry.kinds.contains(Arrow.kind)) }
     }
 }
 

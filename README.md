@@ -22,7 +22,7 @@ and `./build.sh audit` checks it without compiling.
 
 Each board is a file (`.canvasboard`, JSON) in its own window: File › New, Open, Open Recent, and Save,
 as in any Mac document app. Boards save themselves as you work, and File › Revert To goes back to
-earlier versions. The first launch opens the welcome board; Help › Welcome Board opens it again.
+earlier versions.
 A board remembers, on each Mac, where you left its view, and whether its minimap and details show.
 In the Finder, Quick Look (space) shows a board file's top board, and its icon is a picture of it:
 the app carries Quick Look extensions, which macOS finds once the app has been opened (a Mac whose

@@ -71,7 +71,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         try configureBoards()
         let board = BoardDocument()
         defer { board.close() }
-        board.start(with: WelcomeBoard.document())
+        board.start(with: SampleBoard.document())
         expect(!board.isDocumentEdited)
         board.editor.camera = Camera(origin: CGPoint(x: 40, y: 40), zoom: 2)
         board.editor.selection = board.editor.document.shapes.first?.id
@@ -82,7 +82,7 @@ let boardType = "com.example.InfiniteCanvas.board"
     test("a board saves as the codec writes it, and opens as the same document, unedited") {
         try configureBoards()
         let board = BoardDocument()
-        board.start(with: WelcomeBoard.document())
+        board.start(with: SampleBoard.document())
         let data = try board.data(ofType: boardType)
         expectEqual(data, try BoardCodec(registry: board.editor.registry).encode(board.editor.document))
         let reopened = BoardDocument()
@@ -194,7 +194,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         defer { try? FileManager.default.removeItem(at: url) }
         let board = BoardDocument()
         defer { board.close() }
-        board.start(with: WelcomeBoard.document())
+        board.start(with: SampleBoard.document())
         try board.data(ofType: boardType).write(to: url)
         board.fileURL = url
         let saved = board.editor.document

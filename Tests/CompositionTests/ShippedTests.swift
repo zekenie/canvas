@@ -73,13 +73,8 @@ import Validation
         // The app's model brings the key's pane (made only when Settings opens: nothing reads the key here).
         expectEqual(try Registry(plugins: [LanguageModelsPlugin()]).settingsPanes.map(\.title), ["Anthropic"])
     },
-    test("and what the app takes besides is the plugins' too: the notes' welcome board, linked by arrows, and every plugin's command for its server") {
+    test("and what the app takes besides is the plugins' too: every plugin's command for its server") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        let make = try require(registry.welcomeBoard)
-        let welcome = make()
-        expectEqual(welcome.shapes.compactMap { $0.typed(as: StickyNote.self)?.props.text.stored }, WelcomeBoard.texts)
-        expectEqual(welcome.shapes.compactMap { $0.typed(as: Arrow.self) }.count, 3, "the shipped list draws arrows")
-        expect(Set(make().shapes.map(\.id)).isDisjoint(with: welcome.shapes.map(\.id)), "each board opened has shapes of its own")
         expectEqual(registry.hostCommands.specs.map(\.name), ["draw", "show", "kinds", "measure", "query", "query-vocabulary"])
     },
     test("a plugin that needs the key asks for Settings with the action the app's menu item sends") {
@@ -102,7 +97,7 @@ import Validation
         selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
         topology             service TopologyIndex · edge type stands-for
         arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link · welcome board
+        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
         subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
         framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
         references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
@@ -202,10 +197,10 @@ import Validation
         panels.append("\(typeLayout.headerText): \(typeLayout.tabs.map(\.title).joined(separator: ", "))")
         expectEqual(panels, ["(Note): ", "(Untitled Subboard): Board", "(Untitled Frame): ", "Arrow: ", "Reference: ", "(Note): Schema"])
     },
-    test("the table of contents lists the welcome board: each note by its text, each arrow under the note it starts from") {
+    test("the table of contents lists the sample board: each note by its text, each arrow under the note it starts from") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let entries = try require(editor.tableOfContents).entries
-        expectEqual(entries.map { $0.label?.text }, WelcomeBoard.texts)
+        expectEqual(entries.map { $0.label?.text }, SampleBoard.texts)
         expectEqual(entries.map(\.symbol), Array(repeating: "note.text", count: 6))
         expectEqual(entries.map { $0.children?.map { $0.label?.text } }, [["Arrow"], nil, nil, ["Arrow"], ["Arrow"], nil])
         expectEqual(entries[0].children?.first?.symbol, "arrow.up.right")
@@ -287,23 +282,11 @@ import Validation
         editor.transact { $0.update(note, as: StickyNote.self) { $0.props.text = MentionText(stored: "Ask @[Buy milk](shape: \(groceries.rawValue.uuidString))") } }
         expectEqual(editor.validation?.result(for: note)?.issues, [.warning("“@[Buy milk](shape: \(groceries.rawValue.uuidString.prefix(11))…” isn’t a mention.", field: "text")])
     },
-    test("the welcome board: six notes, three arrows, no warnings") {
+    test("the sample board: six notes, three arrows, no warnings") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         expectEqual(editor.document.shapes.filter { $0.kind == StickyNote.kind }.count, 6)
         expectEqual(editor.document.shapes.filter { $0.kind == Arrow.kind }.count, 3)
         expectEqual(editor.validation?.results.count, 0)
-    },
-    test("the shipped welcome board differs from the POC's only in the third note, which mentions H and no longer says dragging the background pans, and the fourth and fifth, which link notes from their dots, the arrow tool gone") {
-        let shipped = WelcomeBoard.texts
-        expectEqual(shipped.count, pocWelcomeTexts.count)
-        expectEqual(shipped.indices.filter { shipped[$0] != pocWelcomeTexts[$0] }, [2, 3, 4])
-        expect(shipped[2].contains("Press H"))
-        expect(!shipped[2].contains("pans too"))
-        expect(!shipped[3].contains("Press A") && shipped[3].contains("dots"))
-        expect(!shipped[3].contains("Press O"))
-        expect(!shipped[4].contains("⌘"), "a connection released on nothing isn't drawn, so there's nothing not to attach")
-        let notes = WelcomeBoard.document().shapes.compactMap { $0.typed(as: StickyNote.self)?.props.text.stored }
-        expectEqual(notes, shipped)
     },
     test("going to a note, or a type note, in view at 70% leaves the camera: a note's text reads there") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
