@@ -163,7 +163,7 @@ import TestKit
 @MainActor let edgesPointTests = Suite("What PortEdgesPlugin tells canvas draw", [
     test("canvas kinds lists the channels an edge may leave each kind by, side by side") {
         let editor = try edgesEditor()
-        let kinds = try run(["kinds"], on: editor).get().arrayValue ?? []
+        let kinds = try kindsListed(in: editor.registry).arrayValue ?? []
         func edges(_ kind: ShapeKind) -> JSON? { kinds.first { $0["kind"]?.stringValue == kind.rawValue }?["edges"] }
         expectEqual(edges(Tile.kind), ["top": ["wire"], "right": ["wire"], "bottom": ["wire"], "left": ["wire"]])
         expectEqual(edges(Card.kind), ["right": ["pipe"], "bottom": ["pipe"]], "no dot where it only takes the wire")
@@ -174,7 +174,7 @@ import TestKit
     },
     test("a kind draw can't name at all has no edges to list, though it has ports; one whose title is worked out keeps them") {
         @MainActor func edges(_ editor: CanvasEditor, _ kind: ShapeKind) throws -> JSON? {
-            try run(["kinds"], on: editor).get().arrayValue?.first { $0["kind"]?.stringValue == kind.rawValue }?["edges"]
+            try kindsListed(in: editor.registry).arrayValue?.first { $0["kind"]?.stringValue == kind.rawValue }?["edges"]
         }
         let unnamed = try edgesEditor(names: namesOnlyTiles())
         expectEqual(try edges(unnamed, Card.kind), nil, "no naming property, no derived title")

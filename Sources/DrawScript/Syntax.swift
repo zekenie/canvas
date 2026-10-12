@@ -93,7 +93,7 @@ public struct EdgeStatement: Sendable, Equatable {
     /// `share:`, which reference an edge through one goes to: any already beside the start's container
     /// (`share: true`), or the one beside a named shape (`share: "A"`); nil to make its own.
     public var share: EdgeShare?
-    /// Every other attribute, for the caller to check (the channel it's on, from DrawLexicon's
+    /// Every other attribute, for the caller to check (the channel it's on, from Connections'
     /// `PortEdgesPlugin`).
     public var attributes: [Attribute]
 

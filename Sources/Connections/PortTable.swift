@@ -178,7 +178,7 @@ extension Registry {
     /// shape of `target` (arriving by `toSide`, if one is named) is on, as a drag from a port picks
     /// one (`CanvasEditor.channel(of:endingAt:)`): the first of `kind`'s dot channels, in the port
     /// table's order, that `target` takes as a target; nil if they share none. What connects shapes
-    /// by name goes by it (DrawLexicon's `PortEdgesPlugin`), so a script's edge picks as a drag does.
+    /// by name goes by it (Connections' `PortEdgesPlugin`), so a script's edge picks as a drag does.
     /// An end may be a stand-in (`fromStandingFor`, `toStandingFor`: the kinds of what it stands
     /// for), which has the ports of what it stands for on its own sides.
     public func connectionChannel(from kind: ShapeKind, fromSide: PortSide? = nil, fromStandingFor fromTargets: [ShapeKind] = [],

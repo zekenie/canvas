@@ -1,7 +1,6 @@
 import AppKit
 import Canvas
 import Connections
-import HostSlots
 import Keyboard
 import Mentions
 import Selection

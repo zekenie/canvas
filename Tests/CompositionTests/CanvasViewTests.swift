@@ -6,7 +6,6 @@ import CanvasUI
 import Connections
 import CoreGraphics
 import Geometry
-import HostSlots
 import Keyboard
 import LanguageModels
 import Locking

@@ -4,7 +4,6 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import Clipboard
-import HostSlots
 import LanguageModels
 import Locking
 import Mentions

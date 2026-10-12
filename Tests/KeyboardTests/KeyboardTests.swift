@@ -1,7 +1,6 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
-import HostSlots
 import Keyboard
 import TestKit
 

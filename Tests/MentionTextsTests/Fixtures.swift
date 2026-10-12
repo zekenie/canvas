@@ -1,11 +1,10 @@
 import Adornments
-import Automation
 @_spi(Host) import Canvas
 import CanvasRPC
 import ContextMenus
 import CoreGraphics
 import DetailPanel
-import DrawLexicon
+import Draw
 import Keyboard
 import Mentions
 import Selection
@@ -16,7 +15,7 @@ import Titles
 import Topology
 import Validation
 
-// Fixtures only, so these tests show DrawLexicon's mention texts know no real kind: a folder (titled,
+// Fixtures only, so these tests show MentionTextsPlugin's text knows no real kind: a folder (titled,
 // mentionable, and the one kind a dispatch's `to` may mention), a crate (titled, but not mentionable),
 // and a dispatch, titled and mentionable too, that holds every kind of mention text there is: any
 // (`body`), only folders (`to`), a declared scope (`tags`: what joined `Crew`, the folders), and
@@ -132,8 +131,8 @@ struct DispatchFixturesPlugin: CanvasPlugin {
 /// An editor 800 × 600 points with the fixtures' kinds, Titles and Mentions (and what they stand
 /// on), Validation and Mentions' rule, and draw's words for them: names, checks, and (unless not)
 /// the mention texts.
-@MainActor func lexiconEditor(mentionTexts: Bool = true) throws -> CanvasEditor {
-    let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), AutomationPlugin(), DispatchFixturesPlugin(),
+@MainActor func mentionTextsEditor(mentionTexts: Bool = true) throws -> CanvasEditor {
+    let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), DrawPlugin(), DispatchFixturesPlugin(),
                                        ValidationPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(),
                                        TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), MentionValidationPlugin(),
                                        TitleNamesPlugin(), ValidationChecksPlugin()] + (mentionTexts ? [MentionTextsPlugin()] : [])
@@ -142,33 +141,27 @@ struct DispatchFixturesPlugin: CanvasPlugin {
     return editor
 }
 
-/// A command, as the command line spells it, run as the app's server runs it; `input` is its
-/// standard input.
-@MainActor func run(_ line: [String], on editor: CanvasEditor?, registry: Registry? = nil, input: String = "") throws -> Result<JSON, RPCError> {
-    let registry = try require(registry ?? editor?.registry)
-    let spec = try require(registry.automationCommands.first { $0.name == line[0] })
-    let params = try spec.params(from: Array(line.dropFirst()), standardInput: { input })
-    return try awaitResult { () async -> Result<JSON, RPCError> in
-        do throws(RPCError) {
-            return .success(try await registry.runAutomationCommand(spec.name, params: .object(params), editor: editor))
-        } catch {
-            return .failure(error)
-        }
-    }
-}
-
-/// What `canvas draw -` says of a script that runs.
+/// What `canvas draw -` says of a script that runs, as the wire carries it.
 @MainActor func drawn(_ script: String, on editor: CanvasEditor, dryRun: Bool = false) throws -> JSON {
-    try run(["draw", "-"] + (dryRun ? ["--dry-run"] : []), on: editor, input: script).get()
+    try JSON(encoding: draw(script: script, dryRun: dryRun, reveal: false, program: RPC.commandName, in: editor))
 }
 
-/// Why `canvas draw -` refused a script: its error, as the command line says it.
-@MainActor func refused(_ script: String, on editor: CanvasEditor) throws -> RPCError {
-    guard case .failure(let error) = try run(["draw", "-"], on: editor, input: script) else { throw DrewAnyway() }
-    return error
+/// Why `canvas draw -` refused a script: its error.
+@MainActor func refused(_ script: String, on editor: CanvasEditor) throws -> DrawError {
+    do throws(DrawError) {
+        _ = try draw(script: script, dryRun: false, reveal: false, program: RPC.commandName, in: editor)
+    } catch {
+        return error
+    }
+    throw DrewAnyway()
 }
 
 struct DrewAnyway: Error {}
+
+/// What `canvas kinds` says of a kind, as the wire carries it: a list of it alone.
+@MainActor func kindsListed(named: String, in registry: Registry) throws -> JSON {
+    try JSON(encoding: kinds(named: named, in: registry))
+}
 
 /// A result's rows' `did`s.
 func dids(_ result: JSON) -> [JSON?] { (result["changes"]?.arrayValue ?? []).map { $0["did"] } }

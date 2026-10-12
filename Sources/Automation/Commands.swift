@@ -1,27 +1,16 @@
 import Canvas
 import CanvasRPC
-import CoreGraphics
-import DrawScript
-import Foundation
-import HostSlots
+import Draw
 
 // The command line's own commands: what any board can do whatever's installed. `draw` puts shapes
-// on a board from a script; `kinds` says what a script can draw, and with what. Other plugins add
-// theirs with `registrar.automationCommand`.
+// on a board from a script; `kinds` says what a script can draw, and with what; `measure` says how
+// big a script's shapes would be. Each is the draw engine's (Draw) behind the command line: it finds
+// the board, hands the engine the script, and says what the engine did, or why it couldn't, as the
+// wire does. Other plugins add theirs with `registrar.automationCommand`.
 
 public struct AutomationPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .automation }
-
-    #if DEBUG
-    /// How many times a run has read the names of every board of a file in this process, debug
-    /// builds only: a script that names no shape, in its statements or its texts, reads none, and
-    /// one that does reads them once.
-    @MainActor public internal(set) static var fileNamesRead = 0
-    /// How many boards' arrows a run has read to choose the board it draws on, debug builds only: only
-    /// an edge between two boards looks (for itself, drawn through a stand-in), each board once a run.
-    @MainActor public internal(set) static var boardConnectionsRead = 0
-    #endif
 
     public func register(into registrar: inout PluginRegistrar) {
         let canvas = RPC.commandName
@@ -53,7 +42,12 @@ public struct AutomationPlugin: ListedPlugin {
                 CommandExample("\(canvas) draw --dry-run - < plan.txt", "Read the script from standard input, and say what it would do."),
             ]
         ) { params, context throws(AutomationError) in
-            try draw(params, in: context)
+            let editor = try context.board()
+            do throws(DrawError) {
+                return try draw(script: params.script, dryRun: params.dryRun, reveal: params.reveal, program: canvas, in: editor)
+            } catch {
+                throw AutomationError(error)
+            }
         }
         registrar.automationCommand(
             "show", "Show another board of the file in its window: a subboard's, by its title, or the top one.",
@@ -86,7 +80,11 @@ public struct AutomationPlugin: ListedPlugin {
                 CommandExample("\(canvas) kinds <kind> --schema", "One kind, with its JSON Schema."),
             ]
         ) { params, context throws(AutomationError) in
-            try kinds(params, in: context.registry)
+            do throws(DrawError) {
+                return try kinds(named: params.kind, schema: params.schema, in: context.registry)
+            } catch {
+                throw AutomationError(error)
+            }
         }
         registrar.automationCommand(
             "measure", "Say how big a draw script's shapes would be, and what they reach, without drawing it.",
@@ -103,103 +101,16 @@ public struct AutomationPlugin: ListedPlugin {
                 CommandExample("\(canvas) measure - < plan.txt", "Read the script from standard input, and say how big each shape would be."),
             ]
         ) { params, context throws(AutomationError) in
-            try measure(params, in: context)
+            do throws(DrawError) {
+                return try measure(script: params.script, program: canvas, in: context.registry)
+            } catch {
+                throw AutomationError(error)
+            }
         }
         // The app's command server runs them all, every plugin's: what the command line shows of
         // each, and each by name.
         registrar.hostCommands(specs: { $0.automationCommands }) { registry, name, params, editor async throws(RPCError) in
             try await registry.runAutomationCommand(name, params: params, editor: editor)
         }
-    }
-}
-
-// MARK: kinds
-
-struct ListKinds: SchemaDefined {
-    static let properties = Properties<ListKinds>(title: "kinds") {
-        Property("kind", \.kind).description("Just this kind.")
-        Property("schema", \.schema).description("With each kind's JSON Schema.")
-    }
-    var kind: String?
-    var schema = false
-}
-
-/// A kind, as `kinds` lists it: the language's vocabulary for it.
-struct KindSummary: Encodable {
-    let kind: String
-    let title: String?
-    /// The tool named for it (`ToolID(placing:)`), by its label: the one that places it, or draws
-    /// it by hand.
-    let tool: String?
-    /// Whether a script can draw it, and why not.
-    let drawable: Bool
-    let why: String?
-    /// Whether its shapes have titles: `named` (given one), `derived` (worked out), `none`.
-    let names: String
-    /// What its tool places: `200x200`.
-    let size: String?
-    /// The smallest its shapes are drawn (`Placement.minimumSize`), under which a `size:` is refused:
-    /// `96x64`; nil where any size goes.
-    let smallest: String?
-    /// What a shape of it holds, which `in "X"` names it for: `board`, a board of its own (a
-    /// subboard's, which the shape goes on), or `shapes` on the board it's on (a frame's, which the
-    /// shape goes in); nil for neither.
-    let holds: String?
-    /// What a script can write on it, and what each takes: `{"status": "todo|doing|blocked|done"}`.
-    let attributes: [String: String]
-    /// The sides an edge may leave it by, and what it may carry from each.
-    let edges: [String: [String]]?
-    let schema: JSONValue?
-}
-
-/// Why a script can't place a kind no tool places: its tool draws one by hand (a line, by its
-/// drag), or it has none.
-@MainActor
-func unplaceable(_ kind: ShapeKind, in registry: Registry) -> String {
-    guard let tool = registry.tools.first(where: { $0.id == ToolID(placing: kind) }) else { return "no tool places one" }
-    return "its tool (\(tool.label)) draws one by hand, so a script can't place one"
-}
-
-@MainActor
-func kinds(_ params: ListKinds, in registry: Registry) throws(AutomationError) -> [KindSummary] {
-    var kinds = registry.kinds.sorted { $0.rawValue < $1.rawValue }
-    if let named = params.kind {
-        guard let kind = kinds.first(where: { $0.rawValue == named }) else {
-            let all = kinds.map(\.rawValue)
-            throw AutomationError("there's no kind of shape called \(named)", reason: ScriptError.Reason.unknownKind.rawValue,
-                                  hint: (Suggestions.closest(to: named, among: all, limit: 1).first.map { "did you mean \($0)? " } ?? "")
-                                      + "the kinds: \(all.joined(separator: ", "))")
-        }
-        kinds = [kind]
-    }
-    let naming = registry.drawNaming, edging = registry.drawEdging, edgeKind = edging.flatMap { $0.kind(registry) }
-    return kinds.map { kind in
-        let vocabulary = KindVocabulary(kind, in: registry)
-        let placement = registry.placement(for: kind)
-        let why: String? = if Keyword(rawValue: kind.rawValue) != nil {
-            "its name is one of the language's words"
-        } else if kind == edgeKind {
-            "it joins two shapes: write edge \"A\" -> \"B\""
-        } else if placement == nil {
-            unplaceable(kind, in: registry)
-        } else {
-            nil
-        }
-        let names = if vocabulary.namingProperty != nil { "named" } else if naming?.isDerived(kind, registry) == true { "derived" } else { "none" }
-        var attributes: [String: String] = [:]
-        for name in vocabulary.attributes { attributes[name] = vocabulary.compactType(of: name) }
-        for name in vocabulary.collisions {
-            attributes[name] = "\(vocabulary.compactType(of: name)) — can't be written: \(name): is one of the language's own keys"
-        }
-        let sides = (edging?.sides(kind, registry) ?? [:]).filter { !$0.value.isEmpty }
-        return KindSummary(kind: kind.rawValue, title: vocabulary.root["title"]?.stringValue,
-                           tool: registry.tools.first { $0.id == ToolID(placing: kind) }?.label,
-                           drawable: why == nil, why: why, names: names,
-                           size: placement.map { Drawing.written($0.size) },
-                           smallest: placement.flatMap { $0.minimumSize == .zero ? nil : Drawing.written($0.minimumSize) },
-                           holds: registry.boardOwningKinds.contains(kind) ? "board" : registry.containingKinds.contains(kind) ? "shapes" : nil,
-                           attributes: attributes,
-                           edges: sides.isEmpty ? nil : Dictionary(uniqueKeysWithValues: sides.map { ($0.key.rawValue, $0.value) }),
-                           schema: params.schema ? .object(vocabulary.root) : nil)
     }
 }

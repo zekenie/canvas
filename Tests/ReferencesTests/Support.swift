@@ -47,7 +47,7 @@ struct TargetsPlugin: CanvasPlugin {
     }
 }
 
-/// Queries name shapes by their titles, as the shipped lexicon names them by Titles'.
+/// Queries name shapes by their titles, as Titles' `TitleQueriesPlugin` names them.
 let targetNames = Contributor(id: "target-names") { registrar in
     registrar.queryNames(attribute: TitleProperty.key.rawValue,
                          source: { kind, registry in registry.properties(for: kind).contains(TitleProperty.key) ? .named : .none },

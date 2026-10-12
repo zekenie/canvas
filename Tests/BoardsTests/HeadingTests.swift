@@ -3,7 +3,6 @@ import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import Find
-import HostSlots
 import Observation
 import SwiftUI
 import TableOfContents

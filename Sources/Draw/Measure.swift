@@ -1,6 +1,5 @@
 import Adornments
 import Canvas
-import CanvasRPC
 import CoreGraphics
 import DrawScript
 import Topology
@@ -15,16 +14,8 @@ import Topology
 // shapes are made on a board of its own that is thrown away, by the same `Drawing` a draw uses, so the
 // sizes are the ones a draw makes, and no board's undo step opens.
 
-struct MeasureParams: SchemaDefined {
-    static let properties = Properties<MeasureParams>(title: "measure") {
-        Property("script", \.script).required().keywords(["x-stdin": true, "x-value-name": "script"])
-            .description("A draw script, as `draw` takes it: what to measure. Where shapes go is ignored.")
-    }
-    var script = ""
-}
-
 /// What `measure` answers.
-struct MeasureResult: Encodable {
+public struct MeasureResult: Encodable {
     /// A shape statement: what draw would make of it.
     struct Shape: Encodable {
         let line: Int
@@ -72,14 +63,15 @@ struct MeasureResult: Encodable {
     let constants: Constants
 }
 
+/// How big a script's shapes would be, as `draw` would make them, over `registry`'s kinds. `program`
+/// is the name its hints give the command line that runs it.
 @MainActor
-func measure(_ params: MeasureParams, in context: AutomationContext) throws(AutomationError) -> MeasureResult {
-    let registry = context.registry
+public func measure(script text: String, program: String, in registry: Registry) throws(DrawError) -> MeasureResult {
     let script: Script
     do throws(ScriptErrors) {
-        script = try Script(parsing: params.script)
+        script = try Script(parsing: text)
     } catch {
-        throw collected(error.errors.map { AutomationError($0) })
+        throw collected(error.errors.map { DrawError($0) })
     }
 
     // Where a shape goes isn't measured: its placements and the shape holding it are left out, and so is
@@ -102,9 +94,9 @@ func measure(_ params: MeasureParams, in context: AutomationContext) throws(Auto
     // A board of its own, empty, so nothing on any board is read: every title is new, as on a new file.
     let scratch = CanvasEditor(registry: registry)
     guard let reading = scratch.reading(of: .root) else {
-        throw AutomationError("a board to measure on couldn't be made", reason: ScriptError.Reason.internal.rawValue)
+        throw DrawError("a board to measure on couldn't be made", reason: ScriptError.Reason.internal.rawValue)
     }
-    let drawing = try Drawing(Script(statements: statements, styles: script.styles), editor: scratch, on: reading)
+    let drawing = try Drawing(Script(statements: statements, styles: script.styles), editor: scratch, on: reading, program: program)
 
     let shapes = drawing.items.map { item in
         var record = item.record
@@ -120,7 +112,7 @@ func measure(_ params: MeasureParams, in context: AutomationContext) throws(Auto
         let kind = try Drawing.standInKind(named: word, among: standIns, statement, written: "\(Keyword.edge.rawValue) \(edge.written)")
         let label = drawing.fold(edge.to) ?? edge.to
         guard let size = standIns.make(kind, standingFor: ShapeID(), label: label)?.box?.size else {
-            throw AutomationError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(quoted(label))")
+            throw DrawError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(quoted(label))")
         }
         references.append(MeasureResult.Reference(line: statement.line, target: label, size: [size.width, size.height]))
     }

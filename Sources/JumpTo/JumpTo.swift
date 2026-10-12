@@ -1,6 +1,5 @@
 import AppKit
 import Canvas
-import HostSlots
 import Keyboard
 import SwiftUI
 

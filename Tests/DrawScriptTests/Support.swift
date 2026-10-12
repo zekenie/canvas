@@ -3,11 +3,11 @@ import DrawScript
 import Geometry
 import TestKit
 
-// A stand-in for Automation, so solver tests can be written in the language: a board of titled
-// rects, kind words with sizes (fixture words only), and a resolver that turns a script into a
-// layout problem the way the caller does. Titles on the board that a statement restates with
-// placements are free (and not obstacles); restated without placements, they stay put; every other
-// board shape is an obstacle, its id its place on the board.
+// A stand-in for Draw, so solver tests can be written in the language: a board of titled rects,
+// kind words with sizes (fixture words only), and a resolver that turns a script into a layout
+// problem the way the caller does. Titles on the board that a statement restates with placements
+// are free (and not obstacles); restated without placements, they stay put; every other board
+// shape is an obstacle, its id its place on the board.
 
 /// Kind words and their sizes: fixture words, never a shipped kind's.
 let fixtureSizes: [String: CGSize] = [
@@ -83,7 +83,7 @@ final class Box<Value> {
     init(_ value: Value) { self.value = value }
 }
 
-/// Reads a script, resolves it against a board as Automation does, and solves it.
+/// Reads a script, resolves it against a board as Draw does, and solves it.
 func draw(_ source: String, on board: Board = Board(), obstacleOrder: @escaping ([LayoutProblem.Obstacle]) -> [LayoutProblem.Obstacle] = { $0 }) -> Drawn {
     let asked = Box(0)
     let script: Script

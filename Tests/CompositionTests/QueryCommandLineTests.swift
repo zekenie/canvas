@@ -3,7 +3,6 @@ import AppKit
 import CanvasRPC
 import CanvasUI
 import Foundation
-import HostSlots
 import LanguageModels
 import Queries
 import Selection

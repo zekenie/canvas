@@ -3,9 +3,9 @@ import Automation
 import CanvasRPC
 import CanvasTesting
 import CoreGraphics
+import Draw
 import Foundation
 import Geometry
-import HostSlots
 import TestKit
 
 // The command line's own commands, run as the app's command server runs them, on an editor with
@@ -101,7 +101,7 @@ let extras = Contributor(id: "extras") { registrar in
 
 /// An editor 800 × 600 points, whose view is (100, 100) to (900, 700), its middle (500, 400).
 @MainActor func makeEditor(_ plugins: [any CanvasPlugin] = [], viewport: CGSize = CGSize(width: 800, height: 600)) throws -> CanvasEditor {
-    let editor = CanvasEditor(registry: try Registry(plugins: [AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(), LinksPlugin(),
+    let editor = CanvasEditor(registry: try Registry(plugins: [DrawPlugin(), AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(), LinksPlugin(),
                                                                extras] + plugins))
     editor.viewportDidResize(to: viewport)
     editor.camera = Camera(origin: CGPoint(x: 100, y: 100))
@@ -255,7 +255,7 @@ extension SizeWord: ShapeProperty {
 /// Why the registry refuses the command line's plugin with `register`'s contributions, if it does.
 @MainActor func refusal(_ register: @escaping @MainActor (inout PluginRegistrar) -> Void) -> String? {
     do throws(RegistryError) {
-        _ = try Registry(plugins: [AutomationPlugin(), Contributor(id: "more", register)])
+        _ = try Registry(plugins: [DrawPlugin(), AutomationPlugin(), Contributor(id: "more", register)])
         return nil
     } catch {
         return error.description

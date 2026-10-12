@@ -9,7 +9,6 @@ import Keyboard
 import Mentions
 import Queries
 import QueryLanguage
-import QueryLexicon
 import Selection
 import SlashCommands
 import TableOfContents
@@ -20,7 +19,7 @@ import Topology
 // Fixtures only, as MentionsTests' mention validation tests keep theirs: scribbles, titled boxes of
 // mention text that can be mentioned, and CanvasTesting's pockets (titled and mentionable here,
 // whose boards nest) and links, which carry strands, edges that aren't mentions. A fixture names
-// shapes for queries by the title Titles keeps: of QueryLexicon's plugins, only
+// shapes for queries by the title Titles keeps: of the plugins that give queries words, only
 // `MentionQueriesPlugin` is installed here.
 
 /// A titled box of text that may mention any shape that can be mentioned.

@@ -4,7 +4,6 @@ import CanvasRPC
 import CanvasUI
 import Connections
 import Foundation
-import HostSlots
 import Publishing
 import References
 import ShippedTesting

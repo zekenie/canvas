@@ -5,7 +5,6 @@ import Foundation
 import Keyboard
 import Queries
 import QueryLanguage
-import QueryLexicon
 import Selection
 import TestKit
 import Topology

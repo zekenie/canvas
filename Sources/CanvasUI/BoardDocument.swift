@@ -1,16 +1,15 @@
 import AppKit
 @_spi(Host) import Canvas
 import Geometry
-import HostSlots
 import Observation
 import SwiftUI
 
 /// How the app makes boards: its plugins and each window's content. Set once, before any board
 /// opens (`BoardDocument.configuration`).
 ///
-/// What the plugins gave the host's slots (HostSlots) comes with the registry: how far down over
-/// the canvas the views over it reach on a board (the path over a subboard's canvas), which each
-/// board's editor is told so its fits leave it clear (`CanvasEditor.coveredTop`, from
+/// What the plugins gave the host's slots comes with the registry: how far down over the canvas the
+/// views over it reach on a board (the path over a subboard's canvas), which each board's editor is
+/// told so its fits leave it clear (`CanvasEditor.coveredTop`, from
 /// `registry.hostCoveredTop(on:)`), and what a window's subtitle says of the board shown
 /// (`registry.windowSubtitle(for:)`). `content` places the views themselves (`BoardChrome`).
 @MainActor

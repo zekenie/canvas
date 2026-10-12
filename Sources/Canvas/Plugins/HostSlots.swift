@@ -1,4 +1,3 @@
-import Canvas
 import CanvasRPC
 import CoreGraphics
 import SwiftUI
@@ -153,7 +152,7 @@ extension WelcomeBoards: KeyedExtensionPoint {
 /// The commands the app's command server runs for the command line, beyond its own: from the
 /// plugin that is the command line (Automation, whose commands the other plugins register with it).
 /// At most one: two are `RegistryError.conflict` at startup. Without one the server runs only its
-/// own. The one slot whose types are the wire's (CanvasRPC), which is why this module imports it.
+/// own. The one slot whose types are the wire's (CanvasRPC), which is why Canvas imports it.
 public enum HostCommands {}
 
 extension HostCommands: KeyedExtensionPoint {

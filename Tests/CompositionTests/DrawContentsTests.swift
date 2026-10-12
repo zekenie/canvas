@@ -3,7 +3,6 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import HostSlots
 import LanguageModels
 import ShippedTesting
 import SwiftUI

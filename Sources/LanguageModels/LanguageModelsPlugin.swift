@@ -1,5 +1,4 @@
 import Canvas
-import HostSlots
 import SwiftUI
 
 /// The app's language model, as a plugin: it lends every editor one model (`editor.languageModel`)

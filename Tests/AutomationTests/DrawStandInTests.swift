@@ -3,6 +3,7 @@ import Automation
 import CanvasRPC
 import CanvasTesting
 import CoreGraphics
+import Draw
 import Foundation
 import TestKit
 import Topology
@@ -487,10 +488,10 @@ extension CanvasEditor {
     test("via is the language's key: an edge maker can't declare an attribute named it") {
         let broken = Contributor(id: "via-edges") { registrar in
             registrar.drawEdges(kind: { _ in Link.kind }, attributes: ["via"], sides: { _, _ in [:] }, ends: { _, _ in nil },
-                                make: { _, _, _ throws(AutomationError) in throw AutomationError("no", reason: "cannot_connect") })
+                                make: { _, _, _ throws(DrawError) in throw DrawError("no", reason: "cannot_connect") })
         }
         expectThrows(RegistryError.invalid(point: "DrawEdges", reason: "attribute via: the language keeps via: for itself")) {
-            _ = try Registry(plugins: [AutomationPlugin(), FixturesPlugin(), LinksPlugin(), broken])
+            _ = try Registry(plugins: [DrawPlugin(), AutomationPlugin(), FixturesPlugin(), LinksPlugin(), broken])
         }
     },
 ])
@@ -968,9 +969,9 @@ private func openHarbor() -> Harbor {
         let h = openHarbor()
         let editor = try h.editor()
         @MainActor func reads(_ script: String) throws -> Int {
-            let before = AutomationPlugin.boardConnectionsRead
+            let before = DrawPlugin.boardConnectionsRead
             _ = try drawn(script, on: editor)
-            return AutomationPlugin.boardConnectionsRead - before
+            return DrawPlugin.boardConnectionsRead - before
         }
         expectEqual(try reads("tile \"Dock\"\ntile \"Gate\" below \"Dock\""), 0, "no edge")
         expectEqual(try reads(#"edge "Hub" -> "Dock""#), 0, "an edge on one board")

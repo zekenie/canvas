@@ -1,9 +1,8 @@
 import Canvas
-import Mentions
 import Queries
 import Topology
 
-/// Mentions in queries, in QueryLexicon: `:mentions(S)` is a shape whose text mentions a shape S
+/// Mentions in queries, in Mentions: `:mentions(S)` is a shape whose text mentions a shape S
 /// matches, and `:mentioned-by(S)` one a shape S matches mentions: Topology's mention edges
 /// (`MentionEdge`), from the shape whose text holds the mention to the shape it names, on any
 /// board, a shape's mention of itself too. And mention text (a string whose schema says

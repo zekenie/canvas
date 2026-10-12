@@ -3,7 +3,6 @@ import CanvasTesting
 import Mentions
 import Queries
 import QueryLanguage
-import QueryLexicon
 import TestKit
 import Topology
 

@@ -10,7 +10,6 @@ import CoreGraphics
 import DetailPanel
 import Foundation
 import Geometry
-import HostSlots
 import LanguageModels
 import Locking
 import Mentions

@@ -1,12 +1,11 @@
 import Canvas
-import HostSlots
 import SwiftUI
 
-/// What a board's window puts around its canvas, from what the plugins gave the host's slots
-/// (HostSlots): each view over the canvas (`registry.hostOverlays`), in plugin order, a later one
-/// over an earlier, and the inspector (`registry.hostInspector`), shown while `showsInspector`,
-/// with the toolbar button that hides it. It knows no plugin: a list without the path has no path,
-/// and one without an inspector has none.
+/// What a board's window puts around its canvas, from what the plugins gave the host's slots:
+/// each view over the canvas (`registry.hostOverlays`), in plugin order, a later one over an
+/// earlier, and the inspector (`registry.hostInspector`), shown while `showsInspector`, with the
+/// toolbar button that hides it. It knows no plugin: a list without the path has no path, and one
+/// without an inspector has none.
 ///
 /// Apply it to the canvas view (`CanvasRepresentable`), after its frame and toolbar, which stay the
 /// app's. `onExit` must give the keyboard back to the canvas (`CanvasFocus.take`): each view is

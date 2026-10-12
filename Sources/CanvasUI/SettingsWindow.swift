@@ -1,6 +1,5 @@
 import AppKit
 import Canvas
-import HostSlots
 import SwiftUI
 
 /// The Settings window: one for the app (Infinite Canvas › Settings…, ⌘,, which the app's delegate

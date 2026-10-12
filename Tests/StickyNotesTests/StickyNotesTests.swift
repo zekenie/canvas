@@ -5,7 +5,6 @@ import CanvasTesting
 import Connections
 import ContextMenus
 import DetailPanel
-import HostSlots
 import Keyboard
 import Mentions
 import Selection

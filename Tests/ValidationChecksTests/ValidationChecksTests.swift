@@ -1,9 +1,8 @@
-import Automation
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
 import CoreGraphics
-import DrawLexicon
+import Draw
 import TestKit
 import Validation
 
@@ -30,18 +29,16 @@ let fixtureRules = Contributor(id: "fixture-rules") { registrar in
 
 /// An editor 800 × 600 points with Validation, the rules, and (unless not) `ValidationChecksPlugin`.
 @MainActor func checkedEditor(withPlugin: Bool = true) throws -> CanvasEditor {
-    let plugins: [any CanvasPlugin] = [AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(), ValidationPlugin(), fixtureRules]
+    let plugins: [any CanvasPlugin] = [DrawPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(), ValidationPlugin(), fixtureRules]
         + (withPlugin ? [ValidationChecksPlugin()] : [])
     let editor = CanvasEditor(registry: try Registry(plugins: plugins))
     editor.viewportDidResize(to: CGSize(width: 800, height: 600))
     return editor
 }
 
-/// What `canvas draw -` says of a script, which must run.
+/// What `canvas draw -` says of a script, which must run, as the wire carries it.
 @MainActor func drawn(_ script: String, on editor: CanvasEditor) throws -> JSON {
-    let spec = try require(editor.registry.automationCommands.first { $0.name == "draw" })
-    let params = try spec.params(from: ["-"], standardInput: { script })
-    return try awaitResult { try await editor.registry.runAutomationCommand(spec.name, params: .object(params), editor: editor) }
+    try JSON(encoding: draw(script: script, dryRun: false, reveal: false, program: RPC.commandName, in: editor))
 }
 
 /// A result's warnings, as `severity line: message (attribute)`.

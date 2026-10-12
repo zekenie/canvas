@@ -4,7 +4,6 @@ import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import Foundation
-import HostSlots
 import LanguageModels
 import Locking
 import Mentions

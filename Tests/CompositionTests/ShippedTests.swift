@@ -9,7 +9,6 @@ import Connections
 import CoreGraphics
 import DetailPanel
 import Geometry
-import HostSlots
 import LanguageModels
 import Mentions
 import QueryTranslation
@@ -139,6 +138,7 @@ import Validation
         arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
         language-models      service LanguageModelState
         prose-maps           service ProseMapService · overlay ProseMapFrames
+        draw-engine          draw engine
         automation           command line draw · command line show · command line kinds · command line measure · host commands
         title-names          draw names
         port-edges           draw edges

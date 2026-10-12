@@ -1,5 +1,6 @@
 import Canvas
 import CanvasRPC
+import Draw
 import Foundation
 
 /// The command line, as a plugin: every command `canvas` runs on the app is registered here, by the
@@ -8,11 +9,12 @@ import Foundation
 /// by), and what it does, on the main actor, through transactions, as anything else changes a
 /// board: at once (`run:`, as `draw` and `kinds` do) or, for one that waits on something (a
 /// language model), later (`runAsync:`), its output then written off the main actor. The app's
-/// command server takes them from the host's slot for them (HostSlots' `registry.hostCommands`,
+/// command server takes them from the host's slot for them (`registry.hostCommands`,
 /// which this plugin fills with `automationCommands` and `runAutomationCommand`), and does the
-/// talking: this plugin never sees a socket, and the core never sees a command. Its own are `draw`, `show`, `kinds` and `measure` (Commands.swift, Measure.swift);
-/// `draw` takes what it doesn't own (names, edges, checks) from the points in DrawPoints.swift,
-/// which DrawLexicon fills (and AutomationTests with fixtures of their own).
+/// talking: this plugin never sees a socket, and the core never sees a command. It registers
+/// `draw`, `show`, `kinds` and `measure` (Commands.swift, Show.swift): `draw`, `kinds` and
+/// `measure` run the draw engine (Draw), which takes what it doesn't own (names, edges, checks)
+/// from its own points, and which any plugin may run; `show` borrows its naming.
 extension PluginID {
     public static let automation: PluginID = "automation"
 }
@@ -176,6 +178,15 @@ public struct AutomationError: Error, Equatable, CustomStringConvertible {
         if let length { data["length"] = .number(Double(length)) }
         if let statement { data["statement"] = .string(statement) }
         return data
+    }
+}
+
+extension AutomationError {
+    /// What the draw engine refused, field for field: the wire says it as it says any error of the
+    /// command line's.
+    init(_ error: DrawError) {
+        self.init(error.message, reason: error.reason, hint: error.hint, line: error.line, statement: error.statement,
+                  errors: error.errors.map { AutomationError($0) })
     }
 }
 

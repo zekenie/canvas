@@ -1,5 +1,4 @@
 import Canvas
-import CanvasRPC
 import CoreGraphics
 import DrawScript
 import Geometry
@@ -16,7 +15,7 @@ import Geometry
 // commits nothing.
 
 extension Drawing {
-    func apply(to transaction: inout Transaction, reveals: Bool) throws(AutomationError) -> DrawResult {
+    func apply(to transaction: inout Transaction, reveals: Bool) throws(DrawError) -> DrawResult {
         var changes: [DrawChange] = []
         var warnings = notes
         let before = target.shapes
@@ -26,8 +25,8 @@ extension Drawing {
         if let kept = deleted.first(where: { transaction.document[$0] != nil }), let delete = deletes.first(where: { item in
             item.shape?.id == kept || item.connections.contains { $0.record.id == kept } || item.loose.contains { $0.id == kept }
         }) {
-            throw AutomationError(delete.statement, .readOnly, "something kept \(named(target.document[kept]!)) from being deleted",
-                                  hint: "leave it out of the script")
+            throw DrawError(delete.statement, .readOnly, "something kept \(named(target.document[kept]!)) from being deleted",
+                            hint: "leave it out of the script")
         }
         for delete in deletes {
             if let shape = delete.shape {
@@ -73,11 +72,11 @@ extension Drawing {
                 }
             } else {
                 guard isNew(item.record.id, in: transaction) else {
-                    throw AutomationError(item.statement, .internal, "\(subject(of: item)) came out a shape already drawn")
+                    throw DrawError(item.statement, .internal, "\(subject(of: item)) came out a shape already drawn")
                 }
                 transaction.insert(item.record)
                 guard transaction.document[item.record.id] != nil else {
-                    throw AutomationError(item.statement, .internal, "\(subject(of: item)) couldn't go on the board")
+                    throw DrawError(item.statement, .internal, "\(subject(of: item)) couldn't go on the board")
                 }
                 raise(item, in: &transaction)
             }
@@ -111,7 +110,7 @@ extension Drawing {
         var outside = 0
         for item in items {
             guard let now = transaction.document[item.record.id] else {
-                throw AutomationError(item.statement, .internal, "\(subject(of: item)) isn't on the board after all")
+                throw DrawError(item.statement, .internal, "\(subject(of: item)) isn't on the board after all")
             }
             var row = DrawChange(line: item.statement.line, did: .created, kind: item.kind.rawValue,
                                  title: naming?.name(now, registry), at: now.box)
@@ -146,7 +145,7 @@ extension Drawing {
             row.sharedWith = connected.sharedWith
             let properties = record.propertiesJSON ?? [:]
             for key in edging?.attributes ?? [] {
-                if let value = properties[key], value != .null { row.attributes[key] = JSON(value) }
+                if let value = properties[key], value != .null { row.attributes[key] = value }
             }
             changes.append(row)
             if connected.did != .unchanged { changed.append((edge.statement.line, "\(Keyword.edge.rawValue) \(edge.edge.written)", record)) }
@@ -199,7 +198,7 @@ extension Drawing {
     /// over its edge goes wholly in or out: said too, as what moved that the script didn't name. A
     /// read-only container (a locked frame) takes nothing: the run is refused.
     private func settle(_ item: ShapeItem, in transaction: inout Transaction, nudges: inout [ShapeID: CGPoint],
-                        warnings: inout [DrawWarning]) throws(AutomationError) {
+                        warnings: inout [DrawWarning]) throws(DrawError) {
         guard !registry.containingKinds.isEmpty else { return }
         let id = item.record.id
         let before = transaction.document[id]?.box
@@ -209,8 +208,8 @@ extension Drawing {
             // A stand-in has no placement of its own to change: where it goes is the side of what it's beside.
             let clear = item.standsFor == nil ? "place it clear of \(named)"
                 : "name another side for it with \(EdgeKey.from.rawValue): or \(EdgeKey.to.rawValue): to put it clear of \(named)"
-            throw AutomationError(item.statement, .readOnly, "\(subject(of: item)) would go in \(named), which is read-only (locked, say)",
-                                  hint: "\(clear), or ask the user to unlock it")
+            throw DrawError(item.statement, .readOnly, "\(subject(of: item)) would go in \(named), which is read-only (locked, say)",
+                            hint: "\(clear), or ask the user to unlock it")
         case .settled(let moved):
             for (shape, delta) in moved { nudges[shape] = (nudges[shape] ?? .zero) + delta }
             let own = moved[id] ?? .zero
@@ -249,31 +248,31 @@ extension Drawing {
     /// stand-in for the other (`edgeMatches`); the edge not drawn yet is made between its ends, or, if
     /// the run made a stand-in for it, between that and the end that stays.
     private func connect(_ edge: EdgeItem, among drawn: [BoardConnection], edging: DrawEdging, kind: ShapeKind,
-                         in transaction: inout Transaction) throws(AutomationError) -> Connected {
+                         in transaction: inout Transaction) throws(DrawError) -> Connected {
         let statement = edge.statement, written = "\(Keyword.edge.rawValue) \(edge.edge.written)"
         let document = transaction.document
         let matches = edgeMatches(from: edge.from, to: edge.to, bothHeads: edge.edge.bothHeads, among: drawn, in: document)
         let arrow = edge.edge.bothHeads ? EdgeArrow.both.rawValue : EdgeArrow.forward.rawValue
         let pair = "\(quoted(edge.fromTitle)) \(arrow) \(quoted(edge.toTitle))"
         guard matches.count < 2 else {
-            throw AutomationError(statement, .ambiguousEdge, "\(pair) is drawn \(matches.count) times",
-                                  hint: "write delete edge \(pair) above this line to replace them")
+            throw DrawError(statement, .ambiguousEdge, "\(pair) is drawn \(matches.count) times",
+                            hint: "write delete edge \(pair) above this line to replace them")
         }
         let match = matches.first
         // `via:` says what the edge goes through, which an arrow drawn another way isn't: it's drawn,
         // and left as it is, for the person to say if it should go.
         if let via = edge.edge.via, let match, match.standIn?.place != .to {
             let how = match.standIn.map { "through \(indefinite($0.kind)) to \(quoted(edge.fromTitle))" } ?? "straight to \(quoted(edge.toTitle))"
-            throw AutomationError(statement, .invalidValue, "the edge \(pair) is drawn \(how)",
-                                  hint: "write delete edge \(pair) above this line to draw it through \(indefinite(via))")
+            throw DrawError(statement, .invalidValue, "the edge \(pair) is drawn \(how)",
+                            hint: "write delete edge \(pair) above this line to draw it through \(indefinite(via))")
         }
         guard match == nil || edge.standIn == nil else {
-            throw AutomationError(statement, .internal, "\(written) came out drawn already, with a stand-in made for it")
+            throw DrawError(statement, .internal, "\(written) came out drawn already, with a stand-in made for it")
         }
         // The shapes it joins, as drawn or as it's to be.
         let ends = match.map { ($0.connection.from, $0.connection.to) } ?? edge.bound
         guard document[ends.0] != nil, document[ends.1] != nil else {
-            throw AutomationError(statement, .internal, "\(written) came out joining a shape that isn't on the board")
+            throw DrawError(statement, .internal, "\(written) came out joining a shape that isn't on the board")
         }
         func side(_ side: EdgeSide?) -> EdgeRequest.Side? { side.flatMap { EdgeRequest.Side(rawValue: $0.rawValue) } }
         // Asked the way the edge is drawn, when `<->` finds one drawn the other way.
@@ -286,17 +285,17 @@ extension Drawing {
             swap(&request.fromSide, &request.toSide)
             swap(&request.fromName, &request.toName)
         }
-        func make(changing existing: AnyShapeRecord?) throws(AutomationError) -> AnyShapeRecord {
-            do throws(AutomationError) {
+        func make(changing existing: AnyShapeRecord?) throws(DrawError) -> AnyShapeRecord {
+            do throws(DrawError) {
                 return try edging.make(request, existing, transaction.shapes)
             } catch {
-                throw AutomationError(error.message, reason: error.reason, hint: error.hint, invalidParams: error.isInvalidParams,
-                                      line: statement.line, statement: statement.text)
+                throw DrawError(error.message, reason: error.reason, hint: error.hint,
+                                line: statement.line, statement: statement.text)
             }
         }
         var made = try make(changing: match?.connection.record)
         guard made.kind == kind else {
-            throw AutomationError(statement, .internal, "\(written) came out \(indefinite(made.kind)), not \(indefinite(kind))")
+            throw DrawError(statement, .internal, "\(written) came out \(indefinite(made.kind)), not \(indefinite(kind))")
         }
         // The kind's own attributes it writes (an arrow's text), set as a shape's are. What the edge
         // says as written (its heads, by its arrow) has the last word: made again, the connection
@@ -305,41 +304,41 @@ extension Drawing {
             do throws(ShapePropertiesError) {
                 made = try registry.shape(made, setting: edge.settings)
             } catch {
-                throw AutomationError(statement, .invalidValue, "\(written) can't have those attributes: \(error)")
+                throw DrawError(statement, .invalidValue, "\(written) can't have those attributes: \(error)")
             }
             let again = try make(changing: made).propertiesJSON ?? [:], set = made.propertiesJSON ?? [:]
             if let key = edge.settings.keys.sorted().first(where: { again[$0] != set[$0] }) {
                 let value = edge.edge.attributes.first { $0.key == key }?.value.written ?? ""
-                throw AutomationError(statement, .invalidValue, "\(written): \(key): \(value) isn't what the edge as written says",
-                                      hint: "leave \(key): out; how the edge is written (its arrow, its sides) says it")
+                throw DrawError(statement, .invalidValue, "\(written): \(key): \(value) isn't what the edge as written says",
+                                hint: "leave \(key): out; how the edge is written (its arrow, its sides) says it")
             }
         }
         // What it's bound to is on the board as the script leaves it: nothing would ever let go of one that isn't.
         guard made.boundShapes(in: transaction.shapes).allSatisfy({ document[$0] != nil }) else {
-            throw AutomationError(statement, .internal, "\(written) came out bound to a shape that isn't on the board")
+            throw DrawError(statement, .internal, "\(written) came out bound to a shape that isn't on the board")
         }
         let through = (standIn(at: ends.0, in: document) ?? standIn(at: ends.1, in: document))?.kind
         let joined = reversed ? (from: ends.1, to: ends.0) : (from: ends.0, to: ends.1)
         let sharing = sharing(of: edge, match: match, among: drawn)
         if let existing = match?.connection.record {
-            guard made.id == existing.id else { throw AutomationError(statement, .internal, "\(written) came out another shape") }
+            guard made.id == existing.id else { throw DrawError(statement, .internal, "\(written) came out another shape") }
             if made == existing { return Connected(record: existing, did: .unchanged, ends: joined, via: through, shared: sharing.shared, sharedWith: sharing.with) }
             if transaction.isReadOnly(existing), transaction.isReadOnly(made) {
-                throw AutomationError(statement, .readOnly, "\(written) is read-only (locked, say), so it stays as it is",
-                                      hint: "leave it out of the script, or ask the user to unlock it")
+                throw DrawError(statement, .readOnly, "\(written) is read-only (locked, say), so it stays as it is",
+                                hint: "leave it out of the script, or ask the user to unlock it")
             }
             transaction.update(existing.id) { $0 = made }
             return Connected(record: transaction.document[existing.id] ?? made, did: .reconnected, ends: joined, via: through,
                              shared: sharing.shared, sharedWith: sharing.with)
         }
-        guard isNew(made.id, in: transaction) else { throw AutomationError(statement, .internal, "\(written) came out a shape already drawn") }
+        guard isNew(made.id, in: transaction) else { throw DrawError(statement, .internal, "\(written) came out a shape already drawn") }
         // A board that can't change (a locked subboard's, at any depth) takes no new edge.
         guard !transaction.isBoardReadOnly else {
-            throw AutomationError(statement, .readOnly, "\(written) would go on \(boardName), which is read-only (locked, say)",
-                                  hint: "leave it out of the script, or ask the user to unlock what holds the board")
+            throw DrawError(statement, .readOnly, "\(written) would go on \(boardName), which is read-only (locked, say)",
+                            hint: "leave it out of the script, or ask the user to unlock what holds the board")
         }
         transaction.insert(made)
-        guard let inserted = transaction.document[made.id] else { throw AutomationError(statement, .internal, "\(written) couldn't go on the board") }
+        guard let inserted = transaction.document[made.id] else { throw DrawError(statement, .internal, "\(written) couldn't go on the board") }
         return Connected(record: inserted, did: .connected, ends: joined, via: through, shared: sharing.shared, sharedWith: sharing.with)
     }
 

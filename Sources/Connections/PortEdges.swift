@@ -1,8 +1,7 @@
-import Automation
 import Canvas
-import Connections
+import Draw
 
-/// Draw's edges, in DrawLexicon: `canvas draw`'s edges are Connections' connections. An edge is
+/// Draw's edges, in Connections: `canvas draw`'s edges are Connections' connections. An edge is
 /// what the connector draws (`registry.connectorKind`, while it makes connections without a drag),
 /// it takes a channel (`channel:`, Connections' key), its sides are where a kind has ports, and
 /// it's made by the connector (`registry.connection`), on the channel this plugin picks from the
@@ -17,7 +16,7 @@ public struct PortEdgesPlugin: ListedPlugin {
                             attributes: [ChannelProperty.key.rawValue],
                             sides: { kind, registry in EdgeChannels.sides(of: kind, in: registry) },
                             ends: { record, registry in registry.connectionEnds(of: record) },
-                            make: { request, existing, shapes throws(AutomationError) in
+                            make: { request, existing, shapes throws(DrawError) in
                                 try EdgeChannels.connection(for: request, existing: existing, in: shapes)
                             })
     }
@@ -59,8 +58,8 @@ enum EdgeChannels {
         case `internal`
     }
 
-    static func refuse(_ reason: Reason, _ message: String, hint: String? = nil) -> AutomationError {
-        AutomationError(message, reason: reason.rawValue, hint: hint)
+    static func refuse(_ reason: Reason, _ message: String, hint: String? = nil) -> DrawError {
+        DrawError(message, reason: reason.rawValue, hint: hint)
     }
 
     // MARK: For canvas kinds
@@ -121,7 +120,7 @@ enum EdgeChannels {
     }
 
     /// The connection `request` asks for: new (`existing` nil), or `existing` changed as it says.
-    static func connection(for request: EdgeRequest, existing: AnyShapeRecord?, in shapes: ShapeContext) throws(AutomationError) -> AnyShapeRecord {
+    static func connection(for request: EdgeRequest, existing: AnyShapeRecord?, in shapes: ShapeContext) throws(DrawError) -> AnyShapeRecord {
         let registry = shapes.registry
         guard let fromRecord = shapes.shape(request.from), let toRecord = shapes.shape(request.to) else {
             throw refuse(.internal, "\(request.written) names a shape that isn't on the board")
@@ -160,7 +159,7 @@ enum EdgeChannels {
     }
 
     /// The channel a request writes: none, `none`, or one some plugin declares.
-    static func written(_ request: EdgeRequest, in registry: Registry) throws(AutomationError) -> Written {
+    static func written(_ request: EdgeRequest, in registry: Registry) throws(DrawError) -> Written {
         guard let word = request.attributes[ChannelProperty.key.rawValue] else { return .unwritten }
         if word == plain { return .plain }
         let channel = ChannelID(rawValue: word)
@@ -172,7 +171,7 @@ enum EdgeChannels {
     }
 
     /// The channel of a new connection, or why there's none.
-    private static func pick(_ request: EdgeRequest, from: End, to: End, written: Written, in registry: Registry) throws(AutomationError) -> ChannelID? {
+    private static func pick(_ request: EdgeRequest, from: End, to: End, written: Written, in registry: Registry) throws(DrawError) -> ChannelID? {
         let channel: ChannelID
         switch written {
         case .plain:
@@ -209,7 +208,7 @@ enum EdgeChannels {
     /// end's, taking it). With the channel written, that's a value that doesn't fit; with it worked
     /// out, no channel fits.
     private static func checkSides(_ request: EdgeRequest, from: End, to: End, on channel: ChannelID, written: Bool,
-                                   in registry: Registry) throws(AutomationError) {
+                                   in registry: Registry) throws(DrawError) {
         for (key, side, end, role) in [("from", request.fromSide, from, PortRole.source), ("to", request.toSide, to, .target)] {
             guard let side, !end.takes(channel, as: role, side: side.port, in: registry) else { continue }
             let sides = end.sides(on: channel, as: role, in: registry).map(\.word)
@@ -224,7 +223,7 @@ enum EdgeChannels {
     /// `to: top` there is a value that doesn't fit. (A plain connection, on no channel, leaves and
     /// arrives by any side, and a stand-in that takes none, standing for a shape with no ports, says
     /// nothing of sides.)
-    private static func checkStandInSides(_ request: EdgeRequest, from: End, to: End, in registry: Registry) throws(AutomationError) {
+    private static func checkStandInSides(_ request: EdgeRequest, from: End, to: End, in registry: Registry) throws(DrawError) {
         for (key, side, end) in [("from", request.fromSide, from), ("to", request.toSide, to)] where !end.standsFor.isEmpty {
             guard let side else { continue }
             let has = registry.portSides(of: end.kind, standingFor: end.standsFor).map(\.word)

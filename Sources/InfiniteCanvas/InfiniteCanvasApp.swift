@@ -1,7 +1,6 @@
 import AppKit
 @_spi(Product) import Canvas
 import CanvasUI
-import HostSlots
 import SwiftUI
 
 /// A document app: each board is a file (`BoardDocument`), in its own window, with the shipped

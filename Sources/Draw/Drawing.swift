@@ -1,5 +1,4 @@
 import Canvas
-import CanvasRPC
 import CoreGraphics
 import DrawScript
 import Topology
@@ -117,6 +116,8 @@ struct BoardConnection {
 @MainActor
 struct Drawing {
     let editor: CanvasEditor
+    /// What the command line that runs it is called, for the hints that name its commands.
+    let program: String
     /// The board it draws on, as the run starts: the board shown, or another (`--on`).
     let target: BoardReading
     let registry: Registry
@@ -169,7 +170,7 @@ struct Drawing {
     private(set) var unresolved: Set<String> = []
     /// What placing found to say: pushes, a shape resized over another.
     var notes: [DrawWarning] = []
-    private var errors: [AutomationError] = []
+    private var errors: [DrawError] = []
 
     /// The file's names, when the script names shapes: what says a title it can't find here is on
     /// another board.
@@ -181,9 +182,10 @@ struct Drawing {
     /// where none does.
     private(set) var textWriter: DrawTextWriter?
 
-    init(_ script: Script, editor: CanvasEditor, on target: BoardReading, fileNames: FileNames? = nil) throws(AutomationError) {
+    init(_ script: Script, editor: CanvasEditor, on target: BoardReading, fileNames: FileNames? = nil, program: String) throws(DrawError) {
         let registry = editor.registry
         self.editor = editor
+        self.program = program
         self.target = target
         self.fileNames = fileNames
         self.registry = registry
@@ -209,13 +211,13 @@ struct Drawing {
 
         for statement in script.statements {
             guard case .delete(let delete) = statement.body else { continue }
-            do throws(AutomationError) { try resolve(delete, statement) } catch { keep(error) }
+            do throws(DrawError) { try resolve(delete, statement) } catch { keep(error) }
         }
         // A stand-in the deletes left with no arrow goes with them.
-        do throws(AutomationError) { try retireEmptiedStandIns() } catch { keep(error) }
+        do throws(DrawError) { try retireEmptiedStandIns() } catch { keep(error) }
         for statement in script.statements {
             guard case .shape(let shape) = statement.body else { continue }
-            do throws(AutomationError) {
+            do throws(DrawError) {
                 try find(shape, statement)
             } catch {
                 keep(error)
@@ -230,26 +232,26 @@ struct Drawing {
             textWriter = DrawTextWriter(registry: registry, formats: formats, lookup: lookup)
         }
         for index in items.indices {
-            do throws(AutomationError) { try complete(index) } catch { keep(error) }
+            do throws(DrawError) { try complete(index) } catch { keep(error) }
         }
         for statement in script.statements {
             guard case .edge(let edge) = statement.body else { continue }
-            do throws(AutomationError) { try resolve(edge, statement) } catch { keep(error) }
+            do throws(DrawError) { try resolve(edge, statement) } catch { keep(error) }
         }
         for style in script.styles {
-            do throws(AutomationError) { try check(style) } catch { keep(error) }
+            do throws(DrawError) { try check(style) } catch { keep(error) }
         }
         guard errors.isEmpty else { throw collected(errors) }
     }
 
     /// Keeps a statement's error with the others (but one that only follows from another's).
-    private mutating func keep(_ error: AutomationError) {
+    private mutating func keep(_ error: DrawError) {
         if error.reason != Self.skipped { errors.append(error) }
     }
 
     /// What a statement that depends on one that couldn't be resolved throws: no error of its own.
     static let skipped = "skipped"
-    func skip() -> AutomationError { AutomationError("", reason: Self.skipped) }
+    func skip() -> DrawError { DrawError("", reason: Self.skipped) }
 
     /// Whether the run, placed, changes or deletes this shape (so an edit under way should end
     /// first): a shape restated as it is isn't changed, nor a connection whose statement writes
@@ -271,13 +273,13 @@ struct Drawing {
     func fold(_ title: String) -> String? { naming?.fold(title) }
 
     /// A title as written, folded, or why it can't be one.
-    func folded(_ written: String, _ statement: Statement) throws(AutomationError) -> String {
+    func folded(_ written: String, _ statement: Statement) throws(DrawError) -> String {
         guard naming != nil else {
-            throw AutomationError(statement, .noNames, "titles name shapes, and nothing here gives shapes names",
-                                  hint: "leave titles out: without a plugin that names shapes, no shape can be named or found by name")
+            throw DrawError(statement, .noNames, "titles name shapes, and nothing here gives shapes names",
+                            hint: "leave titles out: without a plugin that names shapes, no shape can be named or found by name")
         }
         guard let folded = fold(written) else {
-            throw AutomationError(statement, .syntax, "a title can't be blank", hint: "leave it out for an untitled shape")
+            throw DrawError(statement, .syntax, "a title can't be blank", hint: "leave it out for an untitled shape")
         }
         return folded
     }
@@ -293,12 +295,12 @@ struct Drawing {
     }
 
     /// The board shape called this, if one is, or why not: none, or several.
-    func boardShape(called title: String, _ statement: Statement) throws(AutomationError) -> AnyShapeRecord? {
+    func boardShape(called title: String, _ statement: Statement) throws(DrawError) -> AnyShapeRecord? {
         let found = boardShapes(called: title)
         guard found.count < 2 else {
             let each = found.compactMap { target.document[$0] }.map { "\(indefinite($0.kind)) at \(point(middle(of: $0)))" }
-            throw AutomationError(statement, .ambiguousTitle, "the board has \(found.count) shapes called \(quoted(title)): \(listed(each))",
-                                  hint: "titles name shapes here, so each needs its own: ask the user to rename one")
+            throw DrawError(statement, .ambiguousTitle, "the board has \(found.count) shapes called \(quoted(title)): \(listed(each))",
+                            hint: "titles name shapes here, so each needs its own: ask the user to rename one")
         }
         return found.first.flatMap { target.document[$0] }
     }
@@ -306,7 +308,7 @@ struct Drawing {
     /// A shape a statement names by title: one the script draws or restates, else one on the
     /// board; nil if it's one a statement that couldn't be resolved draws. `mine` is the title of
     /// the statement's own shape, never what it meant (placed against itself, it's `circular`).
-    func find(_ title: String, _ statement: Statement, for what: String, mine: String? = nil) throws(AutomationError) -> ShapeItem.Found? {
+    func find(_ title: String, _ statement: Statement, for what: String, mine: String? = nil) throws(DrawError) -> ShapeItem.Found? {
         if let index = itemByTitle[title] { return .item(index) }
         if unresolved.contains(title) { return nil }
         if let record = try boardShape(called: title, statement) { return .shape(record) }
@@ -316,43 +318,43 @@ struct Drawing {
     /// Why a title no shape on the board has isn't found: the script deletes the shape, it's on
     /// another board (an error where `elsewhere` is, as for a placement; an edge's end looks there
     /// itself), or nothing is called that, with the titles like it.
-    func notFound(_ title: String, _ statement: Statement, for what: String, mine: String? = nil, elsewhere: Bool) -> AutomationError {
+    func notFound(_ title: String, _ statement: Statement, for what: String, mine: String? = nil, elsewhere: Bool) -> DrawError {
         if names.ids[title] != nil {
-            return AutomationError(statement, .unknownTitle, "\(what) \(quoted(title)), which this script deletes",
-                                   hint: "draw \(quoted(title)) again after deleting it, or leave it out")
+            return DrawError(statement, .unknownTitle, "\(what) \(quoted(title)), which this script deletes",
+                             hint: "draw \(quoted(title)) again after deleting it, or leave it out")
         }
         if elsewhere, let other = fileNames?.boards(of: title).first(where: { $0 != target.board }) {
             return severalBoards(title, on: other, statement, for: what)
         }
         let drawn = items.compactMap(\.title)
         let guesses = Suggestions.closest(to: title, among: (names.ordered.filter(isOnBoard) + drawn).filter { $0 != mine })
-        return AutomationError(statement, .unknownTitle, "there's no shape called \(quoted(title))",
-                               hint: guesses.isEmpty ? "a title is one the board has as the script starts, or one the script draws"
+        return DrawError(statement, .unknownTitle, "there's no shape called \(quoted(title))",
+                         hint: guesses.isEmpty ? "a title is one the board has as the script starts, or one the script draws"
                                    : "did you mean \(listed(guesses.map(quoted), or: true))?")
     }
 
     /// `edge "A" -> "B" is drawn to "B", which is on "P"'s board, and this script draws on the root
     /// board`: a title that's on another board than the one the run draws on, where that can't be.
-    func severalBoards(_ title: String, on other: BoardID, _ statement: Statement, for what: String, hint: String? = nil) -> AutomationError {
-        guard let naming else { return AutomationError(statement, .internal, "\(what) \(quoted(title)), which is on another board") }
-        return AutomationError(statement, .severalBoards,
-                               "\(what) \(quoted(title)), which is on \(FileNames.named(other, in: editor, naming: naming)), and this script draws on \(FileNames.named(target.board, in: editor, naming: naming))",
-                               hint: hint ?? "a run draws on one board, and a shape is placed or connected only to shapes on its own")
+    func severalBoards(_ title: String, on other: BoardID, _ statement: Statement, for what: String, hint: String? = nil) -> DrawError {
+        guard let naming else { return DrawError(statement, .internal, "\(what) \(quoted(title)), which is on another board") }
+        return DrawError(statement, .severalBoards,
+                         "\(what) \(quoted(title)), which is on \(FileNames.named(other, in: editor, naming: naming)), and this script draws on \(FileNames.named(target.board, in: editor, naming: naming))",
+                         hint: hint ?? "a run draws on one board, and a shape is placed or connected only to shapes on its own")
     }
 
     // MARK: Deletes
 
-    private mutating func resolve(_ delete: DeleteStatement, _ statement: Statement) throws(AutomationError) {
+    private mutating func resolve(_ delete: DeleteStatement, _ statement: Statement) throws(DrawError) {
         switch delete {
         case .shape(let written):
             let title = try folded(written, statement)
             guard let record = try boardShape(called: title, statement) else {
                 if deletes.contains(where: { $0.shape.flatMap(names.name(of:)) == title }) {
-                    throw AutomationError(statement, .duplicate, "\(quoted(title)) is deleted twice", hint: "delete it once")
+                    throw DrawError(statement, .duplicate, "\(quoted(title)) is deleted twice", hint: "delete it once")
                 }
                 let guesses = Suggestions.closest(to: title, among: names.ordered)
-                throw AutomationError(statement, .unknownTitle, "there's no shape called \(quoted(title)) to delete",
-                                      hint: guesses.isEmpty ? nil : "did you mean \(listed(guesses.map(quoted), or: true))?")
+                throw DrawError(statement, .unknownTitle, "there's no shape called \(quoted(title)) to delete",
+                                hint: guesses.isEmpty ? nil : "did you mean \(listed(guesses.map(quoted), or: true))?")
             }
             try writable(record, statement, quoted(title), so: "it can't be deleted")
             // The board it owns goes with it, and every board under that (a transaction takes them):
@@ -362,12 +364,12 @@ struct Drawing {
             // Drawing on a board above the one shown, the window is inside what it'd take.
             if let shown = boards.first(where: editor.boardPath.contains) {
                 let holds = shown == editor.board ? "the board the window shows" : "a board above the one the window shows"
-                throw AutomationError(statement, .boardShown, "\(quoted(title)) holds \(holds), so it can't be deleted",
-                                      hint: "show a board above it first: \(RPC.commandName) show --root")
+                throw DrawError(statement, .boardShown, "\(quoted(title)) holds \(holds), so it can't be deleted",
+                                hint: "show a board above it first: \(program) show --root")
             }
             if boards.contains(where: { file[$0].shapes.contains(where: registry.isReadOnly) }) {
-                throw AutomationError(statement, .readOnly, "\(quoted(title)) holds a read-only shape (locked, say) on its board, so it can't be deleted",
-                                      hint: "leave it out of the script, or ask the user to unlock what's on its board")
+                throw DrawError(statement, .readOnly, "\(quoted(title)) holds a read-only shape (locked, say) on its board, so it can't be deleted",
+                                hint: "leave it out of the script, or ask the user to unlock what's on its board")
             }
             let attached = connections.filter { ($0.from == record.id || $0.to == record.id) && !deleted.contains($0.record.id) }
             let loose = (looseConnections[record.id] ?? []).filter { !deleted.contains($0.id) }
@@ -396,19 +398,19 @@ struct Drawing {
             // this asks for what's done already, which is fine, as it is written the other way round.
             // One that's on another board is the shape there, whose stand-in on this one the edge goes
             // through (`DrawStandIns.swift`).
-            func end(_ title: String) throws(AutomationError) -> EdgeEndFound? {
+            func end(_ title: String) throws(DrawError) -> EdgeEndFound? {
                 if let record = try boardShape(called: title, statement) ?? deletes.lazy.compactMap(\.shape).first(where: { names.name(of: $0) == title }) {
                     return .here(record.id, item: nil)
                 }
                 return try farShape(called: title, statement).map { .away($0) }
             }
-            func none(_ missing: String) -> AutomationError {
+            func none(_ missing: String) -> DrawError {
                 let drawn = script.statements.contains { other in
                     if case .shape(let shape) = other.body, let title = shape.title { return fold(title) == missing } else { return false }
                 }
                 if names.ids[missing] != nil || drawn { return nothingToDelete(statement, written) }
-                return AutomationError(statement, .unknownTitle, "there's no shape called \(quoted(missing))",
-                                       hint: "delete edge takes shapes the file has as the script starts")
+                return DrawError(statement, .unknownTitle, "there's no shape called \(quoted(missing))",
+                                 hint: "delete edge takes shapes the file has as the script starts")
             }
             guard let a = try end(from) else { throw none(from) }
             guard let b = try end(to) else { throw none(to) }
@@ -417,7 +419,7 @@ struct Drawing {
             }
             let pairs = eitherWay ? [(a.id, b.id), (b.id, a.id)] : [(a.id, b.id)]
             if let earlier = edgeDeletes.first(where: { other in pairs.contains { $0 == (other.from, other.to) || other.eitherWay && $0 == (other.to, other.from) } }) {
-                throw AutomationError(statement, .duplicate, "delete edge \(written) is written twice, here and on line \(earlier.line)", hint: "keep one")
+                throw DrawError(statement, .duplicate, "delete edge \(written) is written twice, here and on line \(earlier.line)", hint: "keep one")
             }
             edgeDeletes.append((a.id, b.id, eitherWay, statement.line))
             // Drawn straight between them, or, as an edge to a shape on another board is, into a
@@ -438,7 +440,7 @@ struct Drawing {
     /// A stand-in a delete took an arrow from (`delete edge`, or `delete "X"` taking X's) goes too, if
     /// that leaves no arrow on it (one bound at both ends, or at one): it stood for a shape for those
     /// arrows alone.
-    private mutating func retireEmptiedStandIns() throws(AutomationError) {
+    private mutating func retireEmptiedStandIns() throws(DrawError) {
         guard !standInsEmptied.isEmpty else { return }
         // Those an arrow the run leaves holds still, found in one pass over the board's.
         var held: Set<ShapeID> = []
@@ -454,47 +456,47 @@ struct Drawing {
         }
     }
 
-    private func nothingToDelete(_ statement: Statement, _ written: String) -> AutomationError {
-        AutomationError(statement, .nothingToDelete, "nothing is drawn from one to the other of \(written)",
-                        hint: "delete edge removes the connections drawn from the first to the second; <-> takes them either way")
+    private func nothingToDelete(_ statement: Statement, _ written: String) -> DrawError {
+        DrawError(statement, .nothingToDelete, "nothing is drawn from one to the other of \(written)",
+                  hint: "delete edge removes the connections drawn from the first to the second; <-> takes them either way")
     }
 
-    func noEdges(_ statement: Statement) -> AutomationError {
-        AutomationError(statement, .noEdges, "nothing here draws edges", hint: "leave the edges out: this app has no plugin that connects shapes")
+    func noEdges(_ statement: Statement) -> DrawError {
+        DrawError(statement, .noEdges, "nothing here draws edges", hint: "leave the edges out: this app has no plugin that connects shapes")
     }
 
     /// Refuses to delete a read-only shape (a locked one, or one in a locked frame): `"East" is
     /// read-only (locked, say), so it can't be deleted`.
-    private func writable(_ record: AnyShapeRecord, _ statement: Statement, _ subject: String, so consequence: String) throws(AutomationError) {
+    private func writable(_ record: AnyShapeRecord, _ statement: Statement, _ subject: String, so consequence: String) throws(DrawError) {
         guard target.isReadOnly(record) else { return }
-        throw AutomationError(statement, .readOnly, "\(subject) is read-only (locked, say), so \(consequence)",
-                              hint: "leave it out of the script, or ask the user to unlock it")
+        throw DrawError(statement, .readOnly, "\(subject) is read-only (locked, say), so \(consequence)",
+                        hint: "leave it out of the script, or ask the user to unlock it")
     }
 
     // MARK: Shapes
 
     /// A shape statement's kind, and the shape it's about: pass one, which every title needs.
-    private mutating func find(_ shape: ShapeStatement, _ statement: Statement) throws(AutomationError) {
+    private mutating func find(_ shape: ShapeStatement, _ statement: Statement) throws(DrawError) {
         let kind = try drawable(shape.word, statement)
         let vocabulary = vocabulary(of: kind)
-        let title = try shape.title.map { written throws(AutomationError) in try self.folded(written, statement) }
+        let title = try shape.title.map { written throws(DrawError) in try self.folded(written, statement) }
         if let title, let earlier = itemByTitle[title] {
-            throw AutomationError(statement, .duplicate, "\(quoted(title)) is written twice, here and on line \(items[earlier].statement.line)",
-                                  hint: "say everything about one shape in one statement")
+            throw DrawError(statement, .duplicate, "\(quoted(title)) is written twice, here and on line \(items[earlier].statement.line)",
+                            hint: "say everything about one shape in one statement")
         }
         var existing: AnyShapeRecord?
         var nearMiss: String?
         if let title {
             existing = try boardShape(called: title, statement)
             if let existing, existing.kind != kind {
-                throw AutomationError(statement, .wrongKind, "\(quoted(title)) is \(indefinite(existing.kind)) on the board, not \(indefinite(kind))",
-                                      hint: "to change its kind, delete \(quoted(title)) and draw it again in the same script")
+                throw DrawError(statement, .wrongKind, "\(quoted(title)) is \(indefinite(existing.kind)) on the board, not \(indefinite(kind))",
+                                hint: "to change its kind, delete \(quoted(title)) and draw it again in the same script")
             }
             if existing == nil {
                 guard vocabulary.namingProperty != nil else {
                     let why = naming?.isDerived(kind, registry) == true ? "\(indefinite(kind))'s title is worked out from what it is" : "\(indefinite(kind)) has no title"
-                    throw AutomationError(statement, .untitlable, "\(why), so it can't be called \(quoted(title))",
-                                          hint: "leave the title out: \(shape.word) and where it goes")
+                    throw DrawError(statement, .untitlable, "\(why), so it can't be called \(quoted(title))",
+                                    hint: "leave the title out: \(shape.word) and where it goes")
                 }
                 nearMiss = names.nearMiss(of: title) { $0 != title && isOnBoard($0) }
             }
@@ -510,8 +512,8 @@ struct Drawing {
         if let written = shape.size, size.width < least.width || size.height < least.height, size != existing?.box?.size {
             let fitted = Size(width: max(written.width, least.width), height: written.height.map { max($0, least.height) } ?? (size.height < least.height ? least.height : nil))
             let key = LanguageKey.size.rawValue
-            throw AutomationError(statement, .invalidValue, "\(key): \(written.written) is too small: \(indefinite(kind)) is at least \(Self.written(least))",
-                                  hint: "write \(key): \(fitted.written), or bigger")
+            throw DrawError(statement, .invalidValue, "\(key): \(written.written) is too small: \(indefinite(kind)) is at least \(Self.written(least))",
+                            hint: "write \(key): \(fitted.written), or bigger")
         }
         if let title { itemByTitle[title] = items.count }
         items.append(ShapeItem(statement: statement, shape: shape, kind: kind, title: title, existing: existing, record: base, size: size,
@@ -520,7 +522,7 @@ struct Drawing {
 
     /// The kind a statement's first word names, if its tool places it: a kind drawn by a gesture
     /// (an edge) or only by plugins isn't drawn here.
-    private func drawable(_ word: String, _ statement: Statement) throws(AutomationError) -> ShapeKind {
+    private func drawable(_ word: String, _ statement: Statement) throws(DrawError) -> ShapeKind {
         let kind = ShapeKind(rawValue: word)
         let drawable = drawableKinds
         guard registry.definition(for: kind) != nil else {
@@ -531,12 +533,12 @@ struct Drawing {
             } else if Self.habits.contains(word) {
                 hint += "; a statement starts with its kind, as in \(guess ?? "<kind>") \"A\""
             }
-            throw AutomationError(statement, .unknownKind, "there's no kind of shape called \(word)", hint: hint)
+            throw DrawError(statement, .unknownKind, "there's no kind of shape called \(word)", hint: hint)
         }
         guard registry.placement(for: kind) != nil else {
             let hint = kind == edgeKind ? "to join two shapes, write edge \"A\" -> \"B\""
                 : "the kinds drawn here: \(drawable.joined(separator: ", "))"
-            throw AutomationError(statement, .notPlaceable, "\(indefinite(word)) isn't drawn on its own: \(unplaceable(kind, in: registry))", hint: hint)
+            throw DrawError(statement, .notPlaceable, "\(indefinite(word)) isn't drawn on its own: \(unplaceable(kind, in: registry))", hint: hint)
         }
         return kind
     }
@@ -565,7 +567,7 @@ struct Drawing {
 
     /// Pass two, once every title is known: what holds it, the rename, the attributes (and the
     /// styles that give them), and the placements' targets.
-    private mutating func complete(_ index: Int) throws(AutomationError) {
+    private mutating func complete(_ index: Int) throws(DrawError) {
         try contain(index)
         let item = items[index], statement = item.statement, shape = item.shape
         let vocabulary = vocabulary(of: item.kind)
@@ -574,20 +576,20 @@ struct Drawing {
 
         // A board that can't change (a locked subboard's, at any depth) takes no new shape.
         if item.existing == nil, target.isBoardReadOnly {
-            throw AutomationError(statement, .readOnly, "\(subject) would go on \(boardName), which is read-only (locked, say)",
-                                  hint: "leave it out of the script, or ask the user to unlock what holds the board")
+            throw DrawError(statement, .readOnly, "\(subject) would go on \(boardName), which is read-only (locked, say)",
+                            hint: "leave it out of the script, or ask the user to unlock what holds the board")
         }
 
         // Its title, on a new shape; a new one, on a shape restated.
         if let written = shape.newTitle {
             guard let existing = item.existing else {
-                throw AutomationError(statement, .unsupported, "\(subject) is new, and \(LanguageKey.title.rawValue): renames a shape",
-                                      hint: "the title goes after the kind, in quotes: \(shape.word) \(quoted(written))")
+                throw DrawError(statement, .unsupported, "\(subject) is new, and \(LanguageKey.title.rawValue): renames a shape",
+                                hint: "the title goes after the kind, in quotes: \(shape.word) \(quoted(written))")
             }
             let new = try folded(written, statement)
             guard let property = vocabulary.namingProperty else {
-                throw AutomationError(statement, .untitlable, "\(indefinite(item.kind)) can't be given a title, so \(subject) can't be renamed",
-                                      hint: "leave \(LanguageKey.title.rawValue): out")
+                throw DrawError(statement, .untitlable, "\(indefinite(item.kind)) can't be given a title, so \(subject) can't be renamed",
+                                hint: "leave \(LanguageKey.title.rawValue): out")
             }
             if new != item.title {
                 try claim(new, for: existing, statement, subject: subject)
@@ -604,24 +606,24 @@ struct Drawing {
             guard vocabulary.properties[key] != nil, !vocabulary.isReadOnly(key) else {
                 if attribute.fromStyle != nil { continue }
                 if Self.coordinateKeys.contains(key) {
-                    throw AutomationError(statement, .unsupported, "\(key): would say where \(subject) is, and there are no coordinates here",
-                                          hint: "say where it goes with a placement: right of \"A\", below board, inside view top-left")
+                    throw DrawError(statement, .unsupported, "\(key): would say where \(subject) is, and there are no coordinates here",
+                                    hint: "say where it goes with a placement: right of \"A\", below board, inside view top-left")
                 }
                 if Self.sizeKeys.contains(key) {
                     let size = LanguageKey.size.rawValue
-                    throw AutomationError(statement, .unsupported, "\(key): would say how big \(subject) is, and here that's \(size):",
-                                          hint: "\(size): <width>x<height>, as \(size): 300x200, or a width alone, as \(size): 300x")
+                    throw DrawError(statement, .unsupported, "\(key): would say how big \(subject) is, and here that's \(size):",
+                                    hint: "\(size): <width>x<height>, as \(size): 300x200, or a width alone, as \(size): 300x")
                 }
                 throw unknownAttribute(key, of: item, vocabulary)
             }
             if key == vocabulary.namingProperty {
-                throw AutomationError(statement, .unsupported, "\(key): is what \(subject) is called",
-                                      hint: item.existing == nil ? "the title goes after the kind, in quotes: \(shape.word) \"…\""
+                throw DrawError(statement, .unsupported, "\(key): is what \(subject) is called",
+                                hint: item.existing == nil ? "the title goes after the kind, in quotes: \(shape.word) \"…\""
                                           : "rename it with \(LanguageKey.title.rawValue): \"…\"")
             }
             if vocabulary.coordinates.contains(key) {
-                throw AutomationError(statement, .unsupported, "\(key): says where \(subject) is, and there are no coordinates here",
-                                      hint: "say where it goes with a placement, and how big with \(LanguageKey.size.rawValue):")
+                throw DrawError(statement, .unsupported, "\(key): says where \(subject) is, and there are no coordinates here",
+                                hint: "say where it goes with a placement, and how big with \(LanguageKey.size.rawValue):")
             }
             let from = attribute.fromStyle.map { " (from style \($0))" } ?? ""
             let value: JSONValue
@@ -630,7 +632,7 @@ struct Drawing {
                 try fits(value, key, item.kind, vocabulary)
                 try checkQuery(value, key, vocabulary)
             } catch {
-                throw AutomationError(statement, .invalidValue, "\(subject): \(error.message)\(from)", hint: error.hint)
+                throw DrawError(statement, .invalidValue, "\(subject): \(error.message)\(from)", hint: error.hint)
             }
             settings[key] = try writtenTexts(value, of: key, vocabulary, prefix: "\(subject): \(key)", suffix: from, statement)
         }
@@ -638,8 +640,8 @@ struct Drawing {
             guard let style = script.styles.first(where: { $0.name == name }) else { continue }
             let gives = style.attributes.contains { LanguageKey(rawValue: $0.key) != nil || vocabulary.isAttribute($0.key) }
             if !gives {
-                throw AutomationError(statement, .unknownAttribute, "\(subject) is \(indefinite(item.kind)), and style \(name) gives it nothing it takes",
-                                      hint: "\(indefinite(item.kind)) takes \(vocabulary.everything.joined(separator: ", "))")
+                throw DrawError(statement, .unknownAttribute, "\(subject) is \(indefinite(item.kind)), and style \(name) gives it nothing it takes",
+                                hint: "\(indefinite(item.kind)) takes \(vocabulary.everything.joined(separator: ", "))")
             }
         }
         // What a restated shape already has isn't a change, though it's written without what reading
@@ -695,8 +697,8 @@ struct Drawing {
                 case .title(let written):
                     let title = try folded(written, statement)
                     if title == item.title {
-                        throw AutomationError(statement, .circular, "\(subject) is placed against itself (\(clause.written))",
-                                              hint: "place it against another shape")
+                        throw DrawError(statement, .circular, "\(subject) is placed against itself (\(clause.written))",
+                                        hint: "place it against another shape")
                     }
                     guard let target = try find(title, statement, for: "\(subject) is placed against", mine: item.title) else { throw skip() }
                     found.append(target)
@@ -704,8 +706,8 @@ struct Drawing {
                     found.append(.board)
                 case .view:
                     guard view != nil else {
-                        throw AutomationError(statement, .noView, "\(subject) is \(clause.written), and the board isn't in a window",
-                                              hint: "place it against a shape, or leave it unplaced to draw it where the view would be")
+                        throw DrawError(statement, .noView, "\(subject) is \(clause.written), and the board isn't in a window",
+                                        hint: "place it against a shape, or leave it unplaced to draw it where the view would be")
                     }
                     found.append(.view)
                 }
@@ -721,7 +723,7 @@ struct Drawing {
     /// it. F must be one the script neither deletes nor is (or holds), and writable: a read-only
     /// container (a locked frame) takes nothing, nor does a subboard `in` names whose board is
     /// read-only (it, or a subboard above it, locked).
-    private mutating func contain(_ index: Int) throws(AutomationError) {
+    private mutating func contain(_ index: Int) throws(DrawError) {
         let item = items[index]
         guard let written = item.shape.container, let fileNames, let title = fold(written) else { return }
         let found = fileNames.container(called: title)
@@ -729,17 +731,17 @@ struct Drawing {
         guard case .shape(let id, _) = found else { return }
         let statement = item.statement, subject = subject(of: item)
         guard let holder = target.document[id] else {
-            throw AutomationError(statement, .internal, "\(quoted(title)) isn't on the board \(subject) is drawn on")
+            throw DrawError(statement, .internal, "\(quoted(title)) isn't on the board \(subject) is drawn on")
         }
         if deletedShapes.contains(id) {
-            throw AutomationError(statement, .unknownTitle, "\(subject) is in \(quoted(title)), which this script deletes",
-                                  hint: "draw \(quoted(title)) again after deleting it, or leave in \(quoted(title)) out")
+            throw DrawError(statement, .unknownTitle, "\(subject) is in \(quoted(title)), which this script deletes",
+                            hint: "draw \(quoted(title)) again after deleting it, or leave in \(quoted(title)) out")
         }
         let kinds = registry.containingKinds
         if let existing = item.existing, existing.id == id || target.document.containers(of: id, containingKinds: kinds).contains(existing.id) {
-            throw AutomationError(statement, .circular,
-                                  existing.id == id ? "\(subject) is in itself" : "\(subject) holds \(quoted(title)), so it can't be in it",
-                                  hint: "name another shape to hold it")
+            throw DrawError(statement, .circular,
+                            existing.id == id ? "\(subject) is in itself" : "\(subject) holds \(quoted(title)), so it can't be in it",
+                            hint: "name another shape to hold it")
         }
         if target.isReadOnly(holder) { throw readOnlyHolder(title, statement) }
         items[index].holder = holder
@@ -752,14 +754,14 @@ struct Drawing {
 
     /// `in "F"` names a shape that takes nothing: read-only (locked, say), a frame, or a subboard
     /// whose board is.
-    private func readOnlyHolder(_ title: String, _ statement: Statement) -> AutomationError {
-        AutomationError(statement, .readOnly, "\(quoted(title)) is read-only (locked, say), so nothing goes in it",
-                        hint: "leave in \(quoted(title)) out, or ask the user to unlock it")
+    private func readOnlyHolder(_ title: String, _ statement: Statement) -> DrawError {
+        DrawError(statement, .readOnly, "\(quoted(title)) is read-only (locked, say), so nothing goes in it",
+                  hint: "leave in \(quoted(title)) out, or ask the user to unlock it")
     }
 
     /// The shape with its attributes set, or which one it can't take.
     private func record(_ base: AnyShapeRecord, setting settings: JSONObject, _ item: ShapeItem,
-                        _ vocabulary: KindVocabulary) throws(AutomationError) -> AnyShapeRecord {
+                        _ vocabulary: KindVocabulary) throws(DrawError) -> AnyShapeRecord {
         do throws(ShapePropertiesError) {
             return try registry.shape(base, setting: settings)
         } catch {
@@ -769,11 +771,11 @@ struct Drawing {
                     _ = try registry.shape(base, setting: [key: settings[key]!])
                 } catch {
                     let written = item.shape.attributes.first { $0.key == key }?.value.written ?? "\(LanguageKey.title.rawValue)"
-                    throw AutomationError(item.statement, .invalidValue, "\(subject(of: item)): \(key): \(written) can't be read: \(error)",
-                                          hint: "\(key): takes \(vocabulary.compactType(of: key))")
+                    throw DrawError(item.statement, .invalidValue, "\(subject(of: item)): \(key): \(written) can't be read: \(error)",
+                                    hint: "\(key): takes \(vocabulary.compactType(of: key))")
                 }
             }
-            throw AutomationError(item.statement, .invalidValue, "\(subject(of: item)) can't have those attributes together: \(error)")
+            throw DrawError(item.statement, .invalidValue, "\(subject(of: item)) can't have those attributes together: \(error)")
         }
     }
 
@@ -860,57 +862,57 @@ struct Drawing {
     /// ends, `ShapeReferencing`): it would stay bound to one, and nothing would ever let go of it;
     /// one on another board of the file is no better. What it only names (a mention, `ShapeNaming`)
     /// may be anywhere in the file, or gone: that's said, not refused (`namingWarnings`).
-    private func references(of record: AnyShapeRecord, _ item: ShapeItem) throws(AutomationError) {
+    private func references(of record: AnyShapeRecord, _ item: ShapeItem) throws(DrawError) {
         let away = record.boundShapes(in: target.shapes).filter { target.document[$0] == nil || deleted.contains($0) }
         guard let first = away.first else { return }
         let elsewhere = target.document[first] == nil && editor.file.record(first) != nil
-        throw AutomationError(item.statement, .invalidValue,
-                              "\(subject(of: item)) is bound to a shape \(elsewhere ? "on another board of the file" : "that isn't on this board")",
-                              hint: "a shape can be bound only to shapes on its own board")
+        throw DrawError(item.statement, .invalidValue,
+                        "\(subject(of: item)) is bound to a shape \(elsewhere ? "on another board of the file" : "that isn't on this board")",
+                        hint: "a shape can be bound only to shapes on its own board")
     }
 
     /// Refuses a new title for a restated shape that another shape has, or will have: one the
     /// script draws, renames to it, or the board has.
-    private func claim(_ new: String, for existing: AnyShapeRecord, _ statement: Statement, subject: String) throws(AutomationError) {
+    private func claim(_ new: String, for existing: AnyShapeRecord, _ statement: Statement, subject: String) throws(DrawError) {
         if let other = itemByTitle[new] {
-            throw AutomationError(statement, .duplicate, "\(quoted(new)) is taken: line \(items[other].statement.line) is about it",
-                                  hint: "give \(subject) a title of its own")
+            throw DrawError(statement, .duplicate, "\(quoted(new)) is taken: line \(items[other].statement.line) is about it",
+                            hint: "give \(subject) a title of its own")
         }
         if let other = items.firstIndex(where: { $0.rename == new }) {
-            throw AutomationError(statement, .duplicate, "\(quoted(new)) is written twice, here and on line \(items[other].statement.line)",
-                                  hint: "give each shape a title of its own")
+            throw DrawError(statement, .duplicate, "\(quoted(new)) is written twice, here and on line \(items[other].statement.line)",
+                            hint: "give each shape a title of its own")
         }
         if boardShapes(called: new).contains(where: { $0 != existing.id }) {
-            throw AutomationError(statement, .duplicate, "\(quoted(new)) is taken: the board has a shape called that",
-                                  hint: "give \(subject) a title of its own")
+            throw DrawError(statement, .duplicate, "\(quoted(new)) is taken: the board has a shape called that",
+                            hint: "give \(subject) a title of its own")
         }
     }
 
     /// The title a restated shape of a kind whose titles are only worked out (a schema card's, from
     /// its schema's "title") has once changed, if that's another; refused if it has none, as a
     /// script can't take a title away.
-    private func renamed(_ record: AnyShapeRecord, _ title: String, _ item: ShapeItem) throws(AutomationError) -> String? {
+    private func renamed(_ record: AnyShapeRecord, _ title: String, _ item: ShapeItem) throws(DrawError) -> String? {
         guard let naming else { return nil }
         guard let now = naming.name(record, registry) else {
-            throw AutomationError(item.statement, .renames, "this would leave \(quoted(title)) without a title",
-                                  hint: "its title is worked out from what it is: keep what it's worked out from giving it one")
+            throw DrawError(item.statement, .renames, "this would leave \(quoted(title)) without a title",
+                            hint: "its title is worked out from what it is: keep what it's worked out from giving it one")
         }
         return now == title ? nil : now
     }
 
     /// Refuses a change that would change a restated shape's title (one its kind works out).
-    func keepsName(_ record: AnyShapeRecord, _ title: String, _ item: ShapeItem) throws(AutomationError) {
+    func keepsName(_ record: AnyShapeRecord, _ title: String, _ item: ShapeItem) throws(DrawError) {
         guard let naming, let now = naming.name(record, registry), now != title else { return }
         let size = item.shape.size.map { "\(LanguageKey.size.rawValue): \($0.written)" }
-        throw AutomationError(item.statement, .renames, "\(size ?? "this") would rename \(quoted(title)) to \(quoted(now))",
-                              hint: "its title is worked out from what it is: give it one with \(LanguageKey.title.rawValue): \"…\" first, or leave it as it is")
+        throw DrawError(item.statement, .renames, "\(size ?? "this") would rename \(quoted(title)) to \(quoted(now))",
+                        hint: "its title is worked out from what it is: give it one with \(LanguageKey.title.rawValue): \"…\" first, or leave it as it is")
     }
 
     static func written(_ size: CGSize) -> String {
         "\(KindVocabulary.number(size.width))x\(KindVocabulary.number(size.height))"
     }
 
-    private func unknownAttribute(_ key: String, of item: ShapeItem, _ vocabulary: KindVocabulary) -> AutomationError {
+    private func unknownAttribute(_ key: String, of item: ShapeItem, _ vocabulary: KindVocabulary) -> DrawError {
         let takes = vocabulary.everything
         var hints: [String] = []
         if let guess = Suggestions.closest(to: key, among: takes, limit: 1).first { hints.append("did you mean \(guess)?") }
@@ -919,19 +921,19 @@ struct Drawing {
             .filter { KindVocabulary($0, in: registry).isAttribute(key) }.map(\.rawValue).sorted()
         if !others.isEmpty { hints.append("\(key): belongs to \(listed(others))") }
         let who = item.title.map { "\(quoted($0)) is \(indefinite(item.kind)) and" } ?? "\(subject(of: item))"
-        return AutomationError(item.statement, .unknownAttribute, "\(who) has \(key):, which isn't one of \(indefinite(item.kind))'s attributes",
-                               hint: hints.joined(separator: "; "))
+        return DrawError(item.statement, .unknownAttribute, "\(who) has \(key):, which isn't one of \(indefinite(item.kind))'s attributes",
+                         hint: hints.joined(separator: "; "))
     }
 
     // MARK: Edges
 
-    private mutating func resolve(_ edge: EdgeStatement, _ statement: Statement) throws(AutomationError) {
+    private mutating func resolve(_ edge: EdgeStatement, _ statement: Statement) throws(DrawError) {
         guard let edging, let edgeKind else { throw noEdges(statement) }
         let written = "\(Keyword.edge.rawValue) \(edge.written)"
         let fromTitle = try folded(edge.from, statement), toTitle = try folded(edge.to, statement)
         // An end is a shape the script draws, or the board has, or, elsewhere in the file, the shape
         // there: the edge then goes through a stand-in beside the other end (`DrawStandIns.swift`).
-        func end(_ title: String) throws(AutomationError) -> EdgeEndFound {
+        func end(_ title: String) throws(DrawError) -> EdgeEndFound {
             if let index = itemByTitle[title] { return .here(items[index].record.id, item: index) }
             if unresolved.contains(title) { throw skip() }
             if let record = try boardShape(called: title, statement) { return .here(record.id, item: nil) }
@@ -940,7 +942,7 @@ struct Drawing {
         }
         let fromFound = try end(fromTitle), toFound = try end(toTitle)
         let from = fromFound.id, to = toFound.id
-        let via = try edge.via.map { word throws(AutomationError) in try standInKind(named: word, statement, written: written) }
+        let via = try edge.via.map { word throws(DrawError) in try standInKind(named: word, statement, written: written) }
         // The edge maker's attributes (a channel), then its kind's own, as a shape's are.
         var attributes: [String: String] = [:], settings: JSONObject = [:]
         let connector = vocabulary(of: edgeKind)
@@ -952,22 +954,22 @@ struct Drawing {
             }
             guard connector.isAttribute(key) else {
                 if connector.coordinates.contains(key) {
-                    throw AutomationError(statement, .unsupported, "\(key): says where \(written) is, and an edge goes where its ends are",
-                                          hint: "leave \(key): out")
+                    throw DrawError(statement, .unsupported, "\(key): says where \(written) is, and an edge goes where its ends are",
+                                    hint: "leave \(key): out")
                 }
                 let takes = (EdgeKey.allCases.map(\.rawValue) + edging.attributes + connector.attributes).reduce(into: [String]()) { all, key in
                     if !all.contains(key) { all.append(key) }
                 }
                 let guess = Suggestions.closest(to: key, among: takes, limit: 1).first
-                throw AutomationError(statement, .unknownAttribute, "an edge has no \(key): attribute",
-                                      hint: (guess.map { "did you mean \($0)? " } ?? "") + "an edge takes \(takes.map { "\($0):" }.joined(separator: ", "))")
+                throw DrawError(statement, .unknownAttribute, "an edge has no \(key): attribute",
+                                hint: (guess.map { "did you mean \($0)? " } ?? "") + "an edge takes \(takes.map { "\($0):" }.joined(separator: ", "))")
             }
             let value: JSONValue
             do throws(ValueRefusal) {
                 value = try connector.value(of: attribute)
                 try fits(value, key, edgeKind, connector)
             } catch {
-                throw AutomationError(statement, .invalidValue, "\(written): \(error.message)", hint: error.hint)
+                throw DrawError(statement, .invalidValue, "\(written): \(error.message)", hint: error.hint)
             }
             settings[key] = try writtenTexts(value, of: key, connector, prefix: "\(written): \(key)", statement)
         }
@@ -976,8 +978,8 @@ struct Drawing {
             let theirs = other.edge.bothHeads ? [(other.from, other.to), (other.to, other.from)] : [(other.from, other.to)]
             return pairs.contains { pair in theirs.contains { $0 == pair } }
         }) {
-            throw AutomationError(statement, .duplicate, "\(written) is written twice, here and on line \(earlier.statement.line)",
-                                  hint: "say everything about one edge in one statement")
+            throw DrawError(statement, .duplicate, "\(written) is written twice, here and on line \(earlier.statement.line)",
+                            hint: "say everything about one edge in one statement")
         }
         var item = EdgeItem(statement: statement, edge: edge, from: from, to: to, fromTitle: fromTitle, toTitle: toTitle, attributes: attributes,
                             settings: settings)
@@ -988,15 +990,15 @@ struct Drawing {
     // MARK: Styles
 
     /// Refuses a style that gives an attribute no kind drawn here has (a typo, most likely).
-    private mutating func check(_ style: StyleDefinition) throws(AutomationError) {
+    private mutating func check(_ style: StyleDefinition) throws(DrawError) {
         let kinds = drawableKinds.map { vocabulary(of: ShapeKind(rawValue: $0)) }
         let everything = Set(kinds.flatMap(\.attributes))
         for attribute in style.attributes where LanguageKey(rawValue: attribute.key) == nil && !everything.contains(attribute.key) {
             let guess = Suggestions.closest(to: attribute.key, among: everything.sorted(), limit: 1).first
-            throw AutomationError("style \(style.name) has \(attribute.key):, which is an attribute of nothing drawn here",
-                                  reason: ScriptError.Reason.unknownAttribute.rawValue,
-                                  hint: guess.map { "did you mean \($0)?" } ?? "\(RPC.commandName) kinds lists each kind's attributes",
-                                  line: style.line, statement: style.text)
+            throw DrawError("style \(style.name) has \(attribute.key):, which is an attribute of nothing drawn here",
+                            reason: ScriptError.Reason.unknownAttribute.rawValue,
+                            hint: guess.map { "did you mean \($0)?" } ?? "\(program) kinds lists each kind's attributes",
+                            line: style.line, statement: style.text)
         }
     }
 
@@ -1157,7 +1159,7 @@ extension Attribute.Value {
 }
 
 /// A title in straight double quotes, escaped as a script writes it.
-func quoted(_ title: String) -> String {
+public func quoted(_ title: String) -> String {
     var escaped = ""
     for character in title {
         switch character {
@@ -1172,7 +1174,7 @@ func quoted(_ title: String) -> String {
 }
 
 /// A word with its article, as a message names one of a kind: `a sticky-note`, `an arrow`.
-func indefinite(_ word: some CustomStringConvertible) -> String {
+public func indefinite(_ word: some CustomStringConvertible) -> String {
     let text = word.description
     return (text.first.map { "aeiou".contains($0.lowercased()) } ?? false ? "an " : "a ") + text
 }

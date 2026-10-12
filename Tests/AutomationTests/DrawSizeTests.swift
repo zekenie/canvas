@@ -3,6 +3,7 @@ import Automation
 import CanvasRPC
 import CanvasTesting
 import CoreGraphics
+import Draw
 import Foundation
 import TestKit
 

@@ -3,6 +3,7 @@ import Automation
 import CanvasRPC
 import CanvasTesting
 import CoreGraphics
+import Draw
 import Foundation
 import TestKit
 
@@ -156,7 +157,7 @@ let refTexts = Contributor(id: "ref-texts") { registrar in
 /// `<>` is refused. A text that says `x-test-only` beside its reference may name only those kinds.
 func refFormat(mediaType: String = refsMediaType, id: PluginID = "refs") -> Contributor {
     Contributor(id: id) { registrar in
-        registrar.drawTextFormat(mediaType: mediaType, describes: "<Title> names") { text, context throws(AutomationError) in
+        registrar.drawTextFormat(mediaType: mediaType, describes: "<Title> names") { text, context throws(DrawError) in
             let only = context.schema["x-test-only"]?.arrayValue?.compactMap(\.stringValue)
             var written = "", rest = Substring(text)
             while let open = rest.firstIndex(of: "<") {
@@ -168,7 +169,7 @@ func refFormat(mediaType: String = refsMediaType, id: PluginID = "refs") -> Cont
                 }
                 let name = String(rest[rest.index(after: open)..<close])
                 guard !name.isEmpty else {
-                    throw AutomationError("<> names nothing", reason: "invalid_value", hint: "put a title between the brackets")
+                    throw DrawError("<> names nothing", reason: "invalid_value", hint: "put a title between the brackets")
                 }
                 let shape = try context.shape(called: name) { record in
                     guard let only, !only.contains(record.kind.rawValue) else { return nil }
@@ -474,9 +475,9 @@ func refFormat(mediaType: String = refsMediaType, id: PluginID = "refs") -> Cont
     test("the file's names are read once, when a text first names a shape, and never for a script whose texts name none") {
         let n = Nest(), editor = try n.editor([refTexts, refFormat()])
         @MainActor func reads(_ script: String) throws -> Int {
-            let before = AutomationPlugin.fileNamesRead
+            let before = DrawPlugin.fileNamesRead
             _ = try drawn(script, on: editor)
-            return AutomationPlugin.fileNamesRead - before
+            return DrawPlugin.fileNamesRead - before
         }
         expectEqual(try reads(#"tile remark: "nothing named here, 1 < 2, a@[b]""#), 0)
         expectEqual(try reads(#"tile remark: "<Hub>""#), 1)
@@ -503,19 +504,19 @@ func refFormat(mediaType: String = refsMediaType, id: PluginID = "refs") -> Cont
 
     test("the point takes one plugin for each media type, a media type and what it describes, and the report names it") {
         expectEqual(refusal { registrar in
-            registrar.drawTextFormat(mediaType: "", describes: "x") { text, _ throws(AutomationError) in text }
+            registrar.drawTextFormat(mediaType: "", describes: "x") { text, _ throws(DrawError) in text }
         }, "DrawTextFormats: a media type can't be blank")
         expectEqual(refusal { registrar in
-            registrar.drawTextFormat(mediaType: "text/x-t", describes: "") { text, _ throws(AutomationError) in text }
+            registrar.drawTextFormat(mediaType: "text/x-t", describes: "") { text, _ throws(DrawError) in text }
         }, "DrawTextFormats: text/x-t says nothing of what it describes, which canvas kinds shows after the type")
         do throws(RegistryError) {
-            _ = try Registry(plugins: [AutomationPlugin(), refFormat(), refFormat(id: "more")])
+            _ = try Registry(plugins: [DrawPlugin(), AutomationPlugin(), refFormat(), refFormat(id: "more")])
             expect(false, "two plugins write one media type")
         } catch {
             expectEqual(error.description, "refs and more both claim draw text text/x-test-refs in DrawTextFormats")
         }
         // Another media type is another claim.
-        _ = try Registry(plugins: [AutomationPlugin(), refFormat(), refFormat(mediaType: "text/x-other", id: "more")])
+        _ = try Registry(plugins: [DrawPlugin(), AutomationPlugin(), refFormat(), refFormat(mediaType: "text/x-other", id: "more")])
         let report = try refsEditor().registry.report.split(separator: "\n")
         expect(report.contains { $0.hasPrefix("refs ") && $0.hasSuffix(" draw text \(refsMediaType)") }, report.joined(separator: "\n"))
     },

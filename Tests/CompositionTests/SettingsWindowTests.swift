@@ -3,7 +3,6 @@ import Canvas
 import CanvasTesting
 import CanvasUI
 import Foundation
-import HostSlots
 import LanguageModels
 import SwiftUI
 import TestKit

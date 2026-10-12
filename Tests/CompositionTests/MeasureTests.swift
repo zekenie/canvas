@@ -7,7 +7,6 @@ import CanvasUI
 import DrawScript
 import Foundation
 import Geometry
-import HostSlots
 import LanguageModels
 import ShippedTesting
 import StickyNotes

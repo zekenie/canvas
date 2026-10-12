@@ -1,8 +1,7 @@
 import Canvas
 import Queries
-import Validation
 
-/// `:invalid` and `:warned`, in QueryLexicon: a shape with an error and one with a warning, on
+/// `:invalid` and `:warned`, in Validation: a shape with an error and one with a warning, on
 /// every board of the file, not only the one shown. Only the main actor can say (Validation's
 /// rules), so each is asked there, in the query's slices, about the shape as the app has it then:
 /// from Validation's cache while that's current (the board shown, no commit since the query
