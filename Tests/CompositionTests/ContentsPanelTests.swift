@@ -12,10 +12,10 @@ import SwiftUI
 import TableOfContents
 import TestKit
 
-/// The app's window over the welcome board, unshown: the canvas with the shipped detail panel in
+/// The app's window over the sample board, unshown: the canvas with the shipped detail panel in
 /// an `.inspector`, wired by a `CanvasFocus` as the app wires them (InspectorHost).
 @MainActor
-final class WelcomeWindow {
+final class SampleWindow {
     let editor = ShippedPlugins.makeEditor(scheduler: TaskScheduler(), model: ScriptedLanguageModel())
     let window = BoardWindow(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
     let focus = CanvasFocus()
@@ -59,12 +59,12 @@ extension NSTableView {
 
 @MainActor let contentsPanelTests = Suite("Table of contents in the panel", [
     test("with nothing selected the panel is the table of contents: the notes, each arrow under its note") {
-        let w = try WelcomeWindow()
+        let w = try SampleWindow()
         w.window.spin { w.rows == 6 }
         expect(w.editor.viewportSize.width > 0 && w.editor.viewportSize.height > 0, "the canvas knows its size: \(w.editor.viewportSize)")
     },
     test("selecting one shape shows its details instead; several, their header over the list of just them") {
-        let w = try WelcomeWindow()
+        let w = try SampleWindow()
         w.window.spin { w.rows == 6 }
         w.editor.selection = w.notes[0]
         w.window.spin { w.contents == nil }
@@ -76,7 +76,7 @@ extension NSTableView {
         w.window.spin { w.rows == 6 }
     },
     test("from several shapes to none, the panel lists the board and AppKit logs no reentrant update") {
-        let w = try WelcomeWindow()
+        let w = try SampleWindow()
         w.window.spin { w.rows == 6 }
         w.editor.selectedShapeIDs = [w.notes[1], w.notes[2]]
         w.window.spin { w.rows == 2 }
@@ -87,7 +87,7 @@ extension NSTableView {
         expect(!log.contains(tableReentrancyWarning), "AppKit logged: \(log)")
     },
     test("the pointer on a note on the canvas tints the note's row, and only that; leaving the canvas takes the tint away") {
-        let w = try WelcomeWindow()
+        let w = try SampleWindow()
         w.window.spin { w.rows == 6 }
         let list = try require(w.contents)
         let note = w.notes[1]
@@ -108,7 +108,7 @@ extension NSTableView {
         w.window.spin { changedPixels(plain, snapshot(list), in: row) == 0 }
     },
     test("a row takes the panel to its note; the header's back button brings the list back, and the view as it was") {
-        let w = try WelcomeWindow()
+        let w = try SampleWindow()
         w.window.spin { w.rows == 6 }
         expect(w.backButton == nil, "no header with nothing selected")
         let start = w.editor.camera
@@ -122,7 +122,7 @@ extension NSTableView {
         expect(!w.editor.canGoBack, "nothing further back")
     },
     test("the back button in several shapes' header goes back to one of them, and from it to the board") {
-        let w = try WelcomeWindow()
+        let w = try SampleWindow()
         w.window.spin { w.rows == 6 }
         w.editor.selection = w.notes[0]
         w.editor.selectedShapeIDs = [w.notes[1], w.notes[2]]
@@ -135,7 +135,7 @@ extension NSTableView {
         expect(w.backButton == nil)
     },
     test("in the panel, picking one row takes the list away and gives the canvas the keyboard, so Return opens its shape there") {
-        let w = try WelcomeWindow()
+        let w = try SampleWindow()
         w.window.spin { w.rows == 6 }
         w.window.makeFirstResponder(try require(w.contents))
         w.window.settle()
@@ -146,7 +146,7 @@ extension NSTableView {
         w.window.spin { w.editor.editingShapeID == note }
     },
     test("↓ held in the list picks a row; its repeats, once the canvas has the keyboard, don't move what it picked, while a fresh ↓ there does") {
-        let w = try WelcomeWindow()
+        let w = try SampleWindow()
         w.window.spin { w.rows == 6 }
         w.window.makeFirstResponder(try require(w.contents))
         w.window.settle()
@@ -167,7 +167,7 @@ extension NSTableView {
         expectEqual(w.editor.document[note]?.box?.origin, CGPoint(x: origin.x, y: origin.y + 1), "a fresh ↓ is the canvas's: the selection's nudge")
     },
     test("Escape in the list gives the keyboard back to the canvas, where tool shortcuts work again") {
-        let w = try WelcomeWindow()
+        let w = try SampleWindow()
         w.window.spin { w.rows == 6 }
         w.window.makeFirstResponder(try require(w.contents))
         w.window.settle()

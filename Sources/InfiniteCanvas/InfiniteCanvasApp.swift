@@ -21,7 +21,6 @@ enum InfiniteCanvasApp {
             registry = try Registry(plugins: ShippedList.plugins())
             BoardDocument.configuration = BoardConfiguration(registry: registry) { AnyView(ContentView(board: $0)) }
             delegate.settings = SettingsWindow(registry: registry)
-            delegate.welcomeBoard = registry.welcomeBoard
         } catch {
             fatalError("The shipped plugins don't load or don't register: \(error)")   // CompositionTests catches this first
         }
@@ -35,22 +34,15 @@ enum InfiniteCanvasApp {
         }
         let app = NSApplication.shared
         app.delegate = delegate
-        // Help › Welcome Board, where a plugin gives one.
-        BoardMenus.install(appName: "Infinite Canvas", helpItems: delegate.welcomeBoard == nil ? [] : [
-            NSMenuItem(title: "Welcome Board", action: #selector(AppDelegate.showWelcomeBoard(_:)), keyEquivalent: ""),
-        ])
+        BoardMenus.install(appName: "Infinite Canvas")
         app.run()
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private static let hasShownWelcomeBoard = "hasShownWelcomeBoard"
     /// The Settings window, its panes the shipped plugins': set once the registry is made.
     var settings: SettingsWindow?
-    /// What makes the welcome board (the host's slot for it: the notes plugin's), nil for none: set
-    /// once the registry is made.
-    var welcomeBoard: (@MainActor () -> CanvasDocument)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -61,12 +53,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
-    /// Launched with nothing to open: the welcome board the first time, an empty board after that.
+    /// Launched with nothing to open: a new, empty board.
     func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        let defaults = UserDefaults.standard
-        let firstTime = !defaults.bool(forKey: Self.hasShownWelcomeBoard)
-        defaults.set(true, forKey: Self.hasShownWelcomeBoard)
-        return openNewBoard(with: firstTime ? welcomeBoard?() ?? CanvasDocument() : CanvasDocument())
+        do {
+            guard let board = try NSDocumentController.shared.makeUntitledDocument(ofType: BoardConfiguration.typeIdentifier) as? BoardDocument else { return false }
+            board.openWindow()
+            return true
+        } catch {
+            NSApp.presentError(error)
+            return false
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -78,25 +74,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// content made afresh each time it opens.
     @objc func showSettings(_ sender: Any?) {
         settings?.show()
-    }
-
-    /// Help › Welcome Board: a new board with the welcome notes on it.
-    @objc func showWelcomeBoard(_ sender: Any?) {
-        if let welcomeBoard { openNewBoard(with: welcomeBoard()) }
-    }
-
-    @discardableResult
-    private func openNewBoard(with shapes: CanvasDocument) -> Bool {
-        let controller = NSDocumentController.shared
-        do {
-            guard let board = try controller.makeUntitledDocument(ofType: BoardConfiguration.typeIdentifier) as? BoardDocument else { return false }
-            board.start(with: shapes)
-            board.openWindow()
-            return true
-        } catch {
-            NSApp.presentError(error)
-            return false
-        }
     }
 }
 

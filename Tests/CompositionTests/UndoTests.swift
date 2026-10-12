@@ -27,11 +27,11 @@ import Validation
     var editor: CanvasEditor { board.editor }
     private var time: TimeInterval = 1
 
-    /// The welcome board, or the board `data` holds.
+    /// The sample board, or the board `data` holds.
     init(_ data: Data? = nil) throws {
         try configureBoards(pasteboard: pasteboard)
         board = BoardDocument()
-        if let data { try board.read(from: data, ofType: boardType) } else { board.start(with: WelcomeBoard.document()) }
+        if let data { try board.read(from: data, ofType: boardType) } else { board.start(with: SampleBoard.document()) }
         board.viewState.showsDetails = false
         board.makeWindowControllers()
         window = try require(board.windowControllers.first?.window as? BoardWindow)
@@ -139,7 +139,7 @@ import Validation
     return id
 }
 
-let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x: 940, y: 180),
+let sampleNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x: 940, y: 180),
                     CGPoint(x: 180, y: 520), CGPoint(x: 560, y: 520), CGPoint(x: 940, y: 520)]
 
 // Undo and redo as the app has them: the board's window, its menus and keys, the document's count
@@ -179,7 +179,7 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
         let opened = b.editor.document
         // A press that drags a note: an autosave that can wait, waits; a save that can't splits it.
         b.window.makeFirstResponder(b.canvas)
-        b.canvas.mouseDown(with: b.event(.leftMouseDown, at: welcomeNotes[2]))
+        b.canvas.mouseDown(with: b.event(.leftMouseDown, at: sampleNotes[2]))
         b.canvas.mouseDragged(with: b.event(.leftMouseDragged, at: CGPoint(x: 980, y: 200)))
         expect(b.editor.undoHistory.isPressing)
         do {
@@ -238,7 +238,7 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
         /// How many more autosaves were scheduled as a drag of the third note, from where it is by
         /// `by`, was released: with an autosave that gave way midway, or none.
         @MainActor func scheduled(by: CGPoint, autosaveMidway: Bool) -> Int {
-            let from = CGPoint(x: welcomeNotes[2].x, y: welcomeNotes[2].y)
+            let from = CGPoint(x: sampleNotes[2].x, y: sampleNotes[2].y)
             b.window.makeFirstResponder(b.canvas)
             b.canvas.mouseDown(with: b.event(.leftMouseDown, at: from))
             b.canvas.mouseDragged(with: b.event(.leftMouseDragged, at: CGPoint(x: from.x + 40, y: from.y + 30)))
@@ -258,7 +258,7 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
     test("an autosave waits while an arrow key held on the canvas nudges the selection, and is scheduled again once it's let go: the nudges are one step") {
         let b = try UndoBoard()
         defer { b.close() }
-        b.click(welcomeNotes[2])
+        b.click(sampleNotes[2])
         let note = try require(b.editor.selection)
         let start = try require(b.editor.document[note]?.box).origin
         @MainActor func right(_ type: NSEvent.EventType, isRepeat: Bool = false) -> NSEvent {
@@ -290,12 +290,12 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
         let url = scratchURL("revert-undo.canvasboard")
         defer { try? FileManager.default.removeItem(at: url) }
         expect(!b.editor.canUndo && !b.editor.canRedo)
-        let welcome = try b.board.data(ofType: boardType)
-        try welcome.write(to: url)
+        let saved = try b.board.data(ofType: boardType)
+        try saved.write(to: url)
         b.board.fileURL = url
         _ = b.editor.add(StickyNote(frame: CGRect(x: 0, y: 700, width: 200, height: 200), text: "Unsaved"))
         b.editor.undo()
-        expectEqual(try b.board.data(ofType: boardType), welcome)
+        expectEqual(try b.board.data(ofType: boardType), saved)
         b.editor.redo()
         try b.board.revert(toContentsOf: url, ofType: boardType)
         expect(!b.editor.canUndo && !b.editor.canRedo)
@@ -342,7 +342,7 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
         expect(!b.editor.canUndo)
     },
     test("Delete Hidden Shapes is one step, and undoing it writes the board as it was, byte for byte") {
-        let b = try UndoBoard(try richWelcomeBoard())
+        let b = try UndoBoard(try richSampleBoard())
         defer { b.close() }
         let before = try b.board.data(ofType: boardType)
         b.board.deleteHiddenShapes()
@@ -391,11 +391,11 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
     },
 ])
 
-/// The welcome board with what a board may hold that the app can't use or doesn't know: a note with
+/// The sample board with what a board may hold that the app can't use or doesn't know: a note with
 /// metadata no plugin knows, a note with a value the app can't use, a shape of a kind it doesn't have.
-@MainActor func richWelcomeBoard() throws -> Data {
+@MainActor func richSampleBoard() throws -> Data {
     let codec = BoardCodec(registry: try ShippedPlugins.registry(model: ScriptedLanguageModel()))
-    var json = try require(JSONSerialization.jsonObject(with: codec.encode(WelcomeBoard.document())) as? [String: Any])
+    var json = try require(JSONSerialization.jsonObject(with: codec.encode(SampleBoard.document())) as? [String: Any])
     var shapes = try require(json["shapes"] as? [[String: Any]])
     shapes[0]["meta"] = ["someone": ["pinned": true]]
     var added = shapes[1]["added"] as? [String: Any] ?? [:]
@@ -421,7 +421,7 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
 // Every kind of step the app makes, undone back to the board as it opened and redone again.
 @MainActor let undoRoundTripTests = Suite("Undo, all the way back", [
     test("a session of every kind of step undoes to the board as it opened, byte for byte, and redoes to where it ended") {
-        let b = try UndoBoard(try richWelcomeBoard())
+        let b = try UndoBoard(try richSampleBoard())
         defer { b.close() }
         let e = b.editor
         expect(b.board.loadReport.repairs.isEmpty, "\(b.board.loadReport.repairs)")
@@ -440,29 +440,29 @@ let welcomeNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x:
             documents.append(e.document)
             bytes.append(try! b.board.data(ofType: boardType))
         }
-        try step("move") { b.drag(from: welcomeNotes[2], to: CGPoint(x: 1000, y: 240)) }
+        try step("move") { b.drag(from: sampleNotes[2], to: CGPoint(x: 1000, y: 240)) }
         try step("place and type") { _ = try placeNote(b, at: CGPoint(x: 700, y: 760), text: "New") }
         try step("rename in the panel") {
             let binding = try require(e.shapeBinding(notes[0], as: StickyNote.self))
             for text in ["F", "Fi", "First"] { binding[TitleProperty.self].wrappedValue = text }
             e.undoHistory.seal()
         }
-        try step("lock") { try require(b.menu(at: welcomeNotes[1])).choose("Lock") }
+        try step("lock") { try require(b.menu(at: sampleNotes[1])).choose("Lock") }
         try step("copy and paste") {
-            b.click(welcomeNotes[0])
+            b.click(sampleNotes[0])
             expect(b.command("c"))
             expect(b.command("v"))
         }
         try step("delete") {
-            b.click(welcomeNotes[4])
+            b.click(sampleNotes[4])
             b.window.pressDelete()
         }
-        try step("bring to front") { try require(b.menu(at: welcomeNotes[3])).choose("Arrange", "Bring to Front") }
+        try step("bring to front") { try require(b.menu(at: sampleNotes[3])).choose("Arrange", "Bring to Front") }
         try step("connect two notes") {
             let leftDot = CGPoint(x: 588, y: 760)                           // the placed note's
             b.move(to: CGPoint(x: 700, y: 760))
             b.move(to: leftDot)
-            b.drag(from: leftDot, to: welcomeNotes[3])
+            b.drag(from: leftDot, to: sampleNotes[3])
         }
         try step("delete hidden shapes") { b.board.deleteHiddenShapes() }
         expectEqual(names, ["Move", "Add Note", "Change Note", "Lock", "Paste", "Delete", "Bring to Front", "Add Arrow",

@@ -15,8 +15,8 @@ import TestKit
 import Titles
 import Types
 
-/// The welcome board, its clipboard on a pasteboard of the test's own.
-@MainActor func welcomeBoard(_ pasteboard: NSPasteboard) -> EditorHarness {
+/// The sample board, its clipboard on a pasteboard of the test's own.
+@MainActor func sampleBoard(_ pasteboard: NSPasteboard) -> EditorHarness {
     EditorHarness { ShippedPlugins.makeEditor(scheduler: $0, pasteboard: pasteboard, model: ScriptedLanguageModel()) }
 }
 
@@ -24,7 +24,7 @@ import Types
     test("two notes and the arrow between them paste as two notes and an arrow between the copies, listed under the first") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        let h = welcomeBoard(pasteboard)
+        let h = sampleBoard(pasteboard)
         let notes = h.editor.document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id)
         let arrow = try require(h.editor.document.shapes.first { $0.typed(as: Arrow.self)?.props.end.binding?.shapeID == notes[1] }?.id)
         h.editor.selectedShapeIDs = [notes[0], notes[1], arrow]
@@ -51,7 +51,7 @@ import Types
     test("an arrow copied alone pastes free, ending where it was drawn: as the original does once its notes are deleted") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        let h = welcomeBoard(pasteboard)
+        let h = sampleBoard(pasteboard)
         let bent = try require(h.editor.document.shapes.first { ($0.typed(as: Arrow.self)?.props.bend ?? 0) != 0 })
         let arrow = try require(bent.typed(as: Arrow.self)?.props)
         h.editor.selection = bent.id
@@ -67,7 +67,7 @@ import Types
     test("where a shape was copied from is saved with the board, and read back") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        let h = welcomeBoard(pasteboard)
+        let h = sampleBoard(pasteboard)
         let note = try require(h.editor.document.shapes.first?.id)
         h.editor.transact { $0.update(note) { $0[TitleProperty.self] = "Oat milk" } }
         h.editor.selection = note
@@ -117,7 +117,7 @@ import Types
         try configureBoards(pasteboard: pasteboard)
         defer { try? configureBoards() }
         let board = BoardDocument()
-        board.start(with: WelcomeBoard.document())
+        board.start(with: SampleBoard.document())
         board.makeWindowControllers()
         defer { board.close() }
         let window = try require(board.windowControllers.first?.window)

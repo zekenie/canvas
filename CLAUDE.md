@@ -64,7 +64,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [Quick Look](.claude/rules/quick-look.md): a board file's preview and thumbnail in the Finder: `BoardPicture`, the app's extension, how it's built, signed and registered.
 
 **Foundation**
-- [host slots](.claude/rules/host-slots.md): what a window puts around its canvas, and what the app takes besides, from plugins: views over the canvas, the inspector, the subtitle, settings panes, tool tips, the welcome board, the commands the app's server runs; CanvasUI's chrome that places them, and the app.
+- [host slots](.claude/rules/host-slots.md): what a window puts around its canvas, and what the app takes besides, from plugins: views over the canvas, the inspector, the subtitle, settings panes, tool tips, the commands the app's server runs; CanvasUI's chrome that places them, and the app.
 - [text editing](.claude/rules/text-editing.md): `EditingTextView`, the app's spelling settings and the one caret list, under every editable text.
 - [fuzzy matching](.claude/rules/fuzzy-matching.md): `FuzzyMatcher`, the matcher every list ranks typed text with; `TextSearch`, Find's, over folded texts; `PathMatcher`, Jump To's, over containment paths.
 

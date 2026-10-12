@@ -2792,11 +2792,11 @@ thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on Test
 
 A board's window puts things around its canvas that are plugins': the path of crumbs over its top,
 a palette, the inspector beside it, the window's subtitle, the panes of the Settings window, the
-toolbar's tips. And the app takes two more things from them: the board a new person is welcomed
-with, and the commands its command server runs. A plugin can't import the window (CanvasUI) or the
+toolbar's tips. And the app takes one more thing from them: the commands its command server
+runs. A plugin can't import the window (CanvasUI) or the
 app, and neither can import a plugin (the app and CanvasUI may use only the foundation and the
 wire). So what passes between them is declared beneath both, in the core,
-[`Sources/Canvas/Plugins/HostSlots.swift`](../Sources/Canvas/Plugins/HostSlots.swift): seven
+[`Sources/Canvas/Plugins/HostSlots.swift`](../Sources/Canvas/Plugins/HostSlots.swift): six
 extension points a plugin contributes to and the host reads. The core imports SwiftUI for them,
 since its slots hold views, and the wire (CanvasRPC), for the types the commands are said in; it
 knows no plugin and no window.
@@ -2813,7 +2813,6 @@ plugins ([What ships](#what-ships)).
 | The window's subtitle (`WindowSubtitles`, at most one) | `registrar.windowSubtitle { editor in … }` | `registry.windowSubtitle(for:)` | Boards: the board shown's name, none on the root |
 | Settings panes (`SettingsPanes`, in plugin order, a title once) | `registrar.settingsPane("Anthropic") { … }` | `registry.settingsPanes` | the Anthropic key's, when the model is Anthropic's |
 | Tool tips (`ToolTips`, at most one) | `registrar.toolTips { tool, registry in … }` | `registry.toolTip(for:)`, the tool's label without one | Keyboard: "Note (N)" |
-| The welcome board (`WelcomeBoards`, at most one) | `registrar.welcomeBoard { registry in … }`, a `CanvasDocument` made each time it's asked for | `registry.welcomeBoard`, what makes one, nil without | StickyNotes: six notes on how to use them, three linked where the list draws arrows |
 | The commands (`HostCommands`, at most one) | `registrar.hostCommands(specs:run:)`, both handed the built registry | `registry.hostCommands`: the specs, and how to run one by name | Automation: every plugin's command |
 
 A view a plugin gives is made for a window's canvas: it's handed that board's editor and `onExit`,
@@ -2850,17 +2849,15 @@ The window's side is CanvasUI's, and knows no plugin:
 - **`CommandServer.Commands(registry:)`** is the commands the server runs beyond its own
   ([The command line](#the-command-line)): none where the list has no command line.
 
-The app's own side is two lines. It opens `registry.welcomeBoard`'s board the first time it's
-launched with nothing to open, and from Help › Welcome Board, an item it adds only where a plugin
-gives one; and it starts its command server on `CommandServer.Commands(registry:)`.
+The app's own side is one line: it starts its command server on
+`CommandServer.Commands(registry:)`.
 
 Tests: CanvasTests' `hostSlotsTests` hold the points with contributors of their own (order, the
-most covered, one inspector, one subtitle, a pane's title once, a tip's default, a welcome board
-made each time it's asked for and handed the registry, the commands read off the built registry
+most covered, one inspector, one subtitle, a pane's title once, a tip's default, the commands read off the built registry
 and none without a contributor); CanvasUITests' `chromeTests` the chrome over a real canvas in an
 unshown window (each view where it says, the inspector's rule with a fixture that's wanted while a
 model says) and `toolPickerTests` the tips; each plugin's own tests what it gives; and
-CompositionTests the shipped seven (ShippedTests) and the window's behavior with Find
+CompositionTests the shipped six (ShippedTests) and the window's behavior with Find
 (`findShippedTests`).
 
 ## The detail panel
@@ -12283,7 +12280,7 @@ keyboard             service KeyboardState · tool tips · key strokes · key re
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link · welcome board
+sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
 framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
@@ -13015,7 +13012,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 - **Arrow behavior is pinned to the proof of concept.** CompositionTests replays 28 arrow
   scenarios through `CanvasView` with real events and compares where every arrow ends up, byte for
   byte, with a transcript recorded from the POC. It also compares eight renders pixel for pixel:
-  the welcome board, target outlines, binding hints mid-drag, handles and their halos, zoomed out.
+  the POC's welcome board, target outlines, binding hints mid-drag, handles and their halos, zoomed out.
   The renders are drawn with [skeletons](#skeletons) off (`skeletonZoom = 0`): the POC drew every
   shape in full at every zoom, so "re-aimed-zoomed-out", at 15%, would differ in the shapes
   themselves, where the app draws them as skeletons on purpose; the goldens stay as recorded.
@@ -13029,10 +13026,9 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   run on real time, so keep an event well clear of the moment one fires (50 ms or more): a
   scenario that releases 44 ms after the 320 ms timer is due records either way. Where the app
   differs on purpose, the replay says so: the "pan, then re-aim" scenario presses H and holds still
-  100 ms before the release (both do nothing in the POC, whose select tool panned), and the welcome
-  renders use the POC's note text
-  (`pocWelcomeTexts`), since the shipped board's third note describes the hand tool and the
-  marquee, and its fourth and fifth linking notes from their ports.
+  100 ms before the release (both do nothing in the POC, whose select tool panned), and the renders of
+  the POC's welcome board draw the tests' sample board (ShippedTesting's `SampleBoard`) with the
+  POC's note text (`pocWelcomeTexts`).
   Where a scenario ends differently on purpose, `intendedDeviations` in TranscriptTests replaces
   the golden's line with the app's, and says why; the fixture stays as recorded. There's one: the
   POC brought a pressed shape to the front and the app doesn't, so "move shape" lists its two notes

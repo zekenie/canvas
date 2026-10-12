@@ -144,29 +144,6 @@ import TestKit
             _ = try Registry(plugins: [tips, again])
         }
     },
-    test("the welcome board is what one plugin makes, each time it's asked: none without one, and a second is a conflict") {
-        expect(try Registry(plugins: []).welcomeBoard == nil)
-        let handed = Handed()
-        let welcome = Contributor(id: "welcome") { registrar in
-            registrar.welcomeBoard { registry in
-                handed.made.append("board")
-                // One pocket for each kind the list has: it's handed the built registry.
-                return CanvasDocument(shapes: registry.kinds.map { _ in AnyShapeRecord(ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 100, height: 60)))) })
-            }
-        }
-        let registry = try Registry(plugins: [PocketsPlugin(), welcome])
-        let make = try require(registry.welcomeBoard)
-        expectEqual(handed.made, [], "not made until the app asks")
-        let first = make(), second = make()
-        expectEqual(handed.made, ["board", "board"])
-        expectEqual(first.shapes.count, registry.kinds.count, "it's handed the built registry")
-        expect(first.shapes[0].id != second.shapes[0].id, "each board opened has shapes of its own")
-        expectEqual(report(registry, of: "welcome"), "welcome board")
-        let again = Contributor(id: "again") { $0.welcomeBoard { _ in CanvasDocument() } }
-        expectThrows(RegistryError.conflict(point: "WelcomeBoards", key: "welcome board", plugins: ["welcome", "again"])) {
-            _ = try Registry(plugins: [welcome, again])
-        }
-    },
     test("the commands the app's server runs are one plugin's, read off the built registry: none without one, and a second is a conflict") {
         let none = try Registry(plugins: []).hostCommands
         expectEqual(none.specs, [])

@@ -60,10 +60,8 @@ import TestKit
     expectEqual(differing, 0, "\(name): differing pixels; see build/parity-\(name).png", file: file, line: line)
 }
 
-/// The POC's welcome board text (804db97), verbatim. The shipped board's third note says how the
-/// hand tool and the marquee work instead, and its fourth and fifth how notes are linked from their
-/// ports (no arrow tool, and no ellipse); the goldens come only from the POC, so the welcome renders
-/// use these.
+/// The POC's welcome board text (804db97), verbatim: the goldens come only from the POC, so the
+/// renders of its welcome board are the sample board's notes saying these.
 let pocWelcomeTexts = [
     "Double-click empty space to add a note. Drag a note to move it.",
     "Double-click a note (or select it and press Return) to edit it.",
@@ -74,8 +72,8 @@ let pocWelcomeTexts = [
 ]
 
 @MainActor let parityTests = Suite("Pixel parity", [
-    test("the welcome board, a selected bent arrow, and a zoomed selection render identically") {
-        let editor = ShippedPlugins.makeEditor(document: WelcomeBoard.document(texts: pocWelcomeTexts), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+    test("the POC's welcome board, a selected bent arrow, and a zoomed selection render identically") {
+        let editor = ShippedPlugins.makeEditor(document: SampleBoard.document(texts: pocWelcomeTexts), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         editor.skeletonZoom = 0     // in full at every zoom, as the POC drew (above)
         editor.outlineStandoff = 0  // outlines on the shapes' edges, as the POC drew (above)
         let canvas = CanvasView(editor: editor)

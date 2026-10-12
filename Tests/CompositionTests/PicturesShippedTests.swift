@@ -30,8 +30,8 @@ import TestKit
 private func isNoteYellow(_ color: [Int]) -> Bool { color[0] > 235 && (190...245).contains(color[1]) && color[2] < 150 }
 
 @MainActor let picturesShippedTests = Suite("Board pictures, shipped", [
-    test("the welcome board's picture shows it whole at 100%: each note in its yellow where it is, the canvas between") {
-        let picture = BoardPicture(file: CanvasFile(root: WelcomeBoard.document()), registry: try shippedRegistry())
+    test("the sample board's picture shows it whole at 100%: each note in its yellow where it is, the canvas between") {
+        let picture = BoardPicture(file: CanvasFile(root: SampleBoard.document()), registry: try shippedRegistry())
         // The notes, 200 square, from (80, 80) to (1040, 620): 960 × 540, with 64 in all.
         let size = picture.size(within: CGSize(width: 1600, height: 1200))
         expectEqual(size, CGSize(width: 1024, height: 604))

@@ -22,15 +22,15 @@ public enum BoardMenus {
     public static let showSettings = NSSelectorFromString("showSettings:")
 
     /// Installs the menus as the app's.
-    public static func install(appName: String, helpItems: [NSMenuItem] = []) {
-        let menus = make(appName: appName, helpItems: helpItems)
+    public static func install(appName: String) {
+        let menus = make(appName: appName)
         NSApp.mainMenu = menus.main
         NSApp.servicesMenu = menus.services
         NSApp.windowsMenu = menus.windows
         NSApp.helpMenu = menus.help
     }
 
-    public static func make(appName: String, helpItems: [NSMenuItem] = []) -> Menus {
+    public static func make(appName: String) -> Menus {
         let services = NSMenu(title: "Services")
         let app = menu(appName, [
             item("About \(appName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
@@ -106,7 +106,7 @@ public enum BoardMenus {
             .separator(),
             item("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))),
         ])
-        let help = menu("Help", helpItems)
+        let help = menu("Help", [])
         let main = MenuBar(title: "Main Menu")
         for menu in [app, file, edit, view, go, windows, help] { main.addItem(submenu(menu.title, menu)) }
         return Menus(main: main, services: services, windows: windows, help: help)

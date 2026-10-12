@@ -7,7 +7,7 @@ import SwiftUI
 // no plugin. A plugin can't import the window (CanvasUI) or the app, and neither can import a
 // plugin, so what passes between them is declared here, beneath both: views over the canvas, the
 // inspector beside it, the window's subtitle, the panes of the Settings window, the toolbar's tool
-// tips, the board a new person is welcomed with and the commands the app's command server runs.
+// tips and the commands the app's command server runs.
 // Every point is the core's, so it's always installed: a plugin contributes from its own
 // `register`, and a list without the plugin is a host without its piece.
 //
@@ -130,23 +130,6 @@ extension ToolTips: KeyedExtensionPoint {
     public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "tool tips" }
 }
 
-// MARK: The welcome board
-
-/// The board the app opens the first time it's launched with nothing to open, and from
-/// Help › Welcome Board: from the plugin whose shapes are on it (StickyNotes: six notes on how to
-/// use them). Made each time it's asked for, so each board opened has shapes of its own, and handed
-/// the frozen registry, so it can leave out what the plugin list can't draw. At most one: two are
-/// `RegistryError.conflict` at startup. Without one the first board is empty, and the app has no
-/// such menu item.
-public enum WelcomeBoards {}
-
-extension WelcomeBoards: KeyedExtensionPoint {
-    public typealias Contribution = @MainActor (Registry) -> CanvasDocument
-    public static var owner: PluginID { .core }
-    public static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["welcome board"] }
-    public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "welcome board" }
-}
-
 // MARK: The command line
 
 /// The commands the app's command server runs for the command line, beyond its own: from the
@@ -224,14 +207,6 @@ extension PluginRegistrar {
         contribute(tip, to: ToolTips.self)
     }
 
-    /// The board a new person is welcomed with, made each time the app asks, for the plugins there
-    /// are:
-    ///
-    ///     registrar.welcomeBoard { registry in WelcomeBoard.document(linked: registry.kinds.contains(Arrow.kind)) }
-    public mutating func welcomeBoard(_ board: @escaping @MainActor (Registry) -> CanvasDocument) {
-        contribute(board, to: WelcomeBoards.self)
-    }
-
     /// The commands the app's command server runs: `specs`, what the command line shows of each,
     /// and `run`, one by name with its params, on a board's editor (nil for a command about the app
     /// as a whole), answering when it's done. Both are handed the frozen registry:
@@ -274,13 +249,6 @@ extension Registry {
     /// A tool's tip in the toolbar: what a plugin says of it, else its label.
     public func toolTip(for tool: ToolDescriptor) -> String {
         contributions(to: ToolTips.self).first?.value(tool, self) ?? tool.label
-    }
-
-    /// What makes the welcome board, nil where no plugin gives one: called for each board opened
-    /// with it.
-    public var welcomeBoard: (@MainActor () -> CanvasDocument)? {
-        guard let board = contributions(to: WelcomeBoards.self).first?.value else { return nil }
-        return { board(self) }
     }
 
     /// The commands a plugin gives the app's command server: what the command line shows of each,

@@ -143,7 +143,7 @@ public final class BoardDocument: NSDocument {
         super.scheduleAutosaving()
     }
 
-    /// A new board's shapes: the welcome board, say. The board isn't edited by them.
+    /// A new board's shapes, put there before it's shown. The board isn't edited by them.
     public func start(with document: CanvasDocument) {
         editor.replaceDocument(with: document)
     }
