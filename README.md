@@ -111,7 +111,7 @@ schema card or another subboard, and the link is an arrow (`ArrowPortsPlugin`) t
 
 ```
 Package.swift           the module graph: one line per module, with its layer (a horizontal's is surface,
-                        concern, language or lexicon)
+                        concern, feature or language)
 Sources/
   Geometry/             vector math, arcs, Camera
   Canvas/               the core: model, plugin registry, editor, the hand tool, drawing
@@ -130,10 +130,11 @@ Sources/
   Frames/               frames: a region of a board that holds shapes, which move and lock with it
   References/           references: a pill that stands for a public shape, so an arrow into it counts as an arrow
                         into the shape (the Reference tool, R)
-  Moving/               /move-to and /move-near: the shape typed in moved into a frame, onto a subboard's board or
+  Moving/               a feature, /move-to and /move-near: the shape typed in moved into a frame, onto a subboard's board or
                         beside a shape, on any board, placed as canvas draw places a shape; and the table of
                         contents' rows dropped into a frame, onto a subboard's board or out of frames
-  Validation/           the validation horizontal: rules, engine, outline, the Issues tab and the rows' dots
+  Validation/           the validation horizontal: rules, engine, outline, the Issues tab and the rows' dots, and
+                        queries' :invalid and :warned
   DetailPanel/          the detail panel horizontal: tabs, sections, bindings, the inspector view
   ContextMenus/         the context menu horizontal: right-click items, groups, the selection's menu
   SlashCommands/        a horizontal: commands a shape offers, typed as /name on a line of its text (the list
@@ -144,7 +145,7 @@ Sources/
                         any plugin, laid out so none overlap, drawn in one overlay
   Clipboard/            the clipboard horizontal: cut, copy and paste, which kinds may opt out of
   Titles/               a horizontal any kind opts into: a title, a property it adds (or derived), in a pill
-                        and the table of contents, and a header, or /title, that renames it
+                        and the table of contents, and a header, or /title, that renames it; queries' names
   Locking/              a horizontal every kind is in: a lock from the context menu or /lock, and its chip
   Publishing/           a horizontal: which shapes are public (another shape may stand for one), its chip and
                         count, /public and /private, and the Referenced In tab
@@ -152,27 +153,24 @@ Sources/
                         say what may connect to what, and the arrow (a port of tldraw's arrow geometry and
                         binding) a drag from a dot draws, bound only where its channel goes
   Mentions/             a horizontal: text that mentions shapes, each mention a live pill, with the @ picker and
-                        a Mentioned In tab
-  Boards/               a horizontal: getting around a file's boards (opening one, ⌘↑, the path over the canvas)
+                        a Mentioned In tab, and queries' :mentions and :mentioned-by
+  Boards/               a horizontal: getting around a file's boards (opening one, ⌘↑, the path over the canvas),
+                        and queries' boards' names
   Topology/             a horizontal: what connects and contains what across the file (arrows, mentions, frames
                         and boards), read from the shapes that carry it
-  Automation/           the command line's horizontal: every command canvas runs, draw and kinds its own
-  Queries/              a horizontal: the engine that answers canvas query about the whole file
+  Draw/                 a horizontal: the engine of canvas draw (and measure, kinds), which any plugin may run
+  Automation/           the command line's horizontal: every command canvas runs, over Draw for draw, kinds and measure
+  Queries/              a horizontal: the engine that answers canvas query about the whole file, and :selected
   QueryTranslation/     a horizontal: English into a query (Claude writes it), for the command line and the app
   QueryCommands/        canvas query, query-vocabulary, and --ask (a call to the translator)
   LanguageModels/       a horizontal that lends every editor a language model (Claude Haiku), its key in Settings
-  Snapping/             a horizontal: what a drag moves snaps to the shapes in view (edges, middles, even
+  Snapping/             a feature: what a drag moves snaps to the shapes in view (edges, middles, even
                         spaces), with guides
   Transform/            a horizontal: turning a shape into another kind through channels (a frame into a
                         subboard: one kind offers a channel, another takes it), from its menu or /turn-into-…
-  DrawLexicon/          canvas draw's words for this app: shapes named by their titles, edges as the connector's
-                        connections (on a channel both ends take), and warnings as validation finds them
-  QueryLexicon/         canvas query's words for this app: titles, boards' names, mentions, validity and the
-                        selection
-  Composition/          the shipped plugin list, and the welcome board
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern
-  Reordering/           menu items for every kind with a capability: the Arrange submenu
+  Reordering/           a feature, menu items for every kind with a capability: the Arrange submenu
 Tests/                  test executables (the core, each plugin with logic of its own, the examples,
                         the shipped app) and their support libraries, on a small macro-free kit
 scripts/                re-records the proof of concept's behavior, which the tests hold the app to; schema-prompts/

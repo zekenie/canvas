@@ -9,9 +9,9 @@ import CoreGraphics
 // them) and places boxes (`LayoutProblem.solve()`): it knows no canvas, registry, kind or plugin.
 // Every first word but `edge`, `delete` and `style` is a kind word, left for the caller to resolve;
 // titles are left as written; an attribute that isn't the language's own is a key and a value the
-// caller checks against the kind. The caller (Automation) resolves the words, builds the layout
-// problem from its board (the shapes that stay put, the parts of their outlines, the view) and
-// applies what comes back.
+// caller checks against the kind. The caller (Draw) resolves the words, builds the layout problem
+// from its board (the shapes that stay put, the parts of their outlines, the view) and applies
+// what comes back.
 //
 // The language and its solver are modified from reladraw's (https://github.com/reladraw/reladraw,
 // Apache-2.0; THIRD_PARTY_NOTICES.md): its placements, parts, lists, one unplaced shape, refusing

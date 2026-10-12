@@ -3,6 +3,7 @@ import Automation
 import CanvasRPC
 import CanvasTesting
 import CoreGraphics
+import Draw
 import Foundation
 import Geometry
 import TestKit
@@ -193,6 +194,48 @@ import TestKit
     },
 ])
 
+/// What a link reads out: an object with a list, an object and a list of objects in it, and fractions
+/// among them, which a draw's row for the edge says as the link keeps it.
+struct Readout: Codable, Hashable, Sendable {
+    struct Step: Codable, Hashable, Sendable {
+        var at: Double
+        var on: Bool
+    }
+
+    var levels: [Double]
+    var mix: [String: Double]
+    var steps: [Step]
+    var label: String
+}
+
+extension Readout: SchemaDescribed {
+    static func schema(in _: inout SchemaDefinitions) -> JSONObject { ["type": "object"] }
+}
+
+enum Reading {}
+
+extension Reading: ShapeProperty {
+    static let key: PropertyKey = "reading"
+    static var defaultValue: Readout? { nil }
+}
+
+/// Makes links with a reading, which the edge's row says (`DrawEdges`' attributes are said beside the row's own members).
+@MainActor func readingEdgesPlugin() -> Contributor {
+    Contributor(id: "reading-edges") { registrar in
+        registrar.declare(Reading.self)
+        registrar.optIn(Link.self, to: Reading.self)
+        registrar.drawEdges(kind: { _ in Link.kind }, attributes: [Reading.key.rawValue], sides: { _, _ in [:] }, ends: { record, _ in
+            guard let link = record.typed(as: Link.self), let from = link.props.from, let to = link.props.to else { return nil }
+            return (from, to)
+        }, make: { request, existing, _ throws(DrawError) in
+            var record = existing ?? AnyShapeRecord(ShapeRecord(Link(from: request.from, to: request.to)))
+            record[Reading.self] = Readout(levels: [0.25, 1.5, 3, 1234.5678], mix: ["low": 2.75, "high": 0.1],
+                                           steps: [Readout.Step(at: 0.125, on: false), Readout.Step(at: 10, on: true)], label: "a \"quoted\" / label")
+            return record
+        })
+    }
+}
+
 @MainActor let edgeDrawingTests = Suite("Drawing edges", [
     test("an edge connects two shapes; the same statement again changes nothing, and one that says more changes only that") {
         let log = EdgeLog()
@@ -309,6 +352,16 @@ import TestKit
         expectEqual(rows(replaced).map { $0["did"] }, ["deleted", "deleted", "connected"])
         expectEqual(links(in: editor), ["Hub -> East"])
     },
+    test("an edge's row says the attributes its maker declares as the link keeps them, objects and lists and fractions whole, on the wire") {
+        let editor = try makeEditor([namesPlugin(), readingEdgesPlugin()])
+        _ = try drawn(threeShapes, on: editor)
+        let reading = #""reading":{"label":"a \"quoted\" / label","levels":[0.25,1.5,3,1234.5678],"mix":{"high":0.1,"low":2.75},"#
+            + #""steps":[{"at":0.125,"on":false},{"at":10,"on":true}]}"#
+        let made = try drawn(#"edge "Hub" -> "East""#, on: editor)
+        expectEqual(try require(rows(made).first).compactText, #"{"did":"connected","from":"Hub","kind":"link","line":1,"# + reading + #","to":"East"}"#)
+        let again = try drawn(#"edge "Hub" -> "East""#, on: editor)
+        expectEqual(try require(rows(again).first).compactText, #"{"did":"unchanged","from":"Hub","kind":"link","line":1,"# + reading + #","to":"East"}"#)
+    },
 ])
 
 @MainActor let drawRunTests = Suite("Drawing runs", [
@@ -379,6 +432,20 @@ import TestKit
         """#, on: editor)
         expectEqual(unread.reason, "syntax")
         expectEqual(unread.data?["errors"]?.arrayValue?.count, 2)
+    },
+    test("several problems come out as the wire says them: the first leading, then every one with its line, statement, reason, message and hint") {
+        let editor = try drawEditor()
+        _ = try drawn(threeShapes, on: editor)
+        let error = try refused(#"""
+        crad "A"
+        tile "B" colr: red
+        """#, on: editor)
+        expectEqual(error.code, RPCError.failed)
+        expectEqual(error.message, "there's no kind of shape called crad")
+        let first = #""hint":"did you mean card? the kinds drawn here: card, tile","line":1,"message":"there's no kind of shape called crad","# + #""reason":"unknown_kind","statement":"crad \"A\"""#
+        let second = #""hint":"a tile takes size:, gap:, overlap:, style:, title:, finish:, pinned:, rank:, steps:","line":2,"# + #""message":"\"B\" is a tile and has colr:, which isn't one of a tile's attributes","reason":"unknown_attribute","# + #""statement":"tile \"B\" colr: red""#
+        expectEqual(try require(error.data).compactText,
+                    #"{"errors":[{"# + first + #"},{"# + second + #"}],"hint":"did you mean card? the kinds drawn here: card, tile","line":1,"# + #""reason":"unknown_kind","statement":"crad \"A\""}"#)
     },
     test("a drag under way leaves the board alone; an edit under way ends first, if the script changes that shape") {
         let editor = try drawEditor()
@@ -995,7 +1062,7 @@ import TestKit
     test("each takes one plugin at most, and the report names them") {
         expectEqual(refusal { $0.drawNames(name: { _, _ in nil }, namingProperty: { _, _ in nil }, isDerived: { _, _ in false }, fold: fold) }, nil)
         do throws(RegistryError) {
-            _ = try Registry(plugins: [AutomationPlugin(), namesPlugin(), Contributor(id: "more") { registrar in
+            _ = try Registry(plugins: [DrawPlugin(), AutomationPlugin(), namesPlugin(), Contributor(id: "more") { registrar in
                 registrar.drawNames(name: { _, _ in nil }, namingProperty: { _, _ in nil }, isDerived: { _, _ in false }, fold: fold)
             }])
             expect(false, "two plugins name shapes")
@@ -1011,12 +1078,12 @@ import TestKit
     test("an edge's attributes can't be the language's own keys") {
         expectEqual(refusal { registrar in
             registrar.drawEdges(kind: { _ in nil }, attributes: ["from"], sides: { _, _ in [:] }, ends: { _, _ in nil },
-                                make: { _, _, _ throws(AutomationError) in throw AutomationError("no", reason: "no") })
+                                make: { _, _, _ throws(DrawError) in throw DrawError("no", reason: "no") })
         }, "DrawEdges: attribute from: the language keeps from: for itself")
         for key in ["line", "did", "kind"] {
             expectEqual(refusal { registrar in
                 registrar.drawEdges(kind: { _ in nil }, attributes: [key], sides: { _, _ in [:] }, ends: { _, _ in nil },
-                                    make: { _, _, _ throws(AutomationError) in throw AutomationError("no", reason: "no") })
+                                    make: { _, _, _ throws(DrawError) in throw DrawError("no", reason: "no") })
             }, "DrawEdges: attribute \(key): a draw result's row has \(key) of its own")
         }
     },

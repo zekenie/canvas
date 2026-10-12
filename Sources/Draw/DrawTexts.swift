@@ -78,13 +78,13 @@ final class DrawTextLookup {
 
     // MARK: Asking
 
-    func shape(called written: String, admitting admits: @MainActor (AnyShapeRecord) -> String?) throws(AutomationError) -> DrawTextShape {
+    func shape(called written: String, admitting admits: @MainActor (AnyShapeRecord) -> String?) throws(DrawError) -> DrawTextShape {
         guard let naming else {
-            throw AutomationError("titles name shapes, and nothing here gives shapes names", reason: ScriptError.Reason.noNames.rawValue,
-                                  hint: "leave titles out: without a plugin that names shapes, no shape can be named or found by name")
+            throw DrawError("titles name shapes, and nothing here gives shapes names", reason: ScriptError.Reason.noNames.rawValue,
+                            hint: "leave titles out: without a plugin that names shapes, no shape can be named or found by name")
         }
         guard let title = naming.fold(written) else {
-            throw AutomationError("a title can't be blank", reason: ScriptError.Reason.syntax.rawValue, hint: "name a shape by its title")
+            throw DrawError("a title can't be blank", reason: ScriptError.Reason.syntax.rawValue, hint: "name a shape by its title")
         }
         // What's called that and isn't admitted: the first of them, by where it is, and why not.
         var refused: (kind: ShapeKind, why: String)?
@@ -92,7 +92,7 @@ final class DrawTextLookup {
             guard let why = admits(entry.record) else { return DrawTextShape(id: entry.id, title: entry.title) }
             refused = (entry.record.kind, why)
         } else if unresolved.contains(title) {
-            throw AutomationError("", reason: Drawing.skipped)
+            throw DrawError("", reason: Drawing.skipped)
         }
         let file = editor.file
         let all = names()?.places[title] ?? []
@@ -118,35 +118,35 @@ final class DrawTextLookup {
             case .shape(let found):
                 return DrawTextShape(id: found.id, title: title)
             case .ambiguous(let message):
-                throw AutomationError(message, reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: FileNames.oneEach)
+                throw DrawError(message, reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: FileNames.oneEach)
             case .none:
                 break
             }
         }
 
         if let refused {
-            throw AutomationError("\(quoted(title)) is \(indefinite(refused.kind)), \(refused.why)", reason: ScriptError.Reason.invalidValue.rawValue)
+            throw DrawError("\(quoted(title)) is \(indefinite(refused.kind)), \(refused.why)", reason: ScriptError.Reason.invalidValue.rawValue)
         }
         if all.count > live.count {
-            throw AutomationError("names \(quoted(title)), which this script deletes", reason: ScriptError.Reason.unknownTitle.rawValue,
-                                  hint: "draw \(quoted(title)) again after deleting it, or leave it out")
+            throw DrawError("names \(quoted(title)), which this script deletes", reason: ScriptError.Reason.unknownTitle.rawValue,
+                            hint: "draw \(quoted(title)) again after deleting it, or leave it out")
         }
         let guesses = Suggestions.closest(to: title, among: admittedTitles(admits, taken: taken))
-        throw AutomationError("there's no shape called \(quoted(title))", reason: ScriptError.Reason.unknownTitle.rawValue,
-                              hint: guesses.isEmpty ? "a title is one the file has as the script starts, or one the script draws"
+        throw DrawError("there's no shape called \(quoted(title))", reason: ScriptError.Reason.unknownTitle.rawValue,
+                        hint: guesses.isEmpty ? "a title is one the file has as the script starts, or one the script draws"
                                   : "did you mean \(listed(guesses.map(quoted), or: true))?")
     }
 
     /// Several shapes on one board are called one title: each with its kind and where it is.
-    private func several(_ places: [Place], _ title: String, on board: String) -> AutomationError {
+    private func several(_ places: [Place], _ title: String, on board: String) -> DrawError {
         let each = places.compactMap { place in
             editor.file.record(place.id).map { record in
                 let bounds = target.shapes.geometry(of: record.id)?.bounds ?? record.box
                 return "\(indefinite(record.kind)) at \(point(bounds.map { CGPoint(x: $0.midX, y: $0.midY) } ?? .zero))"
             }
         }
-        return AutomationError("\(board) has \(places.count) shapes called \(quoted(title)): \(listed(each))",
-                               reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: FileNames.oneEach)
+        return DrawError("\(board) has \(places.count) shapes called \(quoted(title)): \(listed(each))",
+                         reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: FileNames.oneEach)
     }
 
     // MARK: What it reads
@@ -187,14 +187,14 @@ extension Drawing {
     /// `prefix` (`"Plan": text`) says what it's about, then `suffix`; one a statement it depends on
     /// leaves to that statement's own error (`Drawing.skipped`) is passed on as it is.
     func writtenTexts(_ value: JSONValue, of key: String, _ vocabulary: KindVocabulary, prefix: String, suffix: String = "",
-                      _ statement: Statement) throws(AutomationError) -> JSONValue {
+                      _ statement: Statement) throws(DrawError) -> JSONValue {
         guard let textWriter else { return value }
-        do throws(AutomationError) {
+        do throws(DrawError) {
             return try textWriter.written(value, of: key, in: vocabulary)
         } catch {
             guard error.reason != Self.skipped else { throw error }
-            throw AutomationError("\(prefix): \(error.message)\(suffix)", reason: error.reason, hint: error.hint,
-                                  line: statement.line, statement: statement.text)
+            throw DrawError("\(prefix): \(error.message)\(suffix)", reason: error.reason, hint: error.hint,
+                            line: statement.line, statement: statement.text)
         }
     }
 }
@@ -212,12 +212,12 @@ struct DrawTextWriter {
     /// `additionalProperties`, `prefixItems` and `items`, `$ref`s followed). What isn't a string of
     /// such a schema is as it was. It throws what a format throws, as it's thrown; the caller says
     /// where.
-    func written(_ value: JSONValue, of key: String, in vocabulary: KindVocabulary) throws(AutomationError) -> JSONValue {
+    func written(_ value: JSONValue, of key: String, in vocabulary: KindVocabulary) throws(DrawError) -> JSONValue {
         guard vocabulary.textKeys.contains(key), let declared = vocabulary.properties[key] else { return value }
         return try written(value, declared: declared, in: vocabulary.schema)
     }
 
-    private func written(_ value: JSONValue, declared: JSONValue, in schema: KindSchema) throws(AutomationError) -> JSONValue {
+    private func written(_ value: JSONValue, declared: JSONValue, in schema: KindSchema) throws(DrawError) -> JSONValue {
         let resolved = schema.resolved(declared)
         switch value {
         case .string(let text):

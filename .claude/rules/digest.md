@@ -2,7 +2,7 @@
 paths:
   - ".claude/skills/canvas-digest/**"
   - "dogfood/model/**"
-  - "Sources/Automation/Measure.swift"
+  - "Sources/Draw/Measure.swift"
   - "Tests/CompositionTests/DigestTests.swift"
   - "Tests/CompositionTests/MeasureTests.swift"
 ---

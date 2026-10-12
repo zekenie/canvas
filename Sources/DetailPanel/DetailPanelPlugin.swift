@@ -1,5 +1,4 @@
 import Canvas
-import HostSlots
 import SwiftUI
 
 /// The panel's own contribution: its state, and the panel as the window's inspector (the host's

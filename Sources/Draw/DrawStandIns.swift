@@ -105,23 +105,23 @@ extension Drawing {
     }
 
     /// The kind `via:` names, if it's one that can be made to stand for a shape.
-    func standInKind(named word: String, _ statement: Statement, written: String) throws(AutomationError) -> ShapeKind {
+    func standInKind(named word: String, _ statement: Statement, written: String) throws(DrawError) -> ShapeKind {
         try Self.standInKind(named: word, among: standIns, statement, written: written)
     }
 
     /// The same for whoever has the registry's stand-ins and no run (`canvas measure`).
     static func standInKind(named word: String, among standIns: StandIns?, _ statement: Statement,
-                            written: String) throws(AutomationError) -> ShapeKind {
+                            written: String) throws(DrawError) -> ShapeKind {
         let makers = standIns?.makers ?? []
         guard let kind = makers.first(where: { $0.rawValue == word }) else {
             let key = EdgeKey.via.rawValue
             guard !makers.isEmpty else {
-                throw AutomationError(statement, .invalidValue, "\(written): \(key): \(word) isn't a kind of shape that stands for others",
-                                      hint: "no kind here is put beside a shape it stands for: leave \(key): out")
+                throw DrawError(statement, .invalidValue, "\(written): \(key): \(word) isn't a kind of shape that stands for others",
+                                hint: "no kind here is put beside a shape it stands for: leave \(key): out")
             }
             let guess = Suggestions.closest(to: word, among: makers.map(\.rawValue), limit: 1).first
-            throw AutomationError(statement, .invalidValue, "\(written): \(key): \(word) isn't a kind of shape that stands for others",
-                                  hint: (guess.map { "did you mean \($0)? " } ?? "") + "\(key): takes \(makers.map(\.rawValue).joined(separator: "|"))")
+            throw DrawError(statement, .invalidValue, "\(written): \(key): \(word) isn't a kind of shape that stands for others",
+                            hint: (guess.map { "did you mean \($0)? " } ?? "") + "\(key): takes \(makers.map(\.rawValue).joined(separator: "|"))")
         }
         return kind
     }
@@ -149,14 +149,14 @@ extension Drawing {
     /// can show (not on a board a delete of this script takes); nil if none is. One on the board the
     /// window shows is the one, as everywhere; two or more on one board, or on several none of which is
     /// the one shown, are `ambiguous_title` (`FileNames.beyond`, which a text's names are found by too).
-    func farShape(called title: String, _ statement: Statement) throws(AutomationError) -> FarShape? {
+    func farShape(called title: String, _ statement: Statement) throws(DrawError) -> FarShape? {
         guard let fileNames, let places = fileNames.places[title] else { return nil }
         let taken = deletedShapes.isEmpty ? [] : Set(editor.file.subtree(ownedBy: deletedShapes))
         switch fileNames.beyond(title, among: places.filter { $0.board != target.board && !taken.contains($0.board) }) {
         case .none:
             return nil
         case .ambiguous(let message):
-            throw AutomationError(statement, .ambiguousTitle, message, hint: FileNames.oneEach)
+            throw DrawError(statement, .ambiguousTitle, message, hint: FileNames.oneEach)
         case .shape(let place):
             return editor.file.record(place.id).map { FarShape(record: $0, board: place.board) }
         }
@@ -241,7 +241,7 @@ extension Drawing {
     /// the run as a shape of its own, placed beside the end that stays: the end that's off the board
     /// the run draws on is stood for, or, with `via:`, the end.
     mutating func routeEdge(_ edge: EdgeStatement, _ statement: Statement, written: String, from: EdgeEndFound, to: EdgeEndFound,
-                            fromTitle: String, toTitle: String, via: ShapeKind?) throws(AutomationError) -> NewStandIn? {
+                            fromTitle: String, toTitle: String, via: ShapeKind?) throws(DrawError) -> NewStandIn? {
         let drawnTo = "\(written) is drawn to"
         let key = EdgeKey.via.rawValue
         let stoodFor: EdgePlace
@@ -260,9 +260,9 @@ extension Drawing {
                     let drawn = boardConnections().filter { !deleted.contains($0.record.id) }
                     guard edgeMatches(from: from.id, to: to.id, bothHeads: edge.bothHeads, among: drawn, in: target.document).contains(where: { $0.standIn != nil }) else {
                         let key = EdgeKey.share.rawValue, kind = standInKinds.first
-                        throw AutomationError(statement, .invalidValue,
-                                              "\(written): \(key): is for an edge that goes through \(kind.map(indefinite) ?? "a stand-in"), and this one is drawn straight",
-                                              hint: (kind.map { "write \(EdgeKey.via.rawValue): \($0) to put one beside its start, or " } ?? "") + "leave \(key): out")
+                        throw DrawError(statement, .invalidValue,
+                                        "\(written): \(key): is for an edge that goes through \(kind.map(indefinite) ?? "a stand-in"), and this one is drawn straight",
+                                        hint: (kind.map { "write \(EdgeKey.via.rawValue): \($0) to put one beside its start, or " } ?? "") + "leave \(key): out")
                     }
                 }
                 return nil
@@ -284,7 +284,7 @@ extension Drawing {
         }
         let nearPlace = stoodFor.other
         guard case .here(let nearID, let nearItem) = nearPlace == .from ? from : to else {
-            throw AutomationError(statement, .internal, "\(written) has no end on the board it's drawn on")
+            throw DrawError(statement, .internal, "\(written) has no end on the board it's drawn on")
         }
         let nearTitle = nearPlace == .from ? fromTitle : toTitle, standTitle = stoodFor == .from ? fromTitle : toTitle
 
@@ -296,7 +296,7 @@ extension Drawing {
             }
         }
         guard let fromEnd = end(from), let toEnd = end(to) else {
-            throw AutomationError(statement, .internal, "\(written) names a shape that isn't on any board")
+            throw DrawError(statement, .internal, "\(written) names a shape that isn't on any board")
         }
         let standEnd = stoodFor == .from ? fromEnd : toEnd
 
@@ -305,10 +305,10 @@ extension Drawing {
         if let via {
             guard let standIns, standIns.admits(via, standEnd.record) else {
                 let needs = standIns?.needs(via)
-                throw AutomationError(statement, .invalidValue,
-                                      needs.map { "\(written): \(key): \(via) can't stand for \(quoted(standTitle)): only \(indefinite($0)) shape can be stood for" }
+                throw DrawError(statement, .invalidValue,
+                                needs.map { "\(written): \(key): \(via) can't stand for \(quoted(standTitle)): only \(indefinite($0)) shape can be stood for" }
                                           ?? "\(written): \(key): \(via) can't stand for \(quoted(standTitle))",
-                                      hint: (needs.map { "ask the user to make \(quoted(standTitle)) \($0), or " } ?? "") + "leave \(key): out")
+                                hint: (needs.map { "ask the user to make \(quoted(standTitle)) \($0), or " } ?? "") + "leave \(key): out")
             }
             kind = via
         } else {
@@ -387,7 +387,7 @@ extension Drawing {
     /// container. Nil for `share: true` with none; a named host with none is refused.
     private mutating func sharedStandIn(_ share: EdgeShare, for end: AnyShapeRecord, kind: ShapeKind, near: (id: ShapeID, item: Int?),
                                         container: ShapeID?, written: String, standTitle: String, nearTitle: String,
-                                        _ statement: Statement) throws(AutomationError) -> (id: ShapeID, host: String?)? {
+                                        _ statement: Statement) throws(DrawError) -> (id: ShapeID, host: String?)? {
         let key = EdgeKey.share.rawValue
         let kinds = registry.containingKinds
         switch share {
@@ -414,12 +414,12 @@ extension Drawing {
             }
             guard let hostID else { throw notFound(title, statement, for: "\(written): \(key): names", elsewhere: false) }
             guard hostID != near.id else {
-                throw AutomationError(statement, .invalidValue, "\(written): \(key): \(quoted(title)) is the edge's own end",
-                                      hint: "name another shape whose arrow goes into the reference, or write \(key): true")
+                throw DrawError(statement, .invalidValue, "\(written): \(key): \(quoted(title)) is the edge's own end",
+                                hint: "name another shape whose arrow goes into the reference, or write \(key): true")
             }
             guard containerOfEnd(hostID, item: hostItem) == container else {
-                throw AutomationError(statement, .invalidValue, "\(written): \(key): \(quoted(title)) and \(quoted(nearTitle)) aren't in the same container",
-                                      hint: "a reference is shared by shapes in one frame, or none: put them in the same one, or leave \(key): out")
+                throw DrawError(statement, .invalidValue, "\(written): \(key): \(quoted(title)) and \(quoted(nearTitle)) aren't in the same container",
+                                hint: "a reference is shared by shapes in one frame, or none: put them in the same one, or leave \(key): out")
             }
             func stands(_ pill: ShapeID) -> Bool {
                 standingFor(pill) == end.id && (madeStandIns.first { $0.id == pill }?.kind ?? target.document[pill]?.kind) == kind
@@ -430,8 +430,8 @@ extension Drawing {
                 return (standIn.id, title)
             }
             for pill in connected(to: hostID) where !deleted.contains(pill) && stands(pill) { return (pill, title) }
-            throw AutomationError(statement, .invalidValue, "\(written): \(key): \(quoted(title)) has no \(kind) to \(quoted(standTitle)) beside it",
-                                  hint: "draw an edge between \(quoted(title)) and \(quoted(standTitle)) above this line, in this run or an earlier one; or write \(key): true, or leave \(key): out")
+            throw DrawError(statement, .invalidValue, "\(written): \(key): \(quoted(title)) has no \(kind) to \(quoted(standTitle)) beside it",
+                            hint: "draw an edge between \(quoted(title)) and \(quoted(standTitle)) above this line, in this run or an earlier one; or write \(key): true, or leave \(key): out")
         }
     }
 
@@ -443,9 +443,9 @@ extension Drawing {
     /// one shape on one side are a list, `LayoutProblem.impliedListStep` apart.
     private mutating func addStandIn(_ kind: ShapeKind, for target: AnyShapeRecord, called label: String, beside near: ShapeID, item: Int?,
                                      title nearTitle: String, nearIs place: EdgePlace, side: EdgeSide?,
-                                     _ statement: Statement) throws(AutomationError) -> ShapeID {
+                                     _ statement: Statement) throws(DrawError) -> ShapeID {
         guard let standIns, let record = standIns.make(kind, standingFor: target.id, label: label), let size = record.box?.size else {
-            throw AutomationError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(quoted(label))")
+            throw DrawError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(quoted(label))")
         }
         let direction: Direction = switch side {
         case .left?: .left
@@ -460,7 +460,7 @@ extension Drawing {
         } else if let nearRecord = self.target.document[near] {
             found = .shape(nearRecord)
         } else {
-            throw AutomationError(statement, .internal, "\(quoted(nearTitle)) isn't on the board the reference is drawn on")
+            throw DrawError(statement, .internal, "\(quoted(nearTitle)) isn't on the board the reference is drawn on")
         }
         var clauses = [Clause(relation: .direction(direction), targets: [Target(.title(nearTitle))])]
         var targets: [[ShapeItem.Found]] = [[found]]

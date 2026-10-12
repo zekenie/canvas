@@ -1,7 +1,6 @@
 import Canvas
 import ContextMenus
 import DetailPanel
-import HostSlots
 import Keyboard
 import Selection
 import SwiftUI

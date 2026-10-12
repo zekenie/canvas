@@ -394,6 +394,57 @@ public struct Transaction {
         restack(block, above: anchor)
     }
 
+    /// Paints the shapes above every other, keeping their order among themselves, each with what it
+    /// holds just above it. A shape that is on top already, or read-only, stays.
+    public mutating func bringToFront(_ ids: [ShapeID]) {
+        for id in backToFront(ids) { bringToFront(id) }
+    }
+
+    /// Paints the shapes below every other, keeping their order among themselves, each with what it
+    /// holds just above it; one in a container, just above its container. A shape that is there
+    /// already, or read-only, stays.
+    public mutating func sendToBack(_ ids: [ShapeID]) {
+        for id in backToFront(ids).reversed() { sendToBack(id) }
+    }
+
+    /// tldraw's Bring Forward: each shape moves just past the nearest shape above it that overlaps
+    /// it and isn't moving too, nor held in it (a container's contents go with it); past a shape it
+    /// doesn't overlap, a move would change nothing to see. The topmost shape moves first, so the
+    /// shapes keep their order among themselves. A shape with nothing to pass stays, as does a
+    /// read-only one. Shapes painted by anchor (`PaintOrderAnchored`) don't count.
+    public mutating func bringForward(_ ids: [ShapeID]) { step(ids, forward: true) }
+
+    /// tldraw's Send Backward: each shape moves just below the nearest shape under it that overlaps
+    /// it and isn't moving too, nor held in it (a container's contents go with it). The lowest
+    /// shape moves first, so the shapes keep their order among themselves. A shape with nothing to
+    /// pass stays, as does a read-only one. Shapes painted by anchor (`PaintOrderAnchored`) don't
+    /// count.
+    public mutating func sendBackward(_ ids: [ShapeID]) { step(ids, forward: false) }
+
+    /// So the shapes keep their order among themselves.
+    private func backToFront(_ ids: [ShapeID]) -> [ShapeID] {
+        ids.sorted { (document.index(of: $0) ?? 0) < (document.index(of: $1) ?? 0) }
+    }
+
+    private mutating func step(_ ids: [ShapeID], forward: Bool) {
+        let moving = Set(ids)
+        func bounds(_ id: ShapeID) -> CGRect? { shapes.geometry(of: id)?.bounds }
+        let ordered = backToFront(ids)
+        for id in forward ? ordered.reversed() : ordered {
+            guard let index = document.index(of: id), let mine = bounds(id) else { continue }
+            let all = document.shapes
+            let passing = forward ? Array(all[(index + 1)...]) : all[..<index].reversed()
+            // What a container holds goes with it, so it's never the shape it steps past.
+            let held = Set(document.descendants(of: id, containingKinds: registry.containingKinds))
+            let next = passing.first { other in
+                !moving.contains(other.id) && !held.contains(other.id) && !(registry.definition(for: other.kind) is any PaintOrderAnchored)
+                    && bounds(other.id).map { $0.intersects(mine) } == true
+            }
+            guard let next else { continue }
+            if forward { move(id, above: next.id) } else { move(id, below: next.id) }
+        }
+    }
+
     /// The shape at `index` and what it holds, at any depth, by their indices, ascending: what
     /// restacking it moves.
     private func block(of id: ShapeID, at index: Int) -> [Int] {

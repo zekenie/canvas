@@ -27,7 +27,7 @@ import Topology
 
 /// The file's shapes by name, every board the app can show, as the run starts.
 @MainActor
-struct FileNames {
+public struct FileNames {
     /// A shape of a board, with the board.
     typealias Place = (id: ShapeID, board: BoardID)
 
@@ -40,9 +40,9 @@ struct FileNames {
     private let editor: CanvasEditor
     private let naming: DrawNaming
 
-    init(_ editor: CanvasEditor, naming: DrawNaming) {
+    public init(_ editor: CanvasEditor, naming: DrawNaming) {
         #if DEBUG
-        AutomationPlugin.fileNamesRead += 1
+        DrawPlugin.fileNamesRead += 1
         #endif
         self.editor = editor
         self.naming = naming
@@ -134,7 +134,7 @@ struct FileNames {
     private func called(_ board: BoardID) -> String { Self.named(board, in: editor, naming: naming) }
 
     /// What a title names as a shape that holds others (`in "X"`, `canvas show "X"`).
-    enum Container {
+    public enum Container {
         /// The one shape called that which holds a board (a subboard): its board.
         case board(BoardID)
         /// The one shape called that which holds shapes on its own board (`ShapeContaining`: a
@@ -159,7 +159,7 @@ struct FileNames {
     /// The shape called `title` that holds others, among those that do (a note called the same is
     /// passed over): one that holds a board, or, unless `boards` alone, a container on its board;
     /// of several, the one on the board shown.
-    func container(called title: String, boards: Bool = false) -> Container {
+    public func container(called title: String, boards: Bool = false) -> Container {
         let all = places[title] ?? [], registry = editor.registry
         let holders = all.filter { place in
             editor.file.record(place.id).map { registry.boardOwningKinds.contains($0.kind) || !boards && registry.isContainer($0) } ?? false
@@ -331,7 +331,7 @@ private struct BoardClaims {
     private mutating func connections(on board: BoardID) -> [BoardConnection] {
         if let known = connectionsByBoard[board] { return known }
         #if DEBUG
-        AutomationPlugin.boardConnectionsRead += 1
+        DrawPlugin.boardConnectionsRead += 1
         #endif
         let read = edges.map { Drawing.connections(in: editor.contents(of: board), kind: $0.kind, edging: $0.edging, registry: editor.registry) } ?? []
         connectionsByBoard[board] = read
@@ -343,13 +343,13 @@ extension Drawing {
     /// The board a script draws on, or why it can't draw on one: the board each statement's titles
     /// put it on agree, else the board shown. With it, the file's names, when the script names
     /// shapes.
-    static func board(for script: Script, in editor: CanvasEditor) throws(AutomationError) -> (BoardID, FileNames?) {
+    static func board(for script: Script, in editor: CanvasEditor) throws(DrawError) -> (BoardID, FileNames?) {
         let shown = editor.board
         guard let naming = editor.registry.drawNaming else {
             // `in` names a shape by its title: with nothing to name shapes, it can't be honored.
             let contained = script.statements.filter(\.isContained).map { statement in
-                AutomationError(statement, .noNames, "in names a shape by its title, and nothing here gives shapes names",
-                                hint: "leave in out: without a plugin that names shapes, a script draws on the board the window shows")
+                DrawError(statement, .noNames, "in names a shape by its title, and nothing here gives shapes names",
+                          hint: "leave in out: without a plugin that names shapes, a script draws on the board the window shows")
             }
             if !contained.isEmpty { throw collected(contained) }
             return (shown, nil)
@@ -363,12 +363,12 @@ extension Drawing {
         })
 
         var book = BoardClaims(editor: editor, names: names, naming: naming, drawn: drawn, joinsShapes: script.statements.contains(where: \.joinsShapes))
-        var errors: [AutomationError] = []
+        var errors: [DrawError] = []
         for statement in script.statements {
             switch statement.body {
             case .shape(let shape):
                 if let written = shape.container {
-                    do throws(AutomationError) {
+                    do throws(DrawError) {
                         let board = try container(written, statement, names: names, drawn: drawn, naming: naming, editor: editor)
                         book.claim(board, statement, why: "in \(quoted(naming.fold(written) ?? written))")
                     } catch {
@@ -392,24 +392,24 @@ extension Drawing {
         let anchor: (board: BoardID, statement: Statement, why: String)? = book.claims.first.map { ($0.board, $0.statement, $0.why) } ?? book.softStarts.first
         // A title on several boards is the one on the board the rest of the script draws on.
         for title in book.unsettled where anchor.map({ !title.boards.contains($0.board) }) ?? true {
-            errors.append(AutomationError(title.statement, .ambiguousTitle,
-                                          "\(quoted(title.title)) is on \(title.boards.count) boards: \(listed(title.boards.map(named)))",
-                                          hint: "say which with in \"…\", naming the shape that holds the board it's on"))
+            errors.append(DrawError(title.statement, .ambiguousTitle,
+                                    "\(quoted(title.title)) is on \(title.boards.count) boards: \(listed(title.boards.map(named)))",
+                                    hint: "say which with in \"…\", naming the shape that holds the board it's on"))
         }
         guard errors.isEmpty else { throw collected(errors) }
         guard let anchor else { return (shown, names) }
         if let other = book.claims.first(where: { $0.board != anchor.board }) {
             // An end of an edge between boards, which a stand-in would join if it could stand for it.
             let wanted = [book.claims.first, other].compactMap { $0?.crossing }
-            throw AutomationError(other.statement, .severalBoards,
-                                  "this script draws on \(named(anchor.board)) (\(anchor.why), line \(anchor.statement.line)) and on \(named(other.board)) (\(other.why))",
-                                  hint: Self.standInHint(for: wanted, book.standIns) ?? "a run draws on one board: split the script into a run for each")
+            throw DrawError(other.statement, .severalBoards,
+                            "this script draws on \(named(anchor.board)) (\(anchor.why), line \(anchor.statement.line)) and on \(named(other.board)) (\(other.why))",
+                            hint: Self.standInHint(for: wanted, book.standIns) ?? "a run draws on one board: split the script into a run for each")
         }
         // Each edge between boards needs one end on the board the run draws on, and a stand-in for the other.
         if let crossing = book.crossings.first(where: { $0.from.board != anchor.board && $0.to.board != anchor.board }) {
-            throw AutomationError(crossing.statement, .severalBoards,
-                                  "this script draws on \(named(anchor.board)) (\(anchor.why), line \(anchor.statement.line)) and on \(named(crossing.from.board)) (\(quoted(crossing.from.title)))",
-                                  hint: "a run draws on one board, and an edge between boards needs one end on it: split the script into a run for each")
+            throw DrawError(crossing.statement, .severalBoards,
+                            "this script draws on \(named(anchor.board)) (\(anchor.why), line \(anchor.statement.line)) and on \(named(crossing.from.board)) (\(quoted(crossing.from.title)))",
+                            hint: "a run draws on one board, and an edge between boards needs one end on it: split the script into a run for each")
         }
         return (anchor.board, names)
     }
@@ -417,9 +417,9 @@ extension Drawing {
     /// The board `in "X"` puts a shape on: the one X holds (a subboard's), or the one X is on, for
     /// a container there (a frame), which the shape goes in.
     private static func container(_ written: String, _ statement: Statement, names: FileNames, drawn: Set<String>, naming: DrawNaming,
-                                  editor: CanvasEditor) throws(AutomationError) -> BoardID {
+                                  editor: CanvasEditor) throws(DrawError) -> BoardID {
         guard let title = naming.fold(written) else {
-            throw AutomationError(statement, .syntax, "a title can't be blank", hint: "in names the shape that holds it")
+            throw DrawError(statement, .syntax, "a title can't be blank", hint: "in names the shape that holds it")
         }
         let found = names.container(called: title)
         switch found {
@@ -427,18 +427,18 @@ extension Drawing {
             return found.board!
         case .none:
             if drawn.contains(title) {
-                throw AutomationError(statement, .unsupported, "\(quoted(title)) is drawn by this script, and a shape goes in one already on the board",
-                                      hint: "draw \(quoted(title)) first, then run the shapes in it as a script of their own")
+                throw DrawError(statement, .unsupported, "\(quoted(title)) is drawn by this script, and a shape goes in one already on the board",
+                                hint: "draw \(quoted(title)) first, then run the shapes in it as a script of their own")
             }
-            throw AutomationError(statement, .unknownTitle, "there's no shape called \(quoted(title)) to be in",
-                                  hint: "in names a shape that holds others (a subboard, or a frame), by its title")
+            throw DrawError(statement, .unknownTitle, "there's no shape called \(quoted(title)) to be in",
+                            hint: "in names a shape that holds others (a subboard, or a frame), by its title")
         case .holdsNone(let record):
-            throw AutomationError(statement, .cannotContain, "\(quoted(title)) is \(indefinite(record.kind)), which holds no shapes",
-                                  hint: "in names a shape that holds others (a subboard, or a frame); to put it over \(quoted(title)), write inside \(quoted(title)) top-left, or on \(quoted(title))")
+            throw DrawError(statement, .cannotContain, "\(quoted(title)) is \(indefinite(record.kind)), which holds no shapes",
+                            hint: "in names a shape that holds others (a subboard, or a frame); to put it over \(quoted(title)), write inside \(quoted(title)) top-left, or on \(quoted(title))")
         case .ambiguous(let boards):
-            throw AutomationError(statement, .ambiguousTitle,
-                                  "\(boards.count) shapes that hold others are called \(quoted(title)), on \(listed(boards.reduce(into: [BoardID]()) { if !$0.contains($1) { $0.append($1) } }.map { FileNames.named($0, in: editor, naming: naming) }))",
-                                  hint: "titles name shapes, so the one it's in needs its own: ask the user to rename one")
+            throw DrawError(statement, .ambiguousTitle,
+                            "\(boards.count) shapes that hold others are called \(quoted(title)), on \(listed(boards.reduce(into: [BoardID]()) { if !$0.contains($1) { $0.append($1) } }.map { FileNames.named($0, in: editor, naming: naming) }))",
+                            hint: "titles name shapes, so the one it's in needs its own: ask the user to rename one")
         }
     }
 }

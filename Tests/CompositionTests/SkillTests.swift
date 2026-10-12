@@ -4,7 +4,6 @@ import CanvasRPC
 import CanvasUI
 import DrawScript
 import Foundation
-import HostSlots
 import LanguageModels
 import QueryLanguage
 import ShippedTesting

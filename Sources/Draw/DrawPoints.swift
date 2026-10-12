@@ -1,13 +1,12 @@
 import Canvas
 
 // What `canvas draw` needs from concerns it doesn't own, each an extension point with at most one
-// contribution, from DrawLexicon, which binds them to the plugins that own the concerns
-// (AutomationTests bind them to fixtures of their own): what a
-// shape is called (DrawNames, Titles'), what an edge is (DrawEdges, Connections'), what's
-// wrong with a shape drawn (DrawChecks, Validation's), and how text of a media type is written
-// (DrawTextFormats, one for each media type). Without one, `draw` does without: no
-// titles (a titled statement is `no_names`), no edges (`no_edges`), only the schemas' bounds
-// checked, and text kept as written.
+// contribution, from the plugins that own the concerns (AutomationTests bind them to fixtures of
+// their own): what a shape is called (DrawNames, Titles'), what an edge is (DrawEdges,
+// Connections'), what's wrong with a shape drawn (DrawChecks, Validation's), and how text of a
+// media type is written (DrawTextFormats, one for each media type, Mentions' for mention text).
+// Without one, `draw` does without: no titles (a titled statement is `no_names`), no edges
+// (`no_edges`), only the schemas' bounds checked, and text kept as written.
 
 // MARK: Names
 
@@ -17,10 +16,10 @@ import Canvas
 /// sugar makes one (`registrar.drawNames`).
 @MainActor
 public struct DrawNaming {
-    let name: @MainActor (AnyShapeRecord, Registry) -> String?
+    public let name: @MainActor (AnyShapeRecord, Registry) -> String?
     let namingProperty: @MainActor (ShapeKind, Registry) -> String?
     let isDerived: @MainActor (ShapeKind, Registry) -> Bool
-    let fold: @Sendable (String) -> String?
+    public let fold: @Sendable (String) -> String?
 }
 
 /// What names shapes for `canvas draw`: at most one plugin.
@@ -28,7 +27,7 @@ public enum DrawNames {}
 
 extension DrawNames: KeyedExtensionPoint {
     public typealias Contribution = DrawNaming
-    public static var owner: PluginID { .automation }
+    public static var owner: PluginID { .drawEngine }
     public static func uniqueKeys(of _: DrawNaming, for _: ShapeTarget) -> [AnyHashable] { [DrawPointKey(name: label)] }
     public static func summary(of _: DrawNaming, for _: ShapeTarget) -> String { label }
     static let label = "draw names"
@@ -99,7 +98,7 @@ public struct DrawEdging {
     let attributes: [String]
     let sides: @MainActor (ShapeKind, Registry) -> [EdgeRequest.Side: [String]]
     let ends: @MainActor (AnyShapeRecord, Registry) -> (from: ShapeID, to: ShapeID)?
-    let make: @MainActor (EdgeRequest, AnyShapeRecord?, ShapeContext) throws(AutomationError) -> AnyShapeRecord
+    let make: @MainActor (EdgeRequest, AnyShapeRecord?, ShapeContext) throws(DrawError) -> AnyShapeRecord
 }
 
 /// What makes edges for `canvas draw`: at most one plugin.
@@ -107,7 +106,7 @@ public enum DrawEdges {}
 
 extension DrawEdges: KeyedExtensionPoint {
     public typealias Contribution = DrawEdging
-    public static var owner: PluginID { .automation }
+    public static var owner: PluginID { .drawEngine }
     public static func uniqueKeys(of _: DrawEdging, for _: ShapeTarget) -> [AnyHashable] { [DrawPointKey(name: label)] }
     public static func summary(of _: DrawEdging, for _: ShapeTarget) -> String { label }
     static let label = "draw edges"
@@ -163,7 +162,7 @@ public enum DrawChecks {}
 
 extension DrawChecks: KeyedExtensionPoint {
     public typealias Contribution = DrawCheck
-    public static var owner: PluginID { .automation }
+    public static var owner: PluginID { .drawEngine }
     public static func uniqueKeys(of _: DrawCheck, for _: ShapeTarget) -> [AnyHashable] { [DrawPointKey(name: label)] }
     public static func summary(of _: DrawCheck, for _: ShapeTarget) -> String { label }
     static let label = "draw checks"
@@ -197,7 +196,7 @@ public struct DrawTextContext {
     /// place are `ambiguous_title`; shapes the script deletes don't count; and one that's called
     /// that but none `admits` is `invalid_value`, saying why. What's thrown is a refusal as the
     /// script's own are, which the run says on the statement's line.
-    public func shape(called name: String, admitting admits: @MainActor (AnyShapeRecord) -> String? = { _ in nil }) throws(AutomationError) -> DrawTextShape {
+    public func shape(called name: String, admitting admits: @MainActor (AnyShapeRecord) -> String? = { _ in nil }) throws(DrawError) -> DrawTextShape {
         try lookup.shape(called: name, admitting: admits)
     }
 }
@@ -210,7 +209,7 @@ public struct DrawTextContext {
 public struct DrawTextFormatting {
     let mediaType: String
     let describes: String
-    let write: @MainActor (String, DrawTextContext) throws(AutomationError) -> String
+    let write: @MainActor (String, DrawTextContext) throws(DrawError) -> String
 }
 
 /// How text of each media type is written in `canvas draw`: at most one plugin for each. A string
@@ -221,7 +220,7 @@ public enum DrawTextFormats {}
 
 extension DrawTextFormats: KeyedExtensionPoint {
     public typealias Contribution = DrawTextFormatting
-    public static var owner: PluginID { .automation }
+    public static var owner: PluginID { .drawEngine }
     public static func uniqueKeys(of format: DrawTextFormatting, for _: ShapeTarget) -> [AnyHashable] {
         [DrawPointKey(name: "draw text \(format.mediaType)")]
     }
@@ -244,7 +243,7 @@ struct DrawPointKey: Hashable, CustomStringConvertible {
     var description: String { name }
 }
 
-// MARK: Sugar (what DrawLexicon writes)
+// MARK: Sugar (what the concerns write)
 
 extension PluginRegistrar {
     /// Names shapes for `canvas draw`: `name` is what a shape is called (folded, as `fold` folds a
@@ -266,13 +265,13 @@ extension PluginRegistrar {
     /// `make` a connection as a request asks, not inserted: new (`existing` nil), or `existing`
     /// changed (only what the request names; itself when nothing would change). It throws what it
     /// can't do, with a reason (`no_channel`, `cannot_connect`, `invalid_value`); `draw` says which
-    /// line. Its closure says so, `{ request, existing, shapes throws(AutomationError) in … }`, as a
+    /// line. Its closure says so, `{ request, existing, shapes throws(DrawError) in … }`, as a
     /// command's does. `shapes` is the board as the script leaves it, so either end may be new. At
     /// most one plugin makes edges.
     public mutating func drawEdges(kind: @escaping @MainActor (Registry) -> ShapeKind?, attributes: [String] = [],
                                    sides: @escaping @MainActor (ShapeKind, Registry) -> [EdgeRequest.Side: [String]],
                                    ends: @escaping @MainActor (AnyShapeRecord, Registry) -> (from: ShapeID, to: ShapeID)?,
-                                   make: @escaping @MainActor (EdgeRequest, AnyShapeRecord?, ShapeContext) throws(AutomationError) -> AnyShapeRecord) {
+                                   make: @escaping @MainActor (EdgeRequest, AnyShapeRecord?, ShapeContext) throws(DrawError) -> AnyShapeRecord) {
         contribute(DrawEdging(kind: kind, attributes: attributes, sides: sides, ends: ends, make: make), to: DrawEdges.self)
     }
 
@@ -286,11 +285,11 @@ extension PluginRegistrar {
     /// Writes the strings of a script whose schema says `contentMediaType: mediaType`: `write` gets
     /// the text as the script wrote it (its string's escapes undone) and what it may ask
     /// (`DrawTextContext`), and returns the text to keep, or throws a refusal, which `draw` says on
-    /// the statement's line (its closure says so, `{ text, context throws(AutomationError) in … }`).
+    /// the statement's line (its closure says so, `{ text, context throws(DrawError) in … }`).
     /// `describes` is said after the attribute's type in `canvas kinds`, as `text (<Title> names)`.
     /// At most one plugin writes each media type.
     public mutating func drawTextFormat(mediaType: String, describes: String,
-                                        write: @escaping @MainActor (String, DrawTextContext) throws(AutomationError) -> String) {
+                                        write: @escaping @MainActor (String, DrawTextContext) throws(DrawError) -> String) {
         contribute(DrawTextFormatting(mediaType: mediaType, describes: describes, write: write), to: DrawTextFormats.self)
     }
 }
@@ -305,7 +304,8 @@ extension Registry {
         return naming.namingProperty(kind, self) != nil || naming.isDerived(kind, self)
     }
 
-    var drawNaming: DrawNaming? { contributions(to: DrawNames.self).first?.value }
+    /// What names shapes, if something does.
+    public var drawNaming: DrawNaming? { contributions(to: DrawNames.self).first?.value }
     var drawEdging: DrawEdging? { contributions(to: DrawEdges.self).first?.value }
     var drawCheck: DrawCheck? { contributions(to: DrawChecks.self).first?.value }
 

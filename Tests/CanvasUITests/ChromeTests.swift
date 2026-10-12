@@ -2,7 +2,6 @@ import AppKit
 import Canvas
 import CanvasTesting
 import CanvasUI
-import HostSlots
 import Observation
 import SwiftUI
 import TestKit

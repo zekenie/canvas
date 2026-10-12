@@ -4,7 +4,6 @@ import CoreGraphics
 import Foundation
 import Queries
 import QueryLanguage
-import QueryLexicon
 import TestKit
 import Topology
 import Validation

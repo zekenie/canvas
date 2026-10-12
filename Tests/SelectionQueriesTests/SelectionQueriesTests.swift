@@ -1,7 +1,6 @@
 import CanvasTesting
 import Queries
 import QueryLanguage
-import QueryLexicon
 import Selection
 import TestKit
 

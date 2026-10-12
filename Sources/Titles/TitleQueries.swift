@@ -1,14 +1,11 @@
 import Canvas
 import Queries
-import Titles
 
-// QueryLexicon: the words the query language has for this app's concerns (what shapes and boards
-// are called, `:mentions` and `:mentioned-by`, `:invalid` and `:warned`, `:selected`, and how
-// mention text reads), each a plugin of its own over Queries' points, so a list can install the
-// engine with words of its own (QueriesTests do). It imports the concerns its words are about;
-// none of them knows queries.
+// The words the query language has for what shapes are called: a plugin of its own over Queries'
+// points, so a list can install the engine with words of its own (QueriesTests do). Titles
+// imports Queries; Queries knows no title.
 
-/// Query names, in QueryLexicon: queries name shapes as Titles has them, for a `"Title"` head,
+/// Query names, in Titles: queries name shapes as Titles has them, for a `"Title"` head,
 /// the `title` attribute (`[title^="API"]`), rows and `--ask`'s titles. A kind's shapes are named
 /// when it opts into the title Titles keeps (`TitleProperty`), read from the record on any thread;
 /// derived when Titles works them out from what the kind keeps (a schema card's, from its schema's

@@ -1,6 +1,5 @@
 import AppKit
 @_spi(Host) import Canvas
-import HostSlots
 import SwiftUI
 
 /// A board's window: the app's content for it (`BoardConfiguration.content`), hosted with its

@@ -18,7 +18,7 @@ import Geometry
 extension Drawing {
     /// Places every shape the script moves, or says why it can't (the solver's first problem), and
     /// builds each shape as it will be.
-    mutating func place() throws(AutomationError) {
+    mutating func place() throws(DrawError) {
         let target = target, context = target.shapes, document = target.document, registry = registry
         for index in items.indices where !items[index].moves {
             guard let box = items[index].existing?.box else { throw broken(items[index], "it has no frame") }
@@ -103,8 +103,8 @@ extension Drawing {
                         }
                     case .shape(let record):
                         guard let geometry = context.geometry(of: record.id), !geometry.bounds.isNull, geometry.bounds.isFinite else {
-                            throw AutomationError(item.statement, .unsupported, "\(named(record)) has nothing drawn to be placed against",
-                                                  hint: "place \(subject(of: item)) against another shape")
+                            throw DrawError(item.statement, .unsupported, "\(named(record)) has nothing drawn to be placed against",
+                                            hint: "place \(subject(of: item)) against another shape")
                         }
                         let bounds = geometry.bounds
                         refs.append(fixedShape(record, rect: bounds, gap: nil))
@@ -113,12 +113,12 @@ extension Drawing {
                         }
                     case .board:
                         guard let boardBounds else {
-                            throw AutomationError(item.statement, .unknownTitle, "\(subject(of: item)) is \(clause.written), and the board has nothing on it yet",
-                                                  hint: "leave the shape unplaced to draw it in view")
+                            throw DrawError(item.statement, .unknownTitle, "\(subject(of: item)) is \(clause.written), and the board has nothing on it yet",
+                                            hint: "leave the shape unplaced to draw it in view")
                         }
                         refs.append(fixedWord(.board, rect: boardBounds))
                     case .view:
-                        guard let view else { throw AutomationError(item.statement, .noView, "the board isn't in a window") }
+                        guard let view else { throw DrawError(item.statement, .noView, "the board isn't in a window") }
                         refs.append(fixedWord(.view, rect: view))
                     }
                     if let part = target.part, part.isCorner, let outline, let corner = Self.corner(part, on: outline.points, in: outline.rect) {
@@ -164,7 +164,7 @@ extension Drawing {
         do throws(ScriptError) {
             solution = try problem.solve()
         } catch {
-            throw AutomationError(error, statement: text(ofLine: error.line))
+            throw DrawError(error, statement: text(ofLine: error.line))
         }
 
         for index in items.indices {
@@ -263,8 +263,8 @@ extension Drawing {
             guard record.box?.isFinite == true else { throw broken(item, "its frame isn't finite") }
             if let title = item.title, item.existing != nil, item.rename == nil { try keepsName(record, title, item) }
             if let existing = item.existing, record != existing, target.isReadOnly(existing), target.isReadOnly(record) {
-                throw AutomationError(item.statement, .readOnly, "\(subject(of: item)) is read-only (locked, say), so it stays as it is",
-                                      hint: "leave it out of the script, or ask the user to unlock it")
+                throw DrawError(item.statement, .readOnly, "\(subject(of: item)) is read-only (locked, say), so it stays as it is",
+                                hint: "leave it out of the script, or ask the user to unlock it")
             }
             items[index].record = record
             // Resized where it stays, over what's around it: not one a container the script moves
@@ -294,7 +294,7 @@ extension Drawing {
 
     /// Refuses a placement against a shape that a container this script moves takes along (a frame's
     /// contents), and a shape in one (`in`): the layout has it where it was, and it won't be there.
-    private func refuseCarriedTargets() throws(AutomationError) {
+    private func refuseCarriedTargets() throws(DrawError) {
         let kinds = registry.containingKinds, document = target.document
         guard !kinds.isEmpty else { return }
         var carriedBy: [ShapeID: AnyShapeRecord] = [:]
@@ -318,9 +318,9 @@ extension Drawing {
             if let holder = item.holder { named.append(("in \(self.named(holder))", holder)) }
             for (written, shape) in named {
                 guard let container = carriedBy[shape.id] else { continue }
-                throw AutomationError(item.statement, .unsupported,
-                                      "\(subject(of: item)) is \(written), and \(self.named(shape)) moves with \(self.named(container)), which this script moves",
-                                      hint: "place it against \(self.named(container)), or in a run of its own after this one")
+                throw DrawError(item.statement, .unsupported,
+                                "\(subject(of: item)) is \(written), and \(self.named(shape)) moves with \(self.named(container)), which this script moves",
+                                hint: "place it against \(self.named(container)), or in a run of its own after this one")
             }
         }
     }
@@ -376,8 +376,8 @@ extension Drawing {
         }
     }
 
-    private func broken(_ item: ShapeItem, _ why: String) -> AutomationError {
-        AutomationError(item.statement, .internal, "\(subject(of: item)) couldn't be drawn: \(why)")
+    private func broken(_ item: ShapeItem, _ why: String) -> DrawError {
+        DrawError(item.statement, .internal, "\(subject(of: item)) couldn't be drawn: \(why)")
     }
 
     /// The statement or style written on a line, as an error quotes it.

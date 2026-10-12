@@ -1,8 +1,7 @@
 import Canvas
-import Queries
 import Selection
 
-/// `:selected`, in QueryLexicon: the shapes the person has selected as the query takes up the file
+/// `:selected`, in Queries: the shapes the person has selected as the query takes up the file
 /// (`editor.selectedShapeIDs`, in the selection's order), which are also what `--ask` tells the
 /// model is selected (`QueryState.whereThePersonIs`). It's the person's selection
 /// (`registrar.querySelection`), not just a word: a change of the selection while the query runs

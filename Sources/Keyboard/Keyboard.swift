@@ -1,5 +1,4 @@
 import Canvas
-import HostSlots
 
 /// Keyboard shortcuts, as a plugin: every key the canvas answers is registered here, by the plugin
 /// that gives it its meaning, one shortcut per chord. A tool's letter switches to the tool, a

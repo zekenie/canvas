@@ -1,5 +1,6 @@
 import Canvas
 import CanvasRPC
+import Draw
 import DrawScript
 
 // `canvas show`: moves the window to another board of its file, as opening a subboard does (or the

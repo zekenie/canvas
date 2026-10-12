@@ -1,10 +1,9 @@
 import Adornments
-import Automation
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
 import CoreGraphics
-import DrawLexicon
+import Draw
 import Keyboard
 import Selection
 import SlashCommands
@@ -30,38 +29,36 @@ import Titles
 /// An editor 800 × 600 points, its view (0, 0) to (800, 600), with Titles (and the slash commands it
 /// offers) and `TitleNamesPlugin`.
 @MainActor func namedEditor(tilesNamed: Bool = true, withPlugin: Bool = true) throws -> CanvasEditor {
-    let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
+    let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), DrawPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
                                        AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), fixtureTitles(tilesNamed: tilesNamed)] + (withPlugin ? [TitleNamesPlugin()] : [])
     let editor = CanvasEditor(registry: try Registry(plugins: plugins))
     editor.viewportDidResize(to: CGSize(width: 800, height: 600))
     return editor
 }
 
-/// A command, as the command line spells it, run as the app's server runs it; `input` is its
-/// standard input.
-@MainActor func run(_ line: [String], on editor: CanvasEditor, input: String = "") throws -> Result<JSON, RPCError> {
-    let spec = try require(editor.registry.automationCommands.first { $0.name == line[0] })
-    let params = try spec.params(from: Array(line.dropFirst()), standardInput: { input })
-    return try awaitResult { () async -> Result<JSON, RPCError> in
-        do throws(RPCError) {
-            return .success(try await editor.registry.runAutomationCommand(spec.name, params: .object(params), editor: editor))
-        } catch {
-            return .failure(error)
-        }
-    }
-}
-
-/// What `canvas draw -` says of a script that runs.
+/// What `canvas draw -` says of a script that runs, as the wire carries it.
 @MainActor func drawn(_ script: String, on editor: CanvasEditor) throws -> JSON {
-    try run(["draw", "-"], on: editor, input: script).get()
+    try JSON(encoding: draw(script: script, dryRun: false, reveal: false, program: RPC.commandName, in: editor))
 }
 
-/// Why `canvas draw -` refused a script: its error's data, and its message.
+/// Why `canvas draw -` refused a script: its error's fields (`reason`, `hint`, `line`, `statement`),
+/// and its message.
 @MainActor func refused(_ script: String, on editor: CanvasEditor) throws -> JSON {
-    guard case .failure(let error) = try run(["draw", "-"], on: editor, input: script) else { throw Unexpected() }
-    var data = try require(error.data?.objectValue)
-    data["message"] = .string(error.message)
-    return .object(data)
+    do throws(DrawError) {
+        _ = try draw(script: script, dryRun: false, reveal: false, program: RPC.commandName, in: editor)
+    } catch {
+        var data: [String: JSON] = ["reason": .string(error.reason), "message": .string(error.message)]
+        if let hint = error.hint { data["hint"] = .string(hint) }
+        if let line = error.line { data["line"] = .number(Double(line)) }
+        if let statement = error.statement { data["statement"] = .string(statement) }
+        return .object(data)
+    }
+    throw Unexpected()
+}
+
+/// What `canvas kinds` says, as the wire carries it: a list, of the kind named alone if one is.
+@MainActor func kindsListed(named: String? = nil, in registry: Registry) throws -> JSON {
+    try JSON(encoding: kinds(named: named, in: registry))
 }
 
 struct Unexpected: Error {}
@@ -94,7 +91,7 @@ struct Unexpected: Error {}
     },
     test("canvas kinds says how each kind is named: named, worked out, or not at all") {
         let editor = try namedEditor()
-        let kinds = try run(["kinds"], on: editor).get().arrayValue ?? []
+        let kinds = try kindsListed(in: editor.registry).arrayValue ?? []
         func names(_ kind: ShapeKind) -> JSON? { kinds.first { $0["kind"]?.stringValue == kind.rawValue }?["names"] }
         expectEqual(names(Card.kind), "named")
         expectEqual(names(Tile.kind), "named", "named, with a title worked out for those nobody named")
@@ -121,7 +118,7 @@ struct Unexpected: Error {}
         let error = try refused(#"tile "Kiosk""#, on: editor)
         expectEqual(error["reason"], "untitlable")
         expect(error["message"]?.stringValue?.contains("worked out from what it is") == true, "\(error)")
-        let kinds = try run(["kinds", Tile.kind.rawValue], on: editor).get()
+        let kinds = try kindsListed(named: Tile.kind.rawValue, in: editor.registry)
         expectEqual(kinds.arrayValue?.first?["names"], "derived")
     },
     test("without TitleNamesPlugin, nothing is named: a titled statement is no_names") {

@@ -3,9 +3,9 @@ import CoreGraphics
 import DrawScript
 import Geometry
 
-// Where moved shapes land, worked out as `canvas draw` places a shape (Automation's DrawLayout): a
-// layout problem for DrawScript's solver, with the box around them as its one free box and the shapes of
-// the board they land on as its obstacles. It's put down anew, as a new shape is (no `current`): where
+// Where moved shapes land, worked out as `canvas draw` places a shape (Draw's DrawLayout): a layout
+// problem for DrawScript's solver, with the box around them as its one free box and the shapes of the
+// board they land on as its obstacles. It's put down anew, as a new shape is (no `current`): where
 // they are now holds them nowhere, and they're in their own way nowhere.
 
 /// Where moved shapes go: the board, the box around them there, and the shapes there they're raised

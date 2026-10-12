@@ -1,6 +1,5 @@
 import AppKit
 import Canvas
-import HostSlots
 import SwiftUI
 
 /// A window's canvas view, for chrome beside it: a panel hands the keyboard back with `take()`, and

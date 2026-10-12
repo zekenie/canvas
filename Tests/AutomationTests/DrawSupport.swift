@@ -3,6 +3,7 @@ import Automation
 import CanvasRPC
 import CanvasTesting
 import CoreGraphics
+import Draw
 import Foundation
 
 // What `canvas draw` needs from plugins it doesn't know, as tests give it: names (a tile is called
@@ -80,18 +81,18 @@ extension Caption: ShapeProperty {
         }, ends: { record, _ in
             guard let link = record.typed(as: Link.self), let from = link.props.from, let to = link.props.to else { return nil }
             return (from, to)
-        }, make: { request, existing, shapes throws(AutomationError) in
+        }, make: { request, existing, shapes throws(DrawError) in
             log.requests.append(request)
             log.existing.append(existing?.id)
             let tone = request.attributes[Tone.key.rawValue]
             if tone == "icy" {
-                throw AutomationError("a link can't be icy", reason: "invalid_value", hint: "tone: takes warm or cool")
+                throw DrawError("a link can't be icy", reason: "invalid_value", hint: "tone: takes warm or cool")
             }
             guard request.from != request.to else {
-                throw AutomationError("\(request.fromName) can't be linked to itself", reason: "cannot_connect")
+                throw DrawError("\(request.fromName) can't be linked to itself", reason: "cannot_connect")
             }
             guard shapes.shape(request.from) != nil, shapes.shape(request.to) != nil else {
-                throw AutomationError("\(request.written) names a shape that isn't there", reason: "cannot_connect")
+                throw DrawError("\(request.written) names a shape that isn't there", reason: "cannot_connect")
             }
             var record = existing ?? AnyShapeRecord(ShapeRecord(Link(from: request.from, to: request.to)))
             if let tone { record[Tone.self] = tone }

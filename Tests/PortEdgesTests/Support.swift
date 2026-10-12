@@ -1,11 +1,10 @@
 import AppKit
-import Automation
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
 import Connections
 import CoreGraphics
-import DrawLexicon
+import Draw
 import Keyboard
 import Selection
 import TestKit
@@ -181,7 +180,7 @@ func relaysPlugin() -> Contributor {
 /// are in).
 @MainActor func edgesEditor(_ requests: Requests = Requests(), cards: Bool = true, makes: Bool = true, withPlugin: Bool = true,
                                         names: Contributor = fixtureNames, more: [any CanvasPlugin] = []) throws -> CanvasEditor {
-    let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), AutomationPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
+    let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), DrawPlugin(), FixturesPlugin(), CardsPlugin(), TilesPlugin(),
                                        LinksPlugin(), PortsPlugin(), channelsPlugin(cards: cards), linkConnector(requests, makes: makes),
                                        names] + more + (withPlugin ? [PortEdgesPlugin()] : [])
     let editor = CanvasEditor(registry: try Registry(plugins: plugins))
@@ -214,35 +213,30 @@ extension CanvasEditor {
     func relays(on board: BoardID = .root) -> [ShapeRecord<Relay>] { contents(of: board).shapes.compactMap { $0.typed(as: Relay.self) } }
 }
 
-/// A command, as the command line spells it, run as the app's server runs it; `input` is its
-/// standard input.
-@MainActor func run(_ line: [String], on editor: CanvasEditor, input: String = "") throws -> Result<JSON, RPCError> {
-    let spec = try require(editor.registry.automationCommands.first { $0.name == line[0] })
-    let params = try spec.params(from: Array(line.dropFirst()), standardInput: { input })
-    return try awaitResult { () async -> Result<JSON, RPCError> in
-        do throws(RPCError) {
-            return .success(try await editor.registry.runAutomationCommand(spec.name, params: .object(params), editor: editor))
-        } catch {
-            return .failure(error)
-        }
-    }
-}
-
-/// What `canvas draw -` says of a script that runs.
+/// What `canvas draw -` says of a script that runs, as the wire carries it.
 @MainActor func drawn(_ script: String, on editor: CanvasEditor) throws -> JSON {
-    try run(["draw", "-"], on: editor, input: script).get()
+    try JSON(encoding: draw(script: script, dryRun: false, reveal: false, program: RPC.commandName, in: editor))
 }
 
-/// Why `canvas draw -` refused a script: its error's data (`reason`, `hint`, `line`), and its
+/// Why `canvas draw -` refused a script: its error's fields (`reason`, `hint`, `line`), and its
 /// `message`.
 @MainActor func refused(_ script: String, on editor: CanvasEditor) throws -> JSON {
-    switch try run(["draw", "-"], on: editor, input: script) {
-    case .success(let result): throw DrewAnyway(result: result)
-    case .failure(let error):
-        var data = try require(error.data?.objectValue)
-        data["message"] = .string(error.message)
+    let result: DrawResult
+    do throws(DrawError) {
+        result = try draw(script: script, dryRun: false, reveal: false, program: RPC.commandName, in: editor)
+    } catch {
+        var data: [String: JSON] = ["reason": .string(error.reason), "message": .string(error.message)]
+        if let hint = error.hint { data["hint"] = .string(hint) }
+        if let line = error.line { data["line"] = .number(Double(line)) }
+        if let statement = error.statement { data["statement"] = .string(statement) }
         return .object(data)
     }
+    throw DrewAnyway(result: try JSON(encoding: result))
+}
+
+/// What `canvas kinds` says, as the wire carries it: a list.
+@MainActor func kindsListed(in registry: Registry) throws -> JSON {
+    try JSON(encoding: kinds(in: registry))
 }
 
 struct DrewAnyway: Error, CustomStringConvertible {

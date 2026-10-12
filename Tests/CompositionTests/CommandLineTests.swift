@@ -5,7 +5,6 @@ import CanvasTesting
 import CanvasUI
 import Connections
 import Foundation
-import HostSlots
 import LanguageModels
 import Mentions
 import Schemas

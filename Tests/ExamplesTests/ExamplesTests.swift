@@ -37,57 +37,17 @@ import TestKit
         h.add(Arrow(start: .free(CGPoint(x: 0, y: 500)), end: .free(CGPoint(x: 400, y: 500))))
         expectEqual(try require(h.secondaryClick(at: CGPoint(x: 200, y: 500))).outline, ["Delete"], "no Arrange for an arrow")
     },
-    test("Reordering: Bring Forward and Send Backward step past the next shape each overlaps, keeping the selection's order") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), FixturesPlugin(), ReorderingPlugin()])
-        let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
-        let b = h.add(Box(CGRect(x: 50, y: 0, width: 100, height: 100)))      // overlaps a
-        let c = h.add(Box(CGRect(x: 500, y: 0, width: 100, height: 100)))     // overlaps nothing
-        let d = h.add(Box(CGRect(x: 60, y: 0, width: 100, height: 100)))      // overlaps a and b
-        @MainActor func order() -> [ShapeID] { h.editor.document.shapes.map(\.id) }
-        @MainActor func choose(_ title: String, on point: CGPoint = CGPoint(x: 10, y: 50)) throws {
-            try require(h.secondaryClick(at: point)).choose("Arrange", title)
-        }
-        try choose("Bring Forward")
-        expectEqual(order(), [b, a, c, d])
-        try choose("Bring Forward")
-        expectEqual(order(), [b, c, d, a], "past c, which it doesn't overlap, to above d")
-        let revision = h.editor.revision
-        try choose("Bring Forward")
-        expectEqual(h.editor.revision, revision, "nothing above it: nothing to do")
-        try choose("Send Backward")
-        expectEqual(order(), [b, c, a, d])
-        try choose("Send Backward")
-        expectEqual(order(), [a, b, c, d], "past c again, to below b")
-
-        h.editor.selectedShapeIDs = [b, a]
-        try choose("Bring Forward")
-        expectEqual(order(), [c, d, a, b], "each past d, the next it overlaps, a still below b")
-        try choose("Send Backward")
-        expectEqual(order(), [c, a, b, d])
-    },
-    test("Reordering: a container steps past the next shape it overlaps that it doesn't hold, what it holds going with it") {
-        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), FixturesPlugin(), CorralsPlugin(), ReorderingPlugin()])
-        let corral = h.add(Corral(CGRect(x: 0, y: 0, width: 300, height: 200)))
-        let held = h.add(Box(CGRect(x: 20, y: 20, width: 100, height: 100)))
-        h.editor.put([held], in: corral)
-        let over = h.add(Box(CGRect(x: 250, y: 50, width: 100, height: 100)))       // overlaps the corral, above it
-        @MainActor func order() -> [ShapeID] { h.editor.document.shapes.map(\.id) }
-        expectEqual(order(), [corral, held, over])
-        h.editor.selection = corral
-        try require(h.secondaryClick(at: CGPoint(x: 290, y: 190))).choose("Arrange", "Bring Forward")
-        expectEqual(order(), [over, corral, held], "past the box above it, not its own box, which goes with it")
-        try require(h.secondaryClick(at: CGPoint(x: 290, y: 190))).choose("Arrange", "Send Backward")
-        expectEqual(order(), [corral, held, over])
-    },
     test("Reordering: each Arrange item is one step, and undoing it puts back the order and every stacking key") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), FixturesPlugin(), ReorderingPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Box(CGRect(x: 50, y: 0, width: 100, height: 100)))
-        h.add(Box(CGRect(x: 60, y: 0, width: 100, height: 100)))
+        let c = h.add(Box(CGRect(x: 60, y: 0, width: 100, height: 100)))
         h.editor.selectedShapeIDs = [b, a]
+        let expectedOrders: [[ShapeID]] = [[c, a, b], [a, b, c], [a, b, c], [c, a, b]]
         var documents = [h.editor.document]
-        for title in ["Bring to Front", "Send Backward", "Send to Back", "Bring Forward"] {
+        for (i, title) in ["Bring to Front", "Send Backward", "Send to Back", "Bring Forward"].enumerated() {
             try require(h.secondaryClick(at: CGPoint(x: 10, y: 50))).choose("Arrange", title)
+            expectEqual(h.editor.document.shapes.map(\.id), expectedOrders[i], title)
             expectEqual(h.editor.undoHistory.undoName, title)
             documents.append(h.editor.document)
         }

@@ -3,7 +3,6 @@ import AppKit
 import CanvasTesting
 import CanvasUI
 import CoreGraphics
-import HostSlots
 import JumpTo
 import Selection
 import SwiftUI

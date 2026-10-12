@@ -2,7 +2,6 @@ import Canvas
 import CanvasRPC
 import CanvasTesting
 import CoreGraphics
-import HostSlots
 import SwiftUI
 import TestKit
 

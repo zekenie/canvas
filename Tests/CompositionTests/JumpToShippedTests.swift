@@ -5,7 +5,6 @@ import CanvasUI
 import CoreGraphics
 import Frames
 import Geometry
-import HostSlots
 import JumpTo
 import Mentions
 import Selection

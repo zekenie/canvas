@@ -2,24 +2,23 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import Foundation
-import HostSlots
 import UniformTypeIdentifiers
 
 /// The app's end of the command line (`canvas`): it listens where `canvas` looks (`SocketPath`),
 /// tells it what the app is and what it runs (`describe`), and answers each request on the main
 /// actor. Three commands are its own, since they're about the app's boards, which only it knows:
 /// `status`, `boards` and `new`, which makes a board's file as Save As does and opens it. It's given
-/// the rest (`Commands`: the plugins' commands, from the host's slot for them, HostSlots'
-/// `registry.hostCommands`), and runs each on the board its
-/// request names (`board`), or the one in front, whose editor it changes as anything else does, so
-/// the board's window shows each change as it's made. A file with boards inside shapes is worked on
-/// where its window is: the board it shows (`editor.board`), which `status` and `boards` name. A board command's result, when it's an object, says which
-/// board that was: `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the
-/// command's own job as it starts, so nothing switches boards between the two for a command that
-/// doesn't wait (`draw`). A command that knows better where inside the file it worked (a query:
-/// the board shown as it took up the file) says so in a `board` object of its own, which the server
-/// completes with what it knows and the command doesn't (the file's `id` and `name`); a `board`
-/// that isn't an object is left alone.
+/// the rest (`Commands`: the plugins' commands, from the host's slot for them,
+/// `registry.hostCommands`), and runs each on the board its request names (`board`), or the one in
+/// front, whose editor it changes as anything else does, so the board's window shows each change
+/// as it's made. A file with boards inside shapes is worked on where its window is: the board it
+/// shows (`editor.board`), which `status` and `boards` name. A board command's result, when it's an
+/// object, says which board that was: `board: {id, name, shows, showsPath}`, as `boards` lists it,
+/// read in the command's own job as it starts, so nothing switches boards between the two for a
+/// command that doesn't wait (`draw`). A command that knows better where inside the file it worked
+/// (a query: the board shown as it took up the file) says so in a `board` object of its own, which
+/// the server completes with what it knows and the command doesn't (the file's `id` and `name`); a
+/// `board` that isn't an object is left alone.
 ///
 /// A command may take its time (one that waits on a language model): each runs as a task of its
 /// own, the main actor free while it waits. A request whose client hangs up is answered

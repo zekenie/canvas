@@ -2,7 +2,6 @@ import AppKit
 import Canvas
 import CanvasTesting
 import DetailPanel
-import HostSlots
 import Keyboard
 import Observation
 import Selection
