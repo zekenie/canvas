@@ -389,4 +389,62 @@ private func frame(_ i: Int) -> CGRect { CGRect(x: i * 150, y: 0, width: 120, he
         expectEqual(tokens.rows.compactMap(\.candidate?.id).first, r.tokens[3])
         expectEqual(picker([Endpoint.kind]).rows, [.empty("Nothing to mention")], "no endpoint on the board")
     },
+
+    test("among: a typed query ranks only the given shapes, and the rest of the file is no match") {
+        let r = try Row()
+        let given = [r.plates[1], r.tokens[3], r.plates[4]]
+        let found = r.state.candidates(matching: "t", in: AnyMentionable.self, for: r.owner, among: given).matches.map(\.id)
+        expectEqual(Set(found), Set(given), "\"t\" is in every label: the given alone")
+        let plain = r.candidates("t").matches.map(\.id)
+        expectEqual(found, plain.filter { given.contains($0) }, "ranked as without it, less the rest")
+        expectEqual(r.state.candidates(matching: "endpoint", in: AnyMentionable.self, for: r.owner, among: given).matches, [], "what matches but isn't given is no match")
+        expectEqual(r.state.candidates(matching: "token 0", in: AnyMentionable.self, for: r.owner, among: [r.plates[0]]).matches, [], "the token itself, not given")
+        expectEqual(r.state.candidates(matching: "t", in: AnyMentionable.self, for: r.owner, among: []), MentionCandidates(), "none given, none listed")
+        expectEqual(r.state.candidates(matching: "", in: AnyMentionable.self, for: r.owner, among: []), MentionCandidates())
+    },
+
+    test("among: an empty query lists the given shapes nearest first, as many as a query lists, and drops what the catalog lacks and the owner") {
+        let r = try Row()
+        let given = Array(r.plates.reversed()) + r.tokens + [r.owner, ShapeID()]
+        let listed = r.state.candidates(matching: "", in: AnyMentionable.self, for: r.owner, among: given)
+        expectEqual(listed.nearby.map(\.id), (0..<6).flatMap { [r.plates[$0], r.tokens[$0]] }, "all twelve, nearest first, not the four nearby lists: no owner, no stranger")
+        r.state.didPick(r.tokens[5])
+        r.state.didPick(r.plates[2])
+        let recent = r.state.candidates(matching: "", in: AnyMentionable.self, for: r.owner, among: Array(r.plates)).recent.map(\.id)
+        expectEqual(recent, [r.plates[2]], "a recent pick that isn't given isn't listed")
+        expectEqual(r.state.candidates(matching: "", in: AnyMentionable.self, for: r.owner, among: [r.plates[0], r.plates[0]]).nearby.map(\.id), [r.plates[0]], "once")
+    },
+
+    test("among: an empty query lists on every board, the board shown's nearest first, then the others nearest board first, whatever the rule would reach") {
+        let a = ShapeID(), b = ShapeID(), owner = ShapeID()
+        let onRoot = ShapeID(), onA = ShapeID(), onB = ShapeID()
+        @MainActor func plate(_ id: ShapeID, x: Double) -> AnyShapeRecord {
+            var plate = ShapeRecord(id: id, Plate(CGRect(x: x, y: 0, width: 120, height: 80)))
+            plate[TitleProperty.self] = "Plate"
+            return AnyShapeRecord(plate)
+        }
+        @MainActor func pocket(_ id: ShapeID, x: Double) -> AnyShapeRecord {
+            AnyShapeRecord(ShapeRecord(id: id, Pocket(CGRect(x: x, y: 1200, width: 100, height: 100))))
+        }
+        let root = CanvasDocument(shapes: [pocket(a, x: 0), pocket(b, x: 200), plate(onRoot, x: 400)])
+        let boardA = CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: owner, Jot(CGRect(x: 0, y: 0, width: 200, height: 200), text: "Mine"))), plate(onA, x: 300)])
+        let h = try EditorHarness(plugins: mentionPlugins([PocketsPlugin()]),
+                                  file: CanvasFile(root: root, children: [a: boardA, b: CanvasDocument(shapes: [plate(onB, x: 0)])]))
+        expect(h.editor.showBoard(BoardID(owner: a)))
+        let state = h.editor.mentionState
+        expectEqual(state.candidates(matching: "", in: AnyMentionable.self, for: owner, among: [onB, onRoot, onA]).nearby.map(\.id), [onA, onRoot, onB],
+                    "this board's, the root's one board away, B's two")
+        expectEqual(state.candidates(matching: "", in: AnyMentionable.self, for: owner, among: [onB]).nearby.map(\.id), [onB], "a board the owner isn't inside, with nothing typed")
+        expectEqual(state.candidates(matching: "plate", in: AnyMentionable.self, for: owner, among: [onB]).matches.map(\.id), [onB])
+        // With kinds: the shapes of both.
+        expectEqual(state.candidates(matching: "", in: AnyMentionable.self, for: owner, kinds: [Plate.kind], among: [onB, a]).nearby.map(\.id), [onB], "the pocket isn't a plate")
+    },
+
+    test("no among is what it was: every other call's answer is the same") {
+        let r = try Row()
+        r.state.didPick(r.tokens[2])
+        for query in ["", "plate", "tok 3", "zzzzq"] {
+            expectEqual(r.state.candidates(matching: query, in: AnyMentionable.self, for: r.owner, among: nil), r.candidates(query), "\"\(query)\"")
+        }
+    },
 ])

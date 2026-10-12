@@ -62,6 +62,7 @@ public enum BoardMenus {
             item("Cut", NSSelectorFromString("cut:"), "x"),
             item("Copy", NSSelectorFromString("copy:"), "c"),
             item("Paste", NSSelectorFromString("paste:"), "v"),
+            item("Duplicate", #selector(BoardWindowController.duplicate(_:)), "d"),
             item("Delete", NSSelectorFromString("delete:")),
             item("Select All", NSSelectorFromString("selectAll:"), "a"),
             .separator(),

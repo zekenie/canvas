@@ -53,7 +53,7 @@ extension SkeletonTextRun: SkeletonTextRunConvertible {
 /// the lines left, so a shape costs about the same whatever it holds (a paragraph of a million
 /// characters, what one of 150 does), and text typed in the app, still the UTF-16 a text view cut
 /// it from, is read a chunk at a time, never transcoded. What every kind's greeked paragraphs go
-/// by (a note's text, a schema card's description), so they wrap alike.
+/// by (a note's text), so they wrap alike.
 public struct SkeletonTextBars<Runs: RandomAccessCollection>: Sequence, IteratorProtocol where Runs.Element: SkeletonTextRunConvertible {
     /// First, and apart from the runs: what the text's bytes are read into isn't generic, so its
     /// loops are compiled for them, whatever the runs are.

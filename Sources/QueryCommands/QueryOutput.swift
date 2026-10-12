@@ -75,6 +75,15 @@ public enum QueryOutput {
             object["connection"] = .object(drawn)
         }
         if let editing = row.editing { object["editing"] = .bool(editing) }
+        if let problems = row.problems { object["problems"] = .array(problems.map(problem)) }
+        return .object(object)
+    }
+
+    /// A problem, as `ShapeProblem` encodes itself: a rule across the whole shape has no `field` or `path`.
+    private nonisolated static func problem(_ problem: ShapeProblem) -> JSON {
+        var object: [String: JSON] = ["class": .string(problem.problemClass), "message": .string(problem.message)]
+        if let field = problem.field { object["field"] = .string(field) }
+        if let path = problem.path { object["path"] = .string(path) }
         return .object(object)
     }
 

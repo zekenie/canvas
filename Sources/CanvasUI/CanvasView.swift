@@ -4,7 +4,8 @@ import Geometry
 
 /// The AppKit view around a `CanvasEditor`: turns NSEvents into editor calls, draws it, and hosts
 /// its subviews: a shape's editing view, the minimap when it shows, the zoom above it while it
-/// changes, and the editor's popover over everything. Plugins can't import this module.
+/// changes, the editor's card (`editor.card`, a plugin's view under a rect of the board) over all of
+/// those, and the editor's popover over everything. Plugins can't import this module.
 public final class CanvasView: NSView {
     public let editor: CanvasEditor
     private var editingView: EditingView?
@@ -12,6 +13,16 @@ public final class CanvasView: NSView {
     private var popoverBubble: PopoverView?
     /// The view showing the editor's popover while one shows, over everything the canvas hosts.
     public var popoverView: NSView? { popoverBubble }
+    /// The box around the editor's card while one shows (`editor.card`): over the editing view, the
+    /// minimap and the zoom, under the popover.
+    private var cardHost: CardView?
+    /// The plugin's view while a card shows.
+    public var cardView: NSView? { cardHost?.content }
+    /// The card's bubble in view points (less its shadow's margin), while one shows: tests.
+    @_spi(Host) public var cardFrame: CGRect? { cardHost?.bubbleFrame }
+    /// Watches for presses anywhere in the window while a card shows, which the card closes on
+    /// (`pressBeganInWindow`).
+    private var cardPressMonitor: Any?
     /// The minimap, in the bottom-left corner, over everything else; nil while the host doesn't show
     /// it (and hidden, though there, while the board is empty).
     public private(set) var minimap: MinimapView?
@@ -23,7 +34,12 @@ public final class CanvasView: NSView {
     /// menus).
     private var pointerPlace = PointerPlace.canvas
 
-    private enum PointerPlace { case canvas, minimap, editingView, covered }
+    private enum PointerPlace { case canvas, minimap, editingView, covered, card }
+
+    /// How a menu the editor queued (`popUpMenu`) is shown, given the menu and the point in this view it
+    /// opens at (the bottom-left of the rect it is below): AppKit's pop-up, which runs the menu's
+    /// tracking, unless a test puts in one that notes it (a menu's tracking runs in no unshown window).
+    @_spi(Host) public var menuPresenter: (@MainActor (NSMenu, CGPoint) -> Void)?
 
     /// Whether the minimap shows. Off unless the host turns it on (the app does, per board).
     public var showsMinimap = false {
@@ -31,7 +47,8 @@ public final class CanvasView: NSView {
             guard showsMinimap != (minimap != nil) else { return }
             if showsMinimap {
                 let minimap = MinimapView(editor: editor)
-                addSubview(minimap)
+                // Under the card and the popover, which are over everything.
+                if let overlay = cardHost ?? popoverBubble { addSubview(minimap, positioned: .below, relativeTo: overlay) } else { addSubview(minimap) }
                 self.minimap = minimap
                 layoutMinimap()
             } else {
@@ -79,6 +96,7 @@ public final class CanvasView: NSView {
         editor.viewportDidResize(to: newSize)
         layoutMinimap()
         layoutZoomIndicator()
+        layoutCard()
         layoutPopover()
     }
 
@@ -97,10 +115,12 @@ public final class CanvasView: NSView {
     /// (on an empty board it's hidden, and the corner is the canvas's).
     private func isOnMinimap(_ point: CGPoint) -> Bool { minimap.map { !$0.isHidden && $0.frame.contains(point) } ?? false }
 
-    /// Where a point (view points) is: on the minimap (which is over everything), on the editing
+    /// Where a point (view points) is: on the card (which is over the minimap and takes the pointer
+    /// where it is: its content's cursor), on the minimap (which is over the rest), on the editing
     /// view (which takes the pointer where it is: its text, its cursor), under a view the host put
     /// over the canvas, or on the canvas.
     private func place(of point: CGPoint) -> PointerPlace {
+        if cardHost?.bubbleFrame.contains(point) == true { return .card }
         if isOnMinimap(point) { return .minimap }
         if editingView?.view.frame.contains(point) == true { return .editingView }
         if isCovered(point) { return .covered }
@@ -122,7 +142,7 @@ public final class CanvasView: NSView {
     /// their own).
     private func pointerLeftCanvas(for place: PointerPlace) {
         if pointerPlace == .canvas { editor.pointerExited() }
-        if place == .covered, pointerPlace != .covered { NSCursor.arrow.set() }
+        if place == .covered || place == .card, pointerPlace != place { NSCursor.arrow.set() }
         pointerPlace = place
     }
 
@@ -130,6 +150,7 @@ public final class CanvasView: NSView {
         if let window {
             NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: window)
             NotificationCenter.default.removeObserver(self, name: NSMenu.didBeginTrackingNotification, object: nil)
+            stopWatchingPresses()
         }
         super.viewWillMove(toWindow: newWindow)
     }
@@ -140,6 +161,7 @@ public final class CanvasView: NSView {
             NotificationCenter.default.addObserver(self, selector: #selector(windowDidResignKey(_:)), name: NSWindow.didResignKeyNotification, object: window)
             NotificationCenter.default.addObserver(self, selector: #selector(menuDidBeginTracking(_:)), name: NSMenu.didBeginTrackingNotification, object: nil)
             Self.watchCommandKeyUps()
+            if cardHost != nil { watchPresses() }
         }
         window?.makeFirstResponder(self)
     }
@@ -212,6 +234,64 @@ public final class CanvasView: NSView {
         popoverView.place(CGRect(x: max(x, margin), y: under ? anchor.maxY + gap : anchor.minY - gap - size.height,
                                  width: size.width, height: size.height))
         popoverView.isHidden = !bounds.intersects(anchor)
+    }
+
+    /// Keeps the card under its rect as the camera or the rect moves: 4 points below it, left edges
+    /// together, or above it when it doesn't fit below and there is more room above; inside the part
+    /// of the view the host leaves clear (`unobscuredViewport`) less a margin, cut to the room there
+    /// with its content scrolling itself. Its size in points is the plugin's (`card.size`, asked with
+    /// the room), whatever the zoom. Nothing before the view has a size.
+    private func layoutCard() {
+        guard let host = cardHost, let card = editor.card else { return }
+        // Past the canvas in the responder chain: AppKit sets it whenever the view is added.
+        if host.nextResponder !== nextResponder { host.nextResponder = nextResponder }
+        let viewport = editor.unobscuredViewport
+        guard !viewport.isEmpty else { return }
+        let clear = viewport.insetBy(dx: CardStyle.margin, dy: CardStyle.margin)
+        guard !clear.isNull, clear.width > 0, clear.height > 0 else { return }
+        let anchor = editor.camera.toView(card.anchor)
+        let gap = CardStyle.gap
+        let below = clear.maxY - (anchor.maxY + gap), above = anchor.minY - gap - clear.minY
+        let wanted = card.size(CGSize(width: clear.width, height: .greatestFiniteMagnitude))
+        let under = wanted.height <= below || below >= above
+        let size = card.size(CGSize(width: clear.width, height: max(under ? below : above, CardStyle.minHeight)))
+        let x = min(max(anchor.minX, clear.minX), clear.maxX - size.width)
+        let y = under ? anchor.maxY + gap : anchor.minY - gap - size.height
+        host.place(CGRect(x: max(x, clear.minX), y: min(max(y, clear.minY), max(clear.maxY - size.height, clear.minY)),
+                          width: size.width, height: size.height))
+    }
+
+    /// A press began somewhere in the window (the monitor's, while a card shows): the card closes unless
+    /// it was on the card, or on the rect the card hangs from, which is the card's own ground (the
+    /// plugin that showed it hears its own click and decides). Anything else closes it: the canvas, the
+    /// note being edited, a view the host put over the canvas, the panel, the toolbar. A press in
+    /// another window (a list beside a caret) or a menu closes nothing. The press goes on to what it
+    /// landed on.
+    @_spi(Host) public func pressBeganInWindow(_ event: NSEvent) {
+        guard let card = editor.card, let host = cardHost, event.window === window else { return }
+        if let content = window?.contentView, let frame = content.superview,
+           let hit = content.hitTest(frame.convert(event.locationInWindow, from: nil)) {
+            if hit === host || hit.isDescendant(of: host) { return }
+            if hit === self || hit.isDescendant(of: self),
+               editor.camera.toView(card.anchor).contains(convert(event.locationInWindow, from: nil)) { return }
+        }
+        editor.closeCard(.pressedElsewhere)
+    }
+
+    private func watchPresses() {
+        guard cardPressMonitor == nil, window != nil else { return }
+        cardPressMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated { self?.pressBeganInWindow(event) }
+            return event
+        }
+    }
+
+    /// A view in a window is released only by leaving it (`viewWillMove(toWindow:)`, which ends this), and
+    /// `watchPresses` needs a window, so a view that is released has no monitor.
+    private func stopWatchingPresses() {
+        guard let monitor = cardPressMonitor else { return }
+        NSEvent.removeMonitor(monitor)
+        cardPressMonitor = nil
     }
 
     private func cursor(_ cursor: CanvasCursor) -> NSCursor {
@@ -319,7 +399,7 @@ public final class CanvasView: NSView {
             pointerLeftCanvas(for: place)
             return
         }
-        if pointerPlace == .covered { cursor(editor.cursor).set() }
+        if pointerPlace == .covered || pointerPlace == .card { cursor(editor.cursor).set() }
         pointerPlace = .canvas
         editor.pointerMoved(pointer)
     }
@@ -328,7 +408,7 @@ public final class CanvasView: NSView {
         editor.pointerExited()
     }
     public override func cursorUpdate(with event: NSEvent) {
-        (pointerPlace == .covered ? NSCursor.arrow : cursor(editor.cursor)).set()
+        (pointerPlace == .covered || pointerPlace == .card ? NSCursor.arrow : cursor(editor.cursor)).set()
     }
     public override func flagsChanged(with event: NSEvent) { editor.modifiersChanged(held: Modifiers(event.modifierFlags)) }
 
@@ -459,7 +539,50 @@ extension CanvasView: NSMenuItemValidation {
         // Placed again while it shows, as the minimap under it may have shown or hidden meanwhile.
         if zoomIndicator.zoomMayHaveChanged() || !zoomIndicator.isHidden { layoutZoomIndicator() }
         layoutEditingView()
+        layoutCard()
         layoutPopover()
+    }
+
+    /// Shows the card over what the canvas hosts, under the popover, in place of the one before, and
+    /// gives its view the keyboard; or takes it down and gives the keyboard back to the editing view,
+    /// else the canvas, if the card had it. Laid out again when it moved or its content resized.
+    public func editorCardDidChange(_ editor: CanvasEditor) {
+        guard let card = editor.card else {
+            removeCardHost()
+            return
+        }
+        let isNew = cardHost?.cardID != card.id || cardHost?.content !== card.view
+        if isNew {
+            removeCardHost()
+            let host = CardView(card)
+            // Over the minimap and the zoom, under the popover.
+            if let popoverBubble { addSubview(host, positioned: .below, relativeTo: popoverBubble) } else { addSubview(host) }
+            cardHost = host
+            host.nextResponder = nextResponder
+            watchPresses()
+            layoutCard()
+            if let responder = card.firstResponder { window?.makeFirstResponder(responder) }
+        } else {
+            layoutCard()
+        }
+    }
+
+    /// Whether the keyboard is in the card's view.
+    private var cardHasKeyboard: Bool {
+        guard let host = cardHost, let responder = window?.firstResponder as? NSView else { return false }
+        return responder === host || responder.isDescendant(of: host)
+    }
+
+    /// Takes the card down: the keyboard goes back to the editing view, else the canvas, if the card had
+    /// it, and the pointer over it is on the canvas again (the tool hears it when it next moves).
+    private func removeCardHost() {
+        guard let host = cardHost else { return }
+        // First, so a field being typed in ends its edit as the keyboard leaves it.
+        if cardHasKeyboard { window?.makeFirstResponder(editingView?.firstResponder ?? self) }
+        host.removeFromSuperview()
+        cardHost = nil
+        stopWatchingPresses()
+        if pointerPlace == .card { pointerPlace = .canvas }
     }
 
     /// Shows the popover over everything else, in place of the one before, or takes it down.
@@ -476,6 +599,27 @@ extension CanvasView: NSMenuItemValidation {
             popoverBubble = view
         }
         layoutPopover()
+    }
+
+    /// Pops up the menu the editor queued (`popUpMenu`) on the next turn of the run loop: the click
+    /// that asked is still inside its press's bookkeeping, and a menu's tracking loop there would run
+    /// inside it.
+    public func editorMenuToPopUpDidChange(_ editor: CanvasEditor) {
+        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.popUpWaitingMenu() } }
+    }
+
+    private func popUpWaitingMenu() {
+        // Dropped meanwhile (a press began), or already popped up for an earlier turn's request.
+        guard let waiting = editor.menuToPopUp else { return }
+        editor.menuDidPopUp()
+        let rect = editor.camera.toView(waiting.rect)
+        let point = CGPoint(x: rect.minX, y: rect.maxY)
+        if let menuPresenter {
+            menuPresenter(waiting.menu, point)
+        } else if window != nil {
+            // A view taken off its window meanwhile has nowhere to open one: it's dropped.
+            waiting.menu.popUp(positioning: nil, at: point, in: self)
+        }
     }
 
     /// Over a view the canvas hosts, that view's cursor stands.

@@ -22,7 +22,7 @@ private let scale: CGFloat = 4
 @MainActor private func arrowHarness(bend: CGFloat, endArrowhead: Bool = true, zoom: CGFloat = 0.3,
                                      lit: TintedOutlinesBox? = nil) throws -> (EditorHarness, ShapeID) {
     let lights = lit.map { lit in [Contributor(id: "lights") { $0.outlines { _ in Outlines(tinted: lit.groups) } }] } ?? []
-    let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()] + lights)
+    let h = try EditorHarness(plugins: arrowsPlugins() + lights)
     let id = h.add(Arrow(start: .free(CGPoint(x: 100, y: 200)), end: .free(CGPoint(x: 500, y: 200)), bend: bend, endArrowhead: endArrowhead))
     h.editor.camera = Camera(origin: .zero, zoom: zoom)
     return (h, id)

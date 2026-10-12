@@ -105,10 +105,28 @@ public struct PluginRegistrar {
 
     /// Runs inside the deleting transaction, before the shapes are removed. It may change other
     /// shapes, and delete more (their handlers run too), read-only ones included: what it does keeps
-    /// the board whole, which a lock doesn't stand in the way of. Each shape's handlers run once per
-    /// transaction, and every shape being deleted still exists while any handler runs.
+    /// the board whole, which a lock doesn't stand in the way of. It may change shapes on other boards
+    /// of the file too (`transaction.update(_:on:_:)`), read-only ones included, in the same undo
+    /// step: one undo brings back what it took back, on every board. Each shape's handlers run once
+    /// per transaction, and every shape being deleted still exists while any handler runs.
     public mutating func willDelete(_ handler: @escaping @MainActor (Set<ShapeID>, inout Transaction) -> Void) {
         contribute(handler, to: CorePoints.WillDelete.self)
+    }
+
+    /// Provides a layout input: what `context.layoutInput(key, of:)` reads for a shape nothing set
+    /// one for. Asked when the core lays a shape out, of the editor's file and, mid-transaction, of
+    /// the file as the transaction leaves it, so a shape that isn't committed yet is laid out as
+    /// it will be. Answer from the record and the reading alone, and cheaply: a board first shown
+    /// asks for every shape of the kinds that read the key. Nil for a shape with none.
+    ///
+    /// Whoever provides a key says when its answer for a shape changes for a reason other than a
+    /// change to that shape's own record (`editor.shapesDidChangeLayout`): the core keeps what it
+    /// laid out until then. That holds for a shape the same commit added or changed too: a
+    /// service that hears the commit first may have asked for it already, and been answered from
+    /// what the provider's own service kept of the file before. One provider a key.
+    public mutating func layoutInput<V>(_ key: LayoutInputKey<V>,
+                                        _ provide: @escaping @MainActor (AnyShapeRecord, LayoutReading) -> V?) {
+        contribute(LayoutProvider(name: key.name) { record, reading in provide(record, reading) }, to: CorePoints.LayoutProviders.self)
     }
 
     /// Shapes that can't change while `isReadOnly` says so of them (Locking's locked shapes): no
@@ -266,6 +284,26 @@ public struct Placement {
     @MainActor
     public func shape(at point: CGPoint) -> AnyShapeRecord {
         make(CGRect(center: point, size: size))
+    }
+
+    /// The same placement, with every shape it places changed by `transform` after it is made, in a
+    /// frame of the placement's size centered where it lands: for a plugin that puts down a record it
+    /// built (a shape of a kind with extra values set, props another plugin's data fills in). The record
+    /// keeps its id, kind and frame unless `transform` changes them; a record of another kind is a
+    /// precondition failure (a placement is of one kind).
+    public func mapping(_ transform: @escaping @MainActor (AnyShapeRecord) -> AnyShapeRecord) -> Placement {
+        let make = make, kind = kind
+        return Placement(kind: kind, size: size, minimumSize: minimumSize, completion: completion) { frame in
+            let record = transform(make(frame))
+            precondition(record.kind == kind, "a placement of \(kind) shapes can't make \(record.kind) ones")
+            return record
+        }
+    }
+
+    /// The same placement, of shapes this size: what it makes is placed in a frame of `size` centered
+    /// where it lands (or in the rect it is given, `editor.place(_:in:)`). Its smallest size stays.
+    public func sized(_ size: CGSize) -> Placement {
+        Placement(kind: kind, size: size, minimumSize: minimumSize, completion: completion, make: make)
     }
 
     /// The same placement, with an added property set on every shape it places:

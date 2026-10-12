@@ -16,7 +16,7 @@ import Titles
 // `canvas measure`, as shipped: the size draw makes each shape of a script and each reference an edge
 // says `via:`, how far a shape's title row reaches above it, and the constants placement is done with,
 // each held to what a draw of the same script makes on a board, or to the source it is read from; and
-// that it reads no board, changes none and opens no undo step.
+// that it changes no board and opens no undo step; and, given a board, what it reads of that file (its types and names).
 
 /// The shipped editor over an empty board in a 1440 × 900 window.
 @MainActor private func shippedEditor() -> CanvasEditor {
@@ -25,7 +25,7 @@ import Titles
     return editor
 }
 
-/// `measure`, as the app's command server runs it (an app command: no board).
+/// `measure`, as the app's command server runs it with no board open.
 @MainActor private func measured(_ script: String, in editor: CanvasEditor) -> Result<JSON, RPCError> {
     let commands = editor.registry.hostCommands
     let result = try? awaitResult { () async -> Result<JSON, RPCError> in
@@ -57,16 +57,16 @@ private func size(_ json: JSON?) -> [Double]? { json?.arrayValue?.compactMap(\.n
 private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.last) }
 
 @MainActor let measureTests = Suite("canvas measure: what draw would make, read from the source", [
-    test("each shape is the size draw makes it: a note 300 wide with text as tall as its text, a schema card, a subboard, a frame") {
-        let schema = #"{"title": "Person", "type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}}}"#
+    test("each shape is the size draw makes it: a note 300 wide with text as tall as its text, a type (a note that holds a schema), a subboard, a frame") {
+        let schema = #"{"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}}}"#
         let long = String(repeating: "The checkout takes a basket and a card, charges it, and sends the receipt. ", count: 3)
         let script = """
             sticky-note "Checkout v2" size: 300x text: "\(long)"
             sticky-note "Plain"
             sticky-note "Wide" size: 420x text: "short"
             sticky-note "Exact" size: 250x90
-            schema-card schema: "\(scripted(schema))" prompt: "A person who buys things, with the details we keep for them and why we keep each."
-            schema-card schema: "\(scripted(schema.replacingOccurrences(of: "Person", with: "Plain")))"
+            sticky-note "Person" text: "A person who buys things, with the details we keep for them and why we keep each." schema: "\(scripted(schema))"
+            sticky-note "Simple" schema: "\(scripted(schema))"
             subboard "Payments"
             subboard "Big" size: 500x300
             frame "Region" size: 400x300
@@ -84,7 +84,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         for (measure, row) in zip(shapes, drawn) {
             expectEqual(measure["line"], row["line"])
             expectEqual(measure["kind"], row["kind"])
-            expectEqual(measure["title"], row["title"], "\(measure["line"] ?? .null): the title draw reports, a card's from its schema")
+            expectEqual(measure["title"], row["title"], "\(measure["line"] ?? .null): the title draw reports, a type's the one written")
             expectEqual(size(measure["size"]), drawnSize(row), "line \(measure["line"] ?? .null)")
         }
         let tall = try require(size(shapes[0]["size"]))
@@ -221,10 +221,15 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         expectEqual(rows.map { $0["title"] }, ["One", "Two", "Three", "Four"])
         expectEqual(rows.map { $0["line"] }, [1, 2, 3, 6])
         expectEqual(size(rows[3]["size"])?.first, 400, "a style's size still applies")
-        // No board named, none in front: an app command, like kinds.
+        // No board named, none in front: it still runs, on none, and names no board.
         let apart = try run(builtExecutable("CanvasCLI"), ["--socket", server.path, "help", "measure"])
         expectEqual(apart.status, 0, apart.error)
         expect(apart.output.contains("measure"), apart.output)
+        expect(apart.output.contains("the board in front, if any."), apart.output)
+        let loose = try startCommandServer(boards: [board], frontmost: nil)
+        defer { loose.stop() }
+        let none = try canvas(loose, ["measure", "-", "--board", "99"], input: "sticky-note \"A\"")
+        expect(none.status != 0, "a board named that isn't open is refused as for any board command")
     },
     test("the answer, whole, through canvas as built: the JSON a tool reads") {
         try configureBoards()
@@ -251,6 +256,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
                 "defaultGap": 80, "listStep": 64, "referenceStep": 16, "horizontalClearance": 40, "verticalClearance": 64,
                 "frameInset": 40, "smallest": ["frame": [96, 64]],
             ],
+            "board": ["id": .number(Double(board.number)), "name": .string(board.displayName), "shows": "root", "showsPath": ["root"]],
         ])
     },
     test("an unreadable script is refused with draw's messages, a via: with draw's, and a title is as draw's: once") {
@@ -283,5 +289,90 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         guard case .failure(let via) = measured("sticky-note \"A\"\nsticky-note \"B\"\nedge \"A\" -> \"B\" via: rference", in: editor) else { throw RequireFailed() }
         expectEqual(via.reason, "invalid_value")
         expectEqual(via.hint, "did you mean reference? via: takes reference")
+    },
+    test("with a board it reads the file's types, as draw finds a title: an is: measures the note with its rows, equal to a draw of it; with none open, without") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let schema = scripted(#"{"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}, "role": {"type": "string"}}}"#)
+        expectEqual(try canvas(server, ["draw", #"sticky-note "Person" text: "A person" schema: "\#(schema)""#]).status, 0)
+        let script = #"sticky-note "Ann" is: "Person""#
+        let before = board.editor.file, revision = board.editor.revision, step = board.editor.undoHistory.undoName
+        let withBoard = try canvas(server, ["measure", "-"], input: script)
+        expectEqual(withBoard.status, 0, withBoard.error)
+        let json = try JSON(text: withBoard.output)
+        let roomy = try require(size(json["shapes"]?.arrayValue?.first?["size"]))
+        expectEqual(json["warnings"], nil, "the type is found")
+        expect(try require(json["board"]?["shows"]?.stringValue) == "root")
+        // No board: the type isn't there, so a note without rows.
+        let without = try measured(script, in: shippedEditor()).get()
+        let plain = try require(size(without["shapes"]?.arrayValue?.first?["size"]))
+        expect(roomy != plain && roomy[0] >= plain[0] && roomy[1] >= plain[1], "rows give it room: \(roomy) against \(plain)")
+        expectEqual(without["warnings"]?.arrayValue?.first?["message"], #""Ann": is: there's no shape called "Person"; measured without it"#)
+        expectEqual(without["board"], nil, "no board, none named")
+        // Nothing changed, no step, and every statement's shape is new: a title the file has is no restatement.
+        expect(board.editor.file == before && board.editor.revision == revision && board.editor.undoHistory.undoName == step, "the board is as it was")
+        // The size is the size a draw of it makes.
+        let drew = try canvas(server, ["draw", script])
+        expectEqual(drew.status, 0, drew.error)
+        let row = try require(try JSON(text: drew.output)["changes"]?.arrayValue?.first)
+        expectEqual(drawnSize(row), roomy, "measured as drawn")
+        // A type the script draws gives its note rows, with no board and with one.
+        let both = #"""
+            sticky-note "Order" text: "An order" schema: "\#(schema)"
+            sticky-note "O1" is: "Order"
+            """#
+        for answered in [try measured(both, in: shippedEditor()).get(), try JSON(text: canvas(server, ["measure", "-"], input: both).output)] {
+            let rows = try require(answered["shapes"]?.arrayValue)
+            expect(try require(size(rows[1]["size"])) == roomy, "a type of the same script gives rows")
+            expectEqual(answered["warnings"], nil)
+        }
+    },
+    test("--board names the board it reads, whatever is in front; an is: it can't find is a warning and the note is measured without it") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let typed = newBoard(), front = newBoard()
+        defer { typed.close(); front.close() }
+        let server = try startCommandServer(boards: [typed, front], frontmost: front)
+        defer { server.stop() }
+        let schema = scripted(#"{"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}}}"#)
+        let drawn = try canvas(server, ["draw", "--board", "\(typed.number)", #"sticky-note "Person" schema: "\#(schema)""#])
+        expectEqual(drawn.status, 0, drawn.error)
+        expectEqual(typed.editor.document.shapes.count, 1)
+        let named = try canvas(server, ["measure", "--board", "\(typed.number)", "-"], input: #"sticky-note "Ann" is: "Person""#)
+        let elsewhere = try canvas(server, ["measure", "-"], input: #"sticky-note "Ann" is: "Person""#)
+        expectEqual(named.status, 0, named.error)
+        expectEqual(elsewhere.status, 0, elsewhere.error)
+        let withRows = try JSON(text: named.output), plain = try JSON(text: elsewhere.output)
+        expectEqual(withRows["board"]?["id"], .number(Double(typed.number)))
+        expectEqual(plain["board"]?["id"], .number(Double(front.number)))
+        expect(try require(size(withRows["shapes"]?.arrayValue?.first?["size"])) != (try require(size(plain["shapes"]?.arrayValue?.first?["size"]))))
+        expectEqual(plain["warnings"]?.arrayValue?.count, 1, "the front board has no Person")
+        // Nothing, two, or a note that is no type: warned of, measured as a plain note.
+        let script = """
+            sticky-note "Plain"
+            sticky-note "A" is: "Nobody"
+            sticky-note "B" is: "Plain"
+            sticky-note "C" text: "see @[Nobody]"
+            """
+        let several = try canvas(server, ["measure", "--board", "\(front.number)", "-"], input: script)
+        expectEqual(several.status, 0, several.error)
+        let answered = try JSON(text: several.output)
+        let warnings = try require(answered["warnings"]?.arrayValue)
+        expectEqual(warnings.map { $0["line"] }, [2, 3, 4])
+        expect(warnings[0]["message"]?.stringValue?.hasSuffix("measured without it") == true, "\(warnings[0])")
+        expect(warnings[1]["message"]?.stringValue?.contains("isn't a type") == true, "\(warnings[1])")
+        expect(warnings[2]["message"]?.stringValue?.hasPrefix(#""C": text: "#) == true, "\(warnings[2])")
+        let sizes = try require(answered["shapes"]?.arrayValue).map { size($0["size"]) }
+        expectEqual(sizes[1], sizes[0], "A is measured as a plain note")
+        expectEqual(sizes[2], sizes[0])
+        // A format's own refusal, a blank mention, still refuses the whole script.
+        let blank = try canvas(server, ["measure", "-"], input: #"sticky-note "D" text: "@[]""#)
+        expect(blank.status != 0, "a blank @[] is refused")
     },
 ])

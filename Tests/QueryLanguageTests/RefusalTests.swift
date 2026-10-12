@@ -215,15 +215,25 @@ private let bracketsTest = "can't be read here: a test of an attribute is in bra
                     better: #":has("A":has(> "B":has("C")))"#, holding: [#""A""#, #""B""#], at: 8, 13),
         ])
     },
-    test("what's planned is not built: classes, attributes inside attributes") {
+    test(".Name has no meaning in the language; the app may give it a word") {
+        let message = " has no meaning here: a shape is found by its kind, its title, its id, an attribute or a word."
         expectRefused([
-            Refused(".Task", .notBuilt, "Shapes aren't typed by schemas yet, so .Task names nothing.",
-                    hint: #"Name a kind, or find the word: :contains("Task")."#, at: 0, 5),
-            Refused("card.Task", .notBuilt, "Shapes aren't typed by schemas yet, so .Task names nothing.",
-                    hint: #"Name a kind, or find the word: :contains("Task")."#, at: 4, 5),
+            Refused(".Task", .unsupported, ".Task" + message, hint: #"Name a kind, or find the word: :contains("Task")."#, typeWord: "Task", at: 0, 5),
+            Refused("card.Task", .unsupported, ".Task" + message, hint: #"Name a kind, or find the word: :contains("Task")."#, typeWord: "Task", at: 4, 5),
             Refused(".", .syntax, ". can't start a part of a query.", at: 0, 1),
-            Refused("[a.b]", .notBuilt, "a.b is an attribute inside an attribute, which a query can't read yet.", at: 1, 3),
-            Refused("[a.b.c=1]", .notBuilt, "a.b.c is an attribute inside an attribute, which a query can't read yet.", at: 1, 5),
+        ])
+        for query in [".Task", "card.Task"] {
+            let plain = try require(refusal(query))
+            expect(!plain.message.contains("class") && !plain.message.contains("schema") && !(plain.hint ?? "").contains("class"), "a refusal that names no kind of thing: \(query)")
+        }
+    },
+    test("an attribute's members: [a.b.c], identifiers after dots") {
+        expectRefused([
+            Refused("[a.]", .syntax, "A member's name follows the dot: [a.member].", at: 2, 1),
+            Refused("[a.1]", .syntax, "A member's name follows the dot: [a.member].", at: 2, 1),
+            Refused("[a.b.]", .syntax, "A member's name follows the dot: [a.member].", at: 4, 1),
+            Refused(#"[a."b"]"#, .syntax, "A member's name follows the dot: [a.member].", at: 2, 1),
+            Refused("[a.b c]", .syntax, "An operator or ] follows a.b.", hint: operators, at: 5, 1),
         ])
     },
     test("# takes an id") {
@@ -280,8 +290,8 @@ private let bracketsTest = "can't be read here: a test of an attribute is in bra
                     at: 13, 1),
             Refused(#":between("A", "B",)"#, .badArgument, "A comma after the two shapes starts edge types, and none follow it.",
                     hint: #":between("A", "B")"#, at: 17, 1),
-            Refused(#":edge-to("A", wire.Task)"#, .notBuilt, "Shapes aren't typed by schemas yet, so .Task names nothing.",
-                    hint: #"Name a kind, or find the word: :contains("Task")."#, at: 18, 5),
+            Refused(#":edge-to("A", wire.Task)"#, .unsupported, ".Task has no meaning here: a shape is found by its kind, its title, its id, an attribute or a word.",
+                    hint: #"Name a kind, or find the word: :contains("Task")."#, typeWord: "Task", at: 18, 5),
         ])
     },
     test("a refusal says where it is: line and column in Characters, its length on that line, and the line") {

@@ -73,23 +73,28 @@ final class SnapDrag {
     private var bounds: CGRect
     private var isPastThreshold = false
     private var targets: SnapTargets?
-    /// What `targets` were read in: the camera, and the view's size.
-    private var view: (camera: Camera, size: CGSize)?
+    /// What `targets` were read in: the camera, the view's size and the layout (shapes laid out
+    /// again with no commit change the frames they were read from).
+    private var view: (camera: Camera, size: CGSize, layout: Int)?
+    /// The layout `bounds` was taken at.
+    private var layout: Int
     private(set) var guides: [SnapGuide] = []
 
     /// Nil for a drag that moves no frame: nothing to snap.
     init?(_ start: TranslationStart, in editor: CanvasEditor) {
         var starts: [ShapeID: CGPoint] = [:], bounds = CGRect.null
+        let context = editor.shapeContext
         for id in start.ids {
             guard let box = editor.document[id]?.box else { continue }
             starts[id] = box.origin
-            bounds = bounds.union(box)
+            bounds = bounds.union(context.frame(of: id) ?? box)
         }
         guard !starts.isEmpty else { return nil }
         moving = Set(start.ids)
         origin = start.origin
         self.starts = starts
         self.bounds = bounds
+        layout = editor.layoutRevision
         editor.service(SnapState.self)?.drag = self
     }
 
@@ -97,28 +102,31 @@ final class SnapDrag {
     func dropTargets() { targets = nil }
     func movesFrame(_ id: ShapeID) -> Bool { starts[id] != nil }
 
-    /// A frame it moves changed size (a plugin's write): its frames together again, from where they
-    /// began, as big as they are now.
+    /// A frame it moves changed size (a plugin's write, or the shape laid out again): its frames
+    /// together again, from where they began, as big as they are now.
     func framesChanged(in editor: CanvasEditor) {
+        let context = editor.shapeContext
+        layout = editor.layoutRevision
         bounds = starts.reduce(CGRect.null) { bounds, start in
-            editor.document[start.key]?.box.map { bounds.union(CGRect(origin: start.value, size: $0.size)) } ?? bounds
+            context.frame(of: start.key).map { bounds.union(CGRect(origin: start.value, size: $0.size)) } ?? bounds
         }
     }
 
     /// The frames in view, but those it moves, as the camera shows them now: none without a view.
     private func targets(in editor: CanvasEditor) -> SnapTargets {
-        let camera = editor.camera, size = editor.viewportSize
-        if let targets, let view, view.camera == camera, view.size == size { return targets }
+        let camera = editor.camera, size = editor.viewportSize, layout = editor.layoutRevision
+        if let targets, let view, view.camera == camera, view.size == size, view.layout == layout { return targets }
         var frames: [CGRect] = []
         if size.width > 0, size.height > 0 {
             let visible = camera.toWorld(CGRect(origin: .zero, size: size))
+            let context = editor.shapeContext
             for record in editor.paintOrder(in: visible) where !moving.contains(record.id) {
-                if let box = record.box, box.touches(visible) { frames.append(box) }
+                if let frame = context.frame(of: record), frame.touches(visible) { frames.append(frame) }
             }
         }
         let targets = SnapTargets(frames)
         self.targets = targets
-        view = (camera, size)
+        view = (camera, size, layout)
         return targets
     }
 }
@@ -129,6 +137,9 @@ extension SnapDrag: TranslationAdjuster {
         let shown = guides
         defer { if guides != shown { editor.setNeedsDisplay() } }
         guides = []
+        // Shapes laid out again with no commit (a note's type gained a field): the frames it moves, and
+        // the targets (`targets(in:)`), follow.
+        if layout != editor.layoutRevision { framesChanged(in: editor) }
         if !isPastThreshold { isPastThreshold = pointer.view.distance(to: editor.camera.toView(origin)) > Style.dragThreshold }
         // Its frames all gone (deleted mid-drag): nothing to snap.
         guard isPastThreshold, !bounds.isNull, pointer.modifiers.isDisjoint(with: SnappingStyle.freeMoveModifiers) else { return delta }

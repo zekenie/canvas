@@ -269,6 +269,36 @@ struct OneAtATime: CanvasOverlay {
         expectEqual(registry.validationIssues(of: tag, in: planned).map(\.message), ["every"])
         expectEqual(engine.dependents(of: [crate.id]), [], "the engine heard nothing of it")
     },
+    test("an issue says where in its field's value, kept by the engine's cache, and a rule reads the file as its shapes do") {
+        var seen: [Bool?] = []
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Box.self) { box, context in
+                seen.append(context.reading?.isCommitted)
+                return box.frame.isEmpty ? [.error("too small", field: "frame", path: "/size/0"), .warning("odd", field: "frame")] : []
+            }
+        }])
+        let box = h.add(Box(.zero))
+        let engine = try require(h.editor.validation)
+        let want: [ValidationIssue] = [.error("too small", field: "frame", path: "/size/0"), .warning("odd", field: "frame")]
+        expectEqual(engine.result(for: box)?.issues, want, "the path kept with the issue")
+        expectEqual(engine.result(for: box)?.issues.map(\.path), ["/size/0", nil])
+        expectEqual(engine.cachedResult(for: box), .current(ValidationResult(issues: want)), "and in the cache")
+        expectEqual(seen.last, .some(nil), "the engine checks the board's own shapes, which lay nothing out")
+        let record = try require(h.editor.document[box])
+        seen = []
+        expectEqual(h.editor.registry.validationIssues(of: record, in: h.editor.shapeContext), want)
+        expectEqual(seen, [true], "given the editor's context, a rule reads the committed file")
+        h.editor.transact { transaction in
+            seen = []
+            _ = h.editor.registry.validationIssues(of: record, in: transaction.shapes)
+            expectEqual(seen, [false], "mid-transaction the rule's reading is the transaction's")
+        }
+        seen = []
+        _ = h.editor.registry.validationIssues(of: record, in: ShapeContext(document: h.editor.document, registry: h.editor.registry))
+        expectEqual(seen, [nil], "a plain context lays nothing out")
+        expectEqual(ValidationIssue.error("a"), ValidationIssue("a", severity: .error), "no path is the default")
+        expect(ValidationIssue.error("a", path: "/x") != .error("a"), "a path is part of the issue")
+    },
     test("contributing a rule without the validation plugin installed is an error") {
         expectThrows(RegistryError.ownerNotInstalled(point: "ValidationRules", owner: .validation, contributor: "rules")) {
             _ = try Registry(plugins: [FixturesPlugin(), Rules { r in r.validate(Box.self) { _, _ in [] } }])
@@ -296,6 +326,24 @@ struct OneAtATime: CanvasOverlay {
         expect(warning[0] > 200 && warning[1] > 110 && warning[2] < 100, "orange outline: \(warning)")
         expect(error[0] > 200 && error[1] < 100 && error[2] < 100, "red outline: \(error)")
         expect(clean[0] < 250 && abs(clean[0] - clean[2]) < 10, "no outline: \(clean)")
+    },
+    test("the ring of a stretch follows the frame it is laid out in: on the grown part's top edge, and moved with the gauge, with no commit of the stretch's") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), StretchesPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Stretch.self) { _, _ in [.error("always")] }
+        }])
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 300, y: 200, width: 60, height: 40), width: 160, height: 60))
+        h.add(Stretch(CGRect(x: 40, y: 40, width: 40, height: 40), gauge: gauge))              // laid out to x 200
+        h.editor.camera = Camera(origin: .zero, zoom: 2)
+        let size = CGSize(width: 800, height: 400)
+        @MainActor func red(_ rep: NSBitmapImageRep, _ point: CGPoint) -> Bool {
+            let p = pixel(rep, at: point)
+            return p[0] > 200 && p[1] < 100 && p[2] < 100
+        }
+        let rep = renderBitmap(h.editor, size: size)
+        expect(red(rep, CGPoint(x: 150 * 2, y: 40 * 2 - 3)), "the ring runs along the grown part's top edge: \(pixel(rep, at: CGPoint(x: 300, y: 77)))")
+        expect(!red(rep, CGPoint(x: 250 * 2, y: 40 * 2 - 3)), "and stops at its laid-out right edge")
+        h.editor.transact("Gauge") { $0.update(gauge, as: CanvasTesting.Gauge.self) { $0.props.width = 300 } }
+        expect(red(renderBitmap(h.editor, size: size), CGPoint(x: 250 * 2, y: 40 * 2 - 3)), "and reaches the new one")
     },
     test("a closed shape's ring stands 3 view points outside the outline, which stands off its edge: 7 out at any zoom, clear of the outline's line; an open shape's is 3 out; it follows the standoff") {
         let h = try EditorHarness(plugins: [FixturesPlugin(), LinksPlugin(), ValidationPlugin(), Rules { r in

@@ -1,5 +1,6 @@
 import Canvas
 import CoreGraphics
+import Draw
 import TableOfContents
 
 /// Shapes the table of contents drops somewhere they aren't (`ContentsMoves`): into a frame (its row, or

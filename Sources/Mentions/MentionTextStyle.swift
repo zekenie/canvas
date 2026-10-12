@@ -3,10 +3,12 @@ import Canvas
 
 /// Where mention text is shown, which says how its pills are colored: on a shape's surface (a
 /// note), in the text's own color, since a tint on a tinted shape would vanish; or on a neutral
-/// one (a panel, the picker), in the system's colors, with the target's tint on its symbol.
+/// one (a panel, the picker), in the system's colors, with the target's tint on its symbol; or as a
+/// value that points at a shape, where a pill is a white one with a hairline outline and no symbol.
 public enum MentionSurface: Hashable, Sendable {
     case shape
     case neutral
+    case outlined
 }
 
 /// How mention text looks: one style shared by a kind's render and its editing view, as a note's
@@ -19,19 +21,26 @@ public struct MentionTextStyle: @MainActor Hashable {
     /// Every line this tall, in string drawing and TextKit 2 alike; nil for the font's own.
     public let lineHeight: CGFloat?
     public let surface: MentionSurface
+    /// How its lines are set across the box: the writing direction's own unless a kind says (an
+    /// arrow's label is centered).
+    public let alignment: NSTextAlignment
     /// What `attributes` returns, made once.
     private let madeAttributes: [NSAttributedString.Key: Any]
 
-    public init(font: NSFont, color: NSColor, lineHeight: CGFloat? = nil, surface: MentionSurface = .shape) {
+    public init(font: NSFont, color: NSColor, lineHeight: CGFloat? = nil, surface: MentionSurface = .shape, alignment: NSTextAlignment = .natural) {
         self.font = font
         self.color = color
         self.lineHeight = lineHeight
         self.surface = surface
+        self.alignment = alignment
         var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
-        if let lineHeight {
+        if lineHeight != nil || alignment != .natural {
             let paragraph = NSMutableParagraphStyle()
-            paragraph.minimumLineHeight = lineHeight
-            paragraph.maximumLineHeight = lineHeight
+            if let lineHeight {
+                paragraph.minimumLineHeight = lineHeight
+                paragraph.maximumLineHeight = lineHeight
+            }
+            paragraph.alignment = alignment
             attributes[.paragraphStyle] = paragraph.copy()
         }
         madeAttributes = attributes
@@ -42,7 +51,7 @@ public struct MentionTextStyle: @MainActor Hashable {
     public var attributes: [NSAttributedString.Key: Any] { madeAttributes }
 
     public static func == (a: MentionTextStyle, b: MentionTextStyle) -> Bool {
-        a.font == b.font && a.color == b.color && a.lineHeight == b.lineHeight && a.surface == b.surface
+        a.font == b.font && a.color == b.color && a.lineHeight == b.lineHeight && a.surface == b.surface && a.alignment == b.alignment
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -50,6 +59,7 @@ public struct MentionTextStyle: @MainActor Hashable {
         hasher.combine(color)
         hasher.combine(lineHeight)
         hasher.combine(surface)
+        hasher.combine(alignment)
     }
 
     /// The text as it's drawn and edited: its text runs with `attributes`, and each mention one
@@ -83,20 +93,30 @@ public struct MentionTextStyle: @MainActor Hashable {
     /// each mention a live pill by the name it holds, which is as wide as the canvas draws it while
     /// its shape is called that, whatever its kind's symbol (a symbol has a slot of its own,
     /// `MentionStyle.symbolSlot`). One drawn missing or unavailable has no symbol, so it's narrower.
-    public func measuredString<S>(_ text: ScopedMentionText<S>, width: CGFloat?) -> NSAttributedString {
-        var labels = text.runs.lazy.compactMap { run -> String? in
+    ///
+    /// `names`, if given, are the names the mentions show now, one for each, in order
+    /// (`ShapeContext.mentionNames`: a layout input that follows a rename, which writes nothing to
+    /// the text), and measure in place of the names the text holds.
+    public func measuredString<S>(_ text: ScopedMentionText<S>, width: CGFloat?, names: [String]? = nil) -> NSAttributedString {
+        let held = text.runs.compactMap { run -> String? in
             if case .mention(_, let label) = run { label } else { nil }
-        }.makeIterator()
+        }
+        var next = 0
+        func label() -> String {
+            defer { next += 1 }
+            if let names, next < names.count { return names[next] }
+            return next < held.count ? held[next] : ""
+        }
         // Its symbol is drawn nowhere, so it names none: the slot is the same.
         return attributedString(text, width: width) { _ in
-            .live(MentionAppearance(label: labels.next() ?? "", systemImage: "", kindName: "", detail: ""))
+            .live(MentionAppearance(label: label(), systemImage: "", kindName: "", detail: ""))
         }
     }
 
     /// Where each of `ranges` of `string` (made by `attributedString`) is when the canvas draws it
     /// in a box of `size` (`drawMentionText`): a rect a line the range is on, from the box's
     /// top-left (down is +y), as wide as its glyphs and pills there and as tall as the line; none
-    /// on a line past the box. For what a shape draws behind some of its words (a schema card's
+    /// on a line past the box. For what a shape draws behind some of its words (a type's
     /// highlights).
     public func lineRects(of ranges: [NSRange], in string: NSAttributedString, size: CGSize) -> [[CGRect]] {
         MentionTextLayout.lineRects(of: ranges, in: string, size: size, style: self)

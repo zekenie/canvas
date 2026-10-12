@@ -2,6 +2,7 @@ import Canvas
 import CoreGraphics
 import DrawScript
 import Geometry
+import Queries
 
 // `canvas draw`: a script in DrawScript's language, applied to the board in one transaction, or
 // not at all. It's read (`Script(parsing:)`), resolved against the board as the run starts (kinds,
@@ -18,7 +19,7 @@ extension PluginID {
     public static let drawEngine: PluginID = "draw-engine"
 }
 
-/// The draw engine's plugin: it owns the four points the plugins that own a concern fill with this
+/// The draw engine's plugin: it owns the six points the plugins that own a concern fill with this
 /// app's words (DrawPoints.swift), and contributes the engine's mark. A plugin that isn't a language
 /// runs the engine through the free functions `draw` (here), `measure` (Measure.swift) and `kinds`
 /// (Kinds.swift); the command line's commands over it are Automation's.
@@ -122,6 +123,9 @@ struct DrawChange: Sendable {
     /// `share: "A"`, the title of the shape it is beside.
     var shared: Bool?
     var sharedWith: String?
+    /// What its values still need and what is wrong with them, when its types say anything of them
+    /// (`DrawReports`).
+    var problems: [ShapeProblem]?
     /// An edge's attributes as it has them now (those DrawEdges declares), by key.
     var attributes: [String: JSONValue] = [:]
 }
@@ -130,7 +134,7 @@ extension DrawChange: Encodable {
     /// A row's own members, which an edge's attributes (written beside them) can't be named
     /// (`DrawEdges.check`).
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case line, did, kind, title, was, at, inView, pushedPast, from, to, via, shared, sharedWith
+        case line, did, kind, title, was, at, inView, pushedPast, from, to, via, shared, sharedWith, problems
     }
 
     private struct AttributeKey: CodingKey {
@@ -155,6 +159,7 @@ extension DrawChange: Encodable {
         try container.encodeIfPresent(via, forKey: .via)
         try container.encodeIfPresent(shared, forKey: .shared)
         try container.encodeIfPresent(sharedWith, forKey: .sharedWith)
+        try container.encodeIfPresent(problems, forKey: .problems)
         guard !attributes.isEmpty else { return }
         var more = encoder.container(keyedBy: AttributeKey.self)
         for (key, value) in attributes.sorted(by: { $0.key < $1.key }) { try more.encode(value, forKey: AttributeKey(stringValue: key)) }
@@ -318,6 +323,9 @@ public struct DrawError: Error, Equatable, CustomStringConvertible {
     public let statement: String?
     /// Every problem found, this one first; empty when it's the only one.
     public let errors: [DrawError]
+    /// Whether it says a name a text writes (a title in a script's value) found no shape, or several, or one the
+    /// value can't be: what `canvas measure` makes a warning, since it measures without the shape.
+    var fromNameLookup = false
 
     public init(_ message: String, reason: String, hint: String? = nil, line: Int? = nil, statement: String? = nil, errors: [DrawError] = []) {
         self.message = message
@@ -329,6 +337,13 @@ public struct DrawError: Error, Equatable, CustomStringConvertible {
     }
 
     public var description: String { message }
+
+    /// This error with another hint, and everything else of it (where the name was looked up, for one).
+    public func with(hint: String?) -> DrawError {
+        var changed = DrawError(message, reason: reason, hint: hint, line: line, statement: statement, errors: errors)
+        changed.fromNameLookup = fromNameLookup
+        return changed
+    }
 }
 
 extension DrawError {

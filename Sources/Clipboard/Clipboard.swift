@@ -1,7 +1,9 @@
 import AppKit
 import Canvas
 import ContextMenus
+import Geometry
 import Keyboard
+import Selection
 
 /// Cut, copy and paste, as a plugin: ⌘X, ⌘C and ⌘V (registered with Keyboard), Edit › Cut, Copy
 /// and Paste (the commands the board's window runs), and Cut, Copy and Paste in every context
@@ -69,9 +71,16 @@ extension AnyShapeRecord {
     public var copiedFrom: ShapeID? { meta[CopiedFrom.self]?.shape }
 }
 
+/// Clipboard's constants.
+@MainActor
+public enum ClipboardStyle {
+    /// How far a duplicate lands from what it copies, down and right, in view points.
+    public static let duplicateOffset: CGFloat = 16
+}
+
 // MARK: The context menu
 
-/// Cut, Copy and Paste, items for the canvas: after a kind's own items and a feature's, before
+/// Cut, Copy, Duplicate and Paste, items for the canvas: after a kind's own items and a feature's, before
 /// Arrange.
 public enum ClipboardMenuGroup {}
 extension ClipboardMenuGroup: MenuGroup {
@@ -99,6 +108,10 @@ public struct ClipboardPlugin: OutwardPlugin {
         registrar.command(.cut, shortcuts: [KeyChord("x", .command)], isEnabled: { $0.canCut }) { $0.cutSelection() }
         registrar.command(.copy, shortcuts: [KeyChord("c", .command)], isEnabled: { $0.canCopy }) { $0.copySelection() }
         registrar.command(.paste, shortcuts: [KeyChord("v", .command)], isEnabled: { $0.canPaste }) { $0.paste() }
+        // ⌘D and Edit › Duplicate copy the selection beside itself without the pasteboard; ⌥ held on a drag
+        // of the selection (Selection's `copiesOnDrag`) carries copies in place of the shapes.
+        registrar.command(.duplicate, shortcuts: [KeyChord("d", .command)], isEnabled: { $0.canDuplicate }) { $0.duplicateSelection() }
+        registrar.copiesOnDrag { editor, ids in editor.duplicate(ids) }
         // In every context menu, on shapes and on empty canvas. Cut and Copy show when some of the
         // shapes the menu is for can be copied, and act on those; Paste, when there's something
         // to paste, which lands centered where the menu was asked for (⌘V keeps its rule: where it
@@ -109,6 +122,11 @@ public struct ClipboardPlugin: OutwardPlugin {
             }
             MenuItem("Copy", in: ClipboardMenuGroup.self, when: { $0.shapes.contains(where: $0.editor.isCopyable) }) { ids, editor in
                 editor.copy(ids)
+            }
+            MenuItem("Duplicate", in: ClipboardMenuGroup.self,
+                     when: { !$0.editor.isBoardReadOnly && $0.shapes.contains(where: $0.editor.isCopyable) }) { ids, editor in
+                let step = ClipboardStyle.duplicateOffset / editor.camera.zoom
+                editor.duplicate(ids, offsetBy: CGPoint(x: step, y: step))
             }
             MenuItem("Paste", in: ClipboardMenuGroup.self, when: { $0.editor.canPaste }) { subject in   // handed the subject: its point
                 subject.editor.paste(centeredAt: subject.point)

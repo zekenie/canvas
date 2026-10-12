@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([textTests, scopeTests, labelTests, stateTests, labelsTests, matchingTests, pillTests, drawingTests, faceTests, textViewTests, pickerTests, boardsTests, backlinkTests, panelTests, mentionedInTests, edgeTests, slashTests, admittingTests, mentionValidationTests, mentionFindTests, mentionLightTests, nameTests, admissionTests])
+runTests([textTests, scopeTests, labelTests, stateTests, labelsTests, matchingTests, pillTests, drawingTests, faceTests, textViewTests, pickerTests, boardsTests, backlinkTests, panelTests, mentionedInTests, edgeTests, slashTests, admittingTests, mentionValidationTests, mentionFindTests, mentionLightTests, nameTests, admissionTests, tokenTests, choiceTests])

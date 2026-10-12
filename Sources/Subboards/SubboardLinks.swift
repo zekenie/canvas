@@ -3,7 +3,7 @@ import Canvas
 import Connections
 
 /// What a subboard's ports draw: a link from a subboard to a subboard. A subboard has ports on
-/// every other channel too (`subboardLinks`), so a note or a schema card links to it on its own
+/// every other channel too (`subboardLinks`), so a note links to it on its own
 /// channel, and it links to either on theirs. It says nothing more yet; a channel is where a
 /// connection's meaning would go.
 public enum SubboardLink {}
@@ -16,7 +16,7 @@ extension SubboardLink: Channel {
 }
 
 extension ShapeRegistrar where Definition == SubboardDefinition {
-    /// Ports on all four sides, the top too, as a schema card's: a long title's pill runs under the
+    /// Ports on all four sides, the top too, as a note's: a long title's pill runs under the
     /// top dot. Its own channel is first, so its dots are indigo (a dot is its first channel's
     /// color) and a drag to another subboard is on it (a drag is drawn on the first of the dot's
     /// channels the shape it ends on takes); every channel there is comes after, so what has ports

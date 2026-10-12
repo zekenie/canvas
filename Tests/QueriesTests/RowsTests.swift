@@ -9,6 +9,23 @@ import TestKit
 // unless named, or none; where a connection runs; and whether it's being typed into. The warnings,
 // how many there are, and `--ask`'s titles and where the person is.
 
+/// `:ailing` and `:sick`, every chore, which say what's the matter with the ones they know: a flagged chore needs an estimate (both
+/// words say so), a done one has a wrong status (`:sick` alone). Neither lists it for any other.
+private func problemsPlugin() -> Contributor {
+    let estimate = ShapeProblem(field: "estimate", path: "/estimate", class: "needed", message: "estimate is needed")
+    let status = ShapeProblem(field: "status", path: nil, class: "wrong", message: "status is done")
+    return Contributor(id: "problems") { registrar in
+        registrar.queryPseudoClass("ailing", "a chore that says what it needs", example: "chore:ailing", prepare: { _ in () },
+                                   matches: { shape, _ in shape.record.kind == Chore.kind ? .yes : .no },
+                                   problems: { record, _, _, _ in record[Flagged.self] == true ? [estimate] : [] })
+        registrar.queryPseudoClass("sick", "a chore that says what's wrong", example: "chore:sick", prepare: { _ in () },
+                                   matches: { shape, _ in shape.record.kind == Chore.kind ? .yes : .no },
+                                   problems: { record, _, _, _ in
+                                       (record[Flagged.self] == true ? [estimate] : []) + ((record.props as? Chore)?.status == .done ? [status] : [])
+                                   })
+    }
+}
+
 @MainActor let rowsTests = Suite("Rows", [
     test("a row: id, kind, name, board, what it's inside, and its attributes as they read") {
         let h = try choresHarness()
@@ -221,5 +238,41 @@ import TestKit
             #"{"board":"root","connection":{"from":{"id":"\#(uuid(2))","title":"Pantry"},"to":{"id":"\#(uuid(1))","title":"Alpha"},"type":"tether"},"#
                 + #""id":"\#(uuid(4))","kind":"link"}"#,
         ])
+    },
+    test("a word with problems lists them on its rows, for those it has any, once each across two words, and no member on a row with none") {
+        let h = try choresHarness(plugins: queryPlugins(more: [problemsPlugin()]))
+        let needs = ShapeProblem(field: "estimate", path: "/estimate", class: "needed", message: "estimate is needed")
+        let rows = try answer("chore:ailing", on: h).rows
+        expectEqual(rows.map(\.id), [1, 2, 3, 4, 11].map(id))
+        expectEqual(rows.map(\.problems), [[needs], nil, nil, nil, nil], "a row with none has no member")
+        let both = try answer("chore:is(:ailing, :sick)", on: h).rows
+        expectEqual(both.map(\.problems), [[needs], [ShapeProblem(field: "status", path: nil, class: "wrong", message: "status is done")], nil, nil, nil],
+                    "the one problem both words give is listed once; a shape's own, with no place in it, has none")
+        let none = try answer("chore:starred, chore:heavy", on: h).rows
+        expect(none.allSatisfy { $0.problems == nil }, "a word that says nothing of problems gives no member")
+    },
+    test("problems are asked only of the rows returned: none for a count, a limit's rows, all of them in slices") {
+        let h = try choresHarness(plugins: queryPlugins(more: [problemsPlugin()]))
+        let queries = try require(h.editor.queries)
+        _ = try answer("chore:ailing", on: h, countOnly: true)
+        expectEqual(queries.problemsAsked, 0, "a count lists no rows")
+        _ = try answer("chore:ailing", on: h, limit: 2)
+        expectEqual(queries.problemsAsked, 2, "two rows")
+        _ = try answer("chore:ailing", on: h, properties: .none)
+        expectEqual(queries.problemsAsked, 2 + 5, "every row, though no attributes are listed")
+        _ = try answer("chore", on: h)
+        expectEqual(queries.problemsAsked, 2 + 5, "a query that names no such word asks nothing")
+        _ = try answer("chore:ailing, chore:sick", on: h)
+        expectEqual(queries.problemsAsked, 2 + 5 + 5, "once for each row, whatever the words it names")
+    },
+    test("a row's problems as JSON: a field and its place when there are any, each problem's class and message") {
+        let h = try choresHarness(plugins: queryPlugins(more: [problemsPlugin()]))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let rows = try answer("chore:is(:ailing, :sick)", on: h, properties: .none).rows
+        let texts = try rows.prefix(3).map { String(decoding: try encoder.encode($0), as: UTF8.self) }
+        expectEqual(texts[0], #"{"board":"root","id":"\#(uuid(1))","kind":"chore","problems":[{"class":"needed","field":"estimate","message":"estimate is needed","path":"\/estimate"}],"title":"Alpha"}"#)
+        expectEqual(texts[1], #"{"board":"root","id":"\#(uuid(2))","kind":"chore","problems":[{"class":"wrong","field":"status","message":"status is done"}]}"#)
+        expectEqual(texts[2], #"{"board":"root","id":"\#(uuid(3))","kind":"chore","title":"Gamma"}"#)
     },
 ])

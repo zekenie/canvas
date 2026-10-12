@@ -1,6 +1,9 @@
 import Foundation
 
 /// Where a JSON value breaks a schema: one keyword, at one place in the value.
+///
+/// Equal by `path`, `keyword` and `message`: `detail` is the message less the place's name, so it
+/// follows from them.
 public struct SchemaViolation: Hashable, Sendable, CustomStringConvertible {
     /// Where it is, from the value's root: the members and elements on the way. For a member that's
     /// missing (`required`) or not allowed (`additionalProperties`), that member.
@@ -11,11 +14,26 @@ public struct SchemaViolation: Hashable, Sendable, CustomStringConvertible {
     /// What's wrong, for people. It names the place by its schema's `title`, else by its path:
     /// "Title is 95 characters long, and should be at most 80."
     public let message: String
+    /// What's wrong without naming the place, for a reader that says the place its own way:
+    /// "is 95 characters long, and should be at most 80." The message is the place's name, a space,
+    /// and this. A violation made by hand with no detail has its message.
+    public let detail: String
 
-    public init(path: [JSONPathComponent], keyword: String, message: String) {
+    public init(path: [JSONPathComponent], keyword: String, message: String, detail: String? = nil) {
         self.path = path
         self.keyword = keyword
         self.message = message
+        self.detail = detail ?? message
+    }
+
+    public static func == (a: Self, b: Self) -> Bool {
+        a.path == b.path && a.keyword == b.keyword && a.message == b.message
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(path)
+        hasher.combine(keyword)
+        hasher.combine(message)
     }
 
     /// The root's member it's in (`title`, `frame`); nil for the root itself.
@@ -76,11 +94,18 @@ extension JSONSchema {
 /// `properties`, `patternProperties`, `additionalProperties`, `propertyNames`, `prefixItems`,
 /// `items`, `contains`, `allOf`, `anyOf`, `oneOf`, `not`, `if`/`then`/`else` and `$ref`, to any
 /// place in the same schema (`#/$defs/core.rect`, `#`). `format` is an annotation, as 2020-12 has
-/// it, and so is any keyword it doesn't know (`x-canvas-owner`, `default`): neither is checked.
+/// it, unless the validator is given the format (`SchemaFormats`), and so is any keyword it doesn't
+/// know (`x-canvas-owner`, `default`): neither is checked.
 /// Strings are compared as JSON Schema compares them, code point for code point (Swift's `==`
 /// equates "é" and "e\u{301}"). Patterns are ECMA-262's, as JSON Schema's are, run by ICU
 /// (`NSRegularExpression`) once what it reads otherwise is rewritten (`ICUPattern`); one ICU can't
 /// read at all is a problem of the schema's.
+///
+/// A `$ref` may also name a schema outside this one, `urn:uuid:…#/$defs/name`: `init(_:resources:)`
+/// asks its resolver for the schema filed under the part before the first `#`, verbatim (no RFC 3986
+/// resolution against `$id`, which stays an annotation), once per URI however many refs name it,
+/// then follows the fragment in that schema, whose own `#/…` refs are to itself. A `$ref` with no
+/// resolver to ask, or that the resolver has no schema for, is a problem like one to nowhere.
 public struct SchemaValidator: Sendable {
     private let nodes: [Node]
     /// What's wrong with the schema itself, each saying where it is: a `$ref` to a place the schema
@@ -89,13 +114,34 @@ public struct SchemaValidator: Sendable {
     /// Checking a value says each where the value meets it, as "can't be checked"; the registry
     /// refuses a kind whose schema has any.
     public let problems: [String]
+    /// The URIs outside the schema that its `$ref`s name, each once, in the order the compiler met
+    /// them, found or not: what a caller that keeps this validator drops it on when one of those
+    /// schemas changes (or appears). Empty without a resolver.
+    public let resources: [String]
 
-    public init(_ schema: JSONSchema) {
-        var compiler = Compiler(root: .object(schema.json))
+    /// `formats` are the `format`s it checks (`SchemaFormats.standard`); every other is an annotation.
+    public init(_ schema: JSONSchema, formats: SchemaFormats = .none) {
+        var compiler = Compiler(root: .object(schema.json), resolver: nil, formats: formats)
         _ = compiler.node(for: .object(schema.json), at: "#")
         compiler.markLoops()
         nodes = compiler.nodes
         problems = compiler.problems
+        resources = []
+    }
+
+    /// The schema compiled with `resources` to ask for the schemas its `$ref`s name outside it: the
+    /// URI is the `$ref`'s part before its first `#`, as written, and nil is a schema it doesn't
+    /// have. It runs while compiling and isn't kept, so a validator is as `Sendable` as ever: it may
+    /// close over state that isn't, or read a snapshot taken for the purpose.
+    /// A resource is compiled with the same `formats`, so its `format`s are checked too.
+    public init(_ schema: JSONSchema, formats: SchemaFormats = .none, resources resolve: (_ uri: String) -> JSONSchema?) {
+        let compiled = withoutActuallyEscaping(resolve) { resolver in
+            var compiler = Compiler(root: .object(schema.json), resolver: resolver, formats: formats)
+            _ = compiler.node(for: .object(schema.json), at: "#")
+            compiler.markLoops()
+            return (compiler.nodes, compiler.problems, compiler.met)
+        }
+        (nodes, problems, resources) = compiled
     }
 
     /// Where `value` breaks the schema, in the order the schema lists what it checks; empty when it
@@ -120,23 +166,23 @@ public struct SchemaValidator: Sendable {
         let node = nodes[index]
         // What the place is called, worked out only when there's something to say about it.
         func name() -> Naming { Naming(path: path, title: title(of: node)) }
-        if node.allowsNothing { return found.report(path, "false", "\(name()) isn’t allowed here.") }
+        if node.allowsNothing { return found.report(path, "false", name: name(), "isn’t allowed here.") }
         if let unresolved = node.unresolvedRef {
-            return found.report(path, "$ref", "\(name()) can’t be checked: its schema refers to \(unresolved), which isn’t in it.")
+            return found.report(path, "$ref", name: name(), "can’t be checked: its schema refers to \(unresolved), which \(node.unresolvedWhole ? "can’t be found" : "isn’t in it").")
         }
         if node.loops {
-            return found.report(path, "$ref", "\(name()) can’t be checked: its schema refers back to itself without end.")
+            return found.report(path, "$ref", name: name(), "can’t be checked: its schema refers back to itself without end.")
         }
         if let ref = node.ref { check(value, against: ref, at: &path, into: &found) }
         // A value of the wrong type isn't what the rest describes: that's all there is to say.
         if let types = node.types, types.isDisjoint(with: JSONTypes(of: value)) {
-            return found.report(path, "type", "\(name()) should be \(Self.list(node.typeNames.map(Self.typeName), or: true)), not \(Self.describe(value)).")
+            return found.report(path, "type", name: name(), "should be \(Self.list(node.typeNames.map(Self.typeName), or: true)), not \(Self.describe(value)).")
         }
         if let values = node.enumValues, !values.contains(where: { Self.same($0, value) }) {
-            found.report(path, "enum", "\(name()) should be \(Self.list(values.map(Self.literal), or: true)).")
+            found.report(path, "enum", name: name(), "should be \(Self.list(values.map(Self.literal), or: true)).")
         }
         if let constant = node.constValue, !Self.same(value, constant) {
-            found.report(path, "const", "\(name()) should be \(Self.literal(constant)).")
+            found.report(path, "const", name: name(), "should be \(Self.literal(constant)).")
         }
         switch value {
         case .number(let number) where node.checksNumbers:
@@ -152,14 +198,14 @@ public struct SchemaValidator: Sendable {
         }
         for index in node.allOf { check(value, against: index, at: &path, into: &found) }
         if !node.anyOf.isEmpty, !node.anyOf.contains(where: { holds(value, against: $0, at: &path) }) {
-            found.report(path, "anyOf", "\(name()) doesn’t fit any of its forms.")
+            found.report(path, "anyOf", name: name(), "doesn’t fit any of its forms.")
         }
         if !node.oneOf.isEmpty {
             let fits = node.oneOf.count { holds(value, against: $0, at: &path) }
-            if fits != 1 { found.report(path, "oneOf", fits == 0 ? "\(name()) doesn’t fit any of its forms." : "\(name()) fits more than one of its forms.") }
+            if fits != 1 { found.report(path, "oneOf", name: name(), fits == 0 ? "doesn’t fit any of its forms." : "fits more than one of its forms.") }
         }
         if let not = node.not, holds(value, against: not, at: &path) {
-            found.report(path, "not", "\(name()) fits a form it shouldn’t.")
+            found.report(path, "not", name: name(), "fits a form it shouldn’t.")
         }
         if let condition = node.condition {
             let branch = holds(value, against: condition, at: &path) ? node.then : node.else
@@ -174,7 +220,7 @@ public struct SchemaValidator: Sendable {
 
     private func checkNumber(_ number: Double, _ node: Node, at path: [JSONPathComponent], into found: inout Found) {
         func report(_ keyword: String, _ bound: Double, _ should: String) {
-            found.report(path, keyword, "\(Naming(path: path, title: title(of: node))) is \(Self.format(number)), and should be \(should) \(Self.format(bound)).")
+            found.report(path, keyword, name: Naming(path: path, title: title(of: node)), "is \(Self.format(number)), and should be \(should) \(Self.format(bound)).")
         }
         if let minimum = node.minimum, number < minimum { report("minimum", minimum, "at least") }
         if let maximum = node.maximum, number > maximum { report("maximum", maximum, "at most") }
@@ -205,19 +251,22 @@ public struct SchemaValidator: Sendable {
             // Code points, as JSON Schema counts a string's length.
             let length = string.unicodeScalars.count
             if let minimum = node.minLength, length < minimum {
-                found.report(path, "minLength", length == 0 ? "\(name()) is empty." : "\(name()) \(Self.length(of: string, length)), and should be at least \(minimum).")
+                found.report(path, "minLength", name: name(), length == 0 ? "is empty." : "\(Self.length(of: string, length)), and should be at least \(minimum).")
             }
             if let maximum = node.maxLength, length > maximum {
-                found.report(path, "maxLength", "\(name()) \(Self.length(of: string, length)), and should be at most \(maximum).")
+                found.report(path, "maxLength", name: name(), "\(Self.length(of: string, length)), and should be at most \(maximum).")
             }
         }
         if let pattern = node.pattern {
             guard let regex = pattern.regex else {
-                return found.report(path, "pattern", "\(name()) can’t be checked: its pattern \(Self.quoted(pattern.source)) isn’t a regular expression ICU can read.")
+                return found.report(path, "pattern", name: name(), "can’t be checked: its pattern \(Self.quoted(pattern.source)) isn’t a regular expression ICU can read.")
             }
             if regex.firstMatch(in: string, range: NSRange(string.startIndex..., in: string)) == nil {
-                found.report(path, "pattern", "\(name()) should match \(pattern.source).")
+                found.report(path, "pattern", name: name(), "should match \(pattern.source).")
             }
+        }
+        if let format = node.format, !format.fits(string) {
+            found.report(path, "format", name: name(), "should be \(format.reads), not \(Self.describe(.string(string))).")
         }
     }
 
@@ -229,7 +278,7 @@ public struct SchemaValidator: Sendable {
                 guard let schema else { continue }
                 if offset >= node.prefixItems.count, nodes[schema].allowsNothing {
                     // `items: false`: no element past the listed ones, said once for the array.
-                    found.report(path, "items", "\(name()) has \(Self.count(elements.count, "item")), and should have at most \(node.prefixItems.count).")
+                    found.report(path, "items", name: name(), "has \(Self.count(elements.count, "item")), and should have at most \(node.prefixItems.count).")
                     break
                 }
                 path.append(.element(offset))
@@ -247,20 +296,20 @@ public struct SchemaValidator: Sendable {
             let fitting = fits == 1 ? "1 item that fits" : "\(fits) items that fit"
             if fits < least {
                 found.report(path, node.minContains == nil ? "contains" : "minContains",
-                             fits == 0 ? "\(name()) has no item that fits." : "\(name()) has \(fitting), and should have at least \(least).")
+                             name: name(), fits == 0 ? "has no item that fits." : "has \(fitting), and should have at least \(least).")
             }
             if let most = node.maxContains, fits > most {
-                found.report(path, "maxContains", "\(name()) has \(fitting), and should have at most \(most).")
+                found.report(path, "maxContains", name: name(), "has \(fitting), and should have at most \(most).")
             }
         }
         if let minimum = node.minItems, elements.count < minimum {
-            found.report(path, "minItems", "\(name()) has \(Self.count(elements.count, "item")), and should have at least \(minimum).")
+            found.report(path, "minItems", name: name(), "has \(Self.count(elements.count, "item")), and should have at least \(minimum).")
         }
         if let maximum = node.maxItems, elements.count > maximum {
-            found.report(path, "maxItems", "\(name()) has \(Self.count(elements.count, "item")), and should have at most \(maximum).")
+            found.report(path, "maxItems", name: name(), "has \(Self.count(elements.count, "item")), and should have at most \(maximum).")
         }
         if node.uniqueItems, Set(elements.map(Exactly.init)).count != elements.count {
-            found.report(path, "uniqueItems", "\(name()) has the same item more than once.")
+            found.report(path, "uniqueItems", name: name(), "has the same item more than once.")
         }
     }
 
@@ -275,12 +324,12 @@ public struct SchemaValidator: Sendable {
             Naming(path: path + [.member(member)], title: node.listed[member].flatMap { nodes[$0].title })
         }
         for member in node.required where Self.member(member, of: members) == nil {
-            found.report(path + [.member(member)], "required", "\(memberName(member)) is missing.")
+            found.report(path + [.member(member)], "required", name: memberName(member), "is missing.")
         }
         for (member, dependents) in node.dependentRequired where Self.member(member, of: members) != nil {
             for dependent in dependents where Self.member(dependent, of: members) == nil {
                 found.report(path + [.member(dependent)], "dependentRequired",
-                             "\(memberName(dependent)) is missing, which \(memberName(member).lowercased) needs.")
+                             name: memberName(dependent), "is missing, which \(memberName(member).lowercased) needs.")
             }
         }
         var listed = 0
@@ -298,14 +347,14 @@ public struct SchemaValidator: Sendable {
             let broken = node.patternProperties.first { $0.regex == nil }
             if let broken {
                 found.report(path, "patternProperties",
-                             "\(name()) can’t be checked: its pattern \(Self.quoted(broken.source)) for properties isn’t a regular expression ICU can read.")
+                             name: name(), "can’t be checked: its pattern \(Self.quoted(broken.source)) for properties isn’t a regular expression ICU can read.")
             }
             for member in members.keys.sorted() {
                 let value = members[member]!
                 path.append(.member(member))
                 defer { path.removeLast() }
                 if let names = node.propertyNames, !holds(.string(member), against: names, at: &path) {
-                    found.report(path, "propertyNames", "\(member) isn’t a name \(objectName()) allows.")
+                    found.report(path, "propertyNames", name: member, "isn’t a name \(objectName()) allows.")
                 }
                 var matched = broken != nil || Self.member(member, of: node.listed) != nil
                 for (_, regex, schema) in node.patternProperties {
@@ -315,7 +364,7 @@ public struct SchemaValidator: Sendable {
                 }
                 if !matched, let additional = node.additionalProperties {
                     if nodes[additional].allowsNothing {
-                        found.report(path, "additionalProperties", "\(Naming(path: path, title: nil)) isn’t one of \(objectName())’s properties.")
+                        found.report(path, "additionalProperties", name: Naming(path: path, title: nil), "isn’t one of \(objectName())’s properties.")
                     } else {
                         check(value, against: additional, at: &path, into: &found)
                     }
@@ -323,10 +372,10 @@ public struct SchemaValidator: Sendable {
             }
         }
         if let minimum = node.minProperties, members.count < minimum {
-            found.report(path, "minProperties", "\(name()) has \(Self.count(members.count, "property", "properties")), and should have at least \(minimum).")
+            found.report(path, "minProperties", name: name(), "has \(Self.count(members.count, "property", "properties")), and should have at least \(minimum).")
         }
         if let maximum = node.maxProperties, members.count > maximum {
-            found.report(path, "maxProperties", "\(name()) has \(Self.count(members.count, "property", "properties")), and should have at most \(maximum).")
+            found.report(path, "maxProperties", name: name(), "has \(Self.count(members.count, "property", "properties")), and should have at most \(maximum).")
         }
     }
 
@@ -452,10 +501,12 @@ private struct Found {
     /// Whether there's nothing more to find out.
     var isSettled: Bool { quiet && broke }
 
-    mutating func report(_ path: @autoclosure () -> [JSONPathComponent], _ keyword: String, _ message: @autoclosure () -> String) {
+    /// `name` is the place as the message calls it, `detail` what is wrong without it.
+    mutating func report(_ path: @autoclosure () -> [JSONPathComponent], _ keyword: String, name: @autoclosure () -> CustomStringConvertible, _ detail: @autoclosure () -> String) {
         broke = true
         guard !quiet else { return }
-        violations.append(SchemaViolation(path: path(), keyword: keyword, message: message()))
+        let detail = detail()
+        violations.append(SchemaViolation(path: path(), keyword: keyword, message: "\(name()) \(detail)", detail: detail))
     }
 }
 
@@ -671,8 +722,10 @@ private final class Node: @unchecked Sendable {
     var allowsNothing = false
     var title: String?
     var ref: Int?
-    /// A `$ref` to a place the schema doesn't have.
+    /// A `$ref` to a place the schema doesn't have, or (with `unresolvedWhole`) to a schema outside
+    /// it that the resolver didn't have: the URI.
     var unresolvedRef: String?
+    var unresolvedWhole = false
     /// A place its `$ref` leads back to before going into the value, where checking would go round
     /// forever: it stops there.
     var loops = false
@@ -690,6 +743,8 @@ private final class Node: @unchecked Sendable {
     var minLength: Int?
     var maxLength: Int?
     var pattern: (source: String, regex: NSRegularExpression?)?
+    /// The `format`, when the validator checks that one.
+    var format: SchemaFormats.Format?
     var prefixItems: [Int] = []
     var items: Int?
     var contains: Int?
@@ -721,7 +776,7 @@ private final class Node: @unchecked Sendable {
 
     /// Whether a number or a string has anything to be held to here, beyond its type.
     var checksNumbers: Bool { minimum != nil || maximum != nil || exclusiveMinimum != nil || exclusiveMaximum != nil || multipleOf != nil }
-    var checksStrings: Bool { minLength != nil || maxLength != nil || pattern != nil }
+    var checksStrings: Bool { minLength != nil || maxLength != nil || pattern != nil || format != nil }
 
     /// The places applied to the same value as this one: a loop through them never ends. `then`
     /// and `else` are applied only with an `if`.
@@ -732,15 +787,36 @@ private final class Node: @unchecked Sendable {
 
 private struct Compiler {
     let root: JSONValue
+    /// Asked for a schema outside the root, by its URI; nil when there is none to ask.
+    let resolver: ((String) -> JSONSchema?)?
+    let formats: SchemaFormats
     var nodes: [Node] = []
-    /// Where each node is, as a JSON Pointer from the root, for `problems`.
+    /// Where each node is, as its resource's URI (empty for the root) and a JSON Pointer from that
+    /// resource's root, for `problems`: `#/$defs/core.rect`, `urn:uuid:…#/properties/name`.
     var pointers: [String] = []
-    /// Each place compiled, by its JSON Pointer from the root (`#/$defs/core.rect`), so a `$ref` to
-    /// a place already compiled, or being compiled (a type that holds itself), finds its node.
+    /// Each place compiled, by those same names, so a `$ref` to a place already compiled, or being
+    /// compiled (a type that holds itself), finds its node.
     var byPointer: [String: Int] = [:]
     var problems: [String] = []
+    /// Each resource the resolver was asked for, nil if it had none; asked once.
+    private var resources: [String: JSONValue?] = [:]
+    /// Their URIs, in the order they were first asked for.
+    var met: [String] = []
 
-    init(root: JSONValue) { self.root = root }
+    init(root: JSONValue, resolver: ((String) -> JSONSchema?)?, formats: SchemaFormats) {
+        self.root = root
+        self.resolver = resolver
+        self.formats = formats
+    }
+
+    /// The schema filed under `uri`, asking the resolver the first time only.
+    private mutating func resource(_ uri: String) -> JSONValue? {
+        if let known = resources[uri] { return known }
+        let found = resolver?(uri).map { JSONValue.object($0.json) }
+        resources[uri] = .some(found)
+        met.append(uri)
+        return found
+    }
 
     mutating func node(for schema: JSONValue, at pointer: String) -> Int {
         if let known = byPointer[pointer] { return known }
@@ -769,11 +845,32 @@ private struct Compiler {
 
         node.title = json["title"]?.stringValue
         if let reference = json["$ref"]?.stringValue {
-            if let target = Self.resolve(reference, in: root) {
-                node.ref = self.node(for: target, at: Self.normalized(reference))
-            } else {
+            // The resource the place is in: the root's, or one the resolver gave.
+            let here = String(pointer[..<(pointer.firstIndex(of: "#") ?? pointer.endIndex)])
+            let hash = reference.firstIndex(of: "#")
+            let base = String(reference[..<(hash ?? reference.endIndex)])
+            let fragment = hash.map { String(reference[$0...]) } ?? (base.isEmpty ? reference : "#")
+            if base.isEmpty || base == here {
+                if let target = Self.resolve(fragment, in: here.isEmpty ? root : resource(here) ?? root) {
+                    node.ref = self.node(for: target, at: here + Self.normalized(fragment))
+                } else {
+                    node.unresolvedRef = reference
+                    problems.append("the $ref at \(pointer), \(reference), isn't in the schema")
+                }
+            } else if resolver == nil {
                 node.unresolvedRef = reference
                 problems.append("the $ref at \(pointer), \(reference), isn't in the schema")
+            } else if let outside = resource(base) {
+                if let target = Self.resolve(fragment, in: outside) {
+                    node.ref = self.node(for: target, at: base + Self.normalized(fragment))
+                } else {
+                    node.unresolvedRef = reference
+                    problems.append("the $ref at \(pointer), \(reference), isn't in \(base)")
+                }
+            } else {
+                node.unresolvedRef = base
+                node.unresolvedWhole = true
+                problems.append("the $ref at \(pointer), \(base), can't be found")
             }
         }
         if let type = json["type"] {
@@ -795,6 +892,7 @@ private struct Compiler {
             node.pattern = (pattern, regex)
             if regex == nil { problems.append("the pattern at \(pointer), \(SchemaValidator.quoted(pattern)), isn't a regular expression ICU can read") }
         }
+        node.format = json["format"]?.stringValue.flatMap { formats[$0] }
         node.prefixItems = children("prefixItems")
         node.items = child("items")
         node.contains = child("contains")
@@ -856,8 +954,8 @@ private struct Compiler {
         problems += marked.map { "\(pointers[$0]) refers back to itself without going into the value, so checking one would never end" }
     }
 
-    /// The place a local `$ref` points to (`#`, `#/$defs/core.rect`), percent-decoded and unescaped
-    /// as a JSON Pointer; nil for one that isn't local, or isn't there.
+    /// The place a fragment points to in the resource whose root is `root` (`#`, `#/$defs/core.rect`),
+    /// percent-decoded and unescaped as a JSON Pointer; nil for one that isn't there.
     static func resolve(_ reference: String, in root: JSONValue) -> JSONValue? {
         guard reference.hasPrefix("#") else { return nil }
         let pointer = String(reference.dropFirst()).removingPercentEncoding ?? String(reference.dropFirst())
@@ -880,7 +978,7 @@ private struct Compiler {
         return value
     }
 
-    /// A `$ref` as the pointer the compiler files its place under.
+    /// A fragment as the pointer the compiler files its place under (after its resource's URI).
     static func normalized(_ reference: String) -> String {
         reference.removingPercentEncoding ?? reference
     }

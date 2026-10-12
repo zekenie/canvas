@@ -166,6 +166,55 @@ import TestKit
         expectEqual(b.asked.count, 4, "cancelled, then asked again")
         expect(b.read(id, "the prices") != nil)
     },
+    test("a call that failed for a reason that may pass (rate limited, overloaded, the network, a timeout) is asked again after a while, when next read; a refused one never") {
+        let b = try MapBench()
+        b.answer = .failure(.rateLimited)
+        let id = b.box()
+        _ = b.read(id)
+        b.frame()
+        b.settle()
+        expectEqual(b.asked.count, 1)
+        // Not at once.
+        for _ in 0..<2 {
+            _ = b.read(id)
+            b.frame()
+            b.settle()
+        }
+        expectEqual(b.asked.count, 1, "cooling")
+        b.h.scheduler.advance(by: ProseMapService.retryDelay)
+        b.answer = .success(ModelResponse(text: menuAnswer))
+        _ = b.read(id)
+        b.frame()
+        b.settle()
+        expectEqual(b.asked.count, 2, "asked again")
+        expect(b.read(id) != nil, "and answered")
+        for error in [LanguageModelError.overloaded, .network("down"), .timedOut, .server(status: 503, message: "down")] {
+            let other = b.box(at: 300)
+            b.answer = .failure(error)
+            _ = b.read(other, "the prices of \(error)")
+            b.frame()
+            b.settle()
+            let before = b.asked.count
+            b.h.scheduler.advance(by: ProseMapService.retryDelay)
+            b.answer = .success(ModelResponse(text: menuAnswer))
+            _ = b.read(other, "the prices of \(error)")
+            b.frame()
+            b.settle()
+            expectEqual(b.asked.count, before + 1, "\(error) is asked again")
+        }
+        let refused = b.box(at: 600)
+        b.answer = .failure(.unauthorized)
+        _ = b.read(refused, "the unauthorized")
+        b.frame()
+        b.settle()
+        let before = b.asked.count
+        b.h.scheduler.advance(by: ProseMapService.retryDelay)
+        b.answer = .success(ModelResponse(text: menuAnswer))
+        _ = b.read(refused, "the unauthorized")
+        b.frame()
+        b.settle()
+        expectEqual(b.asked.count, before, "unauthorized waits for a key")
+    },
     test("at most 4 calls are out at once, the rest waiting their turn; another board shown drops those waiting for shapes not on it") {
         let b = try MapBench()
         b.model.holdsAnswers = true

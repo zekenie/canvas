@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The highlight evals' cases: a schema card's description and its schema, in step, and the links a
+"""The highlight evals' cases: a type's words and its schema, in step, and the links a
 person would draw between the description's words and the schema's parts. Authored here, readable;
 highlight_evals.py imports CASES.
 
@@ -624,7 +624,7 @@ case("emoji",
      "emoji around the words")
 
 
-# Other schema cards, as the app shows them to the model: a mention as @ and a word, and a "$ref"
+# Other types, as the app shows them to the model: a mention as @ and a word, and a "$ref"
 # to it as that word.
 
 case("house_refs",
@@ -665,3 +665,51 @@ case("order_roles",
       ("@Address", ["/properties/billingAddress"]),
       ("total", ["/properties/total"])],
      "one schema twice: each mention linked to its own use", names_schemas=True)
+
+
+# A link to a note of another type (a pointer), a field renamed by its title, and a setting that is no field.
+
+case("h_link_pointer",
+     "an order: number, a link to a @Customer",
+     {
+         "title": "Order",
+         "type": "object",
+         "properties": {
+             "number": {"type": "string"},
+             "customer": {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "@Customer"}},
+         },
+     },
+     [("order", [ROOT, "/title"]),
+      ("number", ["/properties/number"]),
+      ("@Customer", ["/properties/customer"])],
+     "a link: the @ word goes to the property, never into its contentSchema", names_schemas=True)
+
+case("h_renamed_title",
+     "a contact: email, mobile number",
+     {
+         "title": "Contact",
+         "type": "object",
+         "properties": {
+             "email": {"type": "string", "format": "email"},
+             "phone": {"type": "string", "title": "mobile number"},
+         },
+     },
+     [("contact", [ROOT, "/title"]),
+      ("email", ["/properties/email"]),
+      ("mobile number", ["/properties/phone"])],
+     "a field's title is what the words call it; the address is its key")
+
+case("h_title_directive",
+     "a person: name, called by its name",
+     {
+         "title": "Person",
+         "type": "object",
+         "properties": {
+             "name": {"type": "string"},
+             "$title": {"x-canvas-from": "name"},
+         },
+     },
+     [("person", [ROOT, "/title"]),
+      ("name", ["/properties/name"]),
+      ("called by", [NEVER])],
+     "a $title is a setting, not a field: 'called by its name' is linked to nothing")

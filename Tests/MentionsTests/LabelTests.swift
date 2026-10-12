@@ -16,6 +16,16 @@ import Titles
 private let frame = CGRect(x: 0, y: 0, width: 100, height: 80)
 
 @MainActor let labelTests = Suite("Labels", [
+    test("a resolution's shown label is the live label, else the name it holds, else what its tooltip says") {
+        let live = MentionResolution.live(MentionAppearance(label: "Ann Lee", systemImage: "circle", kindName: "Plate", detail: "Plate"))
+        expectEqual(live.shownLabel(stored: "Old name"), "Ann Lee")
+        expectEqual(live.shownLabel(stored: ""), "Ann Lee")
+        expectEqual(MentionResolution.missing.shownLabel(stored: "Ann Lee"), "Ann Lee")
+        expectEqual(MentionResolution.unavailable.shownLabel(stored: "Ann Lee"), "Ann Lee")
+        expectEqual(MentionResolution.missing.shownLabel(stored: ""), "Deleted")
+        expectEqual(MentionResolution.unavailable.shownLabel(stored: ""), "Not available")
+    },
+
     test("the label is the kind's label, else the title, else untitled, else Untitled and the kind's name") {
         let h = try mentionHarness()
         let registry = h.editor.registry

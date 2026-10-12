@@ -1,5 +1,6 @@
 import Canvas
 import CoreGraphics
+import Mentions
 
 /// An arrow: a shape kind with no box. The record's id is the arrow's id.
 public struct Arrow: ShapeProps {
@@ -8,6 +9,9 @@ public struct Arrow: ShapeProps {
     public static let migrations = [
         // It may say something, on its body (tldraw's arrow label).
         PropsMigration("text and labelPosition"),
+        // Its text may mention shapes: text that would now read as a mention (or an escaped one)
+        // is escaped, so it stays the text it was.
+        PropsMigration("text may mention shapes") { props in MentionTextFormat.escapeLookalikesV1(in: &props, "text") },
     ]
     public static let properties = Properties<Arrow>(title: "Arrow") {
         Property("start", \.start).required()
@@ -25,16 +29,16 @@ public struct Arrow: ShapeProps {
     public var bend: CGFloat
     public var startArrowhead: Bool
     public var endArrowhead: Bool
-    /// What it says, set on its body, which gives way to it (its label). Plain text for now; text
-    /// that mentions shapes, as a note's does, is to come (stored as a string all the same).
-    public var text: String
+    /// What it says, set on its body, which gives way to it (its label), with mentions of other
+    /// shapes, as a note's text has (stored as a string all the same).
+    public var text: MentionText
     /// Where its label's center sits along its visible body, as a fraction of its length: 0 at its
     /// start, 1 at its end (tldraw's `labelPosition`). The label stays clear of an end that has a
     /// head or is bound, however near that end this is.
     public var labelPosition: CGFloat
 
     public init(start: ArrowTerminal, end: ArrowTerminal, bend: CGFloat = 0, startArrowhead: Bool = false, endArrowhead: Bool = true,
-                text: String = "", labelPosition: CGFloat = 0.5) {
+                text: MentionText = "", labelPosition: CGFloat = 0.5) {
         self.start = start
         self.end = end
         self.bend = bend
@@ -44,9 +48,9 @@ public struct Arrow: ShapeProps {
         self.labelPosition = labelPosition
     }
 
-    /// Whether it says anything: text that isn't all spaces and line breaks. Only then has it a
-    /// label, but while it's being edited.
-    public var hasText: Bool { text.contains { !$0.isWhitespace } }
+    /// Whether it says anything: a mention, or text that isn't all spaces and line breaks. Only then
+    /// has it a label, but while it's being edited.
+    public var hasText: Bool { !text.isBlank }
 
     public init() { self.init(start: .free(.zero), end: .free(.zero)) }
 

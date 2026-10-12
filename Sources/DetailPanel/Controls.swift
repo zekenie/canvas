@@ -352,17 +352,21 @@ public enum DetailNumberText {
 /// checked as the app's is (`Spelling.app`). `placeholder` shows, dimmed, while it's empty. With
 /// `onCommit`, Return calls it (the text is done: a plugin may act on it), ⇧↩ is a new line, and the
 /// keyboard leaving the box calls it too; without, Return is a new line and nothing else happens.
+/// `asTyped` is for a value, not words: no spelling check and no correction, no smart quotes or
+/// dashes, nothing changed as it is keyed (the panel's own font still).
 public struct DetailTextArea: View {
     @Binding var text: String
     let height: CGFloat
     let placeholder: String?
+    let asTyped: Bool
     let onCommit: (@MainActor () -> Void)?
 
     public init(_ text: Binding<String>, height: CGFloat = DetailStyle.textAreaHeight, placeholder: String? = nil,
-                onCommit: (@MainActor () -> Void)? = nil) {
+                asTyped: Bool = false, onCommit: (@MainActor () -> Void)? = nil) {
         _text = text
         self.height = height
         self.placeholder = placeholder
+        self.asTyped = asTyped
         self.onCommit = onCommit
     }
 
@@ -370,7 +374,7 @@ public struct DetailTextArea: View {
     /// draws the placeholder itself and checks spelling as the app does (SwiftUI's `TextEditor`
     /// can't be told to).
     public var body: some View {
-        DetailTextBox($text, height: height, placeholder: placeholder, onCommit: onCommit, make: PlainTextView.prose)
+        DetailTextBox($text, height: height, placeholder: placeholder, onCommit: onCommit, make: asTyped ? PlainTextView.keyed : PlainTextView.prose)
     }
 }
 

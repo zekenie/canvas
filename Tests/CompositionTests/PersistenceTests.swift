@@ -1,14 +1,16 @@
 import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Foundation
+import Frames
 import LanguageModels
 import Mentions
-import Schemas
 import ShippedTesting
 import StickyNotes
 import TestKit
 import Titles
+import Types
 
 @MainActor private func record<P: ShapeProps>(_ props: P) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(props)) }
 
@@ -48,24 +50,81 @@ import Titles
         ])
         expectEqual(MentionText(note.props.text.runs), note.props.text, "written as a note's editor writes it")
     },
-    // Since its second version a schema card's description may mention other schema cards, which its
-    // schema refers to: what it said before reads as it did.
-    test("a schema card's description from before mentions reads as the text it was; today's fixture mentions the card its schema refers to") {
+    // Since its third version an arrow's text may mention shapes: what it said before reads as it did.
+    test("an arrow's text from before mentions reads as the text it was; today's fixture holds mentions, and a look-alike that's text") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         let directory = "Tests/CompositionTests/Fixtures/kinds"
-        expectEqual(codec.version(of: SchemaCard.kind), 1)
-        let before = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/schema-card.v0.json"))
-        let old = try require(codec.decodeRecord(props: before, kind: SchemaCard.kind, version: 0).typed(as: SchemaCard.self))
-        expectEqual(old.props.prompt.runs, [.text("email required, phone required, description")])
-        let data = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/schema-card.v1.json"))
-        let card = try require(codec.decodeRecord(props: data, kind: SchemaCard.kind, version: 1).typed(as: SchemaCard.self))
+        expectEqual(codec.version(of: Arrow.kind), 2)
+        let before = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/arrow.v1.json"))
+        let old = try require(codec.decodeRecord(props: before, kind: Arrow.kind, version: 1).typed(as: Arrow.self))
+        expectEqual(old.props.text.runs, [.text("Calls")])
+        let data = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/arrow.v2.json"))
+        let arrow = try require(codec.decodeRecord(props: data, kind: Arrow.kind, version: 2).typed(as: Arrow.self))
+        let groceries = ShapeID(UUID(uuidString: "7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D")!)
+        expectEqual(arrow.props.text.runs, [.text("Calls "), .mention(groceries, label: "Groceries"), .text(", not @[Q2](shape:11111111-2222-4333-8444-555555555555)")])
+        expectEqual(MentionText(arrow.props.text.runs), arrow.props.text, "written as an arrow's editor writes it")
+        // A label from before that reads as a mention (a look-alike or a whole one) is the text it was.
+        var looks = try require(JSONValue.object(["start": .object(["free": .array([0, 0])]), "end": .object(["free": .array([1, 1])]),
+                                                    "text": "see @[x](shape:1234)"]).objectValue)
+        looks["bend"] = 0
+        let escaped = try require(codec.decodeRecord(props: try JSONEncoder().encode(JSONValue.object(looks)), kind: Arrow.kind, version: 1).typed(as: Arrow.self))
+        expectEqual(escaped.props.text.runs, [.text("see @[x](shape:1234)")])
+    },
+    // A type's schema (Types' added property) is its text, one string, whose `$ref`s to other types
+    // name them, as a note's mentions do.
+    test("a type note's schema reads as the text it was, and names the type its $ref points to") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        expectEqual(codec.version(ofProperty: TypeSchemaProperty.key), 0)
+        let data = try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/added/schema.v0.json"))
+        let schema = try JSONDecoder().decode(SchemaText.self, from: try codec.migrateValue(data, property: TypeSchemaProperty.key, version: 0))
         let address = ShapeID(UUID(uuidString: "5B0E7C1A-3D2F-4E6B-8A9C-1F2E3D4C5B6A")!)
-        expectEqual(card.props.prompt.runs, [.text("A house: its "), .mention(address, label: "Address"), .text(", and how many bedrooms (required).")])
-        expectEqual(SchemaReferences.refs(in: card.props.schema.text).map(\.card), [address])
+        expect(schema.text.hasPrefix("{\n  \"type\": \"object\""), schema.text)
+        expectEqual(SchemaReferences.refs(in: schema.text).map(\.shape), [address])
         var named: [ShapeID] = []
-        card.props.schema.forEachNamedShape { named.append($0) }
-        expectEqual(named, [address], "a $ref names its card, as the mention does")
+        schema.forEachNamedShape { named.append($0) }
+        expectEqual(named, [address], "a $ref names its type, as a mention does")
+        expect(registry.properties(for: StickyNote.kind).contains(TypeSchemaProperty.key), "a note can be a type")
+    },
+    // The types a shape is, an ordered list of the types' ids (Types' added property): read back in the
+    // order written, each a name of its type, as a mention is.
+    test("a shape's types read as the ids' list they were, in order, each naming its type; notes and arrows can hold them") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        expectEqual(codec.version(ofProperty: IsAProperty.key), 0)
+        let data = try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/added/is.v0.json"))
+        let types = try JSONDecoder().decode([TypeLink].self, from: try codec.migrateValue(data, property: IsAProperty.key, version: 0))
+        let groceries = ShapeID(UUID(uuidString: "7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D")!)
+        let review = ShapeID(UUID(uuidString: "0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9")!)
+        expectEqual(types.map(\.shape), [groceries, review])
+        var named: [ShapeID] = []
+        types.forEachNamedShape { named.append($0) }
+        expectEqual(named, [groceries, review], "an entry names its type")
+        for kind in [StickyNote.kind, Arrow.kind] {
+            expect(registry.properties(for: kind).contains(IsAProperty.key), "\(kind) can be an instance of a type")
+        }
+        expect(!registry.properties(for: Frame.kind).contains(IsAProperty.key))
+    },
+    // What a shape holds for the fields of its types: a bare JSON object, nothing empty in it, on the
+    // kinds that can be instances.
+    test("a shape's values read as the object they were; notes and arrows can hold them, a frame can't") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        expectEqual(codec.version(ofProperty: FieldValuesProperty.key), 0)
+        let data = try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/added/fieldValues.v0.json"))
+        let values = try JSONDecoder().decode(FieldValues.self, from: try codec.migrateValue(data, property: FieldValuesProperty.key, version: 0))
+        expectEqual(values["status"], .string("paid"))
+        expectEqual(values["gift"], .bool(false), "a false is a value")
+        expectEqual(values["address"]?["city"], .string("Leeds"))
+        expectEqual(values["lineItems"]?.arrayValue?.count, 2)
+        expectEqual(values["lineItems"]?.arrayValue?.last?["price"], .number(0), "a 0 is a value")
+        expectEqual(values["tags"], .array(["gift", "mugs"]))
+        expectEqual(FieldValues.pruned(.object(values.values)), .object(values.values), "nothing in a fixture is empty")
+        for kind in [StickyNote.kind, Arrow.kind] {
+            expect(registry.properties(for: kind).contains(FieldValuesProperty.key), "\(kind) can hold the values of its types' fields")
+        }
+        expect(!registry.properties(for: Frame.kind).contains(FieldValuesProperty.key))
     },
     test("the welcome board, and a board of every shipped kind, read back as they were") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())

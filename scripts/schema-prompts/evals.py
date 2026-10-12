@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Quick and dirty evals for the schema card's two prompts, as the app ships them: the system prompts
-are read out of Sources/Schemas/SchemaPrompts.swift, so there's one copy.
+"""Quick and dirty evals for a type's two prompts, as the app ships them: the system prompts
+are read out of Sources/Types/SchemaPrompts.swift, so there's one copy.
 
-    python3 evals.py --check                # read the prompts and settings out of the Swift; no call
+    python3 evals.py --check                # read the prompts and settings out of the Swift, and self-test the checks; no call
     python3 evals.py --round 1              # every case in cases.csv, and the chains
     python3 evals.py --round 1 --only s_rename,p_add_field --runs 3
     python3 evals.py --round 1 --no-chains
@@ -39,16 +39,20 @@ from gen_cases import fmt, STARTER, ORDER  # noqa: E402
 
 API_URL = "https://api.anthropic.com/v1/messages"
 SOURCES = os.path.normpath(os.path.join(HERE, "..", "..", "Sources"))
-SWIFT = os.path.join(SOURCES, "Schemas", "SchemaPrompts.swift")
+SWIFT = os.path.join(SOURCES, "Types", "SchemaPrompts.swift")
 # Each direction's system prompt and max_tokens (the Swift constants they're read from):
 # `swift_settings` fills in the values, and MODEL and EFFORT, from the Swift.
 CONFIG = {
-    "to_schema": {"system": "toSchemaSystem", "references": "toSchemaReferences", "max_tokens_name": "toSchemaMaxTokens"},
-    "to_prompt": {"system": "toPromptSystem", "references": "toPromptReferences", "max_tokens_name": "toPromptMaxTokens"},
+    "to_schema": {"system": "toSchemaSystem", "titles": ["toSchemaTitle", "toSchemaNewTitle"], "references": "toSchemaReferences",
+                  "max_tokens_name": "toSchemaMaxTokens"},
+    "to_prompt": {"system": "toPromptSystem", "titles": ["toPromptTitle"], "references": "toPromptReferences",
+                  "max_tokens_name": "toPromptMaxTokens"},
 }
 MODEL = None
 EFFORT = None
 NO_CHANGE = "NO_CHANGE"
+# The tags a prompt is answered in (SchemaPrompts.answerTag): `swift_settings` reads it.
+ANSWER_TAG = None
 # A prompt answer that reads as something other than the prompt (SchemaPrompts.isNotAPrompt).
 PREAMBLES = ("here's ", "here’s ", "here is ", "here are ", "updated prompt", "updated description",
              "the updated prompt", "the updated description", "prompt:", "description:",
@@ -119,12 +123,36 @@ def is_not_a_prompt(t):
     return NO_CHANGE in t or "```" in t or t.lower().startswith(PREAMBLES)
 
 
-def parse(direction, text, stop_reason):
-    """The parse rule, as the Swift side does it. Returns (kind, value): ("nochange", None),
+def tagged(text):
+    """What's inside a prompt answer's tags and what's around them (SchemaPrompts.tagged): the last <answer>
+    that a </answer> follows, up to the last </answer>; with none closed, what follows the last <answer>;
+    None for an answer with no opening tag. Returns (inside, outside)."""
+    open_, close = f"<{ANSWER_TAG}>", f"</{ANSWER_TAG}>"
+    end = text.rfind(close)
+    start = text.rfind(open_, 0, end) if end >= 0 else -1
+    if start >= 0:
+        return text[start + len(open_):end], text[:start] + "\n" + text[end + len(close):]
+    start = text.rfind(open_)
+    if start < 0:
+        return None
+    return text[start + len(open_):], text[:start]
+
+
+def parse(direction, text, stop_reason, words=""):
+    """The parse rule, as the Swift side does it (`words` is the prompt as it was: an answer that reads like a
+    preamble is a prompt when the prompt it replaces read so itself). A prompt is what's inside the answer's
+    tags, whatever is said around them; NO_CHANGE is judged outside them (the whole answer when it has none),
+    and inside; an answer with no tags is read whole. Returns (kind, value): ("nochange", None),
     ("schema", text), ("prompt", text) or ("error", why)."""
     if stop_reason != "end_turn":
         return "error", f"stop_reason={stop_reason}"
-    t = unwrap(text.strip(), "schema" if direction == "to_schema" else "prompt")
+    if direction == "to_prompt":
+        pair = tagged(text)
+        if pair and says_no_change(unwrap(pair[1].strip(), "prompt")):
+            return "nochange", None
+        t = unwrap((pair[0] if pair else text).strip(), "prompt")
+    else:
+        t = unwrap(text.strip(), "schema")
     if says_no_change(t):
         return "nochange", None
     if direction == "to_schema":
@@ -140,9 +168,99 @@ def parse(direction, text, stop_reason):
     t = unquoted(t)
     if not t:
         return "error", "empty"
-    if is_not_a_prompt(t):
+    if is_not_a_prompt(t) and not is_not_a_prompt(words):
         return "error", "not a prompt"
     return "prompt", t
+
+
+
+# ------------------------------------------------------------------ the type's name, as TypeSync puts it in and takes it out
+# (Sources/Types/TypeSchema.swift `TypeNaming`, used by TypeSync.start and .apply): a type's schema is
+# stored with no root "title"; its note's title goes in as the first member for the request (unless the
+# person typed one in the JSON), and the model's comes out of what it writes, naming an untitled note.
+
+def _members(text):
+    """The root object's members as (key, key_start, value_start, value_end), or None."""
+    dec = json.JSONDecoder()
+    if not text.startswith("{"):
+        return None
+    i, out = 1, []
+    while True:
+        while i < len(text) and text[i].isspace():
+            i += 1
+        if i >= len(text) or text[i] == "}":
+            return out
+        key, end = dec.raw_decode(text, i)
+        j = end
+        while text[j].isspace() or text[j] == ":":
+            j += 1
+        _, vend = dec.raw_decode(text, j)
+        out.append((key, i, j, vend))
+        i = vend
+        while text[i].isspace():
+            i += 1
+        if text[i] == ",":
+            i += 1
+
+
+def naming_title(text):
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return None
+    t = obj.get("title") if isinstance(obj, dict) else None
+    return t if isinstance(t, str) else None
+
+
+def titled(text, name):
+    """TypeNaming.titled: `name` first, as the root "title", laid out as the first member is."""
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    if "title" in obj or not name.strip():
+        return text
+    lit = json.dumps(name, ensure_ascii=False)
+    members = _members(text)
+    if not members:
+        return "{ \"title\": " + lit + " }"
+    i = members[0][1]
+    space = text[1:i]
+    member = f'"title":{lit},' if not space else f'"title": {lit},{space}'
+    return text[:i] + member + text[i:]
+
+
+def untitled(text):
+    """TypeNaming.untitled: (text without its root "title", what it said or None), or None for none."""
+    members = _members(text)
+    if members is None:
+        return None
+    idx = [k for k, m in enumerate(members) if m[0] == "title"]
+    if not idx:
+        return None
+    i = idx[-1]
+    key, kstart, vstart, vend = members[i]
+    title = json.loads(text[vstart:vend])
+    title = title if isinstance(title, str) and title.strip() else None
+    if i + 1 < len(members):
+        return text[:kstart] + text[members[i + 1][1]:], title
+    if i > 0:
+        return text[:members[i - 1][3]] + text[vend:], title
+    return text[:1] + text[len(text) - 1:], title
+
+
+def prepare(case):
+    """The case as TypeSync sends it: the note's name as each schema's root title, unless the schema
+    has one. `named` is whether the answer's title comes out (the schema as stored has none)."""
+    c = dict(case)
+    name = c.get("name") or ""
+    c["named"] = naming_title(c["schema"]) is None
+    for k in ("schema", "previous_schema"):
+        if c[k] and name:
+            c[k] = titled(c[k], name) or c[k]
+    return c
 
 
 # ------------------------------------------------------------------ calling
@@ -183,16 +301,18 @@ def literal(name):
 
 
 def system_prompt(direction, schemas=""):
-    """The direction's system prompt and, for a request that names other schemas, what it says of
-    them after it, a blank line apart (SchemaPrompts.system)."""
-    base = literal(CONFIG[direction]["system"])
-    return base + "\n" + literal(CONFIG[direction]["references"]) if (schemas or "").strip() else base
+    """The direction's system prompt, what it says of titles after it on every request and, for a
+    request that names other schemas, what it says of them after that, each a blank line apart
+    (SchemaPrompts.system(_:schemas:))."""
+    cfg = CONFIG[direction]
+    text = literal(cfg["system"]) + "".join("\n" + literal(name) for name in cfg["titles"])
+    return text + "\n" + literal(cfg["references"]) if (schemas or "").strip() else text
 
 
 def swift_settings():
-    """Reads each direction's max_tokens, the model and its effort out of the Swift, so the evals
-    send what the app does."""
-    global MODEL, EFFORT
+    """Reads each direction's max_tokens, the model, its effort and the tags a prompt is answered in
+    out of the Swift, so the evals send what the app does and read what it reads."""
+    global MODEL, EFFORT, ANSWER_TAG
     src = swift_source()
 
     def text(name):
@@ -211,6 +331,10 @@ def swift_settings():
         cfg["max_tokens"] = int(number(cfg["max_tokens_name"]))
     MODEL = text("model")
     EFFORT = text("effort")
+    ANSWER_TAG = text("answerTag")
+    asked = f"<{ANSWER_TAG}> and </{ANSWER_TAG}>"
+    if asked not in literal(CONFIG["to_prompt"]["system"]) or f"<{ANSWER_TAG}>" in literal(CONFIG["to_schema"]["system"]):
+        raise Fatal(f"toPromptSystem, and it alone, should ask for {asked}")
 
 
 def call(key, direction, user, schemas=""):
@@ -341,16 +465,81 @@ def refs_in(node):
             yield from refs_in(v)
 
 
-def auto_prompt_checks(text):
+def auto_prompt_checks(text, words=""):
     failed = []
     low = text.lower()
     if text.startswith(('"', "'", "“")) and text.endswith(('"', "'", "”")):
         failed.append("quoted")
-    if "```" in text or low.startswith(("here", "updated prompt", "prompt:", "sure")):
+    if ("```" in text or low.startswith(("here", "updated prompt", "prompt:", "sure"))) and not is_not_a_prompt(words):
         failed.append("preamble")
-    if NO_CHANGE in text:
+    if NO_CHANGE in text and not is_not_a_prompt(words):
         failed.append("no-change-inside-text")
     return failed
+
+
+POINTER_MEDIA_TYPE = "text/x-canvas-link"
+
+
+def schemas_in(node, inside_content=False):
+    """Every dict of the answer, at any depth, and whether it is a "contentSchema" (a pointer's, not a property's)."""
+    if isinstance(node, dict):
+        yield node, inside_content
+        for k, v in node.items():
+            yield from schemas_in(v, k == "contentSchema")
+    elif isinstance(node, list):
+        for v in node:
+            yield from schemas_in(v, False)
+
+
+def pointers_to(obj, word):
+    """The schemas that are a pointer to `word`: a string, `contentMediaType` the link's, `contentSchema` exactly
+    its `$ref`, and nothing else but a title or a description. All three members are demanded."""
+    for node, _ in schemas_in(obj):
+        if node.get("type") == "string" and node.get("contentMediaType") == POINTER_MEDIA_TYPE \
+                and node.get("contentSchema") == {"$ref": word} \
+                and set(node) <= {"type", "contentMediaType", "contentSchema", "title", "description"}:
+            yield node
+
+
+def plain_refs_to(obj, word):
+    """The schemas that are exactly `{"$ref": word}`, a contentSchema not among them."""
+    for node, inside_content in schemas_in(obj):
+        if node == {"$ref": word} and not inside_content:
+            yield node
+
+
+def conditions(obj):
+    """Every dict that has an "if", at any depth."""
+    return [node for node, _ in schemas_in(obj) if "if" in node]
+
+
+def differs_only_at(answer, original, pointers):
+    """Whether `answer` is `original` (as parsed, the root "title" aside) except at and under `pointers`, which may differ, appear or go."""
+    def without(root, pointer):
+        segs = [x.replace("~1", "/").replace("~0", "~") for x in pointer.split("/") if x != ""]
+        node = root
+        for seg in segs[:-1]:
+            if isinstance(node, dict) and seg in node:
+                node = node[seg]
+            elif isinstance(node, list) and seg.isdigit() and int(seg) < len(node):
+                node = node[int(seg)]
+            else:
+                return
+        if not segs:
+            return
+        last = segs[-1]
+        if isinstance(node, dict):
+            node.pop(last, None)
+        elif isinstance(node, list) and last.isdigit() and int(last) < len(node):
+            node[int(last)] = None
+
+    a, b = json.loads(json.dumps(answer)), json.loads(json.dumps(original))
+    for root in (a, b):
+        if isinstance(root, dict):
+            root.pop("title", None)
+        for pointer in pointers:
+            without(root, pointer)
+    return a == b
 
 
 def run_check(check, direction, kind, out_text, out_obj, case):
@@ -384,7 +573,7 @@ def run_check(check, direction, kind, out_text, out_obj, case):
         if name == "titlesame":
             return None if obj.get("title") == in_obj.get("title") else f"title {obj.get('title')!r}"
         if name == "titlehas":
-            return None if arg.lower() in str(obj.get("title", "")).lower() else f"title {obj.get('title')!r}"
+            return None if any_in(str(obj.get("title", "")), arg) else f"title {obj.get('title')!r}"
         if name == "has":
             return None if resolve(obj, ptr)[0] else f"missing {ptr}"
         if name == "absent":
@@ -392,6 +581,9 @@ def run_check(check, direction, kind, out_text, out_obj, case):
         if name in ("props", "anyprop", "propsexact", "count", "order"):
             ok, node = resolve(obj, ptr)
             keys = list(node.keys()) if ok and isinstance(node, dict) else []
+            if [s for s in ptr.split("/") if s][-1:] == ["properties"]:
+                # A `$`-key under `properties` is a setting (`$title`), never a field (SchemaDocument.fields).
+                keys = [k for k in keys if not k.startswith("$")]
             if name == "props":
                 m = names_ok(keys, spec)
                 return None if not m else f"missing {m} in {keys}"
@@ -445,6 +637,50 @@ def run_check(check, direction, kind, out_text, out_obj, case):
             word, _, n = arg.partition("=")
             count = sum(1 for ref in refs_in(obj) if ref == word)
             return None if count == int(n) else f"{count} $ref {word}"
+        if name == "titleis":
+            # A member's "title" is one of the alternatives (case-insensitive, trimmed); an empty one accepts no title at all.
+            ok, v = resolve(obj, ptr)
+            if not ok or not isinstance(v, dict):
+                return f"missing {ptr}"
+            t = v.get("title", "")
+            got = t.strip().lower() if isinstance(t, str) else None
+            return None if got in {a.strip().lower() for a in spec.split("|")} else f"{ptr} title {v.get('title')!r}"
+        if name == "pointer":
+            word, _, n = arg.partition("=")
+            count = sum(1 for _ in pointers_to(obj, word))
+            return None if count == int(n) else f"{count} pointers to {word}"
+        if name == "plainref":
+            word, _, n = arg.partition("=")
+            count = sum(1 for _ in plain_refs_to(obj, word))
+            return None if count == int(n) else f"{count} bare $ref {word}"
+        if name == "titlefrom":
+            got = (obj.get("properties") or {}).get("$title") if isinstance(obj.get("properties"), dict) else None
+            return None if got == {"x-canvas-from": arg} else f"$title {json.dumps(got)}"
+        if name == "notitle":
+            props = obj.get("properties")
+            return None if not (isinstance(props, dict) and "$title" in props) else f"$title {json.dumps(props['$title'])}"
+        if name == "lastkey":
+            ok, v = resolve(obj, ptr)
+            last = list(v.keys())[-1] if ok and isinstance(v, dict) and v else None
+            return None if last == spec else f"last key {last!r} in {ptr}"
+        if name == "onlydiff":
+            return None if differs_only_at(obj, in_obj, arg.split(",")) else f"differs beyond {arg}"
+        if name == "condtests":
+            bad = [c for c in conditions(obj) if not (isinstance(c.get("if"), dict) and isinstance(c["if"].get("properties"), dict) and c["if"]["properties"])]
+            return None if not bad else f"an if with no properties: {json.dumps(bad[0].get('if'))[:80]}"
+        if name == "condthen":
+            key, _, spec = arg.partition("=")
+            for c in conditions(obj):
+                tested = c["if"].get("properties") if isinstance(c.get("if"), dict) else None
+                then = c.get("then")
+                if isinstance(tested, dict) and key in tested and isinstance(then, dict) \
+                        and any(a in (then.get("required") or []) for a in spec.split("|")):
+                    return None
+            return f"no if on {key} whose then requires {spec}"
+        if name == "textcount":
+            needle, _, n = arg.rpartition("=")
+            count = text.count(needle)
+            return None if count == int(n) else f"{count} of {needle!r}"
         return f"unknown check {name}"
 
     # to_prompt
@@ -471,9 +707,168 @@ def run_check(check, direction, kind, out_text, out_obj, case):
     return f"unknown check {name}"
 
 
+def known_check(direction, name):
+    """Whether run_check has a check of this name for the direction (a check that raises on an empty argument is known)."""
+    kind = "schema" if direction == "to_schema" else "prompt"
+    try:
+        why = run_check(name + ":", direction, kind, "{}" if kind == "schema" else "", {} if kind == "schema" else None,
+                        {"schema": "{}", "prompt": ""})
+    except Exception:
+        return True
+    return not (isinstance(why, str) and why.startswith("unknown check"))
+
+
+def check_cases_file():
+    """Every check named in cases.csv is one run_check knows, so a mistyped one is found here and not when a case runs."""
+    unknown = []
+    with open(os.path.join(HERE, "cases.csv"), newline="", encoding="utf-8") as f:
+        for c in csv.DictReader(f):
+            for check in [x for x in c["checks"].split("\n") if x.strip()]:
+                if not known_check(c["direction"], check.partition(":")[0]):
+                    unknown.append(f"{c['id']}: {check}")
+    if unknown:
+        raise Fatal("cases.csv names checks run_check doesn't have: " + "; ".join(unknown))
+
+
+def selftest():
+    """Each check added for the types cut, shown able to fail before a model is asked: for each, answers it passes and answers it
+    fails, hand-written. Nothing is called."""
+    customer = {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "@Customer"}}
+    contact = {"type": "object", "properties": {
+        "email": {"type": "string"}, "phone": {"type": "string", "pattern": "^x$"}, "description": {"type": "string"}}, "required": ["email", "phone"]}
+
+    def props(**members):
+        return {"type": "object", "properties": members}
+
+    def with_phone(**extra):
+        o = json.loads(json.dumps(contact))
+        o["properties"]["phone"].update(extra)
+        return o
+
+    pet = props(name={"type": "string"}, age={"type": "integer"})
+    pet_title = props(name={"type": "string"}, age={"type": "integer"}, **{"$title": {"x-canvas-from": "name"}})
+    when = {"if": {"properties": {"gift": {"const": True}}}, "then": {"required": ["giftNote"]}}
+    rows = [
+        # (check, the input the case holds, answers it passes, answers it fails)
+        ("titleis:/properties/phone=mobile number", contact, [with_phone(title="Mobile Number ")], [contact, with_phone(title="cell")]),
+        ("titleis:/properties/phone=cell|mobile|", contact, [with_phone(title="cell"), contact], [with_phone(title="work")]),
+        ("titleis:/properties/phone=", contact, [contact], [with_phone(title="phone")]),
+        ("pointer:@Customer=1", {}, [props(customer=customer), props(customers={"type": "array", "items": customer})],
+         [props(customer={"$ref": "@Customer"}), props(customer={"type": "string", "contentSchema": {"$ref": "@Customer"}}),
+          props(customer={"type": "string", "contentMediaType": "text/x-canvas-link"}),
+          props(customer=dict(customer, **{"properties": {}})), props(customer=customer, other=customer)]),
+        ("pointer:@Customer=0", {}, [props(customer={"$ref": "@Customer"})], [props(customer=customer)]),
+        ("plainref:@Customer=1", {}, [props(customer={"$ref": "@Customer"})], [props(customer=customer), props(a={"$ref": "@Customer"}, b={"$ref": "@Customer"})]),
+        ("titlefrom:name", {}, [pet_title], [pet, props(name={"type": "string"}, **{"$title": {"x-canvas-from": "age"}})]),
+        ("notitle", {}, [pet], [pet_title]),
+        ("lastkey:/properties=$title", {}, [pet_title], [props(**{"$title": {"x-canvas-from": "name"}, "name": {"type": "string"}}), pet]),
+        ("onlydiff:/properties/phone/title", contact, [with_phone(title="mobile"), contact],
+         [with_phone(title="mobile", pattern="^y$"), dict(contact, required=["email"]),
+          with_phone(title="mobile", maxLength=5)]),
+        ("onlydiff:/properties/phone/title,/properties/phone/pattern", contact, [with_phone(title="mobile", pattern="^y$")],
+         [dict(contact, required=["email"])]),
+        ("condtests", {}, [dict(props(gift={"type": "boolean"}), allOf=[when]), props(a={"type": "string"})],
+         [dict(props(gift={"type": "boolean"}), allOf=[{"if": {"required": ["gift"]}, "then": {"required": ["giftNote"]}}]),
+          dict(props(gift={"type": "boolean"}), allOf=[{"if": {"properties": {}}, "then": {}}])]),
+        ("condthen:gift=giftNote|giftMessage", {}, [dict(props(gift={"type": "boolean"}), allOf=[when])],
+         [dict(props(gift={"type": "boolean"}), allOf=[{"if": {"properties": {"gift": {"const": True}}}, "then": {"required": ["other"]}}]),
+          dict(props(gift={"type": "boolean"}), allOf=[{"if": {"properties": {"method": {"const": "x"}}}, "then": {"required": ["giftNote"]}}]),
+          props(gift={"type": "boolean"})]),
+        ("textcount:text/x-canvas-link=1", {}, [props(customer=customer)], [props(customer=customer, other=customer), props(customer={"$ref": "@Customer"})]),
+        # the listing checks leave a `$`-key out, as SchemaDocument.fields does; `same:` does not
+        ("propsexact:/properties=name,age", {}, [pet, pet_title], [props(name={"type": "string"}, age={}, extra={})]),
+        ("count:/properties=2..2", {}, [pet_title], [props(name={}, age={}, extra={})]),
+        ("order:/properties=name,age", {}, [pet_title], [props(age={}, name={})]),
+        ("anyprop:/properties=name", {}, [pet_title], [props(**{"$title": {}})]),
+        ("same:/properties", pet, [pet], [pet_title]),
+    ]
+    failures = []
+    for check, original, passes, fails in rows:
+        case = {"schema": json.dumps(original), "prompt": ""}
+        for answer in passes:
+            why = run_check(check, "to_schema", "schema", json.dumps(answer), answer, case)
+            if why is not None:
+                failures.append(f"{check} should pass {json.dumps(answer)[:100]}: {why}")
+        for answer in fails:
+            if run_check(check, "to_schema", "schema", json.dumps(answer), answer, case) is None:
+                failures.append(f"{check} should fail {json.dumps(answer)[:100]}")
+    # A prompt is read as the app reads it (`parse`): what's inside the answer's tags, whatever is said around
+    # them, so a remark before a tagged prompt costs `maxlen` and `lacks` nothing, and the same answer without
+    # the tags still fails them. (answer, the prompt it replaces, the kind read, the prompt read)
+    remark = ("There is no <prompt>, so I write one. Fields: number (string), customer (@Customer), total (number). "
+              "None are listed as required...")
+    order = "An order: number, customer (a @Customer), total"
+    a = f"<{ANSWER_TAG}>"
+    z = f"</{ANSWER_TAG}>"
+    reads = [
+        (f"{remark}\n\n{a}\n{order}\n{z}", "", "prompt", order),
+        (f"{remark}\n\n{a}{order}{z}", "", "prompt", order),
+        (f"{remark}\n\n{order}", "", "prompt", f"{remark}\n\n{order}"),
+        (f"{a}\n{order}\n{z}\n\nI kept it to one line.", "", "prompt", order),
+        (f"{a}a pet{z}\nOr, shorter:\n{a}pet{z}", "", "prompt", "pet"),
+        (f"I put it in {a} tags.\n{a}a pet{z}", "", "prompt", "a pet"),
+        (f"{a}a pet{z}\nThen, cut off: {a}a p", "", "prompt", "a pet"),
+        (f"{remark}\n\n{a}\n{order}", "", "prompt", order),
+        (f"{a}a {a}pet", "", "prompt", "pet"),
+        (f"{order}\n{z}", "", "prompt", order),
+        ("NO_CHANGE", "", "nochange", None),
+        (f"{a}NO_CHANGE{z}", "", "nochange", None),
+        (f"The prompt still says it.\n\n{a}NO_CHANGE.{z}", "", "nochange", None),
+        (f"NO_CHANGE: the prompt never named the title.\n{a}a pet{z}", "", "nochange", None),
+        (f"{a}a pet{z}\n\nNO_CHANGE", "", "nochange", None),
+        (f"A $title alone would be NO_CHANGE, but there is no <prompt>, so I write one.\n\n{a}A pet: name{z}", "", "prompt", "A pet: name"),
+        ("A $title alone would be NO_CHANGE, but there is no <prompt>, so I write one.\n\nA pet: name", "", "error", "not a prompt"),
+        (f"{a}{z}", "", "error", "empty"),
+        (f"{a}\n \n{z}", "", "error", "empty"),
+        (f"{order}\n{a}{z}", "", "error", "empty"),
+        (f"{remark}\n{a}", "", "error", "empty"),
+        (f"```\n{a}\na pet\n{z}\n```", "", "prompt", "a pet"),
+        (f"{a}\n```\na pet\n```\n{z}", "", "prompt", "a pet"),
+        (f"{a}<prompt>a pet</prompt>{z}", "", "prompt", "a pet"),
+        (f'{a}"a pet, with its weight"{z}', "", "prompt", "a pet, with its weight"),
+        (f"{a}Here's the updated prompt: a pet{z}", "", "error", "not a prompt"),
+        (f"{a}Here are the fields: name, email, role, phone.{z}", "Here are the fields: name, email, role.", "prompt",
+         "Here are the fields: name, email, role, phone."),
+        ("<prompt>\nemail required, phone\n</prompt>", "", "prompt", "email required, phone"),
+        ("a pet in my household\n\nNO_CHANGE", "", "nochange", None),
+    ]
+    for answer, words, kind, value in reads:
+        got = parse("to_prompt", answer, "end_turn", words)
+        if got != (kind, value):
+            failures.append(f"parse should read {answer[:80]!r} as {(kind, value)!r}, not {got!r}")
+    if parse("to_prompt", reads[0][0], "max_tokens")[0] != "error":
+        failures.append("a tagged prompt cut off should be an error")
+    if parse("to_schema", f"Sure.\n{a}{{}}{z}", "end_turn")[0] != "error" or parse("to_schema", f"{a}\n{{}}\n{z}", "end_turn") != ("schema", "{}"):
+        failures.append("a schema is read as it was: no tags but a wrapper's lines")
+    # (check, the answer with its tags: passes; the same without them: fails), as `evaluate` runs a case's checks.
+    scored = [("maxlen:120", "A contact: email (required), phone (required), description.",
+               "There is no <prompt>, so I write one. Fields: email (string, required), phone (string, required), description (string)."),
+              ("lacks:schema|json|string", "A contact: email (required), phone (required), description.",
+               "There is no <prompt>, so I write one. Fields: email (string, required), phone (string, required), description (string)."),
+              ("maxlen:200", order, remark + " The customer is a $ref to @Customer, the type itself."),
+              ("lacks_re:link|point|refer", order, "The customer is a bare $ref, not a link, so I name the type by its word."),
+              ("lacks:its fields", "An order: number, a link to a @Customer, total", "A pointer is a link to the type, never its fields.")]
+    for check, words, said in scored:
+        for answer, passes in ((f"{said}\n\n{a}\n{words}\n{z}", True), (f"{said}\n\n{words}", False)):
+            kind, value, failed, warn = evaluate({"direction": "to_prompt", "prompt": "", "checks": check}, {"text": answer, "stop_reason": "end_turn"})
+            if (not failed) != passes or kind != "prompt":
+                failures.append(f"{check} should {'pass' if passes else 'fail'} {answer[:80]!r}: {kind}, {failed}")
+            if ("untagged" in warn) == passes or ("remark" in warn) != passes:
+                failures.append(f"{answer[:80]!r} should warn {'remark' if passes else 'untagged'}, not {warn}")
+    tested = {row[0].partition(":")[0] for row in rows}
+    for name in ("titleis", "pointer", "plainref", "titlefrom", "notitle", "lastkey", "onlydiff", "condtests", "condthen", "textcount"):
+        if name not in tested:
+            failures.append(f"{name} has no self-test")
+        if not known_check("to_schema", name):
+            failures.append(f"{name} is not a check")
+    if failures:
+        raise Fatal("the checks' self-test failed:\n  " + "\n  ".join(failures))
+    return len(rows), len(reads) + 3, len(scored)
+
+
 def evaluate(case, result):
     direction = case["direction"]
-    kind, value = parse(direction, result["text"], result["stop_reason"])
+    kind, value = parse(direction, result["text"], result["stop_reason"], case.get("prompt", "") if direction == "to_prompt" else "")
     failed, warn = [], []
     out_obj = None
     if direction == "to_schema" and result["text"].lstrip().startswith("```"):
@@ -485,13 +880,39 @@ def evaluate(case, result):
         f, w = auto_schema_checks(value, out_obj, case.get("schema"))
         failed += f
         warn += w
+        # As TypeSync.apply reads it: the title comes out of what's written when it went in as the
+        # note's name (or the note had none); an untitled note is named by it.
+        if case.get("named", True):
+            got = untitled(value)
+            if got is None:
+                warn.append("no-title-to-take-out")
+            else:
+                stored_text, title = got
+                try:
+                    stored_obj = json.loads(stored_text)
+                except ValueError as e:
+                    failed.append(f"stripped-invalid:{e}")
+                else:
+                    if not isinstance(stored_obj, dict) or "title" in stored_obj:
+                        failed.append("stripped-not-an-object-or-still-titled")
+                    if not case.get("name") and not title:
+                        failed.append("untitled-note-got-no-name")
+                    if case.get("name") and title != case["name"]:
+                        warn.append(f"title-changed:{title!r}")
         # A "$ref" to an @ word is only ever to one <schemas> lists, as the app reads them back.
         listed = {line.strip() for line in (case.get("schemas") or "").split("\n") if line.strip()}
         for ref in refs_in(out_obj):
             if ref.startswith("@") and ref.split("#")[0] not in listed:
                 failed.append(f"unlisted-ref:{ref}")
     elif kind == "prompt":
-        failed += auto_prompt_checks(value)
+        failed += auto_prompt_checks(value, case.get("prompt", ""))
+        # How the model used the tags it is asked for (warnings: the app reads either): none at all, or
+        # something said around them, which the tags kept out of the prompt.
+        pair = tagged(result["text"])
+        if pair is None:
+            warn.append("untagged")
+        elif unwrap(pair[1].strip(), "prompt"):
+            warn.append("remark")
     if kind != "error":
         for check in [c for c in case["checks"].split("\n") if c.strip()]:
             why = run_check(check, direction, kind, value or "", out_obj, case)
@@ -665,7 +1086,46 @@ def chain_contact_both_ways(key):
     return fails, log, calls
 
 
-CHAINS = [chain_hand_edit, chain_roundtrip, chain_pet_both_ways, chain_contact_both_ways]
+def chain_rename_roundtrip(key):
+    """to-schema renames a field (its key kept, its title the new name); a hand edit adds a description to it; to-prompt must still
+    call it by the new name; to-schema again with those words changes nothing."""
+    from gen_cases import CONTACT_HAND
+    p0 = "email required, phone required, description"
+    p1 = "email required, mobile number required, description"
+    log, calls, fails = [], [], []
+    k, s1, r = step(key, "to_schema", previous_prompt=p0, prompt=p1, schema=fmt(CONTACT_HAND))
+    calls.append(r)
+    log.append(("s1", s1))
+    if k != "schema":
+        return [f"step1 {k}"], log, calls
+    o = json.loads(s1)
+    phone = o["properties"].get("phone")
+    if not isinstance(phone, dict) or str(phone.get("title", "")).strip().lower() != "mobile number":
+        return [f"step1 phone {json.dumps(phone)[:120]}"], log, calls
+    phone["description"] = "Cell preferred."
+    s2 = fmt(o)
+    k, p2, r = step(key, "to_prompt", prompt=p1, previous_schema=s1, schema=s2)
+    calls.append(r)
+    log.append(("p2", p2))
+    if k == "prompt":
+        if "mobile number" not in p2.lower():
+            fails.append(f"step2 prompt lost the name: {p2!r}")
+        words = p2
+    elif k == "nochange":
+        words = p1
+    else:
+        return [f"step2 {k}"], log, calls
+    k, s3, r = step(key, "to_schema", previous_prompt=p1, prompt=words, schema=s2)
+    calls.append(r)
+    log.append(("s3", s3))
+    if k == "schema" and json.loads(s3) != o:
+        fails.append("step3 drift: the same words changed the schema")
+    elif k == "error":
+        fails.append("step3 error")
+    return fails, log, calls
+
+
+CHAINS = [chain_hand_edit, chain_roundtrip, chain_pet_both_ways, chain_contact_both_ways, chain_rename_roundtrip]
 
 
 # ------------------------------------------------------------------ main
@@ -688,15 +1148,20 @@ def main():
     args = ap.parse_args()
 
     swift_settings()
-    print(f"model {MODEL}, effort {EFFORT}; a new card's schema {STARTER!r}")
+    print(f"model {MODEL}, effort {EFFORT}; a new type's schema {STARTER!r}")
     for d in CONFIG:
         text = system_prompt(d)
-        print(f"{d}: {CONFIG[d]['system']}, {len(text)} characters, {len(text.splitlines())} lines, "
+        print(f"{d}: {CONFIG[d]['system']} and {' and '.join(CONFIG[d]['titles'])}, {len(text)} characters, {len(text.splitlines())} lines, "
               f"and {CONFIG[d]['references']}, {len(literal(CONFIG[d]['references']))} characters, for other schemas; "
               f"max_tokens {CONFIG[d]['max_tokens']}")
     if Draft202012Validator is None:
         print("metaschema check skipped: no jsonschema in _pylib (see README.md)")
     if args.check:
+        check_cases_file()
+        checks, reads, scored = selftest()
+        print(f"cases.csv: every check it names is one run_check has; the new checks' self-test: {checks} rows; "
+              f"a prompt read from its <{ANSWER_TAG}> tags: {reads} answers, {scored} checks a remark fails only without them; "
+              f"{len(CHAINS)} chains")
         return
     if args.round is None:
         ap.error("--round is required")
@@ -719,6 +1184,7 @@ def main():
 
     def work(job):
         c, run = job
+        c = prepare(c)
         user = user_message(c["direction"], prompt=c["prompt"], schema=c["schema"],
                             previous_prompt=c["previous_prompt"], previous_schema=c["previous_schema"], schemas=c.get("schemas", ""))
         r = call(key, c["direction"], user, c.get("schemas", ""))
@@ -784,6 +1250,12 @@ def main():
             line += (f"  latency p50 {int(statistics.median(lat))} ms, p90 {p90} ms, max {lat[-1]} ms; "
                      f"out tokens mean {int(statistics.mean(r['output_tokens'] for r in rs))}")
         print(line)
+        if d == "to_prompt":
+            # Of the answers read as a prompt (NO_CHANGE and errors aside): how many had no tags, and how many
+            # said something around them.
+            prompts = [r for r in records if r["direction"] == d and r.get("kind") == "prompt"]
+            print(f"{'':<10} {len(prompts)} prompts: {sum('untagged' in r['warn'] for r in prompts)} with no <{ANSWER_TAG}> tags, "
+                  f"{sum('remark' in r['warn'] for r in prompts)} with a remark around them")
 
 
 if __name__ == "__main__":

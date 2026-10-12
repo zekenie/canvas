@@ -16,16 +16,8 @@ extension PublicShapes: MentionScope {
 }
 
 /// A shape the list offers: what Mentions says of it, and the name of the board it's on when that
-/// isn't the board shown (nil on it).
-public struct ReferenceChoice: Hashable, Sendable {
-    public let candidate: MentionCandidate
-    public let board: String?
-
-    public init(candidate: MentionCandidate, board: String?) {
-        self.candidate = candidate
-        self.board = board
-    }
-}
+/// isn't the board shown (nil on it). Mentions' choice, which every list of shapes shows alike.
+public typealias ReferenceChoice = MentionChoice
 
 /// One row of the list over the pill's field: a shape that can be picked, the words as typed (the
 /// last row while there's text), or the one row an empty list shows. Only the first two can be
@@ -125,30 +117,22 @@ public final class ReferencePicker {
         }
     }
 
-    /// The rows as the list draws and says them: a shape's symbol in its tint, its label with the
-    /// matched characters, its detail at the trailing end; the words row with a magnifier and a line
-    /// above it when shapes are listed. Said as "Groceries, Note, 2 of 7".
+    /// The rows as the list draws and says them: a shape's line is Mentions' (`MentionChoice.items`); the
+    /// words row has a magnifier and a line above it when shapes are listed.
     private static func listRows(_ rows: [ReferencePickerRow]) -> [CaretListRow] {
-        var counts: [String: Int] = [:]
-        var shapes = 0
-        for case .shape(let choice) in rows {
-            counts[choice.candidate.appearance.label.lowercased(), default: 0] += 1
-            shapes += 1
-        }
+        var choices: [ReferenceChoice] = []
+        for case .shape(let choice) in rows { choices.append(choice) }
+        let items = MentionChoice.items(choices)
         var position = 0
         return rows.map { row in
             switch row {
             case .empty(let words): return .empty(words)
             case .words(let words):
-                return .item(CaretListItem(words, symbol: ReferenceStyle.dynamicSymbol, separated: shapes > 0,
+                return .item(CaretListItem(words, symbol: ReferenceStyle.dynamicSymbol, separated: !choices.isEmpty,
                                            spoken: "\(ReferenceStyle.wordsSpoken), \(words)"))
-            case .shape(let choice):
+            case .shape:
                 position += 1
-                let appearance = choice.candidate.appearance
-                let shared = counts[appearance.label.lowercased(), default: 0] > 1
-                let detail = shared ? ([appearance.kindName] + (choice.board.map { [$0] } ?? [])).joined(separator: " · ") : choice.board
-                return .item(CaretListItem(appearance.label, matched: choice.candidate.matched, symbol: appearance.systemImage, tint: appearance.tint,
-                                           detail: detail, spoken: "\(appearance.label), \(appearance.kindName), \(position) of \(shapes)"))
+                return .item(items[position - 1])
             }
         }
     }
@@ -163,7 +147,7 @@ extension ReferenceState {
         guard let mentions = editor.mentions else { return [] }
         var found = mentions.candidates(matching: text, in: PublicShapes.self, for: owner).all
         if found.isEmpty, ReferenceEdits.isBlank(text) { found = publicShapes(limit: ReferenceStyle.pickerRest) }
-        return found.map { ReferenceChoice(candidate: $0, board: boardName(ofShape: $0.id)) }
+        return mentions.choices(found)
     }
 
     /// The first public shapes of the file that can be named: the root's, in board order, then each other
@@ -185,11 +169,5 @@ extension ReferenceState {
             if let document = file.children[owner] { scan(document) }
         }
         return found
-    }
-
-    /// The name of the board the shape is on, unless that's the board shown.
-    private func boardName(ofShape id: ShapeID) -> String? {
-        guard let board = editor.file.board(containing: id), board != editor.board else { return nil }
-        return editor.publishing?.boardName(of: board)
     }
 }

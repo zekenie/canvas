@@ -121,7 +121,8 @@ extension CommandSpec {
         if scope == .board {
             arguments.append(CommandArgument(
                 name: RPC.boardParam, option: "--\(RPC.boardParam)", isPositional: false, isRequired: false, value: .text(choices: nil),
-                summary: "The board to work on: its id (`\(RPC.commandName) boards`), its file, or its name. Default: the board in front.",
+                summary: "The board to work on: its id (`\(RPC.commandName) boards`), its file, or its name. Default: the board in front"
+                    + (boardOptional == true ? ", if any." : "."),
                 defaultValue: nil, valueName: "board", readsStandardInput: false, waits: nil, isPath: false))
         }
         return arguments

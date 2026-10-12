@@ -401,22 +401,36 @@ final class PlainTextView: EditingTextView, DetailTextContent {
         let view = PlainTextView(usingTextLayoutManager: false)
         view.plain(font: DetailStyle.codeFont)
         view.isCode = true
-        view.inlinePredictionType = .no
-        if #available(macOS 15.0, *) {
-            view.mathExpressionCompletionType = .no
-            view.writingToolsBehavior = .none
-        }
-        view.isAutomaticQuoteSubstitutionEnabled = false
-        view.isAutomaticDashSubstitutionEnabled = false
-        view.isAutomaticTextReplacementEnabled = false
-        view.isAutomaticSpellingCorrectionEnabled = false
-        view.isContinuousSpellCheckingEnabled = false
-        view.isGrammarCheckingEnabled = false
-        view.isAutomaticLinkDetectionEnabled = false
-        view.isAutomaticDataDetectionEnabled = false
-        view.isAutomaticTextCompletionEnabled = false
-        view.smartInsertDeleteEnabled = false
+        view.typedAsKeyed()
         return view
+    }
+
+    /// Words typed exactly as keyed, in the panel's own font: what `code()` turns off turned off, and no
+    /// spelling (`Spelling.app` would set autocorrection from the app's setting, and a value typed in a
+    /// field must never be corrected). Not code: Return and Tab are a prose box's.
+    static func keyed() -> PlainTextView {
+        let view = PlainTextView(usingTextLayoutManager: false)
+        view.plain(font: DetailStyle.textFont)
+        view.typedAsKeyed()
+        return view
+    }
+
+    private func typedAsKeyed() {
+        inlinePredictionType = .no
+        if #available(macOS 15.0, *) {
+            mathExpressionCompletionType = .no
+            writingToolsBehavior = .none
+        }
+        isAutomaticQuoteSubstitutionEnabled = false
+        isAutomaticDashSubstitutionEnabled = false
+        isAutomaticTextReplacementEnabled = false
+        isAutomaticSpellingCorrectionEnabled = false
+        isContinuousSpellCheckingEnabled = false
+        isGrammarCheckingEnabled = false
+        isAutomaticLinkDetectionEnabled = false
+        isAutomaticDataDetectionEnabled = false
+        isAutomaticTextCompletionEnabled = false
+        smartInsertDeleteEnabled = false
     }
 
     /// No wrapping: the text is as wide as its longest line, and scrolls sideways.

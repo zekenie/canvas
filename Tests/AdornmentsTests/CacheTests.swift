@@ -75,6 +75,21 @@ final class DisplayCounter: CanvasEditorDelegate {
         _ = render(h)
         expectEqual(calls.counts, [a: 2, b: 2])
     },
+    test("a commit that only moves a shape keeps its labels, and they follow it: a drag makes none again") {
+        let calls = Calls()
+        let h = try adornedHarness([countedCaptions(calls)])
+        let a = h.add(Box(boxFrame))
+        _ = render(h)
+        let before = try require(h.editor.adornmentFrames(of: a).first?.rect)
+        h.editor.transact("Move") { $0.translate([a], by: CGPoint(x: 40, y: 30)) }
+        _ = render(h)
+        expectEqual(calls.counts, [a: 1], "moved, not remade")
+        let after = try require(h.editor.adornmentFrames(of: a).first?.rect)
+        expectEqual(after, before.offsetBy(dx: 40, dy: 30), "and laid out against where it is")
+        h.editor.transact { $0.update(a) { $0.box = CGRect(x: 100, y: 100, width: 150, height: 120) } }
+        _ = render(h)
+        expectEqual(calls.counts, [a: 2], "a resize is a change")
+    },
     test("`adornmentsDidChange` makes a shape's labels again and redraws; a shape that's gone is forgotten") {
         let calls = Calls()
         let h = try adornedHarness([countedCaptions(calls)])

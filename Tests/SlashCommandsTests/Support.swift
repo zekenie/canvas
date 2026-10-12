@@ -16,6 +16,8 @@ import TextEditing
     var asked: [Asked] = []
     /// How many times `park`'s kinds were asked of the registry.
     var kindsAsked = 0
+    /// How many times the choice commands were asked for their rows.
+    var choicesAsked = 0
 
     /// A question to a rule: the shape, the shape the line is on, and the editor it was given.
     struct Asked: Equatable {
@@ -50,6 +52,45 @@ struct CardCommandsPlugin: CanvasPlugin {
             SlashCommand("any", argument: "anything", accepts: { _ in true }) { _, arguments, _ in
                 log.runs.append("any \(arguments.text.debugDescription)")
             }
+        }
+    }
+}
+
+/// Commands for cards that take one choice: `pick` lists alpha, beta (preferred, its own step) and
+/// gamma (a group of its own); `pickElse` lists `phone`, `one` and `red panda` and offers a row for any
+/// text but "nope" that no row is titled; `pickNone` lists nothing; `pickWide` is offered only while the
+/// card is wide.
+/// A pick widens the card by one, so it is a step of the board, and is logged.
+struct ChoicePlugin: CanvasPlugin {
+    let log: CommandLog
+    var id: PluginID { "choices" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        let log = log
+        let widen: @MainActor (ShapeID, SlashChoice, CanvasEditor) -> Void = { id, choice, editor in
+            log.runs.append("pick \(choice.id)")
+            editor.transact { $0.update(id, as: Card.self) { $0.props.frame.size.width += 1 } }
+        }
+        registrar.slashCommands(Card.self) {
+            SlashCommand("pick", argument: "item", choices: { _, _ in
+                log.choicesAsked += 1
+                return [SlashChoice("alpha", title: "Alpha"),
+                        SlashChoice("beta", title: "Beta", step: "Pick Beta", isPreferred: true),
+                        SlashChoice("gamma", title: "Gamma", symbol: "star", detail: "last", group: 1)]
+            }, perform: widen)
+            SlashCommand("pick-else", argument: "item", choices: { _, _ in
+                log.choicesAsked += 1
+                return [SlashChoice("phone", title: "Phone"), SlashChoice("one", title: "One"), SlashChoice("red-panda", title: "Red Panda")]
+            }, otherwise: { typed, _, _ in
+                typed == "nope" ? nil : SlashChoice("else:\(typed)", title: "Else \(typed)", step: "Make Else")
+            }, perform: widen)
+            SlashCommand("pick-none", argument: "item", choices: { _, _ in [] }, perform: widen)
+            SlashCommand("pick-chips", argument: "item", choices: { _, _ in
+                [SlashChoice("red", title: "Red", symbol: "star", chip: .systemRed), SlashChoice("plain", title: "Plain", symbol: "star")]
+            }, perform: widen)
+            SlashCommand("pick-wide", argument: "item", when: { $0.frame.width >= 110 }, choices: { _, _ in
+                [SlashChoice("wide", title: "Wide")]
+            }, perform: widen)
         }
     }
 }
@@ -195,10 +236,10 @@ final class SlashSession {
     let host: SlashHost
 
     /// `offering` false leaves the card commandless (`CardCommandsPlugin` isn't installed).
-    init(_ text: String = "", offering: Bool = true, plugins more: [any CanvasPlugin] = [],
+    init(_ text: String = "", offering: Bool = true, plugins more: [any CanvasPlugin] = [], log: CommandLog? = nil,
          arguments: (@MainActor (NSRange) -> SlashArguments)? = nil) throws {
-        log = CommandLog()
-        h = try slashHarness((offering ? [CardCommandsPlugin(log: log)] : []) + more)
+        self.log = log ?? CommandLog()
+        h = try slashHarness((offering ? [CardCommandsPlugin(log: self.log)] : []) + more)
         card = h.editor.add(Card(CGRect(x: 0, y: 0, width: 100, height: 60), text: text))
         expect(h.editor.beginEditing(card))
         let field = try require(h.editor.makeEditingView()?.view as? CardField)
@@ -223,6 +264,18 @@ final class SlashSession {
     var rows: [String] { list?.rows.map(Self.describe) ?? [] }
     var listed: [String] { list?.listed.map(\.name) ?? [] }
     var highlighted: String? { list?.highlightedCommand?.name }
+    var choiceList: SlashChoicePicker? { view.slashCommands?.choices }
+    /// The choices' rows, a line before a row it sets off written `—`.
+    var choiceRows: [String] {
+        choiceList?.rows.map { row in
+            switch row {
+            case .header(let words): "# \(words)"
+            case .empty(let words): "- \(words)"
+            case .item(let item): (item.separated ? "— " : "") + item.title
+            }
+        } ?? []
+    }
+    var highlightedChoice: String? { choiceList?.highlightedChoice?.id }
 
     /// Puts `text` in the view with the caret at `caret`, as the person had it: nothing is heard.
     func set(_ text: String, caret: Int? = nil) {

@@ -15,11 +15,13 @@ import TestKit
 import TextEditing
 import Titles
 import Topology
+import Types
 
-/// The note, every plugin it opts into, and Adornments, which lays out what Titles shows on it.
+/// The note, every plugin it opts into (Types among them), and Adornments, which lays out what Titles
+/// shows on it.
 @MainActor var notePlugins: [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin()]
+     ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin()]
 }
 
 @MainActor let stickyNotesTests = Suite("Sticky notes", [
@@ -69,6 +71,10 @@ import Topology
         expectThrows(RegistryError.ownerNotInstalled(point: "MentionTexts", owner: .mentions, contributor: .stickyNotes)) {
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), DetailPanelPlugin(),
                                        SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()])
+        }
+        expectThrows(RegistryError.ownerNotInstalled(point: "TypeWords", owner: .types, contributor: .stickyNotes)) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
+                                       ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin()])
         }
     },
     test("its row in the table of contents: its text on one line, or Empty Note") {

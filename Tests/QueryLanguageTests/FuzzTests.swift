@@ -11,6 +11,9 @@ struct QueryGenerator {
 
     static let kinds = ["card", "box", "disc", "Card", "wide_card-2", "é-card", "i", "only", "_x"]
     static let names = ["rank", "status", "due", "my attr", "a.b", "x-y_z", "é", "\"q\""]
+    /// Names that are identifiers, which can have members inside them, and the members.
+    static let pathNames = ["rank", "status", "due", "x-y_z", "é"]
+    static let members = ["x", "y_2", "é", "a-b", "only", "_", "Card"]
     static let types = ["wire", "hot-wire", "pipe", "only", "Wire"]
     static let unknownWords = ["glows", "stacked", "x-y", "a_b2"]
     static let junk = ["2n+1", "1, 2", "-x", "", "a b", #""x" y"#, "@q", "[a=:)]", "a[b"]
@@ -66,10 +69,12 @@ struct QueryGenerator {
 
     mutating func filter() -> Filter {
         guard chance(50) else { return .pseudo(pseudo()) }
-        let name = pick(Self.names)
-        guard chance(75) else { return .attribute(AttributeTest(name: name, span: nowhere)) }
+        let inside = chance(25)
+        let name = inside ? pick(Self.pathNames) : pick(Self.names)
+        let path = inside ? (0..<count(1...3)).map { _ in pick(Self.members) } : []
+        guard chance(75) else { return .attribute(AttributeTest(name: name, path: path, span: nowhere)) }
         let value: Literal = chance(50) ? .quoted(chance(20) ? "" : text()) : .bare(bare())
-        return .attribute(AttributeTest(name: name, op: pick(Operator.allCases), value: value, flag: chance(30) ? pick(CaseFlag.allCases) : nil, span: nowhere))
+        return .attribute(AttributeTest(name: name, path: path, op: pick(Operator.allCases), value: value, flag: chance(30) ? pick(CaseFlag.allCases) : nil, span: nowhere))
     }
 
     /// Characters the lexer reads as one bare value: not starting with an operator's, and no `/*`.

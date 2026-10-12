@@ -20,11 +20,23 @@ public struct OfferedSlashCommand {
     fileprivate let rule: (@MainActor (ShapeID) -> Bool)?
     /// The same with the kinds: a shape of a kind it names, and the rule says yes.
     fileprivate let admitsShape: (@MainActor (ShapeID) -> Bool)?
+    /// A choice command's rows and its row for nothing matching, bound as `rule` is; nil for the
+    /// other forms.
+    fileprivate let choiceRows: (@MainActor () -> [SlashChoice])?
+    fileprivate let choiceOtherwise: (@MainActor (String) -> SlashChoice?)?
 
     init(_ command: ErasedSlashCommand, owner: ShapeID, editor: CanvasEditor) {
         self.command = command
         name = command.name
         argument = command.argument
+        if let choices = command.choices {
+            choiceRows = { [weak editor] in editor.map { choices(owner, $0) } ?? [] }
+            let otherwise = command.otherwise
+            choiceOtherwise = { [weak editor] typed in editor.flatMap { otherwise?(typed, owner, $0) } }
+        } else {
+            choiceRows = nil
+            choiceOtherwise = nil
+        }
         let kinds = command.kinds(in: editor.registry)
         admittedKinds = kinds
         guard let shapes = command.shapes else {
@@ -78,6 +90,18 @@ public struct OfferedSlashCommand {
     /// shape that isn't there is of none), and its rule says yes. False for a command that takes no
     /// shape.
     public func admits(_ shape: ShapeID) -> Bool { admitsShape?(shape) ?? false }
+
+    /// Whether it takes one choice from a list (`SlashCommand`'s `choices:` form): it never runs
+    /// with `SlashArguments`, only with a pick (`SlashCommandState.run(_:on:choosing:)`).
+    public var takesChoice: Bool { choiceRows != nil }
+
+    /// The rows it lists now, in its order; none for a command that takes no choice. Asked each
+    /// time: a list asks once when it opens.
+    public func choices() -> [SlashChoice] { choiceRows?() ?? [] }
+
+    /// The one row it offers for what was typed (trimmed), if it offers one: the list puts it last,
+    /// unless a row is titled so.
+    public func choice(otherwise typed: String) -> SlashChoice? { choiceOtherwise?(typed) }
 
     /// What a text view that lists shapes asks, for the line it's on: the kinds and the rule of the
     /// command it's a line of, if it takes a shape.
@@ -163,6 +187,23 @@ public final class SlashCommandState {
         guard let record = editor.document[id], !record.isOpaque, command.accepts(arguments) else { return false }
         editor.undoHistory.group(command.stepName) { command.command.run(id, arguments, editor) }
         return true
+    }
+
+    /// Runs a choice command with a pick: one undo step, named for the row (`SlashChoice.step`),
+    /// else for the command. False, doing nothing, for a shape that's gone or kept aside and for a
+    /// command that takes no choice.
+    @discardableResult
+    public func run(_ command: OfferedSlashCommand, on id: ShapeID, choosing choice: SlashChoice) -> Bool {
+        guard let record = editor.document[id], !record.isOpaque, let runChoice = command.command.runChoice else { return false }
+        editor.undoHistory.group(choice.step ?? command.stepName) { runChoice(id, choice, editor) }
+        return true
+    }
+
+    /// The same, by name.
+    @discardableResult
+    public func run(_ name: String, on id: ShapeID, choosing choice: SlashChoice) -> Bool {
+        guard let command = command(named: name, for: id) else { return false }
+        return run(command, on: id, choosing: choice)
     }
 
     /// The same, by name: the command is resolved now, so false for one the shape doesn't offer

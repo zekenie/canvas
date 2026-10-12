@@ -94,4 +94,26 @@ import TestKit
         expectEqual(h.frame(of: other), CGRect(x: 320, y: 120, width: 60, height: 40), "boxes overlap as they always could")
         expect(!h.editor.isGliding(other))
     },
+    test("a container resized settles its members by their laid-out frames: one grown past the new edge is nudged in at the release, in the resize's step") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CorralsPlugin(), resizableBoxes(), resizableCorrals(), StretchesPlugin()])
+        let corral = h.add(Corral(CGRect(x: 100, y: 100, width: 300, height: 200)))
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 900, y: 700, width: 60, height: 40), width: 200, height: 60))
+        let member = h.add(Stretch(CGRect(x: 250, y: 150, width: 100, height: 60), gauge: gauge))      // stored inside, laid out to x 450
+        h.editor.put([member], in: corral)
+        h.editor.replaceDocument(with: h.editor.document)
+        let before = h.editor.document
+        h.editor.selection = corral
+        let handle = CGPoint(x: 400, y: 200)
+        h.move(to: handle)
+        h.press(at: handle)
+        h.drag(to: CGPoint(x: 410, y: 200))
+        h.drag(to: CGPoint(x: 420, y: 200))
+        expectEqual(h.editor.document[member]?.box?.origin, CGPoint(x: 250, y: 150), "nothing settles while it goes")
+        h.release()
+        expectEqual(h.editor.holder(of: member), corral)
+        expectEqual(h.editor.document[member]?.box?.origin, CGPoint(x: 204, y: 150), "its frame brought in to the gap inside the new edge, 420")
+        expectEqual(h.editor.undoHistory.undoName, "Resize")
+        h.editor.undo()
+        expectEqual(h.editor.document, before, "undone whole")
+    },
 ])

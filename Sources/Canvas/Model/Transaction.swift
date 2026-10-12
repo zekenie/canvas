@@ -17,13 +17,14 @@ import Geometry
 /// shapes letting go of what's deleted (`ShapeReferencing`).
 ///
 /// A transaction is on one board of the file, the one the editor shows (`board`), and changes that
-/// board's shapes. Three things reach other boards: deleting a shape takes the board it owns with it,
+/// board's shapes. Four things reach other boards: deleting a shape takes the board it owns with it,
 /// and every board under that (`ChangeSet.boardsRemoved`); a shape can go in with its board and the
 /// boards under it (`insert(_:contents:)`, a paste; `ChangeSet.boardsAdded`); and shapes can move onto
 /// any other board of the file (`move(_:to:)`, or `move(_:toBoardOwnedBy:)` onto the board a shape on
 /// this one owns; `boardsAdded`, or `boardsChanged` if the board held shapes already, as the root
 /// does), to be moved there (`translate(_:by:on:)`) and put down there by the in-or-out rule
-/// (`settle(_:on:)`). `contents(of:)` is any board as the transaction leaves it. A shape whose
+/// (`settle(_:on:)`); and a shape on any board can be changed (`update(_:on:_:)`), in the same commit,
+/// so the same undo step. `contents(of:)` is any board as the transaction leaves it. A shape whose
 /// board, or a board under it, holds a read-only shape isn't deleted, as the Finder won't trash a
 /// folder holding a locked file. Shape ids are unique across the file: a shape inserted can't have
 /// the id of one on any board.
@@ -58,6 +59,9 @@ public struct Transaction {
     let keys: StackingKeyGenerator
     /// The rest of the file, read from the editor as it is.
     let file: FileAccess
+    /// What the editor lays shapes out with, which `shapes` reads this transaction's file through;
+    /// nil where there is no editor to ask (`discardKeptAside`).
+    private let layout: LayoutSource?
     /// Boards going in with the shapes inserted here that own them, and the boards under those: what
     /// the commit adds to the file. Also the boards shapes were moved onto here (`move(_:to:)`), moved
     /// on (`translate(_:by:on:)`) or settled on (`settle(_:on:)`), whole, with what the file holds
@@ -98,7 +102,8 @@ public struct Transaction {
     private var tops: [ShapeID: Int] = [:]
 
     init(document: CanvasDocument, board: BoardID, isBoardReadOnly: Bool, registry: Registry, camera: Camera, keys: StackingKeyGenerator,
-         file: FileAccess) {
+         file: FileAccess, layout: LayoutSource?) {
+        self.layout = layout
         self.document = document
         self.board = board
         self.isBoardReadOnly = isBoardReadOnly
@@ -117,15 +122,33 @@ public struct Transaction {
     }
 
     /// Whether an agent makes the change (the command line's `draw`), not a person at the app: its
-    /// commit says so (`ChangeSet.byAgent`), so what acts on a person's edits (a schema card's sync)
+    /// commit says so (`ChangeSet.byAgent`), so what acts on a person's edits (a type's sync)
     /// takes what it changed as it is. Saying so changes nothing by itself.
     public var byAgent: Bool {
         get { changes.byAgent }
         set { changes.byAgent = newValue }
     }
 
-    /// Geometry lookups against the document as it is mid-transaction.
-    public var shapes: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera) }
+    /// Geometry lookups against the document as it is mid-transaction. Layout inputs are read through
+    /// it as the transaction leaves the file: a provider is handed what it inserted, changed and moved
+    /// (and nothing of what it deleted), and a value set for a shape (`editor.setLayoutInput`) is read
+    /// for one it hasn't changed. A shape it didn't touch reads the size the editor has kept for it; one
+    /// with none kept is laid out against this transaction's file. The context is a snapshot: read it, use it, and let it go before the
+    /// next change, or that change copies what it holds.
+    public var shapes: ShapeContext {
+        guard let layout else { return ShapeContext(document: document, registry: registry, camera: camera) }
+        let here = self
+        let source = LayoutSource(inputs: layout.inputs, sizes: layout.sizes, lend: layout.lend, shape: { here.record(inFile: $0) }, isChanged: { id in
+            here.changes.added.contains(id) || (here.changes.changed.contains(id) && !here.changes.moved.contains(id))
+                || here.stagedIDs[id] != nil
+        })
+        return ShapeContext(document: document, registry: registry, camera: camera, index: nil, layout: source)
+    }
+
+    /// A shape on any board of the file as this transaction leaves it (`location(of:)`).
+    func record(inFile id: ShapeID) -> AnyShapeRecord? {
+        location(of: id).flatMap { contents(of: $0)[id] }
+    }
 
     public mutating func insert<P: ShapeProps>(_ shape: ShapeRecord<P>) { insert(AnyShapeRecord(shape)) }
 
@@ -677,6 +700,11 @@ public struct Transaction {
             }
         }
         changes.boardsRemoved.formUnion(file.subtree(Set(owners)))
+        // What a handler wrote on a board that goes with the deletion goes with it (`update(_:on:)`).
+        for board in changes.boardsRemoved where stagedBoards[board] != nil && !movedOnto.contains(board) {
+            stagedBoards[board] = nil
+            changes.boardsChanged.remove(board)
+        }
         changes.reordered = true
         deleting = []
         didChange = true
@@ -981,10 +1009,72 @@ public struct Transaction {
         take(there)
     }
 
+    // MARK: Writing to other boards
+
+    /// The board a shape is on, as this transaction leaves the file: this one; the one it moved the
+    /// shape onto, or brought it in on; else the file's. Nil for a shape on no board of the file, and
+    /// for one this transaction deleted or took the board of.
+    public func board(containing id: ShapeID) -> BoardID? { location(of: id) }
+
+    /// Changes one shape on any board of the file, as `update(_:_:)` changes one on this board: its id,
+    /// stacking key and container stay as they were, and the change lands in this transaction's commit,
+    /// so it is in the same undo step as everything else the transaction does, and undo and redo put
+    /// the other board's shape back and again exactly, with this board's. The board is read as this
+    /// transaction leaves it (`contents(of:)`), so a shape moved onto it, or inserted with it, can be
+    /// written there. Services hear it as a commit that changed that board (`ChangeSet.boardsChanged`,
+    /// the shape in `elsewhere`), in the same commit as this board's.
+    ///
+    /// Nothing happens for a shape that isn't on `board`, for a board the editor couldn't show once this
+    /// transaction commits (`canShow`'s rule: an owner kept aside, or of a kind that owns no board), or
+    /// for one that goes with a shape this transaction deleted. A shape written to in a `willDelete`
+    /// handler on a board that goes with the same deletion leaves no trace: the board is gone, and undo
+    /// brings it back as it was.
+    ///
+    /// Read-only shapes and boards are held as on this board: a shape that was there before the
+    /// transaction and is read-only (or in a read-only container, or on a read-only board) keeps its
+    /// change only if it leaves the shape no longer read-only, and is noted in `refusedShapes`, which
+    /// services hear refused once the transaction is done; what this transaction put on that board
+    /// isn't held. Inside a deletion keeping the board whole (a `willDelete` handler) nothing is held,
+    /// as nothing is on this board: the handler's writes go through a lock, a read-only shape
+    /// depending on what's deleted among them, wherever it is.
+    ///
+    /// On this transaction's own board it's `update(_:_:)`. It can't reach the board shown from a
+    /// transaction on another board (`transact(on:)` commits nothing then, as when it moves shapes onto
+    /// it).
+    public mutating func update(_ id: ShapeID, on board: BoardID, _ body: (inout AnyShapeRecord) -> Void) {
+        guard board != self.board else { return update(id, body) }
+        guard !climb(board).isTaken, var there = transaction(on: board), there.document[id] != nil else { return }
+        there.isCascading = isCascading
+        // `there` reads the board as this transaction leaves it, sharing its storage with the copy this one
+        // has staged: a write would copy the board's whole array of shapes, again for every shape written
+        // (n shapes on a board of m cost n times m). This transaction lets go of its copy while `there`
+        // writes, and takes the result back (or the copy, if nothing changed).
+        let wasStaged = stagedBoards.removeValue(forKey: board) != nil
+        there.update(id, body)
+        if there.didChange {
+            take(there, reserving: false)
+        } else {
+            refused.formUnion(there.refused)
+            if wasStaged { stagedBoards[board] = there.document }
+        }
+    }
+
+    /// `update(_:on:_:)`, with the shape's props typed.
+    public mutating func update<P: ShapeProps>(_ id: ShapeID, on board: BoardID, as _: P.Type, _ body: (inout ShapeRecord<P>) -> Void) {
+        update(id, on: board) { $0.modify(as: P.self, body) }
+    }
+
+    /// `update(_:on:_:)` on whichever board the shape is on (`board(containing:)`); nothing for a shape
+    /// on none.
+    public mutating func update(inFile id: ShapeID, _ body: (inout AnyShapeRecord) -> Void) {
+        guard let board = location(of: id) else { return }
+        update(id, on: board, body)
+    }
+
     /// Puts `document` in for another board, as this transaction leaves it: what the commit adds to the
     /// file, or, if the file held shapes there (the root always does), writes over. No shape this
     /// transaction deletes may take it with it (`movedOnto`).
-    private mutating func stage(_ document: CanvasDocument, on board: BoardID) {
+    private mutating func stage(_ document: CanvasDocument, on board: BoardID, reserving: Bool = true) {
         if stagedBoards[board] == nil {
             if board.isRoot || (!changes.boardsRemoved.contains(board) && !file.contents(board).shapes.isEmpty) {
                 changes.boardsChanged.insert(board)
@@ -993,7 +1083,7 @@ public struct Transaction {
             }
         }
         stagedBoards[board] = document
-        movedOnto.insert(board)
+        if reserving { movedOnto.insert(board) }
         didChange = true
     }
 
@@ -1072,16 +1162,16 @@ public struct Transaction {
             access = FileAccess(locate: { here.location(of: $0) }, subtree: file.subtree, contents: { here.contents(of: $0) }, canShow: file.canShow)
         }
         var there = Transaction(document: contents(of: board), board: board, isBoardReadOnly: isReadOnly(board: board), registry: registry,
-                                camera: camera, keys: keys, file: access)
+                                camera: camera, keys: keys, file: access, layout: layout)
         for (id, on) in stagedIDs where on == board { there.changes.added.insert(id) }
         return there
     }
 
     /// Takes in what a transaction over another board did (`transaction(on:)`): that board as it
     /// leaves it, if it changed anything there, and what it refused.
-    mutating func take(_ there: Transaction) {
+    mutating func take(_ there: Transaction, reserving: Bool = true) {
         refused.formUnion(there.refused)
-        if there.didChange { stage(there.document, on: there.board) }
+        if there.didChange { stage(there.document, on: there.board, reserving: reserving) }
     }
 }
 

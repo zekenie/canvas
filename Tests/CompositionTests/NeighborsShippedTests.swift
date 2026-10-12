@@ -15,6 +15,8 @@ import StickyNotes
 import Subboards
 import TableOfContents
 import TestKit
+import Titles
+import Types
 
 // Neighbors over the shipped plugins: hovering a note, or its row in the table of contents, outlines
 // what it points to (arrows out of it, what a reference stands for), what points to it, what it
@@ -345,5 +347,25 @@ private struct Graph {
         for x in [7.5, 8.5] { expectEqual(Array(color(x).prefix(3)), second, "ring 1, in the second light's purple, \(x) out") }
         // Where the line isn't, the canvas is the canvas's: between the rings, and past the second.
         for x in [5.5, 6.5, 10] { expect(color(x)[0] > 230 && color(x)[1] > 230, "the canvas, \(x) out: \(color(x))") }
+    },
+    test("a pointer lights as a mention does: hovering the Order outlines the Person it points at in mentions' teal, and hovering her the Order in the lavender") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let (ann, order) = (ShapeID(), ShapeID())
+        var person = note(ann, 1, 0)
+        person[TitleProperty.self] = "Ann Lee"
+        person[IsAProperty.self] = [TypeLink(FieldFixtures.personID)]
+        var placed = note(order, 0, 0)
+        placed[IsAProperty.self] = [TypeLink(FieldFixtures.orderID)]
+        placed[FieldValuesProperty.self] = FieldValues(["customer": FieldLink(target: ann, stored: "Ann Lee").value])
+        let types = [typeNote(FieldFixtures.person.schema, title: "Person", id: FieldFixtures.personID), typeNote(FieldFixtures.order.schema, title: "Order", id: FieldFixtures.orderID)]
+        let h = try shipped(CanvasFile(root: CanvasDocument(shapes: [person, placed] + types)), pasteboard)
+        let lights = try Lights(h.editor.registry)
+        h.editor.hovered = order
+        h.settleLights()
+        expectEqual(h.lit, [Lit(lights.mentions, 0, [ann])])
+        h.editor.hovered = ann
+        h.settleLights()
+        expectEqual(h.lit, [Lit(lights.mentionedBy, 0, [order])])
     },
 ])

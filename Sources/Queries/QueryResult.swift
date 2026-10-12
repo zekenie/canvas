@@ -137,9 +137,13 @@ public struct QueryRow: Sendable, Equatable {
     public var connection: QueryConnection?
     /// True while it's being typed into; nil otherwise.
     public var editing: Bool?
+    /// In a query that names a word that says why a shape matched (`:incomplete`, `:invalid`), what the
+    /// app says of this one: a field and what's the matter with it. Nil for a row with none.
+    public var problems: [ShapeProblem]?
 
     public init(id: ShapeID, kind: ShapeKind, title: String? = nil, board: BoardID = .root, inside: [String] = [],
-                properties: JSONObject? = nil, cut: [String]? = nil, connection: QueryConnection? = nil, editing: Bool? = nil) {
+                properties: JSONObject? = nil, cut: [String]? = nil, connection: QueryConnection? = nil, editing: Bool? = nil,
+                problems: [ShapeProblem]? = nil) {
         self.id = id
         self.kind = kind
         self.title = title
@@ -149,6 +153,28 @@ public struct QueryRow: Sendable, Equatable {
         self.cut = cut
         self.connection = connection
         self.editing = editing
+        self.problems = problems
+    }
+}
+
+/// Something a shape's values still need, or have wrong, as a result lists it: a draw's row and a query's. `field` is the member of the property it is about and `path` where in its value (a
+/// JSON Pointer), each nil when the problem is about the whole shape; `class` what it is (`needed`,
+/// `wrong`, `warning`); `message` what the app says of it.
+public struct ShapeProblem: Sendable, Hashable, Encodable {
+    public var field: String?
+    public var path: String?
+    public var problemClass: String
+    public var message: String
+
+    public init(field: String?, path: String?, class problemClass: String, message: String) {
+        self.field = field
+        self.path = path
+        self.problemClass = problemClass
+        self.message = message
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case field, path, problemClass = "class", message
     }
 }
 
@@ -156,7 +182,7 @@ public struct QueryRow: Sendable, Equatable {
 /// nothing cut, not a connection, not being typed into) is left out.
 extension QueryRow: Encodable {
     private enum Key: String, CodingKey {
-        case id, kind, title, board, inside, properties, cut, connection, editing
+        case id, kind, title, board, inside, properties, cut, connection, editing, problems
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -170,6 +196,7 @@ extension QueryRow: Encodable {
         try container.encodeIfPresent(cut, forKey: .cut)
         try container.encodeIfPresent(connection, forKey: .connection)
         try container.encodeIfPresent(editing, forKey: .editing)
+        try container.encodeIfPresent(problems, forKey: .problems)
     }
 }
 
@@ -235,7 +262,7 @@ public struct QueryEnd: Sendable, Equatable, Encodable {
 /// Something worth saying about an answer that doesn't stop it: a reason to branch on, and a
 /// message.
 public struct QueryWarning: Sendable, Equatable, Encodable {
-    /// Why: `limited`, `editing`, `no_title_match`, `pending`; the command line adds its own (`--ask`'s).
+    /// Why: `limited`, `editing`, `no_title_match`, `pending`, `unknown_field`; the command line adds its own (`--ask`'s).
     public struct Reason: RawRepresentable, Hashable, Sendable, Encodable, CustomStringConvertible {
         public let rawValue: String
         public init(rawValue: String) { self.rawValue = rawValue }
@@ -256,6 +283,9 @@ public struct QueryWarning: Sendable, Equatable, Encodable {
         /// Answers the edges wait on were still arriving when the wait for them (`settle`) ran out:
         /// the query went on without them, and what it says of edges may change.
         public static let pending = Reason(rawValue: "pending")
+        /// A path into an attribute's members (`[fieldValues.stauts="x"]`) names one no shape of the file
+        /// can hold: the query went on, and may match what a type no longer has.
+        public static let unknownField = Reason(rawValue: "unknown_field")
     }
 
     public var reason: Reason

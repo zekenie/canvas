@@ -200,16 +200,17 @@ extension PluginRegistrar {
     /// how long `canvas` waits for an answer when it's given (`x-timeout`, seconds). `run` gets them
     /// read and checked against their schema, and its output goes back as JSON, all in the turn
     /// it's asked in. A board command (the default) runs on the board `--board` names, or the one
-    /// in front.
+    /// in front; with `boardOptional`, one that works with none too runs on none when no board is named, in front or
+    /// the only one open (`context.editor` is nil).
     public mutating func automationCommand<Params: SchemaDefined, Output: Encodable>(
-        _ name: String, _ summary: String, discussion: String? = nil, scope: CommandScope = .board, params _: Params.Type = Params.self,
-        positionals: [String] = [], examples: [CommandExample] = [],
+        _ name: String, _ summary: String, discussion: String? = nil, scope: CommandScope = .board, boardOptional: Bool = false,
+        params _: Params.Type = Params.self, positionals: [String] = [], examples: [CommandExample] = [],
         run: @escaping @MainActor (Params, AutomationContext) throws(AutomationError) -> Output
     ) {
         let reading = ParamsReading<Params>(command: name)
         contribute(AutomationCommand(
-            spec: CommandSpec(name: name, summary: summary, discussion: discussion, scope: scope, params: reading.schema, positionals: positionals,
-                              examples: examples),
+            spec: CommandSpec(name: name, summary: summary, discussion: discussion, scope: scope, boardOptional: boardOptional, params: reading.schema,
+                              positionals: positionals, examples: examples),
             run: { json, context throws(AutomationError) in
                 let output = try run(reading.params(from: json), context)
                 do {
@@ -228,14 +229,14 @@ extension PluginRegistrar {
     /// hung up, its board closed), the task running it is: a long wait should check
     /// (`Task.isCancelled`), and stop.
     public mutating func automationCommand<Params: SchemaDefined, Output: Encodable & Sendable>(
-        _ name: String, _ summary: String, discussion: String? = nil, scope: CommandScope = .board, params _: Params.Type = Params.self,
-        positionals: [String] = [], examples: [CommandExample] = [],
+        _ name: String, _ summary: String, discussion: String? = nil, scope: CommandScope = .board, boardOptional: Bool = false,
+        params _: Params.Type = Params.self, positionals: [String] = [], examples: [CommandExample] = [],
         runAsync: @escaping @MainActor (Params, AutomationContext) async throws(AutomationError) -> Output
     ) {
         let reading = ParamsReading<Params>(command: name)
         contribute(AutomationCommand(
-            spec: CommandSpec(name: name, summary: summary, discussion: discussion, scope: scope, params: reading.schema, positionals: positionals,
-                              examples: examples),
+            spec: CommandSpec(name: name, summary: summary, discussion: discussion, scope: scope, boardOptional: boardOptional, params: reading.schema,
+                              positionals: positionals, examples: examples),
             run: { json, context async throws(AutomationError) in
                 let output = try await runAsync(reading.params(from: json), context)
                 return try await AutomationCommand.encoded(consume output, command: name)

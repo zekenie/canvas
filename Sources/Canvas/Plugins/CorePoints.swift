@@ -63,6 +63,13 @@ enum CorePoints {
         static func uniqueKeys(of c: CommandRegistration, for _: ShapeTarget) -> [AnyHashable] { [c.command] }
     }
 
+    /// What provides a layout input (`PluginRegistrar.layoutInput`). One provider a key.
+    enum LayoutProviders: KeyedExtensionPoint {
+        typealias Contribution = LayoutProvider
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of c: LayoutProvider, for _: ShapeTarget) -> [AnyHashable] { [LayoutProviderKey(name: c.name)] }
+    }
+
     /// The tool the editor starts in, and returns to on Escape and after placing a shape. One
     /// plugin may claim it; otherwise it's the Hand.
     enum DefaultTool {}
@@ -115,6 +122,16 @@ extension CorePoints.DefaultTool: KeyedExtensionPoint {
 struct ToolKey: Hashable, CustomStringConvertible {
     let id: ToolID
     var description: String { "tool \(id)" }
+}
+
+struct LayoutProviderKey: Hashable, CustomStringConvertible {
+    let name: String
+    var description: String { "layout input \(name)" }
+}
+
+struct LayoutProvider {
+    let name: String
+    let provide: @MainActor (AnyShapeRecord, LayoutReading) -> AnyHashable?
 }
 
 struct KindLabelKey: Hashable, CustomStringConvertible {

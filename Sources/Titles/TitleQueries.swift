@@ -8,8 +8,7 @@ import Queries
 /// Query names, in Titles: queries name shapes as Titles has them, for a `"Title"` head,
 /// the `title` attribute (`[title^="API"]`), rows and `--ask`'s titles. A kind's shapes are named
 /// when it opts into the title Titles keeps (`TitleProperty`), read from the record on any thread;
-/// derived when Titles works them out from what the kind keeps (a schema card's, from its schema's
-/// `"title"`; a kind both named and derived is derived, since Titles falls back for the shapes
+/// derived when Titles works them out from what the kind keeps (`title { … }`; a kind both named and derived is derived, since Titles falls back for the shapes
 /// nobody named), read through `registry.title(of:)` on the main actor; and a kind with neither has
 /// none. A title is folded as Titles folds one (`TitleProperty.folded`), a query's too.
 public struct TitleQueriesPlugin: ListedPlugin {

@@ -69,7 +69,8 @@ public struct AskStyle: Sendable, Equatable {
 
 /// The request `--ask` sends: its system prompt, and one user message of tagged blocks, each
 /// `<tag>`, its text, `</tag>`, a blank line between them, one with nothing to say left out: the
-/// question, the vocabulary (`QueryVocabulary.text`), where the person is, and the titles. On a
+/// question, the vocabulary (`QueryVocabulary.text`), where the person is, the titles, and what plugins tell of the
+/// file under tags of their own (`QueryAskFacts`: the fields of its types). On a
 /// second try, the first answer follows as the model's, and a message of one block, the error.
 ///
 /// Nothing else leaves the machine: no shape's text, only its title, kind, and where it is, and a
@@ -80,14 +81,17 @@ public enum AskRequest {
     /// `selection` says whether the selected shapes are named in `<board>`: not for a query that is
     /// stored and run later (`TranslationContext.reference`), where whatever is selected is the pill
     /// being typed into.
+    ///
+    /// `facts` are the blocks plugins add (`QueryAskFacts`), each under its tag after the titles, in order; one with
+    /// no text, or a tag the request uses itself, is left out.
     public static func request(question: String, vocabulary: String, where place: QueryWhere, titles: [QueryTitle], system: String,
-                               style: AskStyle, selection: Bool = true) -> ModelRequest {
-        let message = [
+                               style: AskStyle, selection: Bool = true, facts: [(tag: String, text: String)] = []) -> ModelRequest {
+        let message = ([
             block(.question, question),
             block(.vocabulary, vocabulary),
             block(.board, board(place, selection: selection)),
             block(.titles, listed(titles)),
-        ].compactMap { $0 }.joined(separator: "\n\n")
+        ] + facts.filter { Tag(rawValue: $0.tag) == nil }.map { block($0.tag, $0.text) }).compactMap { $0 }.joined(separator: "\n\n")
         return ModelRequest(system: system, messages: [.user(message)], maxTokens: style.maxTokens, temperature: style.temperature,
                             model: style.model, effort: style.effort, fallbacks: style.fallbacks)
     }
@@ -114,14 +118,15 @@ public enum AskRequest {
     public static let oneLine = "Reply with the query alone, on one line."
 
     /// The blocks, by their tags, in the order they're sent.
-    enum Tag: String {
-        case question, vocabulary, board, titles, error
-    }
+    public typealias Tag = AskFacts.Tag
 
     /// `<tag>`, the text trimmed, `</tag>`; nil for no text.
-    static func block(_ tag: Tag, _ text: String) -> String? {
+    static func block(_ tag: Tag, _ text: String) -> String? { block(tag.rawValue, text) }
+
+    /// The same for a tag by its name.
+    static func block(_ tag: String, _ text: String) -> String? {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? nil : "<\(tag.rawValue)>\n\(text)\n</\(tag.rawValue)>"
+        return text.isEmpty ? nil : "<\(tag)>\n\(text)\n</\(tag)>"
     }
 
     /// Where the person is: the board shown, by the path of names to it ("the top board" at the top),

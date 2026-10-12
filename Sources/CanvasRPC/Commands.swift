@@ -8,7 +8,7 @@ public enum RPC {
     /// `errors`). What an older reader passes over keeps the version: a param's `x-timeout` (an
     /// older `canvas` waits its usual time, and says `timed_out`), a param's `x-path` (an older
     /// `canvas` sends a file as typed, which the app refuses unless it's whole), an error's `column`
-    /// and `length`.
+    /// and `length`, a command's `boardOptional`.
     public static let protocolVersion = 2
     /// What the command line is called: in help, and in the examples commands give.
     public static let commandName = "canvas"
@@ -60,17 +60,21 @@ public struct CommandSpec: Codable, Equatable, Sendable {
     /// What else help says: paragraphs, a blank line between them.
     public var discussion: String?
     public var scope: CommandScope
+    /// For a board command that works with no board too (`measure`): `--board` is optional, and with none named and
+    /// none in front, the command runs on none. Present only when true: an older reader passes over it.
+    public var boardOptional: Bool?
     /// A JSON Schema object: `properties`, `required`, and the `$defs` they refer to.
     public var params: JSON
     public var positionals: [String]
     public var examples: [CommandExample]
 
-    public init(name: String, summary: String, discussion: String? = nil, scope: CommandScope, params: JSON = ["type": "object"],
-                positionals: [String] = [], examples: [CommandExample] = []) {
+    public init(name: String, summary: String, discussion: String? = nil, scope: CommandScope, boardOptional: Bool = false,
+                params: JSON = ["type": "object"], positionals: [String] = [], examples: [CommandExample] = []) {
         self.name = name
         self.summary = summary
         self.discussion = discussion
         self.scope = scope
+        self.boardOptional = boardOptional ? true : nil
         self.params = params
         self.positionals = positionals
         self.examples = examples

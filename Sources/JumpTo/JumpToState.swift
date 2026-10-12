@@ -12,7 +12,7 @@ import Topology
 /// rows are ranked from. It never transacts: a pick only goes somewhere (`editor.follow`).
 ///
 /// The catalog (`JumpToCatalog`) is every titled shape on every board the editor can show, named or
-/// derived (`registry.title(of:)`: a note's title, a schema card's), none kept aside. It's built the
+/// derived (`registry.title(of:)`: a note's title), none kept aside. It's built the
 /// first time the palette opens, in slices of a couple of milliseconds on the main actor
 /// (`editor.scheduler`, the first slice at once), so before then a commit costs a note of its
 /// revision; after, each commit costs what it changed: the shapes it removed, added and changed (a

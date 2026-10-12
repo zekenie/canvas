@@ -1,7 +1,7 @@
 /// How long greeked text is (`RenderContext.fillSkeletonText`), from what it says, without laying
 /// it out: in columns, a narrow character's width each, as a terminal counts them, so a bar is as
 /// long as its text's columns times the font's average narrow advance (about half an em). What
-/// every skeleton that shows text as bars goes by (a note's lines and a schema card's, through
+/// every skeleton that shows text as bars goes by (a note's lines, through
 /// `SkeletonTextBars`, and Titles' cover, which sizes its text by them), so
 /// text in Japanese or in emoji is about as long greeked as in full, twice Latin text of as many
 /// characters, and every kind's bars count alike. Pure, and allocates nothing.

@@ -74,11 +74,11 @@ extension Transaction {
     /// under it).
     private func frame(around held: [AnyShapeRecord], with asked: [AnyShapeRecord], padding: CGFloat, minimumSize: CGSize,
                        in parent: ShapeID?) -> CGRect {
-        let boxes = held.compactMap(\.box)
+        let context = shapes
+        let boxes = held.compactMap { context.frame(of: $0) }
         let union = boxes.reduce(CGRect.null) { $0.union($1) }
         var around = union
         if asked.contains(where: { $0.box == nil && registry.referencingKinds.contains($0.kind) }) {
-            let context = shapes
             let inside = Set(held.flatMap { [$0.id] + document.descendants(of: $0.id, containingKinds: registry.containingKinds) })
             for record in asked where record.box == nil && record.isBound(onlyTo: inside, in: context) {
                 if let bounds = context.bounds(of: [record.id]) { around = around.union(bounds) }

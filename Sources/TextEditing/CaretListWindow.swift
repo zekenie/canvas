@@ -380,18 +380,20 @@ final class CaretListRowsView: NSView {
             CGRect(x: row.minX + TextEditingStyle.caretListTextInset, y: rect.minY, width: row.width - 2 * TextEditingStyle.caretListTextInset,
                    height: TextEditingStyle.caretListSeparatorHeight).fill()
         }
+        // A chip row is highlighted pale, behind its capsule; any other with the accent, its text on it.
+        let isSolid = highlighted && item.chip == nil
         if highlighted {
-            NSColor.selectedContentBackgroundColor.setFill()
+            (item.chip == nil ? NSColor.selectedContentBackgroundColor : NSColor.controlAccentColor.withAlphaComponent(TextEditingStyle.caretListChipHighlightAlpha)).setFill()
             NSBezierPath(roundedRect: row, xRadius: TextEditingStyle.caretListHighlightRadius, yRadius: TextEditingStyle.caretListHighlightRadius).fill()
         }
         let onHighlight = NSColor.alternateSelectedControlTextColor
-        let primary = highlighted ? onHighlight : .labelColor
-        let secondary = highlighted ? onHighlight.withAlphaComponent(0.75) : .secondaryLabelColor
+        let primary = isSolid ? onHighlight : .labelColor
+        let secondary = isSolid ? onHighlight.withAlphaComponent(0.75) : .secondaryLabelColor
 
-        // The symbol, in the item's tint.
+        // The symbol, in the item's tint; a chip's is inside its capsule.
         var x = row.minX + TextEditingStyle.caretListTextInset
-        if let name = item.symbol {
-            let symbolColor = highlighted ? onHighlight : item.tint ?? .secondaryLabelColor
+        if let name = item.symbol, item.chip == nil {
+            let symbolColor = isSolid ? onHighlight : item.tint ?? .secondaryLabelColor
             if let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: TextEditingStyle.caretListLabelSize, weight: .regular)
                     .applying(NSImage.SymbolConfiguration(paletteColors: [symbolColor]))) {
@@ -405,35 +407,58 @@ final class CaretListRowsView: NSView {
         // The detail, at the trailing end, then the title in what's left, its symbol after it. The
         // title comes first: the detail takes what the title leaves, and at least its share of the
         // row, where both are long.
-        let label = Self.label(item, color: primary)
+        let chipFont = NSFont.systemFont(ofSize: TextEditingStyle.caretListChipTextSize, weight: .medium)
+        let label = item.chip == nil ? Self.label(item, color: primary) : Self.label(item, color: .white, font: chipFont)
+        let chipSymbol = item.chip == nil ? nil : item.symbol.flatMap { name in
+            NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: TextEditingStyle.caretListChipSymbolSize, weight: .semibold)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [.white])))
+        }
+        // What a chip holds before its text: its symbol, and the gap after it.
+        let chipLead = chipSymbol.map { $0.size.width + TextEditingStyle.caretListChipSymbolGap } ?? 0
+        let chipPadding = item.chip == nil ? 0 : 2 * TextEditingStyle.caretListChipPadding + chipLead
         let trailing = item.trailingSymbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: TextEditingStyle.caretListDetailSize, weight: .regular)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [secondary])))
         let trailingWidth = trailing.map { $0.size.width + TextEditingStyle.caretListGap } ?? 0
         let detail = Self.detail(item, color: secondary)
-        let leftByTitle = row.maxX - TextEditingStyle.caretListTextInset - x - ceil(label.size().width) - trailingWidth - TextEditingStyle.caretListGap
+        let leftByTitle = row.maxX - TextEditingStyle.caretListTextInset - x - ceil(label.size().width) - chipPadding - trailingWidth - TextEditingStyle.caretListGap
         let detailWidth = max(0, min(ceil(detail.size().width), max(leftByTitle, row.width * TextEditingStyle.caretListDetailShare)))
         let detailX = row.maxX - TextEditingStyle.caretListTextInset - detailWidth
         let detailHeight = detail.size().height
         detail.draw(with: CGRect(x: detailX, y: row.midY - detailHeight / 2, width: detailWidth, height: detailHeight),
                     options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
 
-        let room = max(0, detailX - TextEditingStyle.caretListGap - x - trailingWidth)
+        let room = max(0, detailX - TextEditingStyle.caretListGap - x - trailingWidth - chipPadding)
         let labelWidth = min(ceil(label.size().width), room)
         let labelHeight = label.size().height
-        label.draw(with: CGRect(x: x, y: row.midY - labelHeight / 2, width: labelWidth, height: labelHeight),
+        var labelX = x, end = x + labelWidth
+        if let color = item.chip {
+            // The capsule, then what is in it.
+            let height = TextEditingStyle.caretListChipHeight
+            let capsule = CGRect(x: x, y: row.midY - height / 2, width: labelWidth + chipPadding, height: height)
+            color.setFill()
+            NSBezierPath(roundedRect: capsule, xRadius: height / 2, yRadius: height / 2).fill()
+            labelX = capsule.minX + TextEditingStyle.caretListChipPadding + chipLead
+            if let chipSymbol {
+                let size = chipSymbol.size
+                chipSymbol.draw(in: CGRect(x: capsule.minX + TextEditingStyle.caretListChipPadding, y: row.midY - size.height / 2,
+                                           width: size.width, height: size.height))
+            }
+            end = capsule.maxX
+        }
+        label.draw(with: CGRect(x: labelX, y: row.midY - labelHeight / 2, width: labelWidth, height: labelHeight),
                    options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         if let trailing {
             let size = trailing.size
-            trailing.draw(in: CGRect(x: x + labelWidth + TextEditingStyle.caretListGap, y: row.midY - size.height / 2, width: size.width,
-                                     height: size.height))
+            trailing.draw(in: CGRect(x: end + TextEditingStyle.caretListGap, y: row.midY - size.height / 2, width: size.width, height: size.height))
         }
     }
 
     /// An item's title, its matched characters in semibold, cut short with "…".
-    static func label(_ item: CaretListItem, color: NSColor) -> NSAttributedString {
+    static func label(_ item: CaretListItem, color: NSColor, font chipFont: NSFont? = nil) -> NSAttributedString {
         let text = item.title
-        let font = item.font ?? NSFont.systemFont(ofSize: TextEditingStyle.caretListLabelSize)
+        let font = item.font ?? chipFont ?? NSFont.systemFont(ofSize: TextEditingStyle.caretListLabelSize)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         let string = NSMutableAttributedString(string: text, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: paragraph])

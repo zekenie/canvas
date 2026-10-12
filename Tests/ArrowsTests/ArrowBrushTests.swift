@@ -82,7 +82,7 @@ import TestKit
             }
             shapes.append(AnyShapeRecord(ShapeRecord(Arrow(start: bound(box.id), end: bound(next.id)))))
         }
-        let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin()])
+        let registry = try Registry(plugins: arrowsPlugins())
         let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes), scheduler: $0) }
         h.press(at: CGPoint(x: 2500, y: 1600))
         let elapsed = threadCPUTime {

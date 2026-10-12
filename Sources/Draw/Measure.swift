@@ -6,8 +6,8 @@ import Topology
 
 // `canvas measure`: how big a draw script's shapes would be, and what they reach, without drawing it.
 // A tool that lays shapes out before it draws them (the canvas-digest skill's) needs what the app alone
-// knows: the size draw would make each shape (a note as tall as its text at its width, a schema card as
-// tall as its description), how far its title's pill reaches above it, how wide a reference to a shape is
+// knows: the size draw would make each shape (a note as tall as its text at its width, a note that is a type as
+// tall as its text), how far its title's pill reaches above it, how wide a reference to a shape is
 // for its title, and the constants of the placement it will draw with. It reads the script as `draw`
 // does, ignores where shapes go (placements, `in`), and answers for each shape statement, and each edge
 // that says it goes through a reference (`via:`). It reads nothing on a board and changes nothing: the
@@ -16,6 +16,12 @@ import Topology
 
 /// What `measure` answers.
 public struct MeasureResult: Encodable {
+    /// A name measuring couldn't find: its line, and what it did.
+    struct Warning: Encodable {
+        let line: Int
+        let message: String
+    }
+
     /// A shape statement: what draw would make of it.
     struct Shape: Encodable {
         let line: Int
@@ -61,12 +67,15 @@ public struct MeasureResult: Encodable {
     let shapes: [Shape]
     let references: [Reference]
     let constants: Constants
+    /// Names it couldn't find, left out when there are none.
+    let warnings: [Warning]?
 }
 
 /// How big a script's shapes would be, as `draw` would make them, over `registry`'s kinds. `program`
-/// is the name its hints give the command line that runs it.
+/// is the name its hints give the command line that runs it. `editor` is the board it is given, if
+/// any: the open file's names and types are read from it (`Drawing.namesBeyond`), never written.
 @MainActor
-public func measure(script text: String, program: String, in registry: Registry) throws(DrawError) -> MeasureResult {
+public func measure(script text: String, program: String, in registry: Registry, namesBeyond editor: CanvasEditor?) throws(DrawError) -> MeasureResult {
     let script: Script
     do throws(ScriptErrors) {
         script = try Script(parsing: text)
@@ -91,18 +100,20 @@ public func measure(script text: String, program: String, in registry: Registry)
         }
     }
 
-    // A board of its own, empty, so nothing on any board is read: every title is new, as on a new file.
+    // A board of its own, empty, so every title is new, as on a new file; the open file's types and names are read from the editor
+    // it was given, if any (`namesBeyond`).
     let scratch = CanvasEditor(registry: registry)
     guard let reading = scratch.reading(of: .root) else {
         throw DrawError("a board to measure on couldn't be made", reason: ScriptError.Reason.internal.rawValue)
     }
-    let drawing = try Drawing(Script(statements: statements, styles: script.styles), editor: scratch, on: reading, program: program)
+    let drawing = try Drawing(Script(statements: statements, styles: script.styles), editor: scratch, on: reading, namesBeyond: editor,
+                              measuring: true, program: program)
 
     let shapes = drawing.items.map { item in
         var record = item.record
-        record.box = CGRect(origin: .zero, size: item.size)
+        record.box = CGRect(origin: .zero, size: item.room)
         return MeasureResult.Shape(line: item.statement.line, title: drawing.naming?.name(item.record, registry), kind: item.kind.rawValue,
-                                   size: [item.size.width, item.size.height], above: scratch.adornmentExtent(of: record))
+                                   size: [item.room.width, item.room.height], above: scratch.adornmentExtent(of: record))
     }
 
     let standIns = registry.standIns
@@ -127,5 +138,6 @@ public func measure(script text: String, program: String, in registry: Registry)
                          constants: MeasureResult.Constants(
                              gaps: gaps, defaultGap: LayoutProblem.defaultGap, listStep: LayoutProblem.listStep,
                              referenceStep: LayoutProblem.impliedListStep, horizontalClearance: LayoutProblem.horizontalClearance,
-                             verticalClearance: LayoutProblem.verticalClearance, frameInset: LayoutProblem.insideGap, smallest: smallest))
+                             verticalClearance: LayoutProblem.verticalClearance, frameInset: LayoutProblem.insideGap, smallest: smallest),
+                         warnings: drawing.measureWarnings.isEmpty ? nil : drawing.measureWarnings.map { MeasureResult.Warning(line: $0.line, message: $0.message) })
 }

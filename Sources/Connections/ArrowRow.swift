@@ -1,21 +1,23 @@
 import Canvas
-import SwiftUI
+import Foundation
+import Mentions
 import TableOfContents
 import Topology
 
 extension ShapeRegistrar where Definition == ArrowDefinition {
     /// The arrow's row in the table of contents, under the shape it starts from (as data-canvas's
-    /// edges): its label's first line, else "Arrow", dimmed. Where it starts at a stand-in that stands
-    /// for exactly one shape its record names, on the board the stand-in is on, the row is under that
-    /// shape, where the arrow reads as starting from (Topology's resolved edge); else under the
-    /// stand-in, as for any shape. `ArrowRowNesting` tells the list when a change to the edges moves
-    /// such a row.
+    /// edges): its label's first line, each mention with its shape's name as it is now, else "Arrow",
+    /// dimmed; a rename of a shape its label mentions remakes the row (`MentionRows.affected`). Where
+    /// it starts at a stand-in that stands for exactly one shape its record names, on the board the
+    /// stand-in is on, the row is under that shape, where the arrow reads as starting from (Topology's
+    /// resolved edge); else under the stand-in, as for any shape. `ArrowRowNesting` tells the list
+    /// when a change to the edges moves such a row.
     mutating func arrowRow() {
         contentsRow(nestedUnder: { arrow, context in
             guard let start = arrow.props.start.binding?.shapeID else { return nil }
             return context.service(TopologyIndex.self)?.nestingParent(ofArrowStartingAt: start) ?? start
-        }) { arrow in
-            ContentsLabel(arrow.props.firstLine ?? "", placeholder: "Arrow", systemImage: ArrowStyle.symbol)
+        }, affected: MentionRows.affected) { arrow, context in
+            ContentsLabel(Arrow.firstLine(of: context.plainText(arrow.props.text)) ?? "", placeholder: "Arrow", systemImage: ArrowStyle.symbol)
         }
     }
 }
@@ -72,8 +74,8 @@ extension TopologyIndex {
 }
 
 extension Arrow {
-    /// The first line of its text that says something, trimmed; nil for none.
-    var firstLine: String? {
-        text.split(whereSeparator: \.isNewline).lazy.map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
+    /// The first line of its text, as it reads (`plain`), that says something, trimmed; nil for none.
+    static func firstLine(of plain: String) -> String? {
+        plain.split(whereSeparator: \.isNewline).lazy.map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
     }
 }

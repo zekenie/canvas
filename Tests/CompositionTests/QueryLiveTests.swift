@@ -26,6 +26,7 @@ struct QueryEvalCase: Sendable {
     enum File: String, Sendable {
         case story
         case evalBoard = "eval-board"
+        case fields
     }
 
     /// What a right answer is.
@@ -39,7 +40,7 @@ struct QueryEvalCase: Sendable {
     }
 
     static let categories = ["kinds", "titles", "mentions", "inside", "direction", "transitive", "state", "combined", "unanswerable",
-                             "robustness"]
+                             "robustness", "types"]
 
     let id: String
     let file: File
@@ -92,7 +93,11 @@ func openQueryCase(_ evalCase: QueryEvalCase, model: any LanguageModel, pasteboa
         plugin.id == .queryTranslation ? QueryTranslationPlugin(prompt: QueryPrompt.system, referenceRule: QueryPrompt.referenceRule, style: style) : plugin
     }
     let registry = try Registry(plugins: plugins)
-    let file = evalCase.file == .story ? QueryStory.file(in: registry) : QueryEvalBoard.file(in: registry)
+    let file = switch evalCase.file {
+    case .story: QueryStory.file(in: registry)
+    case .evalBoard: QueryEvalBoard.file(in: registry)
+    case .fields: QueryFieldsBoard.file(in: registry)
+    }
     let editor = CanvasEditor(registry: registry, file: file, scheduler: TaskScheduler())
     editor.viewportDidResize(to: QueryStory.viewport)
     let queries = try require(editor.queries)

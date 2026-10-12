@@ -13,13 +13,15 @@ extension CodeTab: DetailTab { static var title: String { "Code" } }
 /// How often each box in the Code tab said it was done.
 @MainActor var codeCommits = 0
 @MainActor var wordCommits = 0
+@MainActor var typedCommits = 0
 /// How often the code editor wrote its text.
 @MainActor var codeWrites = 0
 /// What the code editor said of its completion list, in order: open (true), closed (false).
 @MainActor var codeCompleting: [Bool] = []
 
 /// A Code tab for the gadget: its remark as code, which completes fruit (read-only while its count
-/// isn't 0, as a box a model is writing is), and its name as words that commit.
+/// isn't 0, as a box a model is writing is), and its name as words that commit, and again as a value
+/// typed as keyed.
 struct CodeBoxesPlugin: CanvasPlugin {
     var id: PluginID { "code-boxes" }
     func register(into registrar: inout PluginRegistrar) {
@@ -33,6 +35,9 @@ struct CodeBoxesPlugin: CanvasPlugin {
             }
             DetailSection("Words", in: CodeTab.self) { $gadget in
                 DetailTextArea($gadget.name, placeholder: "Name it", onCommit: { wordCommits += 1 })
+            }
+            DetailSection("Typed", in: CodeTab.self) { $gadget in
+                DetailTextArea($gadget.name, asTyped: true, onCommit: { typedCommits += 1 })
             }
         }
     }
@@ -53,16 +58,19 @@ func digitsAndXs(_ text: String) -> [DetailCodeSpan] {
 extension PanelWindow {
     /// The Code tab's boxes: the code editor's text view (monospaced), and the words'.
     var code: NSTextView? { textViews.first { !$0.isFieldEditor && $0.font?.isFixedPitch == true } }
-    var words: NSTextView? { textViews.first { !$0.isFieldEditor && $0.font?.isFixedPitch == false } }
+    var words: NSTextView? { textViews.first { !$0.isFieldEditor && $0.font?.isFixedPitch == false && ($0 as? EditingTextView)?.spelling != nil } }
+    /// The value typed as keyed: words' font, no spelling.
+    var typed: NSTextView? { textViews.first { !$0.isFieldEditor && $0.font?.isFixedPitch == false && ($0 as? EditingTextView)?.spelling == nil } }
 
     /// A gadget selected, on its Code tab, the counts at zero.
     func showCode(_ gadget: Gadget = Gadget(gadgetFrame)) throws -> ShapeID {
         let id = editor.add(gadget)
         try require(editor.detailPanel).choose(.of(CodeTab.self), for: Gadget.kind)
         editor.selection = id
-        window.spin { self.code != nil && self.words != nil }
+        window.spin { self.code != nil && self.words != nil && self.typed != nil }
         codeCommits = 0
         wordCommits = 0
+        typedCommits = 0
         codeWrites = 0
         codeCompleting = []
         return id
@@ -206,6 +214,35 @@ extension PanelWindow {
         panel.window.spin { panel.textViews.count == 1 }
         let remarks = try require(panel.textViews.first as? EditingTextView, "a text area without a commit, the panel's own view too")
         expect(remarks.spelling === Spelling.app)
+    },
+    test("a text area as typed keeps what's keyed: no quotes or dashes made, no correction or spelling, the panel's font; Return commits, ⇧↩ is a new line") {
+        let editor = try gadgetEditor([CodeBoxesPlugin()], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let id = try panel.showCode()
+        let typed = try require(panel.typed as? EditingTextView)
+        expect(typed.spelling == nil)
+        expectEqual(typed.font, DetailStyle.textFont)
+        expectEqual([typed.isAutomaticQuoteSubstitutionEnabled, typed.isAutomaticDashSubstitutionEnabled, typed.isAutomaticTextReplacementEnabled,
+                     typed.isAutomaticSpellingCorrectionEnabled, typed.isContinuousSpellCheckingEnabled, typed.isGrammarCheckingEnabled,
+                     typed.isAutomaticLinkDetectionEnabled, typed.isAutomaticDataDetectionEnabled, typed.isAutomaticTextCompletionEnabled,
+                     typed.smartInsertDeleteEnabled],
+                    [false, false, false, false, false, false, false, false, false, false])
+        expectEqual(typed.inlinePredictionType, .no)
+        panel.focus(typed)
+        panel.window.type(#"say "hi" -- ok  x"#)
+        typed.checkTextInDocument(nil)       // what AppKit does a moment after typing, where substitutions are on
+        expectEqual(typed.string, #"say "hi" -- ok  x"#)
+        expectEqual(editor.props(id, as: Gadget.self)?.name, #"say "hi" -- ok  x"#, "written as typed, key by key")
+        panel.window.press("\r", code: 36, modifiers: .shift)
+        panel.window.type("b")
+        expectEqual(typedCommits, 0)
+        panel.window.pressReturn()
+        expectEqual(typedCommits, 1)
+        expect(editor.props(id, as: Gadget.self)?.name.hasSuffix("\nb") == true, "⇧↩ is a line break, Return none")
+        panel.window.makeFirstResponder(panel.canvas)
+        expectEqual(typedCommits, 2)
+        let words = try require(panel.words as? EditingTextView)
+        expect(words.spelling === Spelling.app, "the default box is unchanged")
     },
     test("a text area without a commit is as it was: Return is a new line") {
         let editor = try gadgetEditor(scheduler: TaskScheduler())

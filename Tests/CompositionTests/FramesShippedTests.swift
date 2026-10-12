@@ -11,7 +11,6 @@ import Geometry
 import LanguageModels
 import Locking
 import Mentions
-import Schemas
 import Selection
 import ShippedTesting
 import StickyNotes
@@ -19,6 +18,7 @@ import Subboards
 import TableOfContents
 import TestKit
 import Titles
+import Types
 
 // Frames as shipped: notes put in and out of frames by hand (dropped, nudged across an edge, refused by
 // a locked frame), frames moved, nested, resized, deleted and drawn, pressed hollow, mentioned, locked,
@@ -68,9 +68,10 @@ extension CanvasEditor {
 }
 
 /// A file of frames: on the root, frame Roadmap holding frame Sprint 3 (which holds a note and
-/// subboard Research) and a schema card, Order; beside it, frame Done, locked, holding a note; on
+/// subboard Research) and a type note, Order; beside it, frame Done, locked, holding a note; on
 /// Research's board, a note. The ids are fixed, so it's the file `Fixtures/files/frames.v5.json`
-/// was written from: format 5, since shapes are in frames.
+/// was written from (format 5, since shapes are in frames), but for Order, which was a schema card
+/// then, a kind that's gone: the fixture's is kept aside.
 struct FrameFile {
     static func id(_ n: Int) -> ShapeID { ShapeID(UUID(uuidString: "F0000000-0000-4000-8000-0000000000\(String(format: "%02d", n))")!) }
     let roadmap = id(1), sprint = id(2), interview = id(3), research = id(4), order = id(5), done = id(6), shipped = id(7), inside = id(8)
@@ -85,18 +86,24 @@ struct FrameFile {
     var file: CanvasFile {
         var done = titled(self.done, Frame(frame: CGRect(x: 1400, y: 100, width: 500, height: 400)), "Done")
         done[LockedProperty.self] = true
-        let schema = SchemaText(#"{"title": "Order", "type": "object", "properties": {"id": {"type": "string"}}}"#)
         let root = [
             titled(roadmap, Frame(frame: CGRect(x: 100, y: 100, width: 1200, height: 800)), "Roadmap"),
             titled(sprint, Frame(frame: CGRect(x: 150, y: 150, width: 700, height: 500)), "Sprint 3", in: roadmap),
             titled(interview, StickyNote(frame: CGRect(x: 180, y: 200, width: 200, height: 200), text: "Interview five customers"), in: sprint),
             titled(research, Subboard(frame: CGRect(x: 450, y: 200, width: 240, height: 160)), "Research", in: sprint),
-            titled(order, SchemaCard(frame: CGRect(x: 900, y: 200, width: 240, height: 52), schema: schema), in: roadmap),
+            typeOrder,
             done,
             titled(shipped, StickyNote(frame: CGRect(x: 1450, y: 200, width: 200, height: 200), text: "Shipped"), in: self.done),
         ]
         return CanvasFile(root: CanvasDocument(shapes: root),
                           children: [research: CanvasDocument(shapes: [titled(inside, StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Inside the subboard"))])])
+    }
+
+    /// Order, a type note in Roadmap.
+    private var typeOrder: AnyShapeRecord {
+        let record = typeNote(#"{"type": "object", "properties": {"id": {"type": "string"}}}"#, title: "Order",
+                              frame: CGRect(x: 900, y: 200, width: 200, height: 200), id: order)
+        return record.copy(as: order, container: roadmap)
     }
 
     /// The fixture: the file as this app wrote it.
@@ -362,21 +369,35 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         h.wait(0)
         expectEqual(h.editor.selectedShapeIDs, [note])
     },
-    test("the frames file reads as it was written, every shape in its frame, the locked frame's note read-only, and writes back byte for byte") {
+    test("the frames file reads as it was written, every shape in its frame, the locked frame's note read-only, its schema card (a kind that's gone) kept aside, and writes back as it was read") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         let data = try FrameFile.fixture
         let loaded = try codec.decode(data)
         let frames = FrameFile()
-        expectEqual(loaded.file, registry.fillingDefaults(frames.file))
-        expect(loaded.report.isEmpty, "\(loaded.report)")
-        expectEqual(try codec.encode(loaded.file), data)
+        let expected = registry.fillingDefaults(frames.file)
+        expectEqual(loaded.file.root.shapes.filter { $0.id != frames.order }, expected.root.shapes.filter { $0.id != frames.order })
+        expectEqual(loaded.file.children, expected.children)
+        expectEqual(loaded.report, LoadReport(keptAside: [.init(id: frames.order, kind: "schema-card", reason: .unknownKind)]))
+        expect(loaded.file.record(frames.order)?.isOpaque == true, "Order, as the file wrote it")
+        // Written back as read, but for the card's version: a board lists only the kinds the app
+        // writes, so a shape kept aside carries its own (`v`), as the codec keeps every shape it
+        // can't use. Read again, it's the same file.
+        let written = try codec.encode(loaded.file)
+        let card = #""schema" : "{\"title\": \"Order\", \"type\": \"object\", \"properties\": {\"id\": {\"type\": \"string\"}}}"\#n      }"#
+        let rewritten = String(decoding: data, as: UTF8.self)
+            .replacingOccurrences(of: card, with: card + ",\n      \"v\" : 1")
+            .replacingOccurrences(of: "      \"schema-card\" : 1,\n", with: "")
+        expectEqual(String(decoding: written, as: UTF8.self), rewritten)
+        let again = try codec.decode(written)
+        expectEqual(again.file, loaded.file)
+        expectEqual(again.report, loaded.report)
         expect(String(decoding: data, as: UTF8.self).contains(#""format" : 5"#), "format 5: shapes in frames")
         let editor = CanvasEditor(registry: registry, file: loaded.file, scheduler: ManualScheduler())
         expectEqual(editor.holder(of: frames.sprint), frames.roadmap)
         expectEqual(editor.holder(of: frames.interview), frames.sprint)
         expectEqual(editor.holder(of: frames.research), frames.sprint)
-        expectEqual(editor.holder(of: frames.order), frames.roadmap)
+        expectEqual(editor.file.record(frames.order)?.container, frames.roadmap, "kept aside in its frame, as written")
         expectEqual(editor.holder(of: frames.shipped), frames.done)
         expect(editor.isReadOnly(frames.shipped), "in a locked frame")
         expect(!editor.isReadOnly(frames.interview))

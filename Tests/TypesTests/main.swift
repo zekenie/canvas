@@ -1,0 +1,6 @@
+import TestKit
+
+runTests([orderTests, schemaValueTests, chainTests, fieldBookTests, readerTests, caretTests, highlightTests, highlightShownTests, completionTests, fieldTreeTests, syncTests, promptTests, panelTests,
+          panelCompletionTests, liveTests, undoTests, schemaBoardsTests, metaSchemaTests, referenceTests, referenceNameTests, referenceSyncTests,
+          referenceShownTests, commandTests, indexTests, ruleTests, wordsTests, isAPropertyTests, isAEdgeTests, typeLinkTests, isACommandTests, isAMenuTests, newTypeTests, chipTests, typeColorsTests, typePillTests, typesPanelTests, fieldValuesTests,
+          fieldPathTests, fieldNameTests, fieldKindTests, fieldAccessTests, fieldTextTests, fieldSummaryTests, fieldCheckTests, fieldSchemaTests, fieldCheckerTests, fieldChecksTests, fieldRuleTests, rowListTests, fieldStubTests, rowBookTests, rowSpotTests, rowFaceTests, rowValueTests, fieldFindTests, fieldWriterTests, fieldsPanelTests, fieldSheetTests, fieldFormTests, fieldCardsTests, fieldPanelFormTests, titleSourceTests, fieldTitlingTests, schemaDirectiveTests, titleWriteTests, isATitleTests, titleDuplicateTests, fieldTitlePillTests, titleFindTests, titleWarningTests, fieldChecksReadingTests, fileFieldsTests, fieldLinkTests, fieldLinkEdgeTests, fieldLinkCheckerTests, fieldLinkChecksTests, linkPickerTests, fieldLinkFormTests])

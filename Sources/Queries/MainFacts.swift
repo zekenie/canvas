@@ -23,11 +23,18 @@ final class MainFacts {
         let prepared: any Sendable
     }
 
+    /// A word's `problems`, with what its `prepare` took.
+    struct Problemer {
+        let ask: @MainActor (AnyShapeRecord, BoardID, any Sendable, QueryMainContext) -> [ShapeProblem]
+        let prepared: any Sendable
+    }
+
     private weak var editor: CanvasEditor?
     /// `editor.revision` as the query took up the file.
     private let revision: Int
     private let derived: (@MainActor (AnyShapeRecord, Registry) -> String?)?
     private let verdicts: [String: Verdict]
+    private let problemers: [String: Problemer]
     /// The boards' contexts the query's slices made (`QueryMainContext.shapes(on:)`).
     private let kept = KeptContexts()
 
@@ -40,12 +47,16 @@ final class MainFacts {
     /// How many derived names and verdicts were asked.
     private(set) var titlesAsked = 0
     private(set) var verdictsAsked = 0
+    /// How many shapes were asked what's the matter with them.
+    private(set) var problemsAsked = 0
 
-    init(editor: CanvasEditor, revision: Int, derived: (@MainActor (AnyShapeRecord, Registry) -> String?)?, verdicts: [String: Verdict]) {
+    init(editor: CanvasEditor, revision: Int, derived: (@MainActor (AnyShapeRecord, Registry) -> String?)?, verdicts: [String: Verdict],
+         problemers: [String: Problemer] = [:]) {
         self.editor = editor
         self.revision = revision
         self.derived = derived
         self.verdicts = verdicts
+        self.problemers = problemers
     }
 
     /// The derived names of as many of `ids` as a slice holds, from the first: each folded, nil for
@@ -68,6 +79,23 @@ final class MainFacts {
             verdictsAsked += 1
             guard let verdict, let shape = context.shape(id) else { return false }
             return verdict.ask(shape.record, shape.board, verdict.prepared, context)
+        }
+    }
+
+    /// What each of `words` says is the matter with as many of `ids` as a slice holds, from the first:
+    /// each shape's problems in the order of `words`, one that two words give once. A shape gone since
+    /// has none. `done` is how many.
+    func problems(_ words: [String], of ids: ArraySlice<ShapeID>) throws(QueryError) -> (answers: [ShapeID: [ShapeProblem]], done: Int) {
+        let context = try context()
+        let askers = words.compactMap { problemers[$0] }
+        return slice(ids) { id -> [ShapeProblem] in
+            problemsAsked += 1
+            guard let shape = context.shape(id) else { return [] }
+            var found: [ShapeProblem] = []
+            for asker in askers {
+                for problem in asker.ask(shape.record, shape.board, asker.prepared, context) where !found.contains(problem) { found.append(problem) }
+            }
+            return found
         }
     }
 

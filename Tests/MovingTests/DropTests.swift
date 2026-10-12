@@ -115,6 +115,30 @@ private let viewSize = CGSize(width: 1000, height: 700)
         expectEqual(h.editor.holder(of: s), f)
         expectEqual(h.frame(of: s), at(440, 140), "40 in from its top-left")
     },
+    test("a row of a shape laid out wider than it stores, dropped on a corral's row: it lands clear of what the corral holds and within it by the frame it is laid out in, from the board shown or from one that isn't") {
+        let p = ShapeID(), f = ShapeID(), b = ShapeID(), g = ShapeID(), s = ShapeID()
+        @MainActor func landed(stretchOn pocketBoard: Bool) throws -> (stored: CGRect, laidOut: CGRect, holder: ShapeID?) {
+            let gauge = AnyShapeRecord(ShapeRecord(id: g, CanvasTesting.Gauge(at(1000, 1000, 60, 40), width: 400, height: 100)))
+            let stretch = AnyShapeRecord(ShapeRecord(id: s, Stretch(at(1000, 1200), gauge: g)))
+            let root = pocketBoard ? [pocket(p, 3000, 0)] : [pocket(p, 3000, 0), gauge, stretch]
+            let file = CanvasFile(root: CanvasDocument(shapes: root + [corral(f, at(100, 100, 500, 400)), box(b, 140, 140, in: f)]),
+                                  children: pocketBoard ? [p: CanvasDocument(shapes: [gauge, stretch])] : [:])
+            let h = try droppingHarness(file, [StretchesPlugin()])
+            expect(h.drop([s], on: f, .on))
+            expectEqual(h.file.board(containing: s), .root)
+            let frame = try require(h.editor.shapeContext.frame(of: s))
+            return (try require(h.frame(of: s)), frame, h.editor.holder(of: s))
+        }
+        let shown = try landed(stretchOn: false), apart = try landed(stretchOn: true)
+        expectEqual(shown.laidOut.size, CGSize(width: 400, height: 100))
+        for frame in [shown.laidOut, apart.laidOut] {
+            expect(!frame.intersects(at(140, 140)), "clear of the box in the corral: \(frame)")
+            expect(at(100, 100, 500, 400).contains(frame), "and in it: \(frame)")
+        }
+        expectEqual(shown.holder, f)
+        expectEqual(shown.stored, at(140, 360), "below the box, not at (280, 140) where its 100 would fit: the 400 wide frame would not")
+        expectEqual(shown.stored, apart.stored, "the same from either board")
+    },
     test("several rows at once: one block, as they are to each other, in their order") {
         let f = ShapeID(), s1 = ShapeID(), s2 = ShapeID()
         let h = try droppingHarness(CanvasFile(root: board(corral(f, at(100, 100, 600, 400)), box(s1, 1000, 1000), box(s2, 1200, 1100))))

@@ -121,7 +121,9 @@ extension SelectTool: Tool {
             return
         }
         // A lone box follows the pointer from the press, with no drag threshold.
-        if !shift, !command, !onLabel, editor.selectedShapeIDs == [id], record.box != nil, !(definition is any CustomTranslation) {
+        // (Not with ⌥ held where a plugin copies a shape that can be copied: the copy is made when the drag begins, past the threshold.)
+        if !shift, !command, !onLabel, editor.selectedShapeIDs == [id], record.box != nil, !(definition is any CustomTranslation),
+           !(pointer.modifiers.contains(.option) && editor.copiesOnDrag && !editor.isReadOnly(id)) {
             editor.session = TranslatingSession(ids: [id], from: pointer.world, in: editor)
             return
         }
@@ -193,7 +195,7 @@ extension PointingShapeSession: Session {
             next = BrushingSession(origin: origin, in: editor)
         } else {
             if editor.selectedShapeIDs.isEmpty { editor.selection = shapeID }
-            next = TranslatingSession(ids: editor.selectedShapeIDs, from: origin, in: editor)
+            next = editor.translationSession(from: origin, pointer: pointer)
         }
         editor.session = next
         next.drag(pointer, in: editor)
@@ -283,7 +285,7 @@ final class PointingSelectionSession {
 extension PointingSelectionSession: Session {
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {
         guard pointer.view.distance(to: press) > Style.dragThreshold else { return }
-        let move = TranslatingSession(ids: editor.selectedShapeIDs, from: editor.camera.toWorld(press), in: editor)
+        let move = editor.translationSession(from: editor.camera.toWorld(press), pointer: pointer)
         editor.session = move
         move.drag(pointer, in: editor)
     }

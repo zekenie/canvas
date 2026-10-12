@@ -26,6 +26,8 @@ final class AdornmentState {
     /// Dropped for the shapes each commit names and `adornmentsDidChange` names, and for all of them
     /// as the canvas starts drawing skeletons.
     private var kept: [ShapeID: LaidOutAdornments] = [:]
+    /// The "+N" faces made, by text and place: the same on every shape.
+    private var overflowFacesKept: [OverflowKey: AdornmentStyle.Face] = [:]
     /// The revision `kept` is up to date with. Read before this service has heard of a commit (by
     /// a service that hears first: Selection, looking for a button under a still pointer), what's
     /// asked for is made afresh and not kept, so it's never stale and nothing else is thrown away.
@@ -59,22 +61,33 @@ final class AdornmentState {
         let isHeard = keeping && heardRevision == editor.revision
         if isHeard, let known = kept[record.id] { return known.shown.isEmpty ? nil : known }
         let context = AdornmentContext(editor: editor)
-        let shown = candidates.compactMap { candidate in
-            candidate.label(record, context).flatMap { ShownAdornment(candidate, label: $0) }
+        // Each contribution's labels that say something, one adornment each, in order; a group's
+        // know how many follow them, for the "+N" chip that stands for them.
+        var shown: [ShownAdornment] = []
+        for (index, candidate) in candidates.enumerated() {
+            let labels = candidate.labels(record, context).filter(\.showsSomething)
+            for (position, label) in labels.enumerated() {
+                shown.append(ShownAdornment(candidate, label: label, group: candidate.isGroup ? index : nil, remaining: labels.count - position))
+            }
         }
         guard !shown.isEmpty else {
-            if isHeard { kept[record.id] = LaidOutAdornments(shown: [], items: [], faces: [], compactFaces: []) }
+            if isHeard { kept[record.id] = LaidOutAdornments(shown: [], items: [], faces: [], compactFaces: [], overflowFaces: []) }
             return nil
         }
         let faces = shown.map { AdornmentStyle.face(of: $0.label, in: $0.id.placement) }
         let compactFaces: [AdornmentStyle.Face?] = shown.map { adornment in
             adornment.label.compactFace.map { AdornmentStyle.face(of: $0, in: adornment.id.placement) }
         }
+        let overflowFaces: [AdornmentStyle.Face?] = shown.map { adornment in
+            adornment.overflowLabel.map { overflowFace(of: $0, in: adornment.id.placement) }
+        }
         #if DEBUG
-        facesMade += faces.count + compactFaces.filter { $0 != nil }.count
+        facesMade += faces.count + compactFaces.filter { $0 != nil }.count + overflowFaces.filter { $0 != nil }.count
         #endif
-        let items = (0..<shown.count).map { shown[$0].item(width: faces[$0].width, compactWidth: compactFaces[$0]?.width) }
-        let laidOut = LaidOutAdornments(shown: shown, items: items, faces: faces, compactFaces: compactFaces)
+        let items = (0..<shown.count).map {
+            shown[$0].item(width: faces[$0].width, compactWidth: compactFaces[$0]?.width, overflowWidth: overflowFaces[$0]?.width)
+        }
+        let laidOut = LaidOutAdornments(shown: shown, items: items, faces: faces, compactFaces: compactFaces, overflowFaces: overflowFaces)
         if isHeard { kept[record.id] = laidOut }
         return laidOut
     }
@@ -82,6 +95,21 @@ final class AdornmentState {
     /// These shapes' labels are made again when they're next asked for.
     func forget(_ ids: Set<ShapeID>) {
         for id in ids { kept[id] = nil }
+    }
+
+    /// A group's "+N" face: the same text, in the same place, is the same face on every shape, so it is made
+    /// once (measuring text is what a face costs).
+    private func overflowFace(of label: AdornmentLabel, in placement: AdornmentPlacement) -> AdornmentStyle.Face {
+        let key = OverflowKey(text: label.text ?? "", placement: placement)
+        if let known = overflowFacesKept[key] { return known }
+        let face = AdornmentStyle.face(of: label, in: placement)
+        if overflowFacesKept.count < 64 { overflowFacesKept[key] = face }
+        return face
+    }
+
+    private struct OverflowKey: Hashable {
+        let text: String
+        let placement: AdornmentPlacement
     }
 
     private func candidates(for kind: ShapeKind) -> [AdornmentContribution] {
@@ -101,23 +129,30 @@ final class AdornmentState {
 
     // MARK: Where
 
-    /// A shape's bounds, as its adornments go by: its geometry's. Nil for a shape without an
-    /// outline (nothing drawn), which has none.
-    static func bounds(of id: ShapeID, in shapes: ShapeContext) -> CGRect? {
+    /// The rect a shape's adornments are laid out against, in world units, at `zoom`: a closed
+    /// shape's bounds. An open shape's (a wire's), its label's if it has one (`geometry.label`:
+    /// the chips sit above the words), else the middle of its outline, a point; and either widened
+    /// about its center to `minAnchorWidth` view points where it is narrower, so a row of chips has
+    /// room. Nil for a shape without an outline (nothing drawn), which has none.
+    static func anchor(of id: ShapeID, in shapes: ShapeContext, zoom: CGFloat) -> CGRect? {
         guard let geometry = shapes.geometry(of: id), !geometry.outline.isEmpty, !geometry.bounds.isNull else { return nil }
-        return geometry.bounds
+        if geometry.isClosed { return geometry.bounds }
+        var anchor = geometry.label.flatMap { $0.isNull ? nil : $0 } ?? CGRect(origin: geometry.outline[geometry.outline.count / 2], size: .zero)
+        let least = AdornmentLayout.minAnchorWidth * AdornmentLayout.scale(atZoom: zoom)
+        if anchor.width < least { anchor = CGRect(x: anchor.midX - least / 2, y: anchor.minY, width: least, height: anchor.height) }
+        return anchor
     }
 
     /// Where a shape's adornments are now, in world units: none on a shape drawn as a skeleton.
     func frames(of record: AnyShapeRecord) -> [AdornmentFrame] {
         guard !editor.drawsSkeleton(of: record.id), let laidOut = laidOut(record),
-              let bounds = Self.bounds(of: record.id, in: editor.shapeContext) else { return [] }
+              let anchor = Self.anchor(of: record.id, in: editor.shapeContext, zoom: editor.camera.zoom) else { return [] }
         let scale = AdornmentLayout.scale(atZoom: editor.camera.zoom)
-        let slots = AdornmentLayout.slots(of: laidOut.items, width: bounds.width / scale)
+        let slots = AdornmentLayout.slots(of: laidOut.items, width: anchor.width / scale)
         return laidOut.shown.indices.compactMap { index in
             slots[index].map {
                 AdornmentFrame(adornment: laidOut.shown[index].id, label: laidOut.look(of: index, in: $0).label,
-                               rect: $0.worldRect(in: bounds, scale: scale))
+                               rect: $0.worldRect(in: anchor, scale: scale), isOverflow: $0.isOverflow)
             }
         }
     }
@@ -127,22 +162,22 @@ final class AdornmentState {
     /// The front-most adornment within `hitMargin` of a world point, of the shapes `include`
     /// accepts, where they are (not where a shake draws them), as it's drawn: of one shape's, the
     /// nearest. None on a shape drawn as a skeleton, which shows none.
-    func hit(at point: CGPoint, where include: (AnyShapeRecord) -> Bool) -> (shape: ShapeID, adornment: ShownAdornment)? {
+    func hit(at point: CGPoint, where include: (AnyShapeRecord) -> Bool) -> (shape: ShapeID, adornment: ShownAdornment, isOverflow: Bool)? {
         guard !isEmpty, !editor.drawsSkeletons || editor.editingShapeID != nil else { return nil }
         let scale = AdornmentLayout.scale(atZoom: editor.camera.zoom), shapes = editor.shapeContext
         for record in editor.paintOrder(in: AdornmentLayout.area(around: point, scale: scale)).reversed()
         where include(record) && !editor.drawsSkeleton(of: record.id) {
             guard let laidOut = laidOut(record),
-                  let bounds = Self.bounds(of: record.id, in: shapes) else { continue }
-            var nearest: (index: Int, distance: CGFloat)?
-            for (index, slot) in AdornmentLayout.slots(of: laidOut.items, width: bounds.width / scale).enumerated() {
+                  let anchor = Self.anchor(of: record.id, in: shapes, zoom: editor.camera.zoom) else { continue }
+            var nearest: (index: Int, distance: CGFloat, isOverflow: Bool)?
+            for (index, slot) in AdornmentLayout.slots(of: laidOut.items, width: anchor.width / scale).enumerated() {
                 guard let slot else { continue }
-                let corner = slot.corner(in: bounds)
+                let corner = slot.corner(in: anchor)
                 let local = CGPoint(x: (point.x - corner.x) / scale, y: (point.y - corner.y) / scale)
                 let distance = AdornmentLayout.distance(from: local, to: slot.frame)
-                if distance <= AdornmentLayout.hitMargin, distance < nearest?.distance ?? .infinity { nearest = (index, distance) }
+                if distance <= AdornmentLayout.hitMargin, distance < nearest?.distance ?? .infinity { nearest = (index, distance, slot.isOverflow) }
             }
-            if let nearest { return (record.id, laidOut.shown[nearest.index]) }
+            if let nearest { return (record.id, laidOut.shown[nearest.index], nearest.isOverflow) }
         }
         return nil
     }
@@ -158,21 +193,26 @@ final class AdornmentState {
     /// over a back shape's lock takes the press, as it's drawn over it.
     func button(atViewPoint point: CGPoint) -> AdornmentButton? {
         guard hasButtons, let hit = hit(at: editor.camera.toWorld(point), where: { _ in true }), hit.adornment.isClickable else { return nil }
-        return AdornmentButton(hit.adornment.id, on: hit.shape)
+        return AdornmentButton(hit.adornment.id, on: hit.shape, tag: hit.isOverflow ? nil : hit.adornment.label.tag, isOverflow: hit.isOverflow)
     }
 
     /// A click on a clickable adornment: its type's `click`.
     func click(_ button: AdornmentButton) {
         guard let record = editor.document[button.shape],
               let click = candidates(for: record.kind).first(where: { $0.adornment == button.adornment })?.click else { return }
-        click(button.shape, editor)
+        let rect = frames(of: record).first { $0.adornment == button.adornment && $0.tag == button.tag && $0.isOverflow == button.isOverflow }?.rect ?? .null
+        click(AdornmentClick(shape: button.shape, tag: button.tag, rect: rect, isOverflow: button.isOverflow), editor)
     }
 }
 
 extension AdornmentState: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         heardRevision = editor.revision
-        forget(changes.shapeIDs)
+        // A shape that only moved (a drag) has the labels it had: they are laid out against its bounds when
+        // asked, never kept at a place. Everything else a commit touched is made again.
+        for id in changes.added { kept[id] = nil }
+        for id in changes.removed { kept[id] = nil }
+        for id in changes.changed where !changes.moved.contains(id) { kept[id] = nil }
     }
 
     /// Another board is shown: what the board left's shapes showed goes, and the shown board's
@@ -206,10 +246,13 @@ struct LaidOutAdornments {
     /// Each shown adornment's compact face, if its label has one (`AdornmentLabel.compact(_:)`): the
     /// layout says which of the two is drawn.
     let compactFaces: [AdornmentStyle.Face?]
+    /// Each group member's "+N" face, the one that stands for it and those after it.
+    let overflowFaces: [AdornmentStyle.Face?]
 
     /// The label and face drawn for adornment `index` in `slot`: its compact ones where the layout
-    /// placed those.
+    /// placed those, the "+N" chip's where it folded into one.
     func look(of index: Int, in slot: AdornmentLayout.Slot) -> (label: AdornmentLabel, face: AdornmentStyle.Face) {
+        if slot.isOverflow, let face = overflowFaces[index], let label = shown[index].overflowLabel { return (label, face) }
         if slot.isCompact, let face = compactFaces[index], let label = shown[index].label.compactFace { return (label, face) }
         return (shown[index].label, faces[index])
     }
@@ -225,28 +268,32 @@ struct ShownAdornment {
     /// Text, which gives way at the row's left end; otherwise a symbol's disc.
     let isText: Bool
     let lead: CGFloat
+    /// The contribution it's one of several of (a group), and the "+N" that stands for it and the
+    /// labels after it: nil for an adornment on its own.
+    let group: Int?
+    let overflowLabel: AdornmentLabel?
 
-    /// Nil for a label that shows nothing: blank text, or neither text nor a symbol.
-    init?(_ contribution: AdornmentContribution, label: AdornmentLabel) {
-        if let text = label.text {
-            guard !text.isEmpty else { return nil }
-        } else if label.systemImage == nil {
-            return nil
-        }
+    /// A label that shows something (`AdornmentLabel.showsSomething`): the caller leaves the others
+    /// out. `remaining` is how many of its group's labels there are from this one on.
+    init(_ contribution: AdornmentContribution, label: AdornmentLabel, group: Int?, remaining: Int) {
         id = contribution.adornment
         self.label = label
         isClickable = contribution.click != nil
         isText = label.text != nil
         lead = AdornmentStyle.lead(of: label, in: id.placement)
+        self.group = group
+        overflowLabel = group == nil ? nil : AdornmentLabel(AdornmentStyle.overflowPrefix + String(remaining))
     }
 
-    func item(width: CGFloat, compactWidth: CGFloat?) -> AdornmentLayout.Item {
-        AdornmentLayout.Item(id.placement, width: width, isText: isText, lead: lead, compact: compactWidth.map { .init(width: $0) })
+    func item(width: CGFloat, compactWidth: CGFloat?, overflowWidth: CGFloat?) -> AdornmentLayout.Item {
+        AdornmentLayout.Item(id.placement, width: width, isText: isText, lead: lead, compact: compactWidth.map { .init(width: $0) },
+                             group: group, overflowWidth: overflowWidth ?? 0)
     }
 
-    /// Whether this, on `shape`, is `button` (the one hovered or pressed).
-    func isButton(_ button: AdornmentButton?, on shape: ShapeID) -> Bool {
-        guard let button else { return false }
-        return button.adornment == id && button.shape == shape
+    /// Whether this, on `shape`, is `button` (the one hovered or pressed): the same label, or the
+    /// group's "+N" chip, which its labels share.
+    func isButton(_ button: AdornmentButton?, on shape: ShapeID, isOverflow: Bool = false) -> Bool {
+        guard let button, button.adornment == id, button.shape == shape, button.isOverflow == isOverflow else { return false }
+        return isOverflow || button.tag == label.tag
     }
 }

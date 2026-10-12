@@ -26,6 +26,10 @@ public struct QueryPlan: Sendable {
     /// that hold no shapes (`cannot_contain`), as resolution refuses such a kind or id.
     let containerTitles: Set<PlanNodeID>
 
+    /// The paths into an attribute's members the query tests, each once, in the order met: what the answer asks
+    /// the plugin that knows the attribute's members whether any shape can hold (`QueryPathChecks`).
+    var paths: [(attribute: String, members: [String])] { uses.paths.map { ($0.attribute, $0.members) } }
+
     /// The words in the plan whose verdict reads the editor (`QueryReads.editor`), in the order the
     /// query uses them, each once, as the query writes them: a plugin's word that says so
     /// (`:selected`, `:invalid`), `:current-board`, and a text read through a format that reads the
@@ -110,6 +114,9 @@ indirect enum PlanOp: Sendable {
     /// One of the language's edge words (`:edge-to` … `:between`): its anchors (`second` only for
     /// `:between`) and the edge types it follows.
     case edges(word: Word, anchor: PlanList, second: PlanList?, types: PlanEdgeTypes)
+    /// A plugin's relation answered from a fact of the file (`:is-a(S)`): the result is related to a
+    /// shape the anchor matches, as the plugin's `related` says, however far when it's transitive.
+    case fileRelation(word: String, anchor: PlanList)
     /// A plugin's relation (`:mentions(S)`): the result → S (`.outgoing`) or S → the result.
     case relation(word: String, anchor: PlanList, types: PlanEdgeTypes, direction: EdgeDirection)
     /// Carries an edge of these types whose far end isn't a shape the query ranges over.
@@ -163,6 +170,9 @@ struct TypedTest: Sendable, Equatable {
         case less(PlanValue), lessOrEqual(PlanValue), greater(PlanValue), greaterOrEqual(PlanValue)
         /// `~=` on a list: an item equals this.
         case hasItem(PlanValue)
+        /// `[a.b]` and the rest: what's at the members inside the attribute's object, typed by the
+        /// value found there (`PathTest`).
+        case path(PathTest)
     }
 
     let comparison: Comparison
@@ -200,6 +210,12 @@ struct PlanEdgeTypes: Sendable, Equatable {
 }
 
 /// What answering a plan reads, so the answer takes up only that from the app.
+/// A path a query tests into an attribute: its members, as written.
+struct PlanPath: Sendable, Equatable {
+    let attribute: String
+    let members: [String]
+}
+
 struct PlanUses: Sendable, Equatable {
     /// Titles (a title head, the names point's attribute): the names point.
     var names = false
@@ -220,6 +236,14 @@ struct PlanUses: Sendable, Equatable {
     var readsText = false
     /// The words that read the editor (`QueryPlan.editorWords`), in the order they're met, each once.
     var editorWords: [String] = []
+    /// The paths into an attribute's members it tests (`[fieldValues.a.b]`), each once, as written.
+    var paths: [PlanPath] = []
+
+    /// Notes that the plan tests a path.
+    mutating func notePath(attribute: String, members: [String]) {
+        let path = PlanPath(attribute: attribute, members: members)
+        if !paths.contains(path) { paths.append(path) }
+    }
 
     /// Notes that the plan has `word`, which reads the editor.
     mutating func noteEditorWord(_ word: String) {
@@ -273,6 +297,8 @@ extension QueryPlan: CustomStringConvertible {
             case .id(let id): lines.append(indent + "id " + id.description)
             case .attribute(let name, let readers):
                 for reader in readers {
+                    var name = name
+                    if case .path(let path) = reader.test.comparison { name += "." + path.members.joined(separator: ".") }
                     lines.append(indent + "[\(name)] of \(reader.kinds.map(\.rawValue).sorted().joined(separator: "|"))"
                                  + " \(reader.source.planDescription): \(reader.test.planDescription)")
                 }
@@ -310,6 +336,9 @@ extension QueryPlan: CustomStringConvertible {
                 if let second { list(second, depth + 1) }
             case .relation(let word, let anchor, let types, let direction):
                 lines.append(indent + "\(word) \(direction == .incoming ? "from" : "to") \(types.planDescription)")
+                list(anchor, depth + 1)
+            case .fileRelation(let word, let anchor):
+                lines.append(indent + "\(word) of the file")
                 list(anchor, depth + 1)
             case .dangling(let types): lines.append(indent + "dangling \(types.planDescription)")
             case .pseudo(let word): lines.append(indent + ":" + word)
@@ -363,6 +392,7 @@ extension TypedTest {
         case .greater(let value): "> \(value.planDescription)"
         case .greaterOrEqual(let value): ">= \(value.planDescription)"
         case .hasItem(let value): "has the item \(value.planDescription)\(flag)"
+        case .path(let path): path.planDescription
         }
     }
 }
