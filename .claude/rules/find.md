@@ -5,7 +5,7 @@ paths:
   - "Tests/CompositionTests/FindShippedTests.swift"
   - "Sources/Mentions/MentionFind.swift"
   - "Sources/Titles/TitleFind.swift"
-  - "Sources/Types/FieldFind.swift"
+  - "Sources/Types/Engines/FieldFind.swift"
   - "Tests/TypesTests/FieldFindTests.swift"
   - "Sources/Boards/BoardHeadings.swift"
 ---

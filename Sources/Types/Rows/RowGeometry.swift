@@ -20,9 +20,6 @@ extension TypesStyle {
     /// An inherited row's tick: this wide, this far left of the rows, in the padding.
     public static let tickWidth: CGFloat = 2
     public static let tickInset: CGFloat = 8
-    /// A needed field's amber dot: this across, this far after its name.
-    public static let neededDotSize: CGFloat = 5
-    public static let neededDotGap: CGFloat = 5
     /// Between a kind's label, its chip and the `›`.
     public static let partGap: CGFloat = 5
     /// The reading state's bars: this tall, as wide as these shares of the rows.
@@ -32,8 +29,6 @@ extension TypesStyle {
     public static let actionGap: CGFloat = 8
     /// Between the pills of a list of links, and before the `+N` that counts the rest.
     public static let linkGap: CGFloat = 6
-    /// A wrong pill's wave starts and ends this far in from its ends, clear of the round corners.
-    static let linkWaveInset: CGFloat = 7
 }
 
 @MainActor

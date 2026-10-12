@@ -136,3 +136,11 @@ extension CanvasEditor {
     /// The one writer of a shape's field values (`FieldWriter`); nil without TypesPlugin.
     public var fieldWriter: FieldWriter? { service(FieldWriter.self) }
 }
+
+extension TypesStyle {
+    /// `Remove Nickname`: the step of taking a value no field names out, and its minus's label.
+    static func removeValue(_ key: String) -> String {
+        let words = FieldName.words(of: ChainField(name: key, schema: .null)).split(whereSeparator: \.isWhitespace)
+        return (["Remove"] + words.map { $0.prefix(1).uppercased() + $0.dropFirst() }).joined(separator: " ")
+    }
+}

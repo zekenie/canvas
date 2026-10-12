@@ -2,7 +2,8 @@
 import PackageDescription
 
 // THE MODULE GRAPH, AND WHAT SHIPS. This file is the only place module dependencies are written
-// down, and the only list of the plugins the product is made of (the table before the targets).
+// down, and the only list of the plugins the product is made of (the table before the targets). The
+// parts a large module is split into, and what each uses, are a table of their own after that one.
 // build.sh reads it as a table, so every target stays on ONE line, in exactly this form:
 //     .target(name: "X", dependencies: ["A", "B"]),                          // layer: <layer>
 //     .target(name: "X", dependencies: ["A"], path: "Examples/X"),          // layer: <layer>
@@ -109,7 +110,9 @@ import PackageDescription
 //     and no plugin imports it;
 //   - a module writes another module's ShapeKind, PluginID, ToolID, PropertyKey, ChannelID (a
 //     Connections channel's) or EdgeTypeID (a Topology edge type's) as a string literal without
-//     depending on that module.
+//     depending on that module;
+//   - a part of a module (the table of parts, after what ships) names something of a part its line
+//     doesn't say it uses.
 // The graph keeps the core from naming a plugin's types (a module compiles against only its
 // dependency closure, with MemberImportVisibility, and the import check rejects undeclared
 // imports); the id check keeps any module from writing another module's kind, tool, plugin, property,
@@ -214,6 +217,37 @@ let shipped = ships.reduce(into: [String]()) { modules, plugin in
     let module = String(plugin.prefix { $0 != "." })
     if !modules.contains(module) { modules.append(module) }
 }.map { Target.Dependency(stringLiteral: $0) }
+
+// THE PARTS OF A MODULE. A module too large to hold in mind is split into parts, each a folder of its
+// directory, with the same rule between them as between modules: a part uses only the parts its line
+// names, and build.sh type-checks each with those sources alone, so naming anything else of the module
+// doesn't compile. They are parts and not modules, since nothing must build without the others and
+// what one shares with the next stays internal to the module. A line is `"Module/Part": [the parts
+// it uses],`, the parts in an order they could be built in: a part uses only parts above it (so there
+// is no cycle) and names all of what those use (so a line says everything its part compiles with).
+// Every folder of a module that has parts is one; the sources beside the folders are the module's
+// own (its plugins, which install every part) and may use them all.
+//
+// Types: the JSON a schema is read, completed and checked as; a type, and what a shape is (the two
+// properties and the file's index of them); the fields a list of types gives a note, their kinds,
+// values and one writer; the check of a note's values; the model keeping a type's words and schema
+// in step; what a shape is, shown and changed (the commands, `/is-a`, the menu, the chips, the
+// panel's tabs); the form a card and the panel hold; the rows on a note; and the words draw, queries
+// and Find are given.
+//
+// build.sh reads this table as text, as it reads the targets, so it stays in this form: the opening
+// line, a part a line, comments on lines of their own, and `]`. SwiftPM makes nothing of it.
+let parts: KeyValuePairs<String, [String]> = [
+    "Types/JSON": [],
+    "Types/Type": ["JSON"],
+    "Types/Fields": ["JSON", "Type"],
+    "Types/Checks": ["JSON", "Type", "Fields"],
+    "Types/Sync": ["JSON", "Type"],
+    "Types/IsA": ["JSON", "Type", "Fields", "Sync"],
+    "Types/Form": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA"],
+    "Types/Rows": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form"],
+    "Types/Engines": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form", "Rows"],
+]
 
 let package = Package(
     name: "InfiniteCanvas",

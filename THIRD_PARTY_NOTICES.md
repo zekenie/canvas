@@ -11,7 +11,7 @@ license, and the attribution its authors ask for.
   3-clause license or the Academic Free License v3.0; Infinite Canvas takes the BSD license.
 
 The meta-schema a type's JSON editor completes against (`MetaSchema`,
-`Sources/Types/MetaSchema.swift`) is modified from JSON Schema's 2020-12 meta-schema and its
+`Sources/Types/JSON/MetaSchema.swift`) is modified from JSON Schema's 2020-12 meta-schema and its
 vocabularies' meta-schemas (core, applicator, unevaluated, validation, meta-data, format-annotation
 and content). The main changes: they're flattened into one document, their `$dynamicRef`s made
 `$ref`s; the keywords are listed in the order completion offers them, each with a description; the
@@ -57,10 +57,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 `MetaSchema` is flattened as this project flattens the 2020-12 meta-schemas
 (`src/services/schemas/draft-2020-12-flat.ts`), from which it's modified. The completion engine
-(`JSONCompleter`, `Sources/Types/JSONCompleter.swift`) follows this project's completion
+(`JSONCompleter`, `Sources/Types/JSON/JSONCompleter.swift`) follows this project's completion
 (`src/services/jsonCompletion.ts`): the schemas a place is held to, the values offered there, what a
 key is written with, and where commas go. The caret's reading of half-typed JSON (`JSONCaret`,
-`Sources/Types/JSONCaret.swift`) recovers from what's typed wrong as jsonc-parser does
+`Sources/Types/JSON/JSONCaret.swift`) recovers from what's typed wrong as jsonc-parser does
 (https://github.com/microsoft/node-jsonc-parser, `src/impl/parser.ts`, which this project reads JSON
 with; MIT License, Copyright (c) Microsoft, the same text as below). Both are written anew in
 Swift; no code is copied.

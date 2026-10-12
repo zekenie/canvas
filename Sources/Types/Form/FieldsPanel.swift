@@ -19,11 +19,6 @@ extension TypesStyle {
     public static let fieldLine: CGFloat = 22
     /// A value no field names.
     static let unnamedValueSymbol = "circle.dashed"
-    /// `Remove Nickname`: the step of taking a value no field names out, and its minus's label.
-    static func removeValue(_ key: String) -> String {
-        let words = FieldName.words(of: ChainField(name: key, schema: .null)).split(whereSeparator: \.isWhitespace)
-        return (["Remove"] + words.map { $0.prefix(1).uppercased() + $0.dropFirst() }).joined(separator: " ")
-    }
 }
 
 /// One row of the section. Public, with `FieldsPanelModel`, for TypesTests alone: the audit refuses

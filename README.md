@@ -168,7 +168,8 @@ Sources/
   Transform/            a horizontal: turning a shape into another kind through channels (a frame into a
                         subboard: one kind offers a channel, another takes it), from its menu or /turn-into-…
   Types/                a concern: a note that holds a JSON Schema is a type, named by its title (/type), its words
-                        and its schema kept in step by Claude, its words highlighted where they say a part of it
+                        and its schema kept in step by Claude, its words highlighted where they say a part of it;
+                        in nine parts, a folder each, which the build holds apart (Package.swift's table of parts)
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern
   Reordering/           a feature, menu items for every kind with a capability: the Arrange submenu

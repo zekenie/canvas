@@ -41,21 +41,16 @@ extension TypesStyle {
     /// font in a row's field is the field's own offset.
     static let fieldLift: CGFloat = 0.5
 
-    /// A note's paper is light in both appearances, so the rows' inks are fixed colors, as the highlights
-    /// are: the note's ink, and its strengths.
-    static let rowInk = NSColor(white: 0.12, alpha: 1)
+    /// The strengths the note's ink (`rowInk`, the form's style file's: a pill in a card is drawn in it too)
+    /// is drawn at.
     static let faintStrength: CGFloat = 0.45
     static let mutedStrength: CGFloat = 0.55
     /// The rule under a type's words, and the reading state's bars: black at these strengths.
     static let rowsRule = CGColor(gray: 0, alpha: 0.12)
     static let spotBar = CGColor(gray: 0, alpha: 0.10)
-    /// A needed field's dot: the same amber as a rule's highlight and a warning.
-    static let neededInk = NSColor(srgbRed: 0.96, green: 0.62, blue: 0.04, alpha: 1)
     /// Text that says a needed value is missing: the dot's amber, darkened until it reads at 4.5 to 1 on a note's
     /// yellow and on white (the dot itself is a mark, not text).
     static let neededTextInk = NSColor(srgbRed: 0.55, green: 0.32, blue: 0.0, alpha: 1)
-    /// A wrong value's red: as dark as it takes to read at 4.5 to 1 on a note's yellow and on white.
-    static let wrongInk = NSColor(srgbRed: 0.74, green: 0.10, blue: 0.10, alpha: 1)
     /// An action's words (`Retry`, `Settings…`): the accent blue.
     static let linkInk = NSColor(srgbRed: 0.0, green: 0.38, blue: 0.85, alpha: 1)
     /// A tick for rows more than one type gave.

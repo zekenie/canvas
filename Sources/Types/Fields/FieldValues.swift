@@ -77,3 +77,13 @@ extension FieldValuesProperty: ShapeProperty {
             .description("The values of the fields of the shape's types, by field name, as JSON. A value that is empty is not kept.")
     }
 }
+
+extension ShapeRegistrar {
+    /// This kind's shapes can be instances of types: each may hold `is`, the types it is, and
+    /// `fieldValues`, what it holds for their fields. Needs `typeWords` (`TypeWords.check`): a
+    /// shape's types are typed on a line of its words (`/is-a`).
+    public mutating func typeable() {
+        optIn(to: IsAProperty.self)
+        optIn(to: FieldValuesProperty.self)
+    }
+}

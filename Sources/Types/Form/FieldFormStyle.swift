@@ -61,4 +61,20 @@ extension TypesStyle {
     public static let formJSONMaxLines = 12
     public static let formJSONPad: CGFloat = 5
     static let formJSONRadius: CGFloat = 5
+
+    // What the rows on a note draw with too (`Rows/`): declared here, under them, since a card and the
+    // panel mark a field as its row does and may name nothing of the rows'.
+
+    /// A note's paper is light in both appearances, so the rows' inks are fixed colors, as the highlights
+    /// are: the note's ink.
+    static let rowInk = NSColor(white: 0.12, alpha: 1)
+    /// A needed field's dot: the same amber as a rule's highlight and a warning.
+    static let neededInk = NSColor(srgbRed: 0.96, green: 0.62, blue: 0.04, alpha: 1)
+    /// A wrong value's red: as dark as it takes to read at 4.5 to 1 on a note's yellow and on white.
+    static let wrongInk = NSColor(srgbRed: 0.74, green: 0.10, blue: 0.10, alpha: 1)
+    /// A needed field's amber dot: this across, this far after its name.
+    public static let neededDotSize: CGFloat = 5
+    public static let neededDotGap: CGFloat = 5
+    /// A wrong pill's wave starts and ends this far in from its ends, clear of the round corners.
+    static let linkWaveInset: CGFloat = 7
 }

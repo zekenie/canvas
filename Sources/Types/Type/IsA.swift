@@ -76,16 +76,6 @@ extension IsAEdge: EdgeType {
     public static let summary: String? = "from a shape to each type it is, in the order of its list"
 }
 
-extension ShapeRegistrar {
-    /// This kind's shapes can be instances of types: each may hold `is`, the types it is, and
-    /// `fieldValues`, what it holds for their fields. Needs `typeWords` (`TypeWords.check`): a
-    /// shape's types are typed on a line of its words (`/is-a`).
-    public mutating func typeable() {
-        optIn(to: IsAProperty.self)
-        optIn(to: FieldValuesProperty.self)
-    }
-}
-
 extension Registry {
     /// Whether the kind's shapes can be instances of types (`typeable()`).
     public func isTypeable(_ kind: ShapeKind) -> Bool {

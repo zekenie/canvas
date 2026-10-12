@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Quick and dirty evals for a type's two prompts, as the app ships them: the system prompts
-are read out of Sources/Types/SchemaPrompts.swift, so there's one copy.
+are read out of Sources/Types/Sync/SchemaPrompts.swift, so there's one copy.
 
     python3 evals.py --check                # read the prompts and settings out of the Swift, and self-test the checks; no call
     python3 evals.py --round 1              # every case in cases.csv, and the chains
@@ -39,7 +39,7 @@ from gen_cases import fmt, STARTER, ORDER  # noqa: E402
 
 API_URL = "https://api.anthropic.com/v1/messages"
 SOURCES = os.path.normpath(os.path.join(HERE, "..", "..", "Sources"))
-SWIFT = os.path.join(SOURCES, "Types", "SchemaPrompts.swift")
+SWIFT = os.path.join(SOURCES, "Types", "Sync", "SchemaPrompts.swift")
 # Each direction's system prompt and max_tokens (the Swift constants they're read from):
 # `swift_settings` fills in the values, and MODEL and EFFORT, from the Swift.
 CONFIG = {
@@ -175,7 +175,7 @@ def parse(direction, text, stop_reason, words=""):
 
 
 # ------------------------------------------------------------------ the type's name, as TypeSync puts it in and takes it out
-# (Sources/Types/TypeSchema.swift `TypeNaming`, used by TypeSync.start and .apply): a type's schema is
+# (Sources/Types/Type/TypeSchema.swift `TypeNaming`, used by TypeSync.start and .apply): a type's schema is
 # stored with no root "title"; its note's title goes in as the first member for the request (unless the
 # person typed one in the JSON), and the model's comes out of what it writes, naming an untitled note.
 
