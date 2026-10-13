@@ -53,6 +53,9 @@ EFFORT = None
 NO_CHANGE = "NO_CHANGE"
 # The tags a prompt is answered in (SchemaPrompts.answerTag): `swift_settings` reads it.
 ANSWER_TAG = None
+# The schema TypeSync says words that are JSON were over before they became the schema (`adopt`, `changed`):
+# the previous_schema of the request that then writes the words from nothing. `swift_settings` reads it.
+JSON_WORDS_OVER = None
 # A prompt answer that reads as something other than the prompt (SchemaPrompts.isNotAPrompt).
 PREAMBLES = ("here's ", "here’s ", "here is ", "here are ", "updated prompt", "updated description",
              "the updated prompt", "the updated description", "prompt:", "description:",
@@ -312,7 +315,7 @@ def system_prompt(direction, schemas=""):
 def swift_settings():
     """Reads each direction's max_tokens, the model, its effort and the tags a prompt is answered in
     out of the Swift, so the evals send what the app does and read what it reads."""
-    global MODEL, EFFORT, ANSWER_TAG
+    global MODEL, EFFORT, ANSWER_TAG, JSON_WORDS_OVER
     src = swift_source()
 
     def text(name):
@@ -335,6 +338,12 @@ def swift_settings():
     asked = f"<{ANSWER_TAG}> and </{ANSWER_TAG}>"
     if asked not in literal(CONFIG["to_prompt"]["system"]) or f"<{ANSWER_TAG}>" in literal(CONFIG["to_schema"]["system"]):
         raise Fatal(f"toPromptSystem, and it alone, should ask for {asked}")
+    sync = os.path.join(os.path.dirname(SWIFT), "TypeSync.swift")
+    with open(sync, encoding="utf-8") as f:
+        over = set(re.findall(r'TypeSyncSides\(words: [\w.]+, schema: "([^"]*)"\)', f.read()))
+    if len(over) != 1:
+        raise Fatal(f"no one schema that JSON words are said to have been over in {sync}: {sorted(over)}")
+    JSON_WORDS_OVER = over.pop()
 
 
 def call(key, direction, user, schemas=""):
@@ -969,14 +978,26 @@ def chain_hand_edit(key):
 
 
 def chain_roundtrip(key):
-    """schema -> prompt (from nothing) -> schema: no drift."""
+    """schema -> prompt (from nothing) -> schema: no drift. And a schema sent alone gets words too."""
+    from gen_cases import PET
     log, calls, fails = [], [], []
     s0 = fmt(ORDER)
-    k, p1, r = step(key, "to_prompt", schema=s0)
+    # Words that are JSON made a type: TypeSync says the pair was those words over an empty schema, and sends
+    # that as previous_schema.
+    k, p1, r = step(key, "to_prompt", previous_schema=JSON_WORDS_OVER, schema=s0)
     calls.append(r)
     log.append(("p1", p1))
     if k != "prompt":
         return ["step1 no prompt"], log, calls
+    # The schema alone, no <prompt> and no <previous_schema>: what the app sends for a type it first saw with
+    # no words and a blank schema, once its JSON is typed. Words all the same, never NO_CHANGE (the pet's is
+    # the schema that most often got it).
+    for name, alone in (("order", s0), ("pet", fmt(PET))):
+        k, words, r = step(key, "to_prompt", schema=alone)
+        calls.append(r)
+        log.append((f"p1 {name} alone", words))
+        if k != "prompt":
+            fails.append(f"{name} schema alone: {k}")
     # a new card from that prompt
     k, s2, r = step(key, "to_schema", prompt=p1, schema=STARTER)
     calls.append(r)
@@ -1148,7 +1169,7 @@ def main():
     args = ap.parse_args()
 
     swift_settings()
-    print(f"model {MODEL}, effort {EFFORT}; a new type's schema {STARTER!r}")
+    print(f"model {MODEL}, effort {EFFORT}; a new type's schema {STARTER!r}; JSON words are said to have been over {JSON_WORDS_OVER!r}")
     for d in CONFIG:
         text = system_prompt(d)
         print(f"{d}: {CONFIG[d]['system']} and {' and '.join(CONFIG[d]['titles'])}, {len(text)} characters, {len(text.splitlines())} lines, "

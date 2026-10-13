@@ -1071,6 +1071,12 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         expectEqual([toSchema.effort, toPrompt.effort], ["medium", "medium"])
         expectEqual([toSchema.fallbacks, toPrompt.fallbacks], [nil, nil])
     },
+    test("a request with no prompt is never to be answered NO_CHANGE: the prompt says so where it lists the blocks and where it offers the answer") {
+        // With either sentence alone Haiku still answers NO_CHANGE for a schema sent alone (scripts/schema-prompts/README.md).
+        let system = SchemaPrompts.toPromptSystem
+        expect(system.contains("When it's missing there is no prompt yet: you write the first one, whatever else you get."))
+        expect(system.contains("Never when there is no <prompt>: there are no words yet, so the answer is a prompt, never \(SchemaPrompts.noChange)."))
+    },
     test("a system prompt is its base, what it says of titles, and, only in a request that names other schemas, what it says of those, a blank line apart; the user message is as it was") {
         let toSchemaTitles = SchemaPrompts.toSchemaSystem + "\n" + SchemaPrompts.toSchemaTitle + "\n" + SchemaPrompts.toSchemaNewTitle
         let toPromptTitles = SchemaPrompts.toPromptSystem + "\n" + SchemaPrompts.toPromptTitle

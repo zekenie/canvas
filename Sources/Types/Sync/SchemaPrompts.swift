@@ -8,8 +8,9 @@ import LanguageModels
 // is `TypeSync`'s, and for highlights `ProseMapService`'s. The prompts still say "prompt" for the
 // words: the evals read them as they are.
 // scripts/schema-prompts/evals.py reads the sync's two prompts, what each says of other schemas, their
-// max_tokens, the model, its effort and the tags a prompt is answered in out of this file (and a new type's schema out of
-// TypeSchema.swift), and highlight_evals.py the highlights' guide and what
+// max_tokens, the model, its effort and the tags a prompt is answered in out of this file (a new type's schema out of
+// TypeSchema.swift, and the schema words that are JSON are said to have been over out of TypeSync.swift, where a
+// `TypeSyncSides(words:schema:)` is given it as a literal), and highlight_evals.py the highlights' guide and what
 // it says of other schemas (and the frame they go in, the model, its effort and max_tokens out of
 // ProseMapPrompt.swift); each copies the request and the parse rule it tests, so the evals test what
 // ships. What the sync's two prompts say of a title from a field (`toSchemaTitle`, `toSchemaNewTitle`,
@@ -256,13 +257,13 @@ Format
 A user keeps a JSON Schema and a short plain-language prompt describing it side by side. They just edited the schema by hand. You update the prompt so it still describes the schema, the way the user would have written it.
 
 You get:
-- <prompt> (sometimes): the user's prompt now. When it's missing there is no prompt yet.
+- <prompt> (sometimes): the user's prompt now. When it's missing there is no prompt yet: you write the first one, whatever else you get.
 - <previous_schema> (sometimes): the schema as it was when the prompt last matched it.
 - <schema>: the schema now.
 
 Reply with exactly one of:
 1. The updated prompt, inside <answer> and </answer>. What is inside the tags becomes the user's prompt as it is: the text alone. No quotes around it, no preamble, no explanation, no markdown.
-2. The single word NO_CHANGE, when the prompt still describes the schema well enough: the change is formatting, order, or a detail the prompt never went into (a description's wording, the schema's top-level "title" when the prompt doesn't name the thing). Never when there is no <prompt>: write one.
+2. The single word NO_CHANGE, when the prompt still describes the schema well enough: the change is formatting, order, or a detail the prompt never went into (a description's wording, the schema's top-level "title" when the prompt doesn't name the thing). Never when there is no <prompt>: there are no words yet, so the answer is a prompt, never NO_CHANGE.
 
 Updating a prompt
 - It's the user's text. Keep their words, style, tone, language and length. Change only what the schema's change makes wrong or missing, and leave the rest word for word. A terse list stays a terse list: "email required, phone required, description" with an optional company added becomes "email required, phone required, description, company". Don't turn a list into sentences, don't restate fields the prompt didn't list, never mention "the schema" or JSON.

@@ -271,3 +271,42 @@ cases among them; the chains 4 of 5 then 5 of 5 (`chain_roundtrip`, which has fa
 Of 126 prompts read, none came without `<answer>` tags and none had a remark around them: asked for tags, the
 model stopped writing the remark at all. `p_write_simple`, `p_bare_words` and `p_link_words` were 18 of 18, against
 about half before.
+
+## A schema sent alone (2026-10-12; run)
+
+`chain_roundtrip` failed at its first step ("step1 no prompt") in rounds 5, 6, 22 and 32, and five times in a row
+on 2026-10-12: the whole answer was `NO_CHANGE`, which leaves a type's words empty. Two things were wrong, and the
+first hid the second.
+
+- The chain. Its first step sent the schema alone, no `<prompt>` and no `<previous_schema>`, for words that are JSON
+  made a type. The app doesn't send that for them: `TypeSync` says the pair was those words over `{}` (`adopt`,
+  `changed`), so the request has `<previous_schema>` with `{}` in it (`{ "title": "Pet" }` for a note with a name).
+  The step sends that now, `JSON_WORDS_OVER`, read out of `TypeSync.swift` (the script stops if `TypeSync` no longer
+  gives a `TypeSyncSides` one such schema as a literal). Asked eight times a form, with the prompt as it was: the
+  schema alone, 0 of 8 prompts for the order and for the pet (`PET`), 8 of 8 for the contact, which is the prompt's
+  own example; with `{}`, with the name alone and with a new type's schema as `<previous_schema>`, 8 of 8 each.
+  Round 40 is the chains with the step fixed and the prompt as it was: 5 of 5 (no round was numbered 34 to 39).
+- The prompt. The app can still send a schema alone: for a type it first saw (a file opened, an agent's write) with
+  no words and a blank schema, once its JSON is typed in the panel, since a blank block is left out of the message.
+  `toPromptSystem` said "Never when there is no <prompt>: write one." and Haiku answered `NO_CHANGE` all the same.
+  It now says it in two places. The `<prompt>` line ends "When it's missing there is no prompt yet: you write the
+  first one, whatever else you get." and the `NO_CHANGE` option ends "Never when there is no <prompt>: there are no
+  words yet, so the answer is a prompt, never NO_CHANGE." Nothing else changed. On the schema alone, order and pet:
+  the first sentence only (worded "there are no words to keep, so you write the first prompt, and the answer is
+  never NO_CHANGE"), 2 of 8 and 4 of 8; the second only (worded "so write them, with or without a
+  <previous_schema>"), 6 of 8 and 0 of 8, two of the pet's a `NO_CHANGE` and then a tagged prompt, which is read as
+  `NO_CHANGE`; both, 20 of 20 and 20 of 20 (the contact 8 of 8); both, with the second begun "With no <prompt> there
+  are no words yet" in place of "Never when there is no <prompt>:", 12 of 12 and 8 of 12, so the "Never when" stays.
+  `promptTests` pin the two sentences.
+- `chain_roundtrip` also asks for the words of the order's schema and the pet's sent alone, and fails if either
+  answer is no prompt.
+
+Run on 2026-10-12 with the prompt as it is now (Haiku 5.5, `claude-haiku-5-5`, at `medium` effort; rounds 41 to 45):
+every to-prompt case three times, 108 of 108 (96 prompts read, none without `<answer>` tags, one with a remark
+around them, `p_ref_kept`; the other 12 answers the `NO_CHANGE` of `p_description_only`, `p_formatting_only`,
+`p_name_not_in_prompt` and `p_title_silent`, three each); the five chains three times
+(rounds 42 to 44), 15 of 15, the schema alone 6 of 6 in them; a sample of thirteen to-schema cases three times
+(round 45: `s_vague_pet`, `s_precise_contact`, `s_nested_object`, `s_conditional`, `s_rename`, `s_remove`,
+`s_make_required`, `s_non_latin`, `s_ref_new`, `s_link_a`, `s_title_called`, `s_already_matches`, `s_garbage`),
+38 of 39, `s_link_a` once on `indent` (a schema on one line, the old miss; the to-schema prompts did not change).
+The schemas that came back were not meta-validated (no `_pylib`).
