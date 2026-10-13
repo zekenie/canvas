@@ -413,17 +413,26 @@ public struct ContentsLabel: View {
     /// reference): an arrow cut into the symbol's corner, as a Finder alias's icon has, says it's a
     /// pointer to that shape and not the shape.
     public let standsIn: Bool
+    /// Where what the row names is, for a row that names a shape somewhere else (a reference's
+    /// original): the shapes it's inside, outermost first, each by its name (`ContentsPathName`: one
+    /// that is only what its kind is called, an untitled frame's, fainter). Shown before the
+    /// title, dimmed, with "›" between, "Alpha › Beta › Checkout", and the first to give way in a
+    /// narrow list: the names between the first and the last fold into "…" (`folded(_:)`), past
+    /// that each name is cut short, to no less than a few letters, and only then the title
+    /// (`ContentsPathTitle`). The tooltip has it whole.
+    public let path: [ContentsPathName]
 
     @Environment(\.contentsSymbol) private var kindSymbol
 
     public init(_ title: String, placeholder: String? = nil, systemImage: String? = nil, color: Color? = nil, badge: String? = nil,
-                standsIn: Bool = false) {
+                standsIn: Bool = false, path: [ContentsPathName] = []) {
         self.title = title
         self.placeholder = placeholder
         self.systemImage = systemImage
         self.color = color
         self.badge = badge
         self.standsIn = standsIn
+        self.path = path
     }
 
     /// What the row reads: the title on one line (each run of whitespace, newlines included, folds
@@ -435,13 +444,21 @@ public struct ContentsLabel: View {
 
     public var isPlaceholder: Bool { title.allSatisfy(\.isWhitespace) && placeholder != nil }
 
-    /// The row's tooltip: its text, for a row the list cuts short (notes that begin alike), up to
-    /// `ContentsStyle.helpLength` characters, cut between words with "…" past that (a note's whole
-    /// pasted page would be a help tag down the screen); none for a placeholder, which says nothing
-    /// more, or for no text.
+    /// A path as a row too narrow for all of it shows it: its first and last names, "…" for those
+    /// between (the path over the canvas folds its middle the same way); nil for a path of two
+    /// names or fewer, which has no middle.
+    public static func folded(_ path: [ContentsPathName]) -> [ContentsPathName]? {
+        guard path.count > 2 else { return nil }
+        return [path[0], ContentsPathName(ContentsStyle.pathFold), path[path.count - 1]]
+    }
+
+    /// The row's tooltip: its text, after its path if it has one, for a row the list cuts short
+    /// (notes that begin alike, a path folded), up to `ContentsStyle.helpLength` characters, cut
+    /// between words with "…" past that (a note's whole pasted page would be a help tag down the
+    /// screen); none for a placeholder with no path, which says nothing more, or for no text.
     public var help: String? {
-        let text = text
-        guard !isPlaceholder, !text.isEmpty else { return nil }
+        let text = (path.map(\.text) + [text]).joined(separator: ContentsStyle.pathSeparator)
+        guard !isPlaceholder || !path.isEmpty, !self.text.isEmpty else { return nil }
         guard text.count > ContentsStyle.helpLength else { return text }
         let end = text.index(text.startIndex, offsetBy: ContentsStyle.helpLength)
         let head = text[..<end]
@@ -451,19 +468,23 @@ public struct ContentsLabel: View {
 
     /// The same label, called `title` (`ContentsTitles`).
     func retitled(_ title: String) -> ContentsLabel {
-        ContentsLabel(title, placeholder: placeholder, systemImage: systemImage, color: color, badge: badge, standsIn: standsIn)
+        ContentsLabel(title, placeholder: placeholder, systemImage: systemImage, color: color, badge: badge, standsIn: standsIn, path: path)
     }
 
-    /// Whether `other` shows what this does: the same title, placeholder, symbol, color, badge and arrow.
+    /// Whether `other` shows what this does: the same title, placeholder, symbol, color, badge, arrow and path.
     func showsSame(as other: ContentsLabel) -> Bool {
         title == other.title && placeholder == other.placeholder && systemImage == other.systemImage && color == other.color
-            && badge == other.badge && standsIn == other.standsIn
+            && badge == other.badge && standsIn == other.standsIn && path == other.path
     }
 
     public var body: some View {
         HStack(spacing: ContentsStyle.badgeSpacing) {
             Label {
-                Text(text).foregroundStyle(isPlaceholder ? .secondary : .primary)
+                if path.isEmpty {
+                    Text(text).foregroundStyle(isPlaceholder ? .secondary : .primary)
+                } else {
+                    ContentsPathTitle(path: path, title: text, isPlaceholder: isPlaceholder)
+                }
             } icon: {
                 if standsIn {
                     symbol.modifier(StandInArrow(isDimmed: isPlaceholder))
@@ -488,6 +509,125 @@ public struct ContentsLabel: View {
         } else {
             Image(systemName: systemImage ?? kindSymbol)
         }
+    }
+}
+
+/// A row's title after the path to what it names, "Alpha › Beta › Checkout": the path dimmed, whole
+/// where the row has the room, else with its middle folded (`ContentsLabel.folded(_:)`), so the
+/// first and the nearest are always said. A row too narrow for that cuts its names short, each on
+/// its own and never to less than a few letters ("Alp… › … › Gam… › Checkout"), and only then the
+/// title (`ContentsPathLine`). A name that is only what its kind is called is fainter than a title,
+/// as in Jump To's rows. Said as "Checkout, in Alpha › Beta".
+struct ContentsPathTitle: View {
+    let path: [ContentsPathName]
+    let title: String
+    let isPlaceholder: Bool
+    @Environment(\.sidebarRowSize) private var rowSize
+
+    var body: some View {
+        Group {
+            if let folded = ContentsLabel.folded(path) {
+                // The last that's tried is shown whatever the room, cut short.
+                ViewThatFits(in: .horizontal) {
+                    line(path, fold: nil)
+                    line(folded, fold: 1)
+                }
+            } else {
+                line(path, fold: nil)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(ContentsStyle.pathSpoken(title, in: path.map(\.text)))
+    }
+
+    /// The names, each a text of its own with "›" after it, then the title; `fold` is which of
+    /// `names` is the "…" that stands for the names left out.
+    private func line(_ names: [ContentsPathName], fold: Int?) -> some View {
+        ContentsPathLine(nameFloor: ContentsStyle.pathNameFloor * ContentsStyle.standInScale(rowSize)) {
+            ForEach(names.indices, id: \.self) { index in
+                Text(names[index].text).foregroundStyle(names[index].isPlaceholder ? .tertiary : .secondary)
+                    .layoutValue(key: ContentsPathPart.self, value: index == fold ? .fixed : .name)
+                Text(ContentsStyle.pathSeparator).foregroundStyle(.secondary)
+            }
+            Text(title).foregroundStyle(isPlaceholder ? .secondary : .primary)
+                .layoutValue(key: ContentsPathPart.self, value: .title)
+        }
+    }
+}
+
+/// A name on a row's path (`ContentsLabel.path`): what a shape the row's is inside is called. A
+/// string literal is one that's a title.
+public struct ContentsPathName: Hashable, Sendable, ExpressibleByStringLiteral {
+    public let text: String
+    /// Whether it's only what the shape's kind is called, said in a title's place ("Frame",
+    /// "Untitled Subboard"): drawn fainter than a title, so a frame nobody named doesn't read as
+    /// one named "Frame".
+    public let isPlaceholder: Bool
+
+    public init(_ text: String, isPlaceholder: Bool = false) {
+        self.text = text
+        self.isPlaceholder = isPlaceholder
+    }
+
+    public init(stringLiteral value: String) { self.init(value) }
+}
+
+/// What a text on a path's line is: a name, which gives way first; the title, which gives way once
+/// the names have; or what never does (a "›", the fold's "…").
+enum ContentsPathPart: LayoutValueKey {
+    case name, title, fixed
+    static let defaultValue = ContentsPathPart.fixed
+}
+
+/// A path's line, its texts side by side at their own widths while there's room. With less, the
+/// names give way first, the longest first, each to no less than `nameFloor` (or its own width, if
+/// that's less), so every name still starts and every "›" shows; with less than that, the title.
+/// A stack would let the title push the names down to nothing between their "›"s.
+struct ContentsPathLine: Layout {
+    let nameFloor: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+        return CGSize(width: widths(in: proposal.width, subviews).reduce(0, +), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        for (subview, width) in zip(subviews, widths(in: bounds.width, subviews)) {
+            subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(width: width, height: bounds.height))
+            x += width
+        }
+    }
+
+    /// How wide each text is in `available` (nil: all the room it wants).
+    private func widths(in available: CGFloat?, _ subviews: Subviews) -> [CGFloat] {
+        var widths = subviews.map { $0.sizeThatFits(.unspecified).width }
+        guard let available, available.isFinite else { return widths }
+        let over = widths.reduce(0, +) - available
+        guard over > 0 else { return widths }
+        let parts = subviews.map { $0[ContentsPathPart.self] }
+        let names = parts.indices.filter { parts[$0] == .name }
+        let floors = names.map { min(widths[$0], nameFloor) }
+        /// What the names may have between them, and the least they take.
+        let room = names.reduce(0) { $0 + widths[$1] } - over, least = floors.reduce(0, +)
+        if room >= least {
+            // No name wider than `cap`, the widest that fits: the longest give way first.
+            var low: CGFloat = 0, high = names.map { widths[$0] }.max() ?? 0
+            for _ in 0..<24 {
+                let cap = (low + high) / 2
+                let used = zip(names, floors).reduce(0) { $0 + max($1.1, min(widths[$1.0], cap)) }
+                if used > room { high = cap } else { low = cap }
+            }
+            for (name, floor) in zip(names, floors) { widths[name] = max(floor, min(widths[name], low)) }
+        } else {
+            for (name, floor) in zip(names, floors) { widths[name] = floor }
+            if let title = parts.firstIndex(of: .title) { widths[title] = max(0, widths[title] - (least - room)) }
+        }
+        // A text cut short is as wide as what it still says, so the next begins right after it.
+        for index in parts.indices where parts[index] != .fixed {
+            widths[index] = min(widths[index], subviews[index].sizeThatFits(ProposedViewSize(width: widths[index], height: nil)).width)
+        }
+        return widths
     }
 }
 
@@ -585,6 +725,14 @@ enum ContentsStyle {
         default: 1
         }
     }
+    /// A row's path (`ContentsLabel.path`): what's between its names and before the title, what
+    /// stands for the names a narrow row folds, and how a row with one is said.
+    static let pathSeparator = " › "
+    static let pathFold = "…"
+    /// The least of a path's name a narrow row shows, at the sidebar's medium rows (scaled with them,
+    /// as a stand-in's arrow is): a few letters and "…".
+    static let pathNameFloor: CGFloat = 34
+    static func pathSpoken(_ title: String, in path: [String]) -> String { "\(title), in \(path.joined(separator: pathSeparator))" }
     /// A hovered row's tint, in the selection highlight's place: inset from the row's sides, with
     /// its corners.
     static let hoverOpacity: CGFloat = 0.14

@@ -46,6 +46,13 @@ public final class ReferenceState {
     private var drawnMismatches: [ShapeID: ChannelMismatch?] = [:]
     /// Following Topology's changes to the edges, for `drawnMismatches`.
     private var following: TopologyFollowing?
+    /// The shapes each direct reference's row in the table of contents read its path from (the shapes
+    /// its original and it are inside: `rowPath(of:to:)`), and which rows read each, so a commit that
+    /// changes one (renamed, put in another frame, moved to another board) names those rows
+    /// (`rowsAffected(by:)`). Noted as a row is made and kept until its reference changes or goes: a
+    /// row the list keeps for a board not shown is still a row to make again.
+    var pathRead: [ShapeID: Set<ShapeID>] = [:]
+    var pathReaders: [ShapeID: Set<ShapeID>] = [:]
 
     // What dynamic references found (`ReferenceAnswers.swift`).
     /// Every reference with a query, on every board of the file, and what its query found.
@@ -82,6 +89,9 @@ public final class ReferenceState {
     /// any are for `id` (debug builds).
     public var memoCount: Int { memo.count }
     public func isRemembered(_ id: ShapeID) -> Bool { memo[id] != nil }
+    /// How many times a row has read its path (`rowPath(of:to:)`: a direct reference's row made, or
+    /// made again), so a test holds a change to remaking the rows whose paths it changes (debug builds).
+    public internal(set) var pathsRead = 0
     #endif
 
     init(editor: CanvasEditor) {
@@ -164,7 +174,7 @@ public final class ReferenceState {
     private func forgetDrawn(_ changes: ChangeSet, touched: [ShapeID: AnyShapeRecord?]) {
         if !drawnConditions.isEmpty {
             for id in touched.keys { drawnConditions.removeValue(forKey: id) }
-            for id in rowsAffected(by: changes) { drawnConditions.removeValue(forKey: id) }
+            for id in references(namingWhatChanged: changes) { drawnConditions.removeValue(forKey: id) }
         }
         if !drawnMismatches.isEmpty {
             for id in changes.removed { drawnMismatches.removeValue(forKey: id) }
@@ -187,23 +197,43 @@ public final class ReferenceState {
     public func target(of reference: ShapeID) -> ShapeID? { targetOf[reference] }
 
     /// The references a commit may change the rows of without changing them: those that name a shape it
-    /// changed (renamed, made private, deleted, brought back by an undo), moved ones aside.
+    /// changed (renamed, made private, deleted, brought back by an undo), and those whose row's path
+    /// names a shape it changed or was read from one (a frame or a board's owner renamed, or put
+    /// somewhere else: `pathReaders`), moved ones aside. O(what the commit changed).
     func rowsAffected(by changes: ChangeSet) -> Set<ShapeID> {
+        guard !referencesTo.isEmpty || !pathReaders.isEmpty else { return [] }
+        var found: Set<ShapeID> = []
+        forEachChanged(by: changes) { id in
+            if let references = referencesTo[id] { found.formUnion(references) }
+            if let readers = pathReaders[id] { found.formUnion(readers) }
+        }
+        return found
+    }
+
+    /// The direct references that name a shape a commit changed, moved ones aside: those whose pill
+    /// may stand for something else now.
+    private func references(namingWhatChanged changes: ChangeSet) -> Set<ShapeID> {
         guard !referencesTo.isEmpty else { return [] }
         var found: Set<ShapeID> = []
-        func add(_ id: ShapeID) {
+        forEachChanged(by: changes) { id in
             if let references = referencesTo[id] { found.formUnion(references) }
         }
-        for id in changes.added { add(id) }
-        for id in changes.changed where !changes.moved.contains(id) { add(id) }
-        for id in changes.removed { add(id) }
-        for id in changes.elsewhere { add(id) }
         return found
+    }
+
+    /// Every shape a commit added, changed other than by moving it, or removed, on any board.
+    private func forEachChanged(by changes: ChangeSet, _ body: (ShapeID) -> Void) {
+        for id in changes.added { body(id) }
+        for id in changes.changed where !changes.moved.contains(id) { body(id) }
+        for id in changes.removed { body(id) }
+        for id in changes.elsewhere { body(id) }
     }
 
     /// Keeps what the shape `id` is now (`record`, nil when it's in no board of the file) in the
     /// index: whether it's a reference, and what it names.
     private func index(_ id: ShapeID, _ record: AnyShapeRecord?) {
+        // Its row, made again for the reference as it is now, notes what its path reads then.
+        forgetPath(of: id)
         if let old = targetOf.removeValue(forKey: id) {
             referencesTo[old]?.remove(id)
             if referencesTo[old]?.isEmpty == true { referencesTo[old] = nil }
@@ -230,6 +260,9 @@ public final class ReferenceState {
         }
         scan(file.root)
         for document in file.children.values { scan(document) }
+        // What rows read their paths from holds for the rows the list kept: only those of
+        // references that went are let go of.
+        for id in Array(pathRead.keys) where !known.contains(id) { forgetPath(of: id) }
     }
 
     /// The references a commit touched, each once, as they are now (nil: in no board of the file): the

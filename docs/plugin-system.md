@@ -3821,8 +3821,20 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
   characters at the trailing end ("12"). A row that stands in for another shape, wearing that
   shape's name and symbol (a reference's), passes `standsIn: true`: an arrow cut into the symbol's
   corner, as a Finder alias's icon has, so it reads as a pointer to the shape and not the shape.
-  Its text is its tooltip (`label.help`, none for a
-  placeholder; past 200 characters, cut between words with "…"), for a row the list cuts short, in
+  A row that names a shape somewhere else says where with `path:`, the names of the shapes that one
+  is inside, outermost first (a reference's: the frames and boards its original is in): shown before
+  the title, dimmed, with "›" between, "Alpha › Beta › Checkout". Each is a `ContentsPathName` (a
+  string literal is one), and one that is only what its kind is called (`isPlaceholder`: an untitled
+  frame's "Frame") is fainter than a title, as in Jump To's rows. The path gives way before the
+  title does: a row without the room for all of it folds the names between the first and the last
+  into "…" (`ContentsLabel.folded(_:)`, the first and the nearest always said, as the path over
+  the canvas folds its middle), a row narrower than that cuts each name short on its own, the
+  longest first and none to less than a few letters (`ContentsStyle.pathNameFloor`, so every name
+  still starts and every "›" shows: `ContentsPathLine`, a `Layout`, since a stack would let the title
+  push the names down to nothing), and only then is the title cut. VoiceOver says "Checkout, in
+  Alpha › Beta".
+  Its text is its tooltip, after its path if it has one (`label.help`, none for a
+  placeholder with no path; past 200 characters, cut between words with "…"), for a row the list cuts short, in
   the list and in a crumb's menu. The list owns everything around it: row
   height, indentation, disclosure triangles, selection, the header. Any view works, but
   `ContentsLabel` is what keeps rows from different plugins alike; use it unless a row really needs
@@ -3931,7 +3943,7 @@ ref.contentsRow(affected: { changes, context in
 ```
 
 - **The rows `affected` names are made again** on the next read, and replaced (so redrawn) only if
-  their labels changed: the same title, placeholder, symbol, color, badge and `standsIn` keep the
+  their labels changed: the same title, placeholder, symbol, color, badge, `standsIn` and path keep the
   row, as a mark's `affected` keeps it unless its marks changed. So dragging a shape the refs refer
   to makes their rows again and redraws none of them; renaming it redraws theirs. The shapes a commit
   changes get new rows as always, and a row `affected` names that hasn't been made yet is made
@@ -8147,6 +8159,12 @@ registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .c
   kind opens its boards with (nil for a kind that doesn't), the registry's alone, which both read,
   and so does a [query](#queries): its rows name the boards a shape is inside by the same rule,
   through Boards' `BoardQueriesPlugin` (BoardsTests' "A board's placeholder" holds it).
+  `registry.containerName(of: record)` is what a shape that others are inside is called in a path of
+  where a shape is, "Alpha › Beta" (a `ContainerName`: its `title`, else its `placeholder`, the
+  board placeholder of its kind or, for a kind that opens no board, a frame, its kind's label):
+  whatever writes such a path names each shape this way ([Jump To](#jump-to)'s rows, a
+  [reference](#references)'s row in the table of contents), so they agree with one another and
+  with the path over the canvas.
 - **Over other plugins' lists.** Boards names a board wherever another plugin lists one, each
   from a plugin value of its own (a face), after `BoardsPlugin` and the list's plugin, so a list
   without that plugin leaves it out. `BoardContentsPlugin` (id `board-contents`) heads the table
@@ -8805,7 +8823,7 @@ untinted.
   query for everything under it, so a shape costs one match for each group the last could be in. A
   container's name must be a name, never a scatter of its letters (a bare subsequence matches only
   the shape's own title); an untitled container is on the path by what its kind is called, dimmed,
-  and is never matched. Ties go to the fewer names skipped, the shallower path, a recent pick, and
+  and is never matched (Boards' `registry.containerName(of:)`, as every path calls a container). Ties go to the fewer names skipped, the shallower path, a recent pick, and
   the file's order.
 - **An empty query** lists "Recent" (up to five of this window's picks) and "Nearby" (up to five
   titled shapes in view on the board shown, nearest the middle of the view).
@@ -9195,6 +9213,9 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   name which shape across the whole file (from every commit's `ChangeSet`, reading only the references
   the commit touched: a shape's kind never changes), so a rename, a change of publicness or a deletion
   remakes the right rows, and a commit of thousands of shapes and no reference costs a set hit each.
+  It also keeps which shapes each row read its path from (below, the table of contents), noted as the
+  row is made, so a frame or a board's owner renamed or put somewhere else remakes the rows whose
+  paths it's in, and no other.
 - **What a dynamic reference finds** (`ReferenceAnswers.swift`). `ReferenceState` keeps every reference
   with a query in the file (from `ChangeSet`, other boards and boards added and removed included; read
   afresh for a file put in place) and asks the engine for them: one `queries.matches` batch, on one
@@ -9302,7 +9323,17 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
 - **Validation**: a query the engine can't read (pasted, or written into a board by hand) is a warning
   in the engine's words, on `query`; what it finds or doesn't is the pill's to show, never an issue.
 - **The table of contents**: its row is what it stands for (a dimmed placeholder where it stands for
-  nothing), remade when the shape it names changes; an arrow that starts at a reference nests under the
+  nothing), remade when the shape it names changes. A reference to a shape that's there (public or
+  not) says where it is before its name, "Draw › Points › DrawPoints.swift" (`ContentsLabel`'s
+  `path:`): the shapes its original is inside, outermost first (Topology's `ancestors(of:)`: the
+  frames it's in, the owner of its board, the frames that one is in, and so on up, the root never
+  one), less those the reference is inside too (`ReferenceState.rowPath(of:to:)`), so a row says
+  only where the shape is from where the reference is: nothing for a shape in the same frame or on
+  the same board, or above it, and rows for shapes from the same place read alike. Each is called
+  as Boards calls a container in a path (`registry.containerName(of:)`, which is why References
+  imports Boards), an untitled one by what its kind is called, fainter. The reference's own row is where it is, as any shape's: in a frame, under the
+  frame's row. `rowsAffected(by:)` names the rows whose path was read from a shape a commit
+  changed (`pathReaders`, O(what changed); a move names none), and PathTests hold it. An arrow that starts at a reference nests under the
   shape the reference stands for when that's on the same board ([Connections' arrow row](#the-table-of-contents),
   generic over stand-ins), else under the reference.
 - **Tests.** ReferencesTests hold it over CanvasTesting's boxes and tiles as what it stands for (its `makes` too, through `registry.standIns`: a reference made for a public shape, fitted, standing for it once inserted, and for nothing where the shape isn't public); CompositionTests'
