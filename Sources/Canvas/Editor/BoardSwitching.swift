@@ -15,14 +15,20 @@ public struct BoardChange {
     /// is no longer taken back (every board that changed has a new one), but what it keeps across
     /// the file by shape id (a sync's state) it takes afresh.
     public let isFileReplaced: Bool
+    /// The file's own values (`FileProperty`) that differ in the file put in place (`isFileReplaced`),
+    /// by key; none for a switch, which changes nothing. Also in `changes.fileValues`, for a service
+    /// that follows the switch as a commit.
+    public let fileValues: Set<PropertyKey>
     private let cache: Cache
 
-    init(from: BoardID, to: BoardID, leftCamera: Camera, left: CanvasDocument, shown: CanvasDocument, isFileReplaced: Bool = false) {
+    init(from: BoardID, to: BoardID, leftCamera: Camera, left: CanvasDocument, shown: CanvasDocument, isFileReplaced: Bool = false,
+         fileValues: Set<PropertyKey> = []) {
         self.from = from
         self.to = to
         self.leftCamera = leftCamera
         self.isFileReplaced = isFileReplaced
-        cache = Cache(left: left, shown: shown)
+        self.fileValues = fileValues
+        cache = Cache(left: left, shown: shown, fileValues: fileValues)
     }
 
     /// The shown board's change as a commit's: every shape of the board left removed, every shape of
@@ -41,11 +47,13 @@ public struct BoardChange {
     private final class Cache {
         let left: CanvasDocument
         let shown: CanvasDocument
+        let fileValues: Set<PropertyKey>
         var worked: ChangeSet?
 
-        init(left: CanvasDocument, shown: CanvasDocument) {
+        init(left: CanvasDocument, shown: CanvasDocument, fileValues: Set<PropertyKey>) {
             self.left = left
             self.shown = shown
+            self.fileValues = fileValues
         }
 
         var changes: ChangeSet {
@@ -60,6 +68,7 @@ public struct BoardChange {
                 changes.changed = both
             }
             changes.reordered = true
+            changes.fileValues = fileValues
             worked = changes
             return changes
         }

@@ -449,7 +449,7 @@ extension FieldFormView {
             drawText(text, in: rect.insetBy(dx: TypesStyle.formChipPad, dy: 0), ink: NSColor.labelColor.withAlphaComponent(0.65), font: font, italic: true)
             return width
         }
-        let tint = untitled ? TypeColors.gray : TypeColors.light(type)
+        let tint = untitled ? TypeColors.gray : editor.types?.look(of: type).light ?? TypeColors.gray
         tint.color.withAlphaComponent(TypesStyle.formChipFill).setFill()
         path.fill()
         tint.color.withAlphaComponent(TypesStyle.formChipStroke).setStroke()

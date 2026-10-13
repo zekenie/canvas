@@ -23,10 +23,12 @@ maps one onto the other.
 - [A shape without a frame](#a-shape-without-a-frame)
 - [A horizontal plugin](#a-horizontal-plugin)
 - [Properties](#properties)
+- [File values](#file-values)
 - [Selection](#selection)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [TextEditing](#textediting)
 - [FuzzyMatching](#fuzzymatching)
+- [Palette](#palette)
 - [Host slots](#host-slots)
 - [The detail panel](#the-detail-panel)
 - [Context menus](#context-menus)
@@ -50,6 +52,7 @@ maps one onto the other.
 - [References](#references)
 - [The command line](#the-command-line)
 - [Types](#types-shapes-that-hold-a-schema)
+- [Colors](#colors)
 - [Language models](#language-models)
 - [Prose maps](#prose-maps)
 - [Snapping](#snapping)
@@ -349,6 +352,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Put a service's state back with undo (a selection) | `UndoParticipant` | [Undo](#undo) |
 | Change the board for an agent, without starting what follows a person's edits (a sync) | `transaction.byAgent = true`; a service reads `changes.byAgent` | [The command line](#draw) |
 | Keep something about any shape beside its props (where it came from) | A `ShapeMetaKey`, and `record.meta[Key.self]` | [Metadata](#metadata) |
+| Keep a value on the file itself, no shape's and no board's (the colors a file names) | A `FileProperty`, `registrar.declare(file:)`; read `editor.file[P.self]`, write `transaction.setFileValue(P.self, to:)` | [File values](#file-values) |
 | Add a right-click item that isn't one shape's, in every menu and on empty canvas | `registrar.contextMenuForCanvas { ... }` | [The clipboard](#the-clipboard) |
 | Show a shape's state in the panel: at its foot, or in a tab that shows while there's something to say | `registrar.detailStatusForEveryShape`, with `in: SomeTab.self` for a tab | [Validation's Issues tab](#a-tab-of-status-lines-validations-issues-tab) |
 | Show a shape's state at a glance in the table of contents: a dot or a symbol on its row | `registrar.contentsMarkForEveryShape` | [Validation's dots](#marks-validations-dots) |
@@ -522,10 +526,10 @@ Each layer answers one question, which says what belongs in it:
 | Layer | Why it exists | May depend on | Modules |
 |---|---|---|---|
 | wire | What the app and its command line say to each other, so `canvas` builds without the app | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
-| foundation | What every plugin stands on and no plugin shapes: the core, its host contract, and pure libraries | foundation, wire | Geometry, Canvas (the core, which holds [what a window puts around its canvas](#host-slots), said by plugins and placed by the window, and so names SwiftUI's views and the wire's types for the commands the app's server runs), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on) and FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) |
+| foundation | What every plugin stands on and no plugin shapes: the core, its host contract, and pure libraries | foundation, wire | Geometry, Canvas (the core, which holds [what a window puts around its canvas](#host-slots), said by plugins and placed by the window, and so names SwiftUI's views and the wire's types for the commands the app's server runs), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on), FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) and Palette ([the color math](#palette): the roles one color is drawn in on the light canvas and the dark, and the one test for a dark appearance) |
 | ui | The window around the canvas, so no plugin reaches the window and the window reaches no plugin | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, the chrome around the canvas, `CanvasFocus`, the Settings window, and the command line's server) |
 | surface | Something other plugins build on or show themselves on; it knows no concern, so anything can appear on it without it knowing | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, ProseMaps, Topology, Find, Queries, Draw, QueryTranslation, Neighbors |
-| concern | A meaning shapes carry or kinds opt into (a property on shapes, or a point kinds fill), shown on surfaces | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Publishing, Connections, Mentions, Boards, Transform, Types |
+| concern | A meaning shapes carry or kinds opt into (a property on shapes, or a point kinds fill), shown on surfaces | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Publishing, Connections, Mentions, Boards, Transform, Types, Colors |
 | feature | A cross-cutting behavior the person uses (a palette, a command, a gesture) that nothing builds on: horizontal in reach, a leaf in the graph | foundation, surface, concern | JumpTo, Moving, Snapping, Reordering |
 | language | Where an agent's request arrives over the wire and is answered; the only plugin layer that speaks the wire | foundation, surface, language, wire | Automation, QueryCommands |
 | vertical | A shape kind: its props, definition, tool, and its opt-ins to concerns. Kinds never know each other | foundation, surface, concern | StickyNotes, Subboards, Frames, References |
@@ -2037,6 +2041,94 @@ that both binds and names.)
 - **Bound, or named.** `record.boundShapes(in:)` is what a shape is bound to, what must be on its
   board, each once; the shapes it only names aren't in it. [`canvas draw`](#draw) checks it.
 
+## File values
+
+A plugin can keep a value on the file as a whole: something that belongs to no shape and no board
+of it, as the colors a file names would. It is to the file what an [added
+property](#added-properties) is to a shape, and the core knows nothing of what one means. The
+value is a type ([`FileProperty`](../Sources/Canvas/Model/FileProperty.swift)), which says
+everything about it once:
+
+```swift
+public enum Letterhead {}
+extension Letterhead: FileProperty {
+    public static let key: PropertyKey = "letterhead"
+    public static var defaultValue: String { "" }
+}
+```
+
+- **`key`** is where a file keeps it. It's unique among file properties (an added property may
+  have the same key: a shape's values and the file's are kept apart), and never changes once
+  shipped.
+- **`defaultValue`** is what every file reads until the value is set. A file holds a value only
+  while it differs from the default: setting the default takes it off the file, so a file with
+  none is written exactly as one always was.
+- **`migrations`** is its history (`PropertyMigration`s over the value's JSON, none by default),
+  as an added property's is ([Boards on disk](#boards-on-disk)).
+- **The value** is `Codable`, `Equatable` and `Sendable`: a scalar, an array, a struct of the
+  plugin's own. It has no schema, since it's in no kind's.
+
+**Declaring.** The plugin that owns the property declares it, and nothing opts in: every file has
+it.
+
+```swift
+registrar.declare(file: Letterhead.self)        // the owner; one plugin per key
+```
+
+The registry refuses a key two plugins declare (`conflict`, in `FilePropertyDeclarations`), and its
+report shows a declared one on its owner's line, `file property letterhead` (`file property
+letterhead v1` once it has a migration). In code, `registry.declaredFileProperties` and
+`registry.owner(ofFileProperty: key)`.
+
+**Reading.** A read is the value the file holds, else the default:
+
+| Where | Read | |
+|---|---|---|
+| Anywhere with the editor | `editor.file[Letterhead.self]` | Observed through `document`, as `file` is, so a view that reads it redraws when it changes. |
+| A transaction | `transaction.fileValue(Letterhead.self)` | As the transaction leaves it: what it set, else the file's. |
+| A render | `context.fileValue(Letterhead.self)` (`RenderContext`) | Read as the shape is drawn, with no service; the commit that changes one redraws the canvas. |
+| A layout | `reading.fileValue(Letterhead.self)` (`LayoutReading`: a layout provider's, or `context.reading`) | The editor's committed, or mid-transaction as the transaction leaves it. Nothing kept of a shape's geometry or laid-out size is let go because a file value changed: the plugin that reads one there calls `editor.shapesDidChangeLayout` when it hears the change. |
+
+**Writing.** Only in a transaction, on whatever board it is (`transact(on:)` too):
+
+```swift
+editor.transact("Head File") { $0.setFileValue(Letterhead.self, to: "Acme") }
+```
+
+- It commits with the rest of the transaction, as one undo step: undo and redo put the value back
+  and again with whatever else the step changed ([Undo](#undo)). The step is made on the board
+  shown, as any is, so undoing it from another board shows that board first.
+- A body that throws sets nothing.
+- A write equal to what the value is commits nothing and opens no step, and neither does one that
+  goes there and back in one transaction. Setting the default takes the value off the file.
+- A write is dropped, as a shape's value is for a kind that doesn't opt in, for a property no
+  installed plugin declares, and for one whose value in the file the app can't use and keeps aside
+  (`file.keptFileValues`).
+- No lock holds it: the value is the file's, not the board's the transaction is on, so it's set
+  from a read-only board as from any other.
+
+`CanvasFile`'s own subscript can be set too, on a file of one's own (one being made, or read:
+`file[Letterhead.self] = "Acme"`), never on the editor's.
+
+**Hearing.** A commit says which file values it changed, by key, in `ChangeSet.fileValues`: an edit,
+an undo or a redo of one (`restoredStep`), and a file put in place whose values differ
+(`replaceFile`; when it switches boards as it goes, `BoardChange.fileValues`, and that change's
+`changes`). A commit that changed only a file value names no shape and no board, and writes no
+board, so no board's revision moves; `editor.revision` does, and the canvas redraws.
+
+**On disk.** A file's values are in the envelope's `values`, each with its version, which makes the
+file format 6; a file with none stays in the format it had. A value the app can't use (no installed
+plugin declares it, a newer version, one that doesn't read) is kept as it was and written back
+([Boards on disk](#boards-on-disk)).
+
+**Not built.** The clipboard takes none (a copy is shapes), there's no panel for one, and the
+command line doesn't read or write one.
+
+**Testing.** CanvasTesting's `LetterheadPlugin` declares `Letterhead`, a string, apart from
+`FixturesPlugin` (so the registry reports tests pin don't change). CanvasTests'
+[`FileValueTests`](../Tests/CanvasTests/FileValueTests.swift) hold the editor's side and
+[`FileValueCodecTests`](../Tests/CanvasTests/FileValueCodecTests.swift) the file's.
+
 ## Selection
 
 Selecting is a horizontal ([`Sources/Selection`](../Sources/Selection)), and the one most others
@@ -2833,6 +2925,57 @@ thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on Test
   `leafScore(after:label:)` from its parent container's row, which costs one match of each group of
   its label, a few for a few pieces. A one-piece query has no path in it: that's `FuzzyMatcher` over
   the leaves.
+
+## Palette
+
+Palette ([`Sources/Palette`](../Sources/Palette)) is the color math: a foundation module that depends
+on no other module of the project (it knows no canvas, registry, plugin, kind or named color), pure,
+nonisolated and `Sendable` but for the few lines that make AppKit's colors. A module that makes a
+color that follows the appearance, or checks that one reads, imports it. PaletteTests hold it on
+TestKit alone.
+
+- **`RGB`** is a color as its sRGB components, 0 to 1, with no alpha: `RGB(hex: 0x4465E9)`,
+  `RGB(hexString: "#4465E9")` (or `#46E`, in either case; nil for anything else), `hexString` (six
+  digits, in capitals), `over(_:alpha:)` (what a faint fill of it looks like on a ground),
+  `luminance` and `contrast(with:)` (WCAG's, 1 to 21), which every floor below is in.
+- **`OKLCH`** is the same color as how light it is, how colorful and which hue (Oklab in polar
+  form). A color's variations are made there: moving `lightness` alone keeps what the eye calls the
+  same color, where moving sRGB's components, or HSL's lightness, turns its hue. `OKLCH(rgb)` and
+  `.rgb` convert, and `.rgb` of a color too colorful for sRGB is the most colorful one of the same
+  lightness and hue, so lightening a color only pales it where it must and never turns it.
+- **`Tone`** is a color in the light appearance and in the dark (`tone[dark: isDark]`).
+- **`Swatch`** is the looks one color is drawn in. A color is a starting point: what draws it draws
+  one of seven roles worked out from it, each a `Tone`, so the same color suits a line, a surface,
+  text and a sheet of paper, on either canvas. `Swatch(color)` makes them the same way for every
+  color:
+
+  | Role | What draws it | How it comes from the color |
+  |---|---|---|
+  | `solid` | A line or a symbol on the canvas, and a fill that holds text | The color itself where it reads on the canvas at 3:1 (`lineContrast`), else the nearest lighter or darker color of its hue that does |
+  | `onSolid` | Text on `solid` | White, or black where white is under 4.5:1 (`textContrast`); one of the two always reads |
+  | `wash` | A faint surface on the canvas | `solid` at 14% over the canvas (`washStrength`) |
+  | `surface` | A large surface that holds shapes (a region, a card) | `solid` at 5% (`surfaceStrength`) over a ground raised off the canvas as a panel is (`raised`: white, and a lighter gray in the dark) |
+  | `ink` | Text in the color, on the canvas, on `wash` or on `surface` | `solid`, made lighter or darker until it reads on all three at 4.5:1 |
+  | `paper` | A sheet of paper (a note) | The hue as a light pastel (`paperLightness`, at most `paperChroma`), the same in both appearances |
+  | `paperInk` | Text on `paper` | A note's ink |
+
+  Each floor is met by construction: `Swatch.reading(_:against:atLeast:)` finds the lightness
+  nearest the color's that reads against the grounds it's handed, darker on light grounds and
+  lighter on dark ones, 2% over the floor so the color still meets it rounded to 8 bits. Paper is
+  one sheet whatever the appearance, since paper stays paper in the dark, and as light whatever the
+  color, so the inks drawn on a note read on every one. The canvas the roles are made for is
+  `Swatch.canvas` unless another is handed in.
+- **AppKit.** `NSAppearance.isDark` is the one test for a dark appearance (vibrant and
+  high-contrast dark ones are dark); `NSColor(light:dark:)` a color of two `RGB`s that follows the
+  appearance it's drawn in, resolved as it's drawn (read its `cgColor` in the drawing, never ahead
+  of it); `NSColor(rgb)` and `NSColor(tone)`; and `rgb.cgColor`, for a drawing that knows which
+  appearance it's in. A dynamic color whose two values aren't opaque sRGB (a white at an alpha, a
+  system color) is still `NSColor(name: nil) { $0.isDark ? … : … }`.
+
+tldraw's colors are the model: each of its named colors has fourteen hand-picked values in a light
+and a dark palette (`solid`, `semi`, `noteFill`, `frameFill` and the rest). The roles here are the
+same idea with one difference: they are computed from the one color, so a color someone picked gets
+the treatment a named one does.
 
 ## Host slots
 
@@ -8986,8 +9129,7 @@ The arrows themselves, between a shape and those, are outlined with them and nev
 The colors are their owners' (`ArrowStyle.pointsToLight` and `pointedToByLight`,
 `MentionStyle.mentionsLight` and `mentionedByLight`), chosen together in a design audit from renders of
 the lights over both canvases: one fixed sRGB value for each appearance
-(`NeighborLight.color(light:dark:)`, an `NSColor(name:)` as the
-arrow's color is), never a system color (system pink read as Validation's error red, system purple as
+(`NeighborLight.color(light:dark:)`, [Palette](#palette)'s `NSColor(light:dark:)`), never a system color (system pink read as Validation's error red, system purple as
 the selection's blue, and the light-mode green and teal fell under 3:1). In the light and the dark:
 green #07933B and #2FD359, purple #8C21A4 and #B851FD, teal #0E97B0 and #329AB4, lavender #A76FE2
 and #D0B0FE. Each is clear of Validation's red and orange and of Find's orange, at least 3:1 against
@@ -9446,12 +9588,14 @@ The modules, one job each:
 | CanvasCLI | cli | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
 | CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
 | Automation | language | The commands plugins give the command line (`AutomationCommands`), its own four, `draw`, `kinds` and `measure` (each resolving its board, calling the draw engine (Draw) and saying its `DrawError` as the wire's `AutomationError`) and `show`, which borrows Draw's naming. The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
+| Colors | concern | The color a shape of a kind that opted in holds ([Colors](#colors)): the property, the built-in names and a file's own, the book that says what every color looks like, the panel's row, `/color`, Color ▸, and the words draw and queries take; what a color looks like is [Palette](#palette)'s. |
 | Draw | surface | The engine of `canvas draw`, `measure` and `kinds` ([draw](#draw)), and the six points it takes what it doesn't own from (`DrawNames`, `DrawEdges`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`): a surface, so any plugin may run it, and it knows no concern. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
 | DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
 | FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | feature | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
 | Moving | feature | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Draw's placement for plugins (DrawScript's solver, over `ObstacleGrid`) as `draw` places a shape; no kind opts into it, and nothing imports it. |
 | Neighbors | surface | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)), and select one and its panel's Connections tab lists them by the same ways, then what it's inside and what it holds (`NeighborDetailsPlugin`, on DetailPanel, its search ranked by FuzzyMatching, a shape with no title called as TableOfContents calls it): its lights are titles, colors and the queries that find their shapes, each contributed by the plugin that owns the edges (Connections' `ArrowLightsPlugin`, Mentions' `MentionLightsPlugin`), asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`). |
+| Palette | foundation | The color math ([Palette](#palette)): a color as sRGB and OKLCH (`RGB`, `OKLCH`), the seven roles one color is drawn in on the light canvas and the dark (`Swatch`, each a `Tone`), contrast, and the one test for a dark appearance: pure, it knows no canvas, registry, plugin or named color. |
 | QueryCommands | language | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
 | QueryLanguage | foundation | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
 | Queries | surface | The engine that answers a query about a file ([Queries](#queries)), and its points: a surface, so any plugin may run a query; it gives the selection's word itself (`SelectionQueriesPlugin`, `:selected`), as Selection is below it. |
@@ -10849,6 +10993,66 @@ and the prompts it sends (`SyncedSchema`: a type's is `TypeSchemaProperty`, with
   `parse`. `editor.typeSync?.status(of: id)` is observed a shape at a
   time, so a panel redraws for its own sync only.
 
+## Colors
+
+Colors ([`Sources/Colors`](../Sources/Colors)) is a concern: a shape of a kind that opted in has a
+color, and its kind draws it. It is loosely tldraw's color system: a set of named colors, each drawn
+in roles that suit a line, a surface, text and a sheet of paper on the light canvas and the dark, and
+colors of a document's own. What a color looks like is [Palette](#palette)'s `Swatch`; which names
+there are, and what each shape's color is, is Colors'; what a kind does with its color is the kind's.
+
+A color is a named color or a hex value (`ShapeColor`: `.named("blue")`, `.value(RGB(hex: 0x4465E9))`),
+one string on a board. Ten names are built in (gray, red, orange, yellow, green, teal, blue, indigo,
+purple, pink), and a file adds its own (a name and a value, kept on the file as a
+[file value](#file-values)). Every list of colors offers the named ones only; a hex comes from the
+system color panel, or is typed.
+
+A kind opts in where it's registered, and reads its colors where it draws:
+
+```swift
+registrar.shape(StickyNoteDefinition()) { note in
+    note.colorable(default: .yellow)        // a note has a color: its paper, yellow without one
+}
+
+func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
+    let colors = context.colors(of: shape)  // the roles, in the appearance being drawn
+    context.cg.setFillColor(colors?.paper ?? NoteStyle.color.cgColor)
+    …
+}
+```
+
+- **`colorable(default:)`** opts the kind into `ColorProperty` (key `color`, nil on a shape with no
+  color of its own) and says what such a shape is drawn in: a built-in name or a value, or nothing,
+  for a kind whose shapes then look as the kind does on its own (`frame.colorable()`). The registry
+  refuses a default that names a color no file is sure to have. In the kind's schema the property is
+  a string with `contentMediaType` `text/x-canvas-color`.
+- **`context.colors(of: shape)`** is the seven roles as `CGColor`s (`SwatchColors`), or nil for a
+  shape drawn as its kind looks on its own. One lookup a shape, so a skeleton reads it too. A shape
+  whose color is a name the file lacks is drawn as its kind's default, and warned of.
+- **`editor.colors`** (`ColorBook`) is what another plugin asks: `names` (the built-in ones, then
+  the file's), `swatch(of: record)`, `swatch(for: color)`, `color(\.solid, of: record)` (one role as
+  a color that follows the appearance, for a view) and `onChange`, called when the file's colors
+  change. `editor.setColor(_:of:)` gives shapes a color, or takes theirs away, in one step.
+- **Where a color is picked.** The panel's Color row, one line in the Style tab: a dot and the
+  color's name, which opens a grid of the named colors, None and Other… (the system color panel); a
+  value picked there can be named, which adds it to the file, and a color of the file's is renamed,
+  changed and removed from its dot's menu. `/color` in a shape's text lists the named colors, each a
+  chip in its color, and takes a typed hex. Color ▸ in a shape's menu colors the whole selection.
+- **A file's colors.** `editor.defineColor(named:value:)`, `renameColor(_:to:)` (every shape that
+  holds the name, on every board, is renamed in the same step), `setColorValue(of:to:)` (every shape
+  that names it is recolored, and none is rewritten) and `removeColor(_:)` (each shape that held it
+  takes the value as a hex, so it looks as it did).
+- **What agents write.** `canvas draw` takes `color: blue` or `color: "#4465E9"` on a kind that has
+  one, and on an edge for its arrow; a name the file lacks is refused with the names it has.
+  `canvas query` finds `[color="blue"]`, and `[color]` is a shape with a color of its own.
+
+What the shipped kinds do: a note's paper is its color's `paper` (yellow without one; a type's note
+stays white), a frame's surface and border are `surface` and `solid` (none without one), a
+subboard's card and border likewise (indigo without one), an arrow's line is `solid` and its label
+`ink`, and a type's color is the color its note holds, else one of eight names by its id. A listed
+shape's symbol (Find, Jump To, a mention's pill, the table of contents, the Connections tab) is in
+its own color where it has one, through the core's `registrar.shapeTints`.
+
 ## Language models
 
 LanguageModels ([`Sources/LanguageModels`](../Sources/LanguageModels)) is a horizontal that declares
@@ -12182,7 +12386,10 @@ takes its boards out with its shapes, leaving no board without its owner, and re
 same ids. Services hear the boards in the change set (`boardsAdded`, `boardsRemoved`,
 `boardsChanged`), and each board the step changes gets a new revision, so nothing kept about one
 (the editor's index, the table of contents' rows, validation's issues, the minimap's picture) is
-taken for it: entering a board undo put back works it out afresh. `DocumentDelta` is the one type
+taken for it: entering a board undo put back works it out afresh. A step holds the [file
+values](#file-values) it changed too, each before and after (`DocumentDelta.fileValues`), so a
+value set in a transaction is undone and redone with the rest of its step, and a step of file
+values alone reaches no board. `DocumentDelta` is the one type
 that holds records before and after (`CanvasFile.apply` puts one in place), and
 `CanvasEditor.apply(_:restoring:)` the one place a step is applied; agents and sync can reuse them,
 with who made the change.
@@ -12349,6 +12556,28 @@ kept verbatim in `CanvasFile.unreadableBoards` until a board a shape comes to ow
 an entry that can't be kept as it was, a number JSON can't hold in it, stops the file opening).
 Shapes and values kept aside say which board they're on (`KeptShape.board`, `KeptValue.board`).
 
+**A value on the file** ([File values](#file-values)) is written in the envelope's `values`, by
+key, with its own version beside it, at format 6, which a file is only while it holds one (a value
+that differs from its default); read only from 6:
+
+```json
+{
+  "format" : 6,
+  "shapes" : [ … ],
+  "values" : { "letterhead" : { "v" : 0, "value" : "Acme" } },
+  "versions" : { "kinds" : { "sticky-note" : 3 } }
+}
+```
+
+A value of an older version goes through its property's migrations and is saved at today's; one
+that reads as its default, or is written null, is none. An entry the app can't use is kept whole
+(`CanvasFile.keptFileValues`), reads as the default, takes no write, and is written back as it
+was: no installed plugin declares the key, it's from a newer version, the value doesn't read or
+migrate, or the entry isn't a value with its version (`LoadReport.keptFileValues`, each a
+`KeptFileValue` with its reason). `values` that isn't an object, or an entry that can't be kept as
+it was, stops the file opening, as `boards` does. `BoardDocument` carries them with nothing of its
+own: it saves `editor.file` and opens and reverts with `replaceFile`.
+
 **Opening never drops a shape.** What the app can't use is kept aside (`AnyShapeRecord.isOpaque`),
 in its place in the stack, and saved back as it was, with its own version (`v`): a kind no plugin
 installs, a newer version of a kind, or props that don't read (or don't migrate, or have a frame
@@ -12368,7 +12597,8 @@ It repairs ids that repeat or are missing, and stacking keys that don't rise, an
 metadata, or added or kept values, that aren't an object by key (a kept one with its version):
 those can't be anything's (`droppedMeta`, `droppedValues`), and the report says so.
 `LoadedBoard.report` says what was kept aside (`keptAside`, the shapes; `keptValues`, the values on
-shapes the app can use; `keptBoards`, the boards) and what was repaired; the window shows it,
+shapes the app can use; `keptBoards`, the boards; `keptFileValues`, the file's own values) and what
+was repaired; the window shows it,
 offering to delete the shapes kept aside and the boards kept (`BoardDocument.deleteHiddenShapes`,
 through `editor.discardKeptAside`, one undo step) but never to discard a value. Repairs mark the
 board edited, so saving keeps them. Only a file that isn't a board, or comes from a newer app,
@@ -12385,7 +12615,7 @@ hand tool). It then checks everything and throws on:
 | `duplicatePlugin` | The same plugin id twice. |
 | `ownerNotInstalled` | A contribution to a point whose owner isn't in the list. |
 | `unknownKind` | A contribution for a kind no plugin registers. |
-| `conflict` | Two claims to the same key: a kind, a tool id, a service type, a command, the default tool, the secondary click, key strokes, an added property's key (two declarations), one kind's opt-in to a property (from two plugins, or twice from one), or a key in any `KeyedExtensionPoint` (a keyboard shortcut's chord, one kind's double-click claim, one adornment on a kind). |
+| `conflict` | Two claims to the same key: a kind, a tool id, a service type, a command, the default tool, the secondary click, key strokes, an added property's key (two declarations), a file property's key (two declarations), one kind's opt-in to a property (from two plugins, or twice from one), or a key in any `KeyedExtensionPoint` (a keyboard shortcut's chord, one kind's double-click claim, one adornment on a kind). |
 | `invalid` | A property list that doesn't hold up, two types under one definition name, or a struct that holds itself with no name ([Properties](#a-kinds-own-properties)); an opt-in to a property no installed plugin declares, a plugin opting a kind into one both by itself and through `optInEveryShape`, or a kind opting into a property named like one of its own ([added properties](#added-properties)); or a point's own `check` refused the list (the default tool must be a registered one). |
 
 Some rules span contributions in a way keys can't express. For those, a point implements `check`,
@@ -12434,10 +12664,10 @@ core                 tool hand · command undo · command redo · command zoomIn
 keyboard             service KeyboardState · tool tips · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
-arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
-subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
-framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
+arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
+sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
+subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
+framing              shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title cover surface → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · service ChipFade · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -12468,6 +12698,9 @@ types                property schema · property is · property fieldValues · e
 type-validation      ValidationRules · ValidationRules · ValidationRules
 type-details         ShapeDetails · ShapeDetails · ShapeDetails
 field-find           findable field value → every shape
+colors               property color · file property colors · service ColorBook · shape tints · /color → every shape · CanvasContextMenu
+color-validation     service ColorWarnings · ValidationRules
+color-details        ShapeDetails
 snapping             service SnapState · translation adjuster
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons
 arrow-ports          property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
@@ -12481,6 +12714,7 @@ validation-checks    draw checks
 mention-texts        draw text text/x-canvas-mentions
 type-names           draw text text/x-canvas-type
 draw-field-values    draw value fieldValues · draw reports
+color-names          draw text text/x-canvas-color
 queries              service QueryState · query engine
 query-translation    service QueryTranslator
 title-queries        query names
@@ -12488,6 +12722,7 @@ board-queries        query board names
 mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
 validation-queries   query word :invalid · query word :warned
 type-queries         query word :is-a · query text text/x-canvas-type · query word :incomplete · ask fact fields · query path fieldValues
+color-queries        query text text/x-canvas-color
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
 neighbors            service NeighborState · outlines
@@ -12958,6 +13193,19 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   written in the test, hit for hit, and seeded texts of `ß`, emoji, CJK and combining marks for hits in bounds and whole) and `PathMatcher` (skips, groups, tiers, the ranking of a small
   story, and `leafScore` over memoized rows and `match(path:)` on seeded random trees, each against a
   brute force written in the test that tries every placement of the pieces).
+- **Palette.** PaletteTests (TestKit alone), over a grid of sRGB's cube and ten colors a person
+  would pick: hex written and read, luminance and contrast against WCAG's figures, every color
+  through OKLCH and back, a color too colorful for sRGB shown at its own lightness and hue, every
+  role of every color at its floor on both canvases once rounded to 8 bits, paper one light sheet in
+  both appearances, the roles within 1.5° of the color's hue, and which appearances are dark.
+- **Colors.** ColorsTests, on kinds of their own (a sheet drawn as its paper, yellow by default; a
+  pane drawn as its solid, with no default): a color written and read, the ten built-in colors'
+  roles at their floors, the opt-in and its refusals, the book, `setColor`, drawing in both
+  appearances, a file's colors (each action and its undo, across boards, on disk), the panel's
+  row through its model and the binding the panel hands a section, `/color`, Color ▸, the draw and
+  query words, the warning and the tint. CompositionTests' `colorsShippedTests` hold the shipped
+  kinds, `/color` typed in a note on the app's canvas view, the menu, and a script drawn and queried
+  through `canvas`; each kind's tests hold its own look in color.
 - **Queries.** QueryLanguageTests, QueriesTests, the owners' query tests, QueryTranslationTests,
   QueryCommandsTests, CompositionTests' query suites and BenchmarkTests' Query benchmarks:
   [Testing queries](#testing-queries).

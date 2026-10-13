@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Colors
 import Geometry
 
 /// An arrow zoomed out (`CustomSkeleton`): its body as its kept geometry has it, never worked out
@@ -18,7 +19,7 @@ import Geometry
 extension ArrowDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<Arrow>, in context: RenderContext) {
         guard let geometry = context.shapes.geometry(of: shape.id), let body = ArrowSkeleton(geometry, zoom: context.zoom) else { return }
-        let cg = context.cg, color = ArrowStyle.color.cgColor, arrow = shape.props
+        let cg = context.cg, color = context.colors(of: shape)?.solid ?? ArrowStyle.color.cgColor, arrow = shape.props
         body.add(to: cg)
         cg.setStrokeColor(color)
         cg.setLineWidth(max(ArrowStyle.strokeWidth, ArrowStyle.skeletonLineWidth / context.zoom))

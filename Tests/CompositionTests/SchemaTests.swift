@@ -120,6 +120,16 @@ private let stickyNoteSchema = #"""
   "$schema" : "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties" : false,
   "properties" : {
+    "color" : {
+      "contentMediaType" : "text/x-canvas-color",
+      "description" : "The shape's color: a named color, or a value as #RRGGBB.",
+      "examples" : [
+        "blue",
+        "#4465E9"
+      ],
+      "type" : "string",
+      "x-canvas-owner" : "colors"
+    },
     "fieldValues" : {
       "$ref" : "#/$defs/types.field-values",
       "description" : "The values of the fields of the shape's types, by field name, as JSON. A value that is empty is not kept.",

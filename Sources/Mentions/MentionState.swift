@@ -769,11 +769,21 @@ public final class MentionState {
             defaults = MentionKindDefaults(record.kind, in: registry)
             kindDefaults[record.kind] = defaults
         }
-        return registry.mentionAppearance(of: record, defaults: defaults)
+        return registry.mentionAppearance(of: record, defaults: defaults, shapeTint: editor.ownTint(of: record))
     }
 }
 
 extension MentionState: EditorService {
+    /// The file's colors changed, and with them the tint of the shapes that hold one: what's mentioned
+    /// is resolved again, telling those whose pill changed, and the catalog's entries are read again
+    /// at the next query (the `@` picker's rows are the entries' appearances).
+    public func shapeTintsDidChange(in editor: CanvasEditor) {
+        var changed: Set<ShapeID> = []
+        for id in Array(resolutions.keys) { resolveAgain(id, into: &changed) }
+        stale.formUnion(catalog.entries.lazy.map(\.id))
+        tell(changed)
+    }
+
     /// Follows the commit, unless the table of contents asked about it first (`rowsAffected`).
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         guard heardRevision != editor.revision else { return }

@@ -8,6 +8,9 @@ import TestKit
 import Titles
 import Transform
 
+/// The Color ▸ items a frame's menu holds, with None checked: a frame has no color yet.
+private let frameColorItems = ["Color ▸", "  Gray", "  Red", "  Orange", "  Yellow", "  Green", "  Teal", "  Blue", "  Indigo", "  Purple", "  Pink", "  —", "  ✓ None"]
+
 // Frames offer the container channel and know nothing of what takes it: what a frame turns into is
 // whatever takes the channel (Subboards, in the app: CompositionTests hold that). Here it's CanvasTesting's
 // pocket, a kind that owns a board as a subboard does, taking it as Subboards does: a pocket's size at the
@@ -68,8 +71,8 @@ import Transform
         h.addBox(CGRect(x: 120, y: 120, width: 80, height: 60), in: frame)
         expectEqual(h.editor.transforms?.targets(of: frame), [])
         expect(h.editor.transforms?.turn([frame], into: Pocket.kind) == false, "nothing to turn into")
-        expectEqual(h.editor.slashCommands?.commands(for: frame).map(\.name), ["title"], "a target brings /turn-into-…, not the kind that offers")
-        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 300, y: 101))).outline, ["Create Frame", "—", "Delete"], "Create Frame is Frames' own, for any shapes")
+        expectEqual(h.editor.slashCommands?.commands(for: frame).map(\.name), ["color", "title"], "a target brings /turn-into-…, not the kind that offers")
+        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 300, y: 101))).outline, ["Create Frame", "—"] + frameColorItems + ["—", "Delete"], "Create Frame is Frames' own, for any shapes")
 
         let turning = try Registry(plugins: framePlugins() + framesTurnIntoPockets())
         expectEqual(turning.turnTargets(of: Frame.kind), [Pocket.kind])
@@ -106,10 +109,10 @@ import Transform
     test("a frame's menu has the target's item once a kind takes the channel, and /turn-into-pocket is offered; either turns it") {
         let s = Sprint(try turnHarness())
         let h = s.h
-        expectEqual(h.editor.slashCommands?.commands(for: s.sprint).map(\.name), ["title", "turn-into-pocket"])
+        expectEqual(h.editor.slashCommands?.commands(for: s.sprint).map(\.name), ["color", "title", "turn-into-pocket"])
         expectEqual(h.editor.slashCommands?.commands(for: s.z).map(\.name), [], "a box offers no channel")
         let menu = try require(h.secondaryClick(at: s.edge))
-        expectEqual(menu.outline, ["Turn into Pocket", "—", "Create Frame", "—", "Delete"])
+        expectEqual(menu.outline, ["Turn into Pocket", "—", "Create Frame", "—"] + frameColorItems + ["—", "Delete"])
         try menu.choose("Turn into Pocket")
         expectEqual(h.editor.document[s.sprint]?.kind, Pocket.kind)
         expectEqual(h.editor.selectedShapeIDs, [s.sprint], "still selected")

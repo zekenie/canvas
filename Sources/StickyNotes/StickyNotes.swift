@@ -1,9 +1,11 @@
 import AppKit
 import Canvas
+import Colors
 import Connections
 import Keyboard
 import Mentions
 import Observation
+import Palette
 import Selection
 import TextEditing
 import Titles
@@ -62,11 +64,15 @@ public struct StickyNotesPlugin: ListedPlugin {
         registrar.shape(StickyNoteDefinition()) { note in
             let place = note.editingPlacement(size: NoteStyle.size) { StickyNote() }
             note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
+            note.colorable(default: .yellow)                   // a note has a color: its paper, yellow without one
             note.tint(NoteStyle.tint)                          // its yellow, wherever it's listed by its kind
             note.createOnDoubleClick(place)                    // opts into the selection's double-click
             note.title(coverSurface: NoteStyle.color)          // and titles: a title, its pill, its cover, and its row's name
             note.titlePillLook { shape, _ in                   // a type's note is white paper, so its cover's ink is chosen for that
                 shape[TypeSchemaProperty.self] != nil ? TitlePillLook(coverSurface: NoteStyle.typePaper) : nil
+            }
+            note.titleCoverSurface { shape, context in        // and any other note's is its own paper, its color's
+                context.service(ColorBook.self)?.color(\.paper, for: shape[ColorProperty.self], kind: StickyNote.kind)
             }
             note.noteHeader()                                  // renamed in the detail panel's header
             note.noteRow()                                     // and the table of contents
@@ -88,9 +94,10 @@ extension StickyNoteDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
         let layout = NoteLayout(shape, in: context.shapes)
         // A type's note is white paper, its highlights behind its words, under its editor too, whose text
-        // lays out as this does (a note that isn't a type costs one lookup).
+        // lays out as this does (a note that isn't a type costs one lookup). Any other note is its color's paper.
         let isType = shape[TypeSchemaProperty.self] != nil
-        context.fillWithShadow(NoteStyle.path(layout.frame), isType ? NoteStyle.typePaper : NoteStyle.color)
+        let paper = isType ? NoteStyle.typePaper : context.colors(of: shape).flatMap { NSColor(cgColor: $0.paper) } ?? NoteStyle.color
+        context.fillWithShadow(NoteStyle.path(layout.frame), paper)
         let placements = shape.mentionTexts(placedIn: layout.words)
         if isType, let words = placements.first { context.fillTypeHighlights(of: shape, in: words) }
         // Its rows, if it has any (a plain note has no block), under the editor too.
@@ -144,7 +151,7 @@ enum NoteStyle {
     static let color = NSColor(srgbRed: 1.0, green: 0.87, blue: 0.45, alpha: 1)
     /// A type's note is paper, not yellow: white, and in the dark appearance a light paper (0.92), not
     /// the canvas's color, as the yellow note stays yellow there. Its text is the note's ink on both.
-    static let typePaper = NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? typePaperDark : .white }
+    static let typePaper = NSColor(name: nil) { $0.isDark ? typePaperDark : .white }
     static let typePaperDark = NSColor(white: 0.92, alpha: 1)
 
     /// The paper as the appearance being drawn resolves it, for a skeleton, which draws thousands a

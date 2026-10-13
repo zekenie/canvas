@@ -123,7 +123,12 @@ extension ArrowStyle {
     /// The text's style, in the render, the editor and the measure alike: centered, on fixed lines,
     /// each mention a pill in the arrow's own color (`MentionSurface.shape`: over the canvas, whose
     /// color follows the appearance, as the line does).
-    static let labelText = MentionTextStyle(font: labelFont, color: color, lineHeight: labelLineHeight, alignment: .center)
+    static let labelText = labelStyle(ink: color)
+
+    /// The label's style in `color`: the arrow's own color's ink (text in the color, on the canvas).
+    static func labelStyle(ink: NSColor) -> MentionTextStyle {
+        MentionTextStyle(font: labelFont, color: ink, lineHeight: labelLineHeight, alignment: .center)
+    }
 }
 
 /// An arrow's label measured and placed: its text's size kept by what it says and how wide it may
@@ -210,8 +215,9 @@ enum ArrowLabels {
 
     /// Where the text is drawn in its frame (`drawMentionText`, the render's, and the faces' and
     /// Find's): centered within it, its padding in from its edges, over the canvas.
-    static func placement(of text: MentionText, in frame: CGRect) -> MentionTextPlacement {
-        MentionTextPlacement(text, in: frame.insetBy(dx: ArrowStyle.labelPadding, dy: ArrowStyle.labelPadding), style: ArrowStyle.labelText,
+    static func placement(of text: MentionText, in frame: CGRect, ink: CGColor? = nil) -> MentionTextPlacement {
+        let style = ink.flatMap { NSColor(cgColor: $0) }.map { ArrowStyle.labelStyle(ink: $0) } ?? ArrowStyle.labelText
+        return MentionTextPlacement(text, in: frame.insetBy(dx: ArrowStyle.labelPadding, dy: ArrowStyle.labelPadding), style: style,
                              overCanvas: true)
     }
 }

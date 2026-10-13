@@ -1,20 +1,22 @@
 import AppKit
 import Canvas
+import Colors
 
 /// A card zoomed out (`CustomSkeleton`): fills alone, square (its 10-point corners are 3.5 points
 /// on screen at most here, and its outline is its frame's, as the core draws it), with no shadow,
-/// symbol or count: its border's indigo, the card inside it, and its board's preview, the one
+/// symbol or count: its border's color (the solid), the card inside it, and its board's preview, the one
 /// picture it draws, as the card asks for it: drawn once it's built and while it's big enough on
 /// screen, else nothing. Two fills and the preview; its title is Titles' cover, drawn over it.
 extension SubboardDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<Subboard>, in context: RenderContext) {
         let card = shape.frame, cg = context.cg
-        cg.setFillColor(SubboardStyle.border.cgColor)
+        let colors = context.colors(of: shape)
+        cg.setFillColor(colors?.solid ?? SubboardStyle.border.cgColor)
         cg.fill(card)
         let border = max(SubboardStyle.borderWidth, SubboardStyle.skeletonBorderWidth / context.zoom)
         let inside = card.insetBy(dx: border, dy: border)
         guard !inside.isEmpty else { return }
-        cg.setFillColor(SubboardStyle.cardFill.cgColor)
+        cg.setFillColor(colors?.surface ?? SubboardStyle.cardFill.cgColor)
         cg.fill(inside)
         _ = context.drawBoardPreview(ofBoardOwnedBy: shape.id, in: SubboardStyle.preview(in: card), maxScale: SubboardStyle.previewMaxScale)
     }

@@ -221,7 +221,8 @@ public final class NeighborList {
         return (ranked.count, ranked)
     }
 
-    /// How a row is drawn: its kind's symbol and tint, its name (its title, else its kind's), the
+    /// How a row is drawn: its kind's symbol, in the tint the shape has (`editor.tint(of:)`: its
+    /// kind's unless it has a color of its own), read as the row is drawn, its name (its title, else its kind's), the
     /// board it's on when that isn't the one shown, and what its list's light says under it.
     public func line(for row: NeighborRow, in group: Int) -> NeighborLine {
         #if DEBUG
@@ -233,7 +234,8 @@ public final class NeighborList {
         // (what a subboard holds) needs no saying.
         let isElsewhere = row.board != editor.board && row.board != subject.map { BoardID(owner: $0) }
         return editor.withoutObservingDocument {
-            NeighborLine(symbol: label.systemImage ?? NeighborStyle.fallbackSymbol, tint: label.tint, name: name(of: row),
+            NeighborLine(symbol: label.systemImage ?? NeighborStyle.fallbackSymbol,
+                         tint: editor.shape(inFile: row.id).flatMap { editor.tint(of: $0) } ?? label.tint, name: name(of: row),
                          detail: isElsewhere ? boardName(of: row) : nil,
                          caption: subject.flatMap { groups[group].caption?(editor, $0, row.id) })
         }
@@ -428,6 +430,12 @@ extension NeighborList: EditorService {
         let onlyMoves = !changes.replacedDocument && changes.added.isEmpty && changes.removed.isEmpty && changes.elsewhere.isEmpty
             && changes.boardsReached.isEmpty && changes.changed.isSubset(of: changes.moved)
         if !onlyMoves { askSoon(after: NeighborStyle.settle) }
+    }
+
+    /// The file's colors changed: every row is drawn again, as an answer drawn again does, since a
+    /// row's symbol is in the tint its shape has, read as it's drawn.
+    public func shapeTintsDidChange(in editor: CanvasEditor) {
+        listing?.stamp += 1
     }
 
     /// Keeps nothing per board: the panel's shape says what's listed, and a row says which board it's

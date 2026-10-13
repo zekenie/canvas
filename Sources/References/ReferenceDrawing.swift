@@ -340,8 +340,10 @@ extension ReferenceDefinition {
     func condition(of shape: ShapeRecord<Reference>, state: ReferenceState?, in context: RenderContext) -> ReferenceCondition {
         let status = shape.props.mode == .dynamic ? state?.answer(of: shape.id) : nil
         let compute = {
+            // With the service, a shape's own tint (its color) is the symbol's, as in its row and panel.
             ReferenceCondition.of(shape.props, status: status, registry: context.shapes.registry,
-                                  lookup: { context.shape(inFile: $0) }, isElsewhere: { state?.isElsewhere($0) ?? false })
+                                  lookup: { context.shape(inFile: $0) }, isElsewhere: { state?.isElsewhere($0) ?? false },
+                                  appearance: state.map { state in { state.editor.mentionAppearance(of: $0) } })
         }
         guard let state, let target = shape.props.target else { return compute() }
         return state.drawnCondition(of: shape.id, target: target, compute)

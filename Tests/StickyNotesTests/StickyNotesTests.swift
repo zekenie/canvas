@@ -2,6 +2,7 @@ import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Colors
 import Connections
 import ContextMenus
 import DetailPanel
@@ -21,7 +22,7 @@ import Types
 /// shows on it.
 @MainActor var notePlugins: [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin()]
+     ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin()]
 }
 
 @MainActor let stickyNotesTests = Suite("Sticky notes", [
@@ -34,32 +35,32 @@ import Types
     },
     test("can't be installed without the keyboard, selection, titles, ports and mentions plugins it opts into, the panel and the table of contents") {
         expectThrows(RegistryError.ownerNotInstalled(point: "KeyboardShortcuts", owner: .keyboard, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [StickyNotesPlugin(), DetailPanelPlugin()])
+            _ = try Registry(plugins: [StickyNotesPlugin(), ColorsPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "DoubleClickPlacement", owner: .selection, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), StickyNotesPlugin(), DetailPanelPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), StickyNotesPlugin(), ColorsPlugin(), DetailPanelPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeTitles", owner: .titles, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), DetailPanelPlugin(), TableOfContentsPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ColorsPlugin(), DetailPanelPlugin(), TableOfContentsPlugin()])
         }
         // A title names the note's row, so titles need the table of contents too.
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsTitles", owner: .tableOfContents, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), DetailPanelPlugin(), SlashCommandsPlugin(), TitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ColorsPlugin(), DetailPanelPlugin(), SlashCommandsPlugin(), TitlesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeDetails", owner: .detailPanel, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin()])
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ColorsPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapePorts", owner: .ports, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), DetailPanelPlugin(),
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), StickyNotesPlugin(), ColorsPlugin(), DetailPanelPlugin(),
                                        SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "MentionTexts", owner: .mentions, contributor: .stickyNotes)) {
-            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), DetailPanelPlugin(),
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), ColorsPlugin(), DetailPanelPlugin(),
                                        SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), PortsPlugin()])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "TypeWords", owner: .types, contributor: .stickyNotes)) {
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
-                                       ContextMenusPlugin(), SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin()])
+                                       ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin()])
         }
     },
     test("its row in the table of contents: its text on one line, or Empty Note") {

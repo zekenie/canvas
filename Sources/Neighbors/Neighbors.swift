@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Palette
 
 extension PluginID {
     public static let neighbors: PluginID = "neighbors"
@@ -53,10 +54,7 @@ public struct NeighborLight: Sendable {
     /// dark, for a light whose color is chosen against both canvases rather than left to a system
     /// color.
     public static func color(light: Int, dark: Int) -> NSColor {
-        func srgb(_ hex: Int) -> NSColor {
-            NSColor(srgbRed: CGFloat(hex >> 16 & 0xFF) / 255, green: CGFloat(hex >> 8 & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
-        }
-        return NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? srgb(dark) : srgb(light) }
+        NSColor(light: RGB(hex: UInt32(truncatingIfNeeded: light)), dark: RGB(hex: UInt32(truncatingIfNeeded: dark)))
     }
 }
 

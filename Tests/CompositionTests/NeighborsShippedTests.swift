@@ -179,7 +179,7 @@ private struct Graph {
             _ = try Registry(plugins: all.filter { $0.id != .neighbors })
         }
     },
-    test("the tab that lists what the lights match is a plugin of its own: a list without it keeps the four lights and the hover, and the panels lose the tab") {
+    test("the tab that lists what the lights match is a plugin of its own: a list without it keeps the four lights and the hover, and the panels lose the Connections tab") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let all = ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel())
@@ -189,11 +189,11 @@ private struct Graph {
         expect(editor.neighbors != nil, "the hover")
         expect(editor.neighborList == nil, "the list")
         let id = editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Milk"))
-        expectEqual(try require(editor.detailPanel).layout(for: try require(editor.document[id])).tabs, [])
-        // And with it, a note has that tab alone.
+        expectEqual(try require(editor.detailPanel).layout(for: try require(editor.document[id])).tabs.map(\.title), ["Style"], "Colors' tab stays; the list's is gone")
+        // And with it, a note has that tab, then Style.
         let shipped = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
         let note = shipped.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Milk"))
-        expectEqual(try require(shipped.detailPanel).layout(for: try require(shipped.document[note])).tabs.map(\.title), ["Connections"])
+        expectEqual(try require(shipped.detailPanel).layout(for: try require(shipped.document[note])).tabs.map(\.title), ["Connections", "Style"])
     },
     test("the colors are the design audit's: one sRGB value each in the light and the dark, each at least 3:1 against the canvas it's drawn over") {
         let pasteboard = NSPasteboard.withUniqueName()

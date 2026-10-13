@@ -146,11 +146,15 @@ public struct AdornmentButton: Hashable, Sendable {
     }
 }
 
-/// A color a label is drawn in, in place of its tone's: a type's, in Types. A fixed color, the same in
-/// both appearances, so Adornments makes its fills once. Solid, the capsule is the color and its text
-/// and symbol are white; light, the capsule is the color faint, with a thin line of it, and the text
-/// and symbol are its `ink`, which may follow the appearance (a color that reads on the canvas
-/// whichever it is).
+/// A color a label is drawn in, in place of its tone's: a type's, in Types. A color may follow the
+/// appearance (a dynamic `NSColor`), and Adornments makes its fills for the appearance drawn, once
+/// each. Solid, the capsule is the color and its text and symbol are its `ink`, white by default;
+/// light, the capsule is the color faint, with a thin line of it, and the text and symbol are its
+/// `ink`, the color itself by default. An ink may follow the appearance too (a color that reads on
+/// the capsule whichever it is).
+///
+/// A dynamic color is equal to itself only: a caller that makes a tint again and again for one
+/// color keeps the tint (or the `NSColor`s it is made of), or what Adornments keeps per tint grows.
 public struct AdornmentTint: Hashable, @unchecked Sendable {
     public enum Style: Hashable, Sendable { case solid, light }
 
@@ -158,10 +162,10 @@ public struct AdornmentTint: Hashable, @unchecked Sendable {
     public let ink: NSColor
     public let style: Style
 
-    /// `ink` is the color itself by default.
+    /// `ink` is white for a solid tint and the color itself for a light one, by default.
     public init(_ color: NSColor, ink: NSColor? = nil, style: Style) {
         self.color = color
-        self.ink = ink ?? color
+        self.ink = ink ?? (style == .solid ? .white : color)
         self.style = style
     }
 }

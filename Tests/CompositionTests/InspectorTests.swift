@@ -135,7 +135,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
 
 // The shipped panel beside the canvas, as the app places it.
 @MainActor let inspectorTests = Suite("Inspector", [
-    test("selecting a note shows its header, where it's named, and one tab, Connections") {
+    test("selecting a note shows its header, where it's named, and two tabs, Connections and Style") {
         let w = try InspectorWindow()
         let shape = note("Shopping")
         w.editor.transact { $0.insert(shape) }
@@ -144,7 +144,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         w.window.spin { w.titleField != nil }
         expectEqual(w.editor.selection, shape.id)
         let state = try require(w.editor.detailPanel)
-        expectEqual(state.layout(for: try require(w.editor.document[shape.id])).tabs.map(\.title), ["Connections"])
+        expectEqual(state.layout(for: try require(w.editor.document[shape.id])).tabs.map(\.title), ["Connections", "Style"])
         expectEqual(w.fields.count, 0)
         expectEqual(w.tables.count, 0)
     },
@@ -202,7 +202,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         w.window.spin { w.canvasHasKeyboard }
         expect(w.canvasHasKeyboard, "not the window: \(String(describing: w.window.firstResponder))")
     },
-    test("an arrow shows its Arrow header and only its Connections tab") {
+    test("an arrow shows its Arrow header and only its Connections and Style tabs") {
         let w = try InspectorWindow()
         let shape = note(), arrow = ShapeRecord(Arrow(start: .free(CGPoint(x: 400, y: 100)), end: .free(CGPoint(x: 600, y: 300))))
         w.editor.transact { $0.insert(shape); $0.insert(arrow) }
@@ -212,7 +212,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         w.window.spin { w.titleField == nil }
         let layout = try require(w.editor.detailPanel).layout(for: try require(w.editor.document[arrow.id]))
         expectEqual(layout.header, DetailHeader("Arrow", systemImage: "arrow.up.right"))
-        expectEqual(layout.tabs.map(\.title), ["Connections"])
+        expectEqual(layout.tabs.map(\.title), ["Connections", "Style"])
         expectEqual(w.fields.count, 0)
         expectEqual(w.tables.count, 0)
     },
@@ -279,7 +279,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         w.editor.selection = nil
         expectEqual(w.editor.tableOfContents?.entries.map { $0.label?.text }, ["Groceries"])
     },
-    test("a note whose title is too long has an Issues tab that says so, through ValidationDetailsPlugin, after its Connections tab; a note without issues has no such tab") {
+    test("a note whose title is too long has an Issues tab that says so, through ValidationDetailsPlugin, after its Connections and Style tabs; a note without issues has no such tab") {
         let w = try InspectorWindow()
         var long = note("Hi")
         long[TitleProperty.self] = String(repeating: "Groceries ", count: 9)
@@ -289,13 +289,13 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         expectEqual(w.editor.selection, long.id)
         let state = try require(w.editor.detailPanel)
         let record = try require(w.editor.document[long.id])
-        expectEqual(state.layout(for: record).tabs.map(\.title), ["Connections", "Issues"])
+        expectEqual(state.layout(for: record).tabs.map(\.title), ["Connections", "Style", "Issues"])
         expectEqual(state.layout(for: record).statuses(in: .of(IssuesTab.self)),
                     [DetailStatus("Title is 90 characters long, and should be at most 80.", tone: .warning)])
         expectEqual(state.statuses(for: record), [], "nothing in the footer")
         w.click(CGPoint(x: 500, y: 200))
         expectEqual(w.editor.selection, written.id)
-        expectEqual(state.layout(for: try require(w.editor.document[written.id])).tabs.map(\.title), ["Connections"])
+        expectEqual(state.layout(for: try require(w.editor.document[written.id])).tabs.map(\.title), ["Connections", "Style"])
         expectEqual(w.issues, [])
     },
     test("typing a subboard's name in the panel's header gives it a title's pill, and keeps Select") {

@@ -1,4 +1,5 @@
 import Canvas
+import Colors
 import CoreGraphics
 import Selection
 
@@ -11,7 +12,7 @@ struct FrameDefinition {}
 /// above it; its title is Titles' pill above it.
 extension FrameDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Frame>, in context: RenderContext) {
-        FrameStyle.draw(shape.frame, zoom: context.zoom, in: context.cg)
+        FrameStyle.draw(shape.frame, zoom: context.zoom, colors: context.colors(of: shape), in: context.cg)
     }
 
     func indicatorPath(of shape: ShapeRecord<Frame>, in context: ShapeContext) -> CGPath {

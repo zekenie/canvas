@@ -57,12 +57,12 @@ public struct TypesPlugin: ListedPlugin {
         registerIsACommand(into: &registrar)
         registerTypeMenus(into: &registrar)
         registerTypeChips(into: &registrar)
-        // A type's pill is its title in its color, after the mark of a type; untitled, gray and dimmed.
+        // A type's pill is its title in its color (Colors', else its id's), after the mark of a type; untitled, gray and dimmed.
         // Asked of the kinds that hold a schema, a note's, and a plain note's pill is as it was.
-        registrar.titlePillLook(forShapesHolding: TypeSchemaProperty.self) { record, title in
+        registrar.titlePillLook(forShapesHolding: TypeSchemaProperty.self) { record, title, context in
             guard record[TypeSchemaProperty.self] != nil else { return nil }
-            return TitlePillLook(symbol: TypesStyle.typeSymbol, tint: title == nil ? nil : TypeColors.solid(record.id),
-                                 placeholder: TypesStyle.untitledType)
+            let tint = title == nil ? nil : context.service(TypeIndex.self).map { $0.look(of: record.id).solid }
+            return TitlePillLook(symbol: TypesStyle.typeSymbol, tint: tint, placeholder: TypesStyle.untitledType)
         }
         // A note that is one of a kind that draws rows shows no pill for a title copied from its field: the
         // name is already in its row, folded or not, and the chip above says what it is. Asked where the

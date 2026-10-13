@@ -24,8 +24,10 @@ import Geometry
 /// kind's version and each added property's. Format 4 added the boards shapes own (`CanvasFile`):
 /// `boards`, one flat map, never nested however deep the boards are, each an object with its
 /// `shapes`, records as the root's, under the same `versions`. Format 5 added the container a shape
-/// is in on its board (`AnyShapeRecord.container`, a frame's id), in `container`. Members a shape
-/// doesn't have are left out. As with a record's, a member a board entry doesn't have yet needs a
+/// is in on its board (`AnyShapeRecord.container`, a frame's id), in `container`. Format 6 added the
+/// values plugins keep on the file as a whole (`FileProperty`), in the envelope's `values`, by key,
+/// each with its own version: `"values" : { "letterhead" : { "v" : 0, "value" : "Acme" } }`; only
+/// those that differ from their defaults. Members a shape doesn't have are left out. As with a record's, a member a board entry doesn't have yet needs a
 /// newer format: this one reads only `shapes`, and would save a board without any other.
 ///
 /// Reading never drops a shape and never stops at one: it refuses only a file that isn't a board,
@@ -34,19 +36,23 @@ import Geometry
 /// `v`: its kind isn't installed, it's from a newer version of its kind, or it didn't load. So is
 /// an added value it can't use (no installed plugin declares it, the kind doesn't opt in, it's
 /// from a newer version, or it didn't load), in the shape's `kept`, with its version, while the
-/// shape itself stays usable, and a board it can't show (`LoadReport.KeptBoard`), with its shapes.
+/// shape itself stays usable, and a board it can't show (`LoadReport.KeptBoard`), with its shapes,
+/// and one of the file's own values it can't use (no installed plugin declares it, it's from a newer
+/// version, or it didn't load: `LoadReport.KeptFileValue`), its entry kept whole.
 /// What reading had to fix, and what it kept aside, is in the report.
 public struct BoardCodec: Sendable {
     /// The newest envelope this app reads. It writes the oldest that holds the file: 1, unless a
     /// shape has metadata, which needs 2, or added values, which need 3, or the file has a board
-    /// besides the root, which needs 4, or a shape on any board is in a container, which needs 5.
+    /// besides the root, which needs 4, or a shape on any board is in a container, which needs 5, or
+    /// the file holds a value of its own (`FileProperty`), which needs 6.
     /// So an older app still opens a file it would save back whole, and refuses one it would save
     /// without what it doesn't know.
-    public static let format = 5
+    public static let format = 6
 
     private let kinds: [ShapeKind: KindCodec]
     private let properties: [PropertyKey: PropertyCodec]
     private let optIns: [ShapeKind: [PropertyKey]]
+    private let fileProperties: [PropertyKey: FilePropertyCodec]
     private let boardOwningKinds: Set<ShapeKind>
 
     /// For the kinds `registry` installs, and the properties they opt into. Build it once; it reads
@@ -60,6 +66,7 @@ public struct BoardCodec: Sendable {
         self.kinds = kinds
         properties = registry.propertyTable.codecs
         optIns = registry.propertyTable.byKind
+        fileProperties = registry.fileProperties
         boardOwningKinds = registry.boardOwningKinds
     }
 
@@ -69,19 +76,24 @@ public struct BoardCodec: Sendable {
     /// A declared added property's version; nil for one no installed plugin declares.
     public func version(ofProperty key: PropertyKey) -> Int? { properties[key]?.version }
 
+    /// A declared file property's version (`FileProperty`); nil for one no installed plugin declares.
+    public func version(ofFileProperty key: PropertyKey) -> Int? { fileProperties[key]?.version }
+
     // MARK: Writing
 
     /// A file of this board alone: its root.
     public func encode(_ document: CanvasDocument) throws -> Data {
-        try encode(root: document, children: [:], unreadable: [:])
+        try encode(root: document, children: [:], unreadable: [:], fileValues: FileValues())
     }
 
-    /// Every board of the file, and what it keeps of `boards` that didn't read.
+    /// Every board of the file, what it keeps of `boards` that didn't read, and the file's own
+    /// values (`FileProperty`), those it can't use as they were read.
     public func encode(_ file: CanvasFile) throws -> Data {
-        try encode(root: file.root, children: file.children, unreadable: file.unreadableBoards)
+        try encode(root: file.root, children: file.children, unreadable: file.unreadableBoards, fileValues: file.fileValues)
     }
 
-    private func encode(root: CanvasDocument, children: [ShapeID: CanvasDocument], unreadable: [String: JSONValue]) throws -> Data {
+    private func encode(root: CanvasDocument, children: [ShapeID: CanvasDocument], unreadable: [String: JSONValue],
+                        fileValues: FileValues) throws -> Data {
         var versions = Versions()
         for document in [root] + children.values {
             for record in document.shapes where !record.isOpaque {
@@ -96,9 +108,19 @@ public struct BoardCodec: Sendable {
             for (owner, document) in children { entries[owner.description] = .board(document.shapes.map(Record.init)) }
             boards = entries
         }
+        var values: [String: FileValueEntry]?
+        if !fileValues.isEmpty {
+            var entries = fileValues.kept.reduce(into: [String: FileValueEntry]()) { $0[$1.key.rawValue] = .kept($1.value) }
+            for key in fileValues.keys {
+                if let value = fileValues[key] { entries[key.rawValue] = .value(v: fileProperties[key]?.version ?? 0, value) }
+            }
+            values = entries
+        }
         let containers = root.namesContainers || children.values.contains { $0.namesContainers }
-        let format = containers ? 5 : boards != nil ? 4 : root.shapes.contains { !$0.added.isEmpty } ? 3 : root.shapes.contains { !$0.meta.isEmpty } ? 2 : 1
-        return try Self.makeEncoder().encode(Envelope(format: format, versions: versions, shapes: root.shapes.map(Record.init), boards: boards))
+        let format = values != nil ? 6 : containers ? 5 : boards != nil ? 4 : root.shapes.contains { !$0.added.isEmpty } ? 3
+            : root.shapes.contains { !$0.meta.isEmpty } ? 2 : 1
+        return try Self.makeEncoder().encode(Envelope(format: format, versions: versions, shapes: root.shapes.map(Record.init), boards: boards,
+                                                      values: values))
     }
 
     /// One shape's props, as a board writes them: for fixtures, and tools that edit props as JSON.
@@ -158,6 +180,16 @@ public struct BoardCodec: Sendable {
         return try Self.makeEncoder().encode(value)
     }
 
+    /// One file property's value at `version`, as JSON, migrated to today's and written as a board
+    /// writes it: `migrateValue`'s, for a file property. Throws where reading a board would keep the
+    /// value aside.
+    public func migrateFileValue(_ data: Data, property key: PropertyKey, version: Int) throws -> Data {
+        guard let property = fileProperties[key] else { throw ReadProblem("no installed plugin declares \(key)") }
+        let value = try value(at: version, of: property.version, migrations: property.migrations, decodeData: property.decodeData,
+                              direct: { try property.decodeData(data) }, json: { try Self.makeDecoder().decode(JSONValue.self, from: data) })
+        return try Self.makeEncoder().encode(value)
+    }
+
     /// Today's props from a shape's props at `version`: straight into the kind's type when it's
     /// today's version, otherwise through the JSON and each migration since, which may hand members
     /// over to added properties.
@@ -184,15 +216,45 @@ public struct BoardCodec: Sendable {
     /// (and `direct` can), otherwise through the JSON and each of its migrations since.
     private func value(of property: PropertyCodec, at version: Int, direct: (() throws -> any AddedValue)?,
                        json: () throws -> JSONValue) throws -> any AddedValue {
-        guard version <= property.version else { throw ReadProblem("version \(version) is newer than this app's \(property.version)") }
-        if version == property.version, let direct { return try direct() }
+        try value(at: version, of: property.version, migrations: property.migrations, decodeData: property.decodeData, direct: direct, json: json)
+    }
+
+    /// The same, for any value with a history of its own: an added property's, or a file property's.
+    private func value(at version: Int, of current: Int, migrations: [PropertyMigration], decodeData: (Data) throws -> any AddedValue,
+                       direct: (() throws -> any AddedValue)?, json: () throws -> JSONValue) throws -> any AddedValue {
+        guard version <= current else { throw ReadProblem("version \(version) is newer than this app's \(current)") }
+        if version == current, let direct { return try direct() }
         var value = try json()
-        for migration in property.migrations[max(version, 0)...] {
+        for migration in migrations[max(version, 0)...] {
             do { try migration.body(&value) } catch {
                 throw ReadProblem("the migration “\(migration.name)” failed: \(Self.describe(error))")
             }
         }
-        return try property.decodeData(Self.makeEncoder().encode(value))
+        return try decodeData(Self.makeEncoder().encode(value))
+    }
+
+    /// One entry of the envelope's `values` (from format 6): one of the file's own values, typed if the
+    /// app can use it (today's value, through its migrations; none if that's the default, which no
+    /// file holds), else kept as the entry was, whole, with why. Never throws. `entry` is the entry's
+    /// own container, to read a value of today's version straight into its type.
+    fileprivate func readFileValue(_ key: PropertyKey, json: JSONValue, entry: KeyedDecodingContainer<FileValueKeys>?) -> ReadFileValue {
+        func keep(_ reason: LoadReport.KeptFileValue.Reason) -> ReadFileValue { ReadFileValue(key: key, value: nil, kept: json, reason: reason) }
+        guard let version = json["v"]?.numberValue.flatMap(Int.init(exactly:)), let written = json["value"] else {
+            return keep(.unreadable("it isn't a value with its version"))
+        }
+        guard let property = fileProperties[key] else { return keep(.notDeclared) }
+        guard version <= property.version else { return keep(.newerVersion(file: version, app: property.version)) }
+        do {
+            let direct: (() throws -> any AddedValue)? = entry.map { entry in { try property.decode(entry.superDecoder(forKey: .value)) } }
+            let read = try value(at: version, of: property.version, migrations: property.migrations, decodeData: property.decodeData,
+                                 direct: direct, json: { written })
+            return ReadFileValue(key: key, value: property.isDefault(read) ? nil : read, kept: nil, reason: nil)
+        } catch {
+            // A value written as null (no property's can be, but one whose value is optional) is none:
+            // kept aside, it would stop the file ever having one.
+            if written == .null { return ReadFileValue(key: key, value: nil, kept: nil, reason: nil) }
+            return keep(.unreadable(Self.describe(error)))
+        }
     }
 
     /// A default for each property the kind opts into that has one, where there's no value.
@@ -422,6 +484,14 @@ public struct BoardCodec: Sendable {
         }
         var file = CanvasFile(root: CanvasDocument(shapes: root), children: children)
         file.unreadableBoards = contents.unreadableBoards.mapValues(\.json)
+        // By key, so the same file reports the same way every time.
+        for read in contents.fileValues.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+            if let value = read.value { file.fileValues[read.key] = value }
+            if let kept = read.kept, let reason = read.reason {
+                file.fileValues.kept[read.key] = kept
+                report.keptFileValues.append(LoadReport.KeptFileValue(key: read.key, reason: reason))
+            }
+        }
         return LoadedBoard(file: file, report: report)
     }
 
@@ -534,14 +604,40 @@ public struct LoadReport: Equatable, Sendable {
     public var keptAside: [KeptShape]
     public var keptValues: [KeptValue]
     public var keptBoards: [KeptBoard]
+    /// The file's own values the app can't use (`FileProperty`), by key.
+    public var keptFileValues: [KeptFileValue]
     public var repairs: [Repair]
-    public var isEmpty: Bool { keptAside.isEmpty && keptValues.isEmpty && keptBoards.isEmpty && repairs.isEmpty }
+    public var isEmpty: Bool { keptAside.isEmpty && keptValues.isEmpty && keptBoards.isEmpty && keptFileValues.isEmpty && repairs.isEmpty }
 
-    public init(keptAside: [KeptShape] = [], keptValues: [KeptValue] = [], keptBoards: [KeptBoard] = [], repairs: [Repair] = []) {
+    public init(keptAside: [KeptShape] = [], keptValues: [KeptValue] = [], keptBoards: [KeptBoard] = [],
+                keptFileValues: [KeptFileValue] = [], repairs: [Repair] = []) {
         self.keptAside = keptAside
         self.keptValues = keptValues
         self.keptBoards = keptBoards
+        self.keptFileValues = keptFileValues
         self.repairs = repairs
+    }
+
+    /// One of the file's own values (`FileProperty`) the file keeps but the app can't use
+    /// (`CanvasFile.keptFileValues`): it reads as its default, can't be set, and is saved back as it was.
+    public struct KeptFileValue: Equatable, Sendable {
+        public let key: PropertyKey
+        public let reason: Reason
+
+        public init(key: PropertyKey, reason: Reason) {
+            self.key = key
+            self.reason = reason
+        }
+
+        public enum Reason: Equatable, Sendable {
+            /// No installed plugin declares the property.
+            case notDeclared
+            /// Written by a newer version of the property's plugin.
+            case newerVersion(file: Int, app: Int)
+            /// It didn't load: an entry that isn't a value with its version, a bad value, or a failed
+            /// migration.
+            case unreadable(String)
+        }
     }
 
     /// A shape the file keeps but the app can't use (`AnyShapeRecord.isOpaque`).
@@ -716,6 +812,35 @@ private struct ReadRecord {
 
 private enum RecordKeys: String, CodingKey { case id, kind, index, props, v, meta, added, kept, container }
 
+/// An entry of the envelope's `values`: its version, and the value.
+fileprivate enum FileValueKeys: String, CodingKey { case v, value }
+
+/// One of the file's own values, read: typed, or kept as its entry was, with why.
+private struct ReadFileValue {
+    let key: PropertyKey
+    let value: (any AddedValue)?
+    let kept: JSONValue?
+    let reason: LoadReport.KeptFileValue.Reason?
+}
+
+/// An entry of the envelope's `values` as a board writes it: a value with its version, or an entry
+/// the app couldn't use, as it was.
+private enum FileValueEntry: Encodable {
+    case value(v: Int, any AddedValue)
+    case kept(JSONValue)
+
+    func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .value(let version, let value):
+            var container = encoder.container(keyedBy: FileValueKeys.self)
+            try container.encode(version, forKey: .v)
+            try value.encode(to: container.superEncoder(forKey: .value))
+        case .kept(let json):
+            try json.encode(to: encoder)
+        }
+    }
+}
+
 /// Each kind's version and, from format 3, each added property's.
 private struct Versions {
     var kinds: [String: Int] = [:]
@@ -734,8 +859,10 @@ private struct Envelope: Encodable {
     let shapes: [Record]
     /// From format 4.
     let boards: [String: BoardEntry]?
+    /// From format 6: the file's own values, by key.
+    let values: [String: FileValueEntry]?
 
-    private enum Keys: String, CodingKey { case format, schema, versions, shapes, boards }
+    private enum Keys: String, CodingKey { case format, schema, versions, shapes, boards, values }
     private enum VersionKeys: String, CodingKey { case kinds, added }
 
     /// Before format 3, the kinds' versions are the envelope's `schema`.
@@ -751,6 +878,7 @@ private struct Envelope: Encodable {
         }
         try container.encode(shapes, forKey: .shapes)
         try container.encodeIfPresent(boards, forKey: .boards)
+        try container.encodeIfPresent(values, forKey: .values)
     }
 }
 
@@ -805,8 +933,10 @@ private struct Contents: Decodable {
     var boards: [ShapeID: [ReadRecord]] = [:]
     /// What's in `boards` that isn't a board, by key, and why.
     var unreadableBoards: [String: (json: JSONValue, why: String)] = [:]
+    /// The file's own values (from format 6).
+    var fileValues: [ReadFileValue] = []
 
-    private enum Keys: String, CodingKey { case format, schema, versions, shapes, boards }
+    private enum Keys: String, CodingKey { case format, schema, versions, shapes, boards, values }
     private enum BoardKeys: String, CodingKey { case shapes }
     private enum VersionKeys: String, CodingKey { case kinds, added }
 
@@ -826,6 +956,19 @@ private struct Contents: Decodable {
         var shapes = try container.nestedUnkeyedContainer(forKey: .shapes)
         while !shapes.isAtEnd {
             records.append(codec.read(try shapes.superDecoder(), versions: versions, format: format))
+        }
+        if format >= 6, container.contains(.values) {
+            guard let entries = try? container.nestedContainer(keyedBy: PropertyCodingKey.self, forKey: .values) else {
+                throw BoardReadError.unreadable("its values aren’t an object")
+            }
+            for key in entries.allKeys {
+                // Kept only to be written back, so kept whole, or the file isn't read: a save would lose it.
+                guard let json = try? entries.decode(JSONValue.self, forKey: key) else {
+                    throw BoardReadError.unreadable("values.\(key.stringValue) can’t be kept as it is")
+                }
+                fileValues.append(codec.readFileValue(PropertyKey(rawValue: key.stringValue), json: json,
+                                                      entry: try? entries.nestedContainer(keyedBy: FileValueKeys.self, forKey: key)))
+            }
         }
         guard format >= 4, container.contains(.boards) else { return }
         guard let entries = try? container.nestedContainer(keyedBy: PropertyCodingKey.self, forKey: .boards) else {

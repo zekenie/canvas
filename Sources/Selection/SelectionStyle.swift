@@ -1,5 +1,6 @@
 import AppKit
 import Keyboard
+import Palette
 
 /// The selection's UI constants. Sizes are view points. The values follow tldraw.
 @MainActor
@@ -53,10 +54,4 @@ enum SelectionStyle {
         (.leftArrow, CGPoint(x: -1, y: 0)), (.rightArrow, CGPoint(x: 1, y: 0)),
         (.upArrow, CGPoint(x: 0, y: -1)), (.downArrow, CGPoint(x: 0, y: 1)),
     ]
-}
-
-extension NSAppearance {
-    var isDark: Bool {
-        bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-    }
 }

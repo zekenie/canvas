@@ -697,6 +697,17 @@ extension ContentsState {
 }
 
 extension ContentsState: EditorService {
+    /// The file's colors changed, and a row's symbol is in the color its shape has: every row, the
+    /// boards kept and the outlines of others are made again as they are read, a row a shape's color
+    /// is read for (`ContentsContext.color(of:)`) or a shape it stands for. Rare, and lazy: the next
+    /// read makes the rows it shows.
+    public func shapeTintsDidChange(in editor: CanvasEditor) {
+        kept.removeAll()
+        touchedAway = [:]
+        outlines = [:]
+        forget(Set(rows.keys))
+    }
+
     /// Forgets the rows of the shapes the commit touched, for the next read to make again and
     /// place, but for those it only moved (`ChangeSet.moved`: a drag's every event, a container
     /// carrying all it holds), whose rows say what they are and not where, so they stay, noted for

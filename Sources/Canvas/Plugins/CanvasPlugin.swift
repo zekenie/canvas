@@ -144,6 +144,15 @@ public struct PluginRegistrar {
     public mutating func readOnlyShapes(where isReadOnly: @escaping @MainActor (AnyShapeRecord) -> Bool) {
         contribute(isReadOnly, to: CorePoints.ReadOnlyRules.self)
     }
+
+    /// The color a shape's symbol has wherever it is listed by its kind, when it has one of its own
+    /// (Colors' shapes with a color), asked of one shape at a time: `editor.tint(of:)` answers the
+    /// first plugin's color that isn't nil, else the kind's (`ShapeRegistrar.tint`). Asked per row
+    /// shown, never per frame, but keep it cheap. A color that changes by anything but a commit to
+    /// the shape (the file's colors) says so with `editor.shapeTintsDidChange()`.
+    public mutating func shapeTints(_ tint: @escaping @MainActor (AnyShapeRecord, CanvasEditor) -> NSColor?) {
+        contribute(tint, to: CorePoints.ShapeTints.self)
+    }
 }
 
 /// Registers things for one shape kind; everything is stamped with that kind.

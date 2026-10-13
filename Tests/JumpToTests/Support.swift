@@ -33,6 +33,19 @@ func titled() -> Contributor {
 /// corral have none.
 let cardTint = NSColor.systemTeal
 
+/// The tint a frozen shape has of its own, standing in for a color a shape holds (CanvasTesting's
+/// `Frozen` flag): what a plugin's `shapeTints` gives, here a color the test can change, then say so.
+@MainActor final class OwnTint {
+    var color: NSColor = .systemRed
+}
+
+/// Declares the flag and gives every frozen shape `tint.color` as its own tint.
+@MainActor func ownTints(_ tint: OwnTint) -> [any CanvasPlugin] {
+    [FreezingPlugin(), Contributor(id: "own-tints") { r in
+        r.shapeTints { record, _ in record[Frozen.self] == true ? tint.color : nil }
+    }]
+}
+
 /// What opening a board takes (keys, the selection, the panel, menus), titles, Topology and Boards,
 /// then Jump To, and the titles of the fixtures.
 @MainActor func jumpPlugins() -> [any CanvasPlugin] {
@@ -84,8 +97,8 @@ func storyFile() -> CanvasFile {
 /// The view's size in these tests.
 let viewSize = CGSize(width: 1000, height: 700)
 
-@MainActor func storyHarness(file: CanvasFile = storyFile()) throws -> EditorHarness {
-    let h = try EditorHarness(plugins: jumpPlugins(), file: file)
+@MainActor func storyHarness(file: CanvasFile = storyFile(), more: [any CanvasPlugin] = []) throws -> EditorHarness {
+    let h = try EditorHarness(plugins: jumpPlugins() + more, file: file)
     h.editor.viewportDidResize(to: viewSize)
     return h
 }

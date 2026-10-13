@@ -4,8 +4,8 @@ import Foundation
 /// The types the rows, the card, the panel and the check are built against (board 5 of the wireframes),
 /// as schema texts and fixed ids: strings and ids only, so every test target (TypesTests, StickyNotesTests,
 /// the gallery, the benchmarks) reads the same texts and a state looks the same in rows, card, panel and
-/// gallery. The ids are fixed so a type's color is fixed (`TypeColors`: Person blue, Address orange,
-/// Employee purple, Order green, KindsA teal, KindsB magenta, Wide gold). A test adds them as types
+/// gallery. The ids are fixed so a type's color is fixed (`TypeColors`: Person orange, Address yellow,
+/// Employee green, Order teal, KindsA blue, KindsB indigo, Wide purple). A test adds them as types
 /// (`fieldEditor()` in TypesTests does) and makes Employee a Person.
 public enum FieldFixtures {
     /// A type as a note would hold it: its id, its title, its words and its JSON Schema.

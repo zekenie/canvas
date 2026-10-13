@@ -175,7 +175,8 @@ func namesPlugin() -> Contributor {
 
 /// An editor of `file` with the keyboard and the selection (a hover), Topology, the fixtures and the
 /// engine, then Neighbors and a plugin that gives it `lights`.
-@MainActor func neighborHarness(_ file: CanvasFile, lights: [NeighborLight] = testLights(), queries: Bool = true) throws -> EditorHarness {
+@MainActor func neighborHarness(_ file: CanvasFile, lights: [NeighborLight] = testLights(), queries: Bool = true,
+                                  more: [any CanvasPlugin] = []) throws -> EditorHarness {
     try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), LinksPlugin(), PocketsPlugin(), CorralsPlugin(),
                                 NamingPlugin(), graphPlugin()] + (queries ? [QueriesPlugin()] : []) + [NeighborsPlugin(), lightsPlugin(lights)], file: file)
 }
@@ -183,11 +184,12 @@ func namesPlugin() -> Contributor {
 /// The same editor with the detail panel, the lists of what's connected to a shape in it
 /// (`NeighborDetailsPlugin`), the table of contents, where a memo's row is its text, and, with the
 /// engine, captions that name its shapes in the engine's rows.
-@MainActor func listHarness(_ file: CanvasFile, lights: [NeighborLight] = testLights(), queries: Bool = true) throws -> EditorHarness {
+@MainActor func listHarness(_ file: CanvasFile, lights: [NeighborLight] = testLights(), queries: Bool = true,
+                                  more: [any CanvasPlugin] = []) throws -> EditorHarness {
     try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), LinksPlugin(), PocketsPlugin(), CorralsPlugin(),
                                 NamingPlugin(), graphPlugin(), DetailPanelPlugin(), TableOfContentsPlugin(), memoRowsPlugin()]
                           + (queries ? [QueriesPlugin(), namesPlugin()] : [])
-                          + [NeighborsPlugin(), lightsPlugin(lights), NeighborDetailsPlugin()], file: file)
+                          + [NeighborsPlugin(), lightsPlugin(lights), NeighborDetailsPlugin()] + more, file: file)
 }
 
 

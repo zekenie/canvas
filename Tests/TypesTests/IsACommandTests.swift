@@ -3,7 +3,10 @@ import Adornments
 import CanvasTesting
 import CoreGraphics
 import Foundation
+import AppKit
+import Colors
 import Mentions
+import Palette
 import SlashCommands
 import TestKit
 import Titles
@@ -37,6 +40,21 @@ private struct ChitsPlugin: CanvasPlugin {
             chit.typeable()
         }
     }
+}
+
+/// A chip's color as it is drawn in an appearance, as hex.
+@MainActor private func drawn(_ color: NSColor?, dark: Bool) -> String? {
+    var found: String?
+    NSAppearance(named: dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
+        found = color.flatMap { NSColor(cgColor: $0.cgColor) }.flatMap { $0.usingColorSpace(.sRGB) }
+            .map { RGB($0.redComponent, $0.greenComponent, $0.blueComponent).hexString }
+    }
+    return found
+}
+
+/// The color of the row `/is-a` lists for the type titled Person.
+@MainActor private func personChip(_ editor: CanvasEditor, on id: ShapeID) throws -> NSColor? {
+    try isA(editor, on: id).choices().first { $0.title == "Person" }?.chip
 }
 
 @MainActor private func isA(_ editor: CanvasEditor, on id: ShapeID) throws -> OfferedSlashCommand {
@@ -130,10 +148,27 @@ private struct ChitsPlugin: CanvasPlugin {
         let rows = try isA(editor, on: ann).choices()
         expectEqual(rows.map(\.title), ["Type", "Person", "Untitled"])
         expectEqual(rows[0].chip, TypesStyle.grayChip)
-        expectEqual(rows[1].chip, TypeColors.base(person))
+        expectEqual(rows[1].chip, editor.types?.look(of: person).row)
         expectEqual(rows[2].chip, TypesStyle.grayChip)
-        expectEqual(rows[1].chip, TypeColors.solid(person).color, "the pill's color")
+        expectEqual(rows[1].chip, editor.types?.look(of: person).solid.color, "the pill's color")
         _ = untitled
+    },
+    test("a type whose shape holds a color is that color in the list: its solid, a hex value too; a name the file lacks is the id's") {
+        let editor = try typeEditor(more: [Contributor(id: "memo-colors") { $0.colorable(Memo.self) }, ColorsPlugin()])
+        let person = editor.addType(TypeSchemaProperty.starter, title: "Person")
+        let ann = editor.addInstance("Ann", of: [])
+        let byId = try require(editor.types).look(of: person)
+        expectEqual(try personChip(editor, on: ann), byId.row)
+        let held: ShapeColor = TypeColors.name(of: person) == .green ? .teal : .green
+        editor.setColor(held, of: [person])
+        let swatch = try require(BuiltInColors.named(try require(held.name))).swatch
+        expectEqual(try personChip(editor, on: ann), try require(editor.types).look(of: person).row)
+        expectEqual(drawn(try personChip(editor, on: ann), dark: false), swatch.solid.light.hexString, "the color's solid")
+        expectEqual(drawn(try personChip(editor, on: ann), dark: true), swatch.solid.dark.hexString, "in the dark too")
+        editor.setColor(.value(RGB(hex: 0x4465E9)), of: [person])
+        expectEqual(drawn(try personChip(editor, on: ann), dark: false), Swatch(RGB(hex: 0x4465E9)).solid.light.hexString)
+        editor.transact("Color") { $0.update(person) { $0[ColorProperty.self] = .named("chartreuse") } }
+        expectEqual(try personChip(editor, on: ann), byId.row)
     },
     test("a shape of a kind that cannot be a type is offered no Type; with no types in the file the list is empty") {
         let editor = try typeEditor(more: [ChitsPlugin()])

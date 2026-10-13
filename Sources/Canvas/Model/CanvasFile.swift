@@ -7,6 +7,9 @@
 /// id alone finds a shape (`board(containing:)`, `record(_:)`). A board with no shapes isn't kept: a
 /// board that isn't here is empty, so a shape's board exists as soon as the shape does.
 ///
+/// It also holds what plugins keep on the file as a whole (`FileProperty`: `file[P.self]`), which is
+/// no board's.
+///
 /// Every walk up or down the tree is a loop that stops at a board it has already met, so a file of
 /// any depth, or one whose boards hold each other's owners (only a hand-edited file can), is safe.
 public struct CanvasFile: Equatable, Sendable {
@@ -19,6 +22,9 @@ public struct CanvasFile: Equatable, Sendable {
     /// shapes, or under a key that isn't a shape's id), by key: written back as they were, never
     /// shown. A board a shape comes to own under the same key takes its place.
     public internal(set) var unreadableBoards: [String: JSONValue] = [:]
+    /// The values plugins keep on the file as a whole (`FileProperty`): those that differ from their
+    /// defaults, and those the app can't use, kept as they were.
+    var fileValues = FileValues()
     /// Which board each shape is on.
     private var locations: [ShapeID: BoardID] = [:]
     /// Each board's revision: the stamp it got when its shapes last changed.
@@ -44,6 +50,23 @@ public struct CanvasFile: Equatable, Sendable {
         guard let owner = board.owner else { return root }
         return children[owner] ?? CanvasDocument()
     }
+
+    /// A value a plugin keeps on the file as a whole (`FileProperty`): what the file holds, else the
+    /// property's default (also for one kept aside, `keptFileValues`). An editor's file is read here
+    /// (`editor.file[P.self]`) and changed only in a transaction (`transaction.setFileValue`);
+    /// setting it here is for a file of one's own (one being made, or read). Setting the default
+    /// takes the value off the file, and setting one that's kept aside does nothing.
+    public subscript<P: FileProperty>(_ property: P.Type) -> P.Value {
+        get { fileValues[P.self] }
+        set { fileValues[P.self] = newValue }
+    }
+
+    /// The file properties the file holds a value for (one that differs from its default), by key.
+    public var fileValueKeys: [PropertyKey] { fileValues.keys.sorted { $0.rawValue < $1.rawValue } }
+
+    /// The file properties the file holds a value for that the app can't use, kept as it was read
+    /// and written back so (`LoadReport.keptFileValues`), by key.
+    public var keptFileValues: [PropertyKey] { fileValues.kept.keys.sorted { $0.rawValue < $1.rawValue } }
 
     /// The board a shape is on, whichever it is; nil for a shape that isn't in the file.
     public func board(containing id: ShapeID) -> BoardID? { locations[id] }
@@ -156,7 +179,7 @@ public struct CanvasFile: Equatable, Sendable {
     public var shapeCount: Int { locations.count }
 
     public static func == (a: Self, b: Self) -> Bool {
-        a.root == b.root && a.children == b.children && a.unreadableBoards == b.unreadableBoards
+        a.root == b.root && a.children == b.children && a.unreadableBoards == b.unreadableBoards && a.fileValues == b.fileValues
     }
 
     /// The root, then each board in `children`.
@@ -234,8 +257,9 @@ public struct CanvasFile: Equatable, Sendable {
     }
 
     /// Puts a step's change in place, as undo and redo do: its board's shapes (`CanvasDocument.apply`),
-    /// every board it names whole, and the entries that didn't read as boards. The file must be as
-    /// the delta's `before` side has it. Every board it changes gets a new revision.
+    /// every board it names whole, the entries that didn't read as boards, and the file's values
+    /// (`FileProperty`). The file must be as the delta's `before` side has it. Every board it changes
+    /// gets a new revision.
     public mutating func apply(_ delta: DocumentDelta) {
         var document = self[delta.board]
         document.apply(delta)
@@ -253,6 +277,7 @@ public struct CanvasFile: Equatable, Sendable {
         if !delta.changes.isEmpty { set(document, for: delta.board, changes: changes) }
         for (board, change) in delta.boards where !change.after.shapes.isEmpty { fill(board, with: change.after) }
         for (key, entry) in delta.unreadableBoards { unreadableBoards[key] = entry.after }
+        for (key, value) in delta.fileValues { fileValues[key] = value.after }
     }
 
     /// Takes every shape off a board, the root too.

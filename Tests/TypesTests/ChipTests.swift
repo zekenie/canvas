@@ -58,13 +58,13 @@ import Types
         let a = chips(editor, ann)
         expect(a[0].rect.maxX < a[1].rect.minX, "side by side: \(a.map(\.rect))")
         expectEqual(a.map(\.tag), [AdornmentTag(employee), AdornmentTag(person)], "told apart by the type they stand for")
-        expectEqual(a.map(\.label.tint), [TypeColors.light(employee), TypeColors.light(person)], "each in its type's color")
+        expectEqual(a.map(\.label.tint), [editor.types?.look(of: employee).light, editor.types?.look(of: person).light], "each in its type's color")
         expect(a.allSatisfy { $0.label.tint?.style == .light }, "light")
         // A type that is an instance: the pill, then the chips of the types it builds on.
         editor.addTypeLink(person, to: employee)
         expectEqual(texts(editor, employee), ["Person"])
         expectEqual(editor.adornmentFrames(of: employee).map { $0.label.text ?? "" }, ["Employee", "Person"], "its pill, then the chip")
-        expectEqual(editor.adornmentFrames(of: employee).first?.label.tint, TypeColors.solid(employee), "the pill is solid, in its own color")
+        expectEqual(editor.adornmentFrames(of: employee).first?.label.tint, editor.types?.look(of: employee).solid, "the pill is solid, in its own color")
     },
     test("a chip reads its type's live title: renamed, it changes; untitled, it says so; undone, it is back") {
         let editor = try typeEditor()

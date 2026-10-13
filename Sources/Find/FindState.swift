@@ -1,3 +1,4 @@
+import AppKit
 import Canvas
 import CoreGraphics
 import Foundation
@@ -42,6 +43,10 @@ public final class FindState {
     public private(set) var focusRequest = 0
     /// Whether the index is still being built: the field shows a spinner.
     public private(set) var isIndexing = false
+    /// Bumped when a row's symbol may have another tint (a result shape's commit, the file's
+    /// colors): a row reads it, to be drawn again, since it reads its shape's tint as it's drawn and
+    /// keeps none.
+    public private(set) var tintRevision = 0
 
     /// The board searched: the one shown when the query last changed.
     @ObservationIgnored public private(set) var scope: BoardID = .root
@@ -514,6 +519,27 @@ extension FindState: EditorService {
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         editor.topology?.catchUp(changes)
         index.hear(changes)
+        // A move changes no tint: a drag's every event is a look at the results it touched, if any.
+        if !places.isEmpty, changes.changed.contains(where: { places[$0] != nil && !changes.moved.contains($0) })
+            || changes.elsewhere.contains(where: { places[$0] != nil }) {
+            tintRevision &+= 1
+        }
+    }
+
+    /// A result's symbol in the panel: its kind's, in the tint the shape has (`editor.tint(of:)`: its
+    /// kind's unless it has a color of its own). Read as a row is drawn, never kept, and observed through
+    /// `tintRevision`, so the row is drawn again when the shape's tint may have changed.
+    public func symbol(of id: ShapeID) -> (systemImage: String?, tint: NSColor?) {
+        _ = tintRevision
+        return editor.withoutObservingDocument {
+            guard let record = editor.file.record(id) else { return (nil, nil) }
+            return (editor.registry.label(of: record.kind).systemImage, editor.tint(of: record))
+        }
+    }
+
+    /// The file's colors changed: the rows' symbols are drawn again.
+    public func shapeTintsDidChange(in editor: CanvasEditor) {
+        tintRevision &+= 1
     }
 
     /// The index is the file's: nothing, but a file put in place, read again. The scope stays.

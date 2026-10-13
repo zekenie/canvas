@@ -3,6 +3,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Geometry
+import Palette
 import TestKit
 
 // A tinted label (`AdornmentLabel.tinted(_:)`): a capsule in a fixed color, solid or light, text and
@@ -13,6 +14,12 @@ let tintColor = NSColor(srgbRed: 0.10, green: 0.40, blue: 0.90, alpha: 1)
 let tintInk = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 0.92, alpha: 1) : NSColor(white: 0.08, alpha: 1) }
 let solidTint = AdornmentTint(tintColor, style: .solid)
 let lightTint = AdornmentTint(tintColor, ink: tintInk, style: .light)
+/// A color that follows the appearance (blue on the light canvas, orange on the dark), with an ink that does too.
+let followingColor = NSColor(light: RGB(hex: 0x1A66E6), dark: RGB(hex: 0xE6661A))
+let followingSolid = AdornmentTint(followingColor, ink: tintInk, style: .solid)
+let followingLight = AdornmentTint(followingColor, ink: tintInk, style: .light)
+/// A solid tint with a black ink, as a yellow pill has.
+let blackInkTint = AdornmentTint(NSColor(srgbRed: 0.95, green: 0.72, blue: 0.02, alpha: 1), ink: NSColor(white: 0, alpha: 1), style: .solid)
 
 /// The board drawn in either appearance (`render(_:)` is the light one).
 @MainActor func render(_ h: EditorHarness, dark: Bool) -> NSBitmapImageRep {
@@ -163,6 +170,51 @@ func luminance(_ color: [Int]) -> Int { color.prefix(3).reduce(0, +) / 3 }
         let place = CGRect(x: frame.minX + 7, y: frame.minY + 2, width: 11, height: 14)
         let white = extremes(render(h, dark: false), in: place).lightest
         expect(white > 190, "white on the color: \(white)")
+    },
+    test("a solid tint's ink is white unless it says another; its text and symbol are drawn in it") {
+        expectEqual(AdornmentTint(tintColor, style: .solid).ink, NSColor.white, "white by default")
+        let (h, _, frame) = try tintedBoard(AdornmentLabel("Person", systemImage: "curlybraces").tinted(blackInkTint))
+        let drawn = render(h)
+        let fill = pixel(drawn, at: capsulePoint(frame))
+        expect(zip(fill, [242, 184, 5]).allSatisfy { abs($0 - $1) <= 4 }, "the capsule: \(fill)")
+        expect(extremes(drawn, in: frame.insetBy(dx: 22, dy: 4)).darkest < 70, "black text on it")
+        let place = CGRect(x: frame.minX + 7, y: frame.minY + 2, width: 11, height: 14)
+        expect(extremes(drawn, in: place).darkest < 90, "and a black symbol: \(extremes(drawn, in: place))")
+    },
+    test("a tint whose color follows the appearance fills its capsule in each, hovered and pressed too, and its ink follows") {
+        for (tint, name) in [(followingSolid, "solid"), (followingLight, "light")] {
+            let (h, _, frame) = try tintedBoard(AdornmentLabel("Person", systemImage: "curlybraces").tinted(tint))
+            let plain = try adornedHarness([Contributor(id: "none") { $0.adornmentsForEveryShape(Chips.self) { _, _ in [] } }])
+            plain.add(Box(boxFrame))
+            // Dark first, then light, then dark again: nothing kept for one appearance is drawn in the other.
+            for dark in [true, false, true] {
+                let drawn = render(h, dark: dark), canvas = render(plain, dark: dark)
+                let fill = pixel(drawn, at: capsulePoint(frame)), under = pixel(canvas, at: capsulePoint(frame))
+                let color = dark ? [230, 102, 26] : [26, 102, 230]
+                let expected = tint.style == .solid ? color : zip(under.prefix(3), color).map { Int((Double($0) * 0.86 + Double($1) * 0.14).rounded()) }
+                expect(zip(fill, expected).allSatisfy { abs($0 - $1) <= 4 }, "\(name), dark \(dark): \(fill) is not \(expected)")
+                let text = extremes(drawn, in: frame.insetBy(dx: 22, dy: 4))
+                if dark { expect(text.lightest > 200, "\(name): the ink is light in the dark: \(text)") } else { expect(text.darkest < 60, "\(name): the ink is dark in the light: \(text)") }
+            }
+            let point = capsulePoint(frame)
+            h.move(to: CGPoint(x: frame.midX, y: frame.midY))
+            let lightHovered = pixel(render(h, dark: false), at: point), darkHovered = pixel(render(h, dark: true), at: point)
+            expect(lightHovered[2] > lightHovered[0], "\(name): hovered in the light is still blue: \(lightHovered)")
+            expect(darkHovered[0] > darkHovered[2], "\(name): hovered in the dark is still orange: \(darkHovered)")
+        }
+    },
+    test("fills are made once an appearance: a frame in each again makes no layout, and the face is kept") {
+        let (h, _, frame) = try tintedBoard(AdornmentLabel("Person").tinted(followingSolid))
+        _ = render(h, dark: false)
+        _ = render(h, dark: true)
+        #if DEBUG
+        let made = h.editor.adornmentFacesMade
+        #endif
+        for dark in [false, true, false, true] { _ = render(h, dark: dark) }
+        #if DEBUG
+        expectEqual(h.editor.adornmentFacesMade, made, "no face made again")
+        #endif
+        expectEqual(h.editor.camera.toView(try require(h.editor.rects(h.editor.document.shapes[0].id).first)), frame)
     },
     test("a placeholder's text is dimmed on both") {
         for tint in [solidTint, lightTint] {

@@ -42,9 +42,11 @@ enum TypeChoices {
         }
         for (index, type) in (editor.types?.choices(for: owner) ?? []).enumerated() {
             // A type's color, `Untitled` gray: what its pill and the chips of its instances are.
+            let look = editor.types?.look(of: type.type)
             rows.append(SlashChoice(type.type.rawValue.uuidString, title: type.name ?? TypesStyle.untitledType, symbol: TypesStyle.typeSymbol,
                                     group: 1, step: TypesStyle.addType, isPreferred: index == 0,
-                                    chip: type.name == nil ? TypesStyle.grayChip : TypeColors.base(type.type)))
+                                    chip: type.name == nil ? TypesStyle.grayChip : (look?.row ?? TypesStyle.grayChip),
+                                    chipInk: type.name == nil ? nil : look?.rowInk))
         }
         return rows
     }

@@ -1,5 +1,6 @@
 import Canvas
 import CanvasTesting
+import AppKit
 import CoreGraphics
 import JumpTo
 import Selection
@@ -29,6 +30,27 @@ import TextEditing
         expectEqual(box.systemImage, "square.dashed", "no label symbol: the placeholder")
         expect(box.tint == nil, "a box declares no tint")
         expectEqual(box.kindName, "box")
+    },
+    test("a shape with a tint of its own is listed in it, its kind's otherwise; a change to it, by a commit or to what the tint is, updates the rows") {
+        let own = OwnTint()
+        let h = try storyHarness(file: CanvasFile(root: CanvasDocument(shapes: [shape(1, Card(frame(100, 100)), titled: "Ledger"),
+                                                                                 shape(2, Box(frame(300, 100)), titled: "Ledger box")])),
+                                 more: ownTints(own))
+        /// The tints of the rows the open palette has, without asking again.
+        @MainActor func tints() -> [NSColor?] { h.jump.rows.compactMap(\.candidate).map(\.tint) }
+        _ = h.candidates("ledger")
+        expectEqual(tints(), [cardTint, nil], "kinds' own")
+        h.editor.freeze([id(1), id(2)])
+        expectEqual(tints(), [own.color, own.color], "a shape's own, over its kind's: the commit makes the open palette's rows again")
+        own.color = .systemPurple
+        h.editor.shapeTintsDidChange()
+        expectEqual(tints(), [.systemPurple, .systemPurple], "what the tint is changed with no commit: the open palette's rows are made again")
+        h.editor.freeze([id(1)], false)
+        expectEqual(tints(), [cardTint, .systemPurple], "a commit that takes it away")
+        h.jump.close()
+        own.color = .systemGreen
+        h.editor.shapeTintsDidChange()
+        expectEqual(h.candidates("ledger").map(\.tint), [cardTint, .systemGreen], "a palette opened after reads it as it is now")
     },
     test("several pieces go in order along the path, names skipped as they like, the last in the shape's own title") {
         let h = try storyHarness()

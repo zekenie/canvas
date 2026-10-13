@@ -297,7 +297,7 @@ extension FlatPocketDefinition: ShapeDefinition {
         expectEqual(flat.editor.document.shapes.map(\.kind), [Pocket.kind])
         expectEqual(flat.file.children, [:])
     },
-    test("a payload in a newer format (6) is nothing to paste: ⌘V passes the key on") {
+    test("a payload in a newer format than the app reads is nothing to paste: ⌘V passes the key on") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
         let nest = Nest()
@@ -307,7 +307,7 @@ extension FlatPocketDefinition: ShapeDefinition {
         let json = try require(pasteboard.data(forType: type).flatMap { String(data: $0, encoding: .utf8) })
         expect(json.contains(#""format" : 4"#))
         pasteboard.clearContents()
-        pasteboard.setData(Data(json.replacingOccurrences(of: #""format" : 4"#, with: #""format" : 6"#).utf8), forType: type)
+        pasteboard.setData(Data(json.replacingOccurrences(of: #""format" : 4"#, with: #""format" : \#(BoardCodec.format + 1)"#).utf8), forType: type)
         expect(!h.editor.canPaste)
         expect(!h.command("v"))
         expectEqual(h.file, nest.file)

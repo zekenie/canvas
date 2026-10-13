@@ -1,7 +1,9 @@
 import Canvas
+import Colors
 import CoreGraphics
 import Keyboard
 import Mentions
+import Palette
 import Selection
 import Titles
 import Transform
@@ -61,8 +63,12 @@ public struct FramesPlugin: ListedPlugin {
             // its minimum, however it's drawn.
             let place = frame.placement(size: Frame.defaultSize, minimumSize: Frame.minimumSize) { Frame() }
             frame.tool(label: "Frame", systemImage: Frame.systemImage, shortcut: "f", placing: place) { _ in FrameTool(placing: place) }
+            frame.colorable()                                               // a color of its own; none, the neutral surface
             frame.tint(FrameStyle.tint)                                     // its gray, wherever it's listed by its kind
             frame.title(placeholderInPill: Frame.pillPlaceholder, coverSurface: FrameStyle.fill)  // Titles keeps its name, in a pill above it
+            frame.titleCoverSurface { shape, context in       // a colored frame's cover is drawn over its own surface
+                context.service(ColorBook.self)?.color(\.surface, for: shape[ColorProperty.self], kind: Frame.kind)
+            }
             frame.mentionable()                                             // by its name; followed, it's gone to
             frame.resizable(minimumSize: place.minimumSize)                 // eight handles, Selection's
             frame.frameRow()                                                // the table of contents, named by Titles

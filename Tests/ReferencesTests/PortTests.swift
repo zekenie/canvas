@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Colors
 import Connections
 import DetailPanel
 import Geometry
@@ -34,7 +35,7 @@ let channelsPlugin = Contributor(id: "pill-channels") { registrar in
 }
 
 @MainActor private func portHarness() throws -> EditorHarness {
-    try referenceHarness([TypesPlugin(), ArrowsPlugin(), ArrowPortsPlugin(), channelsPlugin])
+    try referenceHarness([TypesPlugin(), ColorsPlugin(), ArrowsPlugin(), ArrowPortsPlugin(), channelsPlugin])
 }
 
 private let aMiddle = CGPoint(x: 175, y: 150)

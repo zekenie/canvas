@@ -1,4 +1,5 @@
 import AppKit
+import Palette
 import QueryTranslation
 import TextEditing
 
@@ -285,8 +286,4 @@ func resolved(in appearance: NSAppearance, _ make: () -> NSColor) -> NSColor {
     var color = NSColor.clear
     appearance.performAsCurrentDrawingAppearance { color = make() }
     return color
-}
-
-extension NSAppearance {
-    var isDark: Bool { bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
 }

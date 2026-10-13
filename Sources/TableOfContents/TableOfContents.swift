@@ -163,6 +163,13 @@ public struct ContentsMoveContribution {
 public struct ContentsContext {
     let editor: CanvasEditor
     public func service<S: EditorService>(_ type: S.Type) -> S? { editor.service(S.self) }
+
+    /// The color of the shape's symbol in its row: the one it has of its own where a plugin gives it
+    /// one, else its kind's (`editor.tint(of:)`); nil for a shape with neither. A row that asks is
+    /// made again when the shape changes and when the file's colors do.
+    public func color<P: ShapeProps>(of shape: ShapeRecord<P>) -> Color? {
+        editor.tint(of: shape).map { Color(nsColor: $0) }
+    }
 }
 
 /// A row as a kind drew it, and, when it's a plain `ContentsLabel`, that label, for tests to read.
@@ -240,6 +247,19 @@ extension ShapeRegistrar {
         @ViewBuilder _ row: @escaping (ShapeRecord<Definition.Props>) -> Row
     ) {
         contribute(ContentsContribution(Definition.Props.self, isListed: isListed, parent: parent, row: row), to: ContentsRows.self)
+    }
+
+    /// This kind's row, a label that reads the editor's services besides the shape, but no other
+    /// shape: `context.color(of:)`, the color of its symbol, is the usual reason. As the first form
+    /// above, a commit that doesn't change the shape keeps its row.
+    public mutating func contentsRow(
+        when isListed: @escaping @MainActor (ShapeRecord<Definition.Props>) -> Bool = { _ in true },
+        nestedUnder parent: (@MainActor (ShapeRecord<Definition.Props>) -> ShapeID?)? = nil,
+        _ row: @escaping @MainActor (ShapeRecord<Definition.Props>, ContentsContext) -> ContentsLabel
+    ) {
+        contribute(ContentsContribution(Definition.Props.self, isListed: isListed, parent: parent,
+                                        row: { record, context in record.typed(as: Definition.Props.self).map { ResolvedRow(row($0, context)) } ?? ResolvedRow(EmptyView()) }),
+                   to: ContentsRows.self)
     }
 
     /// This kind's row, read from more than this shape: the builder gets what `ContentsContext`

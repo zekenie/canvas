@@ -35,7 +35,7 @@ extension TypeChips {
     static func label(for link: TypeLink, in types: TypeIndex) -> AdornmentLabel {
         let tag = AdornmentTag(link.shape)
         switch types.name(of: link) {
-        case .live(let title?): return AdornmentLabel(title).tagged(tag).tinted(TypeColors.light(link.shape))
+        case .live(let title?): return AdornmentLabel(title).tagged(tag).tinted(types.look(of: link.shape).light)
         case .live(nil): return AdornmentLabel(placeholder: TypesStyle.untitledType).tagged(tag)
         case .missing(let lastKnown): return AdornmentLabel(lastKnown ?? TypesStyle.deletedType).missing().tagged(tag)
         }

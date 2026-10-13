@@ -44,6 +44,8 @@ final class LayoutSource {
     let lend: @MainActor (ObjectIdentifier) -> (any EditorService)?
     /// A shape on any board of the file, as this source's reader sees the file.
     let shape: @MainActor (ShapeID) -> AnyShapeRecord?
+    /// The file's own values (`FileProperty`), as this source's reader sees the file.
+    let fileValues: @MainActor () -> FileValues
     /// Whether a shape isn't as the editor keeps it; nil for the editor's own committed reading.
     let isChanged: (@MainActor (ShapeID) -> Bool)?
     var isCommitted: Bool { isChanged == nil }
@@ -52,11 +54,13 @@ final class LayoutSource {
     let fresh: LaidOutSizes?
 
     init(inputs: LayoutInputs, sizes: LaidOutSizes, lend: @escaping @MainActor (ObjectIdentifier) -> (any EditorService)?,
-         shape: @escaping @MainActor (ShapeID) -> AnyShapeRecord?, isChanged: (@MainActor (ShapeID) -> Bool)? = nil) {
+         shape: @escaping @MainActor (ShapeID) -> AnyShapeRecord?, fileValues: @escaping @MainActor () -> FileValues,
+         isChanged: (@MainActor (ShapeID) -> Bool)? = nil) {
         self.inputs = inputs
         self.sizes = sizes
         self.lend = lend
         self.shape = shape
+        self.fileValues = fileValues
         self.isChanged = isChanged
         fresh = isChanged == nil ? nil : LaidOutSizes()
     }
@@ -123,6 +127,13 @@ public struct LayoutReading {
     /// editor's, or mid-transaction as the transaction leaves it (what it inserted, changed and
     /// moved; nil for what it deleted).
     public func shape(inFile id: ShapeID) -> AnyShapeRecord? { source.shape(id) }
+
+    /// One of the file's own values (`FileProperty`), as whoever is laying the shape out sees the
+    /// file: the editor's, or mid-transaction as the transaction leaves it; the property's default
+    /// for a file that holds none. Nothing a shape is laid out by is worked out again because a file
+    /// value changed: the plugin that reads one here says so when it does
+    /// (`editor.shapesDidChangeLayout`, on hearing `ChangeSet.fileValues`), as for any layout input.
+    public func fileValue<P: FileProperty>(_: P.Type) -> P.Value { source.fileValues()[P.self] }
 
     /// One of the editor's services.
     public func service<S: EditorService>(_: S.Type) -> S? { source.lend(ObjectIdentifier(S.self)) as? S }
@@ -249,7 +260,7 @@ extension ShapeContext {
         let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         let source = LayoutSource(inputs: layout.inputs, sizes: layout.sizes, lend: layout.lend,
                                   shape: { byID[$0] ?? (removed.contains($0) ? nil : layout.shape($0) ?? beyond?($0)) },
-                                  isChanged: { id in
+                                  fileValues: layout.fileValues, isChanged: { id in
             byID[id] != nil || layout.isChanged?(id) == true
                 || (!removed.contains(id) && layout.shape(id) == nil && beyond?(id) != nil)
         })

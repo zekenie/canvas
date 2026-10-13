@@ -1,4 +1,6 @@
 import AppKit
+import Colors
+import Palette
 
 /// The frame's look: a quiet region on the canvas, a surface with a thin neutral border and no
 /// shadow, a step up from the canvas as a panel is. World units, but for the border's width and how
@@ -38,24 +40,22 @@ enum FrameStyle {
 
     /// A frame at `rect` (world units), at `zoom`: its surface, and its border just inside its edge,
     /// so nothing is drawn outside it; with `fillOpacity` under 1, a frame being drawn.
-    static func draw(_ rect: CGRect, zoom: CGFloat, fillOpacity: CGFloat = 1, in cg: CGContext) {
+    /// A colored frame (`colors`) has the color's surface and, on its border, its solid; none, the
+    /// neutral pair above.
+    static func draw(_ rect: CGRect, zoom: CGFloat, colors: SwatchColors? = nil, fillOpacity: CGFloat = 1, in cg: CGContext) {
         cg.saveGState()
         cg.addPath(path(rect))
-        let surface = fill.cgColor
+        let surface = colors?.surface ?? fill.cgColor
         cg.setFillColor(fillOpacity < 1 ? surface.copy(alpha: surface.alpha * fillOpacity) ?? surface : surface)
         cg.fillPath()
         let width = borderWidth / zoom
         let inset = rect.insetBy(dx: width / 2, dy: width / 2)
         if inset.width > 0, inset.height > 0 {
             cg.addPath(path(inset, radius: cornerRadius - width / 2))
-            cg.setStrokeColor(border.cgColor)
+            cg.setStrokeColor(colors?.solid ?? border.cgColor)
             cg.setLineWidth(width)
             cg.strokePath()
         }
         cg.restoreGState()
     }
-}
-
-extension NSAppearance {
-    fileprivate var isDark: Bool { bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
 }

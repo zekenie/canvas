@@ -78,9 +78,12 @@ extension ReferenceCondition {
     /// app can't show). Public when `registry.isPublic` says so.
     /// A dynamic one's condition follows how its query was answered (`status`: `ReferenceState`'s,
     /// nil read as not answered yet).
+    /// `appearance` says how a shape the reference stands for shows (the registry's mention
+    /// appearance, the default): the service's is the editor's, with the shape's own tint.
     @MainActor
     static func of(_ props: Reference, status: ReferenceStatus?, registry: Registry, lookup: (ShapeID) -> AnyShapeRecord?,
-                   isElsewhere: (ShapeID) -> Bool) -> ReferenceCondition {
+                   isElsewhere: (ShapeID) -> Bool, appearance appearanceOf: ((AnyShapeRecord) -> MentionAppearance?)? = nil) -> ReferenceCondition {
+        let appearanceOf = appearanceOf ?? { registry.mentionAppearance(of: $0) }
         switch props.mode {
         case .empty:
             return .empty
@@ -105,7 +108,7 @@ extension ReferenceCondition {
                 return .finding(text: text)
             case .answered(let matches):
                 guard matches.count > 0, let first = matches.ids.first else { return .noMatches(text: text) }
-                let appearance = props.all ? nil : lookup(first).flatMap { registry.mentionAppearance(of: $0) }
+                let appearance = props.all ? nil : lookup(first).flatMap(appearanceOf)
                 return .found(text: text, ReferenceFound(all: props.all, count: matches.count, ids: matches.ids, first: appearance))
             case .refused(let message):
                 return .refused(text: text, message: message)
@@ -117,7 +120,7 @@ extension ReferenceCondition {
             guard let record = lookup(target.id) else {
                 return isElsewhere(target.id) ? .unavailable(label: target.label) : .missing(label: target.label)
             }
-            guard let appearance = registry.mentionAppearance(of: record) else { return .unavailable(label: target.label) }
+            guard let appearance = appearanceOf(record) else { return .unavailable(label: target.label) }
             return registry.isPublic(record) ? .live(appearance) : .notPublic(appearance)
         }
     }

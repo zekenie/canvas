@@ -205,6 +205,57 @@ let boardType = "com.example.InfiniteCanvas.board"
         settleRunLoop()
         expect(!board.isDocumentEdited)
     },
+    test("a value a plugin keeps on the file saves with the board, opens with it, and goes back on a revert") {
+        try configureBoards(extra: [LetterheadPlugin()])
+        defer { try? configureBoards() }
+        let url = scratchURL("headed.canvasboard")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let board = BoardDocument()
+        defer { board.close() }
+        board.start(with: SampleBoard.document())
+        let plain = try board.data(ofType: boardType)
+        board.editor.transact("Head File") { $0.setFileValue(Letterhead.self, to: "Acme") }
+        expect(board.isDocumentEdited, "a file value edits the board")
+        let data = try board.data(ofType: boardType)
+        expectEqual(data, try BoardCodec(registry: board.editor.registry).encode(board.editor.file))
+        expect(data != plain)
+        let reopened = BoardDocument()
+        defer { reopened.close() }
+        try reopened.read(from: data, ofType: boardType)
+        expectEqual(reopened.editor.file[Letterhead.self], "Acme")
+        expectEqual(reopened.editor.file, board.editor.file)
+        expect(reopened.loadReport.isEmpty)
+        settleRunLoop()
+        expect(!reopened.isDocumentEdited)
+        expectEqual(try reopened.data(ofType: boardType), data)
+
+        // Saved with it, changed, and reverted: the saved value is back, unedited.
+        try data.write(to: url)
+        board.fileURL = url
+        board.editor.transact("Head File") { $0.setFileValue(Letterhead.self, to: "Apex") }
+        try board.revert(toContentsOf: url, ofType: boardType)
+        expectEqual(board.editor.file[Letterhead.self], "Acme")
+        settleRunLoop()
+        expect(!board.isDocumentEdited)
+        // Undone to none, the board saves as it did before it had one.
+        reopened.editor.transact("Head File") { $0.setFileValue(Letterhead.self, to: "") }
+        expectEqual(try reopened.data(ofType: boardType), plain)
+        reopened.editor.undo()
+        expect(!reopened.isDocumentEdited, "undone to what was read, it reads unedited")
+
+        // One the app can't use is kept, said, and saved back.
+        let unknown = String(decoding: data, as: UTF8.self).replacingOccurrences(of: #""letterhead" : {"#, with: #""confetti" : {"#)
+        let kept = BoardDocument()
+        try kept.read(from: Data(unknown.utf8), ofType: boardType)
+        expectEqual(kept.loadReport.keptFileValues.map(\.key), ["confetti"])
+        expectEqual(kept.editor.file.keptFileValues, ["confetti"])
+        let summary = try require(kept.loadReport.summary)
+        expectEqual(summary.message, "Some of this board can’t be used here.")
+        expectEqual(summary.details, "The file holds a value this app can’t use (confetti), kept as it was. Saving keeps it.")
+        settleRunLoop()
+        expect(!kept.isDocumentEdited)
+        expectEqual(String(decoding: try kept.data(ofType: boardType), as: UTF8.self), unknown)
+    },
     test("a board's window hosts its canvas, and the zoom, inspector and back commands reach it") {
         try configureBoards()
         let board = BoardDocument()

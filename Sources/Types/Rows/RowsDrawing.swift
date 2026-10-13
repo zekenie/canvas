@@ -326,7 +326,7 @@ extension RowBook {
             let rect = geometry.rect(row), name = geometry.nameRect(row), value = geometry.valueRect(row)
             switch item {
             case .field(let field):
-                if let tick = field.tick { drawTick(TypeColors.base(tick), in: rect, to: cg) }
+                if let tick = field.tick { drawTick(types?.look(of: tick).tick ?? TypesStyle.manyTick, in: rect, to: cg) }
                 let dotRoom = field.isNeeded ? TypesStyle.neededDotGap + TypesStyle.neededDotSize : 0
                 let line = FieldLines.line(field.name, field.isFaint ? .faint : .name, cutTo: max(0, name.width - dotRoom))
                 FieldLines.draw(line, at: name.minX, midY: rect.midY, in: cg)
@@ -341,7 +341,7 @@ extension RowBook {
                 if fold.isMore {
                     FieldLines.draw(FieldLines.line(fold.name + " ›", .kind), at: rect.minX, midY: rect.midY, in: cg)
                 } else {
-                    drawTick(fold.sources.count == 1 ? TypeColors.base(fold.sources[0]) : TypesStyle.manyTick, in: rect, to: cg)
+                    drawTick(fold.sources.count == 1 ? types?.look(of: fold.sources[0]).tick ?? TypesStyle.manyTick : TypesStyle.manyTick, in: rect, to: cg)
                     FieldLines.draw(FieldLines.line(fold.name, .faint, cutTo: name.width), at: name.minX, midY: rect.midY, in: cg)
                     let words = FieldLines.line(fold.value + " ›", .kind, cutTo: value.width)
                     FieldLines.draw(words, at: value.maxX - words.width, midY: rect.midY, in: cg)
