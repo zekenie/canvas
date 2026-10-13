@@ -97,10 +97,10 @@ import Validation
         selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
         topology             service TopologyIndex · edge type stands-for
         arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
-        subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
-        framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
-        references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
+        sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
+        subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
+        framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
+        references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
         adornments           service AdornmentState · service ChipFade · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         detail-panel         service DetailPanelState · host inspector
@@ -125,7 +125,7 @@ import Validation
         title-validation     service TitleIndex · ValidationRules
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
         locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
-        publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
+        publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ContentsMarks
         types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · edge type field-link · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · service RowBook · layout input type-rows · ShapeFaces · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape · title pill look → every shape
         type-validation      ValidationRules · ValidationRules · ValidationRules
         type-details         ShapeDetails · ShapeDetails · ShapeDetails
@@ -155,6 +155,7 @@ import Validation
         neighbors            service NeighborState · outlines
         arrow-lights         neighbor light · neighbor light
         mention-lights       neighbor light · neighbor light
+        neighbor-details     service NeighborList · ShapeDetails
         moving               /move-to /move-near → every shape · ContentsMoves
         reordering           ShapeContextMenus
         """)
@@ -166,7 +167,7 @@ import Validation
         let end = try require(guide.range(of: "\n```", range: start..<guide.endIndex)).lowerBound
         expectEqual(String(guide[start..<end]), try ShippedPlugins.registry(model: ScriptedLanguageModel()).report)
     },
-    test("every placed kind has a panel: a note its header, a subboard its own tab, a frame, an arrow and a reference only their headers; a type note its Schema tab; every nameable kind's header renames it") {
+    test("every placed kind has a panel: a note its header over the Connections tab, a subboard its own tab before it, a frame, an arrow and a reference that tab alone; a type note its Schema tab before it; every nameable kind's header renames it") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         let state = try require(h.editor.detailPanel)
         var panels: [String] = []
@@ -195,7 +196,8 @@ import Validation
         let type = h.editor.addTypeNote(TypeSchemaProperty.starter, frame: CGRect(x: 3400, y: 100, width: 200, height: 200))
         let typeLayout = state.layout(for: try require(h.editor.document[type]))
         panels.append("\(typeLayout.headerText): \(typeLayout.tabs.map(\.title).joined(separator: ", "))")
-        expectEqual(panels, ["(Note): ", "(Untitled Subboard): Board", "(Untitled Frame): ", "Arrow: ", "Reference: ", "(Note): Schema"])
+        expectEqual(panels, ["(Note): Connections", "(Untitled Subboard): Board, Connections", "(Untitled Frame): Connections", "Arrow: Connections", "Reference: Connections",
+                         "(Note): Schema, Connections"])
     },
     test("the table of contents lists the sample board: each note by its text, each arrow under the note it starts from") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())

@@ -13,6 +13,7 @@ import Geometry
 import LanguageModels
 import Locking
 import Mentions
+import Neighbors
 import Selection
 import ShippedTesting
 import Snapping
@@ -101,8 +102,8 @@ enum Budget {
     /// by none; and to validation's read after it.
     static let renameMentioned = 1.0
     /// The panel's layout of the shape it shows, read after a commit that changed a shape or two:
-    /// its status lines and whether its Mentioned In tab shows are read on every commit, and the
-    /// rest of its layout whenever they, or the shape, change.
+    /// its status lines and whichever of its sections have a condition on their showing are read on
+    /// every commit, and the rest of its layout whenever they, or the shape, change.
     static let panelAfterCommit = 1.0
     /// What a frame's previews drawn as paths add to it: at most `Style.previewPathShapes` shapes, some 2 µs each.
     static let previewPaths = 3.0
@@ -1099,7 +1100,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             }
         }
     },
-    test("the panel of a subboard mentioned 100 times, its Mentioned In tab showing, is read after a drag of another note and after a mentioner's rename in a millisecond") {
+    test("the panel of a subboard mentioned 100 times, its Connections tab showing, is read after a drag of another note and after a mentioner's rename in a millisecond") {
         for size in sizes {
             let document = generatedBoard(shapes: size)
             let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
@@ -1113,7 +1114,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             let other = try require(document.shapes.first { $0.kind == StickyNote.kind && !mentions.mentions(in: $0.id).contains(subboard) })
             let origin = try require(other.box?.origin)
             var layout = panel.layout(for: try require(editor.document[subboard]))
-            expect(layout.tabs.contains(.of(MentionsTab.self)), "the subboard shows what mentions it")
+            expect(layout.tabs.contains(.of(NeighborsTab.self)), "the subboard shows what it is connected to")
             var step = 0.0
             let afterDrag = median(runs: 21, prepare: {
                 step += 1
@@ -1125,13 +1126,9 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 editor.transact { $0.update(mentioner) { $0[TitleProperty.self] = "Mentioner \(n)" } }
             }
             let afterRename = median(runs: 21, prepare: rename) { layout = panel.layout(for: editor.document[subboard]!) }
-            // What the tab's list reads when a mentioner changes: every line again.
-            var lines: [MentionBacklink] = []
-            let backlinks = median(runs: 21, prepare: rename) { lines = mentions.backlinks(of: subboard) }
-            expectEqual(lines.first?.label, "Mentioner \(n)")
-            expect(layout.tabs.contains(.of(MentionsTab.self)))
-            report(String(format: "%6d shapes, the panel of a subboard mentioned %d times: after a drag event of another note %6.3f ms, after renaming a mentioner %6.3f (budget %.0f); its Mentioned In lines %6.3f",
-                          size, mentioners.count, afterDrag, afterRename, Budget.panelAfterCommit, backlinks))
+            expect(layout.tabs.contains(.of(NeighborsTab.self)))
+            report(String(format: "%6d shapes, the panel of a subboard mentioned %d times: after a drag event of another note %6.3f ms, after renaming a mentioner %6.3f (budget %.0f)",
+                          size, mentioners.count, afterDrag, afterRename, Budget.panelAfterCommit))
             if holdsToBudgets {
                 expectEqual(mentioners.count, 100)
                 expect(afterDrag < Budget.panelAfterCommit, "the panel of a subboard mentioned 100 times, after a drag event over \(size) shapes, took \(afterDrag) ms")

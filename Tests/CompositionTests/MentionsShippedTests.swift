@@ -179,7 +179,7 @@ extension CanvasEditor {
         h.editor.paste()
         expectEqual(h.editor.noteText(waiting.id)?.mentioned, [budget.id], "moved, not copied")
         expect(h.editor.mentions?.resolve(budget.id).isLive == true)
-        expectEqual(h.editor.mentions?.backlinks(of: budget.id).map(\.id), [waiting.id])
+        expectEqual(h.editor.mentions?.mentioners(of: budget.id), [waiting.id])
     },
     test("renaming a target redraws its row and the rows of the notes that mention it, and no other") {
         let pasteboard = NSPasteboard.withUniqueName()

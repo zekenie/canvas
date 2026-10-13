@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([lightTests, subjectTests, upkeepTests])
+runTests([lightTests, subjectTests, upkeepTests, listTests])

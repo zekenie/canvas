@@ -8,15 +8,16 @@ extension PluginID {
 }
 
 /// Arrows' lights for Neighbors: hover a shape and what it points to is outlined in green, what
-/// points to it in purple, the arrows between with them. A plugin value of its own, after Neighbors,
-/// so a list without Neighbors leaves it out, and `ArrowPortsPlugin`, which declares the `arrow`
-/// edges its queries name: in a list without that one the engine refuses both, and nothing lights.
+/// points to it in purple, the arrows between with them; its panel lists each under the light's
+/// title, the arrows left out. A plugin value of its own, after Neighbors, so a list without
+/// Neighbors leaves it out, and `ArrowPortsPlugin`, which declares the `arrow` edges its queries
+/// name: in a list without that one the engine refuses both, and nothing lights.
 ///
 /// - What it points to: the shapes an arrow out of it ends at, and what a reference stands for
-///   (`arrow` and `stands-for`), and the arrows themselves (`:starts-at`); for an arrow hovered,
-///   the shape it ends at (`:end-of`).
-/// - What points to it: the shapes an arrow into it starts at, and the references that stand for it,
-///   and those arrows (`:ends-at`); for an arrow hovered, the shape it starts at (`:start-of`).
+///   (`arrow` and `stands-for`); for an arrow, the shape it ends at (`:end-of`). Between: the arrows
+///   themselves (`:starts-at`).
+/// - What points to it: the shapes an arrow into it starts at, and the references that stand for it;
+///   for an arrow, the shape it starts at (`:start-of`). Between: those arrows (`:ends-at`).
 ///
 /// Neighbors asks each in the engine's resolved view of the edges and in the literal one, so a
 /// reference's own arrows count, and so does what it stands for: an arrow into a reference is, to the
@@ -27,12 +28,16 @@ public struct ArrowLightsPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         let arrow = ArrowEdge.id.rawValue, standing = StandingEdge.id.rawValue
-        registrar.neighborLight(color: ArrowStyle.pointsToLight) {
-            ":edge-from(\($0), \(arrow)|\(standing)), :starts-at(\($0), \(arrow)), :end-of(\($0), \(arrow))"
-        }
-        registrar.neighborLight(color: ArrowStyle.pointedToByLight) {
-            ":edge-to(\($0), \(arrow)|\(standing)), :ends-at(\($0), \(arrow)), :start-of(\($0), \(arrow))"
-        }
+        registrar.neighborLight(ArrowStyle.pointsTo, color: ArrowStyle.pointsToLight, query: {
+            ":edge-from(\($0), \(arrow)|\(standing)), :end-of(\($0), \(arrow))"
+        }, between: {
+            ":starts-at(\($0), \(arrow))"
+        })
+        registrar.neighborLight(ArrowStyle.pointedToBy, color: ArrowStyle.pointedToByLight, query: {
+            ":edge-to(\($0), \(arrow)|\(standing)), :start-of(\($0), \(arrow))"
+        }, between: {
+            ":ends-at(\($0), \(arrow))"
+        })
     }
 }
 
@@ -43,6 +48,9 @@ public struct ArrowLightsPlugin: ListedPlugin {
 /// least 3:1 against the canvas in the light and the dark. The two purples, this one and what
 /// mentions a shape, are close for some color-vision deficiencies.
 extension ArrowStyle {
+    /// The lights' titles, over their lists in a shape's panel.
+    nonisolated static let pointsTo = "Points To"
+    nonisolated static let pointedToBy = "Pointed To By"
     /// What a shape points to, and the arrows out of it: green.
     static let pointsToLight = NeighborLight.color(light: 0x07933B, dark: 0x2FD359)
     /// What points to it, and the arrows into it: purple.

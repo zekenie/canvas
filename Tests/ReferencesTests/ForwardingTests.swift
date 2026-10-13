@@ -8,8 +8,8 @@ import Topology
 
 // A direct reference stands for the shape it names, in Topology (`standsIn`, admitted while the shape
 // is public): a link into the pill is a link into the shape for everything that reads the graph,
-// and Publishing's Referenced In says what stands for it. Fixtures only: boxes, and links whose
-// wire is an edge.
+// and holds the shape public while it stands for it. Fixtures only: boxes, and links whose wire is
+// an edge.
 
 /// A box B ("stickies") linked into a reference to a public box A ("shapes").
 @MainActor private struct Wired {
@@ -100,19 +100,16 @@ import Topology
         expectEqual(w.h.editor.topology?.forwards(of: second), [], "a stand-in is never stood for")
         expectEqual(w.h.editor.wired(from: w.b), [w.a])
     },
-    test("what stands for the shape holds it public, and its row in Referenced In is the pill's own: the arrow symbol, and the names connected through it") {
+    test("what stands for the shape holds it public: making it private is refused, and nothing is written") {
         let w = try Wired()
         let publishing = try require(w.h.editor.publishing)
         expect(publishing.isHeld(w.a))
         expectEqual(w.h.editor.makePrivate([w.a]), [w.a], "refused while a pill stands for it")
         expect(w.h.editor.document[w.a]?[PublicProperty.self] == true, "nothing was written")
-        let rows = publishing.referencedInRows(of: w.a)
-        expectEqual(rows.count, 1)
-        expectEqual(rows.first?.standIn, w.reference)
-        expectEqual(rows.first?.symbol, "arrow.up.forward")
-        expectEqual(rows.first?.name, "stickies", "what's connected through it")
+        expectEqual(publishing.standIns(for: w.a), [w.reference])
         let words = w.h.addReference(words: "stuff", at: CGPoint(x: 600, y: 300))
-        // Words stand for nothing, so there's no row for them yet (the dynamic row is told with the look of the kind).
-        expect(!publishing.referencedInRows(of: w.a).contains { $0.standIn == words })
+        // Words stand for nothing, so they hold nothing (a dynamic pill holds the shape once it is answered for).
+        expectEqual(publishing.standIns(for: w.a), [w.reference])
+        expectEqual(w.h.editor.topology?.forwards(of: words), [])
     },
 ])

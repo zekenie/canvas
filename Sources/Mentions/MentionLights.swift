@@ -9,17 +9,19 @@ extension PluginID {
 
 /// Mentions' lights for Neighbors: hover a shape and what its text mentions is outlined in teal,
 /// what mentions it in lavender (`mention` edges, from the shape whose text holds a mention to the
-/// shape it names). A plugin value of its own, after Neighbors and Mentions, so a list without
-/// Neighbors leaves it out; after arrows' lights in the shipped list, so a shape both pointed to
-/// and mentioned has its arrow's ring first.
+/// shape it names); its panel lists each under the light's title, a shape that mentions it with its
+/// text around the mention under its name. A plugin value of its own, after Neighbors and Mentions,
+/// so a list without Neighbors leaves it out; after arrows' lights in the shipped list, so a shape
+/// both pointed to and mentioned has its arrow's ring first.
 public struct MentionLightsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .mentionLights }
 
     public func register(into registrar: inout PluginRegistrar) {
         let mention = MentionEdge.id.rawValue
-        registrar.neighborLight(color: MentionStyle.mentionsLight) { ":edge-from(\($0), \(mention))" }
-        registrar.neighborLight(color: MentionStyle.mentionedByLight) { ":edge-to(\($0), \(mention))" }
+        registrar.neighborLight(MentionStyle.mentions, color: MentionStyle.mentionsLight, query: { ":edge-from(\($0), \(mention))" })
+        registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, query: { ":edge-to(\($0), \(mention))" },
+                                caption: { editor, subject, mentioner in editor.mentions?.quote(of: mentioner, around: subject) })
     }
 }
 
@@ -29,6 +31,9 @@ public struct MentionLightsPlugin: ListedPlugin {
 /// 3:1 against the canvas in the light and the dark. The lavender and arrows' purple are close for
 /// some color-vision deficiencies.
 extension MentionStyle {
+    /// The lights' titles, over their lists in a shape's panel.
+    nonisolated static let mentions = "Mentions"
+    nonisolated static let mentionedBy = "Mentioned By"
     /// What a shape's text mentions: teal.
     static let mentionsLight = NeighborLight.color(light: 0x0E97B0, dark: 0x329AB4)
     /// What mentions it: lavender.

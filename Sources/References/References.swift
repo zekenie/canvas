@@ -143,8 +143,8 @@ extension CanvasCommand {
 /// arrow into it is an arrow into the shape; and for a reference that stands for something else
 /// than a picked shape, the words and the query. It opts into Keyboard's key, the table of
 /// contents (a row; an arrow that starts at it nests under what it stands for), the detail panel (a
-/// header naming what it stands for, and Go to Original), the context menu (Go to Original, first) and
-/// Publishing's Referenced In (its own row). Going to the original is a canvas button, the leading
+/// header naming what it stands for, and Go to Original) and the context menu (Go to Original, first).
+/// Going to the original is a canvas button, the leading
 /// symbol, as well. A reference is never public itself (`NeverPublic`).
 public struct ReferencesPlugin: ListedPlugin {
     public init() {}
@@ -190,13 +190,6 @@ public struct ReferencesPlugin: ListedPlugin {
                 if let target = shape.props.target { return .shapes([target.id]) }
                 if let query = shape.props.query { return .provided(ReferenceState.key(query: query, all: shape.props.all)) }
                 return nil
-            }
-            reference.standInRow { shape, _ in
-                switch shape.props.mode {
-                case .direct: StandInRow(symbol: "arrow.up.forward")
-                case .dynamic: StandInRow(symbol: ReferenceStyle.dynamicSymbol, text: "“\(shape.props.text)”")
-                case .empty: nil
-                }
             }
             reference.referenceRow()
             reference.referencePanel()

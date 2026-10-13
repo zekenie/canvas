@@ -71,7 +71,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 **Surfaces**
 - [keyboard](.claude/rules/keyboard.md): shortcuts and chords, how a key reaches the canvas, the menu bar.
 - [selection](.claude/rules/selection.md): the select tool, handles and resizing, opening, Back, canvas buttons, going to shapes, faces, the shake a refused change gives.
-- [detail panel](.claude/rules/detail-panel.md): sections, tabs, status lines, headers, bindings, text boxes, the code editor and its completions, and its overview and takeovers (what other plugins show in it).
+- [detail panel](.claude/rules/detail-panel.md): sections, tabs, status lines, headers, bindings, text boxes, list rows (a row, a group's header, a search field), the code editor and its completions, and its overview and takeovers (what other plugins show in it).
 - [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed (front to back), its heading, hover, another board's outline, dragging rows.
 - [adornments](.claude/rules/adornments.md): pills and chips on shapes: placing them, their places, drawing and pointing.
 - [context menus](.claude/rules/context-menus.md): a shape's items, the canvas's items, right-clicks and Control-clicks.
@@ -81,17 +81,17 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [prose maps](.claude/rules/prose-maps.md): which words of a text say which part of a lower-level text (a type's highlights): targets, maps, asking the model, the request.
 - [placing](.claude/rules/placing.md): where a box of shapes lands, beside a shape, in a frame or anywhere, placed as `canvas draw` places one: `Surroundings`, `Landing`; Moving's solver, for any plugin that puts shapes down.
 - [find](.claude/rules/find.md): ⌘F: the `FindableTexts` point and its contributors, the index, the search off the main actor, scope and order, the highlights, the panel in the detail panel's place.
-- [neighbors](.claude/rules/neighbors.md): hovering a shape, on the canvas or in the table of contents, outlines what's connected to it in a color for each way (the lights, each a color and a query, contributed by the plugin that owns the edges; a pointer lights as a mention); the subject, asking and asking again, where a match is drawn, rings, and the core's tinted outlines it hands.
+- [neighbors](.claude/rules/neighbors.md): hovering a shape, on the canvas or in the table of contents, outlines what's connected to it in a color for each way, and its panel's Connections tab lists them by the same ways (the lights, each a title, a color and a query, contributed by the plugin that owns the edges; a pointer lights as a mention); the subject, asking and asking again, where a match is drawn, rings, the core's tinted outlines it hands, and the lists (folding, searching, their rows).
 
 **Concerns**
 - [validation](.claude/rules/validation.md): rules and issues (and where in a value one is), the schema rule, what each commit re-checks and `recheck`, rings, where issues show.
 - [titles](.claude/rules/titles.md): named and derived titles, the pill and the looks other plugins give it, the cover zoomed out, `TitleHeader`, `/title`, shared titles.
 - [clipboard](.claude/rules/clipboard.md): cut, copy and paste; boards and containers copied whole; cut and paste as a move.
 - [locking](.claude/rules/locking.md): locked shapes, read-only, the chip, `/lock`.
-- [publishing](.claude/rules/publishing.md): public shapes (what another shape may stand for), the two dials, the chip and its count, refusing while held, `/public`, Referenced In.
+- [publishing](.claude/rules/publishing.md): public shapes (what another shape may stand for), the two dials, the chip and its count, refusing while held (the panel goes to Connections), `/public`.
 - [connections](.claude/rules/connections.md): ports, channels and the connector.
 - [arrows](.claude/rules/arrows.md): tldraw's arc arrows, their labels and binding rules, and the proof-of-concept parity tests.
-- [mentions](.claude/rules/mentions.md): mentions in text: pills, the `@` picker (its lines with their board), one token alone (`MentionToken`), mention edges, Mentioned In, layout by names, mentions' warnings.
+- [mentions](.claude/rules/mentions.md): mentions in text: pills, the `@` picker (its lines with their board), one token alone (`MentionToken`), mention edges, what mentions a shape (its quote, Show What Mentions), layout by names, mentions' warnings.
 - [boards](.claude/rules/boards.md): opening boards, Enclosing Board, what a board is called (the root, as the file is) and where that heads other plugins' lists, the path's crumbs and their menus.
 - [transform](.claude/rules/transform.md): turning a shape into another kind: channels, sources and targets, the menu item and the command, frame into subboard.
 - [types](.claude/rules/types.md): a note that holds a JSON Schema is a type, named by its title: the module's nine parts and what each may use, making one (`/is-a type`, Remove Type, New type), the file's types (`TypeIndex`), what a shape is (`is`, the `is-a` edge, the chips, the Types tab), a note that is one (its `fieldValues`, the chain and the field book, the rows it and its type have under their words and typing in them, the card a row with more in it opens and its form, the Fields section of the Types tab, the one writer that changes a value), Checks (needed, wrong, a warning), pointers to other notes (the pill, the picker, `field-link`), the title from a field, Agents (what `canvas draw`, `canvas query`, `--ask` and `canvas measure` read and write of all that), and the model's part (`TypeSync`: words and schema kept in step; highlights).

@@ -2,17 +2,20 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import DetailPanel
+import Neighbors
 import Publishing
 import Selection
 import SwiftUI
 import TestKit
 
-// Referenced In as the panel draws it, in an unshown window: a button for each stand-in, in file
-// order, redrawn as what stands for the shape changes though the shape doesn't, a click going to it.
-// The editor keeps the harness's time, so a click's going lands when a test advances it.
+// A refused chip click as the panel draws it, in an unshown window: the panel showing the held shape
+// alone goes to Connections, which lists what's connected to the shape (Neighbors' tab, where what
+// stands for it is among what points to it); a click that isn't refused leaves it where it was. The
+// list asks to be told which shape it lists once it is on screen, so that is how a test sees it
+// shown. The editor keeps the harness's time, so a click lands when a test advances it.
 
 @MainActor
-private final class ReferencedPanel {
+private final class HostedPanel {
     let h: EditorHarness
     let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: true)
     let hosting: NSHostingView<DetailPanelView>
@@ -26,60 +29,34 @@ private final class ReferencedPanel {
         window.settle()
     }
 
-    /// The rows, top first.
-    var rows: [NSButton] {
-        hosting.descendants(NSButton.self)
-            .filter { $0.convert($0.bounds, to: hosting).minY >= 44 && $0.convert($0.bounds, to: hosting).height > 20 }
-            .sorted { $0.convert($0.bounds, to: hosting).minY < $1.convert($1.bounds, to: hosting).minY }
-    }
+    /// The shape whose connections are on screen, if any.
+    var listed: ShapeID? { h.editor.neighborList?.subject }
 }
 
-@MainActor let panelTests = Suite("Referenced In in the panel", [
-    test("a row for each stand-in, which comes and goes with what stands for the shape, the shape itself unchanged") {
-        let h = try publishingHarness()
-        let plaque = h.add(Plaque(plaqueFrame))
-        h.publish(plaque)
-        let panel = ReferencedPanel(h)
-        try require(h.editor.detailPanel).choose(.of(ReferencedInTab.self), for: Plaque.kind)
-        h.editor.selection = plaque
-        panel.window.settle()
-        expectEqual(panel.rows.count, 0, "nothing stands for it: no tab, no rows")
-        let first = h.hold([plaque])
-        panel.window.spin { panel.rows.count == 1 }
-        h.hold([plaque], at: CGRect(x: 600, y: 700, width: 60, height: 20))
-        panel.window.spin { panel.rows.count == 2 }
-        h.lens("what", answering: [plaque])
-        panel.window.spin { panel.rows.count == 3 }
-        h.editor.transact { $0.delete([first]) }
-        panel.window.spin { panel.rows.count == 2 }
-        h.provide(try require(h.editor.document.shapes.first { $0.kind == "lens" }?.id), "what", [], revision: 2)
-        panel.window.spin { panel.rows.count == 1 }
-    },
-    test("a click on a row goes to its stand-in: selected, one step back") {
-        let h = try publishingHarness()
-        let plaque = h.add(Plaque(plaqueFrame))
-        h.publish(plaque)
-        let holder = h.hold([plaque])
-        let panel = ReferencedPanel(h)
-        try require(h.editor.detailPanel).choose(.of(ReferencedInTab.self), for: Plaque.kind)
-        h.editor.selection = plaque
-        panel.window.spin { panel.rows.count == 1 }
-        panel.rows[0].performClick(nil)
-        h.wait(1)
-        expectEqual(h.editor.selectedShapeIDs, [holder])
-        h.editor.goBack()
-        expectEqual(h.editor.selectedShapeIDs, [plaque])
-    },
-    test("a refused chip click leaves the panel on Referenced In, showing the row") {
-        let h = try publishingHarness()
+@MainActor let panelTests = Suite("The panel on a refused chip click", [
+    test("a refused chip click leaves the panel on Connections, which lists the shape") {
+        let h = try publishingHarness([NeighborDetailsPlugin()])
         let plaque = h.add(Plaque(plaqueFrame))
         h.publish(plaque)
         h.hold([plaque])
-        let panel = ReferencedPanel(h)
+        let panel = HostedPanel(h)
         h.editor.selection = plaque
         panel.window.settle()
-        expectEqual(panel.rows.count, 0, "the plaque's own tab first")
+        expectEqual(panel.listed, nil, "the plaque's own tab first: no list on screen")
         h.click(at: try h.chipPoint(of: plaque))
-        panel.window.spin { panel.rows.count == 1 }
+        panel.window.spin { panel.listed == plaque }
+        expectEqual(h.editor.document[plaque]?[PublicProperty.self], true, "and it stays public")
+    },
+    test("a click that makes the shape private leaves the panel where it was") {
+        let h = try publishingHarness([NeighborDetailsPlugin()])
+        let plaque = h.add(Plaque(plaqueFrame))
+        h.publish(plaque)
+        let panel = HostedPanel(h)
+        h.editor.selection = plaque
+        panel.window.settle()
+        h.click(at: try h.chipPoint(of: plaque))
+        panel.window.settle()
+        expectEqual(h.editor.document[plaque]?[PublicProperty.self], nil, "private: nothing held it")
+        expectEqual(panel.listed, nil, "no list on screen")
     },
 ])

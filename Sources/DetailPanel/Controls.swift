@@ -58,6 +58,10 @@ public enum DetailStyle {
     static let shapeRowLines = 2
     /// A dimmed `DetailShapeRow`'s opacity, all of it.
     static let dimmedRow: Double = 0.5
+    /// The dot before a list's title, in the list's color (`DetailGroupHeader`).
+    static let groupDot: CGFloat = 7
+    /// A search field's fill (`DetailSearchField`).
+    static let searchFill = Color.primary.opacity(0.06)
     /// A bordered list's height beyond its rows: its border and inset.
     static let listChrome: CGFloat = 6
     static let listRows = 3...8

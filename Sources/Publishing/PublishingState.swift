@@ -2,6 +2,7 @@ import Adornments
 import Canvas
 import CoreGraphics
 import DetailPanel
+import Neighbors
 import Selection
 import TableOfContents
 import Topology
@@ -78,14 +79,6 @@ public final class PublishingState {
     /// The shapes that stand for it, in the order they came to.
     public func standIns(for id: ShapeID) -> [ShapeID] { topology?.standIns(for: id) ?? [] }
 
-    /// Whether the shape can be shown with a Referenced In tab: its kind can be public, and
-    /// something stands for it.
-    /// Observes the shape's edges, so a panel that asks redraws when that changes.
-    func isReferenced(_ record: AnyShapeRecord) -> Bool {
-        _ = topology?.revision(of: record.id)
-        return editor.registry.canBePublic(record.kind) && isHeld(record.id)
-    }
-
     // MARK: The chip
 
     /// How opaque a just-privatized shape's "Private" is: fully until it starts to fade, then less
@@ -116,15 +109,16 @@ public final class PublishingState {
         }
         if !held.isEmpty {
             editor.refuseChanges(to: Set(held))
-            showReferencedIn(held)
+            showWhatHolds(held)
         }
         return held
     }
 
-    /// The panel, if it shows this shape alone, goes to its Referenced In tab, which says why.
-    private func showReferencedIn(_ held: [ShapeID]) {
+    /// The panel, if it shows this shape alone, goes to the tab that lists what's connected to it
+    /// (Neighbors'), where what stands for it is among what points to it: that says why.
+    private func showWhatHolds(_ held: [ShapeID]) {
         guard held.count == 1, let id = held.first, editor.selectedShapeIDs == [id], let record = editor.document[id] else { return }
-        editor.detailPanel?.choose(.of(ReferencedInTab.self), for: record.kind)
+        editor.detailPanel?.choose(.of(NeighborsTab.self), for: record.kind)
     }
 
     // MARK: Following edges

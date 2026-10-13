@@ -4,6 +4,7 @@ import CanvasTesting
 import DetailPanel
 import LanguageModels
 import Mentions
+import Neighbors
 import Selection
 import ShippedTesting
 import StickyNotes
@@ -13,15 +14,16 @@ import Titles
 
 // What mentions a shape, as shipped: Show What Mentions in the context menu of a subboard two notes
 // mention, among the subboard's own items and the canvas's (a pasteboard of the test's own); and the
-// Mentioned In tab in the app's window (a `BoardWindow`, `InspectorWindow`), on a note and a subboard.
+// Connections tab's "Mentioned By" list in the app's window (a `BoardWindow`, `InspectorWindow`), on a
+// note and a subboard.
 
 extension InspectorWindow {
-    /// The Mentioned In tab's lines: the panel's buttons beside the canvas, under its header, as
-    /// tall as a line of a name over a line of text, top first.
-    var mentionLines: [NSButton] {
+    /// The Connections tab's rows: the panel's buttons beside the canvas, under its header, as
+    /// tall as a line of a name (a list's head is shorter), top first.
+    var connectionRows: [NSButton] {
         buttons.filter {
             let frame = $0.convert($0.bounds, to: host)
-            return frame.minX >= canvas.frame.maxX && frame.height > 20
+            return frame.minX >= canvas.frame.maxX && frame.height > 21
         }
         .sorted { $0.convert($0.bounds, to: host).minY < $1.convert($1.bounds, to: host).minY }
     }
@@ -43,7 +45,8 @@ extension InspectorWindow {
             transaction.insert(first)
             transaction.insert(second)
         }
-        expectEqual(h.editor.mentions?.backlinks(of: ship.id).map(\.quote), ["Ask @Ship it first", "@Ship it by Friday"])
+        let mentions = try require(h.editor.mentions)
+        expectEqual(mentions.mentioners(of: ship.id).map { mentions.quote(of: $0, around: ship.id) }, ["Ask @Ship it first", "@Ship it by Friday"])
 
         let menu = try require(h.secondaryClick(at: CGPoint(x: 520, y: 180)))
         let outline = menu.outline
@@ -61,7 +64,7 @@ extension InspectorWindow {
         expect(!unmentioned.contains("Show What Mentions"), "\(unmentioned)")
     },
 
-    test("a note a titled note mentions has a Mentioned In tab, as a subboard it mentions has: the mentioner's line goes to it, and Back returns") {
+    test("a note a titled note mentions has a Connections tab, as a subboard it mentions has, listing the mentioner under Mentioned By: its line goes to it, and Back returns") {
         let w = try InspectorWindow()
         let groceries = ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 400, width: 200, height: 200), text: "Groceries"))
         var plans = ShapeRecord(Subboard(frame: CGRect(x: 700, y: 100, width: 240, height: 160)))
@@ -76,22 +79,30 @@ extension InspectorWindow {
             transaction.insert(ship)
         }
         let panel = try require(w.editor.detailPanel)
-        expectEqual(panel.layout(for: try require(w.editor.document[groceries.id])).tabs.map(\.title).last, "Mentioned In")
-        expectEqual(panel.layout(for: try require(w.editor.document[plans.id])).tabs.map(\.title).last, "Mentioned In")
-        expectEqual(panel.layout(for: try require(w.editor.document[ship.id])).tabs, [], "nothing mentions it")
+        expectEqual(panel.layout(for: try require(w.editor.document[groceries.id])).tabs.map(\.title), ["Connections"], "a note's only tab")
+        expectEqual(panel.layout(for: try require(w.editor.document[plans.id])).tabs.map(\.title), ["Board", "Connections"])
+        expectEqual(panel.layout(for: try require(w.editor.document[ship.id])).tabs.map(\.title), ["Connections"], "it mentions, and nothing mentions it")
 
-        panel.choose(.of(MentionsTab.self), for: StickyNote.kind)
         w.editor.selection = groceries.id
-        let mentions = try require(w.editor.mentions)
-        w.window.spin { mentions.backlinksShown[groceries.id] != nil }
-        let symbol = try require(w.editor.registry.mentionAppearance(of: AnyShapeRecord(ship))?.systemImage)
-        expectEqual(mentions.backlinksShown[groceries.id], [MentionBacklink(id: ship.id, label: "Ship it", systemImage: symbol,
-                                                                            quote: "Ask @Groceries first, then @Plans", tint: .systemYellow)],
-                    "its symbol a note's yellow, as in its row and the @ picker")
-        w.window.spin { w.mentionLines.count == 1 }
-        w.mentionLines[0].performClick(nil)
+        let list = try require(w.editor.neighborList)
+        w.window.spin { list.subject == groceries.id && list.hasLanded && !list.isAsking }
+        let symbol = try require(w.editor.registry.label(of: StickyNote.kind).systemImage)
+        expectEqual(list.panel, [ConnectionGroup(title: "Mentioned By", count: 1, rows: [
+            ConnectionRow(id: ship.id, name: "Ship it", detail: nil, caption: "Ask @Groceries first, then @Plans", symbol: symbol)])],
+                    "the mentioner by its title, and its text around the mention")
+        expectEqual(w.editor.registry.label(of: StickyNote.kind).tint, .systemYellow, "its symbol a note's yellow, as in its row and the @ picker")
+        w.window.spin { w.connectionRows.count == 1 }
+        w.connectionRows[0].performClick(nil)
         w.window.spin { w.editor.selection == ship.id }
         w.editor.goBack()
         expectEqual(w.editor.selection, groceries.id)
+
+        // The subboard has it too, and its panel's other tab is the board's.
+        w.editor.selection = plans.id
+        panel.choose(.of(NeighborsTab.self), for: Subboard.kind)
+        w.window.spin { list.subject == plans.id && list.hasLanded && !list.isAsking }
+        expectEqual(list.panel.map(\.title), ["Mentioned By"])
+        expectEqual(list.panel.first?.rows.map(\.id), [ship.id])
+        expectEqual(list.panel.first?.rows.first?.caption, "Ask @Groceries first, then @Plans")
     },
 ])

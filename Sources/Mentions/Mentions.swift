@@ -8,7 +8,7 @@ import Canvas
 /// its pills show the name they hold, dashed, and putting the shape back brings them back to life.
 /// Each mention is an edge in Topology's graph (`MentionEdge`, `mention`), so who mentions whom is
 /// Topology's index; `MentionState` keeps each target's look, what mentions each shape, on any
-/// board (`backlinks(of:)`), and what the `@` picker offers. The core never learns what a mention
+/// board (`mentioners(of:)`), and what the `@` picker offers. The core never learns what a mention
 /// is.
 extension PluginID {
     public static let mentions: PluginID = "mentions"

@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import CanvasTesting
 import DetailPanel
+import Observation
 import Selection
 import SwiftUI
 import TestKit
@@ -109,7 +110,79 @@ struct FlagPlugin: CanvasPlugin {
         let quiet = ink(DetailShapeRow(symbol: "note", name: "Plan", detail: "Board", lines: ["one"], dimmed: true))
         expect(loud > 0 && quiet > 0 && quiet < loud, "dimmed \(quiet) against \(loud)")
     },
+    test("a group header is a section header's height, folds on a click, and shows its list's color as a dot") {
+        let folds = Folds()
+        let plain = NSHostingView(rootView: DetailGroupHeader("Inside", count: 2, isCollapsed: false) { folds.count += 1 }.frame(width: 228))
+        expectEqual(plain.fittingSize.height, DetailStyleProbe.sectionHeaderHeight)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 228, height: 40), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = plain
+        window.settle()
+        let buttons = plain.descendants(NSButton.self)
+        expectEqual(buttons.count, 1, "the whole head is one button")
+        buttons.first?.performClick(nil)
+        window.settle()
+        expectEqual(folds.count, 1)
+        // The dot: pixels of the tint, which a head without one has none of.
+        let tint = NSColor(srgbRed: 1, green: 0, blue: 1, alpha: 1)
+        expect(magenta(DetailGroupHeader("Points To", count: 3, tint: tint, isCollapsed: true) {}) > 8, "a dot in the list's color")
+        expectEqual(magenta(DetailGroupHeader("Inside", count: 3, isCollapsed: true) {}), 0)
+    },
+    test("a search field writes what's typed, as typed, and its button clears it") {
+        let typed = Typed()
+        let view = NSHostingView(rootView: SearchProbe(typed: typed).frame(width: 228))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 228, height: 40), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = view
+        window.settle()
+        let field = try require(view.descendants(NSTextField.self).first { $0.placeholderString == "Search" })
+        expectEqual(view.descendants(NSButton.self).count, 0, "nothing to clear")
+        window.focus(field)
+        window.type("teh")
+        window.settle()
+        expectEqual(typed.text, "teh", "as typed: nothing corrected")
+        let clear = try require(view.descendants(NSButton.self).first)
+        clear.performClick(nil)
+        window.settle()
+        expectEqual(typed.text, "")
+        expectEqual(view.descendants(NSButton.self).count, 0)
+    },
 ])
 
+/// How often a group header's button was clicked.
+@MainActor private final class Folds { var count = 0 }
+
+/// What a search field wrote.
+@MainActor @Observable private final class Typed { var text = "" }
+
+private struct SearchProbe: View {
+    let typed: Typed
+    var body: some View {
+        DetailSearchField("Search", text: Binding(get: { typed.text }, set: { typed.text = $0 }))
+    }
+}
+
+/// How many pixels of a group header are magenta: its dot's, where its tint is.
+@MainActor private func magenta(_ header: DetailGroupHeader) -> Int {
+    let view = NSHostingView(rootView: header.frame(width: 228).background(Color.white).environment(\.colorScheme, .light))
+    view.frame = CGRect(origin: .zero, size: CGSize(width: 228, height: view.fittingSize.height))
+    let rep = snapshot(view)
+    var found = 0
+    for y in 0..<rep.pixelsHigh {
+        for x in 0..<rep.pixelsWide {
+            var value = [Int](repeating: 0, count: 4)
+            rep.getPixel(&value, atX: x, y: y)
+            if value[0] > 200, value[1] < 80, value[2] > 200 { found += 1 }
+        }
+    }
+    return found
+}
+
 /// `DetailStyle.listRowHeight`, which is internal: a row is no shorter than a status line's.
-enum DetailStyleProbe { static let listRowHeight: CGFloat = 22 }
+enum DetailStyleProbe {
+    static let listRowHeight: CGFloat = 22
+    /// `DetailStyle.sectionHeaderHeight`: a group's head is as tall as a section's.
+    static let sectionHeaderHeight: CGFloat = 20
+}

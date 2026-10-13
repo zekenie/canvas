@@ -474,8 +474,10 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
                     MentionText([.text("See "), .mention(frame.id, label: "Sprint 3"), .text(" ")]))
         expectEqual(editor.mentionPills(of: note).map(\.isLive), [true])
         let layout = try require(editor.detailPanel?.layout(for: try require(editor.document[frame.id])))
-        expect(layout.tabs.map(\.title).contains("Mentioned In"), "\(layout.tabs.map(\.title))")
-        expectEqual(editor.mentions?.backlinks(of: frame.id).map(\.id), [note])
+        expect(layout.tabs.map(\.title).contains("Connections"), "\(layout.tabs.map(\.title))")
+        let connections = try editor.connections(of: frame.id)
+        expectEqual(connections.map(\.title), ["Mentioned By"])
+        expectEqual(connections.first?.rows.map(\.id), [note])
         editor.selection = note
         editor.mentions?.follow(frame.id)
         scheduler.advance(by: .milliseconds(0))

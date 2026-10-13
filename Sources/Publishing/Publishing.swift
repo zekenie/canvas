@@ -10,7 +10,7 @@ import TableOfContents
 /// (`public: true`, nil while private), set from the context menu, with `/public` and `/private`,
 /// or from the chip a public shape wears (a text chip, "Public", with how many things stand for the
 /// shape: "Public · 3"). Making a shape private is refused while anything stands for it (the chip
-/// shakes the shape, and its panel shows what: Referenced In); a click on the "Private" a shape
+/// shakes the shape, and its panel shows what, in its Connections tab); a click on the "Private" a shape
 /// just went to for a moment, before it fades, makes it public again. Publishing knows no kind that
 /// stands in, and no reference: it asks Topology what stands for a shape.
 extension PluginID {
@@ -69,7 +69,7 @@ extension CanvasEditor {
     /// Makes these shapes private, as a person asks (the chip, the menu, `/private`): in one
     /// transaction ("Make Private"), but for those something stands for, which stay public: nothing
     /// is written for them, they shake (`refuseChanges(to:)`), and, when the panel shows one, it
-    /// shows what stands for it (Referenced In). Returns those it left public. What gets a shape
+    /// shows what stands for it (its Connections tab, Neighbors'). Returns those it left public. What gets a shape
     /// private another way (undo, a paste, a board edited by hand, `canvas draw`) isn't asked.
     @discardableResult
     public func makePrivate(_ ids: [ShapeID]) -> [ShapeID] {
@@ -121,7 +121,6 @@ public struct PublishingPlugin: ListedPlugin {
         registrar.service { PublishingState(editor: $0) }
         registerPublicChip(into: &registrar)
         registerPublishMenus(into: &registrar)
-        registerReferencedIn(into: &registrar)
         // A globe at the end of a public shape's row, on the kinds that can be, saying how many
         // things stand for the shape: its row is made again when they change (`contentsDidChange(for:)`,
         // from the state's follower of Topology).

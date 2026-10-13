@@ -1,15 +1,14 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
-import DetailPanel
 import Publishing
 import TestKit
 import Topology
 
 // The paths that make a shape private with no guard (undo, redo, a paste, a board edited by hand,
 // `canvas draw`) write it, and everything follows: the stand-ins drop it in that commit, the count
-// goes, the tab with it, the chip reads Private as it does for any shape that goes private; making
-// it public again heals them.
+// goes, the chip reads Private as it does for any shape that goes private; making it public again
+// heals them.
 
 @MainActor let unguardedTests = Suite("Private by a path with no guard", [
     test("written, whatever stands for the shape: the stand-in lets it go in that commit, and making it public again heals") {
@@ -24,8 +23,6 @@ import Topology
         expectEqual(topology.forwards(of: lens), [], "the answer too")
         expectEqual(topology.standIns(for: plaque), [])
         expectEqual(h.chipText(of: plaque), "Private", "the chip reads Private for a moment, as for any")
-        let panel = try require(h.editor.detailPanel)
-        expect(!panel.layout(for: h.editor.document[plaque]!).tabs.contains(.of(ReferencedInTab.self)), "no tab")
         h.publish(plaque)
         expectEqual(topology.forwards(of: holder), [plaque], "healed")
         expectEqual(topology.forwards(of: lens), [plaque])

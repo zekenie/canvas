@@ -72,8 +72,7 @@ struct LabelFixturesPlugin: CanvasPlugin {
     }
 }
 
-/// A board for labels that mention: `arrowsPlugins` with the detail panel (the kind that is mentioned
-/// brings its Mentioned In tab to it) and `LabelFixturesPlugin`.
+/// A board for labels that mention: `arrowsPlugins` with the detail panel and `LabelFixturesPlugin`.
 @MainActor
 func labelPlugins(before: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
     arrowsPlugins(before: before, more: [DetailPanelPlugin(), LabelFixturesPlugin()])

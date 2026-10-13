@@ -2,11 +2,13 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
+import DetailPanel
 import Foundation
 import Keyboard
 import Neighbors
 import Queries
 import Selection
+import TableOfContents
 import TestKit
 import Topology
 
@@ -123,21 +125,51 @@ enum Light: Int, CaseIterable {
 }
 
 /// The lights, as the shipped ones are written: a query for the shape named `#id`, and, for an arrow
-/// (a link) hovered, where it ends and starts.
+/// (a link) hovered, where it ends and starts; between a shape and what it's wired to, the links; and
+/// under a shape that quotes the subject, a caption saying so.
 func testLights() -> [NeighborLight] {
     let wire = WireEdge.id.rawValue, standing = StandingEdge.id.rawValue, quote = QuoteEdge.id.rawValue
     return [
-        NeighborLight(color: Light.out.color) { ":edge-from(\($0), \(wire)|\(standing)), :starts-at(\($0), \(wire)), :end-of(\($0), \(wire))" },
-        NeighborLight(color: Light.into.color) { ":edge-to(\($0), \(wire)|\(standing)), :ends-at(\($0), \(wire)), :start-of(\($0), \(wire))" },
-        NeighborLight(color: Light.quotes.color) { ":edge-from(\($0), \(quote))" },
-        NeighborLight(color: Light.quoted.color) { ":edge-to(\($0), \(quote))" },
+        NeighborLight("Wired To", color: Light.out.color, query: { ":edge-from(\($0), \(wire)|\(standing)), :end-of(\($0), \(wire))" },
+                      between: { ":starts-at(\($0), \(wire))" }),
+        NeighborLight("Wired From", color: Light.into.color, query: { ":edge-to(\($0), \(wire)|\(standing)), :start-of(\($0), \(wire))" },
+                      between: { ":ends-at(\($0), \(wire))" }),
+        NeighborLight("Quotes", color: Light.quotes.color, query: { ":edge-from(\($0), \(quote))" }),
+        NeighborLight("Quoted By", color: Light.quoted.color, query: { ":edge-to(\($0), \(quote))" },
+                      caption: { editor, subject, neighbor in
+                          editor.shape(inFile: neighbor)?[Caption.self].map { "\($0) quotes \(subject.description.prefix(4))" }
+                      }),
     ]
 }
 
 /// A plugin that gives Neighbors `lights`, in order, as the plugins that own the edges give theirs.
 func lightsPlugin(_ lights: [NeighborLight]) -> Contributor {
     Contributor(id: "lights") { registrar in
-        for light in lights { registrar.neighborLight(color: light.color, query: light.query) }
+        for light in lights {
+            registrar.neighborLight(light.title, color: light.color, query: light.query, between: light.between, caption: light.caption)
+        }
+    }
+}
+
+/// What a fixture shape is called: nil until one is given.
+enum Caption {}
+extension Caption: ShapeProperty {
+    static let key: PropertyKey = "caption"
+    static var defaultValue: String? { nil }
+    static func isNone(_ value: String) -> Bool { value.allSatisfy(\.isWhitespace) }
+}
+
+/// Captions, which every fixture kind here holds, and which name shapes for queries, so a row of the
+/// engine's has a title.
+func namesPlugin() -> Contributor {
+    Contributor(id: "names") { registrar in
+        registrar.declare(Caption.self)
+        registrar.optInEveryShape(to: Caption.self, where: { _ in true })
+        registrar.queryNames(attribute: Caption.key.rawValue,
+                             source: { _, _ in .named },
+                             named: { $0[Caption.self].flatMap { $0.allSatisfy(\.isWhitespace) ? nil : $0 } },
+                             derived: { _, _ in nil },
+                             fold: { $0.allSatisfy(\.isWhitespace) ? nil : $0 })
     }
 }
 
@@ -147,6 +179,17 @@ func lightsPlugin(_ lights: [NeighborLight]) -> Contributor {
     try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), LinksPlugin(), PocketsPlugin(), CorralsPlugin(),
                                 NamingPlugin(), graphPlugin()] + (queries ? [QueriesPlugin()] : []) + [NeighborsPlugin(), lightsPlugin(lights)], file: file)
 }
+
+/// The same editor with the detail panel, the lists of what's connected to a shape in it
+/// (`NeighborDetailsPlugin`), the table of contents, where a memo's row is its text, and, with the
+/// engine, captions that name its shapes in the engine's rows.
+@MainActor func listHarness(_ file: CanvasFile, lights: [NeighborLight] = testLights(), queries: Bool = true) throws -> EditorHarness {
+    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), LinksPlugin(), PocketsPlugin(), CorralsPlugin(),
+                                NamingPlugin(), graphPlugin(), DetailPanelPlugin(), TableOfContentsPlugin(), memoRowsPlugin()]
+                          + (queries ? [QueriesPlugin(), namesPlugin()] : [])
+                          + [NeighborsPlugin(), lightsPlugin(lights), NeighborDetailsPlugin()], file: file)
+}
+
 
 // MARK: Records
 
