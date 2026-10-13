@@ -3,7 +3,6 @@ import Boards
 import Canvas
 import FuzzyMatching
 import Geometry
-import Titles
 import Topology
 
 /// What a query finds: the best of the catalog's shapes, ranked.
@@ -155,11 +154,13 @@ extension JumpToState {
         var node = Node(parent: nil, title: nil, label: nil, placeholder: "")
         if let record = editor.shape(inFile: id) {
             node.parent = editor.topology?.parent(of: id)
-            if !record.isOpaque, let title = registry.title(of: record) {
+            // Called as every path calls a container (Boards' rule).
+            let name = registry.containerName(of: record)
+            if let title = name.title {
                 node.title = title
                 node.label = FuzzyMatcher.Label(title)
             }
-            node.placeholder = registry.boardPlaceholder(of: record.kind) ?? registry.label(of: record.kind).name
+            node.placeholder = name.placeholder
         }
         nodes[id] = node
         return node

@@ -40,4 +40,21 @@ import Titles
         expectEqual(plain.editor.registry.boardPlaceholder(of: Pocket.kind), nil)
         expectEqual(plain.editor.name(of: BoardID(owner: pocket), root: ""), Pocket.kind.rawValue)
     },
+    test("a container in a path is called by its title, else as its board is, else by its kind: containerName(of:)") {
+        let nest = Nest()
+        let h = try nestHarness(nest)
+        let registry = h.editor.registry
+        @MainActor func name(_ id: ShapeID) throws -> ContainerName { registry.containerName(of: try require(h.editor.file.record(id))) }
+        expectEqual(try name(nest.d), ContainerName(title: nil, placeholder: "Untitled Drawer"))
+        expectEqual(try name(nest.d).text, "Untitled Drawer")
+        expect(try name(nest.d).isPlaceholder)
+        expectEqual(try name(nest.p).text, "Untitled Pocket", "on a board that isn't shown")
+        rename(nest.d, on: .root, "Pantry", in: h)
+        expectEqual(try name(nest.d), ContainerName(title: "Pantry", placeholder: "Untitled Drawer"))
+        expectEqual(try name(nest.d).text, "Pantry")
+        expect(!(try name(nest.d).isPlaceholder))
+        expectEqual(try name(nest.d).text, h.editor.name(of: nest.dBoard, root: ""), "as the path over the canvas calls its board")
+        // A kind that opens no board (a frame, to a path) is called by its kind's label.
+        expectEqual(try name(nest.a), ContainerName(title: nil, placeholder: registry.label(of: Box.kind).name))
+    },
 ])

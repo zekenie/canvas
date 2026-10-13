@@ -305,7 +305,7 @@ let package = Package(
         // the titled shapes Titles names (each tinted as its kind is, the core's `registry.label(of:)`), goes to one as Boards' crumbs do (Boards'
         // `follow`), and shows its list in TextEditing's caret list, its palette over the canvas in one of the host's slots.
         .target(name: "JumpTo", dependencies: ["Boards", "Canvas", "FuzzyMatching", "Geometry", "Keyboard", "TextEditing", "Titles", "Topology"]), // layer: feature
-        .target(name: "References", dependencies: ["Canvas", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Mentions", "Publishing", "Queries", "QueryLanguage", "QueryTranslation", "Selection", "TableOfContents", "TextEditing", "Topology", "Validation"]), // layer: vertical
+        .target(name: "References", dependencies: ["Boards", "Canvas", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Mentions", "Publishing", "Queries", "QueryLanguage", "QueryTranslation", "Selection", "TableOfContents", "TextEditing", "Topology", "Validation"]), // layer: vertical
         // Moving (`/move-to`, `/move-near`): a feature no kind opts into and nothing imports: two slash
         // commands that move a shape into a frame, onto a subboard's board or beside a shape, placed as `canvas draw` places one (Draw's
         // placement for plugins, `Surroundings`),

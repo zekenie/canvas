@@ -146,4 +146,31 @@ extension Registry {
 
     /// What `BoardKinds` holds for a kind: at most one.
     func boardKind(of kind: ShapeKind) -> BoardKind? { contributions(to: BoardKinds.self, for: kind).first }
+
+    /// What a shape that others are inside (a frame, a board's owner) is called in a path of where
+    /// a shape is, "Alpha › Beta": its title, else what its kind is called, as a board with no
+    /// title is (`boardPlaceholder(of:)`, else the kind's label). Whatever writes such a path names
+    /// each shape this way (Jump To's rows, a reference's row in the table of contents), so they
+    /// agree with one another and with the path over the canvas.
+    public func containerName(of record: AnyShapeRecord) -> ContainerName {
+        ContainerName(title: record.isOpaque ? nil : title(of: record),
+                      placeholder: boardPlaceholder(of: record.kind) ?? label(of: record.kind).name)
+    }
+}
+
+/// What a shape is called in a path of the shapes a shape is inside (`registry.containerName(of:)`).
+public struct ContainerName: Hashable, Sendable {
+    /// Its title; nil while it has none.
+    public let title: String?
+    /// What its kind is called, said in a title's place: "Untitled Subboard", "Frame".
+    public let placeholder: String
+
+    public init(title: String?, placeholder: String) {
+        self.title = title
+        self.placeholder = placeholder
+    }
+
+    /// What the path says: the title, else the placeholder.
+    public var text: String { title ?? placeholder }
+    public var isPlaceholder: Bool { title == nil }
 }

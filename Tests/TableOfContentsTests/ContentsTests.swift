@@ -113,6 +113,68 @@ import TestKit
         expect(contrast(dimmed, at: dimmedArrow) + 30 < contrast(standIn, at: arrow),
                "dimmed with the placeholder: \(contrast(dimmed, at: dimmedArrow)) against \(contrast(standIn, at: arrow))")
     },
+    test("a row's path comes before its title; a row too narrow for it folds its middle into …, then cuts its names short, each to a few letters, and only then the title") {
+        /// The label alone in an unshown window `width` wide, as the list lays out its row.
+        @MainActor func render(_ label: ContentsLabel, width: CGFloat) -> NSBitmapImageRep {
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: width, height: 24), styleMask: [.titled], backing: .buffered, defer: false)
+            let hosting = NSHostingView(rootView: label.frame(width: width, height: 24, alignment: .leading))
+            hosting.frame = CGRect(x: 0, y: 0, width: width, height: 24)
+            window.contentView = hosting
+            window.settle()
+            return snapshot(hosting)
+        }
+        /// How wide the label is with all the room it wants.
+        @MainActor func ideal(_ label: ContentsLabel) -> CGFloat {
+            NSHostingView(rootView: label.fixedSize()).fittingSize.width
+        }
+        @MainActor func differ(_ a: ContentsLabel, _ b: ContentsLabel, width: CGFloat) -> Bool {
+            let size = CGRect(x: 0, y: 0, width: width, height: 24)
+            return changedPixels(render(a, width: width), render(b, width: width), in: size) > 0
+        }
+        @MainActor func row(_ path: [ContentsPathName], _ title: String = "Checkout") -> ContentsLabel {
+            ContentsLabel(title, systemImage: "note.text", path: path)
+        }
+        expectEqual(ContentsLabel("Checkout").path, [], "none by default")
+        expectEqual(ContentsLabel.folded(["Alpha", "Beta", "Gamma", "Delta"]), ["Alpha", "…", "Delta"], "the first and the nearest stay")
+        expectEqual(ContentsLabel.folded(["Alpha", "Beta"]), nil, "no middle to fold")
+        expectEqual(ContentsLabel.folded([]), nil)
+
+        let path: [ContentsPathName] = ["Alphabetical", "Betatron", "Gammaray", "Deltawinged"]
+        let label = row(path)
+        expectEqual(label.text, "Checkout", "the title is the row's name still")
+        expectEqual(label.help, "Alphabetical › Betatron › Gammaray › Deltawinged › Checkout", "the tooltip has it whole")
+        expectEqual(ContentsLabel("", placeholder: "Checkout", path: ["Alpha"]).help, "Alpha › Checkout", "a placeholder's says where")
+        expectEqual(ContentsLabel("", placeholder: "Checkout").help, nil)
+
+        let folded = row(try require(ContentsLabel.folded(path)))
+        let whole = ideal(label), short = ideal(folded), least = ideal(row([]))
+        expect(whole > short + 60 && short > least + 150, "\(whole), \(short), \(least)")
+        expect(differ(label, row([]), width: whole + 20), "the path shows")
+        expect(differ(label, folded, width: whole + 20), "all of it, with the room")
+        expect(!differ(label, folded, width: ((whole + short) / 2).rounded()), "folded where all of it doesn't fit")
+        // Narrower than the folded path: its names give way, the title's last letter still there.
+        let tight = (short - 45).rounded()
+        expect(differ(label, row(path, "Checkoux"), width: tight), "the title whole")
+        expect(!differ(label, row(Array(path.dropLast()) + ["Deltawinger"]), width: tight), "the nearest name cut short")
+        expect(differ(label, row(["Xlphabetical"] + path.dropFirst()), width: tight), "but still said, as the first is")
+        expect(differ(label, row(Array(path.dropLast()) + ["Xeltawinged"]), width: tight))
+        // Narrower still: the names keep their first letters, and the title is what's cut.
+        let cramped = (short - 130).rounded()
+        expect(cramped > least, "\(cramped), \(least)")
+        expect(!differ(label, row(path, "Checkoux"), width: cramped), "the title cut short")
+        expect(differ(label, row(["Xlphabetical"] + path.dropFirst()), width: cramped), "the first still said")
+        expect(differ(label, row(Array(path.dropLast()) + ["Xeltawinged"]), width: cramped), "and the nearest")
+        // A name that is only what its kind is called is fainter than the same words as a title.
+        expect(!ContentsPathName("Frame").isPlaceholder, "a title unless said")
+        expect(differ(row([ContentsPathName("Frame", isPlaceholder: true)]), row(["Frame"]), width: 200), "an untitled frame's, fainter")
+        expectEqual(ContentsLabel("Checkout", path: [ContentsPathName("Frame", isPlaceholder: true)]).help, "Frame › Checkout")
+        // A path of two names has no fold: its names are cut short the same way.
+        let two = row(["Alphabetical", "Betatron"])
+        let narrow = (ideal(two) - 50).rounded()
+        expect(differ(two, row(["Alphabetical", "Betatron"], "Checkoux"), width: narrow), "the title whole")
+        expect(!differ(two, row(["Alphabetical", "Betatrox"]), width: narrow), "the names cut short")
+        expect(differ(two, row(["Alphabetical", "Xetatron"]), width: narrow), "each still said")
+    },
     test("`when` leaves shapes out of the list, and puts them back when it lets them in") {
         let editor = try contentsEditor()
         editor.add(Widget(name: "Shown"))
