@@ -72,6 +72,35 @@ extension ShapeTitles: KeyedExtensionPoint {
     public static func uniqueKeys(of _: TitleContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
+/// What a kind's shapes' covers are drawn over, shape by shape (`titleCoverSurface`): for a kind
+/// whose surface is each shape's own (a note's paper is its color's). At most one per kind.
+public enum TitleCoverSurfaces {}
+
+extension TitleCoverSurfaces: KeyedExtensionPoint {
+    public typealias Contribution = TitleCoverSurface
+    public static var owner: PluginID { .titles }
+    public static func uniqueKeys(of _: TitleCoverSurface, for target: ShapeTarget) -> [AnyHashable] { [target] }
+    public static func summary(of _: TitleCoverSurface, for target: ShapeTarget) -> String { "title cover surface → \(target)" }
+}
+
+/// One kind's: only the sugar makes one.
+@MainActor
+public struct TitleCoverSurface {
+    let surface: @MainActor (AnyShapeRecord, TitleLookContext) -> NSColor?
+}
+
+extension ShapeRegistrar {
+    /// What a shape of this kind's cover is drawn over, where that is the shape's own and not the
+    /// kind's (`title(coverSurface:)`): a note's paper, which is its color's. Asked for every titled
+    /// skeleton of the kind in view, each frame, with the editor's services, so answer from what a
+    /// service keeps, at the cost of a lookup; nil is the kind's. A look's own `coverSurface`
+    /// (`titlePillLook`) still wins: a type's note is white whatever its color.
+    public mutating func titleCoverSurface(_ surface: @escaping @MainActor (ShapeRecord<Definition.Props>, TitleLookContext) -> NSColor?) {
+        contribute(TitleCoverSurface { record, context in record.typed(as: Definition.Props.self).flatMap { surface($0, context) } },
+                   to: TitleCoverSurfaces.self)
+    }
+}
+
 /// What `ShapeTitles` stores for a kind: its shapes' titles, as they read (`TitleProperty.folded`),
 /// whether they're derived from what the kind keeps, whether its shapes show `TitlePill`, whether
 /// the pill starts with the kind's symbol, and what it says, dimmed, on a shape without a title.
@@ -372,12 +401,18 @@ extension Registry {
     /// What a shape's cover says (`TitleCoverStyle`) and what its kind's skeleton is drawn on: its
     /// title, for a kind that shows one in a pill; nil for an untitled shape (a placeholder is its
     /// pill's alone), and a kind with no pill.
-    func titleCover(of shape: AnyShapeRecord) -> (title: String, surface: NSColor?)? {
+    func titleCover(of shape: AnyShapeRecord, in editor: CanvasEditor) -> (title: String, surface: NSColor?)? {
         guard let titles = titleContribution(for: shape.kind), titles.showsPill,
               let title = titles.title(shape) else { return nil }
-        return (title, titlePillLook(of: shape, title: title, in: .none)?.coverSurface ?? titles.coverSurface)
+        // A look's surface, asked with no services; then the shape's own, which its kind answers from
+        // a service; then the kind's.
+        if let surface = titlePillLook(of: shape, title: title, in: .none)?.coverSurface { return (title, surface) }
+        let own = memo(CoverSurfaceKey(kind: shape.kind)) { contributions(to: TitleCoverSurfaces.self, for: shape.kind).first }
+        return (title, own?.surface(shape, TitleLookContext(editor)) ?? titles.coverSurface)
     }
 }
+
+private struct CoverSurfaceKey: Hashable { let kind: ShapeKind }
 
 /// A horizontal any kind can opt into: a title, kept in the property this plugin adds to the kind or
 /// derived from the kind's own, in a pill on the canvas and naming the shape's row in the table of

@@ -49,7 +49,7 @@ extension RowBook {
         for (index, row) in kept.rows.enumerated() {
             let mark = check.problems.isEmpty ? nil : kept.marks[index].compactMap { check.mark(at: $0) }.max()
             let rect = row.rect, midY = rect.midY
-            if let tick = row.tick { drawTick(TypeColors.base(tick), in: rect, to: cg) }
+            if let tick = row.tick { drawTick(editor?.types?.look(of: tick).tick ?? TypesStyle.manyTick, in: rect, to: cg) }
             if row.path == nil {
                 drawFold(row, mark: mark, midY: midY, to: cg)
                 continue

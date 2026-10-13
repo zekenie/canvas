@@ -1,4 +1,5 @@
 import AppKit
+import Palette
 
 /// The core's UI constants. Sizes are view points unless noted.
 @MainActor
@@ -188,10 +189,4 @@ public enum Style {
     /// step moves the guess toward what it took. Seconds.
     static let initialPreviewCost = 2e-6
     static let previewCostLearning = 0.25
-}
-
-extension NSAppearance {
-    var isDark: Bool {
-        bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-    }
 }

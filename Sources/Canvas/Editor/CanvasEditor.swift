@@ -244,7 +244,8 @@ public final class CanvasEditor {
     /// What the editor's own contexts lay shapes out with: those inputs, its services and its file.
     @ObservationIgnored lazy var layoutSource = LayoutSource(
         inputs: layoutInputs, sizes: laidOutSizes, lend: { [unowned self] in resolveService($0) },
-        shape: { [unowned self] in storedDocument[$0] ?? Self.shape($0, inFile: storedFile, registry: registry) })
+        shape: { [unowned self] in storedDocument[$0] ?? Self.shape($0, inFile: storedFile, registry: registry) },
+        fileValues: { [unowned self] in storedFile.fileValues })
     /// Moves whenever shapes were laid out again without a commit (`shapesDidChangeLayout`). What
     /// keeps something worked out from geometry keys it by this beside `revision`.
     @ObservationIgnored public internal(set) var layoutRevision = 0
@@ -419,6 +420,9 @@ public final class CanvasEditor {
     /// into) until something else happens. `name` names the step, if nothing it's in has named it:
     /// "Move", "Delete", as a menu says Undo Move.
     ///
+    /// The file's own values (`FileProperty`) change here too (`transaction.setFileValue`), in the
+    /// same commit and the same step.
+    ///
     /// A body that throws commits nothing, whatever it changed first: services hear of no change
     /// and no refusal, the board isn't edited, no undo step opens (what there was to redo stays),
     /// and the error comes out of `transact` (untyped: catch it and cast). So work that must happen
@@ -443,9 +447,9 @@ public final class CanvasEditor {
         }
         // Committing can end editing, and an editing view may save as it closes: outside the
         // transaction, so it can.
-        if transaction.didChange, isReplacingFile {
+        if transaction.hasChanges, isReplacingFile {
             commit(transaction)
-        } else if transaction.didChange {
+        } else if transaction.hasChanges {
             undoHistory.willCommit(transaction.changes, from: storedFile, name: name, coalescing: key, origin: origin)
             commit(transaction)
             undoHistory.didCommit()
@@ -466,7 +470,9 @@ public final class CanvasEditor {
     /// nothing goes on it), but nothing shows the refusal, since they aren't shown. A transaction that would
     /// take the board shown, or a board above it, with a shape it deletes, or that reaches the board
     /// shown (moving shapes onto it, or settling there), commits nothing: `document` would go stale.
-    /// Returns nil, doing nothing, for a board the editor can't show (`canShow`).
+    /// Returns nil, doing nothing, for a board the editor can't show (`canShow`). One of the file's
+    /// own values set there (`setFileValue`) is the file's, as from any board: a transaction that
+    /// sets nothing else says no board changed.
     @discardableResult
     public func transact<T>(on target: BoardID, _ name: String? = nil, _ body: (inout Transaction) throws -> T) rethrows -> T? {
         guard target != board else { return try transact(name, coalescing: nil, origin: .ordinary, body) }
@@ -483,7 +489,7 @@ public final class CanvasEditor {
             result = try body(&transaction)
         }
         // The owners too: an empty board isn't among the boards a deletion takes.
-        guard transaction.didChange, transaction.changes.boardsRemoved.isDisjoint(with: boardPath),
+        guard transaction.hasChanges, transaction.changes.boardsRemoved.isDisjoint(with: boardPath),
               transaction.changes.removed.isDisjoint(with: boardPath.lazy.compactMap(\.owner)),
               !transaction.changes.boardsReached.contains(board) else { return result }
         if isReplacingFile {
@@ -562,6 +568,36 @@ public final class CanvasEditor {
         for service in serviceOrder { service.didRefuseChanges(to: ids, in: self) }
     }
 
+    /// The color a shape's symbol has wherever it is listed: the first color a plugin gives it
+    /// (`registrar.shapeTints`: Colors', for a shape with a color of its own), else its kind's
+    /// (`registry.label(of:).tint`); nil for a shape with neither. Asked per row shown, never per
+    /// frame for every shape.
+    public func tint(of record: AnyShapeRecord) -> NSColor? {
+        ownTint(of: record) ?? registry.kindTint(of: record.kind)
+    }
+
+    /// The same for a shape of a known kind.
+    public func tint<P: ShapeProps>(of shape: ShapeRecord<P>) -> NSColor? {
+        tint(of: AnyShapeRecord(shape))
+    }
+
+    /// The color a plugin gives the shape's symbol (`registrar.shapeTints`), the first that has one;
+    /// nil for a shape no plugin gives one, which has its kind's (`tint(of:)`). What a list of many
+    /// shapes asks, with the kind's tint worked out once a kind.
+    public func ownTint(of record: AnyShapeRecord) -> NSColor? {
+        for rule in registry.shapeTintRules {
+            if let tint = rule(record, self) { return tint }
+        }
+        return nil
+    }
+
+    /// Services hear that shapes' tints changed with no commit to them (the file's colors did): a
+    /// plugin that gives tints (`registrar.shapeTints`) calls it, and a service that keeps what
+    /// shows one makes it again (`EditorService.shapeTintsDidChange`).
+    public func shapeTintsDidChange() {
+        for service in serviceOrder { service.shapeTintsDidChange(in: self) }
+    }
+
     /// Services hear that the canvas started or stopped drawing skeletons, if it did since they last
     /// heard: a comparison, as the camera changes on every event of a pinch.
     private func tellSkeletonLevel() {
@@ -575,7 +611,8 @@ public final class CanvasEditor {
         FileAccess(locate: { [unowned self] in storedFile.board(containing: $0) },
                    subtree: { [unowned self] in storedFile.subtree(ownedBy: $0) },
                    contents: { [unowned self] in storedFile[$0] },
-                   canShow: { [unowned self] in Self.canShow($0, in: storedFile, registry: registry) })
+                   canShow: { [unowned self] in Self.canShow($0, in: storedFile, registry: registry) },
+                   values: { [unowned self] in storedFile.fileValues })
     }
 
     /// A board of the file: `document` for the one shown, else its shapes as the file has them
@@ -602,7 +639,8 @@ public final class CanvasEditor {
     /// replaces and is no step. Every board's revision changes but those whose shapes are as they
     /// were (`CanvasFile.restamp(after:)`), so nothing kept about a board of the old file is taken for
     /// the new one's; the cameras boards were left with are kept. A menu waiting to be popped up
-    /// (`popUpMenu`) is dropped.
+    /// (`popUpMenu`) is dropped. The file's own values (`FileProperty`) are the new file's, and services
+    /// hear which differ (`ChangeSet.fileValues`, `BoardChange.fileValues`).
     @_spi(Host) public func replaceFile(with newFile: CanvasFile, showing requested: BoardID? = nil) {
         precondition(!isTransacting, "a file can't be replaced inside a transaction")
         Self.expectAccepted(newFile, by: registry)
@@ -626,16 +664,18 @@ public final class CanvasEditor {
         newFile.restamp(after: storedFile)
         warmIndexes.removeAll()
         laidOutSizes.forgetAll()
+        let fileValues = newFile.fileValues.keysDiffering(from: storedFile.fileValues)
         if target == board {
             var changes = ChangeSet(from: storedDocument, to: newFile[board])
             changes.elsewhere = newFile.shapesChanged(from: storedFile, except: board)
+            changes.fileValues = fileValues
             storedFile = newFile
             boardPath = newFile.path(to: board) ?? [.root]
             documentDidChange(to: newFile[board], changes: changes)
         } else {
             switchTool(to: registry.defaultTool)
             storedFile = newFile
-            show(target, leaving: left, replacingFile: true)
+            show(target, leaving: left, replacingFile: true, fileValues: fileValues)
         }
         undoHistory.clear()
     }
@@ -660,7 +700,7 @@ public final class CanvasEditor {
     @_spi(Host) public func discardKeptAside(shapes ids: Set<ShapeID>, boards keys: Set<String>) -> Bool {
         precondition(!isTransacting, "a file can't be replaced inside a transaction")
         let old = storedFile, access = FileAccess(old, boardOwningKinds: registry.boardOwningKinds)
-        var newFile = old, removed: Set<BoardID> = []
+        var newFile = old, removed: Set<BoardID> = [], fileValues: Set<PropertyKey> = []
         let byBoard = Dictionary(grouping: ids.filter { old.record($0)?.isOpaque == true }) { old.board(containing: $0)! }
         for (board, ids) in byBoard {
             // Refused by nothing: a read-only board's hidden shapes go too.
@@ -669,6 +709,11 @@ public final class CanvasEditor {
             transaction.discard(Set(ids))
             newFile.set(transaction.document, for: board, changes: transaction.changes)
             removed.formUnion(transaction.changes.boardsRemoved)
+            // What a `willDelete` handler set of the file's own values.
+            if let values = transaction.stagedFileValues {
+                for key in transaction.changes.fileValues { newFile.fileValues[key] = values[key] }
+                fileValues.formUnion(transaction.changes.fileValues)
+            }
         }
         for key in keys {
             // A key the report kept may name a board that can be shown by now (an entry that didn't
@@ -688,6 +733,7 @@ public final class CanvasEditor {
         changes.boardsRemoved = removed
         changes.boardsChanged = Set(byBoard.keys).subtracting(removed).subtracting([board])
         changes.elsewhere = newFile.shapesChanged(from: old, except: board)
+        changes.fileValues = fileValues
         undoHistory.group("Delete Hidden Shapes") {
             undoHistory.willCommit(changes, from: storedFile, name: nil, coalescing: nil, origin: .ordinary)
             storedFile = newFile
@@ -704,8 +750,17 @@ public final class CanvasEditor {
     /// change, the boards it takes included, so undoing it puts them back with every id.
     private func commit(_ transaction: Transaction) {
         var changes = transaction.changes
+        writeFileValues(of: transaction)
+        // One that only set the file's values wrote no board: none is stamped, and the board shown is as it was.
+        guard transaction.didChange else { return documentDidChange(to: storedDocument, changes: changes) }
         changes.elsewhere = writeBoards(of: transaction, own: (board, transaction.document, changes))
         documentDidChange(to: transaction.document, changes: changes)
+    }
+
+    /// Writes the file's own values a transaction set (`setFileValue`) through to the file.
+    private func writeFileValues(of transaction: Transaction) {
+        guard !transaction.changes.fileValues.isEmpty, let values = transaction.stagedFileValues else { return }
+        storedFile.fileValues = values
     }
 
     /// Writes a transaction on a board that isn't shown (`transact(on:)`) through to the file, and
@@ -714,11 +769,16 @@ public final class CanvasEditor {
     private func commit(_ transaction: Transaction, onHidden target: BoardID) {
         let local = transaction.changes
         var changes = ChangeSet()
-        changes.boardsChanged = local.boardsChanged.union([target])
-        changes.boardsAdded = local.boardsAdded
-        changes.boardsRemoved = local.boardsRemoved
         changes.byAgent = local.byAgent
-        changes.elsewhere = writeBoards(of: transaction, own: (target, transaction.document, local)).union(local.shapeIDs)
+        changes.fileValues = local.fileValues
+        writeFileValues(of: transaction)
+        // One that only set the file's values changed no board, its own included.
+        if transaction.didChange {
+            changes.boardsChanged = local.boardsChanged.union([target])
+            changes.boardsAdded = local.boardsAdded
+            changes.boardsRemoved = local.boardsRemoved
+            changes.elsewhere = writeBoards(of: transaction, own: (target, transaction.document, local)).union(local.shapeIDs)
+        }
         documentDidChange(to: storedDocument, changes: changes)
     }
 
@@ -755,8 +815,8 @@ public final class CanvasEditor {
 
     /// Undo's and redo's commit, on the board shown, the delta's: `newDocument` is the board with it
     /// applied, `changes` what it did (`ChangeSet(delta)`); the boards it names whole go in or out
-    /// of the file (each with a new revision, so nothing kept about one is taken for it), and
-    /// services hear it as a transaction's.
+    /// of the file (each with a new revision, so nothing kept about one is taken for it), the file's
+    /// own values it names go back or come again, and services hear it as a transaction's.
     func commit(_ newDocument: CanvasDocument, changes: ChangeSet, applying delta: DocumentDelta) {
         storedFile.apply(delta, document: newDocument, changes: changes)
         for board in changes.boardsRemoved { leftCameras[board] = nil }
@@ -864,7 +924,7 @@ public final class CanvasEditor {
 
     /// Goes to `target` once services have heard of it, editing has ended, the default tool is back
     /// and camera motion has stopped: `left` is the camera the board shown now is left with.
-    private func show(_ target: BoardID, leaving left: Camera, replacingFile: Bool = false) {
+    private func show(_ target: BoardID, leaving left: Camera, replacingFile: Bool = false, fileValues: Set<PropertyKey> = []) {
         // A step is the board's it was made on: the one under way closes here.
         undoHistory.close()
         dismissPopover()
@@ -873,7 +933,7 @@ public final class CanvasEditor {
         leftOrder.removeAll { $0 == board }
         leftOrder.append(board)
         let change = BoardChange(from: board, to: target, leftCamera: left, left: storedDocument, shown: storedFile[target],
-                                 isFileReplaced: replacingFile)
+                                 isFileReplaced: replacingFile, fileValues: fileValues)
         withMutation(keyPath: \.document) { storedDocument = storedFile[target] }
         board = target
         boardPath = storedFile.path(to: target) ?? [.root]

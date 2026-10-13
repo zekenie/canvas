@@ -2,6 +2,7 @@ import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Colors
 import ContextMenus
 import DetailPanel
 import Frames
@@ -21,7 +22,7 @@ import Transform
 /// fixtures, for boxes to put in frames, and its freezing, for read-only shapes (a locked frame,
 /// without Locking).
 @MainActor func framePlugins(_ refusals: RefusalLog = RefusalLog()) -> [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), FramesPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), FramesPlugin(), ColorsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
      SlashCommandsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), TitlesPlugin(), MentionsPlugin(), TransformPlugin(),
      FreezingPlugin(log: refusals)]
 }

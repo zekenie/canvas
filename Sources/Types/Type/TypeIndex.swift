@@ -1,5 +1,6 @@
 import Adornments
 import Canvas
+import Colors
 import Foundation
 import Mentions
 import Titles
@@ -23,7 +24,8 @@ public enum TypeLinkName: Equatable, Sendable {
 /// `ChangeSet` alone (what it added, removed and changed, on the board shown and elsewhere, the kind
 /// checked first), a commit heard out of turn and a file put in place read again. Nothing per frame,
 /// and nothing for a shape that only moved. It never transacts; it tells Adornments to make the
-/// chips of the instances of a type again when the type is renamed, deleted or comes back.
+/// chips of the instances of a type again when the type is renamed, recolored (its shape's `color`,
+/// or the file's colors it names), deleted or comes back.
 @MainActor
 @Observable
 public final class TypeIndex {
@@ -31,6 +33,9 @@ public final class TypeIndex {
         var schema: String
         var name: String?
         var revision: Int
+        /// The color the type's shape holds (not what it is drawn in: `look(of:)`), nil for none. Not
+        /// part of its revision, which is what its schema and its name say.
+        var color: ShapeColor?
     }
 
     @ObservationIgnored weak var editor: CanvasEditor?
@@ -40,6 +45,9 @@ public final class TypeIndex {
     @ObservationIgnored private let kinds: Set<ShapeKind>
     /// The kinds that can be instances of types.
     @ObservationIgnored private let typeableKinds: Set<ShapeKind>
+    /// The book of colors, if the plugin list has one: what a type's own color is drawn in. Asked for as
+    /// the index is made, so it is made first.
+    @ObservationIgnored private let colors: ColorBook?
     /// The kinds that stand in for other shapes (pills): never a type, whatever they stand for.
     @ObservationIgnored private let standInKinds: Set<ShapeKind>
     @ObservationIgnored private var observers: [@MainActor (Set<ShapeID>) -> Void] = []
@@ -72,7 +80,9 @@ public final class TypeIndex {
         typeableKinds = Set(registry.kinds.filter { registry.isTypeable($0) })
         standInKinds = registry.standIns.kinds
         heardRevision = editor.revision
+        colors = editor.colors
         readEveryShape(in: editor)
+        colors?.onChange { [weak self] in self?.fileColorsDidChange() }
     }
 
     /// Whether the shape is a type: it holds a schema.
@@ -91,6 +101,13 @@ public final class TypeIndex {
 
     /// A type's name, its title; nil for an untitled type and a shape that isn't one.
     public func name(of id: ShapeID) -> String? { entries[id]?.name }
+
+    /// How a type's color is drawn: the color its shape holds where the file has it, else one of
+    /// eight by its id (`TypeColors`). Asked of any id, a type that is gone included; it keeps nothing
+    /// per type, so it is the color of the commit last heard.
+    public func look(of id: ShapeID) -> TypeLook {
+        TypeColors.look(of: id, own: entries[id]?.color, book: colors)
+    }
 
     /// A type's schema text, as the shape holds it; nil for a shape that isn't one.
     func schemaText(of id: ShapeID) -> String? { entries[id]?.schema }
@@ -225,8 +242,8 @@ public final class TypeIndex {
     // MARK: Keeping it
 
     /// What the shape is now, if it's a type, and whether that differs from what's kept: kept, with
-    /// its revision moved, and true. `renamed` gets the shape when its name, or whether it's a type,
-    /// is what changed.
+    /// its revision moved, and true. `renamed` gets the shape when its name, its color, or whether it's
+    /// a type, is what changed; a color alone is kept with no revision moved, and false.
     private func read(_ record: AnyShapeRecord, registry: Registry, renamed: inout Set<ShapeID>) -> Bool {
         #if DEBUG
         recordsRead += 1
@@ -236,14 +253,20 @@ public final class TypeIndex {
             renamed.insert(record.id)
             return true
         }
-        let name = registry.title(of: record)
+        let name = registry.title(of: record), color = record.ownColor
         let kept = entries[record.id]
-        if let kept, kept.schema == schema.text, kept.name == name { return false }
-        if kept == nil || kept?.name != name { renamed.insert(record.id) }
+        if var kept, kept.schema == schema.text, kept.name == name {
+            guard kept.color != color else { return false }
+            kept.color = color
+            entries[record.id] = kept
+            renamed.insert(record.id)
+            return false
+        }
+        if kept == nil || kept?.name != name || kept?.color != color { renamed.insert(record.id) }
         if let name { lastNames[record.id] = name }
         if kept == nil || kept?.schema != schema.text { chainRevision &+= 1 }
         revisions += 1
-        put(record.id, Entry(schema: schema.text, name: name, revision: revisions))
+        put(record.id, Entry(schema: schema.text, name: name, revision: revisions, color: color))
         return true
     }
 
@@ -311,8 +334,9 @@ public final class TypeIndex {
         for observer in observers { observer(ids) }
     }
 
-    /// A type's name, or whether it's there, changed: the readers of its name hear it, and the
-    /// chips of its instances are made again.
+    /// A type's name, its color, or whether it's there, changed: the readers of its name hear it, and
+    /// the chips of its instances are made again (its own pill is its shape's, which the commit that
+    /// changed it names).
     private func told(renamed: Set<ShapeID>, in editor: CanvasEditor) {
         guard !renamed.isEmpty else { return }
         var chips: Set<ShapeID> = []
@@ -321,6 +345,17 @@ public final class TypeIndex {
             chips.formUnion(instancesByType[type] ?? [])
         }
         if !chips.isEmpty { editor.adornmentsDidChange(for: chips) }
+    }
+
+    /// The file's colors changed: a type that holds a color by name may be drawn in another now, or
+    /// in its id's; one that holds a value, or none, is not.
+    private func fileColorsDidChange() {
+        guard let editor else { return }
+        let named = Set(entries.filter { $0.value.color?.name != nil }.keys)
+        guard !named.isEmpty else { return }
+        // Their own pills too: no commit names them.
+        editor.adornmentsDidChange(for: named)
+        told(renamed: named, in: editor)
     }
 
     /// Everything read again. A file put in place forgets what its types were called (they are

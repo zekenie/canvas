@@ -57,6 +57,12 @@ public struct ChangeSet: Equatable, Sendable {
     /// name of a shape on another board, which went with the board its owner took.
     public internal(set) var elsewhere: Set<ShapeID> = []
 
+    /// The file's values it changed (`FileProperty`, by key): a transaction's `setFileValue`, an undo
+    /// or redo of one, and a file put in place (`replaceFile`) whose values differ. They are no
+    /// shape's and no board's: a commit that changed nothing else names no shape and no board, and
+    /// what reads a file value follows it here.
+    public internal(set) var fileValues: Set<PropertyKey> = []
+
     /// Every shape the commit touched.
     public var shapeIDs: Set<ShapeID> { added.union(changed).union(removed) }
 

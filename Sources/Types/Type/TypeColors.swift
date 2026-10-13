@@ -1,41 +1,85 @@
 import Adornments
 import AppKit
 import Canvas
+import Colors
+import Palette
 
-/// A type's color, worked out from its id and never stored: one of eight (`TypesStyle.colorTable`),
-/// so two types can share one. The same everywhere the type shows: its pill is solid in it, the chips
-/// of the shapes that are it are light in it, and a row of `/is-a`'s list is a capsule in it.
+/// A type's color: the color its shape holds (`record.ownColor`, Colors') where the file has it, else
+/// one of eight built-in names worked out from its id, so two types can share one. The same
+/// everywhere the type shows (`TypeLook`): its pill is solid in it, the chips of the shapes that
+/// are it are light in it, a row of `/is-a`'s list is a capsule in it. Without `ColorsPlugin`
+/// a type's color is always the one its id says.
 @MainActor
 public enum TypeColors {
+    /// The eight a type's id chooses among, in the order of the index: never gray, which reads as no
+    /// color, nor red, which reads as wrong.
+    public static let names: [ShapeColor] = builtIns.map(\.color)
+
+    private static let builtIns: [NamedColor] = [
+        BuiltInColors.orange, BuiltInColors.yellow, BuiltInColors.green, BuiltInColors.teal,
+        BuiltInColors.blue, BuiltInColors.indigo, BuiltInColors.purple, BuiltInColors.pink,
+    ]
+
     /// Which of the eight a type's id says: the first eight bytes of its UUID, each summed with its
     /// position, modulo eight. Never `hashValue`, which changes with the process.
     public static func index(of id: ShapeID) -> Int {
         let bytes = id.rawValue.uuid
         let first = [bytes.0, bytes.1, bytes.2, bytes.3, bytes.4, bytes.5, bytes.6, bytes.7]
-        return first.enumerated().reduce(0) { $0 + Int($1.element) + $1.offset } % TypesStyle.colorTable.count
+        return first.enumerated().reduce(0) { $0 + Int($1.element) + $1.offset } % builtIns.count
     }
 
-    /// The type's pill: its color, with white text.
-    public static func solid(_ id: ShapeID) -> AdornmentTint { solids[index(of: id)] }
-    /// The type's chip: its color faint, with a line of it, its title in the color's ink.
-    public static func light(_ id: ShapeID) -> AdornmentTint { lights[index(of: id)] }
-    /// The type's color alone: a row of `/is-a`'s list.
-    public static func base(_ id: ShapeID) -> NSColor { solids[index(of: id)].color }
+    /// The color a type's id says, whatever its shape holds.
+    public static func name(of id: ShapeID) -> ShapeColor { names[index(of: id)] }
 
     /// What has no color of its own: `Type`, and a type that is untitled.
     public static let gray = AdornmentTint(TypesStyle.grayChip, style: .solid)
 
-    private static let solids = TypesStyle.colorTable.map { AdornmentTint(color(from: $0.base), style: .solid) }
-    private static let lights = TypesStyle.colorTable.map {
-        AdornmentTint(color(from: $0.base), ink: ink(light: $0.lightInk, dark: $0.darkInk), style: .light)
+    /// A type's color as it is drawn: `own`, the color its shape holds, where `book` has it, else the
+    /// one its id says.
+    static func look(of id: ShapeID, own: ShapeColor?, book: ColorBook?) -> TypeLook {
+        if let own, let swatch = book?.swatch(for: own) { return look(of: swatch) }
+        return builtInLooks[index(of: id)]
     }
 
-    private static func color(from rgb: TypesStyle.RGB) -> NSColor { NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1) }
+    private static let builtInLooks: [TypeLook] = builtIns.map { look(of: $0.swatch) }
 
-    /// The ink that reads on the canvas of the appearance drawn, over its own faint tint.
-    private static func ink(light: TypesStyle.RGB, dark: TypesStyle.RGB) -> NSColor {
-        NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? color(from: dark) : color(from: light)
-        }
+    /// How many looks are kept before the lot is let go: a color picked by dragging makes one a value.
+    private static let capacity = 512
+    private static var kept: [Swatch: TypeLook] = [:]
+
+    /// The look of a swatch, made once and kept: Adornments keeps its fills by tint, and a tint is
+    /// equal to another only if it is made of the same colors.
+    private static func look(of swatch: Swatch) -> TypeLook {
+        if let known = kept[swatch] { return known }
+        let made = TypeLook(swatch)
+        if kept.count >= capacity { kept.removeAll(keepingCapacity: true) }
+        kept[swatch] = made
+        return made
+    }
+}
+
+/// How a type's color is drawn, from the roles of its swatch (Palette's): all of it follows the
+/// appearance, but for the tick, which is drawn on a note's paper.
+public struct TypeLook {
+    /// The roles the color is drawn in.
+    public let swatch: Swatch
+    /// The type's pill: its `solid`, with its `onSolid` text (white on most, black on yellow and orange).
+    public let solid: AdornmentTint
+    /// The type's chip: its `solid` faint, with a line of it, its title in the color's `ink`.
+    public let light: AdornmentTint
+    /// The color alone: a row of `/is-a`'s list, and what its title is drawn in there.
+    public let row: NSColor
+    public let rowInk: NSColor
+    /// The mark at the left of a note's row that a type gave: its `solid` in the light appearance,
+    /// since a note's paper is light in both.
+    public let tick: NSColor
+
+    init(_ swatch: Swatch) {
+        self.swatch = swatch
+        row = NSColor(swatch.solid)
+        rowInk = NSColor(swatch.onSolid)
+        solid = AdornmentTint(row, ink: rowInk, style: .solid)
+        light = AdornmentTint(row, ink: NSColor(swatch.ink), style: .light)
+        tick = NSColor(swatch.solid.light)
     }
 }

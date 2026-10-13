@@ -144,7 +144,7 @@ private let petAnswer = """
         }
         let noteMenu = outline(at: CGPoint(x: 200, y: 200), 1)
         let lock = try require(noteMenu.firstIndex(of: "Lock"))
-        expectEqual(Array(noteMenu[lock...].prefix(6)), ["Lock", "Is a ▸", "  Type", "  —", "  Person", "—"], "\(noteMenu)")
+        expectEqual(Array(noteMenu[lock...].prefix(6)), ["Lock", "Is a ▸", "  Type", "  —", "  Person", "Color ▸"], "\(noteMenu)")
         let arrowMenu = outline(at: CGPoint(x: 190, y: 500), 2)
         expect(arrowMenu.contains("Is a ▸") && arrowMenu.contains("  Person") && !arrowMenu.contains("  Type"), "\(arrowMenu)")
         let frameMenu = outline(at: CGPoint(x: 200, y: 700), 3)

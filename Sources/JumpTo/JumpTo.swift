@@ -44,6 +44,12 @@ extension JumpToState: EditorService {
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         heardBoardChange(change)
     }
+
+    /// The file's colors changed: an open palette's rows are made again, since they read each
+    /// shape's tint as they are made and keep none.
+    public func shapeTintsDidChange(in editor: CanvasEditor) {
+        if isOpen { refreshRows() }
+    }
 }
 
 extension CanvasEditor {

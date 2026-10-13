@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Colors
 
 /// On the main actor as a whole, so its drawing helpers share the protocol's isolation.
 @MainActor
@@ -13,15 +14,16 @@ struct SubboardDefinition {}
 extension SubboardDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Subboard>, in context: RenderContext) {
         let card = shape.frame, cg = context.cg, path = SubboardStyle.path(card)
-        context.fillWithShadow(path, SubboardStyle.cardFill)
+        let colors = context.colors(of: shape)
+        context.fillWithShadow(path, colors.map { NSColor(cgColor: $0.surface) ?? SubboardStyle.cardFill } ?? SubboardStyle.cardFill)
         cg.saveGState()
         cg.addPath(path)
         cg.clip()
         if !context.drawBoardPreview(ofBoardOwnedBy: shape.id, in: SubboardStyle.preview(in: card), maxScale: SubboardStyle.previewMaxScale) {
-            drawCaption(context.shapeCount(inBoardOwnedBy: shape.id), in: card)
+            drawCaption(context.shapeCount(inBoardOwnedBy: shape.id), in: card, solid: colors?.solid)
         }
         cg.restoreGState()
-        stroke(card, SubboardStyle.border, width: SubboardStyle.borderWidth, cg: cg)
+        stroke(card, colors?.solid ?? SubboardStyle.border.cgColor, width: SubboardStyle.borderWidth, cg: cg)
     }
 
     func indicatorPath(of shape: ShapeRecord<Subboard>, in context: ShapeContext) -> CGPath {
@@ -32,11 +34,11 @@ extension SubboardDefinition: ShapeDefinition {
     /// board, the symbol over "Empty", the caption alone where there's no room for both; nothing
     /// where there's none for a line. The symbol isn't drawn for a count, so a card that's about
     /// to show its preview doesn't flash it.
-    private func drawCaption(_ count: Int, in card: CGRect) {
+    private func drawCaption(_ count: Int, in card: CGRect, solid: CGColor?) {
         let height = SubboardStyle.captionLineHeight
         guard card.height >= height, card.width > SubboardStyle.padding * 2 else { return }
         var top = card.midY - height / 2
-        if count == 0, let glyph = SubboardStyle.glyph {
+        if count == 0, let glyph = SubboardStyle.glyph(in: solid) {
             let size = glyph.size, total = size.height + SubboardStyle.captionSpacing + height
             if total <= card.height - SubboardStyle.padding * 2, size.width <= card.width - SubboardStyle.padding * 2 {
                 let y = card.midY - total / 2
@@ -51,11 +53,11 @@ extension SubboardDefinition: ShapeDefinition {
     }
 
     /// A line just inside `rect`'s rounded edge, so nothing is drawn outside the frame.
-    private func stroke(_ rect: CGRect, _ color: NSColor, width: CGFloat, cg: CGContext) {
+    private func stroke(_ rect: CGRect, _ color: CGColor, width: CGFloat, cg: CGContext) {
         let inset = rect.insetBy(dx: width / 2, dy: width / 2)
         guard inset.width > 0, inset.height > 0 else { return }
         cg.addPath(SubboardStyle.path(inset, radius: SubboardStyle.cornerRadius - width / 2))
-        cg.setStrokeColor(color.cgColor)
+        cg.setStrokeColor(color)
         cg.setLineWidth(width)
         cg.strokePath()
     }

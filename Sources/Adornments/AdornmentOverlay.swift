@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Palette
 import Selection
 
 /// How adornments look: every plugin's alike. Sizes are view points; where they go is
@@ -34,8 +35,10 @@ enum AdornmentStyle {
     /// A placeholder's text (`AdornmentLabel(placeholder:)`), dimmed: its place's, in white as faint
     /// as secondary text is on a dark surface (`secondaryLabelColor` in the dark).
     static let placeholderWhite = NSColor(white: 1, alpha: 0.55)
-    /// A placeholder's text on a light tint: its ink at this strength.
+    /// A placeholder's text on a light tint: its ink at this strength; on a solid one, its ink at
+    /// `solidPlaceholderInk`, the strength of `placeholderWhite`.
     static let lightPlaceholderInk: CGFloat = 0.6
+    static let solidPlaceholderInk: CGFloat = 0.55
     private static let rowPlaceholderText = rowText.merging([.foregroundColor: placeholderWhite]) { $1 }
     private static let cornerPlaceholderText = cornerText.merging([.foregroundColor: placeholderWhite]) { $1 }
 
@@ -70,9 +73,10 @@ enum AdornmentStyle {
     /// italic and in the canvas's colors where it's missing.
     private static func textAttributes(of label: AdornmentLabel, isCorner: Bool) -> [NSAttributedString.Key: Any] {
         if label.isMissing { return isCorner ? cornerMissingText : missingText }
-        if let tint = label.tint, tint.style == .light {
+        if let tint = label.tint {
             var attributes = isCorner ? cornerText : rowText
-            attributes[.foregroundColor] = label.isPlaceholder ? tint.ink.withAlphaComponent(lightPlaceholderInk) : tint.ink
+            let dimmed = tint.style == .light ? lightPlaceholderInk : solidPlaceholderInk
+            attributes[.foregroundColor] = label.isPlaceholder ? tint.ink.withAlphaComponent(dimmed) : tint.ink
             return attributes
         }
         return switch (isCorner, label.isPlaceholder) {
@@ -104,30 +108,27 @@ enum AdornmentStyle {
 
     /// A symbol as a disc `height` tall shows it: half as tall, bold, white.
     static func symbol(_ name: String, height: CGFloat, tint: AdornmentTint? = nil) -> NSImage? {
-        symbol(SymbolKey(name: name, pointSize: height / 2, weight: .bold, white: 1, ink: tint.flatMap(ink(of:))))
+        symbol(SymbolKey(name: name, pointSize: height / 2, weight: .bold, white: 1, ink: tint.map(ink(of:))))
     }
 
     /// A symbol before text in its place: two points smaller than the text, semibold, in white a
     /// little softer than the text's, so it marks the text rather than reading as part of it (a
     /// label's `brightSymbol()`: as white as the text).
     static func leadingSymbol(_ name: String, in placement: AdornmentPlacement, bright: Bool = false, tint: AdornmentTint? = nil) -> NSImage? {
-        let isSolid = tint?.style == .solid
-        return symbol(SymbolKey(name: name, pointSize: placement == .onTopRightCorner ? 8 : 9, weight: .semibold,
-                                white: bright || isSolid ? 1 : 0.75, ink: tint.flatMap(ink(of:))))
+        symbol(SymbolKey(name: name, pointSize: placement == .onTopRightCorner ? 8 : 9, weight: .semibold,
+                         white: bright ? 1 : 0.75, ink: tint.map(ink(of:))))
     }
 
-    /// A light tint's ink as it is now, in the appearance being drawn: an image made with a dynamic
+    /// A tint's ink as it is now, in the appearance being drawn: an image made with a dynamic
     /// color is fixed when it is made, so the image is made (and kept) for the color it resolves to.
-    /// Nil for no tint and for a solid one, whose symbols are white.
-    private static func ink(of tint: AdornmentTint) -> NSColor? {
-        guard tint.style == .light else { return nil }
+    private static func ink(of tint: AdornmentTint) -> NSColor {
         var resolved = tint.ink
         NSAppearance.currentDrawing().performAsCurrentDrawingAppearance { resolved = NSColor(cgColor: tint.ink.cgColor) ?? tint.ink }
         return resolved
     }
 
     /// What a symbol's image is made from: its name, size and weight, and how opaque its white is, or
-    /// the ink it is drawn in (a light tint's, as it resolves in the appearance drawn).
+    /// the ink it is drawn in (a tint's, as it resolves in the appearance drawn).
     private struct SymbolKey: Hashable {
         let name: String
         let pointSize: CGFloat
@@ -205,7 +206,8 @@ enum AdornmentStyle {
     }
 
     /// A tint's capsule: solid is its color, lighter hovered and darker pressed; light is its color
-    /// faint, a little less so hovered and pressed, with a thin line of it. Fixed, so made once.
+    /// faint, a little less so hovered and pressed, with a thin line of it. Made for an appearance
+    /// (a color that follows it is a different color in each) and kept, once a tint and appearance.
     struct TintFills {
         let normal: NSColor, hovered: NSColor, pressed: NSColor
         /// A light tint's line inside the capsule's edge.
@@ -222,11 +224,31 @@ enum AdornmentStyle {
     static let lightFill: [CGFloat] = [0.14, 0.22, 0.30]
     static let lightLine: CGFloat = 0.35
     static let lightLineWidth: CGFloat = 1
-    private static var tintFillsKept: [AdornmentTint: TintFills] = [:]
+    /// What a tint's fills are kept by: the tint and whether the appearance drawn is dark.
+    private struct FillsKey: Hashable {
+        let tint: AdornmentTint
+        let isDark: Bool
+    }
+    private static var tintFillsKept: [FillsKey: TintFills] = [:]
+    /// How many are kept before the lot is let go: a color picked by dragging asks for a tint a frame.
+    private static let tintFillsCapacity = 1024
+    /// The appearance last drawn in and whether it is dark: asked once an appearance, not a label.
+    private static var drawnAppearance: (appearance: NSAppearance, isDark: Bool)?
 
+    /// Whether the appearance being drawn in is dark.
+    private static var drawsDark: Bool {
+        let current = NSAppearance.currentDrawing()
+        if let known = drawnAppearance, known.appearance === current { return known.isDark }
+        let isDark = current.isDark
+        drawnAppearance = (current, isDark)
+        return isDark
+    }
+
+    /// A tint's fills in the appearance being drawn, its color resolved to what it is in it.
     static func fills(of tint: AdornmentTint) -> TintFills {
-        if let known = tintFillsKept[tint] { return known }
-        let color = tint.color
+        let key = FillsKey(tint: tint, isDark: drawsDark)
+        if let known = tintFillsKept[key] { return known }
+        let color = NSColor(cgColor: tint.color.cgColor) ?? tint.color
         let fills: TintFills
         switch tint.style {
         case .solid:
@@ -236,7 +258,8 @@ enum AdornmentStyle {
             fills = TintFills(normal: color.withAlphaComponent(lightFill[0]), hovered: color.withAlphaComponent(lightFill[1]),
                               pressed: color.withAlphaComponent(lightFill[2]), line: color.withAlphaComponent(lightLine))
         }
-        tintFillsKept[tint] = fills
+        if tintFillsKept.count >= tintFillsCapacity { tintFillsKept.removeAll(keepingCapacity: true) }
+        tintFillsKept[key] = fills
         return fills
     }
 
@@ -299,7 +322,7 @@ enum AdornmentStyle {
                               width: frame.width * scale, height: frame.height * scale)
             cg.fillEllipse(in: disc)
             if let line { paintLine(line, around: disc, radius: nil, unit: scale, in: cg) }
-            if let image = label.tint?.style == .light ? label.systemImage.flatMap({ symbol($0, height: frame.height, tint: label.tint) }) : image {
+            if let image = label.tint != nil ? label.systemImage.flatMap({ symbol($0, height: frame.height, tint: label.tint) }) : image {
                 let size = image.size, glyphScale = disc.width / frame.width
                 image.draw(in: CGRect(x: disc.midX - size.width * glyphScale / 2, y: disc.midY - size.height * glyphScale / 2,
                                       width: size.width * glyphScale, height: size.height * glyphScale),
@@ -324,8 +347,8 @@ enum AdornmentStyle {
             let start = frame.minX + (isCorner ? cornerPadding : rowPadding)
             // Where the text starts, as its width was measured.
             let lead = lead(of: label, in: placement)
-            // A light tint's symbol is made for the appearance drawn, as its ink resolves in it.
-            let mark = label.tint?.style == .light ? label.systemImage.flatMap { leadingSymbol($0, in: placement, bright: label.hasBrightSymbol, tint: label.tint) } : symbol?.image
+            // A tinted label's symbol is made for the appearance drawn, as its ink resolves in it.
+            let mark = label.tint != nil ? label.systemImage.flatMap { leadingSymbol($0, in: placement, bright: label.hasBrightSymbol, tint: label.tint) } : symbol?.image
             if let symbol, let image = mark {
                 // In world units from the corner, as a disc's symbol is drawn: centered in its place.
                 let size = image.size

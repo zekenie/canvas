@@ -47,6 +47,21 @@ public func expectPropertyFixtures(_ keys: [PropertyKey], in registry: Registry,
     }
 }
 
+/// Holds file properties (a plugin's value on the file as a whole, `FileProperty`) to their fixtures
+/// in `directory`, as added properties are held to theirs: `<key>.v<N>.json`, the file's value at
+/// version N. Every fixture must migrate to the property's version today and read, and today's must
+/// write back byte for byte.
+@MainActor
+public func expectFilePropertyFixtures(_ keys: [PropertyKey], in registry: Registry, directory: String,
+                                       file: StaticString = #fileID, line: UInt = #line) {
+    let codec = BoardCodec(registry: registry)
+    for key in keys {
+        expectFixtures(of: "\(key)", version: codec.version(ofFileProperty: key), directory: directory, file: file, line: line) { data, version in
+            try codec.migrateFileValue(data, property: key, version: version)
+        }
+    }
+}
+
 /// `read` takes a fixture at its version and gives it back as today's version writes it.
 @MainActor
 private func expectFixtures(of name: String, version: Int?, directory: String, file: StaticString, line: UInt,

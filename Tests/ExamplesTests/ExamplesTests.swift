@@ -1,6 +1,7 @@
 import Adornments
 @_spi(Host) import Canvas
 import CanvasTesting
+import Colors
 import Connections
 import ContextMenus
 import CoreGraphics
@@ -14,6 +15,9 @@ import TestKit
 import Titles
 import Topology
 import Types
+
+/// The Color ▸ items an arrow's menu holds, with None checked: an arrow has no color yet.
+private let arrowColorItems = ["Color ▸", "  Gray", "  Red", "  Orange", "  Yellow", "  Green", "  Teal", "  Blue", "  Indigo", "  Purple", "  Pink", "  —", "  ✓ None"]
 
 /// The examples' tests: each works on CanvasTesting's boxes, so none depends on a shipped kind.
 @MainActor let examplesTests = Suite("Examples", [
@@ -29,7 +33,7 @@ import Types
     },
     test("Reordering: every kind but those painted by anchor gets Arrange; to front and to back keep the selection's order") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), ContextMenusPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(),
-                                            SlashCommandsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(), FixturesPlugin(), ReorderingPlugin()])
+                                            SlashCommandsPlugin(), ColorsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(), FixturesPlugin(), ReorderingPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         let c = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
@@ -42,7 +46,7 @@ import Types
         expectEqual(h.editor.document.shapes.map(\.id), [b, a, c])
         // An arrow, drawn just above what it joins, doesn't.
         h.add(Arrow(start: .free(CGPoint(x: 0, y: 500)), end: .free(CGPoint(x: 400, y: 500))))
-        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 200, y: 500))).outline, ["Delete"], "no Arrange for an arrow")
+        expectEqual(try require(h.secondaryClick(at: CGPoint(x: 200, y: 500))).outline, arrowColorItems + ["—", "Delete"], "no Arrange for an arrow")
     },
     test("Reordering: each Arrange item is one step, and undoing it puts back the order and every stacking key") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), FixturesPlugin(), ReorderingPlugin()])

@@ -184,6 +184,14 @@ public struct RenderContext {
     /// stale; nothing but a render can read another board.
     public func shape(inFile id: ShapeID) -> AnyShapeRecord? { shapes.shape(id) ?? fileShape(id) }
 
+    /// One of the file's own values (`FileProperty`: the colors a file names), as the file holds it
+    /// now, or the property's default: what a render reads of the file that is no shape's, with no
+    /// service. It's read as the shape is drawn, and the commit that changes one redraws the canvas,
+    /// so what's drawn from it is never stale; a geometry never reads one here (a layout provider
+    /// may, `LayoutReading.fileValue`, and then says when it changes). Read through what the frame's
+    /// shapes are laid out with, the editor's file, so a render context costs nothing more for it.
+    public func fileValue<P: FileProperty>(_: P.Type) -> P.Value { shapes.layout?.fileValues()[P.self] ?? P.defaultValue }
+
     /// One of the editor's services, as `EditContext.service(_:)` lends an editing view's: what a
     /// render needs besides its own shape and the file (an answer a service worked out off the main
     /// thread). Nil if no installed plugin registers it. Nothing observes a render, so a lending

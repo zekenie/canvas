@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import Geometry
+import Palette
 
 /// The minimap: the whole board in miniature, in the canvas's bottom-left corner, with the part the
 /// canvas shows outlined. Each shape is a rough silhouette in one color, and the selected ones are in
@@ -459,10 +460,6 @@ struct MinimapLayout {
         let top = max(0, minY + viewport.height - point.y), bottom = max(0, point.y - (maxY - viewport.height))
         return CGPoint(x: min(max(point.x + (left - right) / 2, minX), maxX), y: min(max(point.y + (top - bottom) / 2, minY), maxY))
     }
-}
-
-extension NSAppearance {
-    fileprivate var isDark: Bool { bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
 }
 
 /// The minimap's constants, in view points unless noted. Its behavior follows tldraw's.

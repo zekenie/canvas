@@ -13,11 +13,11 @@ import TestKit
 import Titles
 
 @MainActor let frameTests = Suite("Frames", [
-    test("its schema is its frame and the title Titles adds; it holds shapes, and owns no board") {
+    test("its schema is its frame, the title Titles adds and its color; it holds shapes, and owns no board") {
         let registry = try Registry(plugins: framePlugins())
         let schema = try require(registry.schema(for: Frame.kind)).json
         expectEqual(schema["title"]?.stringValue, "Frame")
-        expectEqual(Set(schema["properties"]?.objectValue?.keys.map { $0 } ?? []), ["frame", "title", "frozen"])
+        expectEqual(Set(schema["properties"]?.objectValue?.keys.map { $0 } ?? []), ["frame", "title", "color", "frozen"])
         expectEqual(schema["required"], ["frame"])
         expectEqual(schema["properties"]?["title"]?["x-canvas-owner"]?.stringValue, "titles")
         expectEqual(schema["x-canvas-board"], nil, "its shapes are on its own board")

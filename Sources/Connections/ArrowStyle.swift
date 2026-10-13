@@ -1,10 +1,7 @@
 import AppKit
+import Palette
 
 /// Arrow constants, in world units unless noted. The values follow tldraw.
-extension NSAppearance {
-    fileprivate var isDark: Bool { bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
-}
-
 @MainActor
 enum ArrowStyle {
     static let color = NSColor(name: nil) {

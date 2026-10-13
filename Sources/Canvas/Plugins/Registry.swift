@@ -45,11 +45,16 @@ public struct Registry {
     /// Every plugin's rule for which shapes can't change (`registrar.readOnlyShapes`), found once:
     /// a transaction asks them about every shape it changes.
     private let readOnlyRules: [@MainActor (AnyShapeRecord) -> Bool]
+    /// Every plugin's tint for a shape of its own (`registrar.shapeTints`), found once, in plugin
+    /// order: `editor.tint(of:)` asks them.
+    let shapeTintRules: [@MainActor (AnyShapeRecord, CanvasEditor) -> NSColor?]
     /// The tools that place a kind's shapes (`ShapeRegistrar.tool`): none is enabled on a board that
     /// can't change (`editor.isToolEnabled`).
     let placingTools: Set<ToolID>
     /// Added properties: who declares each, and which kinds opt in.
     let propertyTable: PropertyTable
+    /// File properties (`FileProperty`), by key: how each declared one's value is read and written.
+    let fileProperties: [PropertyKey: FilePropertyCodec]
     /// Each kind's schema (`schema(for:)`), described once, as the registry is built.
     private let schemas: [ShapeKind: JSONSchema]
     /// The same, compiled to check its shapes against (`schemaViolations(of:)`).
@@ -102,6 +107,7 @@ public struct Registry {
             return (provider.name, provider)
         }, uniquingKeysWith: { first, _ in first })
         readOnlyRules = (byPoint[ObjectIdentifier(CorePoints.ReadOnlyRules.self)] ?? []).map { $0.value as! CorePoints.ReadOnlyRules.Contribution }
+        shapeTintRules = (byPoint[ObjectIdentifier(CorePoints.ShapeTints.self)] ?? []).map { $0.value as! CorePoints.ShapeTints.Contribution }
         placingTools = Set((byPoint[ObjectIdentifier(CorePoints.Tools.self)] ?? []).compactMap {
             let tool = $0.value as! ToolRegistration
             return tool.placement == nil ? nil : tool.descriptor.id
@@ -112,6 +118,10 @@ public struct Registry {
                                       definitions: definitions,
                                       kinds: shapes.map { ($0.value as! ShapeRegistration).kind })
         propertyTable = table
+        fileProperties = Dictionary((byPoint[ObjectIdentifier(CorePoints.FilePropertyDeclarations.self)] ?? []).map {
+            let codec = ($0.value as! FilePropertyDeclaration).codec
+            return (codec.key, codec)
+        }, uniquingKeysWith: { first, _ in first })
         namingKinds = Set(definitions.filter { kind, definition in
             definition.propsNameShapes || (table.byKind[kind] ?? []).contains { table.codecs[$0]?.naming != nil }
         }.keys)
@@ -356,6 +366,11 @@ public struct Registry {
         return KindLabel(name: kind.rawValue, systemImage: nil, tint: tint)
     }
 
+    /// A kind's tint (`label(of:).tint`), found once: what `editor.tint(of:)` asks for each shape.
+    func kindTint(of kind: ShapeKind) -> NSColor? {
+        memo(KindTintMemo(kind: kind)) { label(of: kind).tint }
+    }
+
     var toolFactories: [(ToolID, @MainActor (CanvasEditor) -> any Tool)] {
         contributions(to: CorePoints.Tools.self).map { ($0.value.descriptor.id, $0.value.make) }
     }
@@ -450,6 +465,8 @@ struct RawContribution {
         case let provider as LayoutProvider: "layout input \(provider.name)"
         case let declaration as PropertyDeclaration:
             "property \(declaration.codec.key)" + (declaration.codec.version > 0 ? " v\(declaration.codec.version)" : "")
+        case let declaration as FilePropertyDeclaration:
+            "file property \(declaration.codec.key)" + (declaration.codec.version > 0 ? " v\(declaration.codec.version)" : "")
         case let optIn as PropertyOptIn: "property \(optIn.key) → \(target == .any ? "every shape" : "\(target)")"
         case let label as KindLabel: "label \(label.name) → \(target)"
         case is KindTint: "tint → \(target)"
@@ -457,6 +474,7 @@ struct RawContribution {
             switch P.self {
             case is CorePoints.WillDelete.Type: "willDelete"
             case is CorePoints.ReadOnlyRules.Type: "read-only shapes"
+            case is CorePoints.ShapeTints.Type: "shape tints"
             case is CorePoints.OutlineSources.Type: "outlines"
             case is CorePoints.DefaultTool.Type: "default tool \(value)"
             case is CorePoints.SecondaryClickMenu.Type: "secondary-click menu"
@@ -472,6 +490,8 @@ struct RawContribution {
         K.uniqueKeys(of: value as! K.Contribution, for: target)
     }
 }
+
+private struct KindTintMemo: Hashable { let kind: ShapeKind }
 
 /// The values `Registry.memo(_:_:)` keeps: a class, so the registry's copies share them.
 @MainActor

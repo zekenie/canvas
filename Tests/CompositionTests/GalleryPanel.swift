@@ -21,9 +21,9 @@ import Types
 
 extension GalleryStage {
     /// The panel of `id`, selected, on its Types tab, as an unshown window draws it at 2x in this appearance.
-    func panelPicture(of id: ShapeID, size: CGSize = CGSize(width: 320, height: 520)) throws -> NSBitmapImageRep {
+    func panelPicture(of id: ShapeID, tab: DetailTabID = .of(TypesTab.self), size: CGSize = CGSize(width: 320, height: 520)) throws -> NSBitmapImageRep {
         let record = try require(editor.document[id])
-        try require(editor.detailPanel).choose(.of(TypesTab.self), for: record.kind)
+        try require(editor.detailPanel).choose(tab, for: record.kind)
         editor.selection = id
         let host = NSHostingView(rootView: try require(editor.registry.hostInspector).view(for: editor, onExit: {}))
         host.frame = CGRect(origin: .zero, size: size)

@@ -43,6 +43,10 @@ import Geometry
 ///
 /// A shape can become another kind under its id (`turn`), so whatever binds or names it goes on
 /// doing so.
+///
+/// The file's own values (`FileProperty`) are read and written here too (`fileValue`,
+/// `setFileValue`), whatever board the transaction is on: they are the file's, so no board's lock
+/// holds them, and they commit with the rest, in the same undo step.
 @MainActor
 public struct Transaction {
     public private(set) var document: CanvasDocument
@@ -75,7 +79,13 @@ public struct Transaction {
     /// there would be dropped with the board, and the boards it owns left with no owner. No flow
     /// deletes a shape it has just moved shapes under.
     private var movedOnto: Set<BoardID> = []
+    /// Whether it changed a board: its own, or one it staged. (The file's values aside: `hasChanges`.)
     private(set) var didChange = false
+    /// The file's values as it leaves them (`FileProperty`), once it has written one; nil while it
+    /// hasn't, and they are the file's (`file.values`).
+    private(set) var stagedFileValues: FileValues?
+    /// Whether there is anything to commit: a board changed, or one of the file's values.
+    var hasChanges: Bool { didChange || !changes.fileValues.isEmpty }
     /// What it did so far, record by record: what the commit hands services.
     private(set) var changes = ChangeSet()
     /// Read-only shapes it was asked to change, restack, move or delete, and didn't (and read-only
@@ -138,7 +148,10 @@ public struct Transaction {
     public var shapes: ShapeContext {
         guard let layout else { return ShapeContext(document: document, registry: registry, camera: camera) }
         let here = self
-        let source = LayoutSource(inputs: layout.inputs, sizes: layout.sizes, lend: layout.lend, shape: { here.record(inFile: $0) }, isChanged: { id in
+        // Only what it reads of the file's values, not another copy of the transaction.
+        let staged = stagedFileValues, held = file.values
+        let source = LayoutSource(inputs: layout.inputs, sizes: layout.sizes, lend: layout.lend, shape: { here.record(inFile: $0) },
+                                  fileValues: { staged ?? held() }, isChanged: { id in
             here.changes.added.contains(id) || (here.changes.changed.contains(id) && !here.changes.moved.contains(id))
                 || here.stagedIDs[id] != nil
         })
@@ -148,6 +161,45 @@ public struct Transaction {
     /// A shape on any board of the file as this transaction leaves it (`location(of:)`).
     func record(inFile id: ShapeID) -> AnyShapeRecord? {
         location(of: id).flatMap { contents(of: $0)[id] }
+    }
+
+    // MARK: The file's values
+
+    /// The file's values as this transaction leaves them.
+    var fileValues: FileValues { stagedFileValues ?? file.values() }
+
+    /// One of the file's own values (`FileProperty`), as this transaction leaves it: what it set,
+    /// else what the file holds, else the property's default.
+    public func fileValue<P: FileProperty>(_: P.Type) -> P.Value { fileValues[P.self] }
+
+    /// Sets one of the file's own values (`FileProperty`), whatever board the transaction is on. It
+    /// commits with the rest of the transaction, as one undo step, and services hear which
+    /// (`ChangeSet.fileValues`); a transaction that only does this changes no shape and no board.
+    /// Setting the default takes the value off the file. Setting what it already is changes nothing
+    /// (alone, it commits nothing and opens no step). Dropped, as a shape's value is for a kind that
+    /// doesn't opt in, for a property no installed plugin declares (`registrar.declare(file:)`), and
+    /// for one whose value in the file the app can't use and keeps aside (`file.keptFileValues`). No
+    /// board's lock holds it: it is the file's.
+    public mutating func setFileValue<P: FileProperty>(_: P.Type, to value: P.Value) {
+        guard registry.declares(file: P.self) else { return }
+        var values = fileValues
+        let old = values[P.self]
+        values[P.self] = value
+        guard values[P.self] != old else { return }
+        stagedFileValues = values
+        // Set back to what the file holds, it's no change.
+        if FileValues.same(values[P.key], file.values()[P.key]) {
+            changes.fileValues.remove(P.key)
+        } else {
+            changes.fileValues.insert(P.key)
+        }
+    }
+
+    /// Takes in the file's values a transaction over another board wrote (`transaction(on:)`).
+    private mutating func takeFileValues(of there: Transaction) {
+        guard let values = there.stagedFileValues else { return }
+        stagedFileValues = values
+        changes.fileValues = values.keysDiffering(from: file.values())
     }
 
     public mutating func insert<P: ShapeProps>(_ shape: ShapeRecord<P>) { insert(AnyShapeRecord(shape)) }
@@ -953,6 +1005,7 @@ public struct Transaction {
         guard var there = transaction(on: source, readingThrough: true) else { return false }
         let moved = there.move(ids, to: destination)
         refused.formUnion(there.refused)
+        takeFileValues(of: there)
         guard moved else { return false }
         if there.didChange { stage(there.document, on: source) }
         for (staged, document) in there.stagedBoards {
@@ -1159,11 +1212,13 @@ public struct Transaction {
         var access = file
         if readingThrough {
             let here = self, file = file
-            access = FileAccess(locate: { here.location(of: $0) }, subtree: file.subtree, contents: { here.contents(of: $0) }, canShow: file.canShow)
+            access = FileAccess(locate: { here.location(of: $0) }, subtree: file.subtree, contents: { here.contents(of: $0) }, canShow: file.canShow,
+                                values: file.values)
         }
         var there = Transaction(document: contents(of: board), board: board, isBoardReadOnly: isReadOnly(board: board), registry: registry,
                                 camera: camera, keys: keys, file: access, layout: layout)
         for (id, on) in stagedIDs where on == board { there.changes.added.insert(id) }
+        there.stagedFileValues = stagedFileValues
         return there
     }
 
@@ -1171,6 +1226,7 @@ public struct Transaction {
     /// leaves it, if it changed anything there, and what it refused.
     mutating func take(_ there: Transaction, reserving: Bool = true) {
         refused.formUnion(there.refused)
+        takeFileValues(of: there)
         if there.didChange { stage(there.document, on: there.board, reserving: reserving) }
     }
 }
@@ -1188,6 +1244,8 @@ struct FileAccess {
     /// Whether the editor can show a board (`CanvasEditor.canShow`: the file's rule,
     /// `CanvasFile.canShow(_:boardOwningKinds:)`, with the registry's kinds that own boards).
     let canShow: (BoardID) -> Bool
+    /// The file's own values (`FileProperty`), as the file holds them.
+    let values: () -> FileValues
 
     /// Over a file of one's own, whose boards `boardOwningKinds` (the registry's) show.
     init(_ file: CanvasFile, boardOwningKinds: Set<ShapeKind>) {
@@ -1195,13 +1253,15 @@ struct FileAccess {
         subtree = { file.subtree(ownedBy: $0) }
         contents = { file[$0] }
         canShow = { file.canShow($0, boardOwningKinds: boardOwningKinds) }
+        values = { file.fileValues }
     }
 
     init(locate: @escaping (ShapeID) -> BoardID?, subtree: @escaping (Set<ShapeID>) -> [BoardID],
-         contents: @escaping (BoardID) -> CanvasDocument, canShow: @escaping (BoardID) -> Bool) {
+         contents: @escaping (BoardID) -> CanvasDocument, canShow: @escaping (BoardID) -> Bool, values: @escaping () -> FileValues) {
         self.locate = locate
         self.subtree = subtree
         self.contents = contents
         self.canShow = canShow
+        self.values = values
     }
 }

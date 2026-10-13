@@ -87,11 +87,11 @@ private func board(_ stage: GalleryStage, zoom: CGFloat = 1) -> GalleryOutput { 
 @MainActor
 private let galleryTypesLookStates: [GalleryState] = [
     // Main
-    GalleryState("Main-p1-type-note", answers: "Main 1", "a type's note: white paper, its pill `{} Person` solid in blue, its words with the highlights", size: small) { stage in
+    GalleryState("Main-p1-type-note", answers: "Main 1", "a type's note: white paper, its pill `{} Person` solid in orange, its words with the highlights", size: small) { stage in
         _ = stage.editor.typeNote("Person", schema: personSchema, words: personWords, at: CGPoint(x: 80, y: 70), width: 280, height: 200)
         return board(stage)
     },
-    GalleryState("Main-p4-instance-chip", answers: "Main 4", "an instance of Person: the light blue `Person` chip above its note", size: small) { stage in
+    GalleryState("Main-p4-instance-chip", answers: "Main 4", "an instance of Person: the light orange `Person` chip above its note", size: small) { stage in
         let person = stage.editor.typeNote("Person", schema: personSchema, words: personWords, at: CGPoint(x: 240, y: 70), width: 160, height: 180)
         let ann = stage.editor.note("Ann Lee", title: "Ann", at: CGPoint(x: 30, y: 70))
         stage.editor.addTypeLink(person, to: ann)
@@ -310,7 +310,7 @@ private let galleryTypesLookStates: [GalleryState] = [
 ]
 
 /// The types cut's states, for the suite: the look's, and one array a track (`GalleryRows`, `GalleryValues`, `GalleryPanel`, `GalleryCards`, `GalleryChecks`, `GalleryTitles`, `GalleryPointers`), so no two tracks touch one line.
-@MainActor let galleryStates: [GalleryState] = galleryTypesLookStates + rowStates + valueStates + panelStates + cardStates + checkStates + titleStates + connectionStates + pointerStates
+@MainActor let galleryStates: [GalleryState] = galleryTypesLookStates + rowStates + valueStates + panelStates + cardStates + checkStates + titleStates + connectionStates + pointerStates + colorStates
 
 @MainActor let galleryTests = Suite("Gallery", galleryDirectory == nil ? [
     test("one state renders in both appearances, and no state names a file twice") {

@@ -194,7 +194,7 @@ public final class BoardDocument: NSDocument {
     /// Deletes what the file keeps aside, as the load report's Delete Hidden Shapes does: the shapes
     /// kept aside, on every board, with the boards they own, and the boards kept, as one undo step,
     /// "Delete Hidden Shapes" (`editor.discardKeptAside`), which edits the file as any step does,
-    /// whatever board it took them from. Values kept aside stay.
+    /// whatever board it took them from. Values kept aside stay, a shape's and the file's own.
     public func deleteHiddenShapes() {
         editor.discardKeptAside(shapes: Set(loadReport.keptAside.map(\.id)), boards: Set(loadReport.keptBoards.map(\.key)))
     }
@@ -347,6 +347,10 @@ extension LoadReport {
             let n = keptValues.count
             lines.append("\(n == 1 ? "1 shape holds a property" : "Shapes hold \(n) properties") this app can’t use (\(names(keptValues.map(\.key.rawValue)))), kept as \(n == 1 ? "it was" : "they were"); the \(n == 1 ? "shape shows" : "shapes show") without \(n == 1 ? "it" : "them"). Saving keeps \(n == 1 ? "it" : "them").")
         }
+        if !keptFileValues.isEmpty {
+            let n = keptFileValues.count
+            lines.append("The file holds \(n == 1 ? "a value" : "\(n) values") this app can’t use (\(names(keptFileValues.map(\.key.rawValue)))), kept as \(n == 1 ? "it was" : "they were"). Saving keeps \(n == 1 ? "it" : "them").")
+        }
         if !keptBoards.isEmpty {
             let n = keptBoards.count, shapes = keptBoards.reduce(0) { $0 + $1.shapeCount }
             let on = shapes == 0 ? "" : " (\(count(shapes)) on \(n == 1 ? "it" : "them"))"
@@ -356,7 +360,7 @@ extension LoadReport {
             lines.append("\(repairs.count) \(repairs.count == 1 ? "repair was" : "repairs were") made to shapes’ ids, stacking order, metadata, added values or containers. Saving keeps \(repairs.count == 1 ? "it" : "them").")
         }
         let message = !keptAside.isEmpty || !keptBoards.isEmpty ? "Some of this board can’t be shown."
-            : !keptValues.isEmpty ? "Some of this board can’t be used here." : "This board was repaired as it opened."
+            : !keptValues.isEmpty || !keptFileValues.isEmpty ? "Some of this board can’t be used here." : "This board was repaired as it opened."
         return (message, lines.joined(separator: "\n\n"))
     }
 

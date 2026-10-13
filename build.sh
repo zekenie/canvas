@@ -587,11 +587,13 @@ audit_sources() {
     # kinds' versions (`schema`, before format 3), as Types' property is, which every board written by
     # hand in a test, and `canvas kinds --schema`'s answer, say. And one that is an English word every
     # message uses, as Types' `is` is ("a note is a", and the query engine's own "is" in its messages).
+    # And one that is a word of the data any test or message may hold, as Colors' `color` is (a field
+    # called color, the text "color" searched for).
     #
     # The forms a module declares an id in are written once, here: the regex below takes the id's types
     # (`id_declaration`), and the layer checks, after, read the same forms for ShapeKind and PropertyKey,
     # and the forms of an extension point (POINT_DECL), through `declarations`.
-    ORDINARY_IDS=(frame is schema)
+    ORDINARY_IDS=(color frame is schema)
     id_declaration() {  # a regex for a declaration of an id of one of the types $1 (alternatives, in a group)
         print -r -- '((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*('$1')[[:space:]]*(=|\{)|=[[:space:]]*('$1')\((rawValue:)?)[[:space:]]*"[^"\\]+"'
     }

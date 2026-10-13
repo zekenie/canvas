@@ -132,7 +132,7 @@ public final class ReferenceState {
     /// one (observed, so a view that reads it draws again as answers come); none, not answered yet.
     public func state(of props: Reference, id: ShapeID? = nil) -> ReferenceCondition {
         ReferenceCondition.of(shown(props, id: id), status: id.flatMap(status(of:)), registry: editor.registry, lookup: { editor.shape(inFile: $0) },
-                              isElsewhere: isElsewhere)
+                              isElsewhere: isElsewhere, appearance: { [editor] in editor.mentionAppearance(of: $0) })
     }
 
     /// Whether the file holds a shape the app can't show (on a board it can't, or kept aside), which a
@@ -477,6 +477,13 @@ extension ReferenceStyle {
 }
 
 extension ReferenceState: EditorService {
+    /// A tint changed with no commit (the file's colors): a pill's kept condition holds its target's
+    /// tint, so the kept ones are let go of and the pills drawn again.
+    public func shapeTintsDidChange(in editor: CanvasEditor) {
+        drawnConditions.removeAll(keepingCapacity: true)
+        editor.setNeedsDisplay()
+    }
+
     /// Keeps which references name which shapes: those the commit added, changed (but for those it only
     /// moved) or removed, on the board shown or, as `elsewhere`, on any other. What it reads is the
     /// references it touched (`referencesTouched(by:)`), so a commit that touches none costs what it

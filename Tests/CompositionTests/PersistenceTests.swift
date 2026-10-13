@@ -26,6 +26,12 @@ import Types
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         expectPropertyFixtures(registry.declaredProperties, in: registry, directory: "Tests/CompositionTests/Fixtures/added")
     },
+    // Fixtures/file holds the file's value per shipped file property and version, the same way.
+    test("every shipped file property reads its fixture at every version, and writes today's back byte for byte") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        expect(!registry.declaredFileProperties.isEmpty, "the shipped list declares file properties")
+        expectFilePropertyFixtures(registry.declaredFileProperties, in: registry, directory: "Tests/CompositionTests/Fixtures/file")
+    },
     // Since its third version a note's text may mention shapes: what it said before reads as it did.
     test("a note's text from before mentions reads as the text it was; today's fixture holds mentions, and a look-alike that's text") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())

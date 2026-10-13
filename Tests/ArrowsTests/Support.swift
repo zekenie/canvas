@@ -1,6 +1,7 @@
 import Adornments
 @_spi(Host) import Canvas
 import CanvasTesting
+import Colors
 import Connections
 import ContextMenus
 import DetailPanel
@@ -27,7 +28,7 @@ let fast: CGFloat = 3, slow: CGFloat = 0.1
 @MainActor
 func arrowsPlugins(before: [any CanvasPlugin] = [], more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin()] + before
-        + [ArrowsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin()] + more
+        + [ArrowsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin()] + more
 }
 
 /// A box of words that can be a type (`canBeType()`), for an arrow to be an instance of: titled and

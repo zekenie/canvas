@@ -2,21 +2,25 @@
 paths:
   - "Sources/Canvas/Schema/**"
   - "Sources/Canvas/Model/AddedProperty.swift"
+  - "Sources/Canvas/Model/FileProperty.swift"
   - "Sources/Canvas/Plugins/PropertyTable.swift"
+  - "Sources/Canvas/Plugins/FileProperties.swift"
   - "Tests/CanvasTests/Schema*.swift"
   - "Tests/CanvasTests/KindSchemaTests.swift"
   - "Tests/CanvasTests/AddedPropertyTests.swift"
   - "Tests/CanvasTests/AddedValueCodecTests.swift"
   - "Tests/CanvasTests/ShapePropertiesTests.swift"
+  - "Tests/CanvasTests/FileValue*.swift"
+  - "Tests/CanvasTesting/Letterheads.swift"
 ---
 
 # Properties and schemas
 
-A kind's props as a list of properties (`SchemaDefined`), the JSON Schemas made from them, `KindSchema`, and added properties, which a plugin adds to the kinds that opt in.
+A kind's props as a list of properties (`SchemaDefined`), the JSON Schemas made from them, `KindSchema`, added properties, which a plugin adds to the kinds that opt in, and file values, which a plugin keeps on the file as a whole.
 
 Related: [plugins and kinds](plugins-and-kinds.md), [boards on disk](boards-on-disk.md), [shape references](shape-references.md), [validation](validation.md), [titles](titles.md), [command line](command-line.md), [queries](queries.md) ([every topic](../../CLAUDE.md#map)).
 
-In the guide, `docs/plugin-system.md`: [Properties](../../docs/plugin-system.md#properties).
+In the guide, `docs/plugin-system.md`: [Properties](../../docs/plugin-system.md#properties), [File values](../../docs/plugin-system.md#file-values).
 
 ## A kind's properties and its schema
 
@@ -31,3 +35,7 @@ In the guide, `docs/plugin-system.md`: [Properties](../../docs/plugin-system.md#
 ## Added properties
 
 - Added properties are what a plugin adds to the kinds that opt in: something the shapes know that their kind doesn't declare (a title). The type is the key: `enum TitleProperty {}` with `extension TitleProperty: ShapeProperty { static let key: PropertyKey = "title"; static var defaultValue: String? { nil } }` (a nil default: only the shapes it's set on have one), and `static var keywords: PropertyKeywords<Value>` for what its schema says beyond its type (Titles' title: `.minLength(1).maxLength(80)`), and `static func isNone(_:)` for a value that's no value at all (Titles' blank title), which no shape holds: a shape set to one, or read from a board with one, holds nil, or the default for a property that has one (which can't be none). A value a board writes as null, added, kept or handed over, is none too. Its owner declares it (`registrar.declare(P.self)`); a kind opts in through the owner's sugar (`ShapeRegistrar.optIn(to:)`, as `note.title()` does), `registrar.optIn(Kind.self, to:)` for another plugin's kind, or `optInEveryShape(to:where:)`. The registry refuses an opt-in to a property nobody declares, a key declared twice, a kind opted in twice, and a key that's one of the kind's own property names; its report lists `property title` and `property title → sticky-note`. Read and write `shape[P.self]` (`record[P.self]`), in a transaction like the props; a write the shape can't hold (its kind doesn't opt in, nil for a property with a default, a value kept aside) is dropped. A placement sets one on what it places with `.setting(P.self, to:)`. A plugin that has only a key (a name in a user's text) reads one as JSON with `record.addedJSON(for: key)` (nil for a kind that doesn't opt in, an unset value, or one kept aside). Defaults are filled where shapes enter an editor (inserted or placed, `CanvasEditor.init` and `replaceFile` on every board, `replaceDocument`, a board read; `registry.fillingDefaults`); filling never marks a board edited by itself. In a kind's schema each one is a property marked `x-canvas-owner`. What a shape knows is a property; what a plugin keeps about a shape (the one it was copied from) is `ShapeMeta`, never a property.
+
+## File values
+
+- File values are what a plugin keeps on the file as a whole, no shape's and no board's (the colors a file names): to the file what an added property is to a shape, and the core knows nothing of what one means. The type is the key: `enum Letterhead {}` with `extension Letterhead: FileProperty { static let key: PropertyKey = "letterhead"; static var defaultValue: String { "" } }` (`Value` is `Codable`, `Equatable` and `Sendable`, with no schema: no kind's schema has it; `migrations` and `version` as an added property's, `PropertyMigration`). A file holds a value only while it differs from the default: every file reads the default until it's set, setting the default takes it off the file, and a file with none is written as one always was, byte for byte. Its owner declares it (`registrar.declare(file: P.self)`); the registry refuses a key declared twice among file properties (`conflict` in `FilePropertyDeclarations`; an added property may have the same key, a shape's values and the file's being kept apart), and its report shows `file property letterhead` (`v1` once it has a migration); `registry.declaredFileProperties`, `registry.owner(ofFileProperty:)`. Read it from the file, `editor.file[P.self]` (observed through `document`; `CanvasFile`'s subscript, settable on a file of one's own, never the editor's), in a transaction as it leaves it, `transaction.fileValue(P.self)`, in a render, `context.fileValue(P.self)` (`RenderContext`: read as the shape is drawn, and the commit that changes one redraws, so no service is needed), and in a layout, `reading.fileValue(P.self)` (`LayoutReading`, `context.reading`: the editor's committed, or mid-transaction as the transaction leaves it; nothing kept of a shape's geometry or laid-out size is let go because a file value changed, so the plugin that reads one there calls `editor.shapesDidChangeLayout` on hearing it). Write it only with `transaction.setFileValue(P.self, to:)`, in `editor.transact` or `transact(on:)`, whatever board the transaction is on (no board's lock holds it: it is the file's): it commits with the rest as one undo step ([undo](undo.md)), a body that throws sets nothing, a write equal to what it is (or there and back in one transaction) is no commit and no step, and a write is dropped for a property no installed plugin declares (by its type) and for one whose value the file keeps aside (`file.keptFileValues`: [boards on disk](boards-on-disk.md)). Services hear which changed in `ChangeSet.fileValues` (`Set<PropertyKey>`): an edit, an undo or redo, and a file put in place where they differ (`replaceFile`; with a switch, `BoardChange.fileValues`, and in its `changes`); a commit that changed only a file value names no shape and no board, writes no board (no revision moves) and still bumps `editor.revision` and redraws. Not built: the clipboard (a copy takes none), any UI, the command line. Tests declare one with CanvasTesting's `LetterheadPlugin` (`Letterhead`, a string; apart from `FixturesPlugin`, so the registry reports tests pin don't change); CanvasTests' `fileValueTests` hold the editor's side and `fileValueCodecTests` the file's.

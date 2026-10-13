@@ -188,12 +188,13 @@ enum TitleCoverStyle {
     /// A shape's cover and where the shape is (its bounds, world units), if it has one: it's titled
     /// and shows a title, and is big enough on screen. The shape's, not whether it's drawn as a
     /// skeleton, which the caller asks.
-    static func cover(of record: AnyShapeRecord, in shapes: ShapeContext, registry: Registry) -> (layout: Layout, bounds: CGRect)? {
+    static func cover(of record: AnyShapeRecord, in shapes: ShapeContext, editor: CanvasEditor) -> (layout: Layout, bounds: CGRect)? {
+        let registry = editor.registry
         guard !record.isOpaque, let geometry = shapes.geometry(of: record.id), !geometry.outline.isEmpty, !geometry.bounds.isNull else { return nil }
         let bounds = geometry.bounds, zoom = shapes.zoom
         let size = CGSize(width: bounds.width * zoom, height: bounds.height * zoom)
         guard size.width >= smallestShape.width, size.height >= smallestShape.height,
-              let title = registry.titleCover(of: record),
+              let title = registry.titleCover(of: record, in: editor),
               let laidOut = layout(of: title.title, in: size, atTop: registry.isContainer(record), surface: title.surface) else { return nil }
         return (laidOut, bounds)
     }
@@ -217,7 +218,7 @@ extension CanvasEditor {
     public func titleCover(of id: ShapeID) -> TitleCover? {
         let shapes = shapeContext
         guard drawsSkeleton(of: id), let record = document[id],
-              let found = TitleCoverStyle.cover(of: record, in: shapes, registry: registry) else { return nil }
+              let found = TitleCoverStyle.cover(of: record, in: shapes, editor: self) else { return nil }
         let zoom = shapes.zoom, text = found.layout.rect
         return TitleCover(text: found.layout.text,
                           rect: CGRect(x: found.bounds.minX + text.minX / zoom, y: found.bounds.minY + text.minY / zoom,
@@ -239,7 +240,7 @@ struct TitleCoverOverlay: CanvasOverlay {
         let reach = context.worldDrawingReach
         let visible = context.visibleRect.insetBy(dx: -reach, dy: -reach)
         for record in editor.paintOrder(in: visible) where context.drawsSkeleton(of: record.id) {
-            guard let found = TitleCoverStyle.cover(of: record, in: context.shapes, registry: editor.registry) else { continue }
+            guard let found = TitleCoverStyle.cover(of: record, in: context.shapes, editor: editor) else { continue }
             let offset = context.worldDrawingOffset(of: record.id)
             cg.saveGState()
             cg.translateBy(x: found.bounds.minX + offset.x, y: found.bounds.minY + offset.y)

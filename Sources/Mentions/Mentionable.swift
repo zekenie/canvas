@@ -140,7 +140,8 @@ extension ShapeRegistrar {
     /// `registry.title(of:)`, named or derived), else `untitled`, else "Untitled" and the kind's
     /// label ("Untitled Note"), each on one line, blank counting as none. `symbol` and `tint` default
     /// to the kind's label's (`registry.label(of:)`), `detail` to the kind's name; a `tint` that
-    /// answers nil for a shape leaves it its kind's, so it can't untint one. `following` says what
+    /// answers nil for a shape leaves it its kind's, so it can't untint one (a color the shape has of
+    /// its own, `editor.tint(of:)`, comes before it). `following` says what
     /// following a mention does: go to the shape, or into it (`.opens`: a subboard enters its
     /// board). An `untitled` that reads the shape's own mention text leaves every other shape's
     /// name out of it (`firstLine`, where each mention is "@…"): a mention holds its target's name
@@ -217,14 +218,17 @@ extension Registry {
     }
 
     /// How a shape is mentioned now; nil if it's kept aside, or its kind isn't mentionable. Reads
-    /// only the record, so it works on a record from any board.
+    /// only the record, so it works on a record from any board. Its tint is the kind's (or the one
+    /// the kind says for the shape): the editor's `mentionAppearance(of:)` adds the shape's own.
     public func mentionAppearance(of shape: AnyShapeRecord) -> MentionAppearance? {
         guard !shape.isOpaque else { return nil }
         return mentionAppearance(of: shape, defaults: MentionKindDefaults(shape.kind, in: self))
     }
 
-    /// The same, with the kind's contribution and defaults worked out already.
-    func mentionAppearance(of shape: AnyShapeRecord, defaults: MentionKindDefaults) -> MentionAppearance? {
+    /// The same, with the kind's contribution and defaults worked out already, and the tint a plugin
+    /// gave the shape (`editor.ownTint(of:)`), if the caller has the editor: a color the shape has of
+    /// its own comes first, then a `tint` the kind says for the shape, then the kind's.
+    func mentionAppearance(of shape: AnyShapeRecord, defaults: MentionKindDefaults, shapeTint: NSColor? = nil) -> MentionAppearance? {
         guard !shape.isOpaque, let contribution = defaults.contribution else { return nil }
         let label: String, isPlaceholder: Bool
         if let own = oneLine(contribution.label?(shape)) {
@@ -240,7 +244,7 @@ extension Registry {
                                  systemImage: oneLine(contribution.symbol?(shape)) ?? defaults.symbol,
                                  kindName: defaults.name,
                                  detail: oneLine(contribution.detail?(shape)) ?? defaults.name,
-                                 tint: contribution.tint?(shape) ?? defaults.tint)
+                                 tint: shapeTint ?? contribution.tint?(shape) ?? defaults.tint)
     }
 
     /// What a mention of `target` shows now: live, with its appearance, when `lookup` finds it and
@@ -249,6 +253,16 @@ extension Registry {
     public func mentionResolution(of target: ShapeID, lookup: (ShapeID) -> AnyShapeRecord?) -> MentionResolution {
         guard let record = lookup(target) else { return .missing }
         return mentionAppearance(of: record).map { .live($0) } ?? .unavailable
+    }
+}
+
+extension CanvasEditor {
+    /// How a shape is mentioned now, as `registry.mentionAppearance(of:)` has it, its symbol in the
+    /// tint the shape has of its own where a plugin gives it one (`ownTint(of:)`: a note's color),
+    /// else the kind's: what a list that shows the shape's symbol on a neutral surface takes.
+    public func mentionAppearance(of shape: AnyShapeRecord) -> MentionAppearance? {
+        guard !shape.isOpaque else { return nil }
+        return registry.mentionAppearance(of: shape, defaults: MentionKindDefaults(shape.kind, in: registry), shapeTint: ownTint(of: shape))
     }
 }
 

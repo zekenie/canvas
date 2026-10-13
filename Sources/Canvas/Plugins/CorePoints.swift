@@ -28,6 +28,13 @@ enum CorePoints {
         static func uniqueKeys(of _: KindTint, for target: ShapeTarget) -> [AnyHashable] { [KindTintKey(target: target)] }
     }
 
+    /// The tint a shape has of its own (`PluginRegistrar.shapeTints`): the first that answers is
+    /// the shape's, else its kind's.
+    enum ShapeTints: ExtensionPoint {
+        typealias Contribution = @MainActor (AnyShapeRecord, CanvasEditor) -> NSColor?
+        static var owner: PluginID { .core }
+    }
+
     enum Services: KeyedExtensionPoint {
         typealias Contribution = ServiceRegistration
         static var owner: PluginID { .core }

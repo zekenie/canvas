@@ -30,7 +30,7 @@ public struct FindPanelPlugin: ListedPlugin {
 /// (`FindState.heading(of:)`), in order: the kind's symbol, the text around its first hit with each
 /// hit there semibold, and its count when it has more than one. A click on a row makes its first hit
 /// current, keeping the keyboard in the field. `onExit` gives the keyboard to the canvas (Done).
-/// A shape's symbol is its kind's, in its kind's tint (`registry.label(of:)`; none: secondary).
+/// A shape's symbol is its kind's, in the tint the shape has (`FindState.symbol(of:)`; none: secondary).
 public struct FindPanel: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
@@ -199,11 +199,11 @@ private struct FindRow: View {
 
     var body: some View {
         let isCurrent = find.current?.result == index
-        let label = editor.withoutObservingDocument { editor.file.record(result.id) }.map { editor.registry.label(of: $0.kind) }
+        let symbol = find.symbol(of: result.id)
         Button(action: pick) {
             HStack(spacing: FindStyle.fieldSpacing) {
-                Image(systemName: label?.systemImage ?? "square")
-                    .foregroundStyle(label?.tint.map { Color(nsColor: $0) } ?? Color.secondary)
+                Image(systemName: symbol.systemImage ?? "square")
+                    .foregroundStyle(symbol.tint.map { Color(nsColor: $0) } ?? Color.secondary)
                     .frame(width: FindStyle.rowSymbolWidth)
                 Text(snippet).font(FindStyle.snippet).lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 0)

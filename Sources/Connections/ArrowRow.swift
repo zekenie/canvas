@@ -17,7 +17,8 @@ extension ShapeRegistrar where Definition == ArrowDefinition {
             guard let start = arrow.props.start.binding?.shapeID else { return nil }
             return context.service(TopologyIndex.self)?.nestingParent(ofArrowStartingAt: start) ?? start
         }, affected: MentionRows.affected) { arrow, context in
-            ContentsLabel(Arrow.firstLine(of: context.plainText(arrow.props.text)) ?? "", placeholder: "Arrow", systemImage: ArrowStyle.symbol)
+            ContentsLabel(Arrow.firstLine(of: context.plainText(arrow.props.text)) ?? "", placeholder: "Arrow", systemImage: ArrowStyle.symbol,
+                         color: context.color(of: arrow))
         }
     }
 }

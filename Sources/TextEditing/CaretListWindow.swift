@@ -408,11 +408,12 @@ final class CaretListRowsView: NSView {
         // title comes first: the detail takes what the title leaves, and at least its share of the
         // row, where both are long.
         let chipFont = NSFont.systemFont(ofSize: TextEditingStyle.caretListChipTextSize, weight: .medium)
-        let label = item.chip == nil ? Self.label(item, color: primary) : Self.label(item, color: .white, font: chipFont)
+        let chipInk = item.chipInk ?? .white
+        let label = item.chip == nil ? Self.label(item, color: primary) : Self.label(item, color: chipInk, font: chipFont)
         let chipSymbol = item.chip == nil ? nil : item.symbol.flatMap { name in
             NSImage(systemSymbolName: name, accessibilityDescription: nil)?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: TextEditingStyle.caretListChipSymbolSize, weight: .semibold)
-                    .applying(NSImage.SymbolConfiguration(paletteColors: [.white])))
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [chipInk])))
         }
         // What a chip holds before its text: its symbol, and the gap after it.
         let chipLead = chipSymbol.map { $0.size.width + TextEditingStyle.caretListChipSymbolGap } ?? 0

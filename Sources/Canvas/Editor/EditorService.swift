@@ -48,6 +48,11 @@ public protocol EditorService: AnyObject {
     /// (`editor.scheduler`) and looks again, as a type's sync does before it takes the
     /// description as done.
     func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor)
+    /// Shapes' tints (`editor.tint(of:)`) changed with no commit to the shapes
+    /// (`editor.shapeTintsDidChange()`: the file's colors changed): a service that keeps a row's
+    /// symbol, or the tint of one, makes it again for the shapes it keeps. A commit to a shape says
+    /// so itself.
+    func shapeTintsDidChange(in editor: CanvasEditor)
 }
 
 extension EditorService {
@@ -59,4 +64,5 @@ extension EditorService {
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) { documentDidChange(change.changes, in: editor) }
     public func drawsSkeletonsDidChange(in editor: CanvasEditor) {}
     public func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) {}
+    public func shapeTintsDidChange(in editor: CanvasEditor) {}
 }

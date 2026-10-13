@@ -42,17 +42,20 @@ public struct CaretListItem: Equatable {
     /// Whether a line one point thick sets the row off from the one above it (a row of another kind,
     /// last in its list).
     public var separated: Bool
-    /// The color of a capsule the symbol and title are drawn in, white on it (a type's, in `/is-a`'s
-    /// list); its highlight is then a pale fill, since the row's text is white on its own color and
-    /// would not read on the accent. nil: a row drawn as every other is.
+    /// The color of a capsule the symbol and title are drawn in (a type's, in `/is-a`'s list); its
+    /// highlight is then a pale fill, since the row's text is drawn for its own color and would not
+    /// read on the accent. nil: a row drawn as every other is.
     public var chip: NSColor?
+    /// What a chip's symbol and title are drawn in: white, unless the chip's color is one white
+    /// doesn't read on (a yellow).
+    public var chipInk: NSColor?
     /// What VoiceOver says for the row.
     public var spoken: String
 
     /// `spoken` nil: the title, then the detail ("type, keyword").
     public init(_ title: String, matched: [Range<Int>] = [], font: NSFont? = nil, symbol: String? = nil, tint: NSColor? = nil,
                 detail: String? = nil, detailMatched: [Range<Int>] = [], detailDimmed: [Range<Int>] = [], trailingSymbol: String? = nil, separated: Bool = false,
-                chip: NSColor? = nil, spoken: String? = nil) {
+                chip: NSColor? = nil, chipInk: NSColor? = nil, spoken: String? = nil) {
         self.title = title
         self.matched = matched
         self.font = font
@@ -64,6 +67,7 @@ public struct CaretListItem: Equatable {
         self.trailingSymbol = trailingSymbol
         self.separated = separated
         self.chip = chip
+        self.chipInk = chipInk
         self.spoken = spoken ?? detail.map { "\(title), \($0)" } ?? title
     }
 }

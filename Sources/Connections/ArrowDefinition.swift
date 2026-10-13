@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Colors
 import Geometry
 import Mentions
 import Publishing
@@ -31,13 +32,14 @@ extension ArrowDefinition: ShapeDefinition {
         if let label { clip(cg, around: label, beside: geometry) }
         cg.addPath(geometry.bodyPath)
         cg.addPath(geometry.arrowheadsPath(strokeWidth: ArrowStyle.strokeWidth))
-        cg.setStrokeColor(ArrowStyle.color.cgColor)
+        let colors = context.colors(of: shape)
+        cg.setStrokeColor(colors?.solid ?? ArrowStyle.color.cgColor)
         cg.setLineWidth(ArrowStyle.strokeWidth)
         cg.setLineCap(.round)
         cg.setLineJoin(.round)
         cg.strokePath()
         cg.restoreGState()
-        if let label, !context.isEditing { context.drawMentionText(ArrowLabels.placement(of: shape.props.text, in: label)) }
+        if let label, !context.isEditing { context.drawMentionText(ArrowLabels.placement(of: shape.props.text, in: label, ink: colors?.ink)) }
     }
 
     /// Clips to everything around the label's cut: what the body and its heads reach, less the cut.
@@ -350,6 +352,9 @@ public struct ArrowsPlugin: ListedPlugin {
                 guard arrow.props.hasText, let label = shapes.geometry(of: arrow.id)?.label else { return [] }
                 return [ArrowLabels.placement(of: arrow.props.text, in: label)]
             }
+            // It may have a color of its own (`ColorsPlugin`): its line, heads and label; with none it is
+            // `ArrowStyle.color`, as it was.
+            arrow.colorable()
             // And types: its label says what it is (`/is-a`), where it's drawn, and fits to nothing but
             // itself.
             arrow.typeWords(\.text, drawnIn: { arrow, shapes in

@@ -98,7 +98,7 @@ import Validation
         expectEqual(g.row(g.receipt), "See @Groceries")
         expectEqual(h.editor.adornmentFrames(of: g.frame).map(\.label), [AdornmentLabel("Groceries")], "a frame's pill has no symbol")
         let panel = try require(h.editor.detailPanel)
-        expectEqual(panel.layout(for: try require(h.editor.document[g.frame])).tabs.map(\.title), ["Connections"])
+        expectEqual(panel.layout(for: try require(h.editor.document[g.frame])).tabs.map(\.title), ["Connections", "Style"])
         expectEqual(h.editor.transforms?.targets(of: g.frame), [Subboard.kind])
         let children = topology.children(of: g.frame), dairysChildren = topology.children(of: g.dairy)
         expectEqual(Set(children), [g.milk, g.eggs, g.dairy])
@@ -140,7 +140,7 @@ import Validation
         expectEqual(h.editor.tableOfContents?.entries.first { $0.id == g.frame }?.label?.systemImage, "rectangle.stack")
         expectEqual(h.editor.adornmentFrames(of: g.frame).map(\.label), [AdornmentLabel("Groceries", systemImage: "rectangle.stack")], "its pill has the subboard's symbol")
         let layout = panel.layout(for: try require(h.editor.document[g.frame]))
-        expectEqual(layout.tabs.map(\.title), ["Board", "Connections"], "the panel's tabs are a subboard's")
+        expectEqual(layout.tabs.map(\.title), ["Board", "Connections", "Style"], "the panel's tabs are a subboard's")
         expectEqual(layout.header(as: TitleHeader.self)?.placeholder, "Untitled Subboard")
         expectEqual(topology.children(of: g.frame), children + [g.between], "containment is the tree it was, a subboard's shapes inside it as a frame's were, and now the arrow too")
         expectEqual(topology.children(of: g.dairy), dairysChildren)
@@ -186,8 +186,8 @@ import Validation
         let g = Groceries(pasteboard)
         let h = g.h
         let state = try require(h.editor.slashCommands)
-        expectEqual(state.commands(for: g.frame).map(\.name), ["turn-into-subboard", "title", "lock", "public", "move-to", "move-near"], "a command is placed where its plugin is: Subboards' is before Titles', Locking's, Publishing's and Moving's")
-        expectEqual(state.commands(for: g.milk).map(\.name), ["title", "lock", "public", "is-a", "move-to", "move-near"], "a note has nothing to turn into")
+        expectEqual(state.commands(for: g.frame).map(\.name), ["turn-into-subboard", "title", "lock", "public", "color", "move-to", "move-near"], "a command is placed where its plugin is: Subboards' is before Titles', Locking's, Publishing's and Moving's")
+        expectEqual(state.commands(for: g.milk).map(\.name), ["title", "lock", "public", "is-a", "color", "move-to", "move-near"], "a note has nothing to turn into")
         expectEqual(state.commands(for: g.frame).first?.title, "Turn into Subboard")
         let before = h.file
         h.editor.selectedShapeIDs = [g.frame, g.milk]
@@ -196,7 +196,7 @@ import Validation
         expectEqual(h.editor.selectedShapeIDs, [g.frame], "a selected note it moved off the board leaves the selection")
         expectEqual(h.editor.undoHistory.undoName, "Turn into Subboard")
         expectEqual(h.file[BoardID(owner: g.frame)].shapes.map(\.id), [g.milk, g.eggs, g.dairy, g.cheese, g.between])
-        expectEqual(state.commands(for: g.frame).map(\.name), ["title", "lock", "public", "move-to", "move-near"], "a subboard has nothing to turn into either")
+        expectEqual(state.commands(for: g.frame).map(\.name), ["title", "lock", "public", "color", "move-to", "move-near"], "a subboard has nothing to turn into either")
         expect(!state.run("turn-into-subboard", on: g.frame, with: SlashArguments([])))
         expect(!state.run("turn-into-subboard", on: g.frame, with: "now"), "it takes no arguments")
         h.editor.undo()

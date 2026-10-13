@@ -1,6 +1,7 @@
 import Adornments
 @_spi(Host) import Canvas
 import CanvasTesting
+import Colors
 import Connections
 import ContextMenus
 import CoreGraphics
@@ -61,7 +62,7 @@ struct PortBoard {
             registrar.ports(Disc.self, on: Pipe.self)
         }
         return [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin(),
-                AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(),
+                AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(),
                 PortsPlugin(), ArrowPortsPlugin(), channels] + more
     }
 

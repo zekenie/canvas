@@ -1,7 +1,9 @@
 import AppKit
 import Canvas
+import Colors
 import Geometry
 import Mentions
+import Palette
 import Selection
 import TextEditing
 
@@ -85,7 +87,10 @@ final class ArrowLabelEditor: NSView, NSTextViewDelegate {
     init(arrow: ShapeRecord<Arrow>, context: EditContext<Arrow>) {
         self.context = context
         let frame = context.frame ?? .zero
-        textView = MentionTextView(frame: CGRect(origin: .zero, size: frame.size), text: arrow.props.text, style: ArrowStyle.labelText,
+        // Its color's ink, which follows the appearance; none, the line's own.
+        let ink = context.service(ColorBook.self)?.swatch(of: AnyShapeRecord(arrow)).map { NSColor($0.ink) } ?? ArrowStyle.color
+        let style = ArrowStyle.labelStyle(ink: ink)
+        textView = MentionTextView(frame: CGRect(origin: .zero, size: frame.size), text: arrow.props.text, style: style,
                                    owner: context.shapeID, mentions: context.service(MentionState.self))
         super.init(frame: .zero)
         textView.isRichText = false
@@ -96,8 +101,8 @@ final class ArrowLabelEditor: NSView, NSTextViewDelegate {
         // TextKit 2 sets a line's glyphs a point lower in it than string drawing does, so the text
         // starts a point higher than the render's, as a note's editor does.
         textView.textContainerInset = NSSize(width: ArrowStyle.labelPadding, height: ArrowStyle.labelPadding - 1)
-        textView.typingAttributes = ArrowStyle.labelText.attributes
-        textView.insertionPointColor = ArrowStyle.color
+        textView.typingAttributes = style.attributes
+        textView.insertionPointColor = ink
         textView.spelling = .app
         textView.delegate = self
         textView.commitsOnLeaving = false

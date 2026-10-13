@@ -1,9 +1,11 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Colors
 import Foundation
 import Geometry
 import Mentions
+import Palette
 import StickyNotes
 import TestKit
 import Titles
@@ -37,12 +39,14 @@ private let paperSpot = CGPoint(x: 220, y: 220)
 }
 
 /// An editor with one note, a type or not, titled or not, at `zoom`.
-@MainActor private func paperEditor(isType: Bool, text: String = "", title: String? = nil, zoom: CGFloat = 1, frame: CGRect = paperFrame) throws -> (CanvasEditor, ShapeID) {
+@MainActor private func paperEditor(isType: Bool, text: String = "", title: String? = nil, zoom: CGFloat = 1, frame: CGRect = paperFrame,
+                                    color: ShapeColor? = nil) throws -> (CanvasEditor, ShapeID) {
     let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())
     editor.camera = Camera(origin: .zero, zoom: zoom)
     var note = ShapeRecord(StickyNote(frame: frame, text: MentionText(plain: text)))
     if isType { note[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter) }
     note[TitleProperty.self] = title
+    note[ColorProperty.self] = color
     let record = AnyShapeRecord(note)
     editor.transact { $0.insert(record) }
     return (editor, record.id)
@@ -125,5 +129,77 @@ private let yellow = [255, 222, 115]
             let drawn = render(type, dark: dark)
             expect(darkInk(drawn, in: note) > 10, "dark ink on the paper, dark \(dark): \(darkInk(drawn, in: note))")
         }
+    },
+])
+
+/// A color's paper as the bitmap holds it.
+private func eightBit(_ rgb: RGB) -> [Int] { [rgb.red, rgb.green, rgb.blue].map { Int(($0 * 255).rounded()) } }
+
+private func paperOf(_ name: String) -> [Int] { eightBit(BuiltInColors.named(name)!.swatch.paper.light) }
+
+@MainActor let coloredNoteTests = Suite("A note's color", [
+    test("a plain note is the yellow paper, which is the note's yellow") {
+        expectEqual(paperOf("yellow"), yellow)
+        let (editor, _) = try paperEditor(isType: false)
+        expectPaper(pixel(render(editor, dark: false), at: paperSpot), yellow, "plain")
+    },
+    test("a named color, and a hex value, is that color's paper in full, at 30% and in the dark") {
+        let hex = try require(ShapeColor("#4465E9"))
+        let swatch = Swatch(RGB(hex: 0x4465E9))
+        for (color, expected) in [(ShapeColor.blue, paperOf("blue")), (.green, paperOf("green")), (.pink, paperOf("pink")), (hex, eightBit(swatch.paper.light))] {
+            let (full, _) = try paperEditor(isType: false, color: color), (out, _) = try paperEditor(isType: false, zoom: 0.3, color: color)
+            let spot = CGPoint(x: 145 * 0.3 + 10, y: 145 * 0.3 + 25)
+            for dark in [false, true] {
+                expectPaper(pixel(render(full, dark: dark), at: paperSpot), expected, "\(color.text) in full, dark \(dark)")
+                expectPaper(pixel(render(out, dark: dark), at: spot), expected, "\(color.text) at 30%, dark \(dark)")
+            }
+        }
+    },
+    test("setColor(nil) puts the yellow back, and undo the color") {
+        let (editor, id) = try paperEditor(isType: false, color: .blue)
+        expectPaper(pixel(render(editor, dark: false), at: paperSpot), paperOf("blue"), "blue")
+        editor.setColor(nil, of: [id])
+        expectPaper(pixel(render(editor, dark: false), at: paperSpot), yellow, "none")
+        editor.undo()
+        expectPaper(pixel(render(editor, dark: false), at: paperSpot), paperOf("blue"), "undone")
+        editor.setColor(.green, of: [id])
+        expectPaper(pixel(render(editor, dark: true), at: paperSpot), paperOf("green"), "set")
+    },
+    test("a type's note is white whatever its color, and its color's paper once it is no type, and white again on undo") {
+        let (editor, id) = try paperEditor(isType: true, color: .blue)
+        expectPaper(pixel(render(editor, dark: false), at: paperSpot), [255, 255, 255], "a type")
+        expectPaper(pixel(render(editor, dark: true), at: paperSpot), [235, 235, 235], "a type, dark")
+        let (out, _) = try paperEditor(isType: true, zoom: 0.3, color: .blue)
+        expectPaper(pixel(render(out, dark: false), at: CGPoint(x: 145 * 0.3 + 10, y: 145 * 0.3 + 25)), [255, 255, 255], "a type at 30%")
+        editor.removeType(id)
+        expectPaper(pixel(render(editor, dark: false), at: paperSpot), paperOf("blue"), "removed")
+        editor.undo()
+        expectPaper(pixel(render(editor, dark: false), at: paperSpot), [255, 255, 255], "and back")
+    },
+    test("the editing view is over the color's paper") {
+        let (editor, id) = try paperEditor(isType: false, color: .purple)
+        expect(editor.beginEditing(id))
+        let drawn = renderBitmap(editor, size: paperCanvas, editing: try require(editor.makeEditingView()))
+        expectPaper(pixel(drawn, at: paperSpot), paperOf("purple"), "under the editor")
+        editor.endEditing()
+    },
+    test("a name the file lacks draws yellow") {
+        let (editor, _) = try paperEditor(isType: false, color: .named("chartreuse"))
+        expectPaper(pixel(render(editor, dark: false), at: paperSpot), yellow, "full")
+        let (out, _) = try paperEditor(isType: false, zoom: 0.3, color: .named("chartreuse"))
+        expectPaper(pixel(render(out, dark: true), at: CGPoint(x: 145 * 0.3 + 10, y: 145 * 0.3 + 25)), yellow, "30%")
+    },
+    test("a note's ink reads at 4.5:1 on every built-in paper, and on the paper of any color") {
+        let ink = RGB(white: 0.12)
+        let samples = [RGB(hex: 0x000000), RGB(hex: 0xFFFFFF), RGB(hex: 0x0000FF), RGB(hex: 0xFF0000), RGB(hex: 0x00FF00), RGB(hex: 0xFFFF00),
+                       RGB(hex: 0x00FFFF), RGB(hex: 0xFF00FF), RGB(hex: 0x808080), RGB(hex: 0x4465E9)]
+        for color in BuiltInColors.all {
+            for dark in [false, true] {
+                let paper = color.swatch.paper[dark: dark]
+                expect(ink.contrast(with: paper) >= 4.5, "\(color.name) paper, dark \(dark): \(ink.contrast(with: paper))")
+                expect(color.swatch.paperInk[dark: dark].contrast(with: paper) >= 4.5, "\(color.name) paperInk, dark \(dark)")
+            }
+        }
+        for color in samples { expect(ink.contrast(with: Swatch(color).paper.light) >= 4.5, "\(color.hexString)") }
     },
 ])

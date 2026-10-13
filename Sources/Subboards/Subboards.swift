@@ -1,9 +1,11 @@
 import Boards
 import Canvas
+import Colors
 import Connections
 import CoreGraphics
 import Keyboard
 import Mentions
+import Palette
 import Titles
 import Transform
 
@@ -54,7 +56,11 @@ public struct SubboardsPlugin: ListedPlugin {
             sub.tool(label: "Subboard", systemImage: Subboard.systemImage, shortcut: "b", placing: place)
             sub.tint(SubboardStyle.border)                 // its indigo, wherever it's listed by its kind
             sub.title(symbolInPill: true, coverSurface: SubboardStyle.cardFill)  // Titles keeps its name, in a pill after the symbol
+            sub.titleCoverSurface { shape, context in          // a colored card's cover is drawn over its own surface
+                context.service(ColorBook.self)?.color(\.surface, for: shape[ColorProperty.self], kind: Subboard.kind)
+            }
             sub.opensBoard(placeholder: Subboard.placeholder, systemImage: Subboard.systemImage)
+            sub.colorable(default: .indigo)                // the card's border, symbol and fill, indigo until it has a color
             sub.mentionable(following: .opens)             // by its name, else "Untitled Subboard"; followed, it's entered
             sub.subboardRow()                              // the table of contents, named by Titles
             sub.subboardHeader()                           // renamed in the panel's header

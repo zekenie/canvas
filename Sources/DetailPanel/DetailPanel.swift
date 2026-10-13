@@ -116,6 +116,7 @@ public struct DetailSection<Value> {
     let content: @MainActor (ShapeBinding<Value>) -> AnyView
     private(set) var isEnabledWhileReadOnly = false
     private(set) var isShownWhile: (@MainActor (AnyShapeRecord, DetailContext) -> Bool)?
+    private(set) var stepNoun: String?
 
     /// `title == nil` is a headerless block that never collapses (the top of a tab). `id` defaults
     /// to the title, or "main"; it keys conflicts and remembered collapse. `when` hides the section
@@ -143,6 +144,17 @@ public struct DetailSection<Value> {
     public func enabledWhileReadOnly() -> Self {
         var section = self
         section.isEnabledWhileReadOnly = true
+        return section
+    }
+
+    /// The section, its writes' undo steps named for `noun` ("Change Color") where it has no title to
+    /// name them: a headerless section that is one row, whose label says what it is.
+    ///
+    ///     DetailSection(in: StyleTab.self, id: "Color") { $x in LabeledContent("Color") { … } }
+    ///         .named("Color")
+    public func named(_ noun: String) -> Self {
+        var section = self
+        section.stepNoun = noun
         return section
     }
 
@@ -225,8 +237,9 @@ struct ErasedSection {
         isShownWhile = section.isShownWhile
         let shown = section.isShown, content = section.content
         isShown = { value($0).map(shown) ?? false }
-        // Its writes are undo steps named for it; one without a title's, for the kind.
-        let stepName = section.title.map { "Change \($0)" }
+        // Its writes are undo steps named for it (its title, or what it says names them); one with
+        // neither, for the kind.
+        let stepName = (section.stepNoun ?? section.title).map { "Change \($0)" }
         let binding = { @MainActor (record: AnyShapeRecord, editor: CanvasEditor) in binding(record, editor)?.named(stepName) }
         self.content = { record, editor in binding(record, editor).map(content) ?? AnyView(EmptyView()) }
     }

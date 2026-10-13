@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
@@ -115,7 +116,24 @@ private final class Bench {
     return false
 }
 
-private let amber = [245, 158, 10], personBlue = [44, 114, 219]
+private let amber = [245, 158, 10]
+
+/// A type's color as a note's paper shows it (the light appearance), 0 to 255: its tick, and its chip's capsule
+/// (the color at 14% over white) and title.
+@MainActor private func typeColor(_ id: ShapeID, in editor: CanvasEditor) -> (solid: [Int], wash: [Int], ink: [Int]) {
+    func components(_ color: NSColor?) -> [Int] {
+        var found: [Int] = []
+        NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
+            if let c = color.flatMap({ NSColor(cgColor: $0.cgColor) })?.usingColorSpace(.sRGB) {
+                found = [c.redComponent, c.greenComponent, c.blueComponent].map { Int(($0 * 255).rounded()) }
+            }
+        }
+        return found
+    }
+    let look = editor.types?.look(of: id)
+    let solid = components(look?.tick)
+    return (solid, solid.map { Int((Double($0) * 0.14 + 255 * 0.86).rounded()) }, components(look?.light.ink))
+}
 
 /// The right part of a row, where its kind is.
 private func kindRect(_ row: ShownRow) -> CGRect { CGRect(x: row.valueRect.maxX - 90, y: row.rect.minY, width: 90, height: row.rect.height) }
@@ -224,7 +242,8 @@ private let petFields = #"{"type": "object", "properties": {"name": {"type": "st
         let faintKind = darkest(drawn, in: rows[0].valueRect), fullKind = darkest(drawn, in: rows[2].valueRect)
         expect(faintKind > fullKind + 15, "an inherited row's kind is fainter too: \(faintKind) against \(fullKind)")
         let tick = { (row: ShownRow) in CGRect(x: row.rect.minX - TypesStyle.tickInset, y: row.rect.minY + 6, width: TypesStyle.tickWidth, height: row.rect.height - 12) }
-        for row in rows.prefix(2) { expect(has(drawn, personBlue, in: tick(row), within: 24), "\(row.name)'s tick is Person's blue, in the padding") }
+        let personColor = typeColor(FieldFixtures.personID, in: b.editor).solid
+        for row in rows.prefix(2) { expect(has(drawn, personColor, in: tick(row), within: 24), "\(row.name)'s tick is Person's color, in the padding") }
         for row in rows.suffix(2) { expectEqual(ink(drawn, in: tick(row).insetBy(dx: -3, dy: 0)), 0, "\(row.name) has no tick") }
     },
     test("an inherited row's tick is drawn outside the block, in the paper's left padding, and is not clipped away") {
@@ -233,7 +252,7 @@ private let petFields = #"{"type": "object", "properties": {"name": {"type": "st
         let row = try require(b.book.rows(of: FieldFixtures.employeeID).first)
         let x = block.minX - TypesStyle.tickInset
         expect(x > 440, "inside the paper: \(x) (the note starts at 440)")
-        expect(has(b.draw(), personBlue, in: CGRect(x: x, y: row.rect.midY - 2, width: TypesStyle.tickWidth, height: 4), within: 24))
+        expect(has(b.draw(), typeColor(FieldFixtures.personID, in: b.editor).solid, in: CGRect(x: x, y: row.rect.midY - 2, width: TypesStyle.tickWidth, height: 4), within: 24))
     },
     test("a chip is drawn in a row of another type's fields, in that type's color; dashed once the type is deleted") {
         let b = try Bench([FieldFixtures.address, FieldFixtures.order])
@@ -241,11 +260,11 @@ private let petFields = #"{"type": "object", "properties": {"name": {"type": "st
         let row = try require(rows.first { $0.name == "shipping address" })
         guard case .kind(_, let chip, _) = row.content else { throw Failure("a kind") }
         expectEqual(chip, FieldFixtures.addressID)
-        let orange = [180, 95, 35]
+        let address = typeColor(FieldFixtures.addressID, in: b.editor)
         let chipArea = CGRect(x: row.valueRect.maxX - 140, y: row.rect.minY, width: 140, height: row.rect.height)
         let drawn = b.draw()
         // A light chip: its capsule is the color at 14%, its text the color's ink.
-        expect(has(drawn, [255, 244, 236], in: chipArea, within: 10) || has(drawn, orange, in: chipArea, within: 60), "the chip in Address's orange")
+        expect(has(drawn, address.wash, in: chipArea, within: 10) || has(drawn, address.ink, in: chipArea, within: 60), "the chip in Address's color")
         let filled = ink(drawn, in: chipArea)
         b.editor.removeType(FieldFixtures.addressID)
         let gone = b.draw()
