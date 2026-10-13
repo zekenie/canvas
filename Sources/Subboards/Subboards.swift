@@ -38,7 +38,7 @@ extension Subboard {
 /// Subboards: the Subboard tool (B), which places a card that opens onto a board of its own. It
 /// opts into Boards (opening it: a double-click, Return, ⌘↓, Open in its menu and panel), Titles
 /// (its name, in a pill above the card after the kind's symbol), Mentions (by
-/// its name; following a mention enters it; a Mentioned In tab in its panel), the table of contents
+/// its name; following a mention enters it), the table of contents
 /// (a row Titles names), the detail panel (a header that renames it) and ports (a link on a channel
 /// of its own, `SubboardLink`, and on every other: anything with ports connects to a subboard, and
 /// a subboard to anything). Going back up, and the path, are Boards'. It takes Transform's container

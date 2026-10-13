@@ -51,7 +51,7 @@ extension Budget {
 /// `count` small notes in a tight grid, 120 to a row at 95 units (all of them in view zoomed out to
 /// 10% in a 1200 × 800 view), the first the hub, and the next `mentioning` each mentioning the hub: a
 /// shape with `mentioning` neighbors, among shapes that have none.
-@MainActor private func hubBoard(shapes count: Int, mentioning: Int) -> (document: CanvasDocument, hub: ShapeID) {
+@MainActor func hubBoard(shapes count: Int, mentioning: Int) -> (document: CanvasDocument, hub: ShapeID) {
     let hub = ShapeID()
     var shapes: [AnyShapeRecord] = []
     shapes.reserveCapacity(count)
@@ -65,7 +65,7 @@ extension Budget {
 
 private let viewport = CGSize(width: 1200, height: 800)
 
-@MainActor private func hubEditor(shapes count: Int, mentioning: Int, pasteboard: NSPasteboard) throws -> (h: EditorHarness, hub: ShapeID) {
+@MainActor func hubEditor(shapes count: Int, mentioning: Int, pasteboard: NSPasteboard) throws -> (h: EditorHarness, hub: ShapeID) {
     let (document, hub) = hubBoard(shapes: count, mentioning: mentioning)
     let registry = try Registry(plugins: shippedPlugins(pasteboard))
     let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }

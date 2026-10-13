@@ -132,7 +132,7 @@ extension CanvasEditor {
         expectEqual(book.resolution(of: link), .missing)
     },
 
-    test("the queries: :edge-to follows field-link, and mention takes it in unless the query says only; :mentions and Mentioned In leave it out") {
+    test("the queries: :edge-to follows field-link, and mention takes it in unless the query says only; :mentions and mentioners(of:) leave it out, and the Connections tab lists it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = typedBoard(pasteboard)
@@ -147,6 +147,15 @@ extension CanvasEditor {
         expectEqual(try ids(#":mentions("Ann Lee")"#), [], "mention exactly")
         expectEqual(h.editor.mentions?.mentioners(of: ann), [])
         expectEqual(try require(h.editor.topology).edges(of: order, .outgoing, types: .only(FieldLinkEdge.id)).map(\.slot), ["customer"])
+        // The Connections tab lists a pointer as a mention, both ways; it has no text to quote.
+        let toAnn = try h.editor.connections(of: ann)
+        expectEqual(toAnn.map(\.title), ["Mentioned By"])
+        expectEqual(toAnn.first?.rows.map(\.id), [order])
+        expectEqual(toAnn.first?.rows.first?.caption, nil)
+        let fromOrder = try h.editor.connections(of: order)
+        expectEqual(fromOrder.map(\.title), ["Mentions"])
+        expectEqual(fromOrder.first?.rows.map(\.id), [ann])
+        expectEqual(fromOrder.first?.rows.first?.name, "Ann Lee")
     },
     test("the check: a Person deleted is a warning on the Order, orange and no red, and undone it is none; pasted into another file, the same warning; a Person who is no longer one is an error") {
         let pasteboard = NSPasteboard.withUniqueName()

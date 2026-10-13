@@ -115,7 +115,7 @@ private final class ContentsList {
         expect(untitled.isPlaceholder)
         expectEqual(untitled.systemImage, "note.text", "the Note tool's")
         expectEqual(untitled.kindName, "Note")
-        expectEqual(untitled.tint, .systemYellow, "in the @ picker and Mentioned In, a note's symbol is yellow, as in its row")
+        expectEqual(untitled.tint, .systemYellow, "in the @ picker, a note's symbol is yellow, as in its row")
         let row = try require(editor.tableOfContents?.entries.first { $0.id == blank }?.label)
         expectEqual(row.color, Color(nsColor: .systemYellow))
         editor.transact { $0.update(blank, as: StickyNote.self) { $0.props.text = "Now it says something" } }

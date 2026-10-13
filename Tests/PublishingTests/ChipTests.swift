@@ -4,6 +4,7 @@ import CanvasTesting
 import CoreGraphics
 import DetailPanel
 import Geometry
+import Neighbors
 import Publishing
 import Selection
 import TestKit
@@ -308,17 +309,18 @@ let elsewhere = CGPoint(x: 600, y: 20)
         h.click(at: try h.chipPoint(of: plaque))
         expectEqual(h.editor.document[plaque]?[PublicProperty.self], nil)
     },
-    test("the refused click switches the panel, when it's showing that shape, to Referenced In; nothing else changes") {
-        let h = try publishingHarness()
+    test("the refused click switches the panel, when it's showing that shape alone, to Connections; nothing else changes") {
+        let h = try publishingHarness([NeighborDetailsPlugin()])
         let plaque = h.add(Plaque(plaqueFrame)), other = h.add(Plaque(CGRect(x: 400, y: 100, width: 100, height: 100)))
         h.publish(plaque, other)
         h.hold([plaque, other])
         let panel = try require(h.editor.detailPanel)
-        let tab = DetailTabID.of(ReferencedInTab.self)
+        let tab = DetailTabID.of(NeighborsTab.self)
         @MainActor func current(_ id: ShapeID) -> DetailTabID? {
             let record = h.editor.document[id]!
             return panel.currentTab(in: panel.layout(for: record), for: record.kind)
         }
+        expect(panel.layout(for: h.editor.document[plaque]!).tabs.contains(tab), "Connections is on the shape, held or not")
         expect(current(plaque) != tab, "the plaque's own tab first")
         h.editor.selection = other
         h.click(at: try h.chipPoint(of: plaque))                                         // selects nothing: it's a button
@@ -326,10 +328,17 @@ let elsewhere = CGPoint(x: 600, y: 20)
         expect(current(plaque) != tab, "the panel shows another shape: nothing to switch")
         h.move(to: elsewhere)
         h.wait(1000)
+        h.editor.selectedShapeIDs = [plaque, other]
+        h.click(at: try h.chipPoint(of: plaque))
+        expectEqual(h.editor.selectedShapeIDs, [plaque, other], "the selection stays")
+        expect(current(plaque) != tab, "the panel shows no one shape: nothing to switch")
+        expect(current(other) != tab)
+        h.move(to: elsewhere)
+        h.wait(1000)
         h.editor.selection = plaque
         h.click(at: try h.chipPoint(of: plaque))
         expectEqual(h.editor.selection, plaque)
-        expectEqual(current(plaque), tab, "Referenced In")
+        expectEqual(current(plaque), tab, "Connections")
         expectEqual(h.editor.document[plaque]?[PublicProperty.self], true)
     },
     test("a locked shape: its chip click is refused by the core, whether held or not, with no step") {

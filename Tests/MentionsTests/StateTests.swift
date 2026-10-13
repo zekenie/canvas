@@ -279,57 +279,6 @@ extension OutlineDefinition: ShapeDefinition {
         expect(b.state.isMentioned(b.jot))
     },
 
-    test("backlinkRevision changes with what mentions a target: a mentioner added, changed or removed, and a name its quote shows; not a drag, another target's mentioner, nor a shape's own mention of itself") {
-        let b = try Board()
-        @MainActor func revision(_ id: ShapeID) -> Int { b.state.backlinkRevision(of: id) }
-        let groceries = revision(b.groceries), errands = revision(b.errands), milk = revision(b.milk)
-        b.editor.transact { $0.translate([b.jot, b.groceries, b.milk], by: CGPoint(x: 10, y: 10)) }
-        expectEqual([revision(b.groceries), revision(b.milk)], [groceries, milk], "a drag changes no text")
-        b.editor.rename(b.errands, "Chores")
-        expectEqual(revision(b.groceries), groceries, "a name no quote shows")
-
-        let second = b.h.add(Jot(frame, text: MentionText([.mention(b.errands, label: "Chores")])))
-        expectEqual(revision(b.errands), errands + 1, "a mentioner came")
-        expectEqual(revision(b.groceries), groceries, "another target's")
-        b.editor.setText(second, MentionText([.text("Then "), .mention(b.errands, label: "Chores")]))
-        expectEqual(revision(b.errands), errands + 2, "its text changed, and with it its quote")
-        let own = revision(second)
-        b.editor.setText(second, MentionText([.mention(second, label: "Me"), .text(" then "), .mention(b.errands, label: "Chores")]))
-        expectEqual(revision(second), own, "a shape's own text is none of its backlinks")
-        expectEqual(revision(b.errands), errands + 3)
-
-        b.editor.transact { $0.update(b.milk, as: Token.self) { $0.props.caption = "Oat milk" } }
-        expectEqual(revision(b.groceries), groceries + 1, "the jot's quote around the groceries shows the milk's name")
-        expectEqual(revision(b.milk), milk + 1)
-        b.editor.setText(b.jot, MentionText([.mention(b.milk, label: "Oat milk")]))
-        expectEqual(revision(b.groceries), groceries + 2, "no longer mentioned")
-        b.editor.delete(b.jot)
-        expectEqual(revision(b.milk), milk + 3, "a mentioner went")
-        expectEqual(revision(b.errands), errands + 3)
-        b.editor.undo()
-        expectEqual(revision(b.milk), milk + 4, "undo is a commit")
-        b.editor.redo()
-        expectEqual(revision(b.milk), milk + 5)
-        expect(!b.state.isMentioned(b.milk))
-    },
-
-    test("backlinkRevision is observed a target at a time: its observers hear a change of its backlinks, and nothing else") {
-        let b = try Board()
-        let flag = Flag()
-        withObservationTracking { _ = b.state.backlinkRevision(of: b.groceries) } onChange: { flag.fired = true }
-        b.h.add(Jot(frame, text: MentionText([.mention(b.errands, label: "Errands")])))
-        expect(!flag.fired, "another target's")
-        b.editor.transact { $0.translate([b.jot], by: CGPoint(x: 5, y: 5)) }
-        expect(!flag.fired, "a drag")
-        b.h.add(Jot(frame, text: MentionText([.mention(b.groceries, label: "Groceries")])))
-        expect(flag.fired)
-        // Heard once, it tells again only once read again, as SwiftUI reads it on redrawing.
-        let again = Flag()
-        withObservationTracking { _ = b.state.backlinkRevision(of: b.groceries) } onChange: { again.fired = true }
-        b.editor.delete(b.jot)
-        expect(again.fired)
-    },
-
     test("rows affected: exactly the mentioners of a target whose name changed; none for a drag, or a change that shows nothing new") {
         let b = try Board()
         let second = b.h.add(Jot(frame, text: MentionText([.mention(b.milk, label: "Milk")])))

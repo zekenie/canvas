@@ -17,6 +17,6 @@ extension ShapeRegistrar where Definition == StickyNoteDefinition {
 
 extension NoteStyle {
     /// A note's symbol wherever it's shown beside others' on a neutral surface: its row, the `@`
-    /// picker, Mentioned In, a pill in the panel's text.
+    /// picker, a list of what's connected to a shape, a pill in the panel's text.
     static let tint = NSColor.systemYellow
 }

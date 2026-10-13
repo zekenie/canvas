@@ -24,7 +24,7 @@ enum FrameStyle {
         $0.isDark ? NSColor(white: 1, alpha: 0.14) : NSColor(white: 0, alpha: 0.12)
     }
     /// The kind's color where a frame is shown by its kind: its row's symbol, and its mentions' tint
-    /// in the picker and Mentioned In. Neutral, as the frame is.
+    /// in the picker. Neutral, as the frame is.
     static let tint = NSColor.systemGray
 
     /// While a frame is drawn with the Frame tool, its surface shows at this much, so what it's drawn

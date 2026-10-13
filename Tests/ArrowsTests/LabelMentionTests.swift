@@ -131,8 +131,7 @@ private final class LabelCanvas: NSView {
         for pill in h.editor.mentionPills(of: id) {
             expect(pills.insetBy(dx: LabelMetrics.padding, dy: LabelMetrics.padding).contains(pill.frame), "\(pill.frame) is inside the label \(pills)")
         }
-        let backlinks = try require(h.editor.mentions).backlinks(of: groceries)
-        expectEqual(backlinks.map(\.id), [id], "Mentioned In lists the arrow")
+        expectEqual(try require(h.editor.mentions).mentioners(of: groceries), [id], "what mentions the groceries is the arrow")
         expectEqual(h.editor.mentionPills(of: plain).count, 0)
     },
     test("with pills, the editor's lines and pills fall where the render draws them, at 1× and 2×: nothing moves when editing starts") {

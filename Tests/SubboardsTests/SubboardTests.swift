@@ -91,7 +91,7 @@ import Titles
         expectEqual(looks.label, "Untitled Subboard")
         expect(looks.isPlaceholder)
         expectEqual(looks.systemImage, "rectangle.stack")
-        let tint = try require(looks.tint, "tinted in the @ picker and Mentioned In")
+        let tint = try require(looks.tint, "tinted in the @ picker")
         let row = try require(h.editor.tableOfContents?.entries.first { $0.id == nest.s }?.label)
         expectEqual(row.color, Color(nsColor: tint), "the card's indigo, in its row too, where the list's accent was")
         h.editor.transact("Rename") { $0.update(nest.s) { $0[TitleProperty.self] = "Kitchen" } }

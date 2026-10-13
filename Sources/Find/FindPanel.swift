@@ -218,7 +218,7 @@ private struct FindRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        // As Mentioned In's lines: a borderless button's label is otherwise drawn dimmed.
+        // As the rows of the panel's lists: a borderless button's label is otherwise drawn dimmed.
         .foregroundStyle(.primary)
         .focusable(false)
     }

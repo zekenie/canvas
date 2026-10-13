@@ -93,10 +93,8 @@ enum MentionStyle {
 
     // MARK: What mentions a shape
 
-    /// The tab that lists what mentions a shape.
-    nonisolated static let mentionedIn = "Mentioned In"
-
-    /// About how many characters of a mentioner's text a backlink quotes around its mention.
+    /// About how many characters of a mentioner's text a list of what mentions a shape quotes around
+    /// its mention.
     static let quoteLength = 60
     /// The symbol of a mentioner whose kind has no placing tool.
     static let unknownSymbol = "square.dashed"

@@ -47,7 +47,7 @@ extension Frame {
 /// frame, a region that holds what's put down in it (the core's containment). Pressed, it's hollow:
 /// its border and its title's pill grab it, and its inside is the canvas, unless it holds nothing. It
 /// opts into Titles (its name, in a pill above it, dimmed "Frame" while untitled), Mentions (by its
-/// name; following a mention goes to it; a Mentioned In tab), Selection's resizing, the table of
+/// name; following a mention goes to it), Selection's resizing, the table of
 /// contents (a row Titles names), the detail panel (a header that renames it) and Transform (it offers
 /// the container channel, so it can be turned into whatever takes that: a subboard, in the app). Create
 /// Frame, in the context menu, puts one down around the shapes it's for, holding them.

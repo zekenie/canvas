@@ -192,7 +192,7 @@ public final class NeighborState {
         var requests: [QueryMatchRequest] = []
         requests.reserveCapacity(lights.count * views.count)
         for light in lights {
-            let text = light.query(selector)
+            let text = light.lit(selector)
             for view in views { requests.append(QueryMatchRequest(text, edges: view, limit: QueryBudget.maxRows)) }
         }
         #if DEBUG

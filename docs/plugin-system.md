@@ -308,7 +308,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Go to shapes, as following a link does (select them, bring them into view, ⌘[ returns), or only bring them into view | Selection's `editor.goTo(_:)`, `editor.reveal(_:)` | [Selection](#selection) |
 | Keep a kind from being copied | `x.uncopyable()`, or `x.copyable { ... }` | [The clipboard](#the-clipboard) |
 | Keep some shapes from changing (a lock), and say why when something tries | `registrar.readOnlyShapes { ... }`; `EditorService.didRefuseChanges` | [Locking](#locking) |
-| Say which shapes another shape may stand for (public), and show what stands for one | `PublicProperty`, `NeverPublic`, `AlwaysPublic`, `editor.publishing`; `StandInRows` for a stand-in kind's row | [Publishing](#publishing) |
+| Say which shapes another shape may stand for (public), and show what stands for one | `PublicProperty`, `NeverPublic`, `AlwaysPublic`, `editor.publishing`; what stands for a shape is in its Connections tab (Neighbors') | [Publishing](#publishing), [Neighbors](#neighbors) |
 | Put a pill that stands for a public shape, so an arrow into it is an arrow into the shape | `ReferencesPlugin`: the Reference tool (R); `x.standsIn` is what it declares, Publishing says what it may stand for | [References](#references) |
 | Put a button on the canvas that a click does something with (a chip), or a drag starts something from (a port's dot) | Selection's `registrar.canvasButtons(at:click:)` or `canvasButtons(at:drag:)`, drawn in an overlay with `editor.hoveredButton` and `editor.pressedButton`; or make an adornment a `ClickableAdornment` | [Canvas buttons](#canvas-buttons), [Locking](#locking), [Ports](#ports) |
 | Make what you draw for a shape outside it count as the shape (a press, a hover, a right-click) | Selection's `registrar.decorationHits`; adornments already do | [DecorationHits](#drawn-for-a-shape-decorationhits) |
@@ -328,9 +328,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Ask Claude something (and test it without the network) | `editor.languageModel?.respond(to: ModelRequest(...))`; `ScriptedLanguageModel` in tests | [Language models](#language-models) |
 | Say which words of a text say which part of a lower-level text (a schema, code, a query), to highlight them | A `ProseTarget` (a name and a guide); `editor.proseMaps?.map(T.self, of:prose:target:askingIf:)` where the words are drawn | [Prose maps](#prose-maps) |
 | Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Connections/ArrowDefinition.swift) |
-| Let a kind's shapes be mentioned in text, as pills, with a tab listing what mentions each | `x.mentionable(untitled:symbol:…)` (Mentions), or `registrar.mentionable(K.self)` for another plugin's kind | [Mentions](#mentionable-kinds) |
+| Let a kind's shapes be mentioned in text, as pills | `x.mentionable(untitled:symbol:…)` (Mentions), or `registrar.mentionable(K.self)` for another plugin's kind | [Mentions](#mentionable-kinds) |
 | Let a kind's text mention shapes, drawn with pills and edited with a picker | A `MentionText` property; `x.mentionText { … }` and `context.drawMentionText`; a `MentionTextView` editor, or `MentionTextArea` in the panel | [Mentions](#mention-text-and-its-stored-form), [In the panel](#in-the-panel-mentiontextarea) |
-| Go to what mentions a shape | `mentions.backlinks(of:)`, `showWhatMentions(_:)`; Show What Mentions in the context menu | [What mentions a shape](#what-mentions-a-shape) |
+| Go to what mentions a shape | `mentions.mentioners(of:)`, `showWhatMentions(_:)`; Show What Mentions in the context menu; every shape's Connections tab lists them | [What mentions a shape](#what-mentions-a-shape) |
 | Restrict what a text may mention to some kinds | `ScopedMentionText<Only<Kind>>`, or a declared scope: `registrar.mentionScope(S.self)` and `x.mentionable(in: S.self)` | [Scopes](#scopes-what-a-text-may-mention) |
 | Hold names of shapes that may outlive them (a mention), renamed when copied with them | A value that adopts `ShapeNaming`; `registry.namingKinds` and `record.forEachNamingValue(in:)` to read them | [Values that name shapes](#values-that-name-shapes) |
 | Ask what's connected to a shape, and how (arrows, mentions), anywhere in the file | `editor.topology?.neighbors(of:)`, `edges(of:_:types:)` with an `EdgeTypeFilter` | [Topology](#the-index-topologyindex) |
@@ -340,7 +340,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Find the shapes of a file a query matches (by kind, title, attribute, what's inside what, what connects to what), from a plugin or an agent | `editor.queries?.run(QueryRequest(#"sticky-note:mentions("Auth")"#))`, answered off the main actor; `canvas query` | [Queries](#queries) |
 | Make text a kind draws findable with ⌘F, highlighted where it's drawn | `registrar.findableTexts(_:where:…)` (Find), or `x.findableTexts(_:…)` for a kind's own: its texts and where each range is drawn | [Find](#find) |
 | Keep the shapes some queries match (what a plugin that stores answers asks, many at once, ids only), or check a query's titles before keeping it | `await editor.queries?.matches([QueryMatchRequest(text, edges: .recorded, limit: 50) { admit($0) }])`, `checkNames(plan)` | [Many at once](#many-at-once-edge-views-and-waiting) |
-| Outline what's connected to the hovered shape, at a glance, in a color for each way (a light: a color and a query), on the canvas and in the minimap | `NeighborsPlugin()`, and a light from each plugin that owns a kind of edge, `registrar.neighborLight(color:query:)`: Neighbors asks the engine, places what's on another board on its card, and hands the core tinted outlines | [Neighbors](#neighbors) |
+| Outline what's connected to the hovered shape, at a glance, in a color for each way (a light: a title, a color and a query), on the canvas and in the minimap | `NeighborsPlugin()`, and a light from each plugin that owns a kind of edge, `registrar.neighborLight(_:color:query:between:caption:)`: Neighbors asks the engine, places what's on another board on its card, and hands the core tinted outlines | [Neighbors](#neighbors) |
+| List what's connected to the selected shape, by the same ways, in its panel (each list folding and searchable, a light's caption under its rows), with what the shape is inside and what it holds | `NeighborDetailsPlugin()`: the Connections tab (`NeighborsTab`), on every shape, always; `NeighborList` (`editor.neighborList`) | [Neighbors](#neighbors) |
 | Know which shape the pointer is on where the canvas doesn't show it (a row of another board's shapes), outline the card that holds it, or say it from a view of your own | `editor.hoveredElsewhere`, observed and settable (Selection's; the table of contents' rows set it) | [Selection](#selection) |
 | Give queries a plugin's word (a pseudo-class, or a relation over its edges), or say how its text reads in them | A plugin value of its own in the module that owns the meaning, which imports Queries: `registrar.queryPseudoClass`, `queryRelation` or `queryTextFormat` | [What plugins add](#what-plugins-add) |
 | Put an editing view's selection where the press that began editing was | `editor.beginEditing(id, at: point, clickCount:)`, read as `EditContext.startPoint` and `startClickCount` | [Capabilities](#capabilities) |
@@ -2005,7 +2006,7 @@ that both binds and names.)
 
   It can't look inside a type coded by hand, as it can't check its list.
 - **Reading them.** `registry.namingKinds` are the kinds whose props, or the added properties they
-  opt into, can hold names; no other shape holds one, so a plugin that follows names (backlinks)
+  opt into, can hold names; no other shape holds one, so a plugin that follows names (Mentions' edges)
   walks only those. `record.forEachNamingValue(in: registry) { property, value in
   value.forEachNamedShape { id in … } }` is each value in a shape that names shapes, with the
   property it's in: the kind's own in list order, then its added ones. A shape kept aside has none,
@@ -2949,8 +2950,8 @@ The panel owns all of the chrome, and plugins fill it in:
 With nothing selected the panel shows its overview, a view the host may give it (the app's is [the
 table of contents](#the-table-of-contents)), else "No Selection". With several, it shows "N Shapes"
 over the kinds selected, then the overview (details are per shape: editing several at once isn't
-built). A shape with no sections to show (an arrow, a note without issues) gets its
-header, then "No Options". Without `DetailPanelPlugin` installed, the panel says "No Details". A
+built). A shape with no sections to show (an arrow, a note without issues, in a list without [Neighbors](#neighbors)'
+Connections tab, which every shape has) gets its header, then "No Options". Without `DetailPanelPlugin` installed, the panel says "No Details". A
 read-only shape (a [locked](#locking) one, one in a locked frame, at any depth, or one on a locked
 subboard's board) shows its whole panel, but nothing in it edits the shape: the panel disables its sections' content, and its header
 (a title field), and leaves going back, the tabs and collapsing as they were. A section whose
@@ -3062,8 +3063,9 @@ it. Tabs sort by `order`, then by first appearance, in these bands:
 |---|---|
 | 0 (the default) | A kind's own tabs (Schema) |
 | 50 | Feature tabs a horizontal brings to the kinds that opt into it (Boards' Board) |
+| 60 | Neighbors' Connections (`NeighborsTab`), on every shape and always: after the feature tabs, before Style |
 | 100 | `StyleTab`: appearance, shared by every kind |
-| 300 | A tab of the shape's state that comes and goes with it (Validation's `IssuesTab`, Mentions' `MentionsTab`): last, so the others keep their order |
+| 300 | A tab of the shape's state that comes and goes with it (Validation's `IssuesTab`): last, so the others keep their order |
 
 Use the shared `StyleTab` rather than a near-duplicate. Two tab types with one title
 would show as two identical tabs, so they're a registry error (`invalid`, below), whether sections
@@ -3083,7 +3085,7 @@ Plugins write the sugar, not the points:
 | `x.details(header:) { sections }` | This kind's header and sections, inside `registrar.shape { x in ... }`. The header is a view made from the shape's binding ([the header](#the-header)). |
 | `registrar.details(P.self, header:) { sections }` | Another plugin's kind, typed as its own. |
 | `registrar.detailsForEveryBox { sections }` | Every shape with a frame, editing the frame. Arrows have none, so they don't get these. |
-| `registrar.detailsForEveryShape(where: { record in ... }) { sections }` | Every shape the `where` picks (asked as the panel is laid out, so it reads cached state), over the whole record (`DetailSection<AnyShapeRecord>`); its writes change the record, in a step named for the section. For what a feature shows about any shape that no property or box says (Mentions' Mentioned In could use it). |
+| `registrar.detailsForEveryShape(where: { record in ... }) { sections }` | Every shape the `where` picks (asked as the panel is laid out, so it reads cached state), over the whole record (`DetailSection<AnyShapeRecord>`); its writes change the record, in a step named for the section. For what a feature shows about any shape that no property or box says (Neighbors' Connections does). |
 | `x.details(of: P.self) { sections }`, `registrar.details(of: P.self) { sections }` | An [added property](#added-properties), editing its value: on this kind's shapes that have one, or on every shape that has one. |
 | `registrar.detailStatusForEveryShape { shape, context in ... }` | Footer lines for every shape. Return `[]` when there's nothing to say. |
 | `registrar.detailStatusForEveryShape(in: SomeTab.self) { shape, context in ... }` | Lines in a tab for every shape. The tab shows while the shape has lines there, above its sections if it has any. |
@@ -3108,7 +3110,7 @@ registrar.detailsForEveryBox {
 }
 ```
 
-Two pieces for a section's rows. `DetailCheckbox("Title", isOn: $x)` is a label-hidden `Toggle`
+Four pieces for a section's rows. `DetailCheckbox("Title", isOn: $x)` is a label-hidden `Toggle`
 beside a `Text` that toggles on a click (4 points apart), for a `LabeledContent` row's content, so
 the row reads "Label [] Title" on macOS 14 and 15 alike (a bare `Toggle` in a row puts its title in
 the label column on 14). `DetailShapeRow(symbol:tint:name:detail:lines:dimmed:)` is a row for a shape
@@ -3116,18 +3118,23 @@ in a list: the kind's symbol (in `tint`, else secondary) in the status icon's co
 one line in the panel's text size, an optional trailing `detail` at 10 points secondary, up to two
 `lines` of 10 point secondary under the name, and `dimmed` for a row that can't be gone to, which
 dims the whole row, secondary text too. It uses the panel's own row metrics, which stay internal;
-wrap it in a `Button` to make it one.
+wrap it in a `Button` to make it one. `DetailGroupHeader(_:count:tint:isCollapsed:toggle:)` heads a list
+of such rows inside a section and folds it: a disclosure triangle, a dot in `tint` when the list has a
+color of its own, the title and the count if given, all one borderless button as tall as a section's
+header; the caller keeps whether the list is folded and leaves its rows out while it is.
+`DetailSearchField("Search", text: $text)` searches such a list: a magnifying glass, the text typed as
+keyed (nothing corrected), and a button that clears it once there's text, as tall as a list row;
+Escape, as anywhere in the panel, gives the keyboard back to the canvas. All four are in
+`ListRows.swift`, and DetailPanelTests' `listRowTests` hold them.
 
-`when` reads only the value. A section of the shape's state that a service knows (whether other
-shapes mention it) says when it shows with `shownWhile`, over the record and a `DetailContext`, as
-Mentions' Mentioned In does:
+`when` reads only the value. A section of the shape's state that a service knows (whether its types
+give it a field) says when it shows with `shownWhile`, over the record and a `DetailContext`, as
+Types' Fields does:
 
 ```swift
-DetailSection(in: MentionsTab.self, id: "mentioned-in") { $x in
-    MentionedInList(target: $x.shapeID, mentions: $x.service(MentionState.self))   // the shape, whatever the value
-}
-    .shownWhile { shape, context in context.service(MentionState.self)?.isMentioned(shape.id) == true }
+DetailSection(TypesStyle.fieldsTitle, in: TypesTab.self, id: "fields") { $record in FieldsList(record: $record) }
     .enabledWhileReadOnly()
+    .shownWhile { shape, context in context.service(FieldBook.self)?.givesFieldsOrValues(shape) == true }
 ```
 
 It's asked on every commit, whatever the commit changed (a drag of another shape), as status
@@ -3567,7 +3574,7 @@ The document changes on every drag event, so the panel does little per change. I
 selected shape, whether it can change (the containers it's in, O(its depth)), its status lines and
 what `shownWhile` hides, and rebuilds the shape's panel only if any of them changed (`panelsDrawn`,
 debug builds, counts it); dragging another shape costs one comparison (`./build.sh bench` holds the
-layout of a subboard 100 notes mention, its Mentioned In tab showing, to 1 ms after a drag event
+layout of a subboard 100 notes mention, its Connections tab showing, to 1 ms after a drag event
 of another note and after a mentioner's rename). A section is rebuilt only when its own shape changes.
 Only the current tab is built, a collapsed section's content isn't, and each kind's contributions
 are gathered once.
@@ -5524,7 +5531,8 @@ and lends any plugin what follows, but for `beginArrow`, which is internal:
 - **For [Neighbors](#neighbors)**, `ArrowLightsPlugin` (Connections', after Neighbors and
   `ArrowPortsPlugin`, whose `arrow` edges its queries name) gives two lights: what the hovered shape
   points to, in green, and what points to it, in purple (`ArrowStyle.pointsToLight`,
-  `pointedToByLight`), the arrows between with them.
+  `pointedToByLight`), titled Points To and Pointed To By, the arrows between with them (each light's
+  `between`: outlined, never listed).
 
 ### Connecting without a drag
 
@@ -5571,8 +5579,8 @@ note, a glossary) needs no arrow from each of them: a pill that stands for it ta
 arrow to the pill counts, for queries, the table of contents and everything that reads
 [Topology](#topology), as an arrow to the shape. Only a public shape can be stood for. Publishing
 ([`Sources/Publishing`](../Sources/Publishing), a concern, on Adornments, ContextMenus, DetailPanel,
-Selection, SlashCommands, TableOfContents, Titles and Topology) says which shapes are, shows it,
-and shows what stands for one; it knows no kind that stands in (no reference), only
+Neighbors, Selection, SlashCommands, TableOfContents, Titles and Topology) says which shapes are, shows it,
+and sends the panel to what stands for one, in Neighbors' Connections tab; it knows no kind that stands in (no reference), only
 what Topology says stands for a shape (`topology.standIns(for:)`), and no core knows of it.
 
 ```swift
@@ -5583,7 +5591,6 @@ registrar.service { PublishingState(editor: $0) }       // which shapes are publ
 registrar.adornmentForEveryShape(PublicChip.self, where: { $0.holds(PublicProperty.self) }) { shape, context in … }
 registrar.contextMenuForCanvas { MenuItem("Make Public", in: PublishMenuGroup.self, …) …; MenuItem("Make Private", …) }
 registrar.slashCommandsForEveryShape(where: { $0.holds(PublicProperty.self) }) { SlashCommand("public", …); SlashCommand("private", …) }
-registrar.detailsForEveryShape(where: { _ in true }) { DetailSection(in: ReferencedInTab.self, id: "referenced-in") { … }.shownWhile { … } }
 registrar.contentsMarkForEveryShape(where: { $0.holds(PublicProperty.self) }) { shape, context in … }   // a globe on a public shape's row
 ```
 
@@ -5623,7 +5630,7 @@ registrar.contentsMarkForEveryShape(where: { $0.holds(PublicProperty.self) }) { 
 - **A click**: on a public shape nothing stands for, it makes the shape private ("Make Private"). On
   one that something stands for, it writes nothing and takes no step: `editor.refuseChanges(to:)`, so
   Selection's `RefusalShake` shakes the shape, and, when the detail panel shows that shape alone, its
-  panel switches to the Referenced In tab (`detailPanel.choose`), where the stand-ins say why. A click on
+  panel switches to the Connections tab (Neighbors', `detailPanel.choose`), where the stand-ins, among what points to the shape, say why. A click on
   "Private" while it lingers makes the shape public again ("Make Public"). `editor.makePrivate(ids)`
   is the guarded way (the chip, the menu and `/private` use it): the shapes nothing stands for go
   private in one step, the held ones are refused and shake, and it returns those it left public.
@@ -5642,23 +5649,12 @@ registrar.contentsMarkForEveryShape(where: { $0.holds(PublicProperty.self) }) { 
   (`step:`).
 - **The table of contents** marks a public shape's row with a globe (`ContentsMark`, "Public" or
   "Public · 3 references"), on the kinds that hold the property.
-- **Referenced In** (`ReferencedInTab`, order 300, beside Mentioned In) is a tab of every shape that can be
-  public (`registry.canBePublic`), shown while something stands for it
-  (`.shownWhile`, observing the shape's edges), and working on a read-only shape: a
-  `DetailShapeRow` for each stand-in, in file order (`topology.snapshot().fileOrderKey`), the
-  kind's symbol, line one the names of what's connected through it (the other end of each edge
-  `edges(through:)` gives, a shape once, its title else its kind's name, up to two and then " +n"),
-  else the board it's on, and at the end the board's name when it isn't the board shown and line
-  one isn't it already (a board is named by its owner's title, else its kind's name, the root
-  "Board": the file's name is the host's). The pointer on a row hovers the stand-in on the board
-  shown, a click goes to it (`editor.goTo`, its board shown first, one step back). The section's
-  `where` is every shape (`detailsForEveryShape`'s `where` sees only the record, no registry), and
-  `shownWhile` does the choosing.
-- **A stand-in kind describes its own row** through a keyed extension point Publishing declares,
-  `StandInRows`: `x.standInRow { shape, registry in StandInRow(symbol:, tint:, text:) }`, the
-  symbol it leads with and the words of line one (a reference's, in curly quotes). Without one the
-  row is the kind's symbol and the connected names. The fixtures `Holder` (direct), `Lens`
-  (dynamic) and `Relay` (none) prove it.
+- **What stands for a shape** is listed by [Neighbors](#neighbors)' Connections tab, to which Publishing adds
+  nothing: a stand-in points to the shape it stands for (arrows' light names `stands-for`), so it is a row
+  under Pointed To By like any shape that points to it, the kind's symbol and its name (a title, else the
+  kind's), with the board it's on when that isn't the board shown. The pointer on a row hovers the
+  stand-in, a click goes to it. Publishing's part is the tab a refusal sends the panel to: it imports
+  Neighbors for `NeighborsTab`, and nothing else of it.
 - **Testing.** PublishingTests use fixtures only: `Plaque` (public by choice, titled), `Seal`
   (`AlwaysPublic`), `Draft` (`NeverPublic`), `Holder`, `Lens` and `Relay` standing in (with CanvasTesting's
   `Link` carrying a fixture wire), a fixture chip standing in for the lock's, and CanvasTesting's
@@ -5668,10 +5664,12 @@ registrar.contentsMarkForEveryShape(where: { $0.holds(PublicProperty.self) }) { 
   compact face over a sweep of title lengths and, zoomed out to 50%, over a sweep of widths from the
   narrowest: the face changes once, compact to full), clicks (the steps, the fade's timings on the
   `ManualScheduler`, the linger while hovered, public again during it, a refusal with no step, a
-  shake, no write and the panel's tab, locked shapes), the menu (items, dimming, a mix, locked shapes),
-  the slash commands, the rows in the table of contents, Referenced In (the tab, the rows and their
-  names, boards, going to a stand-in, and through a hosted panel that redraws as an answer is provided),
-  the unguarded paths and boards. CompositionTests' `publishingShippedTests` hold which shipped kinds can
+  shake, no write and the panel's tab (Connections, only when the panel shows the held shape alone),
+  locked shapes), the menu (items, dimming, a mix, locked shapes), the slash commands, the rows in the
+  table of contents, the panel on a refused click (hosted in an unshown window, with Neighbors'
+  `NeighborDetailsPlugin()` added: Connections lists the shape, Neighbors' list being told which shape is
+  on screen; a click that makes the shape private leaves the panel where it was), the unguarded paths
+  and boards. CompositionTests' `publishingShippedTests` hold which shipped kinds can
   be public (all but the arrow) and are mentionable (the picker offers what's mentionable), the chip beside
   a real lock, a copy, and `canvas draw`'s `public:`.
 
@@ -5692,13 +5690,12 @@ of one enters it), and frames, which can be mentioned too; a type's words mentio
 mention a `$ref`
 in its schema ([References between types](#references-between-types)).
 An arrow's label holds mentions too (Connections is a concern on Mentions, and the arrow, which
-can't itself be mentioned, draws its label, edits it and has it found as a note's text is). A mentioned shape's
-panel lists what mentions it, and its context menu goes to what does. The core knows no mention;
+can't itself be mentioned, draws its label, edits it and has it found as a note's text is). A shape's panel lists what
+mentions it, in the Connections tab, and its context menu goes to what does. The core knows no mention;
 what Mentions needs of it is generic: [names](#values-that-name-shapes) of shapes that may outlive
 them, [faces](#faces-clickable-parts-of-a-shape), [going to shapes](#selection),
-[rows read from more than their shape](#rows-read-from-more-than-their-shape), and the panel's
-[text boxes](#text-of-a-plugins-own-detailtextbox) and
-[sections a service shows](#contributing-two-points-and-their-sugar).
+[rows read from more than their shape](#rows-read-from-more-than-their-shape) and the panel's
+[text boxes](#text-of-a-plugins-own-detailtextbox).
 
 ```swift
 // In StickyNotesPlugin.register:
@@ -5738,7 +5735,7 @@ only when its shape does:
   either was written.
 - **Its symbol** is `symbol`, else its kind's (`registry.label(of:)`); `detail` is said beside the name in the
   picker (the kind's name by default), and its tint colors the symbol where the surface is neutral:
-  the picker, Mentioned In's lines, a pill in the panel's text. The tint is the kind's
+  the picker, the Connections tab's rows, a pill in the panel's text. The tint is the kind's
   (`x.tint`, the core's, in `registry.label(of:)`), so it reads as one kind everywhere (a note's
   yellow, a subboard's indigo), unless `tint` says one for the shape (a fixture's starred token);
   the panel's header keeps its symbol neutral.
@@ -5747,10 +5744,9 @@ only when its shape does:
   view); `.opens` goes into it (`goInto`: goes to it, then opens it, as a double-click on it would,
   one step back in all), for a kind that's opened rather than looked at: a subboard shows its
   board.
-- **Its Mentioned In tab.** Opting in brings the kind's panel a tab listing what mentions each
-  shape, shown only while something does ([What mentions a shape](#what-mentions-a-shape)), so a
-  plugin list with a mentionable kind needs `DetailPanelPlugin()`. `mentionableEveryShape` brings
-  none, since the panel has no section for every shape's record.
+- **Nothing in its panel.** What mentions a shape is listed in the Connections tab every shape has
+  ([What mentions a shape](#what-mentions-a-shape)), so a plugin list with a mentionable kind needs
+  nothing of the panel for it.
 
 `registry.mentionAppearance(of:)` is how a shape shows (`MentionAppearance`), and
 `registry.mentionResolution(of:lookup:)` what a mention of an id shows now (`MentionResolution`):
@@ -5928,8 +5924,10 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
   `.wash`.
 - **For [Neighbors](#neighbors)**, `MentionLightsPlugin` (a plugin value of Mentions' own, after
   Neighbors, and after arrows' lights in the shipped list, so an arrow's ring comes first) gives two
-  lights: what the hovered shape's text mentions, in teal, and what mentions it, in lavender
-  (`MentionStyle.mentionsLight`, `mentionedByLight`).
+  lights, titled Mentions and Mentioned By (`MentionStyle.mentions`, `mentionedBy`): what the hovered
+  shape's text mentions, in teal, and what mentions it, in lavender (`MentionStyle.mentionsLight`,
+  `mentionedByLight`); the second's caption, the line under a mentioner in the Connections tab, is
+  `quote(of:around:)`.
 
 ### The service: `MentionState`
 
@@ -6033,7 +6031,7 @@ follows undo and redo, during which nothing may):
   `hover(_:)` and `endHover(_:)` set `editor.hovered`, so the shape is outlined faintly and its row
   tinted, the one hover every plugin shares.
 - **What mentions each shape**, on any board, read from Topology's edges into it:
-  `isMentioned(_:)`, `backlinks(of:)`, `backlinkRevision(of:)` and `showWhatMentions(_:)` ([What
+  `isMentioned(_:)`, `mentioners(of:)`, `quote(of:around:)` and `showWhatMentions(_:)` ([What
   mentions a shape](#what-mentions-a-shape)).
 
 ### On the canvas: faces
@@ -6206,33 +6204,23 @@ DetailSection("Text", in: FieldsTab.self) { $jot in
 
 ### What mentions a shape
 
-Topology keeps each shape's edges both ways, so what mentions a shape is its `mention` edges in:
-its backlinks, which cost what the shape's own edges do, never the board. They're the file's, as
-the index is ([across boards](#mentions-across-boards)):
+Topology keeps each shape's edges both ways, so what mentions a shape is its `mention` edges in,
+which cost what the shape's own edges do, never the board. They're the file's, as the index is
+([across boards](#mentions-across-boards)):
 
 - **`isMentioned(_:)`**: whether another shape, on any board the editor can show, mentions it. A
   shape's mention of itself doesn't count.
-- **`backlinks(of:)`**: a `MentionBacklink` per mentioner, in `mentioners(of:)`'s order (the board
-  shown's in document order, then the other boards' in the file's), the shape itself left out.
-  Each is named as it's mentioned (`mentionAppearance`), else by its title, else its kind's label,
-  with its symbol, and carries a quote: about 60 characters (`MentionStyle.quoteLength`) of
-  its text as plain text around its first mention of the shape, each mention "@" and the name it
-  shows now, on one line, the mention whole and the rest shared half and half on each side (room
-  one side doesn't use goes to the other), cut between words with "…" where text is left out. It
-  reads each mentioner's record wherever it is, from the board shown and the file read without
-  observing them (the core's `editor.withoutObservingDocument { … }`), so a SwiftUI view that
-  reads it redraws only as its revision says; and it keeps no copy of the file, which would make
-  the next commit that adds or removes shapes copy the file's table of where each shape is.
-- **`backlinkRevision(of:)`** is observed per shape, as `labelRevision` is: it changes when a commit
-  adds, changes or removes a shape that mentions the shape or did, on any board (never when it
-  only moves one: a drag costs nothing), when a name a mentioner's quote shows changes, and on a
-  switch of board, which puts that board's mentioners first. Topology tells which shapes' mentions
-  each change to the edges changed (`follow`, the change's `touched(types:in:)`, so an arrow bound to
-  a mentioned shape changes nothing here; a provide's are bumped at once), and Mentions adds what each shape the commit added or changed, or
-  touched on another board (`elsewhere`), mentions now, since an edit that keeps a mention changes
-  its quote and no edge.
-  Only shapes whose revision was read since it last changed tell observers, so a rename of a
-  subboard 100 notes mention tells no one who isn't looking.
+- **`mentioners(of:)`**: who mentions it, in order: the board shown's in document order, then the other
+  boards' in the file's, the shape itself left out.
+- **`quote(of:around:)`**: a mentioner's text around its first mention of a shape: about 60
+  characters (`MentionStyle.quoteLength`) of it as plain text, each mention "@" and the name it shows
+  now, on one line, the mention whole and the rest shared half and half on each side (room one side
+  doesn't use goes to the other), cut between words with "…" where text is left out. It's nil for a shape
+  that isn't in the file and for one whose text doesn't mention the shape (a pointer is no text). It
+  reads the mentioner's record wherever it is, from the board shown and the file read without
+  observing them (the core's `editor.withoutObservingDocument { … }`), and keeps no copy of the file,
+  which would make the next commit that adds or removes shapes copy the file's table of where each
+  shape is.
 - **`showWhatMentions(_:)`** goes to what mentions the shapes (their mentioners, each one's
   mention of itself left out) and brings them into view (`editor.goTo`: one step back): the board
   shown's first, so it stays if any are there, else it shows the first one's board and selects
@@ -6241,26 +6229,22 @@ the index is ([across boards](#mentions-across-boards)):
 
 Two places show them:
 
-- **The Mentioned In tab** (`MentionsTab`, order 300: a tab of the shape's state that comes and
-  goes, as Issues is) comes with a kind's opt-in, `x.mentionable` or `registrar.mentionable(K.self)`.
-  Its one section is shown while the shape `isMentioned` (`shownWhile`, asked on every commit, the
-  shape's own edges), so the tab shows only then. A line per mentioner, its symbol, its name and its quote
-  under it; the pointer on a line hovers the mentioner if it's on the board shown (`editor.hovered`:
-  outlined on the canvas, its row tinted), and a click goes to it (`editor.goTo`, on the
-  scheduler's next turn: its board shown first if it's on another; ⌘[ comes back). The list
-  observes the shape's `backlinkRevision` alone, so a mentioner renamed, added or removed redraws it though the shape
-  itself didn't change, and a drag redraws nothing. Its lines work on a read-only shape too
-  (`enabledWhileReadOnly`): going to what mentions a locked shape changes nothing of it. In debug
-  builds `MentionState.backlinksShown` records what each list last drew, for tests.
+- **The Connections tab** ([Neighbors](#neighbors)) lists them in every shape's panel, through
+  Mentions' two lights: under Mentioned By, each shape that mentions it, with its quote under its name
+  (the light's `caption` is `quote(of:around:)`), and under Mentions, what its own text mentions. The
+  lists are Neighbors', so a row's look, a click going to the shape (its board shown first if it's on
+  another; ⌘[ comes back), the pointer on it hovering it on the canvas, folding and searching are
+  described there, and they work on a read-only shape too. A type's pointer (`field-link`, a child of
+  `mention`) is listed in both, as it is lit on hover; `isMentioned`, `mentioners(of:)` and `:mentions`
+  read plain `mention` edges only.
 - **Show What Mentions**, in the canvas's context menu: an item for the canvas
   (`contextMenuForCanvas`, since whether a shape is mentioned is what Mentions' state knows, not
   the shape), in `MentionsMenuGroup` (order 50, after a kind's own items), shown when any shape the
   menu is for is mentioned, and in a pill's menu in text ("Show What Mentions “Name”"). Both run
   `showWhatMentions`.
 
-So a list with a mentionable kind needs `DetailPanelPlugin()`, and one with Mentions
-`ContextMenusPlugin()`; the report shows the tab as `ShapeDetails → sticky-note` after the kind's
-`mentionable`, and the menu item as `CanvasContextMenu` on the `mentions` line.
+So a list with Mentions needs `ContextMenusPlugin()`; the report shows the menu item as
+`CanvasContextMenu` on the `mentions` line.
 
 ### Warnings: mentions that can't work
 
@@ -6367,9 +6351,9 @@ shape on any board of it, and shows it as it's called now, wherever it is:
   the editor opens, and kept up to date by every commit, whatever board it's on. So entering a
   board, even for the first time, reads no mention text, and `mentioners(of:)` lists a shape's
   mentioners on every board.
-- **So are backlinks.** The Mentioned In tab and Show What Mentions list the mentioners on every
-  board, the board shown's first; a line goes to its mentioner's board, and so does Show What
-  Mentions when none is on the board shown.
+- **So is what mentions a shape.** The Connections tab lists the mentioners on every board, in the
+  file's order, and Show What Mentions goes to those on every board, the board shown's first; a row
+  goes to its mentioner's board, and so does Show What Mentions when none is on the board shown.
 - **But not warnings.** `MentionValidationPlugin` looks a mention's target up on the board shown, so a
   mention of a shape on another board is checked no more than a missing one is
   ([Not built yet](#not-built-yet) across boards).
@@ -7262,8 +7246,8 @@ let settled = await topology.settled(timeout: .seconds(5))   // false if it ran 
   `touchedByType`, `cause`: `.commit`, `.provide` or `.rebuild`), with the index as the change left
   it; a commit that changes no edge (a move) tells nothing, and a provide that changes none leaves
   `touched` as it was. A service that kept state off edges by reading `touched` as it heard a commit
-  would miss every provide, so following is the way to keep it: Mentions follows (a commit's
-  backlinks are bumped as it hears the commit, a provide's at once). A follower reads only Topology
+  would miss every provide, so following is the way to keep it: Mentions follows (which
+  shapes' resolutions it keeps). A follower reads only Topology
   and the file, writes no document and never provides; it lasts while its token
   (`TopologyFollowing`) is held, or until `cancel()`.
 - **Settling.** A stand-in waiting for its answer leaves arrows at itself for a moment. Whoever
@@ -7427,9 +7411,9 @@ owner isn't installed is `ownerNotInstalled`.
 - **Drawing by type.** Agents read the graph with [`canvas query`](#query), through a snapshot
   (`:edge-to`, `:downstream-of`, `"Payments" *`), but `canvas draw` matches an edge it restates by
   its ends, not by its type.
-- **Showing it.** Nothing in the app shows a shape's connections in general yet (a Connections
-  section of its panel); what mentions a shape is shown, Mentions' Mentioned In tab and Show What
-  Mentions.
+- **Showing it.** Only the ways a light is given for are shown ([Neighbors](#neighbors): outlined on
+  hover, listed in a shape's Connections tab, with what it's inside and what it holds); a type of edge no
+  plugin gives a light isn't.
 
 ## Queries
 
@@ -8130,8 +8114,7 @@ contributes to Boards' `BoardKinds` point (at most one per kind; its report line
 
 `BoardKinds.check` refuses a kind whose definition isn't `BoardOwning` (the form for another plugin's kind can't say so
 in its types), and a contribution for every kind: only a kind that owns boards has one to open. So
-a plugin list with `opensBoard` in it needs Selection, ContextMenus and DetailPanel installed, as a
-list with a mentionable kind needs DetailPanel, for its Mentioned In tab.
+a plugin list with `opensBoard` in it needs Selection, ContextMenus and DetailPanel installed.
 
 `BoardsPlugin` itself ([Boards.swift](../Sources/Boards/Boards.swift)) is small:
 
@@ -8561,7 +8544,7 @@ registrar.createFrameItem()                                        // Create Fra
 - **Opt-ins.** Titles keeps its name, shown in its pill (untitled, a dimmed "Frame"; no symbol, since
   its look says what it is), and `TitleHeader` renames it in its panel's header ("Untitled Frame").
   Mentions offers it by its title, its symbol in its gray (`NSColor.systemGray`, its row's too), and
-  following a mention goes to it (`goTo`), with Mentioned In in its panel and Show What Mentions in
+  following a mention goes to it (`goTo`), with Show What Mentions in
   its menu; untitled, the picker leaves it out. Selection resizes it, and the core settles, at the
   end of the resize, what it leaves hanging over its edge and what it grows over
   ([Containers](#containers)). Its row is its symbol and "Untitled Frame", named by Titles; the
@@ -8787,7 +8770,7 @@ when its kind has a title ([Titles](#a-horizontal-plugin), named or derived), an
 does for it. It builds on Boards (a pick is `editor.follow`, below), Titles, Topology (the tree),
 Keyboard, TextEditing (its field and its list), FuzzyMatching and Geometry. It doesn't import
 Mentions: a row's symbol and tint are its kind's label's (`registry.label(of:)`, the core's), the
-one color a kind has in the list, the picker and Mentioned In; a kind that declares no tint is
+one color a kind has in the list, the picker and the Connections tab; a kind that declares no tint is
 untinted.
 
 ```
@@ -8977,21 +8960,28 @@ contents](#the-table-of-contents), and every shape connected to it is outlined i
 how, and the arrows between are colored too. The minimap fills the same shapes in the same colors,
 so what's connected off screen shows there (the rest of it dims while anything is lit, and a shape
 in two lights shows both, one inside the other), and a connected shape on another board (inside a
-subboard) lights the card that holds it. It's a surface: what an edge's owner shows its edges on. It
-builds on Queries (which finds the shapes), Selection (the hover, and the one a list sets for a shape
-the canvas doesn't show), Topology (when a shape's edges change), the file (where a shape on another
-board is drawn) and the core's [tinted outlines](#outlines), and it knows no kind, edge type or
-concern: what counts as connected is a **light**, a color and a query, which the plugin that owns the
-edges contributes to its point (`registrar.neighborLight`). Arrows' two are Connections'
-(`ArrowLightsPlugin`) and mentions' two are Mentions' (`MentionLightsPlugin`), each a plugin value of
-its own, so a list without Neighbors leaves them out.
+subboard) lights the card that holds it. Select a shape and its panel's Connections tab lists what's
+connected to it by the same ways, then what it's inside and what it holds. It's a surface: what an
+edge's owner shows its edges on. It builds on Queries (which finds the shapes), Selection (the hover,
+and the one a list sets for a shape the canvas doesn't show), Topology (when a shape's edges change),
+the file (where a shape on another board is drawn), the core's [tinted outlines](#outlines), and, for
+the tab, [the detail panel](#the-detail-panel), [FuzzyMatching](#fuzzymatching) (its search) and the
+[table of contents](#the-table-of-contents) (what a listed shape with no title is called), and
+it knows no kind, edge type or concern: what counts as connected is a **light**, a title, a color
+and a query, which the plugin that owns the edges contributes to its point
+(`registrar.neighborLight`). Arrows' two are Connections' (`ArrowLightsPlugin`) and mentions' two are
+Mentions' (`MentionLightsPlugin`), each a plugin value of its own, so a list without Neighbors leaves
+them out.
 
-| Light | Color | What's outlined, for the shape hovered |
+| Light | Color | What's outlined, for the shape hovered, and listed, for the shape selected |
 |---|---|---|
-| points to | green | the shapes an arrow out of it ends at, the shape a reference stands for, and those arrows; for an arrow, the shape it ends at |
-| points to it | purple | the shapes that have an arrow into it, the references that stand for it, and those arrows; for an arrow, the shape it starts at |
-| mentions | teal | the shapes its text mentions |
-| mentioned by | lavender | the shapes whose text mentions it |
+| Points To | green | the shapes an arrow out of it ends at and the shape a reference stands for; for an arrow, the shape it ends at |
+| Pointed To By | purple | the shapes that have an arrow into it and the references that stand for it; for an arrow, the shape it starts at |
+| Mentions | teal | the shapes its text mentions |
+| Mentioned By | lavender | the shapes whose text mentions it |
+
+The arrows themselves, between a shape and those, are outlined with them and never listed (a light's
+`between`).
 
 The colors are their owners' (`ArrowStyle.pointsToLight` and `pointedToByLight`,
 `MentionStyle.mentionsLight` and `mentionedByLight`), chosen together in a design audit from renders of
@@ -9005,41 +8995,54 @@ the canvas it's drawn over in both appearances, and not the accent; the two purp
 some color-vision deficiencies.
 
 ```swift
-// A light is a color and a query, given `#id`, the shape hovered, and the edge types come from
-// their plugins' ids, never written out.
+// A light is a title, a color and a query, given `#id`, the shape hovered or listed, and the edge
+// types come from their plugins' ids, never written out. `between` finds what runs between the shape
+// and those (the arrows): outlined with them, never listed. `caption` is a line under a listed
+// shape's name, from the editor, the shape the list is of and the listed one.
 
 // Connections (ArrowLightsPlugin, id `arrow-lights`):
 let arrow = ArrowEdge.id.rawValue, standing = StandingEdge.id.rawValue
-registrar.neighborLight(color: ArrowStyle.pointsToLight) {
-    ":edge-from(\($0), \(arrow)|\(standing)), :starts-at(\($0), \(arrow)), :end-of(\($0), \(arrow))"
-}
-registrar.neighborLight(color: ArrowStyle.pointedToByLight) {
-    ":edge-to(\($0), \(arrow)|\(standing)), :ends-at(\($0), \(arrow)), :start-of(\($0), \(arrow))"
-}
+registrar.neighborLight(ArrowStyle.pointsTo, color: ArrowStyle.pointsToLight, query: {
+    ":edge-from(\($0), \(arrow)|\(standing)), :end-of(\($0), \(arrow))"
+}, between: {
+    ":starts-at(\($0), \(arrow))"
+})
+registrar.neighborLight(ArrowStyle.pointedToBy, color: ArrowStyle.pointedToByLight, query: {
+    ":edge-to(\($0), \(arrow)|\(standing)), :start-of(\($0), \(arrow))"
+}, between: {
+    ":ends-at(\($0), \(arrow))"
+})
 
 // Mentions (MentionLightsPlugin, id `mention-lights`):
 let mention = MentionEdge.id.rawValue
-registrar.neighborLight(color: MentionStyle.mentionsLight) { ":edge-from(\($0), \(mention))" }
-registrar.neighborLight(color: MentionStyle.mentionedByLight) { ":edge-to(\($0), \(mention))" }
+registrar.neighborLight(MentionStyle.mentions, color: MentionStyle.mentionsLight, query: { ":edge-from(\($0), \(mention))" })
+registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, query: { ":edge-to(\($0), \(mention))" },
+                        caption: { editor, subject, mentioner in editor.mentions?.quote(of: mentioner, around: subject) })
 ```
 
-- **`NeighborsPlugin()`** (id `neighbors`, `PluginID.neighbors`; with `NeighborLight`, the colored
-  question, and `NeighborLight.color(light:dark:)`, a color given as one sRGB value for each
+- **`NeighborsPlugin()`** (id `neighbors`, `PluginID.neighbors`; with `NeighborLight`, the titled,
+  colored question, and `NeighborLight.color(light:dark:)`, a color given as one sRGB value for each
   appearance; its point `NeighborLights`, filled with `registrar.neighborLight` and read as
-  `registry.neighborLights`; and `NeighborState`, the service: the module's whole public surface)
+  `registry.neighborLights`; and `NeighborState`, the service; the lists have their own, below)
   registers the service (`editor.neighbors`), which takes the lights from the registry,
   and `registrar.outlines { $0.neighbors?.outlines ?? Outlines() }`; the report's
   line is `neighbors service NeighborState · outlines`, and each face's is
   `neighbor light · neighbor light`. It's after the query plugins in the shipped
-  list, and the lights' plugins are after it. It lights nothing without `QueriesPlugin()` and
+  list, and the lights' plugins are after it, and the tab's after theirs. It lights nothing without `QueriesPlugin()` and
   `TopologyPlugin()` (a hover asks nothing then), has nothing to hover without `SelectionPlugin()`,
   and nothing to light without a light; none of them is refused, since it
   contributes to none of their points. A light in a list without Neighbors is refused, as any
   contribution whose point's owner isn't installed is.
-- **A light is a color and a question.** `registrar.neighborLight(color:query:)` contributes a
-  `NeighborLight` to the `NeighborLights` point (owner `neighbors`): `query` is given the selector
-  that names the shape hovered (`#`, then its id, as the query language writes one) and returns the
-  query whose matches are outlined in that color. Lights are in plugin order, and a plugin's in the
+- **A light is a title, a color and a question.** `registrar.neighborLight(_:color:query:between:caption:)`
+  contributes a `NeighborLight` to the `NeighborLights` point (owner `neighbors`): `title` is what the
+  panel heads the light's list with, and `query` is given the selector that names the shape hovered
+  or listed (`#`, then its id, as the query language writes one) and returns the query whose matches
+  are outlined in that color and listed. `between`, if given, is a query for what runs between the shape
+  and those (the arrows): hovering outlines it with them (`NeighborLight.lit` is the two as one
+  query), and the panel never lists it. `caption`, if given, is a line under a listed shape's name,
+  from the editor, the shape the list is of and the listed one, asked of the rows in view as each is
+  drawn, so it reads what's kept, never a board (Mentions': a mentioner's text around its mention).
+  Lights are in plugin order, and a plugin's in the
   order it gives them: a shape's first light is its first ring, so the shipped list has arrows' before
   mentions'. They are the query language's
   ([Queries](#queries)): `:edge-from(X, arrow|stands-for)` is the shapes X has an arrow to, or
@@ -9121,6 +9124,63 @@ registrar.neighborLight(color: MentionStyle.mentionedByLight) { ":edge-to(\($0),
   what's in view, and looks at the rest's kept extents (10,000 lit in view at 10% add some 7 ms to
   a frame, as ⌘A's rings do; all out of view, some 0.35 ms), and the minimap fills them (some 4 ms
   for 10,000). `./build.sh bench` holds them.
+- **The lists.** `NeighborList` (`editor.neighborList`, a service `NeighborDetailsPlugin` registers)
+  holds what's connected to the shape a panel shows, in lists: one for each light, in the lights'
+  order, each its light's `query` (not `between`: the arrows aren't listed), then two it gives itself
+  in the query language's own words for [Topology's](#containment) one tree, Inside (`:has(#id)`: what
+  the shape is in, outermost first) and Contains (`#id > *:not(:starts-at(*))`: what's directly in it,
+  a frame's shapes or a subboard's board's in no frame, less the connections among them: no list has
+  what runs between). So it lists what hovering the shape outlines, less what runs
+  between, and knows no kind, edge type or concern. A pointer (Types' `field-link`, a child of
+  `mention`) is a mention to the lights, so it's listed under Mentions and Mentioned By as it is lit.
+  The **subject** is the shape whose lists are on screen: the panel's view tells the list as it
+  appears and goes (`watch`, `unwatch`), so nothing is asked while no list shows (another tab, a hidden
+  inspector, a takeover). One ask for the subject, an ask under way let go of: every folded list is
+  only counted (ids, one batch), and every open one is run for its rows (`queries.run`: id, kind,
+  title, board and what it's inside, as the engine names them, so Neighbors imports no Titles), all at
+  once, each in `.resolved` and, where some shape stands in, `.literal` too, the views' rows merged a
+  shape once, as the hover's are; the subject is never listed. A request the engine refuses (a note
+  asked what it holds) is an empty list. No list is cut: an open one has every row, up to
+  `QueryBudget.maxRows`. The answer lands whole, and until it does the shape before's stays.
+- **Asking again** after any commit that did more than move shapes (a name, an edge, a container
+  joined or left), once commits have stopped for 100 ms (`NeighborStyle.settle`, on `editor.scheduler`:
+  a resize's every event is a commit, so they're one ask), and at once for a change no commit made (a
+  provide). A drag costs a look at its change set. An answer that reads as the one shown shows
+  nothing (a shape watched again), unless a change to the file asked for it: then every row is drawn
+  again, since what a row is called and what its caption quotes are read as it's drawn, from shapes
+  the commit may have changed.
+- **A row's name** is its title, as the query engine names it. A shape with none is called what the
+  table of contents calls it (`ContentsState.name(of:)`: an untitled note's text on one line, "Empty
+  Note", a pill by what it stands for), read once for an answer as the row is drawn, and for every row
+  by a search's first keystroke; with no table of contents, its kind's name. So Neighbors imports
+  TableOfContents, a surface, and no Titles.
+- **Folding and searching.** Each list folds (by its place among the lists, kept while the editor
+  lives, for every shape); a folded list is only counted, and unfolding one whose rows weren't read
+  asks. Typed text keeps, in every list, folded or not, the rows whose names match, ranked as every
+  list ranks what's typed (FuzzyMatching's `FuzzyMatcher.matches`, the best first, ties in the list's
+  order); another shape clears it.
+- **The tab.** `NeighborDetailsPlugin()` (id `neighbor-details`) is a plugin value of Neighbors' own,
+  after Neighbors and the detail panel in the shipped list, so a list without the panel leaves it out
+  and keeps the lights, and one with it and no panel is refused (`ownerNotInstalled`); it needs no
+  light and no `NeighborsPlugin()` (the lists are then Inside and Contains). It registers the service
+  and one headerless section on every shape (`detailsForEveryShape(where: { _ in true })`,
+  `enabledWhileReadOnly`: going to a shape changes nothing of this one) in `NeighborsTab`
+  ("Connections", order 60: after a horizontal's feature tabs, before Style). It's always there: a
+  tab that came with its lists would come a turn late, so with nothing connected it says "No
+  Connections" once the answer is in. The view is a search field once the lists hold 20 shapes in all
+  (`NeighborStyle.searchFrom`: more than a panel shows without scrolling), or while something is typed
+  (`DetailSearchField`), then, in one `LazyVStack`, each list that has
+  shapes: its head (`DetailGroupHeader`: a disclosure triangle, a dot in the light's color, the title and
+  the count), which folds it, and its rows (`DetailShapeRow` in a borderless button: the kind's symbol and
+  tint, its name, the board it's on when that is neither the board shown nor the shape's own, and the
+  light's caption under it), made as they scroll into view, so a list of thousands draws the rows
+  in view. A search that finds nothing says "No Matches". A click on a row goes to the shape
+  (`editor.goTo`, on the scheduler's next turn: its board first, one step back); the pointer on a row
+  hovers the shape (`editor.hovered`, or `hoveredElsewhere` for one the canvas doesn't show, as the
+  table of contents' rows do), so it lights that shape's own neighbors. What mentions a shape is under
+  Mentioned By ([What mentions a shape](#what-mentions-a-shape)); what stands for a public shape is
+  among what points to it, which is where a refused Make Private sends the panel
+  ([Publishing](#publishing)).
 - **Testing.** NeighborsTests use fixtures only (CanvasTesting's boxes, links as wires, memos as
   what quotes, pockets and corrals, a `Pill` that stands for what it cites and a `Lens` for what's
   provided, and four lights of the tests' own in pure colors, given by a plugin of the tests' own,
@@ -9148,6 +9208,21 @@ registrar.neighborLight(color: MentionStyle.mentionedByLight) { ":edge-to(\($0),
   appearance's value, 3:1 against its canvas), a lit arrow covered, and the rings drawn at 4 and 8
   points in the app's own editor. BenchmarkTests' NeighborBenchmarks hold a hover on a shape
   with 10,000 neighbors and with ten, and the frames and the minimap with them lit.
+  NeighborsTests' `listTests` (`ListTests.swift`) hold the lists over the hover's harness with the panel
+  and the tab added, on a small town of notes, memos that quote, a pocket and corrals, driven with
+  `watch` as a list appearing does and read with `settleList` (the `ManualScheduler`'s 100 ms, then the
+  run loop until nothing is on its way): each light's shapes under its title with the links left out,
+  one ask for the six lists, and nothing asked before a list is on screen; Inside outermost first and
+  Contains a corral's shapes and a pocket's board; a row's symbol, name, board and caption; a folded
+  list counted with no rows read, for the next shape too; searching (the best first, folded lists
+  too, cleared with the text and by another shape); upkeep (two commits 60 ms apart one ask, a rename
+  in the row, moves asking nothing, an answer a commit asked for shown though it reads the same, a
+  deletion and its undo, a provide asking with no commit); a shape with no title called what the table
+  of contents calls it; the shape itself never listed; a stand-in listed with what
+  it stands for; a row's click (the next turn, across boards, one Back step) and hover; the tab on every
+  kind and its refusal without the panel; and, in a `DetailPanelView` in an unshown window, a list
+  watched as it appears, a search field from twenty shapes, and 3,000 shapes all there with under 300
+  rows drawn. DetailPanelTests' `listRowTests` hold `DetailGroupHeader` and `DetailSearchField`.
 
 ## References
 
@@ -9181,7 +9256,6 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
         if let query = shape.props.query { return .provided(ReferenceState.key(query: query, all: shape.props.all)) }
         return nil
     }
-    reference.standInRow { shape, _ in … }                 // its row in the shape's Referenced In
     reference.referenceRow()                               // the table of contents
     reference.referencePanel()                             // its header; Go to Original, or the Query and Matches sections
     reference.contextMenu { … }                            // Match All, Match First: a step each
@@ -9377,7 +9451,7 @@ The modules, one job each:
 | FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | feature | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
 | Moving | feature | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Draw's placement for plugins (DrawScript's solver, over `ObstacleGrid`) as `draw` places a shape; no kind opts into it, and nothing imports it. |
-| Neighbors | surface | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)): its lights are colors and the queries that find their shapes, each contributed by the plugin that owns the edges (Connections' `ArrowLightsPlugin`, Mentions' `MentionLightsPlugin`), asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`). |
+| Neighbors | surface | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)), and select one and its panel's Connections tab lists them by the same ways, then what it's inside and what it holds (`NeighborDetailsPlugin`, on DetailPanel, its search ranked by FuzzyMatching, a shape with no title called as TableOfContents calls it): its lights are titles, colors and the queries that find their shapes, each contributed by the plugin that owns the edges (Connections' `ArrowLightsPlugin`, Mentions' `MentionLightsPlugin`), asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`). |
 | QueryCommands | language | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
 | QueryLanguage | foundation | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
 | Queries | surface | The engine that answers a query about a file ([Queries](#queries)), and its points: a surface, so any plugin may run a query; it gives the selection's word itself (`SelectionQueriesPlugin`, `:selected`), as Selection is below it. |
@@ -10706,7 +10780,9 @@ over Mentions' `MentionToken`, [Mentions](#mentions)), so it is a name, not a bi
 [`ShapeNaming`](#values-that-name-shapes), and a copy of a note copied with the one it points at points at the
 copy, one copied alone at the original, and a deleted target leaves the name the pill shows until the delete
 is undone. Each pointer is a `field-link` [edge](#types) (a child of `mention`: a query that says
-`mention` takes it in), from the note to the note it names, in the slot of the field's key. A note is a
+`mention` takes it in), from the note to the note it names, in the slot of the field's key. Neighbors'
+mention lights say `mention`, so a pointer is lit on hover and listed in the Connections tab, under
+Mentions and Mentioned By ([Neighbors](#neighbors)). A note is a
 target when its types reach the field's type (`FieldLinks.admits`: an Employee is a Person; never a type's
 own note), on any board.
 
@@ -11769,7 +11845,7 @@ each of them:
 | [The table of contents](#whats-listed-and-selecting) | Lists the board shown, keeps each board's rows, and takes its header from the plugin that names boards (Boards: the board's crumb). A row may read shapes on other boards ([`elsewhere`](#rows-read-from-more-than-their-shape)). |
 | [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked, and a rule's lookups (`MentionValidationPlugin`'s targets) find shapes there alone; a rule over a service's state (`TitleValidationPlugin`'s titles, the file's) names the shapes a commit changes the issues of on any board, checked once their board is shown. |
 | [Locking](#locking) | A shape whose board holds a locked shape isn't deleted; a locked owner is entered as any other. |
-| [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`, or `goInto` for a kind followed by opening it: a subboard); who mentions whom (Topology's), what each mentioned shape shows and the `@` picker's catalog are the file's (the board shown's first on a tie), so showing another board reads no mention text; so are the Mentioned In tab's and Show What Mentions' mentioners, the board shown's first. |
+| [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`, or `goInto` for a kind followed by opening it: a subboard); who mentions whom (Topology's), what each mentioned shape shows and the `@` picker's catalog are the file's (the board shown's first on a tie), so showing another board reads no mention text; so are the Connections tab's and Show What Mentions' mentioners (the tab's in the file's order, Show What Mentions' the board shown's first). |
 | [Topology](#topology) | The file's edges, and containment (a shape's parent is its container, else its board's owner), whatever board is shown; showing another board reads nothing. |
 | [The clipboard](#the-clipboard) | Copies what a shape holds, all the way down, and pastes the tree with new ids; what a cut took, onto any board, under the ids it had (a move). |
 | [Undo](#undo) | One history per file; a step holds every board it reached, and undoing one made on another board shows that board first. |
@@ -12359,10 +12435,10 @@ keyboard             service KeyboardState · tool tips · key strokes · key re
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · ShapeDetails → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
-subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ShapeDetails → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
-framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeDetails → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
-references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · referenced-in row → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
+sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
+subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
+framing              shape frame · tool frame · shortcut F → tool frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
+references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
 adornments           service AdornmentState · service ChipFade · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState · host inspector
@@ -12387,7 +12463,7 @@ mention-validation   ValidationRules
 title-validation     service TitleIndex · ValidationRules
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
-publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ShapeDetails · ContentsMarks
+publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ContentsMarks
 types                property schema · property is · property fieldValues · edge type is-a · edges → every shape · edge type field-link · edges → every shape · service TypeIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · service RowBook · layout input type-rows · ShapeFaces · ShapePopovers · /is-a → every shape · CanvasContextMenu · adornment TypeChips → every shape · title pill look → every shape · title pill look → every shape
 type-validation      ValidationRules · ValidationRules · ValidationRules
 type-details         ShapeDetails · ShapeDetails · ShapeDetails
@@ -12417,6 +12493,7 @@ query-commands       command line query · command line query-vocabulary
 neighbors            service NeighborState · outlines
 arrow-lights         neighbor light · neighbor light
 mention-lights       neighbor light · neighbor light
+neighbor-details     service NeighborList · ShapeDetails
 moving               /move-to /move-near → every shape · ContentsMoves
 reordering           ShapeContextMenus
 ```
@@ -12434,22 +12511,20 @@ kind in itself (`property locked → every shape`), and `read-only shapes` is it
 `publishing` is the same for `public` (`property public → every shape`, but for the kinds that
 adopt `NeverPublic` or `AlwaysPublic`), with `public dials`, its check that no definition adopts
 both, the state (`PublishingState`), the chip (`adornment PublicChip → every shape`), its menu
-items, `/public` and `/private`, the Referenced In tab (`ShapeDetails`) and a globe at the end of
+items, `/public` and `/private`, and a globe at the end of
 a public shape's row (`ContentsMarks`). `references` is the Reference kind: its state
 (`ReferenceState`), the hover and pressed looks of its leading symbol
 (`overlay ReferenceButtonOverlay`, with `CanvasButtons` for the click and `command goToOriginal`
 and `command interpretReference`, the panel's Interpret), the popover a pill that stands for
 nothing shows (`ShapePopovers`), Go to Original in the context menu (`CanvasContextMenu`), the
-kind and its tool, what it stands in for (`stands in → reference`), its Referenced In row
-(`referenced-in row → reference`), its table-of-contents row and its panel.
+kind and its tool, what it stands in for (`stands in → reference`), its table-of-contents row and its panel.
 `ports note-link → sticky-note` is a note's ports and `channel note-link` the channel StickyNotes
 declares for them, with its edge type (`edge type note-link`); arrow-ports' `connector → arrow`
 makes arrows what ports draw, and brings the opt-in before it (`property channel → arrow`), the
 family's edge type (`edge type arrow`) and the arrows' edges (`edges → arrow`). `topology` is the
 index of them all (`TopologyIndex`), right after Selection, so it hears each commit first.
 `mention text → sticky-note` and `mentionable → sticky-note` are Mentions' opt-ins: a note's text
-shows pills (`note.mentionText`), and text may mention a note (`note.mentionable`), which brings
-the `ShapeDetails` entry after it, the Mentioned In tab. A subboard is mentionable with its tab
+shows pills (`note.mentionText`), and text may mention a note (`note.mentionable`). A subboard is mentionable
 too (`mentionable → subboard`: called by its title, and following a mention of one enters it).
 `mentions` declares the `mention` edge type and says what mention text carries
 (`edge type mention`, `edges → every shape`: every kind it picks, the ones that can hold names),
@@ -12938,9 +13013,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   boards, among thousands of empty notes where only 3 can be mentioned, and on the line of a command
   that takes few shapes, by the kinds it names: five subboards among 10,000 notes), a rename of a
   subboard mentioned 100 times against one mentioned by none (its commit, and validation's read
-  after it), the panel's layout of that subboard, its Mentioned In tab showing, after a drag event
-  of another note and after a mentioner's rename (`Budget.panelAfterCommit`, 1 ms; the tab's lines,
-  `backlinks(of:)`, only reported), what's connected to a shape with 100 edges
+  after it), the panel's layout of that subboard, its Connections tab showing, after a drag event
+  of another note and after a mentioner's rename (`Budget.panelAfterCommit`, 1 ms), what's connected to a shape with 100 edges
   (`topology.neighbors(of:)`, 1 ms), a `canvas draw` of 20 notes each pushed along its row of the
   grid (150 ms, time the window doesn't draw), the minimap's first picture (a frame at a time) and
   a drag frame with it, ten subboards' previews filling in (the longest frame, and how many), the
@@ -13001,8 +13075,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   nothing is placed, and the camera arrives.
 - **Mentions.** MentionsTests use fixtures only (`MentionFixturesPlugin`: `Jot`, a box of mention
   text with a `MentionTextView` editor, and `Plate`, `Token`, `Endpoint` and `Brief`, with the
-  `Blockers` scope; `mentionPlugins` installs the detail panel and the context menu, for the tab
-  and Show What Mentions, and `mentionHarness` puts Keyboard, Selection and Topology first). They fuzz the stored
+  `Blockers` scope; `mentionPlugins` installs the detail panel, which the panel text's tests host, and the context menu, for
+  Show What Mentions, and `mentionHarness` puts Keyboard, Selection and Topology first). They fuzz the stored
   grammar, hold scopes and their registry checks, names, mention edges (slot, count, order, a
   service made before Topology's catching it up), `MentionState`'s resolutions, observations and
   rows (Topology's `recordsRead` counts the records a commit reads, in debug builds: in these
@@ -13024,13 +13098,12 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   the boards it's inside, then the others, the nearest board first; no more than 50), their members kept as shapes come, are renamed, lose their names and go, on another
   board too, and kinds and a scope both asked of each). AppKit closes an undo group at the end of a turn of the run loop,
   so a test that undoes steps one at a time settles the window (`window.settle()`) between them.
-  They hold backlinks too (`backlinkTests`: order and names, quotes cut at either end, the canvas's
-  menu item and its one Back step, file-wide (a mentioner on another board listed and quoted after
-  the board shown's, the menu item showing its board, a switch putting the new board's first), a
-  drag bumping no revision, a mentioner's text changed on another board, and a quoted name changed
-  on another board, by `transact(on:)`, a pocket's deletion and its undo, telling the revision's
-  observers; the revision's bumps and non-bumps, a drag, a self-mention, undo and redo, with the state's
-  tests). Mention text in the panel
+  They hold what mentions a shape too (`backlinkTests`: `mentioners(of:)`'s order, quotes cut at either
+  end (`quote(of:around:)`), the canvas's menu item and its one Back step, file-wide (a mentioner on
+  another board listed and quoted after the board shown's, the menu item showing its board, a switch
+  putting the new board's first), a drag changing neither what mentions a shape nor its quote, a
+  mentioner's text changed on another board, and a quoted name changed on another board, by
+  `transact(on:)`, a pocket's deletion and its undo). Mention text in the panel
   (`panelTests`): `MentionPanel` hosts a `DetailPanelView` in an unshown window with the real
   `TaskScheduler`, and `MentionFieldsPlugin` gives `Jot` a Text field and `Brief` one that commits;
   they hold a pick to one step, the picker's keys against the box's and the panel's, pills clicked,
@@ -13038,10 +13111,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   write, Edit › Undo in a `BoardWindow`, read-only (a pill clicked and followed where the
   window's hit test lands, which SwiftUI would take over a disabled box), ⌘. closing the picker,
   and the picker under its `@` as the panel scrolls. In an unshown window the picker has no parent window, so a test picks with the mouse by
-  clicking its rows (CanvasUITests hold a board's child window to not sealing). The Mentioned In
-  tab (`mentionedInTests`) is read through `backlinksShown`, since SwiftUI draws its lines: shown
-  while mentioned, the lines in order, a click and Back, a line for a mentioner on another board
-  (its quote, and a click showing its board), redrawn by a mentioner's change and not by a drag. A line's hover goes untested: SwiftUI's `.onHover` doesn't answer synthesized events.
+  clicking its rows (CanvasUITests hold a board's child window to not sealing).
   StickyNotesTests hold a note's text (its third migration, its row, what it's called) and its
   editor to its render with pills (`noteEditorTests`: each pill's frame in the editor, TextKit 2's
   for its attachment, is the canvas's; at a whole number of pixels to a point, the lines start
@@ -13075,9 +13145,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   "Add Note"; a pick undone in the text to its query, each undo to one write; Undo with the picker
   open, the text's and the board's, to closing it; a deletion and a rename undone to pills as they
   were; and going to a mention to no step, with Back beside Undo. `backlinksShippedTests` hold Show
-  What Mentions among a subboard's own items and the clipboard's, and the Mentioned In tab of a
-  note and of a subboard in the shipped panel, in a `BoardWindow` (a line goes to its mentioner,
-  and Back returns); ShippedTests a `MentionValidationPlugin` warning in Issues and on its row; and
+  What Mentions among a subboard's own items and the clipboard's; ShippedTests a `MentionValidationPlugin` warning in Issues and on its row; and
   CommandLineTests `draw` notes that mention shapes, on the board or not.
 - **Slash commands.** SlashCommandsTests, MentionsTests' `slashTests`, LockingTests' `lockSlashTests`,
   PublishingTests' `slashTests`, TitlesTests' `titleSlashTests` and CompositionTests' `slashCommandsShippedTests`: [Testing slash
@@ -13330,8 +13398,8 @@ Each of these adds to the design without changing what plugins are written again
   preview in another color, or sharp when a card shows more than 1,000 of its board's shapes large; and a board
   addressed from outside the app (the command line's, above).
 - **More of topology**: `canvas draw` matching an edge it restates by its type as well as its ends;
-  showing a shape's connections of every type in the app (a Connections section of its panel,
-  beside Mentions' Mentioned In); and edges on the boards the app can't show, which carry none
+  showing a shape's connections of every type in the app (its Connections tab lists the ways
+  Neighbors' lights give, then what it's inside and what it holds); and edges on the boards the app can't show, which carry none
   today.
 - **More of queries**: where shapes sit (`:near`, `:left-of`, `:within`, overlaps, and attributes
   that hold a place, which are `not_built`; inside is containment's, boards and containers on them),
@@ -13379,7 +13447,7 @@ Each of these adds to the design without changing what plugins are written again
   half-typed `/lock` is not words to rewrite the schema from).
 - **More of the detail panel**: editing several selected shapes at once (it shows "N Shapes"
   today); every-shape sections over the record (there are every-box ones over the frame, and those
-  over an added property; so `mentionableEveryShape` brings no Mentioned In tab), and every-box
+  over an added property), and every-box
   overrides such as an aspect lock;
   remembering the chosen tab and collapsed sections across launches (`DetailTabID.name` is stable
   for that); and marking the row a validation issue is about (`ValidationIssue.field`).

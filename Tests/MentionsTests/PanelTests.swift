@@ -144,13 +144,6 @@ final class MentionPanel {
         target.mouseDown(with: mouse(.leftMouseDown, at: point, in: view, clicks: clicks))
         target.mouseUp(with: mouse(.leftMouseUp, at: point, in: view, clicks: clicks))
     }
-
-    /// The Mentioned In tab's lines, as the panel draws them: buttons under the header, top first.
-    var lines: [NSButton] {
-        hosting.descendants(NSButton.self)
-            .filter { $0.convert($0.bounds, to: hosting).minY >= 44 && $0.convert($0.bounds, to: hosting).height > 20 }
-            .sorted { $0.convert($0.bounds, to: hosting).minY < $1.convert($1.bounds, to: hosting).minY }
-    }
 }
 
 extension MentionTextView {

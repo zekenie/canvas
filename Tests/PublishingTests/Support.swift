@@ -7,6 +7,7 @@ import CoreGraphics
 import DetailPanel
 import Foundation
 import Keyboard
+import Neighbors
 import Publishing
 import Selection
 import SlashCommands
@@ -17,8 +18,7 @@ import Topology
 
 // Fixtures only (CanvasTesting's boxes and links, and the kinds below), so every test here shows
 // Publishing knows no real kind: a plaque is public by choice (it holds `public`, and a title), a
-// seal is always public, a draft is never; a holder stands in for the shapes it cites (a stand-in
-// kind that describes its own row in Referenced In), a relay stands in and says nothing of itself;
+// seal is always public, a draft is never; a holder and a relay stand in for the shapes they cite;
 // a link carries a wire between what it joins.
 
 struct Plaque: BoxShapeProps {
@@ -60,21 +60,18 @@ extension Draft {
     init() { self.init(.zero) }
 }
 
-/// Stands for the shapes it cites; its `words`, when it has some, are its line in Referenced In.
+/// Stands for the shapes it cites.
 struct Holder: BoxShapeProps {
     static let kind: ShapeKind = "holder"
     static let properties = Properties<Holder> {
         Property("frame", \.frame).required()
         Property("stands", \.stands)
-        Property("words", \.words)
     }
     var frame: CGRect
     var stands: [Citation]
-    var words: String
-    init(_ frame: CGRect, stands: [Citation] = [], words: String = "") {
+    init(_ frame: CGRect, stands: [Citation] = []) {
         self.frame = frame
         self.stands = stands
-        self.words = words
     }
 }
 
@@ -82,7 +79,7 @@ extension Holder {
     init() { self.init(.zero) }
 }
 
-/// Stands for the shapes it cites, and describes nothing of its own row.
+/// Stands for the shapes it cites, as a holder does.
 struct Relay: BoxShapeProps {
     static let kind: ShapeKind = "relay"
     static let properties = Properties<Relay> {
@@ -162,7 +159,7 @@ extension LensDefinition: ShapeDefinition {
 }
 extension LensDefinition: NeverPublic {}
 
-/// A tab of a plaque's own, so its panel has one before Referenced In.
+/// A tab of a plaque's own, so its panel has one before Connections.
 enum PlaqueTab {}
 extension PlaqueTab: DetailTab {
     static var title: String { "Plaque" }
@@ -211,15 +208,11 @@ struct KindsPlugin: CanvasPlugin {
         registrar.shape(DraftDefinition())
         registrar.shape(HolderDefinition()) { holder in
             holder.standsIn(admitting: { target, registry in registry.isPublic(target) }) { shape, _ in .shapes(shape.props.stands.map(\.shape)) }
-            holder.standInRow { shape, _ in
-                shape.props.words.isEmpty ? StandInRow(symbol: "arrow.up.forward") : StandInRow(symbol: "magnifyingglass", text: "“\(shape.props.words)”")
-            }
         }
         registrar.shape(LensDefinition()) { lens in
             lens.standsIn(admitting: { target, registry in registry.isPublic(target) }) { shape, _ in
                 shape.props.asks.isEmpty ? nil : .provided(ForwardingKey(shape.props.asks))
             }
-            lens.standInRow { shape, _ in StandInRow(symbol: "magnifyingglass", text: "“\(shape.props.asks)”") }
         }
         registrar.shape(RelayDefinition()) { relay in
             relay.standsIn(admitting: { target, registry in registry.isPublic(target) }) { shape, _ in .shapes(shape.props.stands.map(\.shape)) }
@@ -260,7 +253,7 @@ extension EditorHarness {
 
     /// A holder standing for `shapes`.
     @discardableResult
-    func hold(_ shapes: [ShapeID], words: String = "", at frame: CGRect = CGRect(x: 600, y: 600, width: 60, height: 20)) -> ShapeID {
-        add(Holder(frame, stands: shapes.map(Citation.init), words: words))
+    func hold(_ shapes: [ShapeID], at frame: CGRect = CGRect(x: 600, y: 600, width: 60, height: 20)) -> ShapeID {
+        add(Holder(frame, stands: shapes.map(Citation.init)))
     }
 }

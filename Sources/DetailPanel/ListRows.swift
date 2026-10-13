@@ -71,3 +71,78 @@ public struct DetailShapeRow: View {
         .contentShape(Rectangle())
     }
 }
+
+/// The head of a list of rows inside a section, which folds it: a disclosure triangle and the title,
+/// set as a section's are, with a dot in `tint` between them when the list has a color of its own,
+/// and how many rows the list has after it. The caller keeps whether it's folded, and leaves the
+/// rows out while it is.
+public struct DetailGroupHeader: View {
+    let title: String
+    let count: Int?
+    let tint: NSColor?
+    let isCollapsed: Bool
+    let toggle: @MainActor () -> Void
+
+    public init(_ title: String, count: Int? = nil, tint: NSColor? = nil, isCollapsed: Bool, toggle: @escaping @MainActor () -> Void) {
+        self.title = title
+        self.count = count
+        self.tint = tint
+        self.isCollapsed = isCollapsed
+        self.toggle = toggle
+    }
+
+    public var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: DetailStyle.smallSpacing) {
+                Image(systemName: "chevron.right")
+                    .font(DetailStyle.disclosure)
+                    .rotationEffect(.degrees(isCollapsed ? 0 : 90))
+                if let tint {
+                    Circle().fill(Color(nsColor: tint)).frame(width: DetailStyle.groupDot, height: DetailStyle.groupDot)
+                }
+                Text(title).font(DetailStyle.sectionTitle).lineLimit(1)
+                if let count {
+                    Text("\(count)").font(DetailStyle.body).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(height: DetailStyle.sectionHeaderHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.primary)
+        .accessibilityLabel(title)
+        .accessibilityValue(count.map { "\($0)" } ?? "")
+    }
+}
+
+/// A field that searches a list in the panel: a magnifying glass, the text, typed as keyed (nothing
+/// corrected), and, once there's text, a button that clears it. Escape, as anywhere in the panel,
+/// gives the keyboard back to the canvas.
+public struct DetailSearchField: View {
+    let prompt: String
+    @Binding var text: String
+
+    public init(_ prompt: String, text: Binding<String>) {
+        self.prompt = prompt
+        _text = text
+    }
+
+    public var body: some View {
+        HStack(spacing: DetailStyle.smallSpacing) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField(prompt, text: $text)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled()
+            if !text.isEmpty {
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Clear")
+            }
+        }
+        .padding(.horizontal, DetailStyle.textInset)
+        .frame(height: DetailStyle.listRowHeight)
+        .background(RoundedRectangle(cornerRadius: DetailStyle.fieldCorner).fill(DetailStyle.searchFill))
+    }
+}

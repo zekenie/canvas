@@ -643,6 +643,18 @@ public final class ContentsState {
         return row
     }
 
+    /// What the list calls a shape, wherever it is in the file: its row's text as its kind makes it
+    /// and `ContentsTitles` names it (a title, else what the kind shows for a shape with none: a
+    /// note's text, a placeholder), nil for a kind whose row is no `ContentsLabel` or says
+    /// nothing. For a plugin that lists shapes of any board elsewhere and calls them as the list does
+    /// (Neighbors' lists in the panel). Made for the call: no row is kept, and none is counted as
+    /// made.
+    public func name(of record: AnyShapeRecord) -> String? {
+        guard let label = resolvedRow(of: record, kind: kindRows(record.kind)).label else { return nil }
+        let text = label.text
+        return text.isEmpty ? nil : text
+    }
+
     /// The marks of a shape's row: none for a shape that isn't listed.
     private func marks(of record: AnyShapeRecord, isListed: Bool, kind: KindRows) -> [ContentsMark] {
         guard isListed, !kind.marks.isEmpty else { return [] }

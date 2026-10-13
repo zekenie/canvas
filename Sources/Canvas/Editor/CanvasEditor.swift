@@ -98,8 +98,9 @@ public final class CanvasEditor {
 
     /// Runs `body` with `document` and `file`, and what reads through them (`contents(of:)`,
     /// `owner(of:)`, `shape(inFile:)`), read without observing them: for a service that reads the
-    /// file for a view that observes a revision the service keeps (Mentions' backlinks), so the view
-    /// redraws as that says rather than on every commit. What it reads is for the call: a copy of the
+    /// file for a view that is drawn again by something else it observes (Mentions' quote of a
+    /// mentioner's text, in a row its list draws again as each answer lands), so the view redraws as
+    /// that says rather than on every commit. What it reads is for the call: a copy of the
     /// file kept until the next commit would make that commit copy the file's tables, whatever it
     /// changed.
     public func withoutObservingDocument<T>(_ body: () throws -> T) rethrows -> T {

@@ -262,7 +262,7 @@ extension SyncBench {
         expectEqual(appearance.label, "Address")
         b.write(house, described("A house: its @", mentioning: address, as: "Address"))
         expect(b.editor.mentions?.isMentioned(address) == true)
-        expectEqual(b.editor.mentions?.backlinks(of: address).map(\.id), [house])
+        expectEqual(b.editor.mentions?.mentioners(of: address), [house])
     },
     test("a type draws its words' mentions as pills, live, inside its text") {
         let b = try SyncBench()

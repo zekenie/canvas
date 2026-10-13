@@ -84,8 +84,8 @@ private let ann = FieldFixtures.annLeeID, bo = FieldFixtures.boParkID
         expectEqual(topology.edges(of: ann, .incoming, types: .within(MentionEdge.id)).map(\.source), [order])
         expectEqual(topology.edges(of: ann, .incoming, types: .only(MentionEdge.id)), [])
         let mentions = try require(editor.mentions)
-        expectEqual(mentions.mentioners(of: ann), [], "Mentioned In lists no pointing note")
-        expectEqual(mentions.backlinks(of: ann).map(\.id), [])
+        expectEqual(mentions.mentioners(of: ann), [], "no pointing note is a mentioner: a pointer is no text")
+        expect(!mentions.isMentioned(ann), "a pointer isn't a mention")
         expectEqual(mentions.mentions(in: order), [])
     },
 ])

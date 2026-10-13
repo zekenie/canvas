@@ -1,31 +1,8 @@
 import AppKit
 import Canvas
 
-/// A shape that mentions another, as a list of what mentions a shape shows it
-/// (`MentionState.backlinks(of:)`): the mentioner named and marked as it is where it's mentioned
-/// (else by its title, else its kind), and its text around its first mention of the shape.
-public struct MentionBacklink: Hashable, Sendable {
-    /// The mentioner.
-    public let id: ShapeID
-    public let label: String
-    public let systemImage: String
-    /// About 60 characters of the mentioner's text as plain text (each mention "@" and the name it
-    /// shows now) around its first mention of the shape, on one line, "…" where it's cut.
-    public let quote: String
-    /// Its symbol's color, as the `@` picker shows it: its kind's mention tint (a note's yellow);
-    /// nil for none, or a mentioner that can't be mentioned.
-    public let tint: NSColor?
-
-    public init(id: ShapeID, label: String, systemImage: String, quote: String, tint: NSColor? = nil) {
-        self.id = id
-        self.label = label
-        self.systemImage = systemImage
-        self.quote = quote
-        self.tint = tint
-    }
-}
-
-/// A quote of mention text around a mention, as a backlink shows it.
+/// A quote of mention text around a mention, as a list of what mentions a shape shows it under a
+/// mentioner's name (`MentionState.quote(of:around:)`).
 enum MentionQuote {
     /// The plain text of `runs` around the first mention of `target` (nil if there's none): each
     /// mention "@" and the name `name` gives, else the name it holds; every run of whitespace, line
