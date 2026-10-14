@@ -243,6 +243,35 @@ import Validation
         expectEqual(h.editor.document[g.frame]?.kind, Subboard.kind)
     },
 
+    test("a frame whose notes a locked arrow joins is left as it is, as for a locked note in it: nothing changes, no step is made, and the arrow shakes; unlocked, the arrow goes with the notes, and Undo and Redo are exact") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let g = Groceries(pasteboard)
+        let h = g.h
+        let transforms = try require(h.editor.transforms)
+        h.editor.lock([g.between])
+        expect(h.editor.isReadOnly(g.between), "the arrow is locked")
+        let step = h.editor.undoHistory.undoName, before = h.file, revision = h.editor.revision
+        expect(!transforms.turn([g.frame], into: Subboard.kind), "refused: the locked arrow would be left behind")
+        expectEqual(h.file, before, "nothing changed")
+        expectEqual(h.editor.revision, revision, "nothing committed")
+        expectEqual(h.editor.undoHistory.undoName, step, "no step")
+        h.wait(16)
+        expect(h.editor.drawingOffset(of: g.between) != .zero, "the locked arrow shakes")
+
+        h.wait(500)
+        h.editor.unlock([g.between])
+        let unlocked = h.file
+        expect(transforms.turn([g.frame], into: Subboard.kind), "unlocked, it turns")
+        expectEqual(h.file.board(containing: g.between), BoardID(owner: g.frame), "and the arrow with the notes")
+        expect(g.ends(of: g.between)?.start == g.milk && g.ends(of: g.between)?.end == g.eggs, "bound at both ends")
+        let after = h.file
+        h.editor.undo()
+        expectEqual(h.file, unlocked, "undo")
+        h.editor.redo()
+        expectEqual(h.file, after, "redo")
+    },
+
     test("a frame and the frame inside it, selected together, both turn, the inner one first: its subboard, with its note, is on the outer one's board") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

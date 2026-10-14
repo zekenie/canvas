@@ -49,6 +49,18 @@ extension Registry {
         definition(for: kind) is any AlwaysPublic || holdsPublic(kind)
     }
 
+    /// Makes the record public, the one writer of `public` on a record (`editor.makePublic` calls it,
+    /// and a stand-in kind asks it through `standsIn(fulfilling:)`, as a person picking a private
+    /// shape would): true when the record is public afterward, already or now; false for a kind that
+    /// holds no `public` and isn't always public (`NeverPublic`). Whether the record may be written
+    /// is its caller's transaction's to say.
+    public func makePublic(_ record: inout AnyShapeRecord) -> Bool {
+        if isPublic(record) { return true }
+        guard !record.isOpaque, holdsPublic(record.kind) else { return false }
+        record[PublicProperty.self] = true
+        return true
+    }
+
     /// Whether the kind holds `PublicProperty`: its shapes can be made public and private.
     func holdsPublic(_ kind: ShapeKind) -> Bool { properties(for: kind).contains(PublicProperty.key) }
 }
@@ -61,8 +73,9 @@ extension CanvasEditor {
     /// of another). A kind that holds no `public` property takes nothing; a read-only shape is
     /// refused by the core, and shakes.
     public func makePublic(_ ids: [ShapeID]) {
+        let registry = registry
         transact("Make Public") { transaction in
-            for id in ids { transaction.update(id) { $0[PublicProperty.self] = true } }
+            for id in ids { transaction.update(id) { _ = registry.makePublic(&$0) } }
         }
     }
 

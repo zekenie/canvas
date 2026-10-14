@@ -151,7 +151,7 @@ let rowStates: [GalleryState] = [
         stage.editor.addTypeLink(FieldFixtures.personID, to: employee)
         return canvas(stage)
     },
-    GalleryState("Flow5-p1-order", answers: "Flow5 p1", "the Order type: customer `→ Person`, shipping address with the Address chip and `›`, line items `List ›`, status `Choice`, tags `List of Text`, gift `Yes or no`, gift note `Text`; the needed ones dotted", size: tall) { stage in
+    GalleryState("Flow5-p1-order", answers: "Flow5 p1", "the Order type: customer `Text`, shipping address with the Address chip and `›`, line items `List ›`, status `Choice`, tags `List of Text`, gift `Yes or no`, gift note `Text`; the needed ones dotted", size: tall) { stage in
         stage.editor.put(FieldFixtures.order, at: CGPoint(x: 40, y: 30))
         stage.editor.put(FieldFixtures.person, at: CGPoint(x: 400, y: 30))
         stage.editor.put(FieldFixtures.address, at: CGPoint(x: 400, y: 260))
@@ -162,7 +162,7 @@ let rowStates: [GalleryState] = [
         stage.editor.put(FieldFixtures.address, at: CGPoint(x: 400, y: 30))
         return canvas(stage)
     },
-    GalleryState("Flow5-p7-kinds-b", answers: "Flow5 p7", "KindsB: a link to a Person, links, a list of groups, a list of Address's fields, either of two plain kinds, pairs, what no control suits, either with a group in it, an integer", size: tall) { stage in
+    GalleryState("Flow5-p7-kinds-b", answers: "Flow5 p7", "KindsB: text, a list of text, a list of groups, a list of Address's fields, either of two plain kinds, pairs, what no control suits, either with a group in it, an integer", size: tall) { stage in
         stage.editor.put(FieldFixtures.everyKind.b, at: CGPoint(x: 40, y: 30))
         stage.editor.put(FieldFixtures.person, at: CGPoint(x: 400, y: 30))
         stage.editor.put(FieldFixtures.address, at: CGPoint(x: 400, y: 260))

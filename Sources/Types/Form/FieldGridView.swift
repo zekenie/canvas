@@ -114,8 +114,8 @@ extension FieldFormView {
     }
 
     func pressed(atGrid point: CGPoint) {
-        // A press while a link's list is open closes it with nothing stored; one on a live pill goes to the note, whatever the form is.
-        endLinkPicking()
+        // A press while a note cell's list is open closes it with nothing stored; one on a live pill goes to the note, whatever the form is.
+        endNotePicking()
         if let target = pillTarget(atGrid: point) {
             editor.mentions?.follow(target)
             return
@@ -295,27 +295,23 @@ extension FieldFormView {
             drawText(cell.shown, in: rect, ink: ink.withAlphaComponent(cell.isEditable || !isReadOnly ? 1 : 0.7))
         case .clear:
             drawText(cell.shown, in: rect, ink: TypesStyle.formNameInk)
-        case .link(let type):
-            drawLink(cell, type: type, in: rect, isEditing: linkPicking?.stop == FieldStop(line: line, column: column))
+        case .note:
+            drawNote(cell, in: rect, isEditing: picking?.stop == FieldStop(line: line, column: column))
         case .label(let text):
             drawText(text, in: rect, ink: text == FieldWords.none ? TypesStyle.formFaintInk : TypesStyle.formNameInk, italic: text == FieldWords.none,
                      align: atRight ? .right : .left)
         }
     }
 
-    /// A link: its pill (the live name; dashed while the note is gone; red with the wave when the note is no longer of the type), the text as
-    /// stored for a value that is no token (red, wavy), `add customer` for none, and the type's chip while the type is gone.
-    private func drawLink(_ cell: FieldCell, type: ShapeID, in rect: CGRect, isEditing: Bool) {
-        guard editor.fieldBook?.isType(type) == true else {
-            drawChip(type, at: CGPoint(x: rect.minX, y: rect.midY - TypesStyle.formChipHeight / 2))
-            return
-        }
+    /// A note: its pill (the live name; dashed while the note is gone; red with the wave when the cell is marked wrong), its words
+    /// when it names no note, and the placeholder for none.
+    private func drawNote(_ cell: FieldCell, in rect: CGRect, isEditing: Bool) {
         guard !isEditing else { return }
         let wrong = cell.mark == .wrong
-        if let pill = linkPill(of: cell, width: rect.width), let box = linkPillRect(of: cell, in: rect) {
-            let drawn = linkStyle(wrong: wrong).pill(pill.attachment)
+        if let pill = notePill(of: cell, width: rect.width), let box = notePillRect(of: cell, in: rect) {
+            let drawn = noteStyle(wrong: wrong).pill(pill.attachment)
             drawn.draw(with: box, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
-            if wrong { drawWave(from: box.minX + TypesStyle.linkWaveInset, to: box.maxX - TypesStyle.linkWaveInset, at: box.maxY - 3) }
+            if wrong { drawWave(from: box.minX + TypesStyle.pillWaveInset, to: box.maxX - TypesStyle.pillWaveInset, at: box.maxY - 3) }
         } else if cell.shown.isEmpty {
             drawText(cell.placeholder, in: rect, ink: cell.mark == .needed ? TypesStyle.neededInk : TypesStyle.formFaintInk, italic: true)
         } else {

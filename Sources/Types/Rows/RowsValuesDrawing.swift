@@ -21,10 +21,10 @@ extension RowLook {
     }
 }
 
-/// How a pointer's pills look in a row: Mentions' pill, outlined (white, a hairline, the live name, no
+/// How a row's pills look: Mentions' pill, outlined (white, a hairline, the live name, no
 /// symbol: board 5's panel 2), in the rows' font; a wrong one in the wrong red.
 @MainActor
-enum LinkPills {
+enum RelationPills {
     /// A pill's line is this tall: the room its pill sits in.
     static let lineHeight: CGFloat = 20
     static let style = MentionTextStyle(font: NSFont.systemFont(ofSize: TypesStyle.rowFontSize), color: TypesStyle.rowInk,
@@ -46,18 +46,21 @@ extension RowBook {
         cg.saveGState()
         defer { cg.restoreGState() }
         cg.translateBy(x: block.minX, y: block.minY)
+        if let y = kept.ruleY { drawRule(at: y, from: 0, to: kept.width, in: cg) }
         for (index, row) in kept.rows.enumerated() {
-            let mark = check.problems.isEmpty ? nil : kept.marks[index].compactMap { check.mark(at: $0) }.max()
+            // A relation row is marked by what the note's check says of that row (amber while a Needed row is empty, red while an
+            // Only one row holds more than one), a field's by the paths under it.
+            let mark = check.problems.isEmpty ? nil : row.relation.map { check.mark(at: $0) } ?? kept.marks[index].compactMap { check.mark(at: $0) }.max()
             let rect = row.rect, midY = rect.midY
             if let tick = row.tick { drawTick(editor?.types?.look(of: tick).tick ?? TypesStyle.manyTick, in: rect, to: cg) }
-            if row.path == nil {
+            if row.isFold {
                 drawFold(row, mark: mark, midY: midY, to: cg)
                 continue
             }
             FieldLines.draw(FieldLines.line(row.name, .muted, cutTo: row.nameRect.width), at: row.nameRect.minX, midY: midY, in: cg)
             // The row being typed in draws its own text, and so does one being picked in.
             if let typed, row.path?.field == typed { continue }
-            if let picking, picking.shape == record.id, row.path?.field == picking.key { continue }
+            if let picking, picking.shape == record.id, row.isRow(picking.row) { continue }
             drawValue(row, look: RowLook.of(content: row.content, mark: mark), context: context)
         }
         if !isEditing { drawOpenOutline(of: record, rows: kept.rows, template: template, to: cg) }
@@ -102,17 +105,20 @@ extension RowBook {
             guard let types = editor?.types else { return }
             let label = TypeChips.label(for: TypeLink(target), in: types)
             label.draw(at: CGPoint(x: value.minX, y: midY - label.contentSize.height / 2), in: cg)
-        case .links(let links, let more):
-            for shown in links {
-                let box = CGRect(x: value.minX + shown.x, y: midY - LinkPills.lineHeight / 2, width: shown.width + 1, height: LinkPills.lineHeight)
-                context.drawMentionText(MentionTextPlacement(shown.text, in: box, style: look == .wrong ? LinkPills.wrongStyle : LinkPills.style, lines: 1))
+        case .related(let pills, let more):
+            for shown in pills {
+                let box = CGRect(x: value.minX + shown.x, y: midY - RelationPills.lineHeight / 2, width: shown.width + 1, height: RelationPills.lineHeight)
+                // A row that breaks Only one is red all through: each of its pills.
+                let wrong = shown.isWrong || look == .wrong
+                context.drawMentionText(MentionTextPlacement(shown.text, in: box, style: wrong ? RelationPills.wrongStyle : RelationPills.style, lines: 1))
                 // Under the name, inside the pill.
-                if look == .wrong { drawWave(from: box.minX + TypesStyle.linkWaveInset, to: box.minX + shown.width - TypesStyle.linkWaveInset, midY: midY - 0.75, to: cg) }
+                if wrong { drawWave(from: box.minX + TypesStyle.pillWaveInset, to: box.minX + shown.width - TypesStyle.pillWaveInset, midY: midY - 0.75, to: cg) }
             }
-            if more > 0, let last = links.last {
-                FieldLines.draw(FieldLines.line("+\(more)", .kind), at: value.minX + last.x + last.width + TypesStyle.linkGap, midY: midY, in: cg)
+            if more > 0, let last = pills.last {
+                FieldLines.draw(FieldLines.line("+\(more)", .kind), at: value.minX + last.x + last.width + TypesStyle.pillGap, midY: midY, in: cg)
             }
-        case .kind, .fold:
+            if let chevron = chevronRect(of: row) { FieldLines.draw(FieldLines.line("›", .kind), at: chevron.minX, midY: midY, in: cg) }
+        case .kind, .fold, .relationType:
             break
         }
     }
@@ -189,18 +195,39 @@ extension RowBook {
         case .summary(let text): width = FieldLines.width(of: text, .value) + Self.chevronRoom
         case .gone(let target):
             width = editor?.types.map { TypeChips.label(for: TypeLink(target), in: $0).contentSize.width } ?? 0
-        case .links(let links, let more):
-            if let last = links.last {
-                let counted = more > 0 ? TypesStyle.linkGap + FieldLines.width(of: "+\(more)", .kind) : 0
-                width = last.x + last.width + counted
+        case .related(let pills, let more):
+            if let last = pills.last {
+                let counted = more > 0 ? TypesStyle.pillGap + FieldLines.width(of: "+\(more)", .kind) : 0
+                width = last.x + last.width + counted + Self.chevronRoom
             } else {
                 width = 0
             }
-        case .kind, .fold: width = value.width
+        case .kind, .fold, .relationType: width = value.width
         }
         width = min(value.width, max(width, 0))
         let outset = TypesStyle.fieldFocusOutset
         return CGRect(x: value.minX - outset, y: row.rect.minY + 1, width: max(width + 2 * outset, TypesStyle.fieldFocusMinimum), height: row.rect.height - 2)
+    }
+
+    /// The `›` that ends a relation row that holds a relationship, from the block's top-left like the rows; nil for a row that
+    /// holds none. It follows the last pill, and the `+N` after it.
+    public func chevronRect(of row: ShownRow) -> CGRect? {
+        guard case .related(let pills, let more) = row.content, let last = pills.last else { return nil }
+        let counted = more > 0 ? TypesStyle.pillGap + FieldLines.width(of: "+\(more)", .kind) : 0
+        let x = row.valueRect.minX + last.x + last.width + counted + TypesStyle.partGap
+        return CGRect(x: x, y: row.rect.minY, width: FieldLines.width(of: "›", .kind) + TypesStyle.partGap, height: row.rect.height)
+    }
+
+    /// Whether a point of the block (a press) is on the `›` of a relation row: it opens the card, where the rest of the value
+    /// lists the notes the row may name.
+    func isChevron(_ point: CGPoint, row: Int, in edited: EditedRows) -> Bool {
+        guard edited.shown.rows.indices.contains(row), case .relation = edited.classes[row] else { return false }
+        return chevronRect(of: edited.shown.rows[row])?.contains(point) == true
+    }
+
+    /// The outline of a pill of a relation row, from the block's top-left like the rows.
+    func pillRect(_ pill: ShownPill, in row: ShownRow) -> CGRect {
+        CGRect(x: row.valueRect.minX + pill.x - 1, y: row.rect.midY - RelationPills.lineHeight / 2, width: pill.width + 2, height: RelationPills.lineHeight)
     }
 
     private func drawOpenOutline(of record: AnyShapeRecord, rows: [ShownRow], template: RowTemplate, to cg: CGContext) {
@@ -213,6 +240,8 @@ extension RowBook {
                 isOpen = row.path == path
             case (.fold, .fold(let fold)):
                 isOpen = fold.folded.first?.field.name == folded
+            case (.relations(let key), .relation(let relation)):
+                isOpen = relation.row.key == key
             default:
                 isOpen = false
             }
@@ -227,7 +256,7 @@ extension RowBook {
     /// What the outline of a focused row or of the row whose card is open goes round: a value as it hugs it, a
     /// fold's words (`+12 more ›` at the left, `4 fields ›` at the right).
     func focusRect(of row: ShownRow, class kind: RowClass?) -> CGRect {
-        guard row.path == nil else { return hug(row, focused: { if case .choice = kind { true } else { false } }()) }
+        guard row.isFold else { return hug(row, focused: { if case .choice = kind { true } else { false } }()) }
         let outset = TypesStyle.fieldFocusOutset
         if row.valueRect == .zero {
             let width = FieldLines.width(of: row.name + " ›", .kind)

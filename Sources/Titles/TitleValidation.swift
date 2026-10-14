@@ -13,7 +13,11 @@ import Validation
 /// and kept up to date by each commit, wherever it changed a title, so the rule reads no other
 /// shape: it names, with `affected`, the shapes a commit gives a title's first other holder or takes
 /// its last from, which Validation checks again, on the board shown or once theirs is. Where shapes
-/// are is nothing it reads, so it ignores moves. A plugin of its own, so a list can have Titles
+/// are is nothing it reads, so it ignores moves. Writes that have not committed (a run of `canvas draw`)
+/// are answered too: the rule reads the titles as the run leaves them (`isShared(_:by:in:)`: the
+/// committed holders the run has not written, and what it wrote) and `touches` names the other holders
+/// of a title the run gives a shape or takes from one, so a run that gives a shape the title of a shape
+/// on another board warns of both. A plugin of its own, so a list can have Titles
 /// without Validation (the registry refuses its rule where Validation isn't installed).
 public struct TitleValidationPlugin: ListedPlugin {
     public init() {}
@@ -29,12 +33,26 @@ public struct TitleValidationPlugin: ListedPlugin {
         registrar.service { TitleIndex(editor: $0) }
         registrar.validateEveryShape(ignoringMoves: true, affected: { changes, editor in
             editor.service(TitleIndex.self)?.affected(by: changes) ?? []
+        }, touches: { changes, shapes in
+            // Writes that have not committed (a run's): the other holders of a title they give a shape or take from one.
+            guard let reading = shapes.reading, let index = reading.service(TitleIndex.self) else { return [] }
+            return index.touched(by: changes, reading: reading)
         }) { shape, context in
-            guard let title = context.registry.title(of: shape), let index = context.service(TitleIndex.self) else { return [] }
+            guard let title = context.registry.title(of: shape) else { return [] }
+            // Without an editor (a run's check, before it commits) the index is asked through the reading the shapes have,
+            // for the titles as the run leaves them.
+            let shared: Bool
+            if let index = context.service(TitleIndex.self) {
+                shared = index.isShared(title, by: shape.id)
+            } else if let reading = context.reading, let index = reading.service(TitleIndex.self) {
+                shared = index.isShared(title, by: shape.id, in: reading)
+            } else {
+                return []
+            }
             #if DEBUG
             Self.titlesChecked += 1
             #endif
-            guard index.isShared(title, by: shape.id) else { return [] }
+            guard shared else { return [] }
             let named = context.registry.properties(for: shape.kind).contains(TitleProperty.key)
             return [.warning("“\(title)” is another shape’s title too.", field: named ? TitleProperty.key.rawValue : nil)]
         }
@@ -72,6 +90,57 @@ final class TitleIndex {
         readIfNeeded()
         guard let named = holders[title] else { return false }
         return named.count > 1 || !named.contains(id)
+    }
+
+    /// What a run has written, by the titles its shapes have now: made once for each state of a run's log.
+    private var run: (id: Int, writes: Int, revision: Int, written: Set<ShapeID>, holders: [String: Set<ShapeID>])?
+
+    /// The run's writes filed by title, for a reading that hasn't committed: every shape it wrote, and under each title the
+    /// written shapes called that now. O(its writes), once for each state of the log.
+    private func written(in reading: LayoutReading) -> (written: Set<ShapeID>, holders: [String: Set<ShapeID>]) {
+        if let run, run.id == reading.runID, run.writes == reading.writeCount, run.revision == editor.revision { return (run.written, run.holders) }
+        var written: Set<ShapeID> = [], now: [String: Set<ShapeID>] = [:]
+        for id in reading.changes where written.insert(id).inserted {
+            if let record = reading.shape(inFile: id), let title = title(of: record) { now[title, default: []].insert(id) }
+        }
+        run = (reading.runID, reading.writeCount, editor.revision, written, now)
+        return (written, now)
+    }
+
+    /// Whether a shape other than `id` is called `title` as a reading that hasn't committed has the file: the committed
+    /// holders the run has not written, and the shapes it wrote that are called that now.
+    func isShared(_ title: String, by id: ShapeID, in reading: LayoutReading) -> Bool {
+        guard !reading.isCommitted else { return isShared(title, by: id) }
+        readIfNeeded()
+        let run = written(in: reading)
+        if run.holders[title]?.contains(where: { $0 != id }) == true { return true }
+        // A committed holder counts if the run has not taken it (deleted, or with its board).
+        return holders[title]?.contains(where: { $0 != id && !run.written.contains($0) && reading.shape(inFile: $0) != nil }) ?? false
+    }
+
+    /// The shapes whose warning writes that have not committed may change though they do not write them: for each
+    /// written shape whose title is another now, the committed holders of the title it has (they share it now) and,
+    /// where one holder of the title it had is left, that one (it shares it no longer). O(the writes).
+    func touched(by changes: ChangeSet, reading: LayoutReading) -> Set<ShapeID> {
+        guard !reading.isCommitted else { return [] }
+        readIfNeeded()
+        let run = written(in: reading)
+        var found: Set<ShapeID> = []
+        func look(_ id: ShapeID) {
+            let before = titles[id]
+            let now = reading.shape(inFile: id).flatMap(title(of:))
+            guard before != now else { return }
+            if let now, let others = holders[now] { for other in others where !run.written.contains(other) { found.insert(other) } }
+            if let before, let others = holders[before] {
+                let left = others.filter { !run.written.contains($0) }
+                if left.count == 1, run.holders[before]?.isEmpty != false { found.formUnion(left) }
+            }
+        }
+        for id in changes.added { look(id) }
+        for id in changes.changed where !changes.moved.contains(id) { look(id) }
+        for id in changes.removed { look(id) }
+        for id in changes.elsewhere { look(id) }
+        return found
     }
 
     /// The shapes a commit may change the warning of: those still in the file whose title it

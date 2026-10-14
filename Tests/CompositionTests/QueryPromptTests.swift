@@ -150,7 +150,6 @@ private func groups(of pattern: String, in text: String) -> [String]? {
             (":end-of(arrow[channel=note-link])", "U"),                  // where does the note-link arrow end? Auth
             (#""Payments" sticky-note[locked]:mentions("Checkout")"#, ""), // locked notes in Payments that mention Checkout: none
             (#":is-a("Person"):incomplete"#, "I"),                        // which people still need something? Ann: her required name
-            (#":is-a("Order"):edge-to("Ann", field-link)"#, ""),         // which orders are for Ann? the story has no links
             (":selected", "U"),                                          // these, the selected ones
         ]
         for (query, letters) in answers {
@@ -203,7 +202,7 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         defer { story.pasteboard.releaseGlobally() }
         let language = Set(Word.allCases.map(\.rawValue))
         let plugins = Set(story.queries.vocabulary.words.filter { $0.from != .queries }.map(\.word))
-        expectEqual(plugins, ["mentions", "mentioned-by", "invalid", "warned", "is-a", "incomplete", "selected"], "the shipped plugins' words")
+        expectEqual(plugins, ["mentions", "mentioned-by", "invalid", "warned", "incomplete", "is-a", "misfit", "selected"], "the shipped plugins' words")
         // Those it says not to invent are illustrative examples on their own, each refused with its reason.
         let invented = Set(QueryPrompt.illustrativeExamples.map(\.query).filter { $0.hasPrefix(":") && !$0.contains("(") }.map { String($0.dropFirst()) })
             .subtracting(language)
@@ -236,7 +235,11 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         }
         inOrder(names(parts[0]), vocabulary.kinds.map(\.kind.rawValue), "kinds")
         inOrder(names(parts[1]), vocabulary.edgeTypes.map(\.type.rawValue), "edge types")
-        inOrder(names(parts[2]).map { String($0.drop { $0 == ":" }) }, vocabulary.words.filter { $0.from != .queries }.map(\.word), "words")
+        // The prompt keeps `:incomplete` with the words of types, which its example uses together (`:is-a("Person"):incomplete`); the app
+        // has it with Validation's (`:invalid`, `:warned`, `:incomplete`). Every other word is said in the vocabulary's order.
+        let said = names(parts[2]).map { String($0.drop { $0 == ":" }) }, shipped = vocabulary.words.filter { $0.from != .queries }.map(\.word)
+        expect(said.contains("incomplete") && shipped.contains("incomplete"), "the prompt names :incomplete, which the app has")
+        inOrder(said.filter { $0 != "incomplete" }, shipped.filter { $0 != "incomplete" }, "words")
         // What's under the one it names.
         let under = try require(matches(of: #"with ([a-z-]+) under it"#, in: parts[1]).first)
         let arrow = vocabulary.edgeTypes.first { $0.type.rawValue == under }

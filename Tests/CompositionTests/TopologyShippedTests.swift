@@ -35,13 +35,12 @@ private func note(_ x: CGFloat, _ y: CGFloat, _ text: MentionText) -> ShapeRecor
 @MainActor let topologyShippedTests = Suite("Topology, as shipped", [
     test("the edge types: arrow, with each channel under it, mention, and Topology's own stands-for") {
         let types = try ShippedPlugins.registry(model: ScriptedLanguageModel()).edgeTypes
-        expectEqual(Set(types.declared), ["arrow", noteLink, subboardLink, "mention", FieldLinkEdge.id, "is-a", StandingEdge.id])
+        expectEqual(Set(types.declared), ["arrow", noteLink, subboardLink, "mention", "is-a", StandingEdge.id])
         expectEqual(types.parent(of: StandingEdge.id), nil)
         expectEqual(types.parent(of: noteLink), "arrow")
         expectEqual(types.parent(of: subboardLink), "arrow")
         expectEqual(types.parent(of: "arrow"), nil)
         expectEqual(types.parent(of: "mention"), nil)
-        expectEqual(types.parent(of: FieldLinkEdge.id), "mention", "Types' pointer, under the mention it is a kind of")
     },
 
     test("arrows on notes' and subboards' channels, a plain arrow, and mentions across a subboard: one graph of the file, by type") {

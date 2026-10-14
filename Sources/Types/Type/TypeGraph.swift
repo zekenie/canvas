@@ -10,6 +10,10 @@ public struct TypeGraph: Sendable {
     public internal(set) var links: [ShapeID: [TypeLink]] = [:]
     /// The title of each type (an untitled one has none).
     public internal(set) var names: [ShapeID: String] = [:]
+    /// Every shape that holds `schema`, titled or not (`names` leaves an untitled one out).
+    public internal(set) var types: Set<ShapeID> = []
+    /// Those of them that hold the mark too: the relationship types.
+    public internal(set) var relationshipTypes: Set<ShapeID> = []
 
     public init() {}
 
@@ -28,6 +32,21 @@ public struct TypeGraph: Sendable {
     /// branch.
     public func lineage(of id: ShapeID) -> [ShapeID] {
         TypeOrder.linearized(parents(of: id), excluding: id, parents: parents(of:))
+    }
+
+    /// Everything `shape`'s lists lead to, however far, never the shape itself; no order, cycle-safe. A
+    /// name that is gone is in it, ending its branch. What `reaches(_:from:)` asks of one type, as a set.
+    public func ancestors(of shape: ShapeID) -> Set<ShapeID> {
+        var seen: Set<ShapeID> = [shape], level = [shape]
+        while !level.isEmpty {
+            var next: [ShapeID] = []
+            for current in level {
+                for parent in parents(of: current) where seen.insert(parent).inserted { next.append(parent) }
+            }
+            level = next
+        }
+        seen.remove(shape)
+        return seen
     }
 
     /// Whether `owner` is in what `target` leads to, however far; no order, cycle-safe. What `lineage`

@@ -315,6 +315,7 @@ extension ShelfDefinition: BoardOwning {}
             let moved = transaction.move([c, a], toBoardOwnedBy: p)
             expectEqual(ids(transaction.contents(ofBoardOwnedBy: p)), [a, c], "the transaction sees them there")
             expectEqual(transaction.document[a], nil)
+            expectEqual(Set(transaction.shapes.reading?.changes ?? []), [a, c], "a shape that went to another board is a write, as the set has it")
             return moved
         }
         expect(moved)
@@ -440,18 +441,22 @@ extension ShelfDefinition: BoardOwning {}
         try expectFile(h, before, "every end as it was")
     },
     test("a name of a shape, a mention, is kept whichever way it goes: of one that moves or one that stays, in a shape that moves or one that stays") {
-        let p = ShapeID(), a = ShapeID(), c = ShapeID(), m1 = ShapeID(), m2 = ShapeID(), n = ShapeID()
+        let p = ShapeID(), a = ShapeID(), c = ShapeID(), m1 = ShapeID(), m2 = ShapeID(), n = ShapeID(), t = ShapeID()
         let h = try harness(CanvasFile(root: board(pocket(p), box(a), box(c, x: 200),
                                                    AnyShapeRecord(ShapeRecord(id: m1, Memo(lead: Citation(a)))),
                                                    AnyShapeRecord(ShapeRecord(id: m2, Memo(lead: Citation(c)))),
-                                                   AnyShapeRecord(ShapeRecord(id: n, CitingTag(target: a, cite: Citation(a)))))))
+                                                   AnyShapeRecord(ShapeRecord(id: n, CitingTag(target: a, cite: Citation(a)))),
+                                                   AnyShapeRecord(ShapeRecord(id: t, CitingTag(target: nil, cite: Citation(a)))))))
         let before = h.file, pBoard = BoardID(owner: p)
         h.editor.transact("Move") { $0.move([a, m2], toBoardOwnedBy: p) }
         expectEqual(h.file.board(containing: m1), .root)
         expectEqual(h.file.board(containing: m2), pBoard)
         expectEqual(props(h, m1, as: Memo.self)?.lead, Citation(a), "it stays, and its shape is on another board")
         expectEqual(props(h, m2, as: Memo.self)?.lead, Citation(c), "it moves, and its shape stays")
-        expectEqual(props(h, n, as: CitingTag.self), CitingTag(target: nil, cite: Citation(a)), "what a tag binds is let go of, what it names isn't")
+        expectEqual(h.file.board(containing: n), pBoard, "a tag bound only to what moves moves with it")
+        expectEqual(props(h, n, as: CitingTag.self), CitingTag(target: a, cite: Citation(a)), "bound still, and what it names isn't touched")
+        expectEqual(h.file.board(containing: t), .root, "a tag bound to nothing stays")
+        expectEqual(props(h, t, as: CitingTag.self), CitingTag(target: nil, cite: Citation(a)), "and what it names, on another board now, is kept")
         h.editor.undo()
         try expectFile(h, before, "as they were")
     },

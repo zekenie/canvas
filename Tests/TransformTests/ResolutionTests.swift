@@ -59,7 +59,7 @@ private let area = CGRect(x: 0, y: 0, width: 100, height: 60)
         expect(h.editor.document[aside.id]?.isOpaque == true)
     },
 
-    test("the container channel hands over the container's id and frame, and what it holds at any depth, with what's bound only to those") {
+    test("the container channel hands over the container's id and frame, and what it holds at any depth; the arrows bound only to those go with them in the move") {
         let z = ShapeID(), k = ShapeID(), a = ShapeID(), l = ShapeID(), b = ShapeID(), c = ShapeID(), i = ShapeID(), o = ShapeID(), n = ShapeID(), m = ShapeID()
         let frame = CGRect(x: 100, y: 100, width: 400, height: 300)
         let h = try transformHarness(file: CanvasFile(root: board(box(z, x: 900), corral(k, frame), box(a, x: 120, y: 120, in: k),
@@ -68,13 +68,13 @@ private let area = CGRect(x: 0, y: 0, width: 100, height: 60)
         let source = h.editor.transact { ContainerChannel.source(of: k, in: $0) }
         expectEqual(source?.id, k)
         expectEqual(source?.frame, frame)
-        expectEqual(source?.held, [a, l, b, i], "the shapes in it at any depth, and the link between two of them; not the link across, one to the container itself, one bound to nothing")
-        expectEqual(h.editor.transact { ContainerChannel.source(of: l, in: $0) }?.held, [b], "an inner container's own")
+        expectEqual(source?.inside, [a, l, b], "the shapes in it at any depth, no link (the move takes the one between two of them along)")
+        expectEqual(h.editor.transact { ContainerChannel.source(of: l, in: $0) }?.inside, [b], "an inner container's own")
         expect(h.editor.transact { ContainerChannel.source(of: z, in: $0) } == nil, "a box holds nothing, and isn't a container")
         expect(h.editor.transact { ContainerChannel.source(of: ShapeID(), in: $0) } == nil, "no such shape")
         expectEqual(h.editor.transact { ContainerChannel.source(of: l, in: $0) }?.frame, CGRect(x: 200, y: 200, width: 200, height: 150))
         let empty = h.add(Corral(CGRect(x: 700, y: 700, width: 50, height: 50)))
-        expectEqual(h.editor.transact { ContainerChannel.source(of: empty, in: $0) }?.held, [], "an empty container")
+        expectEqual(h.editor.transact { ContainerChannel.source(of: empty, in: $0) }?.inside, [], "an empty container")
     },
 
     test("a channel's source can say no: the shape isn't turned, its target doesn't run, and no step is made") {

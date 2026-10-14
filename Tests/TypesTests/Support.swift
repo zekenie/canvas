@@ -92,6 +92,7 @@ struct MemosPlugin: CanvasPlugin {
             memo.mentionable(untitled: { $0.props.text.firstLine })
             memo.typeWords(\.text, drawnIn: { $0.placement }, fitting: { MemoStyle.fit(&$0) })
             memo.canBeType()
+            memo.canBeRelationshipType()
             memo.typeable()
         }
     }

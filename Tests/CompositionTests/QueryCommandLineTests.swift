@@ -285,7 +285,7 @@ func rowIDs(_ output: String) throws -> [String] {
             canvas: line 2, column 22: No shape is titled API gatewey.
               sticky-note:mentions("API gatewey")
                                    ^^^^^^^^^^^^^
-            hint: Did you mean "API gateway"? Some mention edges point at shapes that aren't there: :dangling(only mention) finds what carries them.
+            hint: Did you mean "API gateway"? Some mention edges point at shapes that aren't there: :dangling(mention) finds what carries them.
 
             """)
 
@@ -550,10 +550,10 @@ func rowIDs(_ output: String) throws -> [String] {
         expectEqual(note["attributes"]?["schema"], "text")
         expectEqual(vocabulary["kinds"]?.arrayValue?.first { $0["kind"] == "subboard" }?["holdsShapes"], true)
         expectEqual(vocabulary["kinds"]?.arrayValue?.first { $0["kind"] == "subboard" }?["holdsBoard"], true)
-        expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["type"] }, ["stands-for", "mention", "field-link", "is-a", "arrow", "note-link", "subboard-link"])
-        expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["under"] ?? .null }, [.null, .null, "mention", .null, .null, "arrow", "arrow"])
+        expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["type"] }, ["stands-for", "mention", "is-a", "arrow", "note-link", "subboard-link"])
+        expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["under"] ?? .null }, [.null, .null, .null, .null, "arrow", "arrow"])
         let words = vocabulary["words"]?.arrayValue ?? []
-        expectEqual(words.filter { $0["from"] != "queries" }.map { $0["word"] }, ["mentions", "mentioned-by", "invalid", "warned", "is-a", "incomplete", "selected"])
+        expectEqual(words.filter { $0["from"] != "queries" }.map { $0["word"] }, ["mentions", "mentioned-by", "invalid", "warned", "incomplete", "is-a", "misfit", "selected"])
         expectEqual(words.first { $0["word"] == "mentions" }?["takes"], "shapes")
 
         let onBoard = try canvas(server, ["query-vocabulary", "--board", "1"])

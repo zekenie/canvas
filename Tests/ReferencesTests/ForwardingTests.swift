@@ -112,4 +112,30 @@ import Topology
         expectEqual(publishing.standIns(for: w.a), [w.reference])
         expectEqual(w.h.editor.topology?.forwards(of: words), [])
     },
+    test("what a pill calls what it stands for is the label it keeps, which outlives the shape, or a dynamic pill's words; an empty one calls it nothing") {
+        let w = try Wired()
+        let standIns = w.h.editor.registry.standIns
+        let words = w.h.addReference(words: "stuff", query: "note", at: CGPoint(x: 600, y: 300))
+        let empty = w.h.addEmptyReference(at: CGPoint(x: 600, y: 400))
+        expectEqual(standIns.calls(try require(w.h.editor.document[w.reference])), "shapes")
+        expectEqual(standIns.calls(try require(w.h.editor.document[words])), "stuff")
+        expectEqual(standIns.calls(try require(w.h.editor.document[empty])), nil)
+        expectEqual(standIns.calls(try require(w.h.editor.document[w.a])), nil, "a box doesn't stand in")
+        w.h.editor.transact { $0.delete([w.a]) }
+        expectEqual(standIns.calls(try require(w.h.editor.document[w.reference])), "shapes", "the note is gone, its name is kept")
+    },
+    test("a private shape is fulfilled for a pill by being made public, on the record alone: the document is the caller's to write") {
+        let w = try Wired()
+        let tile = w.h.addTile("Pricing")
+        w.h.editor.transact { $0.update(tile) { $0[PublicProperty.self] = nil } }
+        let standIns = w.h.editor.registry.standIns
+        var record = try require(w.h.editor.document[tile])
+        expect(!standIns.admits(Reference.kind, record))
+        expect(standIns.fulfil(Reference.kind, &record))
+        expectEqual(record[PublicProperty.self], true)
+        expect(standIns.admits(Reference.kind, record))
+        expectEqual(w.h.editor.document[tile]?[PublicProperty.self], nil, "not written")
+        var pill = try require(w.h.editor.document[w.reference])
+        expect(!standIns.fulfil(Reference.kind, &pill), "a pill is never stood for, nor public")
+    },
 ])

@@ -27,11 +27,15 @@ struct LinesFact: QueryFileFact {
 
 /// `:descends-from(S)` (transitive; the word that names types, unless `namesTypes` is false) and
 /// `:sprung-from(S)` (direct only), over the lines; `asked` counts every shape `related` is asked of.
-func linesPlugin(namesTypes: Bool = true, asked: Tally = Tally()) -> Contributor {
-    Contributor(id: "lines") { registrar in
+func linesPlugin(namesTypes: Bool = true, typesAreParents: Bool = false, asked: Tally = Tally()) -> Contributor {
+    @Sendable func parented(_ fact: LinesFact) -> Set<ShapeID> { Set(fact.parents.values.flatMap { $0 }) }
+    let types: (@Sendable (LinesFact) -> Set<ShapeID>)?
+    if typesAreParents { types = parented } else { types = nil }
+    return Contributor(id: "lines") { registrar in
         registrar.service { _ in Lines() }
         registrar.queryRelation("descends-from", "it descends from a shape the query matches", example: #":descends-from("Cat")"#,
                                 reads: .file, transitive: true, namesTypes: namesTypes,
+                                argumentShapes: types,
                                 prepare: { (file: QueryFilePreparation) in file.fact(LinesFact.self) },
                                 seeds: { Set($0.parents.keys) },
                                 related: { shape, fact in

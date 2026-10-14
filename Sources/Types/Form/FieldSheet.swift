@@ -35,8 +35,8 @@ public struct FieldCell: Equatable {
         case check(Bool)
         /// The line that clears several choices.
         case clear
-        /// A link to a note of the type: its pill, the picker's list opened on it. Not editable while its type is gone (its chip).
-        case link(ShapeID)
+        /// A note: its pill, the list of notes opened on it; nil, the blank line that has none yet.
+        case note(ShapeID?)
         /// Words only: a kind on a type's note, a list that is empty and cannot be filled.
         case label(String)
         /// The panel's box of JSON.
@@ -59,9 +59,12 @@ public struct FieldCell: Equatable {
     public var isEditable: Bool
     /// A number in a table.
     public var alignsRight: Bool
+    /// The shape whose values the cell is, when it is not the form's own: a relationship's arrow, on a line of a row's card. Nil:
+    /// the form's shape (every sheet but a row's card).
+    public var owner: ShapeID?
 
     public init(path: FieldPath, field: Resolved.Field, control: Control, value: JSONValue? = nil, shown: String = "", placeholder: String = "",
-                mark: FieldClass? = nil, isStored: Bool = true, isEditable: Bool = false, alignsRight: Bool = false) {
+                mark: FieldClass? = nil, isStored: Bool = true, isEditable: Bool = false, alignsRight: Bool = false, owner: ShapeID? = nil) {
         self.path = path
         self.field = field
         self.control = control
@@ -72,6 +75,7 @@ public struct FieldCell: Equatable {
         self.isStored = isStored
         self.isEditable = isEditable
         self.alignsRight = alignsRight
+        self.owner = owner
     }
 }
 
@@ -92,9 +96,11 @@ public struct FieldLine: Equatable {
     public var slot: Int
     /// Whether `list` is pairs, as the sheet drew it: the form's draft for it is made the same way.
     public var isPair: Bool
+    /// The shape the line is a relationship's, on a row's card: its arrow. Nil: a line of the form's own shape.
+    public var owner: ShapeID?
 
     public init(name: String? = nil, isNeeded: Bool = false, chip: ShapeID? = nil, cells: [FieldCell], depth: Int = 0, disclosure: Bool? = nil,
-                list: FieldPath? = nil, slot: Int = -1, isPair: Bool = false) {
+                list: FieldPath? = nil, slot: Int = -1, isPair: Bool = false, owner: ShapeID? = nil) {
         self.name = name
         self.isNeeded = isNeeded
         self.chip = chip
@@ -104,6 +110,7 @@ public struct FieldLine: Equatable {
         self.list = list
         self.slot = slot
         self.isPair = isPair
+        self.owner = owner
     }
 }
 
@@ -227,7 +234,7 @@ public struct FieldDraft: Equatable {
 }
 
 extension FieldKind {
-    /// A field's line in the panel has a triangle: more in it, and no JSON box. A list of links opens to its lines.
+    /// A field's line in the panel has a triangle: more in it, and no JSON box.
     fileprivate var opensInPanel: Bool {
         switch self {
         case .other: false
@@ -244,6 +251,44 @@ extension FieldDraft.Slot {
 public enum FieldFormRoot {
     case field(path: FieldPath, field: Resolved.Field, kind: FieldKind)
     case fold([Resolved.Field])
+    /// Every field of the shape's types (an arrow's card): the lines of a fold, all the shape's.
+    case shape([Resolved.Field])
+    /// A relation row of a note: a line for each relationship in it, the note at the other end and the relationship type's
+    /// fields, written to each line's arrow.
+    case relations(RelationCardRoot)
+}
+
+/// A note's relation row, as its card is for: the note, and the row.
+public struct RelationCardRoot: Sendable, Hashable {
+    public let note: ShapeID
+    public let row: RelationshipRow
+
+    public init(note: ShapeID, row: RelationshipRow) {
+        self.note = note
+        self.row = row
+    }
+}
+
+/// One relationship of a row, as its line of the card is made: its arrow, the note at the other end (nil for an end the app does
+/// not show a note for: a pill that is gone, or finds several), its values and what the check says of them.
+public struct RelationLine {
+    public var arrow: ShapeID
+    public var other: ShapeID?
+    /// The name the note at the other end is called, kept for a note that is gone.
+    public var label: String
+    public var values: FieldValues
+    public var check: FieldCheck
+    /// The arrow cannot change.
+    public var isReadOnly: Bool
+
+    public init(arrow: ShapeID, other: ShapeID?, label: String, values: FieldValues, check: FieldCheck, isReadOnly: Bool = false) {
+        self.arrow = arrow
+        self.other = other
+        self.label = label
+        self.values = values
+        self.check = check
+        self.isReadOnly = isReadOnly
+    }
 }
 
 public enum FieldSheets {
@@ -271,6 +316,50 @@ public enum FieldSheets {
             ? maker.panelSheet(path: path, field: field, kind: kind)
             : maker.level(path: path, field: field, kind: kind, branch: branch)
         sheet.back = back
+        sheet.stops = SheetMaker.stops(of: sheet)
+        return sheet
+    }
+
+    /// A row's card: a table, the note at the other end in the first column and a column for each field of the relationship type,
+    /// a line for each relationship (every cell of it the arrow's, `owner`), and, unless the card is to be read, a blank line last
+    /// whose first cell picks a note and whose others wait for it. Under the relationship type's chip; no line back. `noteColumn`
+    /// heads the first column and `rowName` names the made-up field it is.
+    @MainActor
+    public static func relationSheet(_ root: RelationCardRoot, lines: [RelationLine], noteColumn: String, rowName: String, book: FieldBook,
+                                     isReadOnly: Bool, locale: Locale = .autoupdatingCurrent) -> FieldSheet {
+        let type = root.row.key.type
+        let fields = book.fields(types: [type]).fields
+        let kinds = fields.map(book.kind(of:))
+        // The first column's field is made up, named for the row, as a pair's name is.
+        let noteField = Resolved.Field(field: ChainField(name: rowName, schema: .null), source: type, introducedBy: type)
+        var sheet = FieldSheet()
+        sheet.chip = type
+        sheet.layout = .table([noteColumn] + fields.map { FieldName.words(of: $0.field) })
+        func cells(for maker: SheetMaker, owner: ShapeID?, values: FieldValues, stored: Bool) -> [FieldCell] {
+            fields.enumerated().map { column, field in
+                let path = FieldPath(field: field.field.name)
+                var cell = maker.memberCell(field, kind: kinds[column], path: path, value: stored ? values.value(at: path) : nil, stored: stored, inTable: true)
+                cell.owner = owner
+                return cell
+            }
+        }
+        for line in lines {
+            let maker = SheetMaker(values: line.values, check: line.check, book: book, types: [type], mode: .values,
+                                   isReadOnly: isReadOnly || line.isReadOnly, presentation: .card, drafts: [:], open: [:], locale: locale)
+            let pill = FieldCell(path: FieldPath(), field: noteField, control: .note(line.other), shown: line.label, mark: line.check.isMisfit ? .wrong : nil,
+                                 isStored: true, isEditable: false, owner: line.arrow)
+            sheet.lines.append(FieldLine(cells: [pill] + cells(for: maker, owner: line.arrow, values: line.values, stored: true), owner: line.arrow))
+        }
+        if !isReadOnly {
+            let maker = SheetMaker(values: FieldValues(), check: .clean, book: book, types: [type], mode: .values, isReadOnly: true, presentation: .card,
+                                   drafts: [:], open: [:], locale: locale)
+            let blank = FieldCell(path: FieldPath(), field: noteField, control: .note(nil), placeholder: FieldWords.addLine, isStored: false, isEditable: true)
+            // The others wait for a pick: there is no arrow to write them to, and the keyboard does not stop on them.
+            let waiting = cells(for: maker, owner: nil, values: FieldValues(), stored: false).map { cell in
+                FieldCell(path: cell.path, field: cell.field, control: .label(""), isStored: false)
+            }
+            sheet.lines.append(FieldLine(cells: [blank] + waiting))
+        }
         sheet.stops = SheetMaker.stops(of: sheet)
         return sheet
     }
@@ -349,10 +438,7 @@ private struct SheetMaker {
             sheet.chip = inner.chip
             sheet.layout = inner.layout
             sheet.lines = inner.lines
-        case .pointers(let type) where book.isType(type):
-            sheet.layout = .column
-            sheet.lines = linkColumnLines(path: path, field: field, type: type)
-        case .plain, .pointer, .pointers, .other:
+        case .plain, .other:
             sheet.lines = [singleLine(path: path, field: field, kind: kind)]
         }
         return sheet
@@ -374,10 +460,10 @@ private struct SheetMaker {
 
     private static func fits(_ value: JSONValue, _ kind: FieldKind) -> Bool {
         switch (kind, value) {
-        case (.choices, .array), (.list, .array), (.listOfGroups, .array), (.listOfTypeFields, .array), (.pointers, .array): true
+        case (.choices, .array), (.list, .array), (.listOfGroups, .array), (.listOfTypeFields, .array): true
         case (.group, .object), (.typeFields, .object), (.pairs, .object): true
-        case (.plain, .array), (.plain, .object), (.pointer, .array), (.pointer, .object): false
-        case (.plain, _), (.pointer, _): true
+        case (.plain, .array), (.plain, .object): false
+        case (.plain, _): true
         case (.either(let a, let b), _): fits(value, a) || fits(value, b)
         default: false
         }
@@ -403,7 +489,7 @@ private struct SheetMaker {
         if mode == .kinds { return [kindsLine(field, kind: kind, path: path, depth: depth)] }
         let value = values.value(at: path)
         let cell = memberCell(field, kind: kind, path: path, value: value, stored: true)
-        guard presentation == .panel, opensInPanel(kind) else {
+        guard presentation == .panel, kind.opensInPanel else {
             return [FieldLine(name: name, cells: [cell], depth: depth)]
         }
         let isOpen = isOpen(path)
@@ -412,7 +498,7 @@ private struct SheetMaker {
     }
 
     /// The cell of a field's value: by its kind. A summary and `›` for what has more in it.
-    private func memberCell(_ field: Resolved.Field, kind: FieldKind, path: FieldPath, value: JSONValue?, stored: Bool, placeholder: String? = nil,
+    fileprivate func memberCell(_ field: Resolved.Field, kind: FieldKind, path: FieldPath, value: JSONValue?, stored: Bool, placeholder: String? = nil,
                             inTable: Bool = false) -> FieldCell {
         let words = placeholder ?? FieldWords.add(FieldName.words(of: field.field))
         let mark = stored ? check.mark(at: path) : nil
@@ -423,12 +509,6 @@ private struct SheetMaker {
             let shown = value.map { FieldText.shown($0, asOneOf: [first, second], locale: locale) } ?? ""
             return FieldCell(path: path, field: field, control: .oneOf([first, second]), value: value, shown: shown, placeholder: words, mark: mark,
                              isStored: stored, isEditable: !isReadOnly)
-        case .pointer(let type):
-            return linkCell(type, field: field, path: path, value: value, placeholder: words, stored: stored)
-        case .pointers(let type) where !book.isType(type):
-            // Its type gone, a list of links is the names it holds, read-only (its values are kept and not checked).
-            let text = FieldSummary.of(value, field: field, in: book, types: types, locale: locale).text
-            return FieldCell(path: path, field: field, control: .label(text), value: value, shown: text, mark: mark, isStored: stored)
         case .other:
             if presentation == .panel {
                 let json = value.map(FieldJSON.pretty) ?? ""
@@ -439,19 +519,6 @@ private struct SheetMaker {
             let summary = FieldSummary.of(value, field: field, in: book, types: types, locale: locale)
             return FieldCell(path: path, field: field, control: .more(summary), value: value, shown: summary.text, mark: mark, isStored: stored)
         }
-    }
-
-    /// A link's cell: the stored token, the name it shows now (the text as stored for what is no token), `add customer`
-    /// while it holds nothing. Its type gone, the cell is its chip and takes nothing.
-    private func linkCell(_ type: ShapeID, field: Resolved.Field, path: FieldPath, value: JSONValue?, placeholder: String, stored: Bool) -> FieldCell {
-        let shown: String
-        if let value {
-            shown = FieldLink(value).map(book.shown) ?? FieldText.shown(value, as: .text, locale: locale)
-        } else {
-            shown = ""
-        }
-        return FieldCell(path: path, field: field, control: .link(type), value: value, shown: shown, placeholder: placeholder, mark: stored ? check.mark(at: path) : nil,
-                         isStored: stored, isEditable: !isReadOnly && book.isType(type))
     }
 
     private func plainCell(_ plain: PlainKind, field: Resolved.Field, path: FieldPath, value: JSONValue?, placeholder: String, stored: Bool,
@@ -496,21 +563,6 @@ private struct SheetMaker {
             let waiting = !isStored && place == held.slots.count - 1
             let cell = plainCell(plain, field: item, path: itemPath, value: isStored ? values.value(at: itemPath) : nil,
                                  placeholder: waiting ? FieldWords.addLine : "", stored: isStored)
-            return FieldLine(cells: [cell], depth: depth, list: path, slot: place)
-        }
-    }
-
-    /// A list of links: a line each, then a blank one waiting, as a list of plain values has.
-    private func linkColumnLines(path: FieldPath, field: Resolved.Field, type: ShapeID, depth: Int = 0) -> [FieldLine] {
-        let held = draft(at: path, kind: .pointers(type))
-        if held.slots.isEmpty { return [noneLine(path: path, field: field)] }
-        let item = book.item(of: field) ?? field
-        return held.slots.enumerated().map { place, slot in
-            let isStored = slot.isStored
-            let itemPath = path.index(held.storedIndex(ofLine: place))
-            let waiting = !isStored && place == held.slots.count - 1
-            let cell = linkCell(type, field: item, path: itemPath, value: isStored ? values.value(at: itemPath) : nil,
-                                placeholder: waiting ? FieldWords.addLine : "", stored: isStored)
             return FieldLine(cells: [cell], depth: depth, list: path, slot: place)
         }
     }
@@ -571,12 +623,6 @@ private struct SheetMaker {
 
     // MARK: The panel
 
-    /// A triangle on the field's line: more in it, and for a list of links only while its type is a type (else it is the words).
-    private func opensInPanel(_ kind: FieldKind) -> Bool {
-        if case .pointers(let type) = kind, !book.isType(type) { return false }
-        return kind.opensInPanel
-    }
-
     /// Open by itself only for a wrong value inside: a needed field left empty is no error, and opening to show it would
     /// only put an `add` line under an amber dot.
     private func isOpen(_ path: FieldPath) -> Bool {
@@ -586,7 +632,7 @@ private struct SheetMaker {
     /// The field's line and, open, what is under it.
     func panelSheet(path: FieldPath, field: Resolved.Field, kind: FieldKind) -> FieldSheet {
         var sheet = FieldSheet()
-        guard opensInPanel(kind) else {
+        guard kind.opensInPanel else {
             sheet.lines = [singleLine(path: path, field: field, kind: kind)]
             return sheet
         }
@@ -610,8 +656,6 @@ private struct SheetMaker {
             return checkLines(path: path, field: field, options: options, depth: depth)
         case .pairs(let plain):
             return pairLines(path: path, field: field, kind: plain, depth: depth)
-        case .pointers(let type):
-            return linkColumnLines(path: path, field: field, type: type, depth: depth)
         case .listOfGroups, .listOfTypeFields:
             return itemLines(path: path, field: field, depth: depth)
         case .either(let first, let second):
@@ -714,7 +758,9 @@ private struct SheetMaker {
                 case .more: stops.append(FieldStop(line: place, column: line.cells.count == 1 ? -1 : column))
                 case .label: break
                 case .text, .oneOf, .yesNo, .choice, .json: stops.append(FieldStop(line: place, column: column))
-                case .link: if cell.isEditable { stops.append(FieldStop(line: place, column: column)) }
+                // A note's pill takes the keyboard (Return goes to the note, Backspace takes its line out), as a blank line's cell does;
+                // a stored line's pill does though the note is gone (dashed), for Backspace.
+                case .note(let note): if cell.isEditable || note != nil || cell.isStored { stops.append(FieldStop(line: place, column: column)) }
                 }
             }
         }

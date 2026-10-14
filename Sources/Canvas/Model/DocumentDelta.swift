@@ -150,6 +150,10 @@ public struct DocumentDelta: Equatable, Sendable {
             }
         }
 
+        /// Whether a commit has reached `other` (noted it whole): a step that holds a board takes in
+        /// whatever happens to it until it closes.
+        public func holds(_ other: BoardID) -> Bool { boardsBefore.index(forKey: other) != nil }
+
         /// Whether any commit has touched a shape, reached a board or named one of the file's values.
         public var isHolding: Bool { !before.isEmpty || !boardsBefore.isEmpty || !fileValuesBefore.isEmpty }
 

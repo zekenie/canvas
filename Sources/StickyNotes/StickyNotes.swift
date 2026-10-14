@@ -78,9 +78,10 @@ public struct StickyNotesPlugin: ListedPlugin {
             note.noteRow()                                     // and the table of contents
             note.noteLinks()                                   // and ports: arrows from a note to a note
             note.mentionText { $0.mentionTexts(in: $1) }          // and mentions: its text shows pills,
-            note.mentionable(untitled: { $0.props.text.firstLine })   // called by its title, else its first line
+            note.mentionable(untitled: { $0.props.text.firstLine ?? FieldValues.name(of: $0) })   // called by its title, else its first line, else its values
             note.typeWords(\.text, drawnIn: { $0.mentionTexts(in: $1).first }, fitting: { StickyNoteDefinition().derive(&$0) })   // and types: its text says what one holds,
             note.canBeType()                                   // and `/is-a type` makes it one
+            note.canBeRelationshipType()                       // and a type may be marked as one that relates
             note.typeable()                                    // and `/is-a` makes it an instance of one
             note.typeRows(drawnIn: { NoteLayout($0, in: $1).block })   // and a type's rows go under its words
         }
@@ -117,7 +118,9 @@ extension StickyNoteDefinition: ShapeDefinition {
 /// the rows. The size is never stored; the stored box is the note as it is with no rows.
 extension StickyNoteDefinition: LaidOutBox {
     func laidOutSize(of shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> CGSize {
-        NoteLayout.size(of: shape.props, rows: context.layoutInput(TypeRows.extent, of: shape))
+        let rows = context.layoutInput(TypeRows.extent, of: shape)
+        if rows == nil, NoteLayout.isCompact(shape, in: context) { return NoteStyle.compactSize }
+        return NoteLayout.size(of: shape.props, rows: rows)
     }
 }
 
@@ -133,6 +136,12 @@ extension StickyNoteDefinition: DerivedProps {
 }
 
 extension StickyNoteDefinition: Editable {
+    /// The paper as it is laid out; a note drawn small is edited over the box it stores, so the caret has a line
+    /// (the paper is full from the first keystroke, from the same top-left).
+    func editingFrame(of shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> CGRect? {
+        NoteLayout.isCompact(shape, in: context) ? shape.frame : context.frame(of: shape)
+    }
+
     func makeEditingView(for shape: ShapeRecord<StickyNote>, context: EditContext<StickyNote>) -> EditingView {
         let editor = NoteEditor(text: shape.props.text, stored: shape.frame, frame: context.frame ?? shape.frame, context: context)
         return EditingView(view: editor, firstResponder: editor.first ?? editor.textView)
@@ -142,6 +151,9 @@ extension StickyNoteDefinition: Editable {
 @MainActor
 enum NoteStyle {
     static let size = StickyNote.defaultSize
+    /// A relationship type that holds no words and no fields is drawn this size, from the top-left it stores
+    /// (a layout, never stored): the paper is a pill's worth, and the skeleton and the outline follow.
+    static let compactSize = CGSize(width: 160, height: 34)
     static let cornerRadius: CGFloat = 4
     static let padding: CGFloat = 16
     /// Between a note's words and the rows under them, when it has words.

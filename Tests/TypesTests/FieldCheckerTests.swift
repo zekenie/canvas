@@ -48,7 +48,7 @@ private func line(_ product: String, _ quantity: JSONValue) -> JSONValue { ["pro
     },
     test("a gift note is needed while gift is ticked, and not unticked, and not for an Order that never said") {
         let editor = try editor()
-        let filled: JSONObject = ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "lineItems": [line("Mug", 1)]]
+        let filled: JSONObject = ["customer": "Ann Lee", "lineItems": [line("Mug", 1)]]
         let base = editor.addNote(of: [order], filled)
         expectEqual(summary(editor.fullCheck(of: base)), [], "a filled Order is clean")
         var ticked = filled
@@ -65,7 +65,7 @@ private func line(_ product: String, _ quantity: JSONValue) -> JSONValue { ["pro
     },
     test("a line item's quantity of 0 is wrong at the cell, worded with its place; a missing one is needed") {
         let editor = try editor()
-        let id = editor.addNote(of: [order], ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "lineItems": [line("Mug", 1), line("Plate", 0)]])
+        let id = editor.addNote(of: [order], ["customer": "Ann Lee", "lineItems": [line("Mug", 1), line("Plate", 0)]])
         let check = editor.fullCheck(of: id)
         expectEqual(summary(check), ["wrong /lineItems/1/quantity"])
         let problem = try require(check.problems.first)
@@ -74,11 +74,11 @@ private func line(_ product: String, _ quantity: JSONValue) -> JSONValue { ["pro
         expectEqual(problem.keyword, "minimum")
         expectEqual(check.mark(at: FieldPath(field: "lineItems")), .wrong)
         expectEqual(check.mark(at: FieldPath(field: "customer")), nil)
-        let missing = editor.addNote(of: [order], ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "lineItems": [["quantity": 2]]])
+        let missing = editor.addNote(of: [order], ["customer": "Ann Lee", "lineItems": [["quantity": 2]]])
         let needed = editor.fullCheck(of: missing)
         expectEqual(summary(needed), ["needed /lineItems/0/product"])
         expectEqual(needed.problems.first?.place, ["line items", "2", "product"], "an item with no plain value first is labelled by its first value")
-        let bare = editor.addNote(of: [order], ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "lineItems": [["price": 5]]])
+        let bare = editor.addNote(of: [order], ["customer": "Ann Lee", "lineItems": [["price": 5]]])
         expectEqual(editor.fullCheck(of: bare).problems.first?.place, ["line items", "5", "product"])
     },
     test("an item with no plain value is `item N`, counted from 1") {
@@ -111,7 +111,7 @@ private func line(_ product: String, _ quantity: JSONValue) -> JSONValue { ["pro
     },
     test("a number that is text is wrong; so is an option outside the list, and the wrong one is said by its keyword") {
         let editor = try editor()
-        let id = editor.addNote(of: [order], ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "lineItems": [line("Mug", "02134")], "status": "lost"])
+        let id = editor.addNote(of: [order], ["customer": "Ann Lee", "lineItems": [line("Mug", "02134")], "status": "lost"])
         let check = editor.fullCheck(of: id)
         expectEqual(summary(check), ["wrong /lineItems/0/quantity", "wrong /status"])
         expectEqual(check.problems.map(\.keyword), ["type", "enum"])

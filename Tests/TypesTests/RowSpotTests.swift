@@ -280,4 +280,31 @@ private let noFieldsSchema = #"{"type": "object"}"#
         spinRunLoop(until: { !b.isUpdating(id) })
         expectEqual(height(), typed + rowsHeight(1), "a reason")
     },
+    test("a relationship type is drawn small only when its words are gone and no read is out or has failed: bars and the reason keep it full") {
+        let b = try SyncBench(more: [RowSlipsPlugin()])
+        let id = placeSlip(b)
+        b.editor.transact("Mark") { $0.update(id) { $0[RelationshipProperty.self] = true } }
+        @MainActor func compact() -> Bool? { b.editor.shapeContext.layoutInput(TypeRows.isCompact, for: id) }
+        expectEqual(compact(), true, "no words, no fields, nothing out: small")
+        typeSlipWords(b, id, "a pet in my household")
+        b.model.holdsAnswers = true
+        b.model.queue(petSchema)
+        b.sync.commit(id)
+        typeSlipWords(b, id, "")
+        expectEqual(try spot(b, id), .reading)
+        expectEqual(compact(), nil, "the words just cleared while the read is out: the bars need the room")
+        spinRunLoop(until: { b.model.waiting == 1 })
+        b.model.release()
+        spinRunLoop(until: { b.status(id) == .idle })
+        b.model.holdsAnswers = false
+        let failing = placeSlip(b)
+        b.editor.transact("Mark") { $0.update(failing) { $0[RelationshipProperty.self] = true } }
+        typeSlipWords(b, failing, "a pet in my household")
+        b.model.queue(.overloaded)
+        b.sync.commit(failing)
+        spinRunLoop(until: { !b.isUpdating(failing) })
+        typeSlipWords(b, failing, "")
+        expectEqual(try spot(b, failing), .failed(LanguageModelError.overloaded.message, action: .retry))
+        expectEqual(b.editor.shapeContext.layoutInput(TypeRows.isCompact, for: failing), nil, "the words just cleared after a failed read: the reason needs the room")
+    },
 ])

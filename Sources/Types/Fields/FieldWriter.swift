@@ -38,15 +38,16 @@ public final class FieldWriter {
         self.editor = editor
     }
 
-    /// What the shape holds; nothing for a shape that is not on the board shown.
+    /// What the shape holds, on whichever board it is; nothing for a shape that is on none.
     public func values(of shape: ShapeID) -> FieldValues {
-        editor?.document[shape]?[FieldValuesProperty.self] ?? FieldValues()
+        editor?.shape(inFile: shape)?[FieldValuesProperty.self] ?? FieldValues()
     }
 
     /// True once the value stands: written, or already there (a write that changes nothing makes no commit
     /// and no step). False, and nothing changed, for a shape that can't change (the core shakes it), a shape
-    /// not on the board shown, a kind that holds no values, and a path that starts with no key (the root
-    /// included).
+    /// on no board of the file, a kind that holds no values, and a path that starts with no key (the root
+    /// included). A shape on another board than the one shown is written there, in the same step as any other
+    /// write of the card it comes from (a far arrow's values, edited in a row's card).
     @discardableResult
     public func set(_ value: JSONValue?, at path: FieldPath, of shape: ShapeID, step: FieldWriteStep = .ownRun) -> Bool {
         guard let field = path.field else { return false }
@@ -93,13 +94,13 @@ public final class FieldWriter {
     /// The one door: a shape that can't change is refused before a transaction (the core shakes it, and
     /// there is no empty step); else one `update` of the shape's record, which keeps it only if it differs.
     private func apply(_ shape: ShapeID, name: String?, key: AnyHashable?, _ change: (inout FieldValues) -> Void) -> Bool {
-        guard let editor, let record = editor.document[shape], editor.registry.isTypeable(record.kind) else { return false }
-        if editor.isReadOnly(shape) {
+        guard let editor, let record = editor.shape(inFile: shape), editor.registry.isTypeable(record.kind) else { return false }
+        if editor.isReadOnly(inFile: shape) {
             editor.refuseChanges(to: [shape])
             return false
         }
         editor.transact(name, coalescing: key) { transaction in
-            transaction.update(shape) { record in
+            transaction.update(inFile: shape) { record in
                 let old = record[FieldValuesProperty.self] ?? FieldValues()
                 var values = old
                 change(&values)
@@ -122,7 +123,7 @@ public final class FieldWriter {
 
     /// `Change Shipping Address`: of the field the key names on this shape's types, else of the key as it is.
     private func stepName(of key: String, on shape: ShapeID) -> String {
-        let field = editor?.document[shape].flatMap { editor?.fieldBook?.fields(of: $0).field(named: key)?.field }
+        let field = editor?.shape(inFile: shape).flatMap { editor?.fieldBook?.fields(of: $0).field(named: key)?.field }
         return FieldName.stepName(of: field ?? ChainField(name: key, schema: .null))
     }
 }

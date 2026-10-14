@@ -139,8 +139,8 @@ extension FieldFormView {
         let words = cell.shown.isEmpty ? cell.placeholder : cell.shown
         var width = textWidth(String(words.prefix(60)), in: font)
         switch cell.control {
-        case .link:
-            if let pill = linkPill(of: cell, width: nil) { width = max(ceil(pill.attachment.layout.bounds.width), width) }
+        case .note:
+            if let pill = notePill(of: cell, width: nil) { width = max(ceil(pill.attachment.layout.bounds.width), width) }
         case .more: width += 14
         case .choice: width += 14
         case .yesNo: width = TypesStyle.formBoxSize

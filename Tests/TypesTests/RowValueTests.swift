@@ -12,6 +12,21 @@ import Types
 // and filled, over slips (which show rows where the memo shows none). Content only: the look is the check's
 // mark and the note's own bitmaps' (StickyNotesTests' noteRowsTests).
 
+/// A relationship whose far end reads `reading`, drawn to the pill `via` (the note itself for a note that is read directly).
+private func relation(_ reading: EndReading, via: ShapeID? = nil) -> Relation {
+    Relation(arrow: ShapeID(), type: ShapeID(), side: .from, far: ReadEnd(literal: via ?? reading.noteForTests, reading: reading))
+}
+
+extension EndReading {
+    /// The note a reading names, for a fixture that reads it directly.
+    var noteForTests: ShapeID? {
+        switch self {
+        case .note(let id), .notAdmitted(let id, _): id
+        default: nil
+        }
+    }
+}
+
 @MainActor
 private struct Bench {
     let editor: CanvasEditor
@@ -40,17 +55,6 @@ private struct Bench {
     }
 
     func names(_ id: ShapeID) -> [String] { book.rows(of: id).map(\.name) }
-
-    /// The names a link row's pills show, and how many more there are.
-    func pills(_ id: ShapeID, _ name: String) throws -> (names: [String], more: Int) {
-        guard case .links(let links, let more) = try content(id, name) else { throw Failure("\(name) is not links") }
-        return (links.map { editor.fieldBook!.shown($0.link) }, more)
-    }
-
-    func shownLinks(_ id: ShapeID, _ name: String) throws -> [ShownLink] {
-        guard case .links(let links, _) = try content(id, name) else { throw Failure("\(name) is not links") }
-        return links
-    }
 }
 
 /// What a test says when its setup is not what it expects.
@@ -104,15 +108,14 @@ private let locale = Locale(identifier: "en_US")
         }
         expectEqual(try t.content(id, "anything"), .summary("edited as JSON in the panel"), "what no control suits says so, empty or not")
         t.set(id, [
-            "customer": link(to: FieldFixtures.annLeeID, "Ann Lee"),
-            "guests": [link(to: FieldFixtures.annLeeID, "Ann Lee"), link(to: FieldFixtures.boParkID, "Bo Park")],
+            "customer": "Ann Lee",
+            "guests": ["Ann Lee", "Bo Park"],
             "lineItems": [["product": "Mug", "quantity": 2], ["product": "Plate", "quantity": 1]],
             "rooms": [["city": "Leeds"], ["city": "York"], ["city": "Hull"]],
             "size": 12, "labels": ["size": "L", "color": "red"], "anything": ["x": 1], "payment": "cash", "count": 3,
         ])
-        expectEqual(try t.pills(id, "customer").names, ["Ann Lee"], "a pointer is its pill")
-        expectEqual(try t.pills(id, "guests").names, ["Ann Lee", "Bo Park"])
-        expectEqual(try t.pills(id, "guests").more, 0)
+        expectEqual(try t.content(id, "customer"), .text("Ann Lee"), "a field that named a note is text")
+        expectEqual(try t.content(id, "guests"), .summary("Ann Lee, Bo Park"), "and a list of them a list of text")
         expectEqual(try t.content(id, "line items"), .summary("2 items"))
         expectEqual(try t.content(id, "rooms"), .summary("3 items"))
         expectEqual(try t.content(id, "size"), .text("12"), "either of two plain kinds: the value, as it is")
@@ -130,14 +133,13 @@ private let locale = Locale(identifier: "en_US")
     test("board 5's Order reads as panel 2: the customer, a summary of the address and the items, the status, the tags, the box, the note still to add") {
         let t = try Bench()
         let id = t.note([FieldFixtures.orderID], [
-            "customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "shippingAddress": ["street": "12 Main St", "city": "Leeds"],
+            "customer": "Ann Lee", "shippingAddress": ["street": "12 Main St", "city": "Leeds"],
             "lineItems": [["product": "Mug", "quantity": 2], ["product": "Plate", "quantity": 1]],
             "status": "paid", "tags": ["gift", "mugs"], "gift": true,
         ])
         let rows = t.book.rows(of: id)
         expectEqual(rows.map(\.name), ["customer", "shipping address", "line items", "status", "tags", "gift", "gift note"])
-        guard case .links(let customer, 0) = rows[0].content, customer.count == 1 else { throw Failure("the customer is one pill") }
-        expectEqual(customer[0].link, FieldLink(target: FieldFixtures.annLeeID, stored: "Ann Lee"))
+        expectEqual(rows[0].content, .text("Ann Lee"))
         expectEqual(Array(rows.map(\.content).dropFirst()), [.summary("12 Main St, Leeds"), .summary("2 items"), .choice("paid"), .summary("gift, mugs"),
                                           .box(true), .empty("add gift note")])
         for row in rows {
@@ -257,7 +259,7 @@ private let locale = Locale(identifier: "en_US")
         expectEqual(try t.content(a, "name"), .text("Ann"))
     },
     test("`RowLook.of` reads each content against each mark") {
-        let contents: [ShownRow.Content] = [.text("x"), .empty("add x"), .box(true), .choice("a"), .choice(nil), .summary("2 items"), .gone(ShapeID()), .fold("4 fields"), .fold(""), .links([], more: 0)]
+        let contents: [ShownRow.Content] = [.text("x"), .empty("add x"), .box(true), .choice("a"), .choice(nil), .summary("2 items"), .gone(ShapeID()), .fold("4 fields"), .fold(""), .related([], more: 0), .relationType(direction: "→", chips: [], more: 0)]
         let expected: [[RowLook]] = [
             // nil, needed, wrong
             [.plain, .plain, .wrong],                 // text
@@ -269,110 +271,75 @@ private let locale = Locale(identifier: "en_US")
             [.plain, .plain, .plain],                 // a gone type: never marked
             [.plain, .neededInside, .wrong],          // a fold
             [.plain, .neededInside, .wrong],
-            [.plain, .plain, .wrong],                 // a pointer's pills: a value, never needed
+            [.plain, .plain, .wrong],                 // pills: a value, never needed
+            [.plain, .plain, .plain],                 // a type's relation row: never marked
         ]
         for (content, looks) in zip(contents, expected) {
             expectEqual([nil, FieldClass.needed, .wrong].map { RowLook.of(content: content, mark: $0) }, looks, "\(content)")
             expectEqual(RowLook.of(content: content, mark: .warning), RowLook.of(content: content, mark: nil), "a warning draws nothing on \(content)")
         }
     },
-    test("a pointer is a pill for the note it points at, in the column from its left; a list is pills a gap apart") {
+    test("a row's pills are laid out from the column's left a gap apart, a live one for a note the app shows and a dashed one with the name it held for one it does not") {
         let t = try Bench()
-        let id = t.note([FieldFixtures.kindsBID], ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"),
-                                                   "guests": [link(to: FieldFixtures.annLeeID, "Ann Lee"), link(to: FieldFixtures.boParkID, "Bo Park")]])
-        let one = try t.shownLinks(id, "customer")
+        let ann = FieldFixtures.annLeeID, bo = FieldFixtures.boParkID
+        guard case .related(let one, 0) = t.book.pills(of: [relation(.note(ann))], among: 1, width: 300) else { throw Failure("one pill") }
         expectEqual(one.count, 1)
+        expectEqual(one[0].target, ann)
         expectEqual(one[0].x, 0)
         expect(one[0].width > 20, "a pill has a width")
         expect(one[0].isLive)
-        let two = try t.shownLinks(id, "guests")
-        expectEqual(two.map(\.link.target), [FieldFixtures.annLeeID, FieldFixtures.boParkID])
-        expectEqual(two[1].x, two[0].width + TypesStyle.linkGap)
-        let value = try require(t.book.rows(of: id).first { $0.name == "guests" }).valueRect.width
-        expect(two[1].x + two[1].width <= value, "both fit in the column")
+        expectEqual(one[0].label, "Ann Lee", "the name Mentions gives the note")
+        guard case .related(let two, 0) = t.book.pills(of: [relation(.note(bo)), relation(.note(ann))], among: 2, width: 300) else { throw Failure("two pills") }
+        expectEqual(two.map(\.target), [ann, bo], "by the name each shows")
+        expectEqual(two[1].x, two[0].width + TypesStyle.pillGap)
+        expect(two[1].x + two[1].width <= 300, "both fit in the column")
+        let pill = ShapeID()
+        t.editor.transact("Delete") { $0.delete([ann]) }
+        guard case .related(let gone, _) = t.book.pills(of: [relation(.gone(called: "Ann Lee"), via: pill)], among: 1, width: 300) else { throw Failure("a pill") }
+        expect(!gone[0].isLive, "a note that is gone is not live")
+        expectEqual(gone[0].label, "Ann Lee", "the name it held")
+        expectEqual(gone[0].target, nil)
+        expectEqual(gone[0].destination, pill, "a click goes to the pill the arrow ends on")
+        t.editor.undo()
+        guard case .related(let back, _) = t.book.pills(of: [relation(.note(ann), via: pill)], among: 1, width: 300) else { throw Failure("a pill") }
+        expect(back[0].isLive, "undo brings it back")
+        expectEqual(back[0].destination, ann, "a live pill goes to its note, whatever pill it was read through")
     },
-    test("a list that does not fit is cut with `+N`: what is not a token is counted in it, and a list of none is the text") {
+    test("every state of a far end is a pill: solid for a note, dashed for the rest, each with the words it holds, blank for a pill that stands for nothing") {
         let t = try Bench()
-        let id = t.note([FieldFixtures.kindsBID])
-        let ann = link(to: FieldFixtures.annLeeID, "Ann Lee"), bo = link(to: FieldFixtures.boParkID, "Bo Park")
-        t.set(id, ["guests": [ann, "someone", bo]])
-        let counted = try t.pills(id, "guests")
-        expectEqual(counted.names, ["Ann Lee", "Bo Park"])
-        expectEqual(counted.more, 1, "the one that is no token is counted")
-        t.set(id, ["guests": .array(Array(repeating: ann, count: 12))])
-        let cut = try t.pills(id, "guests")
-        expect(cut.more > 0 && cut.names.count + cut.more == 12, "as many as fit, the rest counted: \(cut)")
-        let shown = try t.shownLinks(id, "guests"), room = try require(t.book.rows(of: id).first { $0.name == "guests" }).valueRect.width
-        let last = try require(shown.last)
-        expect(last.x + last.width + TypesStyle.linkGap + width("+\(cut.more)") <= room + 1, "the pills and the count fit the column")
-        t.set(id, ["guests": ["someone", "no one"]])
-        expectEqual(try t.content(id, "guests"), .text("someone, no one"), "no token: the text as stored")
+        let ann = FieldFixtures.annLeeID, pill = ShapeID()
+        let states: [(EndReading, label: String, target: ShapeID?)] = [
+            (.notAdmitted(ann, needs: "open"), "Ann Lee", ann),
+            (.gone(called: "Acme"), "Acme", nil), (.gone(called: nil), FieldWords.noteGone, nil),
+            (.unavailable(called: "Acme"), "Acme", nil), (.unavailable(called: nil), FieldWords.noteUnavailable, nil),
+            (.query(called: "every client"), "every client", nil), (.empty, FieldWords.noteBlank, nil),
+        ]
+        for (state, label, target) in states {
+            guard case .related(let shown, 0) = t.book.pills(of: [relation(state, via: pill)], among: 1, width: 300), let one = shown.first else { throw Failure("a pill for \(state)") }
+            expect(!one.isLive, "\(state) is dashed")
+            expectEqual(one.label, label, "\(state)")
+            expectEqual(one.target, target)
+            expectEqual(one.state, state)
+            expectEqual(one.via, pill)
+            expectEqual(one.destination, pill, "a dashed pill goes to the pill, never to a note")
+            expect(!one.isWrong, "the check is not a pill's yet")
+            expect(one.width > 4, "\(state) has a width")
+        }
     },
-    test("a value in a pointer field that is no token reads as its text; a pill wider than the column is cut to it") {
+    test("pills that do not fit are cut with `+N`, and what the row counts beyond its notes is counted in it; the first is always shown, cut to the column") {
         let t = try Bench()
-        let id = t.note([FieldFixtures.kindsBID], ["customer": "Ann Lee"])
-        expectEqual(try t.content(id, "customer"), .text("Ann Lee"), "the text as stored (the check calls it wrong)")
+        let ann = FieldFixtures.annLeeID, bo = FieldFixtures.boParkID
+        guard case .related(let counted, let more) = t.book.pills(of: [relation(.note(ann)), relation(.note(bo))], among: 3, width: 300) else { throw Failure("pills") }
+        expectEqual(counted.count, 2)
+        expectEqual(more, 1, "the one that is no note is counted")
+        let twelve = (0..<12).map { _ in relation(.note(ann)) }
+        guard case .related(let cut, let rest) = t.book.pills(of: twelve, among: 12, width: 300) else { throw Failure("pills") }
+        expect(rest > 0 && cut.count + rest == 12, "as many as fit, the rest counted: \(cut.count) and \(rest)")
+        let last = try require(cut.last)
+        expect(last.x + last.width + TypesStyle.pillGap + width("+\(rest)") <= 301, "the pills and the count fit the column")
         let long = String(repeating: "Ann Lee of the long name ", count: 12)
-        t.editor.transact("Rename") { $0.update(FieldFixtures.annLeeID) { $0[TitleProperty.self] = long } }
-        t.set(id, ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee")])
-        let pill = try require(try t.shownLinks(id, "customer").first)
-        let room = try require(t.book.rows(of: id).first { $0.name == "customer" }).valueRect.width
-        expect(pill.width <= room, "cut to the column: \(pill.width) in \(room)")
-    },
-    test("a pointer's type that is gone is the type's dashed chip, the value kept; a target that is gone is a dashed pill with the name it held") {
-        let t = try Bench()
-        let id = t.note([FieldFixtures.kindsBID], ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "guests": [link(to: FieldFixtures.boParkID, "Bo Park")]])
-        t.editor.transact("Delete") { $0.delete([FieldFixtures.annLeeID]) }
-        let gone = try require(try t.shownLinks(id, "customer").first)
-        expect(!gone.isLive, "a target that is gone is not live")
-        expectEqual(gone.link.stored, "Ann Lee", "the name it held")
-        expectEqual(try t.pills(id, "customer").names, ["Ann Lee"])
-        t.editor.undo()
-        expect(try require(try t.shownLinks(id, "customer").first).isLive, "undo brings it back")
-        t.editor.removeType(FieldFixtures.personID)
-        expectEqual(try t.content(id, "customer"), .gone(FieldFixtures.personID))
-        expectEqual(try t.content(id, "guests"), .gone(FieldFixtures.personID))
-        expectEqual(t.editor.document[id]?[FieldValuesProperty.self]?.value(at: FieldPath(field: "customer")), link(to: FieldFixtures.annLeeID, "Ann Lee"), "its value is kept")
-    },
-    test("a frame draws each pill straight into the context, none through an attachment's image, named as its note is now: a rename shows on the next frame") {
-        let t = try Bench()
-        let id = t.note([FieldFixtures.kindsBID], ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"),
-                                                   "guests": [link(to: FieldFixtures.annLeeID, "Ann Lee"), link(to: FieldFixtures.boParkID, "Bo Park")]])
-        let size = CGSize(width: 900, height: 900)
-        #if DEBUG
-        let straight = MentionDrawingCounts.pillsDrawnStraight
-        #endif
-        let before = renderBitmap(t.editor, size: size)
-        #if DEBUG
-        expectEqual(MentionDrawingCounts.pillsDrawnStraight, straight + 3, "the customer and two guests")
-        #endif
-        let customer = try require(t.book.rows(of: id).first { $0.name == "customer" })
-        let pill = try require(try t.shownLinks(id, "customer").first)
-        let drawn = CGRect(x: customer.valueRect.minX + pill.x, y: customer.rect.minY, width: pill.width, height: customer.rect.height)
-        expect((Int(drawn.minX)..<Int(drawn.maxX)).contains { x in pixel(before, at: CGPoint(x: CGFloat(x), y: drawn.midY))[0] < 128 }, "the name's ink, in the pill")
-        t.editor.transact("Rename") { $0.update(FieldFixtures.annLeeID) { $0[TitleProperty.self] = "Anna Lee" } }
-        let after = renderBitmap(t.editor, size: size)
-        expect(changedPixels(before, after, in: customer.rect) > 0, "the new name, on the frame after the rename")
-        #if DEBUG
-        expectEqual(MentionDrawingCounts.pillsDrawnStraight, straight + 6)
-        #endif
-        t.editor.undo()
-        expectEqual(changedPixels(before, renderBitmap(t.editor, size: size), in: customer.rect), 0, "undone: as it was")
-    },
-    test("a target renamed lets go of the rows of the notes that point at it and nobody else's; a keystroke in its words that leaves its name lets go of none") {
-        let t = try Bench()
-        let pointing = t.note([FieldFixtures.kindsBID], ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee")], at: CGPoint(x: 40, y: 400))
-        let other = t.note([FieldFixtures.kindsBID], ["customer": link(to: FieldFixtures.boParkID, "Bo Park")], at: CGPoint(x: 340, y: 400))
-        let plain = t.note([FieldFixtures.kindsBID], ["guests": ["x"]], at: CGPoint(x: 640, y: 400))
-        for id in [pointing, other, plain] { _ = t.book.rows(of: id) }
-        let built = t.book.rowsShown
-        t.editor.transact("Words") { $0.update(FieldFixtures.annLeeID, as: RowSlip.self) { $0.props.text = MentionText(plain: "She is a person.") } }
-        for id in [pointing, other, plain] { _ = t.book.rows(of: id) }
-        expectEqual(t.book.rowsShown, built, "words below the name: nobody lets go of anything")
-        t.editor.transact("Rename") { $0.update(FieldFixtures.annLeeID) { $0[TitleProperty.self] = "Anna Lee" } }
-        for id in [pointing, other, plain] { _ = t.book.rows(of: id) }
-        expectEqual(t.book.rowsShown, built + 1, "the rename: the one that points at her is built again, nobody else")
-        expectEqual(try t.pills(pointing, "customer").names, ["Anna Lee"])
-        expectEqual(try t.pills(other, "customer").names, ["Bo Park"])
+        t.editor.transact("Rename") { $0.update(ann) { $0[TitleProperty.self] = long } }
+        guard case .related(let named, _) = t.book.pills(of: [relation(.note(ann))], among: 1, width: 120), t.editor.mentions?.resolve(ann).isLive == true else { throw Failure("a pill") }
+        expect(named[0].width <= 120, "cut to the column")
     },
 ])

@@ -144,6 +144,11 @@ public struct HintPremise: Sendable, Equatable {
         /// with the name as its argument. The premise's `hint` is nil: the caller writes it, since
         /// only it knows the word.
         case typeWord(String)
+        /// The edge word `word` (`edge-to`) was given, after its anchors (printed), a title where it takes edge
+        /// types: if some shape is titled so, and no edge type is, it names a type and not an edge type, so the hint
+        /// is the query that asks for what the word was meant for, through the word that finds a type's shapes. The
+        /// premise's `hint` is nil: the caller writes it, since only it knows the word.
+        case titledArgument(word: String, anchors: [String], title: String)
     }
 
     public var claim: Claim

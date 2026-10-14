@@ -373,7 +373,7 @@ private struct Bench {
         expect(try require(t.book.opened.last).isReadOnly)
         expectEqual(t.refusals, [])
     },
-    test("a row of a gone type and a pointer row have no face on their values: a click there is the note's; a typed value has a face of its own") {
+    test("a row of a gone type has no face on its value, and a click on a slip's typed value is the note's; a typed value of a note being edited has a face of its own") {
         let t = try Bench()
         let types = t.add([FieldFixtures.address, FieldFixtures.everyKind.a, FieldFixtures.everyKind.b])
         let a = t.note([FieldFixtures.kindsAID], ["shippingAddress": ["street": "12 Main St"], "name": "Ann"], at: CGPoint(x: 40, y: 700))
@@ -399,48 +399,5 @@ private struct Bench {
         t.click(CGPoint(x: 100, y: 60))
         expectEqual(t.editor.selection, blank)
         expect(t.book.opened.isEmpty && t.editor.menuToPopUp == nil)
-    },
-    test("a click on a live pill of a note that is one goes to the note it points at, on a locked note too; the pointer over it hovers that note") {
-        let t = try Bench()
-        t.add([FieldFixtures.person, FieldFixtures.everyKind.b])
-        t.editor.addFieldPeople()
-        let id = t.note([FieldFixtures.kindsBID], ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"),
-                                                    "guests": [link(to: FieldFixtures.annLeeID, "Ann Lee"), link(to: FieldFixtures.boParkID, "Bo Park")]])
-        @MainActor func pill(_ name: String, _ place: Int = 0) throws -> CGPoint {
-            let row = try t.row(id, name)
-            guard case .links(let links, _) = row.content else { throw Failure("\(name) holds no pills") }
-            return CGPoint(x: row.valueRect.minX + links[place].x + links[place].width / 2, y: row.rect.midY)
-        }
-        t.h.move(to: try pill("guests", 1))
-        expectEqual(t.editor.hovered, FieldFixtures.boParkID, "the pointer over a live pill hovers what it points at")
-        t.editor.selection = nil
-        t.click(try pill("customer"))
-        t.b.scheduler.advance(by: .zero)
-        expectEqual(t.editor.selection, FieldFixtures.annLeeID, "a click on the pill goes to the note")
-        t.editor.selection = nil
-        t.editor.freeze([id])
-        t.click(try pill("guests", 1))
-        t.b.scheduler.advance(by: .zero)
-        expectEqual(t.editor.selection, FieldFixtures.boParkID, "going changes nothing, so a locked note's pill goes")
-        expectEqual(t.refusals, [], "and nothing is refused")
-    },
-    test("a dashed pill is no face, and neither is the rest of the row: a press there is the note's") {
-        let t = try Bench()
-        t.add([FieldFixtures.person, FieldFixtures.everyKind.b])
-        t.editor.addFieldPeople()
-        let id = t.note([FieldFixtures.kindsBID], ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee")])
-        t.editor.transact("Delete") { $0.delete([FieldFixtures.annLeeID]) }
-        let row = try t.row(id, "customer")
-        guard case .links(let links, _) = row.content else { throw Failure("no pills") }
-        expect(!links[0].isLive, "the target is gone")
-        t.editor.selection = nil
-        t.h.move(to: CGPoint(x: row.valueRect.minX + links[0].width / 2, y: row.rect.midY))
-        expectEqual(t.editor.hovered, id, "the note's own hover: the dashed pill points at nothing")
-        t.click(CGPoint(x: row.valueRect.minX + links[0].width / 2, y: row.rect.midY))
-        t.b.scheduler.advance(by: .zero)
-        expectEqual(t.editor.selection, id, "the dashed pill is the note's press: it selects the note")
-        t.editor.selection = nil
-        t.click(CGPoint(x: row.valueRect.maxX - 4, y: row.rect.midY))
-        expectEqual(t.editor.selection, id, "off the pill, the note's")
     },
 ])

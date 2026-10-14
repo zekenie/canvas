@@ -375,4 +375,45 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         let blank = try canvas(server, ["measure", "-"], input: #"sticky-note "D" text: "@[]""#)
         expect(blank.status != 0, "a blank @[] is refused")
     },
+    test("an id finds a shape of the open file as a title does: an edge's end by id is laid with the script, and with none open, or for an id nothing has, it is a warning and the edge is left out") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let schema = scripted(#"{"type": "object", "properties": {"name": {"type": "string"}}}"#)
+        let model = try canvas(server, ["draw", """
+            sticky-note "Person" schema: "\(schema)"
+            sticky-note "Company" schema: "\(schema)" right of "Person"
+            sticky-note is: "Company" fieldValues: {"name": "Acme"} below "Company"
+            """])
+        expectEqual(model.status, 0, model.error)
+        let acme = try require(board.editor.document.shapes.last).id
+        let script = """
+            sticky-note "Ann" is: "Person"
+            edge "Ann" -> #\(acme)
+            """
+        let before = board.editor.file, revision = board.editor.revision
+        let found = try JSON(text: canvas(server, ["measure", "-"], input: script).output)
+        expectEqual(found["warnings"], nil, "the shape of the open file is found by its id")
+        expectEqual(found["shapes"]?.arrayValue?.count, 1)
+        // With no board open, or an id nothing has: said as a name it can't find is, the edge left out.
+        let none = try measured(script, in: shippedEditor()).get()
+        let edgeWarning = try require(none["warnings"]?.arrayValue?.first { $0["line"] == 2 })
+        expectEqual(edgeWarning["message"], .string("there's no shape with the id #\(acme); measured without it"))
+        expectEqual(none["warnings"]?.arrayValue?.map { $0["line"] }, [1, 2], "Person is not found either, with no board")
+        let unknown = try JSON(text: canvas(server, ["measure", "-"], input: "sticky-note \"Ann\" is: \"Person\"\nedge #\(ShapeID()) -> \"Ann\"").output)
+        expectEqual(unknown["warnings"]?.arrayValue?.map { $0["line"] }, [2])
+        expect(unknown["warnings"]?.arrayValue?.first?["message"]?.stringValue?.hasSuffix("measured without it") == true, "\(unknown)")
+        // A shape statement that names an id is measured as a new shape of its kind with no title, as a title the file has is.
+        let restated = try JSON(text: canvas(server, ["measure", "-"], input: "sticky-note #\(acme) text: \"Acme, in full\"").output)
+        expectEqual(restated["shapes"]?.arrayValue?.first?["title"], nil)
+        expectEqual(restated["shapes"]?.arrayValue?.first?["kind"], "sticky-note")
+        // A via: edge to an id is sized, for a pill called what the open file's shape is called.
+        let via = try JSON(text: canvas(server, ["measure", "-"], input: "sticky-note \"Ann\" is: \"Person\"\nedge \"Ann\" -> #\(acme) via: reference").output)
+        expectEqual(via["references"]?.arrayValue?.count, 1)
+        expect(board.editor.file == before && board.editor.revision == revision, "nothing changed")
+    },
 ])

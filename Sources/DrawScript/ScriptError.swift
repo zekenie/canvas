@@ -12,6 +12,8 @@ public struct ScriptError: Error, Sendable, Equatable, CustomStringConvertible {
         case invalidValue = "invalid_value"
         case duplicate
         case unknownTitle = "unknown_title"
+        case notAnID = "not_an_id"
+        case unknownID = "unknown_id"
         case ambiguousTitle = "ambiguous_title"
         case ambiguousEdge = "ambiguous_edge"
         case untitlable

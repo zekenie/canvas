@@ -265,9 +265,6 @@ let galleryHighlightMaps: [(words: String, map: String)] = [
     ("A speaker has", #"[{"text": "a talk", "address": "/properties/talk"}]"#),
 ]
 
-/// The value that points at a note, as a pointer's field stores it (CanvasTesting can't spell a token).
-func link(to id: ShapeID, _ label: String) -> JSONValue { FieldLink(target: id, stored: label).value }
-
 /// Whether a picture says almost nothing: no colour but one fills more than `share` of its pixels'
 /// complement, sampled.
 @MainActor

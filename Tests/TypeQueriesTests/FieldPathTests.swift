@@ -53,7 +53,7 @@ private func order(_ n: Int, _ values: JSONObject = [:], is types: [ShapeID] = [
     test("a nested and a list step are checked where a type says the members") {
         let h = try harness([order(1)])
         expectEqual(try warnings(#"[fieldValues.lineItems.produt="x"]"#, on: h), ["No type in the file has fieldValues.lineItems.produt. Did you mean fieldValues.lineItems.product?"])
-        expectEqual(try warnings(#"[fieldValues.customer.name]"#, on: h), ["No type in the file has fieldValues.customer.name."], "past a pointer")
+        expectEqual(try warnings(#"[fieldValues.customer.name]"#, on: h), ["No type in the file has fieldValues.customer.name."], "past text")
         expectEqual(try warnings(#"[fieldValues.status.x]"#, on: h), ["No type in the file has fieldValues.status.x."], "past a plain value")
     },
     test("a file with no types warns of every path, and a type's $-key is no field") {

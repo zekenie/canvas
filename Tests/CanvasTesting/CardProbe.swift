@@ -46,8 +46,9 @@ public final class ClosingLog {
 /// logging its closings in `closings`.
 @MainActor
 public func probeCard(_ id: String, about shape: ShapeID? = nil, anchor: CGRect, stepName: String? = nil,
-                      probe: CardProbe, closings: ClosingLog) -> CanvasCard {
+                      adoptsPress: Bool = false, probe: CardProbe, closings: ClosingLog) -> CanvasCard {
     CanvasCard(id: id, about: shape, anchor: anchor, view: probe, firstResponder: probe, stepName: stepName,
+               adoptsPress: adoptsPress,
                size: { [unowned probe] in probe.size(in: $0) },
                didClose: { [unowned closings] in
                    closings.closings.append($0)

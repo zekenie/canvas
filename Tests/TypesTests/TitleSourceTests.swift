@@ -57,7 +57,7 @@ private let plainEmployee = schema(#""role": {"type": "string"}"#)
         expectEqual(TitleSource.of(try resolved([], types)), nil)
         expectEqual(TitleSource.of(Resolved()), nil)
     },
-    test("text, a number, a date, a date-time and a choice title; a yes or no, a pointer, a list, a group, pairs and an either do not") {
+    test("text, a number, a date, a date-time and a choice title; a yes or no, a list, a group, pairs and an either do not") {
         expectEqual(try source(of: #"{"type": "string"}"#)?.kind, .text)
         expectEqual(try source(of: #"{"type": "integer"}"#)?.kind, .number(integer: true))
         expectEqual(try source(of: #"{"type": "number"}"#)?.kind, .number(integer: false))
@@ -67,7 +67,7 @@ private let plainEmployee = schema(#""role": {"type": "string"}"#)
         expectEqual(choice?.kind, .choice([FieldOption(value: .string("a"), label: "a"), FieldOption(value: .string("b"), label: "b")]))
         expectEqual(try source(of: #"{"type": "boolean"}"#), nil)
         let link = "{\"type\": \"string\", \"contentMediaType\": \"text/x-canvas-link\", \"contentSchema\": {\"$ref\": \"\(FieldFixtures.uri(of: FieldFixtures.personID))\"}}"
-        expectEqual(try source(of: link), nil, "a pointer")
+        expectEqual(try source(of: link)?.kind, .text, "a schema that was a pointer is text")
         expectEqual(try source(of: #"{"type": "array", "items": {"type": "string"}}"#), nil, "a list")
         expectEqual(try source(of: #"{"type": "object", "properties": {"x": {"type": "string"}}}"#), nil, "a group")
         expectEqual(try source(of: #"{"$ref": "\#(FieldFixtures.uri(of: FieldFixtures.addressID))"}"#), nil, "another type's fields")

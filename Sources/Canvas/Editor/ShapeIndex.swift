@@ -117,7 +117,7 @@ final class ShapeIndex {
         frames.append(Reads())
         let geometry = definition?.erasedGeometry(of: record, in: context)
         let reads = frames.removeLast()
-        let entry = Entry(geometry: geometry, extent: Self.extent(of: record, geometry), hitMargin: definition?.hitMargin ?? HitMargin(),
+        let entry = Entry(geometry: geometry, extent: Self.extent(of: record, geometry, laidOut: context.registry.isLaidOutBox(record.kind)), hitMargin: definition?.hitMargin ?? HitMargin(),
                           reads: reads.shapes)
         entries[id] = entry
         for read in reads.shapes where read != id { readers[read, default: []].insert(id) }
@@ -148,12 +148,14 @@ final class ShapeIndex {
         return geometry.bounds
     }
 
-    static func extent(of record: AnyShapeRecord, _ geometry: ShapeGeometry?) -> CGRect {
+    /// A `LaidOutBox` shape's extent is its geometry's, which is its laid-out frame: the box it stores
+    /// may be larger than that, and is not where it is.
+    static func extent(of record: AnyShapeRecord, _ geometry: ShapeGeometry?, laidOut: Bool = false) -> CGRect {
         guard let geometry else { return .null }
         guard !geometry.outline.isEmpty else { return record.box ?? .infinite }
         var extent = CGRect(enclosing: geometry.outline)
         if !geometry.bounds.isNull { extent = extent.union(geometry.bounds) }
-        if let box = record.box { extent = extent.union(box) }
+        if !laidOut, let box = record.box { extent = extent.union(box) }
         return extent
     }
 

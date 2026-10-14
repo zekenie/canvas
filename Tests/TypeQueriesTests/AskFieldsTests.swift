@@ -35,10 +35,10 @@ private func typeNote(_ text: FieldFixtures.TypeText, at y: Double, buildingOn p
             Employee builds on Person: role (text), startDate (date)
             Person: name (text), email (text)
             Address: street (text), city (text), postcode (text)
-            Order: customer (link to Person), shippingAddress (fields of Address), lineItems (list) {product (text), quantity (whole number), price (number)}, status (draft|paid|shipped), tags (list of text), gift (yes/no), giftNote (text)
+            Order: customer (text), shippingAddress (fields of Address), lineItems (list) {product (text), quantity (whole number), price (number)}, status (draft|paid|shipped), tags (list of text), gift (yes/no), giftNote (text)
             """, "Employee shares a word with the question (start); Person has one note that is one (Employee); then by title")
         expectEqual(try fact(h.editor, "orders"), """
-            Order: customer (link to Person), shippingAddress (fields of Address), lineItems (list) {product (text), quantity (whole number), price (number)}, status (draft|paid|shipped), tags (list of text), gift (yes/no), giftNote (text)
+            Order: customer (text), shippingAddress (fields of Address), lineItems (list) {product (text), quantity (whole number), price (number)}, status (draft|paid|shipped), tags (list of text), gift (yes/no), giftNote (text)
             Person: name (text), email (text)
             Address: street (text), city (text), postcode (text)
             Employee builds on Person: role (text), startDate (date)
@@ -53,7 +53,7 @@ private func typeNote(_ text: FieldFixtures.TypeText, at y: Double, buildingOn p
         let h = try EditorHarness(plugins: typeQueryPlugins(), document: CanvasDocument(shapes: [typeNote(FieldFixtures.order, at: 40), filled]))
         let text = try require(try fact(h.editor, "paid orders"))
         expect(!text.contains("Secret Customer"), "never a value")
-        expect(text.hasPrefix("Order: customer (link to a gone type)"), "Person isn't in this file: " + text)
+        expect(text.hasPrefix("Order: customer (text)"), text)
     },
     test("without the plugin there is no fact") {
         let h = try EditorHarness(plugins: typeQueryPlugins(typeWords: false), document: CanvasDocument(shapes: [typeNote(FieldFixtures.order, at: 40)]))

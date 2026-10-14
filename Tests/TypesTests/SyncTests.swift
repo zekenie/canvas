@@ -1105,6 +1105,48 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
             expect(text.hasPrefix(heading) && text.hasSuffix(".\n") && !text.hasSuffix("\n\n"), heading)
         }
     },
+    test("a relationship type's words are sent one literal more, after the titles and before the references, in the to-schema direction alone") {
+        let titles = SchemaPrompts.toSchemaSystem + "\n" + SchemaPrompts.toSchemaTitle + "\n" + SchemaPrompts.toSchemaNewTitle
+        let relationship = SchemaPrompts.toSchemaRelationshipType
+        expectEqual(SchemaPrompts.system(.toSchema, relationship: true), titles + "\n" + relationship)
+        expectEqual(SchemaPrompts.system(.toSchema, schemas: " ", relationship: true), titles + "\n" + relationship)
+        expectEqual(SchemaPrompts.system(.toSchema, schemas: "@Person", relationship: true), titles + "\n" + relationship + "\n" + SchemaPrompts.toSchemaReferences)
+        expectEqual(SchemaPrompts.system(.toSchema), titles, "a plain type's words are sent what they always were")
+        expectEqual(SchemaPrompts.system(.toPrompt, relationship: true), SchemaPrompts.system(.toPrompt), "the words are written from the schema as for any type")
+        let request = SchemaPrompts.toSchema(previousPrompt: nil, prompt: "employment", schema: "{}", relationship: true)
+        expectEqual(request.system, SchemaPrompts.system(.toSchema, relationship: true))
+        expectEqual(request.messages, SchemaPrompts.toSchema(previousPrompt: nil, prompt: "employment", schema: "{}").messages, "the user message is as it was")
+        expectEqual(SchemaPrompts.toSchema(previousPrompt: nil, prompt: "a pet", schema: "{}").system, titles)
+    },
+    test("the relationship type's literal says what the schema holds and what it never does, in the app's words") {
+        let text = SchemaPrompts.toSchemaRelationshipType
+        expect(text.hasPrefix("A relationship type\n") && text.hasSuffix(".\n") && !text.hasSuffix("\n\n"))
+        expect(text.contains("never who or what it relates"))
+        expect(text.contains("Write no property for either end"))
+        expect(text.contains(#"no "$ref" to the type of either"#))
+        expect(text.contains(#"("employment" relates an employee and an employer"#), "the one-word case the lite eval missed")
+        expect(text.contains("only what the relationship itself holds: a role, a start date"))
+        expect(text.contains("a property the schema has stays unless the prompt takes it out"))
+        for word in ["x-canvas-link", "contentSchema", "contentMediaType", "pointer", "edge type", "link"] { expect(!text.contains(word), word) }
+        expect((try? JSONReader.read(text)) == nil, "it has no JSON example to parse")
+    },
+    test("the sync of a relationship type's words is sent the literal, a plain type's is not") {
+        let b = try SyncBench()
+        let plain = b.place()
+        b.typeWords(plain, "a pet in my household")
+        b.sync(plain, answer: petSchema)
+        expectEqual(b.model.lastRequest?.system, SchemaPrompts.system(.toSchema))
+        let id = b.place()
+        b.editor.transact { $0.update(id) { $0[RelationshipProperty.self] = true } }
+        b.typeWords(id, "employment")
+        b.sync(id, answer: petSchema)
+        expectEqual(b.model.lastRequest?.system, SchemaPrompts.system(.toSchema, relationship: true))
+        expect(b.model.lastRequest?.system?.contains("A relationship type\n") == true)
+        // Its words written from its schema are asked as any type's are.
+        b.typeSchema(id, pet.replacingOccurrences(of: "\"species\"", with: "\"kind\""))
+        b.sync(id, answer: "a pet, its kind")
+        expectEqual(b.model.lastRequest?.system, SchemaPrompts.system(.toPrompt))
+    },
     test("the rename: a renamed field keeps its key and gets a title, and the words say it by that title") {
         let toSchema = SchemaPrompts.toSchemaSystem, toPrompt = SchemaPrompts.toPromptSystem
         expect(toSchema.contains("keeps its key") && toSchema.contains(#"its "title""#))
@@ -1114,24 +1156,30 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         expect(!toPrompt.contains("a title the prompt doesn't name"))
         expect(toSchema.contains(#""if": {"properties": {"method": {"const": "delivery"}}}"#) && toSchema.contains(#"never with "required" alone"#))
     },
-    test("the pointer wording: a link is a string holding a link to a note of the type, a bare word is the type itself") {
+    test("the references wording: a part is a $ref and a bare word is a part, a phrase that relates the thing to a word writes no property, and no literal holds the old pointer") {
         let toSchema = SchemaPrompts.toSchemaReferences
-        expect(toSchema.contains("text/x-canvas-link") && toSchema.contains(#""contentSchema": {"$ref": "@Customer"}"#))
-        for phrase in ["links to", "points to", "refers to"] { expect(toSchema.contains(phrase), phrase) }
         expect(toSchema.contains(#"{"$ref": "@Customer"}"#) && toSchema.contains("A bare @ word"))
-        expect(SchemaPrompts.toPromptReferences.contains("contentSchema") && SchemaPrompts.highlightsReferences.contains("contentSchema"))
+        for phrase in ["is in a @Layer", "belongs to a @Team", "links to", "points to", "refers to"] { expect(toSchema.contains(phrase), phrase) }
+        expect(toSchema.contains("write no property for it at all"))
+        expect(toSchema.contains("When it is unclear whether the prompt means a part or a relationship, it is the part."))
+        expect(toSchema.contains("A schema holds what the thing has, never what it is related to."))
+        let toPrompt = SchemaPrompts.toPromptReferences
+        expect(toPrompt.contains("is in a @Layer") && toPrompt.contains("stay word for word") && toPrompt.contains("never a reason to change the prompt"))
+        expect(toPrompt.contains("Never say link, points to or reference for a type."))
+        expect(SchemaPrompts.highlightsReferences.contains("An @ word that nothing in the schema points to gets no link"))
+        for text in [toSchema, toPrompt, SchemaPrompts.highlightsReferences, SchemaPrompts.toSchemaTitle, SchemaPrompts.toSchemaNewTitle, SchemaPrompts.toPromptTitle] {
+            for word in ["x-canvas-link", "contentSchema", "contentMediaType", "pointer"] { expect(!text.contains(word), word) }
+        }
+        expect(!SchemaPrompts.toSchemaTitle.contains("link"), "the title literal is sent on every request, and says nothing of links")
     },
-    test("the pointer the prompt shows is one the app reads, and writes back as the prompt shows it") {
-        let example = try require(promptExamples(in: SchemaPrompts.toSchemaReferences).first { $0.contains("text/x-canvas-link") })
+    test("the $ref the prompt shows is one the app reads, and writes back as the prompt shows it") {
+        let example = try require(promptExamples(in: SchemaPrompts.toSchemaReferences).first { $0.contains(#""$ref": "@Customer""#) })
         let customer = FieldFixtures.personID
         let holder = #"{"properties": {"c": {"$ref": "\#(FieldFixtures.uri(of: customer))"}}}"#
         let names = SchemaReferenceNames(words: [], schemas: [holder], name: { $0 == customer ? "Customer" : nil })
-        let stored = names.schema(fromModel: example)
+        let stored = names.schema(fromModel: #"{"properties": {"customer": \#(example)}}"#)
         expect(stored.contains(FieldFixtures.uri(of: customer)) && !stored.contains("@Customer"), "the word is the type's id again")
-        let level = try require(ChainLevel(schema: #"{"type": "object", "properties": {"f": \#(stored)}}"#))
-        let field = Resolved.Field(field: level.fields[0], source: ShapeID(), introducedBy: ShapeID())
-        expectEqual(try require(try fieldEditor().fieldBook).kind(of: field), .pointer(customer))
-        expect(names.modelSchema(stored).contains(#""contentSchema": {"$ref": "@Customer"}"#), "and the model sees it as the prompt shows it")
+        expect(names.modelSchema(stored).contains(#"{"$ref": "@Customer"}"#), "and the model sees it as the prompt shows it")
     },
     test("the title's example is one the app reads: a setting among the properties, no field") {
         let level = try require(ChainLevel(schema: #"{"type": "object", "properties": {"name": {"type": "string"}, "$title": {"x-canvas-from": "name"}}}"#))

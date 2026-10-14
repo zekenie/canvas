@@ -118,7 +118,13 @@ extension Budget {
     /// (`timings.main`, the verdict of each typed note in slices, and each row's `problems` in slices) over the verdicts alone:
     /// the rows' problems are a check each. Some 0.6 ms at both sizes (0.61, 0.59 and 0.64 at 10,000, 0.56, 0.60 and 0.62 at 1,000, against 0.26 for the count
     /// alone; load average 10 to 18): held at the design's `queryRowsMain` and a millisecond.
-    static let queryProblemsMain = SizedBudget(thousand: queryRowsMain.thousand + 1, tenThousand: queryRowsMain.tenThousand + 1)
+    /// That was while the word was Types' and asked only of the notes that have types. It is Validation's now, as the
+    /// owner asked: asked of every shape of the file in slices, as `:invalid` is, so its count costs what `:invalid`'s
+    /// does (7.2 ms at 1,000 shapes and 70 at 10,000, alone, against `:invalid`'s 6.4 and 65) and is held to that word's
+    /// budget (`queryInvalidHidden`); what this benchmark is for, the problems of the rows returned and of no other
+    /// shape, is the main time over the count's (0.8 and 0.7 ms), held to 2.
+    static let queryProblemsMain = queryInvalidHidden
+    static let queryProblemsOverCount = 2.0
     /// And off it: 20 queries' evaluation over the one snapshot, names read once.
     static let referenceBatchOffMain = SizedBudget(thousand: 20, tenThousand: 100)
     /// `--ask`'s request without the model, on a board looked at: on the main actor (at least
@@ -1010,9 +1016,12 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
             expectEqual(count, 100)
             expectEqual(listed, 100, "each lists the one name it needs")
             let main = middle(mains), alone = middle(without)
-            report(String(format: "%6d shapes, :incomplete over 100 notes needing a name: main %6.3f ms with their problems (budget %.1f), %6.3f counted alone",
-                          size, main, Budget.queryProblemsMain.at(size), alone))
-            if holdsToBudgets { expect(main < Budget.queryProblemsMain.at(size), "`:incomplete` with 100 rows took \(main) ms on the main actor over \(size) shapes") }
+            report(String(format: "%6d shapes, :incomplete over 100 notes needing a name: main %6.3f ms with their problems (budget %.0f), %6.3f counted alone, the problems %6.3f (budget %.0f)",
+                          size, main, Budget.queryProblemsMain.at(size), alone, main - alone, Budget.queryProblemsOverCount))
+            if holdsToBudgets {
+                expect(main < Budget.queryProblemsMain.at(size), "`:incomplete` with 100 rows took \(main) ms on the main actor over \(size) shapes")
+                expect(main - alone < Budget.queryProblemsOverCount, "the problems of 100 rows took \(main - alone) ms over the count, over \(size) shapes")
+            }
         }
     },
     test("no slice of any query here is longer than 2 ms and the record that crosses it") {

@@ -15,7 +15,7 @@ extension ReferenceDefinition: ShapeDefinition {
         let standing = condition(of: shape, state: state, in: context)
         let handsOff = context.isEditing && state?.isHandingOff(shape.id) == true
         let look = context.isEditing ? ReferenceLook(editing: standing, handsOff: handsOff)
-            : ReferenceLook(standing, mismatch: state?.drawnMismatch(of: shape.id) != nil)
+            : ReferenceLook(standing, mismatch: state?.drawnMismatch(of: shape.id) != nil, board: state?.drawnBoard(of: shape.id))
         draw(look, in: shape.frame, editing: context.isEditing, context)
     }
 
@@ -55,7 +55,13 @@ extension ReferenceDefinition: Editable {
 }
 
 /// A reference made from properties (the command line's `draw`: a `query:`) is fitted as the writers
-/// would have left it: as wide as what it says, 32 tall.
+/// would have left it: as wide as what it says, 32 tall. A direct pill already wider than its label
+/// asks, and not at the width it was placed at, was fitted by a pick with its note's board after the
+/// name (`ReferenceEdits.pick`), a room props can't name and this can't know; it keeps that width.
 extension ReferenceDefinition: DerivedProps {
-    func derive(_ props: inout Reference) { ReferenceEdits.fit(&props) }
+    func derive(_ props: inout Reference) {
+        let keeps = props.mode == .direct && props.frame.width > ReferenceEdits.width(of: props)
+            && props.frame.width != ReferenceStyle.defaultWidth
+        if keeps { props.frame.size.height = ReferenceStyle.height } else { ReferenceEdits.fit(&props) }
+    }
 }

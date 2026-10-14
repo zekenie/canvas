@@ -51,8 +51,9 @@ private let anchor = CGRect(x: 100, y: 100, width: 120, height: 22)
         log.heard = { [unowned host] _ in host.order.append("closed") }
     }
 
-    func card(_ id: String = "c", about shape: ShapeID? = nil, at rect: CGRect = anchor, step: String? = nil) -> CanvasCard {
-        probeCard(id, about: shape, anchor: rect, stepName: step, probe: probe, closings: log)
+    func card(_ id: String = "c", about shape: ShapeID? = nil, at rect: CGRect = anchor, step: String? = nil,
+              adoptsPress: Bool = false) -> CanvasCard {
+        probeCard(id, about: shape, anchor: rect, stepName: step, adoptsPress: adoptsPress, probe: probe, closings: log)
     }
 
     /// Shows a card about `shape`, and forgets what the host was told and the history before it.
@@ -397,6 +398,252 @@ private let anchor = CGRect(x: 100, y: 100, width: 120, height: 22)
         t.transact(on: BoardID(owner: third.pocket), "Elsewhere") { $0.insert(ShapeRecord(Box(CGRect(x: 1, y: 1, width: 2, height: 2)))) }
         third.nudge("c")
         expectEqual(t.undoHistory.undoName, "Card")
+    },
+    test("a delete on a board that isn't shown, under the card's key, is in the card's step: one undo puts it and the card's other commits back") {
+        let rig = try Rig()
+        let e = rig.h.editor, pocketBoard = BoardID(owner: rig.pocket)
+        e.undoHistory.clear()
+        let before = rig.h.file
+        let inside = try require(before[pocketBoard].shapes.first?.id)
+        rig.show(step: "Card")
+        rig.nudge("c")
+        e.transact("Remove", coalescing: "c") { $0.delete([inside], on: pocketBoard) }
+        expect(rig.h.file.record(inside) == nil)
+        rig.nudge("c")
+        expectEqual(e.undoHistory.undoName, "Card")
+        e.undo()
+        expectEqual(rig.h.file, before, "one step")
+        expect(!e.canUndo)
+        e.redo()
+        expect(rig.h.file.record(inside) == nil)
+        expectEqual(rig.boxX, 402)
+    },
+    test("a step recorded on a board the card's step holds closes the card's first: undo, undo, redo, redo are each exact") {
+        let rig = try Rig()
+        let e = rig.h.editor, pocketBoard = BoardID(owner: rig.pocket)
+        e.undoHistory.clear()
+        let s0 = rig.h.file
+        let inside = try require(s0[pocketBoard].shapes.first?.id)
+        @MainActor func slide(_ tx: inout Transaction, by dx: CGFloat) { tx.update(inside, on: pocketBoard, as: Box.self) { $0.props.frame.origin.x += dx } }
+        rig.show(step: "Card")
+        // The card's step reaches the pocket's board, which it then holds whole.
+        e.transact("Card", coalescing: "c") { slide(&$0, by: 5) }
+        let s1 = rig.h.file
+        e.transact(on: pocketBoard, "Elsewhere") { slide(&$0, by: 7) }
+        let s2 = rig.h.file
+        e.closeCard()
+        expect(s0 != s1 && s1 != s2)
+        e.undo()
+        expectEqual(rig.h.file, s1, "the step on the board is undone alone")
+        expectEqual(e.board, pocketBoard, "and shows its board")
+        e.undo()
+        expectEqual(rig.h.file, s0, "then the card's")
+        expectEqual(e.board, .root)
+        expect(!e.canUndo)
+        e.redo()
+        expectEqual(rig.h.file, s1)
+        e.redo()
+        expectEqual(rig.h.file, s2)
+        expect(!e.canRedo)
+    },
+    test("a step recorded on another board that changes, takes or adds a third board the card's step holds closes the card's first: undo, undo, redo, redo are each exact") {
+        let m = ShapeID(), pocketP = ShapeID(), pocketW = ShapeID(), pocketQ = ShapeID(), d = ShapeID(), d2 = ShapeID(), c = ShapeID()
+        func shape(_ id: ShapeID, _ x: CGFloat) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, Box(CGRect(x: x, y: 0, width: 40, height: 30)))) }
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: pocketP, Pocket(CGRect(x: 0, y: 0, width: 100, height: 100)))),
+                                                            AnyShapeRecord(ShapeRecord(id: pocketW, Pocket(CGRect(x: 200, y: 0, width: 100, height: 100))))]),
+                              children: [pocketP: CanvasDocument(shapes: [shape(m, 0), AnyShapeRecord(ShapeRecord(id: pocketQ, Pocket(CGRect(x: 100, y: 0, width: 100, height: 100))))]),
+                                         pocketW: CanvasDocument(shapes: [shape(d, 0), shape(d2, 100)]), pocketQ: CanvasDocument(shapes: [shape(c, 0)])])
+        let p = BoardID(owner: pocketP), w = BoardID(owner: pocketW), q = BoardID(owner: pocketQ)
+        // The card's step reaches W and Q (a write on each), so holds them whole. A step on P then changes
+        // W too, by a write or by a delete, or takes Q with the pocket that owns it.
+        let steps: [(String, @MainActor (CanvasEditor) -> Void)] = [
+            ("a write", { e in
+                e.transact(on: p, "Elsewhere") { tx in
+                    tx.update(m, as: Box.self) { $0.props.frame.origin.x = 9 }
+                    tx.update(d2, on: w, as: Box.self) { $0.props.frame.origin.x = 77 }
+                }
+            }),
+            ("a delete", { e in e.transact(on: p, "Elsewhere") { $0.delete([d2], on: w) } }),
+            ("the owner taken", { e in e.transact(on: p, "Elsewhere") { $0.delete([pocketQ]) } }),
+        ]
+        for (what, elsewhere) in steps {
+            let h = try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin(), FreezingPlugin()], file: file)
+            let e = h.editor
+            let s0 = h.file
+            e.transact("Card", coalescing: "c") { tx in
+                tx.update(d, on: w, as: Box.self) { $0.props.frame.origin.x = 5 }
+                tx.update(c, on: q, as: Box.self) { $0.props.frame.origin.x = 6 }
+            }
+            let s1 = h.file
+            elsewhere(e)
+            let s2 = h.file
+            e.undoHistory.seal()
+            expect(s0 != s1 && s1 != s2, "\(what): each step changed the file")
+            e.undo()
+            expectEqual(h.file, s1, "\(what): the step on the board is undone alone")
+            e.undo()
+            expectEqual(h.file, s0, "\(what): then the card's")
+            expect(!e.canUndo)
+            e.redo()
+            expectEqual(h.file, s1, "\(what): redone")
+            e.redo()
+            expectEqual(h.file, s2, "\(what): and the other")
+            let codec = BoardCodec(registry: e.registry)
+            expectEqual(try codec.encode(h.file), try codec.encode(s2), "\(what): as a file")
+        }
+    },
+    test("a card that adopts the press it is shown in: the press's changes and the card's are one step, open past the release, named for the press, and one Undo after the card closes takes back both") {
+        let rig = try Rig()
+        let e = rig.h.editor
+        forget(rig)
+        rig.h.press(at: CGPoint(x: 700, y: 500))
+        rig.nudge(nil, "Press")
+        expect(e.showCard(rig.card("c", step: "Card", adoptsPress: true)))
+        rig.nudge(nil, "Also the press")
+        rig.h.release()
+        expectEqual(rig.boxX, 402)
+        expect(e.card != nil, "the card stays")
+        expectEqual(e.undoHistory.undoName, "Press", "the step is open, and it is the press's")
+        rig.nudge("c"); e.undoHistory.seal(); rig.nudge("c")
+        expectEqual(rig.boxX, 404)
+        expectEqual(e.undoHistory.undoName, "Press", "the card's commits joined it, whatever its step name")
+        e.closeCard()
+        expectEqual(rig.log.closings, [.asked])
+        e.undo()
+        expectEqual(rig.boxX, 400, "one Undo takes back the press's changes and the card's")
+        expect(!e.canUndo, "and there was no other step")
+        e.redo()
+        expectEqual(rig.boxX, 404, "one Redo puts all back")
+        expectEqual(e.undoHistory.undoName, "Press")
+        e.undo()
+        expect(!e.canUndo)
+        // Undo with the card up closes the card, and takes the same step.
+        let second = try Rig()
+        let s = second.h.editor
+        forget(second)
+        second.h.press(at: CGPoint(x: 700, y: 500))
+        second.nudge(nil, "Press")
+        expect(s.showCard(second.card("c", step: "Card", adoptsPress: true)))
+        second.h.release()
+        second.nudge("c")
+        s.undo()
+        expectEqual(second.boxX, 400)
+        expectEqual(second.log.closings, [.undo])
+        expect(!s.canUndo, "one step")
+        // A group is an action too.
+        let third = try Rig()
+        let t = third.h.editor
+        forget(third)
+        t.undoHistory.group("Grouped") {
+            third.nudge(nil, "Inner")
+            expect(t.showCard(third.card("c", step: "Card", adoptsPress: true)))
+        }
+        third.nudge("c")
+        expectEqual(t.undoHistory.undoName, "Grouped")
+        t.closeCard()
+        t.undo()
+        expectEqual(third.boxX, 400)
+        expect(!t.canUndo)
+    },
+    test("an adopted press's step splits as any kept step does: breakStep during the card, a commit from elsewhere, a new press; and the card's next commit is a step of its own by its name") {
+        @MainActor func shown(_ rig: Rig) {
+            rig.h.press(at: CGPoint(x: 700, y: 500))
+            rig.nudge(nil, "Press")
+            expect(rig.h.editor.showCard(rig.card("c", step: "Card", adoptsPress: true)))
+            rig.h.release()
+            rig.nudge("c")
+        }
+        // A save point.
+        let rig = try Rig()
+        let e = rig.h.editor
+        forget(rig)
+        shown(rig)
+        e.undoHistory.breakStep()
+        rig.nudge("c")
+        expectEqual(e.undoHistory.undoName, "Card", "after the save the card's commits are a step of their own")
+        e.closeCard()
+        e.undo()
+        expectEqual(rig.boxX, 402, "the card's step after the save")
+        e.undo()
+        expectEqual(rig.boxX, 400, "the press's, with its card commit, up to the save")
+        expect(!e.canUndo)
+        // A commit from elsewhere.
+        let other = try Rig()
+        let o = other.h.editor
+        forget(other)
+        shown(other)
+        other.nudge(nil, "Elsewhere")
+        other.nudge("c")
+        o.closeCard()
+        o.undo(); expectEqual(other.boxX, 403, "the card's again")
+        o.undo(); expectEqual(other.boxX, 402, "elsewhere")
+        o.undo(); expectEqual(other.boxX, 400, "the press, with the card's first commit")
+        expect(!o.canUndo)
+        // A new press closes the card and the step.
+        let next = try Rig()
+        let n = next.h.editor
+        forget(next)
+        shown(next)
+        next.h.press(at: CGPoint(x: 700, y: 520))
+        next.nudge(nil, "Next")
+        next.h.release()
+        expect(n.card == nil, "a press elsewhere closed the card")
+        n.undo(); expectEqual(next.boxX, 402, "the next press's step is its own")
+        n.undo(); expectEqual(next.boxX, 400)
+        expect(!n.canUndo)
+        // Nothing came of it: no step.
+        let nothing = try Rig()
+        let z = nothing.h.editor
+        forget(nothing)
+        nothing.h.press(at: CGPoint(x: 700, y: 500))
+        expect(z.showCard(nothing.card("c", step: "Card", adoptsPress: true)))
+        nothing.h.release()
+        expect(!z.canUndo)
+        nothing.nudge("c")
+        expectEqual(z.undoHistory.undoName, "Card", "a card whose press changed nothing holds a step of its own")
+        z.undo()
+        expect(!z.canUndo)
+    },
+    test("a card that does not adopt the press, or is shown outside one, or is closed before the release, is as it was: the press's step closes at the release and the card's commits are another") {
+        // Not adopting.
+        let rig = try Rig()
+        let e = rig.h.editor
+        forget(rig)
+        rig.h.press(at: CGPoint(x: 700, y: 500))
+        rig.nudge(nil, "Press")
+        expect(e.showCard(rig.card("c", step: "Card")))
+        rig.h.release()
+        rig.nudge("c")
+        expectEqual(e.undoHistory.undoName, "Card")
+        e.undo(); expectEqual(rig.boxX, 401)
+        expectEqual(e.undoHistory.undoName, "Press")
+        e.undo(); expectEqual(rig.boxX, 400)
+        // Adopting, shown outside a press.
+        let outside = try Rig()
+        let o = outside.h.editor
+        forget(outside)
+        outside.nudge(nil, "Before")
+        expect(o.showCard(outside.card("c", step: "Card", adoptsPress: true)))
+        outside.nudge("c"); outside.nudge("c")
+        o.undo(); expectEqual(outside.boxX, 401, "the card's step, apart from the commit before it")
+        expectEqual(o.undoHistory.undoName, "Before")
+        o.undo(); expectEqual(outside.boxX, 400)
+        expect(!o.canUndo)
+        // Closed before the release.
+        let early = try Rig()
+        let c = early.h.editor
+        forget(early)
+        early.h.press(at: CGPoint(x: 700, y: 500))
+        early.nudge(nil, "Press")
+        expect(c.showCard(early.card("c", step: "Card", adoptsPress: true)))
+        c.closeCard()
+        early.h.release()
+        early.nudge("c"); early.nudge(nil, "Later")
+        expectEqual(c.undoHistory.undoName, "Later")
+        c.undo(); expectEqual(early.boxX, 402)
+        c.undo(); expectEqual(early.boxX, 401, "the run the closed card's key made")
+        c.undo(); expectEqual(early.boxX, 400, "the press's step closed at the release")
+        expect(!c.canUndo)
     },
     test("in an editing session: typing, then the card's commits, then typing are three steps") {
         let rig = try Rig()

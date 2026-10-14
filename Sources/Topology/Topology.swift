@@ -83,6 +83,10 @@ public struct Edge: Hashable, Sendable, Codable {
         self.origin = origin
     }
 
+    /// Whether this is the connection: the edge in the empty slot, the carrier's own (an arrow bound at
+    /// both ends), as against one a property of the carrier holds. The one place the convention is read.
+    public var isConnection: Bool { slot.isEmpty }
+
     /// The source its carrier emitted: the stand-in it was forwarded through, if it was at that end.
     public var literalSource: ShapeID {
         if case .forwarded(let source?, _) = origin { source } else { source }

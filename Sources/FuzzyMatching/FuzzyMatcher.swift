@@ -91,6 +91,13 @@ public enum FuzzyMatcher {
     /// is its own.
     public static func rank(_ q: QueryView, count: Int, wantSpans: Bool, label: (_ index: Int) -> UnsafeBufferPointer<UInt32>?,
                             found: (_ index: Int, _ score: Int, _ spans: [Range<Int>]) -> Void) {
+        _ = ranking(q, count: count, wantSpans: wantSpans, label: label, found: found)
+    }
+
+    /// `rank`, saying whether the second pass ran: what it found was read from every label, so a caller that ranks
+    /// a narrowed set in place of the whole one gets the same list only when it did not.
+    public static func ranking(_ q: QueryView, count: Int, wantSpans: Bool, label: (_ index: Int) -> UnsafeBufferPointer<UInt32>?,
+                               found: (_ index: Int, _ score: Int, _ spans: [Range<Int>]) -> Void) -> Bool {
         // Those the first pass matched, in order, as far as the second pass needs them: no more
         // than it runs for.
         var matched: [Int] = [], matches = 0
@@ -103,7 +110,7 @@ public enum FuzzyMatcher {
             matches += 1
             found(index, score, spans)
         }
-        guard matches < FuzzyRanking.typoPassBelow, q.characterCount >= FuzzyRanking.typoMinimumQuery else { return }
+        guard matches < FuzzyRanking.typoPassBelow, q.characterCount >= FuzzyRanking.typoMinimumQuery else { return false }
         // The labels matched are passed over as the second pass walks by them.
         var next = 0
         for index in 0..<count {
@@ -116,6 +123,7 @@ public enum FuzzyMatcher {
             guard let score = typo(q, keys, &spans, wantSpans: wantSpans) else { continue }
             found(index, score, spans)
         }
+        return true
     }
 
     /// How a prepared query matches a prepared label, the typo tier included; nil for not at all.

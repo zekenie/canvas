@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Draw
 import Mentions
 import TextEditing
 
@@ -11,10 +12,10 @@ import TextEditing
 // session has two places for the caret, the words and a row. A typed value is edited by a one-line field
 // (`RowField`) laid over it, each keystroke a commit through the one writer; a box, a choice and a row with more
 // in it are focused with this view as the first responder, outlined, and take the keys of the table below.
-// A link to a note (a pointer's row) is focused the same way: typing on it opens the list of the notes it may point at
-// (a field over the value takes the characters; nothing is stored until a pick), Space opens the list with nothing
-// typed, Delete clears the value, and Return ends editing. In the list Return or a click picks, and Tab, ⇧Tab and Escape
-// close it with nothing stored (Tab then goes on to the next row).
+// A row that names notes is focused the same way: typing on it opens the list of the notes it may name (a field over the
+// value takes the characters; nothing is stored until a pick), Space opens the list with nothing typed, and Return ends
+// editing. In the list Return or a click picks, and Tab, ⇧Tab and Escape close it with nothing stored (Tab then goes on
+// to the next row).
 // Every other key stops here: up the responder chain is the canvas's shortcuts, where Backspace deletes the
 // selection, which is the note being edited.
 //
@@ -59,6 +60,7 @@ public final class RowsView: NSView {
     private enum Focus: Equatable {
         case field(String)
         case fold(isMore: Bool)
+        case relation(RelationshipRowKey)
     }
 
     private var focus: Focus?
@@ -73,8 +75,12 @@ public final class RowsView: NSView {
     private var written: JSONValue?
     /// How far the field's text is slid left to keep its caret in the clip.
     private var slide: CGFloat = 0
-    /// A link's list is open: the notes it lists and its window, over the value's field. Nothing is written until a pick.
-    private var picking: (picker: LinkPicker, window: CaretListWindow)?
+    /// A row's list is open: the notes it lists and its window, over the value's field. Nothing is written until a pick.
+    private var picking: (picker: any NotePicking, window: CaretListWindow)?
+    /// The relation row the open list picks for.
+    private var pickingRow: RelationshipRow?
+    /// The pill of the focused relation row that has the focus (by place among the pills shown): a second Backspace removes it.
+    private var pillFocus: Int?
     /// Moving the focus between this view's own parts: the keyboard leaving one is not the person leaving.
     private var switching = false
     /// A card is being asked for: it takes the keyboard as it opens, before the service has it down as open.
@@ -123,16 +129,24 @@ public final class RowsView: NSView {
         switch focus {
         case .field(let key): edited.index(ofField: key)
         case .fold(let isMore): edited.index(ofFold: isMore)
+        case .relation(let key): edited.index(ofRelation: key)
         }
     }
 
     private func focus(of row: Int, in edited: EditedRows) -> Focus? {
         if let key = edited.shown.rows[row].path?.field { return .field(key) }
+        if let key = edited.shown.rows[row].relation { return .relation(key) }
         return edited.fold(row).map { Focus.fold(isMore: $0.isMore) }
     }
 
     /// The focused row's place among the rows as they are now.
     private func focusedIndex(in edited: EditedRows) -> Int? { focus.flatMap { index(of: $0, in: edited) } }
+
+    /// The list a relation row has open, if any (tests read it).
+    public var openList: CaretList? { picking?.picker.list }
+
+    /// The pill of the focused relation row that has the focus, by its place among the pills shown (tests read it).
+    public var focusedPill: Int? { pillFocus }
 
     /// The name of the row with the caret or the focus; nil with none (tests read it).
     public var focusedRow: String? {
@@ -160,13 +174,15 @@ public final class RowsView: NSView {
                 self.openCard(current)
             }
             return responder
-        case .link:
+        case .relation:
             let responder = focusRow(hit.row)
             let session = book.editor?.editingShapeID
+            // A press on the `›` opens the card of the relationships; anywhere else on the value, the list.
+            let onChevron = book.isChevron(point, row: hit.row, in: edited)
             _ = book.editor?.scheduler.schedule(after: .zero) { [weak self] in
                 guard let self, let book = self.book, book.rowsView === self, book.editor?.editingShapeID == session, session == self.shape,
                       let edited = self.rows(), let current = self.focusedIndex(in: edited), current == hit.row, self.picking == nil else { return }
-                self.startPicking(row: current, typed: "")
+                if onChevron { self.openCard(current) } else { self.startRelating(row: current, typed: "") }
             }
             return responder
         default:
@@ -188,6 +204,7 @@ public final class RowsView: NSView {
         switching = true
         defer { switching = false }
         host.keepInView(edited.shown.rows[row].rect)
+        if focus != target { pillFocus = nil }
         let responder: NSResponder
         if case .typed(let kinds) = edited.classes[row], case .field(let key) = target {
             if field == nil || focus != target { stopField() }
@@ -263,8 +280,9 @@ public final class RowsView: NSView {
         switching = true
         if let listed = picking {
             picking = nil
+            pickingRow = nil
             book?.picking = nil
-            field.linkPicking = nil
+            field.picking = nil
             listed.window.dismiss()
             book?.editor?.setNeedsDisplay()
         }
@@ -286,6 +304,7 @@ public final class RowsView: NSView {
     /// The caret leaves the rows for the words.
     private func leaveToWords() {
         focus = nil
+        pillFocus = nil
         stopField()
         needsDisplay = true
         host.focusWords()
@@ -301,8 +320,8 @@ public final class RowsView: NSView {
             return
         }
         if field != nil, picking != nil {
-            // A link's field: its row is still a link to a note, else the list goes.
-            guard case .link = edited.classes[row] else {
+            // A relation row's field: its row is still one, else the list goes.
+            guard case .relation = edited.classes[row] else {
                 stopField()
                 window?.makeFirstResponder(self)
                 needsDisplay = true
@@ -325,6 +344,7 @@ public final class RowsView: NSView {
             }
             layoutField()
         }
+        if let pill = pillFocus, edited.shown.rows[row].pills.count <= pill { pillFocus = nil }
         needsDisplay = true
         window?.invalidateCursorRects(for: self)
     }
@@ -388,17 +408,30 @@ public final class RowsView: NSView {
         case .up:
             if row > 0 { focusRow(row - 1) } else { leaveToWords() }
         case .commit:
-            if edited.classes[row].opensCard { openCard(row) } else { host.end() }
+            if edited.opensCard(row) {
+                openCard(row)
+            } else if case .relation = edited.classes[row] {
+                // Its list, where a list can be made; else editing ends.
+                if canRelate { startRelating(row: row, typed: "") } else { host.end() }
+            } else {
+                host.end()
+            }
         case .escape:
-            host.end()
+            if pillFocus != nil {
+                // A pill's focus goes first; a second Escape ends editing.
+                pillFocus = nil
+                needsDisplay = true
+            } else {
+                host.end()
+            }
         case .space:
             switch edited.classes[row] {
             case .box:
                 if let key = edited.shown.rows[row].path?.field { book?.toggle(key, of: shape) }
             case .choice:
                 popChoice(row, edited)
-            case .link:
-                startPicking(row: row, typed: "")
+            case .relation:
+                startRelating(row: row, typed: "")
             case let kind where kind.opensCard:
                 openCard(row)
             default:
@@ -419,45 +452,70 @@ public final class RowsView: NSView {
         case 36 where modifiers == .command, 76 where modifiers == .command: host.end()
         case 49 where modifiers.isEmpty: handle(.space)
         case 53: handle(.escape)
-        case 51 where modifiers.isEmpty, 117 where modifiers.isEmpty: clearLink()
+        case 123 where modifiers.isEmpty: movePillFocus(by: -1)
+        case 124 where modifiers.isEmpty: movePillFocus(by: 1)
+        case 51 where modifiers.isEmpty, 117 where modifiers.isEmpty: deletePill()
         default: typeToPick(event, modifiers: modifiers)
         }
         // No other key goes on: up the chain is the canvas's shortcuts.
     }
 
-    // MARK: Picking a link
+    // MARK: Picking a note
 
-    /// Typing on a focused link row opens its list with the characters typed: any key with no ⌘ or ⌃ that makes a
+    /// Whether a relation row can open a list: something draws connections.
+    private var canRelate: Bool { book?.editor?.registry.drawsConnections ?? false }
+
+    /// Typing on a focused relation row opens its list with the characters typed: any key with no ⌘ or ⌃ that makes a
     /// printable character.
     private func typeToPick(_ event: NSEvent, modifiers: NSEvent.ModifierFlags) {
         guard focus != nil, modifiers.isDisjoint(with: [.command, .control]), let typed = event.characters, !typed.isEmpty,
               typed.unicodeScalars.allSatisfy({ $0.value >= 32 && $0.value != 127 && !(0xF700...0xF8FF).contains($0.value) }),
-              let edited = rows(), let row = focusedIndex(in: edited), case .link = edited.classes[row] else { return }
-        startPicking(row: row, typed: typed)
+              let edited = rows(), let row = focusedIndex(in: edited), case .relation = edited.classes[row] else { return }
+        startRelating(row: row, typed: typed)
     }
 
-    /// Delete on a focused link row with a value clears it: one step, the row still focused.
-    private func clearLink() {
-        guard let book, let edited = rows(), let row = focusedIndex(in: edited), case .link = edited.classes[row],
-              let key = edited.shown.rows[row].path?.field, edited.record[FieldValuesProperty.self]?.value(at: FieldPath(field: key)) != nil else { return }
-        book.setLink(nil, key: key, of: shape)
+    /// ← and → move the focus between the pills a focused relation row shows, clamped to them; from none, ← goes to the
+    /// last and → to the first.
+    private func movePillFocus(by step: Int) {
+        guard let edited = rows(), let row = focusedIndex(in: edited), case .relation = edited.classes[row] else { return }
+        let count = edited.shown.rows[row].pills.count
+        guard count > 0 else { return }
+        pillFocus = pillFocus.map { min(max($0 + step, 0), count - 1) } ?? (step < 0 ? count - 1 : 0)
+        needsDisplay = true
     }
 
-    /// Opens the list of the notes a link row may point at under its value, a field over the value taking `typed`. A
+    /// Backspace or Delete on a focused relation row: the first focuses the last pill, so the person sees which relationship
+    /// goes (it holds data); the second takes that pill's relationship away.
+    private func deletePill() {
+        guard let book, let edited = rows(), let row = focusedIndex(in: edited), case .relation = edited.classes[row] else { return }
+        let pills = edited.shown.rows[row].pills
+        guard !pills.isEmpty else { return }
+        guard let pill = pillFocus, pills.indices.contains(pill) else {
+            pillFocus = pills.count - 1
+            needsDisplay = true
+            return
+        }
+        pillFocus = nil
+        book.unrelate(pills[pill].arrow, of: shape)
+        needsDisplay = true
+    }
+
+    /// Opens the list of the notes a relation row may name under its value, a field over the value taking `typed`. A
     /// read-only note shakes and opens nothing. Nothing is written until a pick.
-    private func startPicking(row: Int, typed: String) {
+    private func startRelating(row: Int, typed: String) {
         guard let book, let editor = book.editor, picking == nil, let edited = rows(), edited.shown.rows.indices.contains(row),
-              case .link(let type) = edited.classes[row], let key = edited.shown.rows[row].path?.field else { return }
+              case .relation = edited.classes[row], let relation = edited.relation(row), let key = edited.shown.rows[row].relation, canRelate else { return }
         if editor.isReadOnly(shape) {
             editor.refuseChanges(to: [shape])
             return
         }
+        guard let picker = book.makePicker?(shape, relation.row) else { return }
         switching = true
         defer { switching = false }
         stopField()
-        focus = .field(key)
+        focus = .relation(key)
+        pillFocus = nil
         host.keepInView(edited.shown.rows[row].rect)
-        let picker = LinkPicker(editor: editor, owner: shape, type: type)
         let field = RowField()
         field.show(typed)
         field.setSelectedRange(NSRange(location: (field.string as NSString).length, length: 0))
@@ -482,14 +540,15 @@ public final class RowsView: NSView {
         self.clip = clip
         slide = 0
         picker.setQuery(typed)
-        let listWindow = CaretListWindow(picker.list, accessibilityLabel: TypesStyle.linkPickerAccessibilityLabel, over: field,
-                                         anchorRect: { [weak self] in self?.valueScreenRect(of: key) },
+        let listWindow = CaretListWindow(picker.list, accessibilityLabel: TypesStyle.relationPickerAccessibilityLabel, over: field,
+                                         anchorRect: { [weak self] in self?.valueScreenRect() },
                                          pick: { [weak self] row in self?.picked(row: row) },
                                          close: { [weak self] in self?.closePicking() })
         picker.list.onChange = { [weak listWindow] in listWindow?.listDidChange() }
         picking = (picker, listWindow)
-        field.linkPicking = (picker, listWindow)
-        book.picking = (shape, key)
+        pickingRow = relation.row
+        field.picking = (picker, listWindow)
+        book.picking = (shape, .relation(key))
         layoutField()
         window?.makeFirstResponder(field)
         needsDisplay = true
@@ -498,7 +557,7 @@ public final class RowsView: NSView {
     }
 
     /// Where the value's field is, on the screen: what the list goes under.
-    private func valueScreenRect(of key: String) -> CGRect? {
+    private func valueScreenRect() -> CGRect? {
         guard let window, let clip else { return nil }
         return window.convertToScreen(convert(clip.frame, to: nil))
     }
@@ -510,14 +569,14 @@ public final class RowsView: NSView {
         needsDisplay = true
     }
 
-    /// A line of the list picked (Return, or a click): the link is written, the list and the field go, and the row stays
-    /// focused with its new pill.
+    /// A line of the list picked (Return, or a click): the list and the field go, the row stays focused, and the pick is
+    /// written: the relationship (`RowBook.relate`, one step).
     private func picked(row index: Int) {
-        guard let book, let picking, case .field(let key)? = focus, let link = picking.picker.pick(row: index) else { return }
+        guard let picking, case .relation? = focus, let relation = pickingRow, let note = picking.picker.pickNote(row: index) else { return }
         stopField()
         window?.makeFirstResponder(self)
-        book.setLink(link, key: key, of: shape)
         needsDisplay = true
+        book?.relate(note, in: relation, of: shape)
     }
 
     /// The list closed with nothing picked (Escape, Tab, Backspace on nothing, a click elsewhere): the field and what was
@@ -566,7 +625,7 @@ public final class RowsView: NSView {
     /// lead or the paper between it does nothing, and the caret stays where it was.
     public override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        // A press while a link's list is open closes it with nothing stored, then does what it does.
+        // A press while a row's list is open closes it with nothing stored, then does what it does.
         if picking != nil { closePicking() }
         if let face = face(at: point) {
             book?.perform(face)
@@ -574,7 +633,7 @@ public final class RowsView: NSView {
         }
         guard let book, let edited = rows(), let hit = book.target(at: point, in: edited), hit.onValue else { return }
         let row = hit.row
-        // A click on a live pill goes to the note it points at (ending the editing), whatever the row is.
+        // A click on a live pill goes to the note it names (ending the editing), whatever the row is.
         if let pointed = book.pill(at: point, row: row, in: edited) {
             book.editor?.mentions?.follow(pointed)
             return
@@ -591,9 +650,9 @@ public final class RowsView: NSView {
         case .more, .json, .fold:
             focusRow(row)
             openCard(row)
-        case .link:
+        case .relation:
             focusRow(row)
-            startPicking(row: row, typed: "")
+            if book.isChevron(point, row: row, in: edited) { openCard(row) } else { startRelating(row: row, typed: "") }
         case .still:
             focusRow(row)
         }
@@ -619,6 +678,10 @@ public final class RowsView: NSView {
     public override func draw(_ dirtyRect: NSRect) {
         guard let book, let focus, let cg = NSGraphicsContext.current?.cgContext, let edited = rows(), let row = index(of: focus, in: edited) else { return }
         let shown = edited.shown.rows[row]
+        if field == nil, let pillFocus, shown.pills.indices.contains(pillFocus) {
+            book.outline(book.pillRect(shown.pills[pillFocus], in: shown), to: cg)
+            return
+        }
         let rect = field != nil ? clip?.frame ?? .zero : book.focusRect(of: shown, class: edited.classes[row])
         book.drawFocus(rect, of: shown, class: edited.classes[row], to: cg)
     }

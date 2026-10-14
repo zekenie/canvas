@@ -91,6 +91,20 @@ private func at(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat)
         expectEqual(rows(list).map { $0["at"] }, [at(40, 184, 120, 80), at(40, 328, 120, 80)], "as a list, kept clear of A")
         expectEqual(["B", "C"].map { editor.holder(of: shape($0, in: editor)!.id) }, [empty, empty])
     },
+    test("in may name a pen that has no title by its id: the shape goes within it as for a title, a shape with none restated in it moves in, and a shape that holds nothing is cannot_contain") {
+        let editor = try penEditor()
+        let empty = pen("", CGRect(x: 0, y: 0, width: 600, height: 500), in: editor)
+        let result = try drawn("tile \"A\" in #\(empty)", on: editor)
+        expectEqual(rows(result).first?["at"], at(40, 40, 120, 80))
+        expectEqual(editor.holder(of: try require(shape("A", in: editor)).id), empty)
+        expectEqual(result["on"]?["board"], "root")
+        let out = tile("", CGRect(x: 800, y: 600, width: 120, height: 80), in: editor)
+        let moved = try drawn("tile #\(out.id) in #\(empty)", on: editor)
+        expectEqual(rows(moved).map { $0["did"] }, ["moved"])
+        expectEqual(rows(moved).first?["id"], .string(out.id.description))
+        expectEqual(editor.holder(of: out.id), empty)
+        expectEqual(try refused("tile \"B\" in #\(out.id)", on: editor).reason, "cannot_contain")
+    },
     test("in a pen with placements keeps the shape within it as they place it; one that won't fit, or that they'd put outside it, is no_room") {
         let editor = try penEditor()
         let board = PenBoard(editor)

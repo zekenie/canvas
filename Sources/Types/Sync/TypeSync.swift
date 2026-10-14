@@ -62,14 +62,14 @@ public struct TypeSyncFailure: Equatable, Sendable {
 /// says its own.
 public struct SchemaSyncPrompts: Sendable {
     /// The schema that says `words`, `previousWords` the words at the last sync, `schemas` the other
-    /// types named (`SchemaReferenceNames.list`).
-    public let toSchema: @Sendable (_ previousWords: String?, _ words: String, _ schema: String, _ schemas: String?) -> ModelRequest
+    /// types named (`SchemaReferenceNames.list`), `relationship` whether the shape is a relationship type.
+    public let toSchema: @Sendable (_ previousWords: String?, _ words: String, _ schema: String, _ schemas: String?, _ relationship: Bool) -> ModelRequest
     /// The words that say `schema`, `previousSchema` the schema at the last sync.
     public let toWords: @Sendable (_ words: String, _ previousSchema: String?, _ schema: String, _ schemas: String?) -> ModelRequest
     /// A schema longer than this (UTF-8 bytes) is never sent to be written again from its words.
     public let maxSchemaLength: Int
 
-    public init(toSchema: @escaping @Sendable (_ previousWords: String?, _ words: String, _ schema: String, _ schemas: String?) -> ModelRequest,
+    public init(toSchema: @escaping @Sendable (_ previousWords: String?, _ words: String, _ schema: String, _ schemas: String?, _ relationship: Bool) -> ModelRequest,
                 toWords: @escaping @Sendable (_ words: String, _ previousSchema: String?, _ schema: String, _ schemas: String?) -> ModelRequest,
                 maxSchemaLength: Int) {
         self.toSchema = toSchema
@@ -79,7 +79,7 @@ public struct SchemaSyncPrompts: Sendable {
 
     /// A type's: `SchemaPrompts.toSchema` and `toPrompt`, which the evals test.
     public static let types = SchemaSyncPrompts(
-        toSchema: { SchemaPrompts.toSchema(previousPrompt: $0, prompt: $1, schema: $2, schemas: $3) },
+        toSchema: { SchemaPrompts.toSchema(previousPrompt: $0, prompt: $1, schema: $2, schemas: $3, relationship: $4) },
         toWords: { SchemaPrompts.toPrompt(prompt: $0, previousSchema: $1, schema: $2, schemas: $3) },
         maxSchemaLength: SchemaPrompts.toSchemaMaxLength)
 }
@@ -266,6 +266,10 @@ public final class TypeSync<Schema: SyncedSchema> {
         return statuses[id] ?? .idle
     }
 
+    /// Where the shape's sync is, read without observing it: a layout asks of every type's note, is told of a change by
+    /// `onSpotChange`, and an observed read makes a key path each time.
+    func statusUnobserved(of id: ShapeID) -> TypeSyncStatus { statuses[id] ?? .idle }
+
     /// The failure the shape's sync ended in, read without observing it: a type's rows ask each frame they are
     /// drawn (the reason at their foot) and are told of a change by `onSpotChange`, and an observed read makes a
     /// key path each time. Nothing but a compare while no shape is syncing or failed.
@@ -403,7 +407,8 @@ public final class TypeSync<Schema: SyncedSchema> {
         func sent(_ schema: String) -> String { names.modelSchema(name.flatMap { TypeNaming.titled(schema, $0) } ?? schema) }
         let request: ModelRequest, writes: TypeSide
         if wordsAhead, !tooLong {
-            request = Schema.prompts.toSchema(names.modelText(of: last.words).text, names.modelText(of: now.words).text, sent(now.schema), names.list)
+            request = Schema.prompts.toSchema(names.modelText(of: last.words).text, names.modelText(of: now.words).text, sent(now.schema), names.list,
+                                              record[RelationshipProperty.self] == true)
             writes = .schema
         } else if !Self.means(root, last.schema, ignoringTitle: Schema.namesTheShape) {
             guard !(document.fields.isEmpty && words.isEmpty) else { return }
@@ -466,13 +471,15 @@ public final class TypeSync<Schema: SyncedSchema> {
     /// The words the model is shown for the types a shape's sides name, now and at its last sync:
     /// each type called by its name, as a mention of it shows it now; a type that isn't in the file
     /// (deleted, or in another file) by the name its mention holds, and a `$ref` to one no mention
-    /// holds a name for as written. A mention of a shape that isn't a type stays words.
+    /// holds a name for as written. A mention of a shape that isn't a type stays words, and so does one of a
+    /// relationship type, whose fields belong to its arrows (`TypeIndex.canBeEmbedded`); a `$ref` to one written by
+    /// hand is still read as its word.
     private func referenceNames(_ now: TypeSyncSides, _ last: TypeSyncSides, in editor: CanvasEditor) -> SchemaReferenceNames {
         SchemaReferenceNames(words: [now.words, last.words], schemas: [now.schema, last.schema], name: { id in
             guard let record = editor.shape(inFile: id), record[TypeSchemaProperty.self] != nil,
                   let appearance = editor.registry.mentionAppearance(of: record), !appearance.isPlaceholder else { return nil }
             return appearance.label
-        }, isType: { id in editor.shape(inFile: id).map { $0[TypeSchemaProperty.self] != nil } ?? true })
+        }, isType: { id in editor.shape(inFile: id).map { _ in editor.types?.canBeEmbedded(id) ?? true } ?? true })
     }
 
     private func land(_ id: ShapeID, call number: Int, _ result: Result<ModelResponse, LanguageModelError>) {

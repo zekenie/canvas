@@ -17,7 +17,7 @@ private func summary(_ check: FieldCheck) -> [String] {
 }
 
 private func filled(_ quantity: Double = 3) -> JSONObject {
-    ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "lineItems": [["product": "Mug", "quantity": .number(quantity)]]]
+    ["customer": "Ann Lee", "lineItems": [["product": "Mug", "quantity": .number(quantity)]]]
 }
 
 /// A note of `types` holding `values`, not in any file.
@@ -163,7 +163,7 @@ private func filled(_ quantity: Double = 3) -> JSONObject {
         expectEqual(seen, [0, 0])
         expect(ShapeContext(document: editor.document, registry: editor.registry).reading == nil)
     },
-    test("Validation's rule says a wrong value of a run without an editor, with the path, and a needed one not at all") {
+    test("Validation's rule says a wrong value of a run without an editor, with the path, and a needed one as the third level") {
         let editor = try fieldEditor()
         let wrong = note(of: [order], filled(0))
         let bare = note(of: [order])
@@ -176,42 +176,10 @@ private func filled(_ quantity: Double = 3) -> JSONObject {
         expectEqual(seen[0].map(\.field), ["lineItems"])
         expectEqual(seen[0].map(\.path), ["/lineItems/0/quantity"])
         expectEqual(seen[0].map(\.severity), [.error])
-        expectEqual(seen[1], [], "needed is no issue")
+        expectEqual(seen[1].map(\.severity), [.incomplete, .incomplete], "needed is the third level, not a warning")
+        expectEqual(seen[1].map(\.field), ["customer", "lineItems"])
     },
 
-    test("a pointer over a reading: a target the run draws is one, one it deletes is gone, one it takes the type off is wrong, and a restated note's kept answer gives way") {
-        let editor = try fieldEditor()
-        let restated = editor.addNote(of: [order], filled())
-        expectEqual(summary(editor.fullCheck(of: restated)), [], "Ann Lee is a Person")
-        let cy = note(of: [person], ["name": "Cy"])
-        let toCy = note(of: [order], filled().merging(["customer": link(to: cy.id, "Cy")]) { $1 })
-        let drawn = try require(inTransaction(editor) { transaction, checks, _ in
-            transaction.insert(toCy)
-            let before = summary(checks.check(of: toCy, reading: try require(transaction.shapes.reading)))
-            transaction.insert(cy)
-            return (before, summary(checks.check(of: toCy, reading: try require(transaction.shapes.reading))))
-        })
-        expectEqual(drawn.0, ["warning /customer"], "a target the file doesn't hold is gone")
-        expectEqual(drawn.1, [], "a target drawn in the same run is one")
-        expectEqual(summary(editor.fullCheck(of: toCy.id)), [], "and so after the commit")
-        let deleted = try require(inTransaction(editor) { transaction, checks, _ in
-            transaction.delete([FieldFixtures.annLeeID])
-            let shapes = transaction.shapes
-            let reading = try require(shapes.reading)
-            let record = try require(shapes.shape(restated))
-            return (summary(checks.check(of: record, reading: reading)),
-                    editor.registry.validationIssues(of: record, in: shapes).filter { $0.field != nil }.map { "\($0.severity) \($0.path ?? "-")" })
-        })
-        expectEqual(deleted.0, ["warning /customer"], "a restated note whose target the run deletes: its kept answer is not taken")
-        expectEqual(deleted.1, ["warning /customer"], "and the rule says it as a warning with its path")
-        expectEqual(summary(editor.fullCheck(of: restated)), ["warning /customer"], "as the commit does")
-        let untyped = try require(inTransaction(editor) { transaction, checks, _ in
-            transaction.update(cy.id) { $0[IsAProperty.self] = nil }
-            return summary(checks.check(of: try require(transaction.shapes.shape(toCy.id)), reading: try require(transaction.shapes.reading)))
-        })
-        expectEqual(untyped, ["wrong /customer"], "a target the run takes Person off is no longer one")
-        expectEqual(summary(editor.fullCheck(of: toCy.id)), ["wrong /customer"], "as the commit does")
-    },
     test("the members of a written object no field names: a typo at the top, in another type's fields, in a list's item and in a group; none under what a type doesn't say") {
         let editor = try fieldEditor()
         editor.addFieldTypes([FieldFixtures.everyKind.a, FieldFixtures.everyKind.b])
@@ -229,7 +197,7 @@ private func filled(_ quantity: Double = 3) -> JSONObject {
         expectEqual(unnamed(["emial": .null, "status": .null]), [], "a member written null clears: never one")
         let kindsB = FieldFixtures.kindsBID
         expectEqual(unnamed(["labels": ["anything": "goes"], "anything": ["any": "thing"], "size": ["x": 1], "customer": ["x": 1], "payment": ["bogus": 1], "count": ["x": 1]], [kindsB]), [],
-                    "not into pairs, Other, an either, a pointer or a plain value")
+                    "not into pairs, Other, an either or a plain value")
         // A reference to a type that is gone reads as nothing the book can say.
         let gone = ShapeID()
         let holder = editor.addType(#"{"type": "object", "properties": {"x": {"$ref": "\#(FieldFixtures.uri(of: gone))"}}}"#, title: "Holder")

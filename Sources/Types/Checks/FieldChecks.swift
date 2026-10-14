@@ -1,12 +1,15 @@
+import Adornments
 import Canvas
 import Foundation
+import Mentions
 import Observation
 import Titles
+import Topology
 import Validation
 
 /// The types that refer to each other, by their JSON: a `$ref` to a type's URI, with or without a
-/// fragment, and a pointer's `contentSchema`. Both ways, so an edit to a type reaches the types that
-/// refer to it and a type that is gone still knows who waits for it.
+/// fragment. Both ways, so an edit to a type reaches the types that refer to it and a type that is gone
+/// still knows who waits for it.
 struct TypeReferences {
     /// The types each type's text refers to.
     private(set) var targets: [ShapeID: Set<ShapeID>] = [:]
@@ -60,29 +63,29 @@ public final class FieldChecks {
         var stamp: Int
         /// `FieldChecks.names` when the answer holds a problem that names a type (a rule across fields).
         var nameStamp: Int?
+        /// The validator's part and the relationship part together.
         var check: FieldCheck
-        /// What an answer with pointers also depends on; nil (one field, no reference to retain) for the rest.
-        var link: LinkPart?
+        /// The validator's part alone.
+        var base: FieldCheck
+        /// What the arrow's ends say of its relationship types; nil for a kind that does not relate.
+        var relation: RelationPart?
     }
 
-    /// The validator's part of an answer whose list has pointers and whose note holds values (`check` is this and
-    /// the pointers' problems together), the targets the pointers named with their link revisions when it was made
-    /// (`FieldBook.linkRevision`) and the chain's revision then: the answer is current only while both are.
-    private final class LinkPart {
-        let base: FieldCheck
-        let targets: [ShapeID: Int]
-        let chain: Int
-        init(base: FieldCheck, targets: [ShapeID: Int], chain: Int) {
-            self.base = base
-            self.targets = targets
-            self.chain = chain
-        }
+    /// What an arrow's ends say, with what it was made from: the index's stamp for the arrow and its revision
+    /// (any end, mark or lineage moved), and the rename count when the words name a type. Made again by the
+    /// next ask when any of them has moved, the validator's part not asked.
+    private struct RelationPart {
+        var stamp = -1
+        var revision = -1
+        var names: Int?
+        var problems: [FieldProblem] = []
     }
 
     @ObservationIgnored private weak var editor: CanvasEditor?
     /// The services it reads, found once: a frame asks for each note in view, and a lookup by type costs more than the rest of an ask.
     @ObservationIgnored private let book: FieldBook?
     @ObservationIgnored private let index: TypeIndex?
+    @ObservationIgnored private let relationships: RelationshipIndex?
     @ObservationIgnored private var answers: [ShapeID: Answer] = [:]
     @ObservationIgnored private var checkers: [[ShapeID]: FieldChecker] = [:]
     @ObservationIgnored private var references: TypeReferences?
@@ -100,6 +103,26 @@ public final class FieldChecks {
     @ObservationIgnored private var scratchCount = 0
     /// The types a list reads, with those they refer to, by list: what must be unchanged for the kept answer to hold.
     @ObservationIgnored private var closures: (revision: Int, byList: [[ShapeID]: [ShapeID]]) = (-1, [:])
+    /// The notes a sentence quotes by their label (`“foundation” is a Layer`), with the label as quoted and the
+    /// arrows that quote it: nothing tells an arrow that its end was renamed, so a commit that names one of
+    /// these compares its label now. Empty while no arrow of the file is a misfit.
+    @ObservationIgnored private var quotes: [ShapeID: (label: String, arrows: Set<ShapeID>)] = [:]
+    /// The notes each arrow quotes: what `quotes` lets go of when the arrow's part is made again.
+    @ObservationIgnored private var quotedBy: [ShapeID: [ShapeID]] = [:]
+    /// The arrows with no type that `looseEnd` calls a loose end: they keep no answer, so a recheck of everything
+    /// names them by this.
+    @ObservationIgnored private var looseEnds: Set<ShapeID> = []
+    /// The kinds that say where their rows go: a note of one holds relationships in rows, and the rules of its rows are checked.
+    @ObservationIgnored private let rowKinds: Set<ShapeKind>
+    /// By row: the notes whose kept answer holds an Only one issue of it (an error), each with the name the issue says. A rename
+    /// of a row is a change in the words of those issues and names no note (it leaves the partition equal), so a commit that
+    /// changed rows checks the rows' names against these and makes again the notes of the rows that are called otherwise.
+    @ObservationIgnored private var rowErrors: [RelationshipRowKey: [ShapeID: String]] = [:]
+    /// The same for the notes whose Needed row is empty (what a note still needs, Validation's third level): a rename of the row
+    /// only changes their issues' words, so those notes are not made again, only marked stale (`ValidationEngine.recheckWords`).
+    @ObservationIgnored private var rowNeeded: [RelationshipRowKey: [ShapeID: String]] = [:]
+    /// The rows each note holds in `rowErrors` and `rowNeeded`.
+    @ObservationIgnored private var rowErrorKeys: [ShapeID: [RelationshipRowKey]] = [:]
 
     #if DEBUG
     /// How many checkers have been made, and how many values checked (debug builds only): tests hold
@@ -108,8 +131,8 @@ public final class FieldChecks {
     @ObservationIgnored public private(set) var checksMade = 0
     /// How many checkers a run made over a reading (`check(of:reading:)`).
     @ObservationIgnored public private(set) var scratchMade = 0
-    /// How many times the pointers' part of an answer was made (the validator's is `checksMade`).
-    @ObservationIgnored public private(set) var linkChecksMade = 0
+    /// How many times an arrow's relationship part was made (the validator's is `checksMade`).
+    @ObservationIgnored public private(set) var relationPartsMade = 0
     #endif
 
     /// The most lists kept; past it all are dropped.
@@ -117,12 +140,21 @@ public final class FieldChecks {
     /// The most checkers a run keeps for types it changes.
     private static let scratchCapacity = 16
 
-    public init(editor: CanvasEditor) {
+    /// `rowKinds` are the kinds that say where their rows go (`TypeRows`, which this part sits below): a note of one holds its
+    /// relationships in rows, and the rules of its rows are checked.
+    public init(editor: CanvasEditor, rowKinds: Set<ShapeKind> = []) {
         self.editor = editor
         book = editor.fieldBook
         index = editor.types
+        relationships = editor.relationships
+        self.rowKinds = rowKinds
         lastChain = editor.types?.chainRevision ?? 0
-        editor.types?.onChange { [weak self] changed in self?.typesChanged(changed) }
+        editor.types?.onChange { [weak self] change in
+            // Only a change to a type: a mark or a list alone changes nothing a chain resolves to.
+            if !change.types.isEmpty { self?.typesChanged(change.types) }
+        }
+        // After the types': the ends are current when this hears, and an arrow it names is checked again.
+        editor.relationships?.onChange { [weak self] change in self?.relationshipsChanged(change) }
     }
 
     // MARK: Answering
@@ -139,7 +171,8 @@ public final class FieldChecks {
     public func fullCheck(of record: AnyShapeRecord) -> FieldCheck {
         // (An opaque shape holds nothing typed, so it has no `is` and is passed here.) The book's revision is the index's
         // stamp, read from the index at hand: the book finds it by a lookup of the service.
-        guard let book, let index, let links = record[IsAProperty.self], !links.isEmpty, record[TypeSchemaProperty.self] == nil else { return .clean }
+        guard let book, let index else { return .clean }
+        guard let links = record[IsAProperty.self], !links.isEmpty, record[TypeSchemaProperty.self] == nil else { return looseEnd(of: record) }
         let revision = index.chainRevision
         let values = record[FieldValuesProperty.self]
         let id = record.id
@@ -147,38 +180,254 @@ public final class FieldChecks {
         if let old, old.links == links, old.values == values {
             if let checker = old.checker {
                 if checker.stamp == revision, old.nameStamp == nil || old.nameStamp == names {
-                    if isCurrent(old, at: revision) { return old.check }
-                    return relinked(old, of: id, checker: checker, revision: revision)
+                    return relationCurrent(old, id) ? old.check : relationRemade(old, of: record)
                 }
             } else if old.stamp == revision {
-                return old.check
+                return relationCurrent(old, id) ? old.check : relationRemade(old, of: record)
             }
         }
         let checker = self.checker(for: links, revision: revision, book: book, index: index)
-        var check: FieldCheck
+        let base: FieldCheck
         if let old, let checker, old.checker === checker, old.links == links, old.values == values, old.nameStamp == nil || old.nameStamp == names {
-            check = old.link?.base ?? old.check
+            base = old.base
         } else if let checker {
             if let values, !values.isEmpty {
                 #if DEBUG
                 checksMade += 1
                 #endif
-                check = checker.check(values)
+                base = checker.check(values)
             } else {
-                check = checker.emptyCheck(names: names)
+                base = checker.emptyCheck(names: names)
             }
         } else {
-            check = .clean
+            base = .clean
         }
-        let namesAType = check.problems.contains { $0.path.isRoot }
-        if namesAType { named.insert(id) } else if !named.isEmpty { named.remove(id) }
-        var answer = Answer(links: links, values: values, checker: checker, stamp: revision, nameStamp: namesAType ? names : nil, check: check)
-        if let checker, !checker.linkSites.isEmpty, let values, !values.isEmpty {
-            link(&answer, base: check, values: values, checker: checker, revision: revision)
-            check = answer.check
+        let namesAType = base.problems.contains { $0.path.isRoot }
+        var answer = Answer(links: links, values: values, checker: checker, stamp: revision, nameStamp: namesAType ? names : nil, check: base, base: base, relation: nil)
+        if let editor, editor.registry.relates(record.kind) || rowKinds.contains(record.kind) {
+            // The checker was made again (the type's text changed): the ends are as they were, if the index says so.
+            let part: RelationPart
+            if let old, old.links == links, let kept = old.relation, relationCurrent(old, id) { part = kept } else { part = relationPart(of: record, links: links) }
+            answer.relation = part
+            answer.check = base.merging(part.problems)
         }
+        if namesAType || answer.relation?.names != nil { named.insert(id) } else if !named.isEmpty { named.remove(id) }
         answers[id] = answer
-        return check
+        return answer.check
+    }
+
+    // MARK: Relationships
+
+    /// Whether an answer's relationship part is the one the index would make now. While no relationship type
+    /// exists a kept part is current only if it is empty: unmarking or deleting the file's last one, and the
+    /// undo of the first, clear and bring back what it said.
+    private func relationCurrent(_ answer: Answer, _ id: ShapeID) -> Bool {
+        guard let part = answer.relation else { return true }
+        guard let relationships, relationships.isActive else { return part.problems.isEmpty }
+        return part.revision == relationships.revision && part.stamp == relationships.stamp(of: id) && (part.names == nil || part.names == names)
+    }
+
+    /// The answer with its relationship part made again and the validator's kept.
+    private func relationRemade(_ old: Answer, of record: AnyShapeRecord) -> FieldCheck {
+        var answer = old
+        let part = relationPart(of: record, links: old.links)
+        answer.relation = part
+        answer.check = old.base.merging(part.problems)
+        if part.names != nil { named.insert(record.id) } else if old.nameStamp == nil { named.remove(record.id) }
+        answers[record.id] = answer
+        return answer.check
+    }
+
+    /// What an arrow's ends say of the relationship types in its list. Stamp and revision are read before the
+    /// work, so a change during it is caught at the next compare.
+    private func relationPart(of record: AnyShapeRecord, links: [TypeLink]) -> RelationPart {
+        guard let relationships, let editor else { return RelationPart() }
+        var part = RelationPart(stamp: relationships.stamp(of: record.id), revision: relationships.revision)
+        forgetQuotes(of: record.id)
+        forgetRowErrors(of: record.id)
+        guard relationships.isActive else { return part }
+        let graph = relationships.graph
+        // A note says what its ruled rows lack or hold too many of; an arrow, what its ends are.
+        if !editor.registry.relates(record.kind) {
+            let rows = relationships.ruledRows(for: links.map(\.shape))
+            guard !rows.isEmpty else { return part }
+            #if DEBUG
+            relationPartsMade += 1
+            #endif
+            part.problems = RelationChecks.note(rows: rows, count: { relationships.relations(of: record.id, in: $0).count }, graph: graph)
+            if RelationChecks.namesATitle(part.problems) { part.names = self.names }
+            for problem in part.problems where problem.kind == .wrong || problem.kind == .needed {
+                guard case .row(let key) = problem.locus, let name = problem.place.first else { continue }
+                if problem.kind == .wrong { rowErrors[key, default: [:]][record.id] = name } else { rowNeeded[key, default: [:]][record.id] = name }
+                rowErrorKeys[record.id, default: []].append(key)
+            }
+            return part
+        }
+        guard links.contains(where: { graph.isRelationshipType($0.shape) }) else { return part }
+        #if DEBUG
+        relationPartsMade += 1
+        #endif
+        let verdict = RelationChecks.arrow(types: links.map(\.shape), ends: relationships.subjects(of: record.id), graph: graph, naming: naming(in: editor))
+        part.problems = verdict.problems
+        if !verdict.problems.isEmpty { part.names = self.names }
+        if !verdict.quoted.isEmpty {
+            quotedBy[record.id] = verdict.quoted
+            for shape in verdict.quoted {
+                var held = quotes[shape] ?? (label(of: shape, in: editor), [])
+                held.arrows.insert(record.id)
+                quotes[shape] = held
+            }
+        }
+        return part
+    }
+
+    private func forgetRowErrors(of note: ShapeID) {
+        guard !rowErrorKeys.isEmpty, let keys = rowErrorKeys.removeValue(forKey: note) else { return }
+        for key in keys {
+            rowErrors[key]?[note] = nil
+            if rowErrors[key]?.isEmpty == true { rowErrors[key] = nil }
+            rowNeeded[key]?[note] = nil
+            if rowNeeded[key]?.isEmpty == true { rowNeeded[key] = nil }
+        }
+    }
+
+    /// The notes whose Only one or Needed issue says a name its row is not called now.
+    private func notesOfRenamedRows(_ relationships: RelationshipIndex) -> Set<ShapeID> {
+        notesOfRenamedRows(rowErrors, relationships)
+    }
+
+    /// The notes whose Needed issue says a name its row is not called now: their words only are stale, so Validation is
+    /// told so and checks nothing (a keystroke in an end's label must not cost every empty note's check).
+    private func neededNotesOfRenamedRows(_ relationships: RelationshipIndex) -> Set<ShapeID> {
+        notesOfRenamedRows(rowNeeded, relationships)
+    }
+
+    private func notesOfRenamedRows(_ held: [RelationshipRowKey: [ShapeID: String]], _ relationships: RelationshipIndex) -> Set<ShapeID> {
+        guard !held.isEmpty else { return [] }
+        let graph = relationships.graph
+        var current: [RelationshipRowKey: Set<String>] = [:]
+        for rows in graph.ends.rows.values { for row in rows { current[row.key, default: []].insert(row.name(in: graph.types)) } }
+        var found: Set<ShapeID> = []
+        for (key, notes) in held {
+            for (note, name) in notes where current[key].map({ $0 != [name] }) ?? true { found.insert(note) }
+        }
+        return found
+    }
+
+    private func forgetQuotes(of arrow: ShapeID) {
+        guard !quotedBy.isEmpty, let shapes = quotedBy.removeValue(forKey: arrow) else { return }
+        for shape in shapes {
+            quotes[shape]?.arrows.remove(arrow)
+            if quotes[shape]?.arrows.isEmpty == true { quotes[shape] = nil }
+        }
+    }
+
+    /// An arrow with no type that is not at both ends and is a relationship's loose end: one orange line. Either it
+    /// is bound to a relationship type (the type's end of an arrow whose other end was freed), or its relationship
+    /// type is gone (deleted, or moved to another board) and it is left bound to a type's note with a name on it or a
+    /// rule: an arrow with neither is indistinguishable from a plain arrow that lost an end, and says nothing. A
+    /// function of the arrow's record, the marks and which notes are types alone, so it is right after a reopen and
+    /// after an undo. The first is not reached while no relationship type exists.
+    private func looseEnd(of record: AnyShapeRecord) -> FieldCheck {
+        guard let editor, let relationships, editor.registry.relates(record.kind),
+              record[TypeSchemaProperty.self] == nil, (record[IsAProperty.self] ?? []).isEmpty else {
+            if !looseEnds.isEmpty { looseEnds.remove(record.id) }
+            return .clean
+        }
+        // The cheap guards first: an arrow that says nothing of itself, in a file with no relationship type, reads no
+        // more than its own record.
+        let active = relationships.isActive
+        let speaks = record[RelationshipEndProperty.self] != nil || editor.registry.typeWords(of: record.kind)?.words(record)?.firstLine != nil
+        guard active || speaks else {
+            if !looseEnds.isEmpty { looseEnds.remove(record.id) }
+            return .clean
+        }
+        let bound = record.boundShapes(in: editor.shapeContext)
+        guard !bound.isEmpty, editor.topology?.edges(carriedBy: record.id, view: .literal).contains(where: \.isConnection) != true else {
+            if !looseEnds.isEmpty { looseEnds.remove(record.id) }
+            return .clean
+        }
+        let marked = relationships.graph.types.relationshipTypes
+        // An end is read through a pill that names a type, as the index reads it.
+        let at = bound.compactMap(relationships.typeAt)
+        let type = active ? at.first(where: marked.contains) : nil
+        guard type != nil || (speaks && !at.isEmpty) else {
+            if !looseEnds.isEmpty { looseEnds.remove(record.id) }
+            return .clean
+        }
+        looseEnds.insert(record.id)
+        return FieldCheck(problems: [RelationChecks.looseEnd(relation: type, graph: relationships.graph)])
+    }
+
+    /// The names the sentences use, from the editor as it is.
+    /// Made once: the closures read the editor as it is when a sentence is made, and an arrow's part (10,000 on a first
+    /// read) asks for the names whether or not it says anything.
+    private func naming(in editor: CanvasEditor) -> RelationNaming {
+        if let kept = namingKept { return kept }
+        let registry = editor.registry
+        let made = RelationNaming(
+            label: { [unowned self, weak editor] id in editor.map { label(of: id, in: $0) } ?? "Untitled" },
+            directTypes: { [weak editor] id in editor?.types.map { index in index.links(of: id).map(\.shape).filter(index.isType) } ?? [] },
+            kindName: { [weak editor] id in
+                guard let kind = editor?.shape(inFile: id)?.kind, !registry.isTypeable(kind) else { return nil }
+                return registry.label(of: kind).name.lowercased()
+            })
+        namingKept = made
+        return made
+    }
+    @ObservationIgnored private var namingKept: RelationNaming?
+
+    /// What a shape is called in a sentence: Mentions' label, else `Untitled` and its kind.
+    private func label(of id: ShapeID, in editor: CanvasEditor) -> String {
+        guard let record = editor.shape(inFile: id) else { return "Untitled" }
+        return editor.registry.mentionAppearance(of: record)?.label ?? "Untitled " + editor.registry.label(of: record.kind).name
+    }
+
+    /// The index told what a commit changed in relationships: the arrows and notes it names are checked again,
+    /// after Validation and the index have both heard, never inside a follower.
+    private func relationshipsChanged(_ change: RelationshipChange) {
+        revision &+= 1
+        guard let editor else { return }
+        if change.everything {
+            let ids = Set(answers.keys).union(looseEnds)
+            editor.validation?.recheck(ids)
+            editor.adornmentsDidChange(for: ids)
+        } else {
+            var ids = change.arrows.union(change.values).union(change.notes)
+            // A row renamed: the words of an Only one issue name it, and the partition (which names the notes) is as it was.
+            var worded: Set<ShapeID> = []
+            if change.rows, let relationships {
+                ids.formUnion(notesOfRenamedRows(relationships))
+                worded = neededNotesOfRenamedRows(relationships).subtracting(ids)
+            }
+            if !ids.isEmpty { editor.validation?.recheck(ids) }
+            if !worded.isEmpty { editor.validation?.recheckWords(worded) }
+            // An arrow's chip is red while an end of it is a misfit: it is made again for the arrows whose verdict may have moved.
+            if !change.arrows.isEmpty || !change.values.isEmpty { editor.adornmentsDidChange(for: change.arrows.union(change.values)) }
+        }
+        editor.setNeedsDisplay()
+    }
+
+    /// A commit named a note some sentence quotes: where its label differs from the one quoted (or it is
+    /// gone), the arrows that quote it are made again.
+    private func requote(_ changes: ChangeSet, in editor: CanvasEditor) {
+        var stale: Set<ShapeID> = []
+        func look(_ id: ShapeID) {
+            guard let held = quotes[id] else { return }
+            let now = editor.shape(inFile: id) == nil ? nil : label(of: id, in: editor)
+            guard now != held.label else { return }
+            stale.formUnion(held.arrows)
+            // The label quoted is the one now, so the next commit that names the note compares and finds it the same.
+            if let now { quotes[id]?.label = now }
+        }
+        for id in changes.changed where !changes.moved.contains(id) { look(id) }
+        for id in changes.added { look(id) }
+        for id in changes.elsewhere { look(id) }
+        for id in changes.removed { look(id) }
+        guard !stale.isEmpty else { return }
+        for arrow in stale { answers[arrow]?.relation?.revision = -1 }
+        revision &+= 1
+        editor.validation?.recheck(stale)
     }
 
     // MARK: A run's check
@@ -201,13 +450,103 @@ public final class FieldChecks {
     }
 
     /// The answer for a shape as a reading that hasn't committed has the file (draw's run, a dry run, a
-    /// paste), for a shape the reading holds: its values against its types as the reading leaves them.
+    /// paste), for a shape the reading holds: its values against its types as the reading leaves them, and, for
+    /// an arrow of a relationship type, what its ends say as the reading has them.
     /// `typing` is not left out. The committed file's answer when the shape and what it reads are as the
     /// editor keeps them (a script's restated note costs a lookup); the kept checker when only its values
     /// are new; else a checker over the reading, made once for each distinct list and the types' texts and
     /// titles, and let go by the commit. Nothing is kept for the shape.
     public func check(of record: AnyShapeRecord, reading: LayoutReading) -> FieldCheck {
-        checkAndBook(of: record, reading: reading)?.check ?? .clean
+        if let found = checkAndBook(of: record, reading: reading) { return found.check }
+        // A shape with no type says one thing: an arrow that is a relationship's loose end, as the reading has the file.
+        return reading.isCommitted ? looseEnd(of: record) : looseEnd(of: record, reading: reading)
+    }
+
+    /// `looseEnd(of:)` as a reading that hasn't committed has the file: the marks from the run's own graph, which notes
+    /// are types and what a pill names from the reading's records, whether the arrow is bound at both ends from its own
+    /// record. Nothing is kept for it.
+    private func looseEnd(of record: AnyShapeRecord, reading: LayoutReading) -> FieldCheck {
+        guard let editor, let relationships, editor.registry.relates(record.kind),
+              record[TypeSchemaProperty.self] == nil, (record[IsAProperty.self] ?? []).isEmpty else { return .clean }
+        let registry = editor.registry
+        let graph = relationships.graph(in: reading)
+        let marked = graph.types.relationshipTypes
+        let speaks = record[RelationshipEndProperty.self] != nil || registry.typeWords(of: record.kind)?.words(record)?.firstLine != nil
+        guard !marked.isEmpty || speaks else { return .clean }
+        let bound = record.boundShapes(in: editor.shapeContext)
+        guard !bound.isEmpty, !registry.edges(of: record).contains(where: \.isConnection) else { return .clean }
+        func isType(_ id: ShapeID) -> Bool {
+            guard let shape = reading.shape(inFile: id) else { return false }
+            return registry.canBeType(shape.kind) && shape[TypeSchemaProperty.self] != nil
+        }
+        // An end is read through a pill that names one shape that is a type, as the index reads it.
+        let at = bound.compactMap { end -> ShapeID? in
+            guard let shape = reading.shape(inFile: end) else { return nil }
+            guard relationships.standInKinds.contains(shape.kind) else { return isType(end) ? end : nil }
+            let named = Set(relationships.shapesNamed(by: shape))
+            guard named.count == 1, let target = named.first, isType(target) else { return nil }
+            return target
+        }
+        let type = at.first(where: marked.contains)
+        guard type != nil || (speaks && !at.isEmpty) else { return .clean }
+        return FieldCheck(problems: [RelationChecks.looseEnd(relation: type, graph: graph)])
+    }
+
+    /// A type's own warnings as a reading that hasn't committed has the file (the rule's third part, for a run): each
+    /// type its JSON refers to that the reading no longer has as a type, named as the committed file knows it, and a
+    /// `$title` that titles nothing, over the fields the type has in the reading.
+    public func typeWarnings(of record: AnyShapeRecord, reading: LayoutReading) -> [String] {
+        guard let book, let index, let text = record[TypeSchemaProperty.self]?.text else { return [] }
+        if reading.isCommitted {
+            var said = goneReferences(of: record.id).map(FieldCheckWords.refersToGone)
+            if let problem = TitleSource.problem(book.fields(types: [record.id]), writtenBy: record.id) { said.append(FieldCheckWords.title(problem)) }
+            return said
+        }
+        func isType(_ id: ShapeID) -> Bool {
+            guard reading.isChanged(id) else { return index.isType(id) }
+            guard let shape = reading.shape(inFile: id) else { return false }
+            return reading.registry.canBeType(shape.kind) && shape[TypeSchemaProperty.self] != nil
+        }
+        let targets = Set(SchemaReferences.refs(in: SchemaReadings.reading(of: text, for: record.id).shownText).map(\.shape))
+        // Named and ordered as `goneReferences` does: by the title last known, then by id.
+        let gone = targets.filter { !isType($0) }.map { target -> (name: TypeLinkName, key: String, id: String) in
+            let title: String?
+            switch index.name(of: TypeLink(target)) {
+            case .live(let known), .missing(let known): title = known
+            }
+            return (.missing(lastKnown: title), title?.lowercased() ?? "\u{10FFFF}", target.rawValue.uuidString)
+        }.sorted { ($0.key, $0.id) < ($1.key, $1.id) }.map(\.name)
+        var said = gone.map(FieldCheckWords.refersToGone)
+        let fields = closure(of: [record.id], index: index).contains(where: { differs($0, in: reading, index: index) }) || reading.isChanged(record.id)
+            ? FieldBook(reading: reading, record: record, shared: book).fields(types: [record.id]) : book.fields(types: [record.id])
+        if let problem = TitleSource.problem(fields, writtenBy: record.id) { said.append(FieldCheckWords.title(problem)) }
+        return said
+    }
+
+    // MARK: What a run reaches
+
+    /// The shapes whose answer says a type by its name (a rule across fields, an arrow's sentence about its ends): a
+    /// type renamed changes their words.
+    var shapesNamingATitle: Set<ShapeID> { named }
+
+    /// The arrows whose sentence quotes a note by its label (`“foundation” is a Layer`).
+    func arrowsQuoting(_ note: ShapeID) -> Set<ShapeID> { quotes[note]?.arrows ?? [] }
+
+    /// What a change to these types reaches in the committed file: their instances, and the types whose JSON refers to
+    /// them, over and over (an instance of a type that refers to a changed type is reached), the types themselves included.
+    func reached(byTypes changed: Set<ShapeID>) -> Set<ShapeID> {
+        guard let index, !changed.isEmpty else { return [] }
+        let references = knownReferences(index)
+        var reached = changed, frontier = changed
+        while !frontier.isEmpty {
+            var next: Set<ShapeID> = []
+            for id in frontier {
+                for instance in index.instances(of: id) where reached.insert(instance).inserted { next.insert(instance) }
+                for referrer in references.referrers[id] ?? [] where reached.insert(referrer).inserted { next.insert(referrer) }
+            }
+            frontier = next
+        }
+        return reached
     }
 
     /// What a run that hasn't committed says of a shape it wrote (draw, a dry run): the check of its values
@@ -233,19 +572,16 @@ public final class FieldChecks {
         if reading.isCommitted { return (fullCheck(of: record), book) }
         let types = links.map(\.shape)
         let id = record.id
+        // What an arrow's ends say is the run's own: the committed answer's is left out, and the ends the run
+        // wrote are read over the run's graph (`RelationshipIndex.graph(in:)`).
+        let relation = relationProblems(of: record, links: links, reading: reading)
+        func with(_ check: FieldCheck) -> FieldCheck { relation.isEmpty ? check : check.merging(relation) }
         if !closure(of: types, index: index).contains(where: { differs($0, in: reading, index: index) }) {
-            if !reading.isChanged(id) {
-                let full = fullCheck(of: record)
-                // The kept answer's pointers are the committed file's: one whose target the run drew, changed or
-                // deleted (or a type that target is) is said again over the reading, the validator's part kept.
-                guard let answer = answers[id], let part = answer.link, let checker = answer.checker, let values = answer.values,
-                      part.targets.keys.contains(where: { targetDiffers($0, in: reading, index: index) }) else { return (full, book) }
-                return (checker.merged(part.base, with: linkProblems(of: record, values: values, by: checker, reading: reading)), book)
-            }
-            return (checked(record, by: checker(for: links, revision: index.chainRevision, book: book, index: index), reading: reading), book)
+            if !reading.isChanged(id) { return (with(fullCheck(of: record).removingRelations()), book) }
+            return (with(checked(record, by: checker(for: links, revision: index.chainRevision, book: book, index: index), reading: reading)), book)
         }
         if let kept = scratch[types]?.first(where: { $0.reads.allSatisfy { read($0.id, in: reading) == $0 } }) {
-            return (checked(record, by: kept.checker, reading: reading), kept.book)
+            return (with(checked(record, by: kept.checker, reading: reading)), kept.book)
         }
         let over = FieldBook(reading: reading, record: record, shared: book)
         let made = FieldChecker(types: types, book: over)
@@ -259,56 +595,57 @@ public final class FieldChecks {
         }
         scratch[types, default: []].append(Scratch(reads: ids.map { read($0, in: reading) }, checker: made, book: over))
         scratchCount += 1
-        return (checked(record, by: made, reading: reading), over)
+        return (with(checked(record, by: made, reading: reading)), over)
     }
 
-    /// The validator's answer and the pointers', over the reading: a pointer to a note the run draws is one,
-    /// to a note it deletes gone.
+    /// What an arrow's ends say of the relationship types in its list, as a reading has the file: a misfit, an
+    /// end that cannot be read, a free end. Over the run's own graph, so an end, a type or a note the script
+    /// writes is in it. Nothing for a shape that is not an arrow of a kind that relates, or has none of these types.
+    private func relationProblems(of record: AnyShapeRecord, links: [TypeLink], reading: LayoutReading) -> [FieldProblem] {
+        guard let relationships, let editor else { return [] }
+        guard editor.registry.relates(record.kind) else { return noteProblems(of: record, links: links, reading: reading, relationships: relationships) }
+        let graph = relationships.graph(in: reading)
+        guard links.contains(where: { graph.isRelationshipType($0.shape) }) else { return [] }
+        let registry = editor.registry
+        let naming = RelationNaming(
+            label: { id in
+                guard let shape = reading.shape(inFile: id) else { return "Untitled" }
+                return registry.mentionAppearance(of: shape)?.label ?? "Untitled " + registry.label(of: shape.kind).name
+            },
+            directTypes: { id in (graph.types.links[id] ?? []).map(\.shape).filter(graph.types.types.contains) },
+            kindName: { id in
+                guard let kind = reading.shape(inFile: id)?.kind, !registry.isTypeable(kind) else { return nil }
+                return registry.label(of: kind).name.lowercased()
+            })
+        return RelationChecks.arrow(types: links.map(\.shape), ends: relationships.subjects(of: record, in: reading), graph: graph, naming: naming).problems
+    }
+
+    /// What a note's ruled rows lack or hold too many of, as a reading has the file: a note the script draws or changes, or whose
+    /// relationships it changes, is judged against the rows and the arrows the run has written (a row the script gives Only one,
+    /// a second arrow it draws). Nothing for a kind that draws no rows.
+    private func noteProblems(of record: AnyShapeRecord, links: [TypeLink], reading: LayoutReading, relationships: RelationshipIndex) -> [FieldProblem] {
+        guard rowKinds.contains(record.kind) else { return [] }
+        let graph = relationships.graph(in: reading)
+        guard !graph.ends.rows.isEmpty else { return [] }
+        let rows = graph.rows(for: links.map(\.shape), isType: false).filter { !$0.rule.isNone }
+        guard !rows.isEmpty else { return [] }
+        let relations = relationships.relations(of: record.id, in: reading)
+        return RelationChecks.note(rows: rows, count: { row in
+            var seen: Set<ShapeID> = []
+            return relations.filter { $0.type == row.key.type && row.sides.contains($0.side) && seen.insert($0.arrow).inserted }.count
+        }, graph: graph)
+    }
+
+    /// The validator's answer over the reading.
     private func checked(_ record: AnyShapeRecord, by checker: FieldChecker?, reading: LayoutReading) -> FieldCheck {
         guard let checker else { return .clean }
         if let values = record[FieldValuesProperty.self], !values.isEmpty {
             #if DEBUG
             checksMade += 1
             #endif
-            let base = checker.check(values)
-            guard checker.holdsLinks else { return base }
-            return checker.merged(base, with: linkProblems(of: record, values: values, by: checker, reading: reading))
+            return checker.check(values)
         }
         return checker.emptyCheck(names: names)
-    }
-
-    private func linkProblems(of record: AnyShapeRecord, values: FieldValues, by checker: FieldChecker, reading: LayoutReading) -> [FieldProblem] {
-        #if DEBUG
-        linkChecksMade += 1
-        #endif
-        return checker.linkProblems(in: values) { target, type in linkState(target, as: type, reading: reading, record: record) }
-    }
-
-    /// Whether a pointer's target, or a type it is or builds on as the committed file has it, is not as the reading has it.
-    private func targetDiffers(_ target: ShapeID, in reading: LayoutReading, index: TypeIndex) -> Bool {
-        reading.isChanged(target) || index.graph.lineage(of: target).contains { differs($0, in: reading, index: index) }
-    }
-
-    /// What a pointer's target is to the type it points at, as a reading has the file: a shape the reading lacks is
-    /// gone unless the committed file can't read it either (kept aside, on a board it can't show); one it holds is
-    /// a note of the type while it holds no schema and its `is` lists, as the reading has them, reach the type.
-    private func linkState(_ target: ShapeID, as type: ShapeID, reading: LayoutReading, record: AnyShapeRecord) -> LinkState {
-        func shape(_ id: ShapeID) -> AnyShapeRecord? { id == record.id ? record : reading.shape(inFile: id) }
-        guard let found = shape(target) else {
-            guard let editor, editor.file.board(containing: target) != nil else { return .gone }
-            let committed = editor.shape(inFile: target)
-            return committed == nil || committed?.isOpaque == true ? .elsewhere : .gone
-        }
-        guard !found.isOpaque else { return .elsewhere }
-        guard found[TypeSchemaProperty.self] == nil, shape(type)?[TypeSchemaProperty.self] != nil else { return .notOne }
-        var seen: Set<ShapeID> = [target], frontier = [target]
-        while let next = frontier.popLast() {
-            for parent in shape(next)?[IsAProperty.self]?.map(\.shape) ?? [] {
-                if parent == type { return .one }
-                if seen.insert(parent).inserted { frontier.append(parent) }
-            }
-        }
-        return .notOne
     }
 
     private func read(_ id: ShapeID, in reading: LayoutReading) -> ScratchRead {
@@ -338,51 +675,6 @@ public final class FieldChecks {
         }
         closures.byList[types] = found
         return found
-    }
-
-    /// Whether an answer's pointers still say what they said: the chain (what makes a note a Person, and whether
-    /// the type a pointer points at is one) is the one it was made at, and no target changed its state. An
-    /// answer with no pointer is, at one nil compare.
-    private func isCurrent(_ answer: Answer, at revision: Int) -> Bool {
-        guard let part = answer.link, let book else { return true }
-        // Before the targets: values that are no links name none, but their pointer's type may have gone or come back.
-        guard part.chain == revision else { return false }
-        return part.targets.allSatisfy { book.linkRevision(of: $0.key) == $0.value }
-    }
-
-    /// An answer whose validator's part is right and whose pointers' is not: that part made again, the
-    /// validator not asked.
-    private func relinked(_ old: Answer, of id: ShapeID, checker: FieldChecker, revision: Int) -> FieldCheck {
-        var answer = old
-        if let values = old.values, let part = old.link { link(&answer, base: part.base, values: values, checker: checker, revision: revision) }
-        answers[id] = answer
-        return answer.check
-    }
-
-    /// Sets the answer's check to its pointers' problems merged with its validator's (`base`), and keeps the targets it
-    /// read and their revisions. Each target read goes through the book's `remember`, so a commit that changes one
-    /// finds this note.
-    private func link(_ answer: inout Answer, base: FieldCheck, values: FieldValues, checker: FieldChecker, revision: Int) {
-        guard let book else { return }
-        #if DEBUG
-        linkChecksMade += 1
-        #endif
-        var targets: [ShapeID: Int] = [:]
-        let problems = checker.linkProblems(in: values) { target, type in
-            targets[target] = book.linkRevision(of: target)
-            return linkState(target, as: type)
-        }
-        answer.check = checker.merged(base, with: problems)
-        answer.link = LinkPart(base: base, targets: targets, chain: revision)
-    }
-
-    /// What a pointer's target is to the type it points at, as the editor holds the file.
-    private func linkState(_ target: ShapeID, as type: ShapeID) -> LinkState {
-        guard let editor, let index else { return .elsewhere }
-        book?.remember(target)
-        guard editor.file.board(containing: target) != nil else { return .gone }
-        guard let record = editor.shape(inFile: target), !record.isOpaque else { return .elsewhere }
-        return FieldLinks.admits(record.id, as: type, in: index) ? .one : .notOne
     }
 
     /// The checker for a shape's list. Notes made in a row mostly share a list, so the last answer is kept
@@ -476,15 +768,14 @@ public final class FieldChecks {
         if let book {
             let revision = index.chainRevision
             reached = reached.filter { id in
-                // An answer with pointers also depends on what they point at and on whether their type is one, which its
-                // checker doesn't say: it is checked again, though its values name no target.
-                guard !changed.contains(id), !named.contains(id), let answer = answers[id], answer.link == nil, let kept = answer.checker else { return true }
+                guard !changed.contains(id), !named.contains(id), let answer = answers[id], let kept = answer.checker else { return true }
                 return checker(for: answer.links, revision: revision, book: book, index: index) !== kept
             }
-            // The notes that point at a note this makes, or stops making, an instance of what they point at, though
-            // they are no instance of what changed.
-            if book.tracksTargets { reached.formUnion(book.linkCarriers(ofTargetsIn: index.affected(by: changed))) }
         }
+        // The sentences that name a type say it as the chain has it now: a type of an end that lost its schema or
+        // went, or was renamed in the commit that changed the chain. The arrows that say one are not instances
+        // of the type.
+        reached.formUnion(named.filter { answers[$0]?.relation?.names != nil })
         editor.validation?.recheck(reached)
         editor.setNeedsDisplay()
     }
@@ -524,27 +815,29 @@ extension FieldChecks: EditorService {
     /// after the commit, a row's draw). A shape that only moved changes nothing the check reads.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         if scratchCount > 0 { dropScratch() }
-
-        // The notes that point at a note this commit changed what is said of (gone, back, renamed, no longer one): before the
-        // early return, since the book's revisions must move whether or not an answer is kept. Their answers follow
-        // by the target's revision, and Validation looks at them again.
-        if let carriers = editor.fieldBook?.linkCarriers(touchedBy: changes), !carriers.isEmpty {
-            editor.validation?.recheck(carriers)
-            revision &+= 1
-        }
         guard !answers.isEmpty || typingStorage != nil else { return }
         // A file put in place on the board shown (a board read again, a revert): the answers are another file's.
         if changes.replacedDocument {
             answers = [:]
             named = []
+            quotes = [:]
+            quotedBy = [:]
+            looseEnds = []
+            rowErrors = [:]
+            rowNeeded = [:]
+            rowErrorKeys = [:]
             typingStorage = nil
             revision &+= 1
             return
         }
+        if !quotes.isEmpty { requote(changes, in: editor) }
         var moved = false
         func forget(_ id: ShapeID) {
             guard editor.file.record(id) == nil else { return }
             if answers.removeValue(forKey: id) != nil { moved = true }
+            forgetQuotes(of: id)
+            looseEnds.remove(id)
+            forgetRowErrors(of: id)
             named.remove(id)
             if typingStorage?.shape == id {
                 typingStorage = nil
@@ -573,6 +866,11 @@ extension FieldChecks: EditorService {
         typingStorage = nil
         if change.isFileReplaced {
             answers = [:]
+            quotes = [:]
+            quotedBy = [:]
+            rowErrors = [:]
+            rowNeeded = [:]
+            rowErrorKeys = [:]
             checkers = [:]
             recent = nil
             references = nil

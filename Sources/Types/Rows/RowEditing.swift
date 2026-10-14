@@ -3,7 +3,7 @@ import Canvas
 import CoreGraphics
 
 // What the rows of a note that is one do when they are used: what each row is to the keyboard and the
-// pointer, how a typed value is written (through the one writer: each keystroke is a commit, one undo step a
+// mouse, how a typed value is written (through the one writer: each keystroke is a commit, one undo step a
 // field), how the check is told which field is typed in, the choice's menu and the card a row with more in it
 // opens. The view that takes the keys and presses is `RowsView`; this is the book's side of it.
 
@@ -19,8 +19,8 @@ enum RowClass: Equatable {
     case more
     /// What no control suits: the panel's JSON.
     case json
-    /// A link to a note of the type: typing in the row, Space or a click off its pill opens the list of the type's notes.
-    case link(ShapeID)
+    /// A row that names notes: typing in the row, Space or a click off its pills opens the list of the notes it may name.
+    case relation
     /// A row that takes the focus and does nothing (a type that is gone).
     case still
     /// The fold: a card of the rows it holds.
@@ -51,6 +51,21 @@ struct EditedRows {
     /// A fold's place: `+N more` by `isMore`, a `from` fold the other.
     func index(ofFold isMore: Bool) -> Int? {
         template.items.firstIndex { if case .fold(let fold) = $0 { fold.isMore == isMore } else { false } }
+    }
+
+    /// A relation row's place, by the key that finds it again when the rows change.
+    func index(ofRelation key: RelationshipRowKey) -> Int? { shown.rows.firstIndex { $0.relation == key } }
+
+    /// A relation row's template.
+    func relation(_ row: Int) -> RelationRowTemplate? {
+        if case .relation(let relation) = template.items[row] { relation } else { nil }
+    }
+
+    /// Whether Return on the row asks for a card: a row with more in it, and a relation row that holds a relationship (it ends in `›`).
+    func opensCard(_ row: Int) -> Bool {
+        if classes[row].opensCard { return true }
+        if case .relation = classes[row] { return !shown.rows[row].pills.isEmpty }
+        return false
     }
 
     func field(_ row: Int) -> FieldRowTemplate? {
@@ -84,14 +99,13 @@ extension RowBook {
     private func classOf(_ item: RowTemplateItem) -> RowClass {
         switch item {
         case .fold: return .fold
+        case .relation: return .relation
         case .field(let field):
             switch field.kind {
             case .plain(.yesNo): return .box
             case .plain(.choice(let options)): return .choice(options)
             case .plain(let kind): return .typed([kind])
             case .either(.plain(let first), .plain(let second)): return .typed([first, second])
-            case .pointer(let target): return editor?.types?.isType(target) == true ? .link(target) : .still
-            case .pointers(let target): return editor?.types?.isType(target) == true ? .more : .still
             case .other: return .json
             case .typeFields(let target), .listOfTypeFields(let target):
                 return editor?.types?.isType(target) == true ? .more : .still
@@ -107,10 +121,33 @@ extension RowBook {
         let shown = edited.shown.rows[row]
         switch edited.classes[row] {
         case .fold: return (row, true)
-        case .box, .still, .link:
+        case .box, .still, .relation:
             return (row, shown.valueRect.contains(point) && hug(shown).contains(point))
         default: return (row, shown.valueRect.contains(point))
         }
+    }
+
+    // MARK: Relating
+
+    /// A pick in a relation row of `shape`: the relationship (`CanvasEditor.relate`, one step "Add Relationship"). The note
+    /// shakes when nothing was written (a read-only note, a pick that was refused).
+    @discardableResult
+    func relate(_ picked: ShapeID, in row: RelationshipRow, of shape: ShapeID) -> Bool {
+        guard let editor else { return false }
+        // The editor shakes the note itself when it writes nothing: once.
+        return editor.relate(shape, to: picked, in: row) != nil
+    }
+
+    /// A pill deleted in a row of `shape`: its relationship, its values and the pill it empties go (`CanvasEditor.unrelate`,
+    /// one step "Remove Relationship"). A read-only note, or a relationship that cannot go, shakes the note, once.
+    @discardableResult
+    func unrelate(_ arrow: ShapeID, of shape: ShapeID) -> Bool {
+        guard let editor else { return false }
+        if editor.isReadOnly(shape) {
+            editor.refuseChanges(to: [shape])
+            return false
+        }
+        return editor.unrelate([arrow], shaking: shape)
     }
 
     // MARK: Writing
@@ -138,11 +175,6 @@ extension RowBook {
         let path = FieldPath(field: key)
         let ticked = editor?.fieldWriter?.values(of: shape).value(at: path) == .bool(true)
         editor?.fieldWriter?.set(.bool(!ticked), at: path, of: shape)
-    }
-
-    /// A link row's pick: the one writer sets the value (`Change Customer`, one step a field); a read-only note shakes.
-    func setLink(_ link: FieldLink?, key: String, of shape: ShapeID) {
-        editor?.fieldWriter?.set(link?.value, at: FieldPath(field: key), of: shape)
     }
 
     // MARK: Telling the check
@@ -180,8 +212,13 @@ extension RowBook {
                            tabbedOut: @escaping @MainActor (Bool) -> Void) -> FieldCardRequest {
         let id = edited.record.id
         let target: FieldCardRequest.Target, folded: [Resolved.Field], path: FieldPath?, isMore: Bool
+        var key: RelationshipRowKey?
         if let field = edited.field(row) {
             (target, folded, path, isMore) = (.field(field.path), [], field.path, false)
+        } else if let relation = edited.relation(row) {
+            // A relation row's card: a line for each relationship in it, found again by the row's key.
+            key = relation.row.key
+            (target, folded, path, isMore) = (.relations(relation.row.key), [], nil, false)
         } else if let fold = edited.fold(row) {
             (target, folded, path, isMore) = (.fold, fold.folded, nil, fold.isMore)
         } else {
@@ -189,11 +226,14 @@ extension RowBook {
         }
         let now: @MainActor () -> CGRect? = { [weak self] in
             self?.rows(of: id).first { row in
+                if let key { return row.relation == key }
                 if let path { return row.path == path }
-                return row.path == nil && (row.content == .fold("")) == isMore
+                return row.isFold && (row.content == .fold("")) == isMore
             }?.rect
         }
-        return FieldCardRequest(shape: id, target: target, mode: .values, isReadOnly: editor?.isReadOnly(id) ?? true, rowRect: edited.rect(row),
-                                folded: folded, rowRectNow: now, closed: closed, tabbedOut: tabbedOut)
+        var request = FieldCardRequest(shape: id, target: target, mode: .values, isReadOnly: editor?.isReadOnly(id) ?? true, rowRect: edited.rect(row),
+                                       folded: folded, rowRectNow: now, closed: closed, tabbedOut: tabbedOut)
+        request.makePicker = makePicker
+        return request
     }
 }

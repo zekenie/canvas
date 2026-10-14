@@ -16,6 +16,8 @@ public struct MentionTextsPlugin: ListedPlugin {
     public var id: PluginID { "mention-texts" }
 
     public func register(into registrar: inout PluginRegistrar) {
+        // A far shape with no title is called by the pill as a mention calls it: its words, else its values.
+        registrar.drawLabels { record, registry in registry.mentionAppearance(of: record)?.label }
         registrar.drawTextFormat(mediaType: MentionTextFormat.mediaType, describes: "@[Title] mentions") { text, context throws(DrawError) in
             let scope = context.schema[MentionTextFormat.annotationKey]?.objectValue
             return try MentionTextFormat.resolvingNames(in: text) { name throws(DrawError) in
@@ -27,8 +29,9 @@ public struct MentionTextsPlugin: ListedPlugin {
 
     /// The shape a `@[name]` stands for among those a mention may name (and `scope` admits), found as the rest of the
     /// script finds a title, or the refusal a text's mention is given: a blank name, none called so, two, one that
-    /// can't be mentioned. A string of `fieldValues` that is a whole `@[Title]` is refused the same way.
-    public static func shape(named name: String, in context: DrawTextContext, scope: JSONObject?) throws(DrawError) -> DrawTextShape {
+    /// can't be mentioned. (A string of `fieldValues` that is a whole `@[Title]` is stored as the text it is and reaches
+    /// no lookup: `FieldValuesDraw` hands the value writer `merge:` alone.)
+    private static func shape(named name: String, in context: DrawTextContext, scope: JSONObject?) throws(DrawError) -> DrawTextShape {
         guard !name.allSatisfy(\.isWhitespace) else {
             throw explained(DrawError("@[] is a mention with no title in it", reason: "invalid_value",
                                       hint: "write the title of the shape between the brackets, as @[Owner]"), when: true)

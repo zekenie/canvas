@@ -66,16 +66,22 @@ extension RelayDefinition: DerivedProps {
 
 /// Relays: they stand for the shapes they cite, but only open ones, and are made to stand for one by
 /// citing it and saying its name (what the hook is given). With `tool` false, no tool places one, so
-/// none can be made. With `makes` false, the kind says nothing of how one is made.
-@MainActor func relaysPlugin(tool: Bool = true, makes: Bool = true, needs: String? = "open") -> Contributor {
+/// none can be made. With `makes` false, the kind says nothing of how one is made. With `fulfils`, it
+/// says how a shape is made one it may stand for: open.
+@MainActor func relaysPlugin(tool: Bool = true, makes: Bool = true, needs: String? = "open", fulfils: Bool = false) -> Contributor {
     Contributor(id: "relays") { registrar in
         registrar.shape(RelayDefinition()) { relay in
             let admitting: ForwardAdmission = { target, _ in target.meta[Open.self] == true }
+            let open: @MainActor (inout AnyShapeRecord, Registry) -> Bool = { record, _ in
+                record.meta[Open.self] = true
+                return true
+            }
+            let fulfilling: (@MainActor (inout AnyShapeRecord, Registry) -> Bool)? = fulfils ? open : nil
             let stands: @MainActor (ShapeRecord<Relay>, Registry) -> Forwarding? = { shape, _ in
                 shape.props.stands.isEmpty ? nil : .shapes(shape.props.stands.map(\.shape))
             }
             if makes {
-                relay.standsIn(admitting: admitting, needs: needs, makes: { props, target, label in
+                relay.standsIn(admitting: admitting, needs: needs, fulfilling: fulfilling, makes: { props, target, label in
                     props.stands = [Citation(target)]
                     props.says = label
                 }, stands)
@@ -1150,8 +1156,8 @@ private func openHarbor() -> Harbor {
         return CanvasFile(root: CanvasDocument(shapes: [center, rock, pocket]), children: [p: CanvasDocument(shapes: far)])
     }
 
-    func editor(_ more: [any CanvasPlugin] = []) throws -> CanvasEditor {
-        let editor = try drawEditor([TopologyPlugin(), PocketsPlugin(), namedPockets, relaysPlugin()] + more)
+    func editor(_ more: [any CanvasPlugin] = [], relays: Contributor = relaysPlugin()) throws -> CanvasEditor {
+        let editor = try drawEditor([TopologyPlugin(), PocketsPlugin(), namedPockets, relays] + more)
         editor.replaceFile(with: file)
         return editor
     }

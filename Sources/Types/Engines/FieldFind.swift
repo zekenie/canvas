@@ -1,3 +1,4 @@
+import Adornments
 import Canvas
 import CoreGraphics
 import Find
@@ -8,7 +9,9 @@ extension PluginID {
 }
 
 /// Field values, for Find: on every kind that says where its rows go and holds `fieldValues`, a text for each
-/// field of a note that is one that has a value, as its row shows it; a row with more in it gives every text
+/// field of a note that is one that has a value, as its row shows it, and on every arrow that can be a relationship (a kind that relates
+/// and holds `fieldValues`) a text for each field of the types it is of that has a value, as its card says it (a hit
+/// marks the relationship's chip, since its values are shown nowhere on the board); a row's pills are not searched, the note each names is found on its own; a row with more in it gives every text
 /// under it, one a line, at any depth. A hit marks its row's value as a highlighter does, the same mark for
 /// each range of the text: a match inside a row with more in it marks that row's summary, a match in a folded
 /// row the fold. A type's own note gives nothing (its kinds are not values) and a yes or no has no text.
@@ -19,13 +22,30 @@ public struct FieldFindPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.findableTexts("field value",
-                                where: { $0.holds(FieldValuesProperty.self) && $0.registry.typeRows(of: $0.kind) != nil },
+                                where: { $0.holds(FieldValuesProperty.self) && ($0.registry.typeRows(of: $0.kind) != nil || $0.registry.relates($0.kind)) },
+                                // A relationship's mark is its chip, which keeps its size on the screen: laid out again at each zoom.
+                                followsZoom: true,
                                 affected: { changes, context in context.service(RowBook.self)?.reached(by: changes) ?? [] },
-                                texts: { record, context in context.service(RowBook.self)?.findTexts(of: record) ?? [] },
+                                texts: { record, context in
+                                    if context.editor.registry.relates(record.kind) { return context.service(RowBook.self)?.findTexts(ofRelationship: record) ?? [] }
+                                    return context.service(RowBook.self)?.findTexts(of: record) ?? []
+                                },
                                 rects: { record, field, ranges, context in
                                     let none = ranges.map { _ in [CGRect]() }
-                                    guard let book = context.service(RowBook.self), let rect = book.findRect(of: record, field: field),
-                                          let bounds = context.editor.shapeContext.geometry(of: record.id)?.bounds, !bounds.isNull else { return none }
+                                    guard let bounds = context.editor.shapeContext.geometry(of: record.id)?.bounds, !bounds.isNull else { return none }
+                                    // A relationship's values are shown nowhere on the board: a hit marks its chip, which opens
+                                    // them (its arrow's anchor, where the chip is not shown).
+                                    if context.editor.registry.relates(record.kind) {
+                                        let graph = context.service(RelationshipIndex.self)?.graph
+                                        let chip = context.editor.adornmentFrames(of: record.id).first { frame in
+                                            frame.adornment == .of(TypeChips.self) && !frame.isOverflow
+                                                && frame.tag.flatMap { UUID(uuidString: $0.raw) }.map { graph?.isRelationshipType(ShapeID($0)) == true } == true
+                                        }
+                                        guard let rect = chip?.rect ?? context.editor.adornmentAnchor(of: record.id) else { return none }
+                                        let place = rect.offsetBy(dx: -bounds.minX, dy: -bounds.minY)
+                                        return ranges.map { _ in [place] }
+                                    }
+                                    guard let book = context.service(RowBook.self), let rect = book.findRect(of: record, field: field) else { return none }
                                     let place = rect.offsetBy(dx: -bounds.minX, dy: -bounds.minY)
                                     return ranges.map { _ in [place] }
                                 })
@@ -44,21 +64,20 @@ extension RowBook {
             switch item {
             case .field(let field): fields.append(field.resolved)
             case .fold(let fold): fields.append(contentsOf: fold.folded)
+            // A relation row's pills are not searched: each name is found on its own note.
+            case .relation: break
             }
         }
-        var texts: [FindableText] = []
-        for field in fields {
-            guard let held = values[field.field.name].flatMap(FieldValues.pruned) else { continue }
-            // A row whose type is gone shows its dashed chip and no text.
-            switch book.kind(of: field) {
-            case .typeFields(let target), .listOfTypeFields(let target), .pointer(let target), .pointers(let target):
-                if editor?.types?.isType(target) != true { continue }
-            default: break
-            }
-            let lines = FieldFind.lines(of: held, field: field, in: book)
-            if !lines.isEmpty { texts.append(FindableText(field: field.field.name, text: lines.joined(separator: "\n"))) }
-        }
-        return texts
+        return FieldFind.texts(of: values, fields: fields, in: book, types: editor?.types)
+    }
+
+    /// What an arrow says of its values, as text for Find: a text for each field of the types it is of that holds a value, named by the
+    /// field's key (a relationship's, which its card says). A function of the arrow and the types alone, so the mark of a
+    /// relationship type moves nothing here. The arrow's notes are not in it: their names are found on the notes.
+    func findTexts(ofRelationship record: AnyShapeRecord) -> [FindableText] {
+        guard let values = record[FieldValuesProperty.self], !values.isEmpty, let book = editor?.fieldBook,
+              let links = record[IsAProperty.self], !links.isEmpty else { return [] }
+        return FieldFind.texts(of: values, fields: book.fields(types: links.map(\.shape)).fields, in: book, types: editor?.types)
     }
 
     /// Where a field's hit is marked, world units: its row's value as it hugs it, or the fold's words when the
@@ -70,6 +89,7 @@ extension RowBook {
             switch item {
             case .field(let field): field.path.field == key
             case .fold(let fold): fold.folded.contains { $0.field.name == key }
+            case .relation: false
             }
         }
         guard let place else { return nil }
@@ -81,6 +101,23 @@ extension RowBook {
 
 @MainActor
 enum FieldFind {
+    /// A text for each of these fields that holds a value, named by its key, as its row or line shows it. A field whose type is gone
+    /// shows its dashed chip and no text.
+    static func texts(of values: FieldValues, fields: [Resolved.Field], in book: FieldBook, types: TypeIndex?) -> [FindableText] {
+        var texts: [FindableText] = []
+        for field in fields {
+            guard let held = values[field.field.name].flatMap(FieldValues.pruned) else { continue }
+            switch book.kind(of: field) {
+            case .typeFields(let target), .listOfTypeFields(let target):
+                if types?.isType(target) != true { continue }
+            default: break
+            }
+            let shown = lines(of: held, field: field, in: book)
+            if !shown.isEmpty { texts.append(FindableText(field: field.field.name, text: shown.joined(separator: "\n"))) }
+        }
+        return texts
+    }
+
     /// Every text a value holds as its field shows it, one a line: a plain value as its row says it, a list's
     /// elements, a group's filled members (a member with more in it by its own texts, to any depth), a list of
     /// groups' elements' members, pairs' names and values, an either by whichever branch the value is, what
@@ -98,10 +135,6 @@ enum FieldFind {
         case .listOfGroups, .listOfTypeFields:
             guard let item = book.item(of: field) else { return leaves(of: value) }
             return elements(of: value).flatMap { lines(of: $0, field: item, in: book) }
-        case .pointer:
-            return link(value, in: book).map { [$0] } ?? []
-        case .pointers:
-            return elements(of: value).compactMap { link($0, in: book) }
         case .pairs(let kind):
             guard let pairs = value.objectValue else { return leaves(of: value) }
             return pairs.keys.sorted().flatMap { key in [key] + (pairs[key].map { shown($0, as: kind) } ?? []) }
@@ -117,11 +150,6 @@ enum FieldFind {
         case .other:
             return strings(of: value)
         }
-    }
-
-    /// What a pointer shows: the name its target shows now; the text of a value that is not a token.
-    private static func link(_ value: JSONValue, in book: FieldBook) -> String? {
-        FieldLink(value).map { book.shown($0) } ?? value.stringValue
     }
 
     private static func shown(_ value: JSONValue, as kind: PlainKind) -> [String] {

@@ -1,3 +1,4 @@
+import Adornments
 import Canvas
 import CoreGraphics
 import DetailPanel
@@ -12,6 +13,12 @@ public struct FieldCardRequest {
         case field(FieldPath)
         /// The fold's rows (`folded` says which).
         case fold
+        /// Every field of the shape's types, one line each: an arrow's card (its relationship's fields). It has no row, so
+        /// it hangs from the shape's adornment anchor.
+        case shape
+        /// A note's relation row: a line for each relationship in it, the note at the other end and the fields of the
+        /// relationship type, and a blank line that picks a note (a `RelationshipRow` by its key).
+        case relations(RelationshipRowKey)
     }
 
     public var shape: ShapeID
@@ -27,6 +34,8 @@ public struct FieldCardRequest {
     /// Where the row is now (world units), asked while the card is open; nil closes it. A nil closure: the
     /// card keeps its offset from the paper's top-left.
     public var rowRectNow: (@MainActor () -> CGRect?)?
+    /// Lists the notes a row's card may name on its blank line (`.relations`): the list of notes a row of the same note finds one in.
+    public var makePicker: (@MainActor (_ note: ShapeID, _ row: RelationshipRow) -> (any NotePicking)?)?
     /// Esc from the top level, a click outside: the caller focuses the row again.
     public var closed: @MainActor () -> Void
     /// Tab off the last row: the caller focuses the next row, or ends editing.
@@ -81,13 +90,15 @@ public final class FieldCards {
         self.editor = editor
         // A service may reach another as it is made; the check is registered ahead of this one.
         editor.fieldChecks?.onTypingChange { [weak self] in self?.checkDidMove() }
+        // A relationship drawn or taken away, near or far: the cards of the rows it is in are made again.
+        editor.relationships?.onChange { [weak self] change in self?.relationsChanged(change) }
     }
 
     // MARK: Opening
 
     /// Opens the card under the row: of its field's rows (a group, another type's fields, a list, pairs, several
     /// choices, either of two with more in it), of the rows the fold hides, or, on a type's note and a locked
-    /// note, to be read. False when there is none to open: a plain field, a pointer (a list of them opens), a field no type names, a
+    /// note, to be read. False when there is none to open: a plain field, a field no type names, a
     /// fold with nothing folded, a shape not on the board shown. `Other` has no card: the note is selected and
     /// the panel shows where its JSON is (true). Asked for the target that is open, it closes the card, tells
     /// its `closed` and answers true: a click on the row of an open card.
@@ -103,6 +114,7 @@ public final class FieldCards {
         let types = request.mode == .kinds ? [request.shape] : editor.document[request.shape]?[IsAProperty.self]?.map(\.shape) ?? []
         let root: FieldFormRoot
         var stepField: ChainField?
+        var relationRow: RelationshipRow?
         switch request.target {
         case .field(let path):
             guard let field = book.field(at: path, types: types) else { return false }
@@ -111,12 +123,6 @@ public final class FieldCards {
                 Self.revealInPanel(request.shape, in: editor, mode: request.mode)
                 return true
             }
-            switch kind {
-            case .pointer: return false
-            // A list of links opens its lines: a pill each, the notes to point at picked in the card. Its type gone, nothing opens.
-            case .pointers(let type) where !book.isType(type): return false
-            default: break
-            }
             guard request.mode == .kinds ? kind.opensOnType : kind.hasMore else { return false }
             root = .field(path: path, field: field, kind: kind)
             // The step is the row on the note's, whatever depth the card is at.
@@ -124,9 +130,26 @@ public final class FieldCards {
         case .fold:
             guard !request.folded.isEmpty else { return false }
             root = .fold(request.folded)
+        case .shape:
+            // The arrow's relationship types' fields alone: a plain type beside them is not what the relationship holds.
+            let relating = types.filter { editor.relationships?.graph.isRelationshipType($0) == true }
+            let fields = book.fields(types: relating).fields
+            guard !fields.isEmpty else { return false }
+            root = .shape(fields)
+        case .relations(let key):
+            // The row as this note has it now. Every write of the card is its one step, named for the row (`Change Friends`).
+            guard let row = editor.relationships?.rows(for: types, isType: false).first(where: { $0.key == key }), let graph = editor.types?.graph else { return false }
+            relationRow = row
+            root = .relations(RelationCardRoot(note: request.shape, row: row))
+            stepField = ChainField(name: row.name(in: graph), schema: .null)
         }
         let isReadOnly = request.isReadOnly || request.mode == .kinds || editor.isReadOnly(request.shape)
         let form = FieldFormView(editor: editor, shape: request.shape, root: root, mode: request.mode, isReadOnly: isReadOnly, presentation: .card, cardKey: id)
+        // The blank line lists the notes the row may name, on any board: whoever asks for the card says how (the rows know which
+        // kinds an open side lists).
+        if let row = relationRow, let makePicker = request.makePicker {
+            form.makePicker = { note in makePicker(note, row) }
+        }
         var stepName: String?
         if !isReadOnly, let stepField { stepName = FieldName.stepName(of: stepField) }
         let paper = editor.frame(inFile: request.shape)?.origin ?? request.rowRect.origin
@@ -215,8 +238,26 @@ public final class FieldCards {
         for id in changes.removed { panelOpen[id] = nil }
         forms.removeAll { $0.form == nil }
         guard !forms.isEmpty else { return }
-        for held in forms where held.form.map({ changes.shapeIDs.contains($0.shape) }) == true { held.form?.reload() }
+        // A row's card also shows the arrows of its lines, on whichever board they are.
+        for held in forms where held.form.map({ form in
+            changes.shapeIDs.contains(form.shape) || form.owners.contains { changes.shapeIDs.contains($0) || changes.elsewhere.contains($0) }
+        }) == true { held.form?.reloadOnce() }
         schedulePass(in: editor)
+    }
+
+    /// The relationship index told what a commit changed: the card of a row whose note it names, or whose lines' arrows, is made
+    /// again at once (a relationship drawn writes nothing to the note).
+    private func relationsChanged(_ change: RelationshipChange) {
+        forms.removeAll { $0.form == nil }
+        for held in forms {
+            guard let form = held.form, form.relations != nil else { continue }
+            if change.everything || change.notes.contains(form.shape) {
+                form.reload()
+            } else if !form.owners.isDisjoint(with: change.arrows) || !form.owners.isDisjoint(with: change.values) {
+                // A value typed on a line's arrow names the arrow alone; the commit's own hearing has reloaded the form for it.
+                form.reloadOnce()
+            }
+        }
     }
 
     /// What the check says moved with no commit (a caret came to a field or left it, on a surface that is not one of

@@ -14,9 +14,6 @@ public enum FieldSummary: Equatable, Sendable {
     case count(Int)
     /// The first pair and how many more: `size: L, +1`.
     case pair(first: String, more: Int)
-    /// The notes a list of pointers points at, by the names they show now. The row draws them as pills from the values; this is
-    /// what a group's summary and Find read.
-    case pills(targets: [String], more: Int)
     /// A field no control suits: `edited as JSON in the panel`.
     case json
 
@@ -39,7 +36,6 @@ public enum FieldSummary: Equatable, Sendable {
         case .items(let items): items.joined(separator: ", ")
         case .count(let count): FieldWords.items(count)
         case .pair(let first, let more): more > 0 ? "\(first), +\(more)" : first
-        case .pills(let targets, let more): (targets + (more > 0 ? ["+\(more)"] : [])).joined(separator: ", ")
         case .json: FieldWords.editedAsJSON
         }
     }
@@ -60,11 +56,6 @@ public enum FieldSummary: Equatable, Sendable {
         case .listOfGroups, .listOfTypeFields:
             guard let elements = value.arrayValue else { return .value(FieldText.shown(value, asOneOf: [], locale: locale)) }
             return .count(elements.count)
-        case .pointer:
-            return .value(linkText(of: value, in: book, locale: locale))
-        case .pointers:
-            guard let elements = value.arrayValue else { return .value(linkText(of: value, in: book, locale: locale)) }
-            return .pills(targets: elements.map { linkText(of: $0, in: book, locale: locale) }, more: 0)
         case .pairs(let kind):
             guard let members = value.objectValue else { return .value(FieldText.shown(value, asOneOf: [], locale: locale)) }
             guard let first = members.keys.sorted().first, let firstValue = members[first] else { return nil }
@@ -74,13 +65,6 @@ public enum FieldSummary: Equatable, Sendable {
         case .other:
             return .json
         }
-    }
-
-    /// A pointer's value as it reads: the name its target shows now, else (it is not a token) the text as stored.
-    @MainActor
-    private static func linkText(of value: JSONValue, in book: FieldBook, locale: Locale) -> String {
-        if let link = FieldLink(value) { return book.shown(link) }
-        return value.stringValue ?? FieldText.shown(value, asOneOf: [], locale: locale)
     }
 
     private static func items(of value: JSONValue, locale: Locale, shown: (JSONValue) -> String) -> FieldSummary {
@@ -140,10 +124,10 @@ public enum FieldSummary: Equatable, Sendable {
     /// kinds of groups, a scalar for the rest.
     static func fits(_ value: JSONValue, _ kind: FieldKind) -> Bool {
         switch (kind, value) {
-        case (.choices, .array), (.list, .array), (.listOfGroups, .array), (.listOfTypeFields, .array), (.pointers, .array): true
+        case (.choices, .array), (.list, .array), (.listOfGroups, .array), (.listOfTypeFields, .array): true
         case (.group, .object), (.typeFields, .object), (.pairs, .object): true
-        case (.plain, .array), (.plain, .object), (.pointer, .array), (.pointer, .object): false
-        case (.plain, _), (.pointer, _): true
+        case (.plain, .array), (.plain, .object): false
+        case (.plain, _): true
         case (.either(let a, let b), _): fits(value, a) || fits(value, b)
         default: false
         }

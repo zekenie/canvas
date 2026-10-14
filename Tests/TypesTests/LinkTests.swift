@@ -148,6 +148,29 @@ extension Chaser: EditorService {
         editor.transact("Self") { $0.update(thing) { $0[IsAProperty.self] = [TypeLink(thing), TypeLink(person)] } }
         expectEqual(types.lineage(of: thing), [person])
     },
+    test("the ancestors are everything a shape's types lead to, however far, and never the shape itself") {
+        let editor = try typeEditor()
+        let thing = editor.addType(TypeSchemaProperty.starter, title: "Thing"), person = editor.addType(TypeSchemaProperty.starter, title: "Person")
+        let employee = editor.addType(TypeSchemaProperty.starter, title: "Employee"), loner = editor.addType(TypeSchemaProperty.starter, title: "Loner")
+        let types = try require(editor.types)
+        editor.transact("Is") {
+            $0.update(person) { $0[IsAProperty.self] = [TypeLink(thing)] }
+            $0.update(employee) { $0[IsAProperty.self] = [TypeLink(person)] }
+        }
+        expectEqual(types.graph.ancestors(of: employee), [person, thing], "a chain of three: Employee builds on Person, which builds on Thing")
+        expectEqual(types.graph.ancestors(of: person), [thing])
+        expectEqual(types.graph.ancestors(of: thing), [])
+        expectEqual(types.graph.ancestors(of: loner), [], "a type that builds on nothing")
+        let ann = editor.addInstance("Ann", of: [employee])
+        expectEqual(types.graph.ancestors(of: ann), [employee, person, thing], "a note that is one: its own types and what they lead to")
+        editor.transact("Cycle") { $0.update(thing) { $0[IsAProperty.self] = [TypeLink(employee)] } }
+        expectEqual(types.graph.ancestors(of: employee), [person, thing], "a cycle ends where it comes back; the shape itself is never in it")
+        for shape in [employee, person, thing, ann] {
+            for other in [employee, person, thing, loner] {
+                expectEqual(types.graph.ancestors(of: shape).contains(other), types.graph.reaches(other, from: shape), "the same walk as reaches")
+            }
+        }
+    },
     test("a deleted type is in the lineage as a name that leads nowhere") {
         let editor = try typeEditor()
         let person = editor.addType(TypeSchemaProperty.starter, title: "Person"), employee = editor.addType(TypeSchemaProperty.starter, title: "Employee")

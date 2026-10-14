@@ -62,6 +62,10 @@ public struct StandIn {
     let needs: String?
     /// How one is made to stand for a shape, if the kind says.
     let make: ForwardingMaker?
+    /// How a shape is made something the kind may stand for, if the kind says (opaque to Topology).
+    let fulfil: (@MainActor (_ record: inout AnyShapeRecord, _ registry: Registry) -> Bool)?
+    /// What one calls what it stands for, if the kind says.
+    let calls: (@MainActor (_ record: AnyShapeRecord, _ registry: Registry) -> String?)?
 }
 
 /// The kinds whose shapes stand in for others: at most one rule per kind.
@@ -108,9 +112,19 @@ extension ShapeRegistrar {
     /// stands for. A kind with it is made by `registry.standIns` (it needs a tool that places it),
     /// and only for a shape `admitting` takes; `needs` says in a word what a shape must be for that
     /// (`public`), for a message to a person that a shape can't be stood for.
+    ///
+    /// `fulfilling` makes a shape something the kind may stand for, if the kind says how
+    /// (References': make it public): it changes the record it's given and says whether it did what
+    /// `admitting` then needs; `StandIns.fulfil` runs it on a copy and keeps it only if `admitting`
+    /// then takes the shape. Topology learns nothing of what it does.
+    ///
+    /// `calls` says what a shape of the kind calls what it stands for (the label a direct one keeps,
+    /// the words of a query one), which outlives the shape: a pill whose shape is gone keeps its name.
     public mutating func standsIn(maxTargets: Int = 50,
                                   admitting: @escaping ForwardAdmission = { _, _ in true },
                                   needs: String? = nil,
+                                  fulfilling: (@MainActor (_ record: inout AnyShapeRecord, _ registry: Registry) -> Bool)? = nil,
+                                  calls: (@MainActor (_ shape: ShapeRecord<Definition.Props>, _ registry: Registry) -> String?)? = nil,
                                   makes: (@MainActor (_ props: inout Definition.Props, _ target: ShapeID, _ label: String) -> Void)? = nil,
                                   _ forward: @escaping @MainActor (_ shape: ShapeRecord<Definition.Props>, _ registry: Registry) -> Forwarding?) {
         var make: ForwardingMaker?
@@ -121,9 +135,13 @@ extension ShapeRegistrar {
                 return AnyShapeRecord(shape)
             }
         }
+        var erasedCalls: (@MainActor (AnyShapeRecord, Registry) -> String?)?
+        if let calls {
+            erasedCalls = { record, registry in record.typed(as: Definition.Props.self).flatMap { calls($0, registry) } }
+        }
         contribute(StandIn(maxTargets: maxTargets, admitting: admitting, forward: { record, registry in
             record.typed(as: Definition.Props.self).flatMap { forward($0, registry) }
-        }, needs: needs, make: make), to: EdgeForwarding.self)
+        }, needs: needs, make: make, fulfil: fulfilling, calls: erasedCalls), to: EdgeForwarding.self)
     }
 }
 
@@ -175,6 +193,27 @@ public struct StandIns {
     /// What a shape must be for a stand-in of `kind` to stand for it, in a word (`public`), for a
     /// message; nil if the kind doesn't say.
     public func needs(_ kind: ShapeKind) -> String? { rules[kind]?.needs }
+
+    /// Makes `target` something a stand-in of `kind` may stand for, if the kind says how
+    /// (`standsIn(fulfilling:)`): true when `admits(kind, target)` holds afterward. `target` is changed
+    /// only when this returns true, and only by the kind's `fulfilling`. A shape already admitted is
+    /// left as it is (true). It doesn't ask leave to write: its caller does, with the transaction.
+    public func fulfil(_ kind: ShapeKind, _ target: inout AnyShapeRecord) -> Bool {
+        guard rules[kind] != nil else { return false }
+        if admits(kind, target) { return true }
+        guard let fulfil = rules[kind]?.fulfil else { return false }
+        var made = target
+        guard fulfil(&made, registry), admits(kind, made) else { return false }
+        target = made
+        return true
+    }
+
+    /// What a stand-in calls what it stands for: the label a direct one keeps, the words of a query
+    /// one; nil for a shape of a kind that doesn't stand in or doesn't say, or one calling it nothing.
+    public func calls(_ standIn: AnyShapeRecord) -> String? {
+        guard !standIn.isOpaque, let rule = rules[standIn.kind] else { return nil }
+        return rule.calls?(standIn, registry)
+    }
 
     /// A new shape of `kind` that stands for `target`, called `label` there, in no document: what the
     /// kind's tool places (at the origin), made to stand for it by the kind (`makes`), then put in step

@@ -23,8 +23,10 @@ import TestKit
 // lists, in order (an untitled one by its kind in brackets, nothing after the colon for none), or
 // `/* count: N */`; one tagged `query-error` must be refused with the reason its first line names
 // (`/* reason: <reason> */`). A query block leaves the board as it was: the same file, no more
-// edited, and no step to undo. SKILL_DUMP=1 prints what each example said, for checking the prose
-// around it.
+// edited, and no step to undo. A page whose first line is `<!-- ids: <sample>, <sample> -->` writes ids as a reader
+// sees them in its blocks, ids a block cannot know before the board is drawn (a shape with no title is named by its
+// id): each sample stands for the id of the same row of the last query that answered that many (`SampleIDs`).
+// SKILL_DUMP=1 prints what each example said, for checking the prose around it.
 
 /// Where the skill is, from the repository's root (where tests run).
 let skillFolder = ".claude/skills/canvas"
@@ -139,6 +141,37 @@ func skillExamples(in path: String) throws -> [SkillExample] {
     "reference-story": { try QueryReferenceStory.document(windowed: false) },
 ]
 
+/// The sample ids a skill file writes in its first line (`<!-- ids: 7C1E…, B3D9… -->`): ids a block can't know before the board
+/// is drawn, written in the blocks of the page as a reader would see them. A block is run with each sample replaced by the id of
+/// the shape the same place of the last query that found as many (`SampleIDs`): the first sample is the first row's.
+func skillSampleIDs(in text: String) -> [String] {
+    guard let first = text.components(separatedBy: "\n").first, first.hasPrefix("<!-- ids: "), first.hasSuffix(" -->") else { return [] }
+    return first.dropFirst("<!-- ids: ".count).dropLast(" -->".count).components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+}
+
+/// What a page's sample ids stand for as the page runs: the ids of the rows the last query that listed enough of them answered,
+/// in order.
+struct SampleIDs {
+    let samples: [String]
+    private(set) var bound: [String] = []
+
+    init(_ samples: [String]) { self.samples = samples }
+
+    /// A query that answered these rows, which names none of the samples: the samples stand for them from now on, if there are enough.
+    mutating func found(_ ids: [String], by example: SkillExample) {
+        guard !samples.isEmpty, ids.count >= samples.count, !samples.contains(where: { example.script.contains($0) }) else { return }
+        bound = ids
+    }
+
+    /// The example with each sample id replaced by the id it stands for.
+    func resolved(_ example: SkillExample) -> SkillExample {
+        guard !bound.isEmpty else { return example }
+        var script = example.script
+        for (sample, id) in zip(samples, bound) { script = script.replacingOccurrences(of: sample, with: id) }
+        return SkillExample(file: example.file, line: example.line, command: example.command, fails: example.fails, script: script)
+    }
+}
+
 /// The story a skill file names in its first line: nil for none.
 func skillStoryName(in text: String) -> String? {
     guard let first = text.components(separatedBy: "\n").first, first.hasPrefix("<!-- board: "), first.hasSuffix(" -->") else { return nil }
@@ -163,7 +196,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
 
 /// Runs a skill file's query example on `board`, and holds it to what it says it answers, or the
 /// reason it says it's refused, and to changing nothing.
-@MainActor func runQueryExample(_ example: SkillExample, on board: BoardDocument, _ server: CommandServer) throws {
+@MainActor @discardableResult func runQueryExample(_ example: SkillExample, on board: BoardDocument, _ server: CommandServer) throws -> [String] {
     let file = board.editor.file, edited = board.isDocumentEdited
     let undo = (board.editor.undoHistory.canUndo, board.editor.undoHistory.undoName, board.editor.undoHistory.canRedo)
     let result = try canvas(server, ["query", "-", "--board", "\(board.number)"], input: example.script)
@@ -191,6 +224,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
     expectEqual(board.isDocumentEdited, edited, "\(example.place) edited nothing")
     expect(board.editor.undoHistory.canUndo == undo.0 && board.editor.undoHistory.undoName == undo.1 && board.editor.undoHistory.canRedo == undo.2,
            "\(example.place) made no step to undo")
+    return ((try? JSON(text: result.output))?["rows"]?.arrayValue ?? []).compactMap { $0["id"]?.stringValue }
 }
 
 @MainActor let skillTests = Suite("The canvas skill", [
@@ -202,7 +236,9 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         expect(files.count >= 3, "SKILL.md and the references: \(files)")
         var ran = 0, filesOnStory: [String: [String]] = [:]
         for file in files {
-            let story = skillStoryName(in: try String(contentsOfFile: file, encoding: .utf8))
+            let text = try String(contentsOfFile: file, encoding: .utf8)
+            let story = skillStoryName(in: text)
+            var samples = SampleIDs(skillSampleIDs(in: text))
             let make = story.flatMap { skillStories[$0] }
             expect(story == nil || make != nil, "\(file) names a story that isn't one: \(story ?? "")")
             let onStory = make != nil
@@ -216,10 +252,13 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
             defer { server.stop() }
             let examples = try skillExamples(in: file)
             expect(!examples.isEmpty, "\(file) has examples")
-            for example in examples {
+            for written in examples {
                 ran += 1
+                // A page's sample ids stand for the shapes its last query found, wherever the blocks write them.
+                let example = samples.resolved(written)
                 guard example.command == .draw else {
-                    try runQueryExample(example, on: board, server)
+                    let found = try runQueryExample(example, on: board, server)
+                    samples.found(found, by: written)
                     continue
                 }
                 let before = board.editor.document
@@ -237,6 +276,10 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
                     let pushed = (try JSON(text: result.output)["changes"]?.arrayValue ?? []).filter { $0["pushedPast"] != nil }
                     expectEqual(pushed, [], "\(example.place) pushes nothing aside")
                 }
+            }
+            if !samples.samples.isEmpty {
+                expect(samples.bound.count >= samples.samples.count, "\(file): a query on the page answers the shapes its sample ids stand for")
+                expect(Set(samples.bound).isDisjoint(with: samples.samples), "\(file): the sample ids are not the board's own")
             }
             if onStory {
                 expect(!board.isDocumentEdited && !board.editor.undoHistory.canUndo, "\(file): its queries left the story as it was")
@@ -258,6 +301,17 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
             .dropFirst("description: ".count)
         expect(description.count <= 1_024, "\(description.count) characters")
         expect(description.contains("`canvas draw`") && description.contains("`canvas query`"), String(description))
+    },
+    test("every endRule the skill writes in its prose is a JSON object, as canvas draw reads it") {
+        for file in try skillFiles() {
+            let text = try String(contentsOfFile: file, encoding: .utf8)
+            let pattern = try NSRegularExpression(pattern: #"endRule: (\{[^}]*\})"#)
+            for match in pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                let written = (text as NSString).substring(with: match.range(at: 1))
+                let object = try? JSONSerialization.jsonObject(with: Data(written.utf8))
+                expect(object is [String: Any], "\(file): \(written) is not a JSON object")
+            }
+        }
     },
     test("the reference's table of an edge's keys has a row for each key the language keeps for edges, and its measure section names every member canvas measure answers") {
         let reference = try String(contentsOfFile: "\(skillFolder)/reference/language.md", encoding: .utf8)
@@ -285,6 +339,20 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         expect(members.count >= 15, "measure answers: \(members.sorted())")
         for member in members.sorted() { expect(section.contains("`\(member)`"), "the reference's section on measure names \(member)") }
         for name in GapName.allCases { expect(section.contains(name.rawValue), "...and the gap \(name.rawValue)") }
+    },
+    test("the reference's table of an edge's keys has a row for each key an edge is written with, and for no other: the language's own and the arrow's attributes as canvas kinds says them, its heads aside") {
+        let reference = try String(contentsOfFile: "\(skillFolder)/reference/language.md", encoding: .utf8)
+        let table = try require(markdownTables(in: reference).first { table in table.contains { backticked($0[0]) == ["from:"] } }, "the table of an edge's keys")
+        let written = Set(table.dropFirst().compactMap { backticked($0[0]).first })
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let listed = try awaitResult { try await registry.hostCommands.run("kinds", [:], nil) }.arrayValue ?? []
+        let arrow = try require(listed.first { $0["kind"]?.stringValue == "arrow" }, "canvas kinds lists the arrow")
+        let heads: Set<String> = ["startArrowhead", "endArrowhead"]
+        var keys = Set(EdgeKey.allCases.map(\.rawValue))
+        keys.formUnion((arrow["attributes"]?.objectValue?.keys.map { $0 } ?? []).filter { !heads.contains($0) })
+        for key in ["is", "fieldValues", "endRule", "channel", "text"] { expect(keys.contains(key), "an edge is written with \(key): \(keys.sorted())") }
+        for key in keys.sorted() { expect(written.contains("\(key):"), "the reference's table of an edge's keys has \(key):") }
+        for row in written.sorted() { expect(keys.contains(String(row.dropLast())), "...and \(row) is a key an edge is written with") }
     },
     test("the query reference has every construct of the design's table as a block, answering or refused as the table says") {
         let examples = try skillExamples(in: "\(skillFolder)/reference/query.md")

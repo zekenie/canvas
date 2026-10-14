@@ -760,7 +760,12 @@ private struct Resolver {
             + presentEdgeTypes.filter { !vocabulary.edgeTree.isDeclared($0) }.map(\.rawValue).sorted()
         let hint = didYouMean(Suggestions.closest(to: name, among: known, limit: 3))
             ?? (known.isEmpty ? "Nothing in this app declares edge types." : "The edge types: \(known.joined(separator: ", ")).")
-        return QueryError(.unknownEdgeType, "\(name) isn't an edge type.", hint: hint, span: term.span)
+        // A word that is some shape's title may be a type's: the app says, once it has read the titles.
+        var premise: HintPremise?
+        if let anchors, terms.count == 1, !term.only {
+            premise = HintPremise(.titledArgument(word: pseudo.name, anchors: anchors.map(\.canonical), title: name), hint: nil)
+        }
+        return QueryError(.unknownEdgeType, "\(name) isn't an edge type.", hint: hint, premise: premise, span: term.span)
     }
 
     // MARK: Cost

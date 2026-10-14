@@ -21,6 +21,11 @@ public struct CanvasCard {
     public let firstResponder: NSResponder?
     /// The step its commits are, from show to close (`transact(coalescing: id)`). Nil: it holds none.
     public internal(set) var stepName: String?
+    /// Shown inside a press (or any action): the step that action made stays open when it ends, as the
+    /// card's, so what the card commits is part of it, one Undo for both, after the card closes.
+    /// The step keeps the action's name. Needs a `stepName`; a card shown outside an action is as
+    /// any card.
+    public let adoptsPress: Bool
     /// The size it wants, in view points, no larger than `room`. Asked each time it is laid out.
     public let size: @MainActor (_ room: CGSize) -> CGSize
     /// Called once, after it is taken down and the keyboard is back where it was.
@@ -28,6 +33,7 @@ public struct CanvasCard {
 
     public init<ID: Hashable & Sendable>(id: ID, about shape: ShapeID? = nil, anchor: CGRect, view: NSView,
                                          firstResponder: NSResponder? = nil, stepName: String? = nil,
+                                         adoptsPress: Bool = false,
                                          size: @escaping @MainActor (CGSize) -> CGSize,
                                          didClose: @escaping @MainActor (CanvasCardClosing) -> Void = { _ in }) {
         self.id = AnyHashable(id)
@@ -36,6 +42,7 @@ public struct CanvasCard {
         self.view = view
         self.firstResponder = firstResponder
         self.stepName = stepName
+        self.adoptsPress = adoptsPress
         self.size = size
         self.didClose = didClose
     }
@@ -76,8 +83,10 @@ extension CanvasEditor {
     /// With a `stepName` its commits are one undo step from now until it closes: commit with
     /// `transact(nil, coalescing: card.id)`, outside any action (inside a press or a group a commit is
     /// that action's). A card shown inside a press (a face's click) holds the step for what is
-    /// committed after the release. A commit from anywhere else ends that step and is a step of its
-    /// own; the card's next commit makes another by the same name.
+    /// committed after the release, as a step of its own; one that `adoptsPress` holds the press's step
+    /// itself, open past the release, so the press's changes and the card's are one Undo, once the card
+    /// closes (while it has the keyboard, the Undo is its text field's). A commit from anywhere else
+    /// ends that step and is a step of its own; the card's next commit makes another by the same name.
     @discardableResult
     public func showCard(_ card: CanvasCard) -> Bool {
         if let shape = card.shape {
@@ -92,7 +101,7 @@ extension CanvasEditor {
             old.didClose(.replaced)
         }
         shownCard = card
-        if let name = card.stepName { undoHistory.keep(card.id, named: name) }
+        if let name = card.stepName { undoHistory.keep(card.id, named: name, adopting: card.adoptsPress) }
         delegate?.editorCardDidChange(self)
         setNeedsDisplay()
         return true

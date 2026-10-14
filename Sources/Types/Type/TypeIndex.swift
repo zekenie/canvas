@@ -15,6 +15,39 @@ public enum TypeLinkName: Equatable, Sendable {
     case missing(lastKnown: String?)
 }
 
+/// What a commit changed in the file's types, told to `TypeIndex.onChange`: each set is the ids of the
+/// shapes that changed in that way, in the same commit.
+public struct TypeChange: Sendable {
+    /// Types that came, went, or whose schema text, name or own list changed (a change of the mark alone
+    /// is `marks`' only).
+    public let types: Set<ShapeID>
+    /// Shapes that came or went as a relationship type: held the mark with a schema, or stopped.
+    public let marks: Set<ShapeID>
+    /// Shapes that came or went as a type at all. `types` holds a type for every schema keystroke: this is
+    /// how a note that becomes a type is told from one.
+    public let membership: Set<ShapeID>
+    /// Types whose own `is` list changed.
+    public let lineage: Set<ShapeID>
+    /// Every shape whose `is` list changed (a type, a note, an arrow), and removed shapes that held one.
+    public let lists: Set<ShapeID>
+    /// The whole file was read afresh (put in place, or a commit heard out of turn): nothing above is a
+    /// complete account of what moved, and every reader reads everything again.
+    public let everything: Bool
+
+    public init(types: Set<ShapeID> = [], marks: Set<ShapeID> = [], membership: Set<ShapeID> = [], lineage: Set<ShapeID> = [],
+                lists: Set<ShapeID> = [], everything: Bool = false) {
+        self.types = types
+        self.marks = marks
+        self.membership = membership
+        self.lineage = lineage
+        self.lists = lists
+        self.everything = everything
+    }
+
+    /// Whether anything in it moved.
+    public var isEmpty: Bool { !everything && types.isEmpty && marks.isEmpty && membership.isEmpty && lineage.isEmpty && lists.isEmpty }
+}
+
 /// The file's types, on every board: each shape that holds a schema (`TypeSchemaProperty`), its
 /// name (its title, Titles') and a revision that moves whenever its schema or its name changes, so
 /// what depends on a type (a `$ref`'s completion, a type's highlights, an instance's chips) can tell
@@ -36,6 +69,17 @@ public final class TypeIndex {
         /// The color the type's shape holds (not what it is drawn in: `look(of:)`), nil for none. Not
         /// part of its revision, which is what its schema and its name say.
         var color: ShapeColor?
+        var isRelationship: Bool
+    }
+
+    /// What a pass over some records found changed: the sets of a `TypeChange`, and the shapes whose name,
+    /// or whether they are a type, changed (their readers hear it, and their instances' chips are made
+    /// again).
+    private struct Heard {
+        var types: Set<ShapeID> = [], marks: Set<ShapeID> = [], membership: Set<ShapeID> = []
+        var lineage: Set<ShapeID> = [], lists: Set<ShapeID> = [], renamed: Set<ShapeID> = []
+
+        var change: TypeChange { TypeChange(types: types, marks: marks, membership: membership, lineage: lineage, lists: lists) }
     }
 
     @ObservationIgnored weak var editor: CanvasEditor?
@@ -50,7 +94,7 @@ public final class TypeIndex {
     @ObservationIgnored private let colors: ColorBook?
     /// The kinds that stand in for other shapes (pills): never a type, whatever they stand for.
     @ObservationIgnored private let standInKinds: Set<ShapeKind>
-    @ObservationIgnored private var observers: [@MainActor (Set<ShapeID>) -> Void] = []
+    @ObservationIgnored private var observers: [@MainActor (TypeChange) -> Void] = []
     /// Each shape's types, in the order of its list (only the shapes that are some), and the names of
     /// the types: kept as a value, so a query takes it up in O(1).
     @ObservationIgnored private var kept = TypeGraph()
@@ -115,11 +159,20 @@ public final class TypeIndex {
     /// A number that changes whenever the type's schema or name does; nil for a shape that isn't one.
     public func revision(of id: ShapeID) -> Int? { entries[id]?.revision }
 
-    /// Calls `body` after each commit that changed types, with the ids of those that came, went, or
-    /// whose schema, name or own types changed (every type there was and is, when a file is put in
-    /// place).
-    public func onChange(_ body: @escaping @MainActor (Set<ShapeID>) -> Void) {
+    /// Calls `body` after each commit that changed types: the ids of those that came, went, or whose schema,
+    /// name or own types changed (`types`; every type there was and is, when a file is put in place), that
+    /// came or went as a relationship type (`marks`) or as a type at all (`membership`), whose own list
+    /// changed (`lineage`), and every shape whose list did (`lists`). A commit that changed none of them tells
+    /// nobody.
+    public func onChange(_ body: @escaping @MainActor (TypeChange) -> Void) {
         observers.append(body)
+    }
+
+    /// Whether the shape is a type that is no relationship type: one a field may hold the fields of in
+    /// place (a `$ref`). A relationship type's fields belong to its arrows.
+    public func canBeEmbedded(_ id: ShapeID) -> Bool {
+        guard let entry = entries[id] else { return false }
+        return !entry.isRelationship
     }
 
     // MARK: What is what
@@ -241,33 +294,39 @@ public final class TypeIndex {
 
     // MARK: Keeping it
 
-    /// What the shape is now, if it's a type, and whether that differs from what's kept: kept, with
-    /// its revision moved, and true. `renamed` gets the shape when its name, its color, or whether it's
-    /// a type, is what changed; a color alone is kept with no revision moved, and false.
-    private func read(_ record: AnyShapeRecord, registry: Registry, renamed: inout Set<ShapeID>) -> Bool {
+    /// What the shape is now, if it's a type, and whether that differs from what's kept: kept, with its
+    /// revision moved. `heard` gets the shape in what changed: `types` when it came, went or its schema or
+    /// name did, `marks` when it came or went as a relationship type (a flip of the mark alone moves its
+    /// revision and nothing else), `membership` when it came or went as a type, `renamed` when its name, its
+    /// color, or whether it's a type, is what changed. A color alone is kept with no revision moved, and is heard
+    /// in `renamed` alone.
+    private func read(_ record: AnyShapeRecord, registry: Registry, heard: inout Heard) {
         #if DEBUG
         recordsRead += 1
         #endif
         guard let schema = record[TypeSchemaProperty.self] else {
-            guard drop(record.id) else { return false }
-            renamed.insert(record.id)
-            return true
+            drop(record.id, heard: &heard)
+            return
         }
         let name = registry.title(of: record), color = record.ownColor
+        let mark = record[RelationshipProperty.self] == true
         let kept = entries[record.id]
-        if var kept, kept.schema == schema.text, kept.name == name {
-            guard kept.color != color else { return false }
+        let same = kept?.schema == schema.text && kept?.name == name
+        if var kept, same, kept.isRelationship == mark {
+            guard kept.color != color else { return }
             kept.color = color
             entries[record.id] = kept
-            renamed.insert(record.id)
-            return false
+            heard.renamed.insert(record.id)
+            return
         }
-        if kept == nil || kept?.name != name || kept?.color != color { renamed.insert(record.id) }
+        if kept == nil { heard.membership.insert(record.id) }
+        if kept == nil || kept?.name != name || kept?.color != color { heard.renamed.insert(record.id) }
         if let name { lastNames[record.id] = name }
         if kept == nil || kept?.schema != schema.text { chainRevision &+= 1 }
+        if (kept?.isRelationship ?? false) != mark { heard.marks.insert(record.id) }
+        if !same { heard.types.insert(record.id) }
         revisions += 1
-        put(record.id, Entry(schema: schema.text, name: name, revision: revisions, color: color))
-        return true
+        put(record.id, Entry(schema: schema.text, name: name, revision: revisions, color: color, isRelationship: mark))
     }
 
     /// What the shape's list is now, filed under the types it names. True if that changed.
@@ -289,26 +348,40 @@ public final class TypeIndex {
     private func put(_ id: ShapeID, _ entry: Entry) {
         entries[id] = entry
         kept.names[id] = entry.name
+        kept.types.insert(id)
+        if entry.isRelationship { kept.relationshipTypes.insert(id) } else { kept.relationshipTypes.remove(id) }
     }
 
-    private func drop(_ id: ShapeID) -> Bool {
+    /// The shape is no type now (gone, or its schema taken away): it left as a type, and as a relationship
+    /// type if it was one.
+    private func drop(_ id: ShapeID, heard: inout Heard) {
         kept.names[id] = nil
-        guard entries.removeValue(forKey: id) != nil else { return false }
+        guard let entry = entries.removeValue(forKey: id) else { return }
+        kept.types.remove(id)
+        kept.relationshipTypes.remove(id)
         chainRevision &+= 1
-        return true
+        heard.types.insert(id)
+        heard.membership.insert(id)
+        heard.renamed.insert(id)
+        if entry.isRelationship { heard.marks.insert(id) }
     }
 
-    /// A type's own list changed: what its instances resolve to may have, so the stamp moves and it is
-    /// told. An instance's list changing does neither: it is in no chain.
-    private func readLinks(of record: AnyShapeRecord, changed: inout Set<ShapeID>) {
-        guard readLinks(record), entries[record.id] != nil else { return }
+    /// A list changed: it is told in `lists`. A type's own list changing is told in `types` and `lineage`
+    /// too, and moves the stamp: what its instances resolve to may have changed. An instance's list is in
+    /// no chain, so it moves nothing else.
+    private func readLinks(of record: AnyShapeRecord, heard: inout Heard) {
+        guard readLinks(record) else { return }
+        heard.lists.insert(record.id)
+        guard entries[record.id] != nil else { return }
         chainRevision &+= 1
-        changed.insert(record.id)
+        heard.types.insert(record.id)
+        heard.lineage.insert(record.id)
     }
 
     /// A shape that's gone from the file holds no list.
-    private func forgetLinks(of id: ShapeID) {
+    private func forgetLinks(of id: ShapeID, heard: inout Heard) {
         guard let before = kept.links.removeValue(forKey: id) else { return }
+        heard.lists.insert(id)
         for link in before {
             instancesByType[link.shape]?.remove(id)
             if instancesByType[link.shape]?.isEmpty == true { instancesByType[link.shape] = nil }
@@ -317,10 +390,10 @@ public final class TypeIndex {
 
     private func readEveryShape(in editor: CanvasEditor) {
         let registry = editor.registry, file = editor.file
-        var renamed: Set<ShapeID> = []
+        var heard = Heard()
         func read(_ shapes: [AnyShapeRecord]) {
             for record in shapes {
-                if kinds.contains(record.kind) { _ = self.read(record, registry: registry, renamed: &renamed) }
+                if kinds.contains(record.kind) { self.read(record, registry: registry, heard: &heard) }
                 if typeableKinds.contains(record.kind) { readLinks(record) }
             }
         }
@@ -328,10 +401,11 @@ public final class TypeIndex {
         for board in file.children.values { read(board.shapes) }
     }
 
-    private func tell(_ ids: Set<ShapeID>) {
-        guard !ids.isEmpty else { return }
-        withMutation(keyPath: \.changeCount) { changesTold &+= 1 }
-        for observer in observers { observer(ids) }
+    private func tell(_ change: TypeChange) {
+        guard !change.isEmpty else { return }
+        // What the views of a type's fields observe moves for a change to a type, never for a list alone.
+        if !change.types.isEmpty || change.everything { withMutation(keyPath: \.changeCount) { changesTold &+= 1 } }
+        for observer in observers { observer(change) }
     }
 
     /// A type's name, its color, or whether it's there, changed: the readers of its name hear it, and
@@ -363,6 +437,7 @@ public final class TypeIndex {
     /// known by the title it had.
     private func readAfresh(in editor: CanvasEditor, sameFile: Bool) {
         let before = Set(entries.keys), instances = Set(kept.links.keys)
+        let marksBefore = kept.relationshipTypes
         chainRevision &+= 1
         entries = [:]
         kept = TypeGraph()
@@ -370,9 +445,11 @@ public final class TypeIndex {
         if !sameFile { lastNames = [:] }
         readEveryShape(in: editor)
         let now = Set(entries.keys)
-        tell(before.union(now))
-        // Every chip may name another type.
         let moved = before.union(now)
+        let own = Set(kept.links.keys.filter { entries[$0] != nil }).union(instances.filter { before.contains($0) })
+        tell(TypeChange(types: moved, marks: marksBefore.union(kept.relationshipTypes), membership: moved, lineage: own,
+                        lists: instances.union(kept.links.keys), everything: true))
+        // Every chip may name another type.
         for type in moved { withMutation(keyPath: \.[nameVersion: type]) { nameVersions[type, default: 0] += 1 } }
         let chips = instances.union(kept.links.keys)
         if !chips.isEmpty { editor.adornmentsDidChange(for: chips) }
@@ -391,19 +468,16 @@ extension TypeIndex: EditorService {
             return
         }
         let registry = editor.registry, file = editor.file
-        var changed: Set<ShapeID> = [], renamed: Set<ShapeID> = []
+        var heard = Heard()
         for id in changes.removed where file.record(id) == nil {
-            if drop(id) {
-                changed.insert(id)
-                renamed.insert(id)
-            }
-            forgetLinks(of: id)
+            drop(id, heard: &heard)
+            forgetLinks(of: id, heard: &heard)
         }
         // A shape that only moved (a drag) has the schema, the name and the types it had.
         func hear(_ id: ShapeID) {
             guard let record = editor.document[id] else { return }
-            if kinds.contains(record.kind), read(record, registry: registry, renamed: &renamed) { changed.insert(id) }
-            if typeableKinds.contains(record.kind) { readLinks(of: record, changed: &changed) }
+            if kinds.contains(record.kind) { read(record, registry: registry, heard: &heard) }
+            if typeableKinds.contains(record.kind) { readLinks(of: record, heard: &heard) }
         }
         // (Two passes, not a set of both: a drag of everything makes none, and a set of its ids costs more than it saves.)
         for id in changes.added where !changes.moved.contains(id) { hear(id) }
@@ -411,18 +485,15 @@ extension TypeIndex: EditorService {
         // A board taken or brought back holds thousands of shapes, and few are types: the kind first.
         for id in changes.elsewhere {
             guard let record = file.record(id) else {
-                if drop(id) {
-                    changed.insert(id)
-                    renamed.insert(id)
-                }
-                forgetLinks(of: id)
+                drop(id, heard: &heard)
+                forgetLinks(of: id, heard: &heard)
                 continue
             }
-            if kinds.contains(record.kind), read(record, registry: registry, renamed: &renamed) { changed.insert(id) }
-            if typeableKinds.contains(record.kind) { readLinks(of: record, changed: &changed) }
+            if kinds.contains(record.kind) { read(record, registry: registry, heard: &heard) }
+            if typeableKinds.contains(record.kind) { readLinks(of: record, heard: &heard) }
         }
-        tell(changed)
-        told(renamed: renamed, in: editor)
+        tell(heard.change)
+        told(renamed: heard.renamed, in: editor)
     }
 
     /// A whole file put in place with the board switch is read again; a switch alone changes no type

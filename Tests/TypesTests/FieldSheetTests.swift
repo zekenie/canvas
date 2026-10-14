@@ -80,7 +80,7 @@ private func problem(_ path: FieldPath, _ kind: FieldClass) -> FieldProblem { Fi
         expectEqual(sheet.stops, [FieldStop(line: 0, column: 0), FieldStop(line: 1, column: 0), FieldStop(line: 2, column: 0), FieldStop(line: 3, column: 0),
                                   FieldStop(line: 4, column: 0), FieldStop(line: 5, column: -1), FieldStop(line: 6, column: -1), FieldStop(line: 7, column: -1)])
     },
-    test("another type's fields: its chip and its fields, inherited first; a gone type is the chip and no lines; a pointer member is words") {
+    test("another type's fields: its chip and its fields, inherited first; a gone type is the chip and no lines; a member that was a pointer is text") {
         let s = try Sheets()
         let address = try s.sheet("shippingAddress", ["shippingAddress": ["city": "Leeds"]])
         expectEqual(address.chip, FieldFixtures.addressID)
@@ -93,12 +93,10 @@ private func problem(_ path: FieldPath, _ kind: FieldClass) -> FieldProblem { Fi
         let missing = s.sheet(try s.adHoc(#"{"$ref": "\#(FieldFixtures.uri(of: gone))"}"#), types: [])
         expectEqual(missing.chip, gone)
         expectEqual(missing.lines, [])
-        let customer = s.sheet(try s.adHoc(#"{"type": "object", "properties": {"c": {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "\#(FieldFixtures.uri(of: FieldFixtures.personID))"}}}}"#), ["f": ["c": link(to: FieldFixtures.annLeeID, "Ann Lee")]], types: [])
-        expectEqual(customer.lines[0].cells[0].control, .link(FieldFixtures.personID))
+        let customer = s.sheet(try s.adHoc(#"{"type": "object", "properties": {"c": {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "\#(FieldFixtures.uri(of: FieldFixtures.personID))"}}}}"#), ["f": ["c": "Ann Lee"]], types: [])
+        expectEqual(customer.lines[0].cells[0].control, .text(.text), "a schema that was a pointer is text")
         expectEqual(customer.lines[0].cells[0].shown, "Ann Lee")
         expectEqual(customer.stops, [FieldStop(line: 0, column: 0)])
-        let plain = s.sheet(try s.adHoc(#"{"type": "object", "properties": {"c": {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "\#(FieldFixtures.uri(of: FieldFixtures.personID))"}}}}"#), ["f": ["c": "ann"]], types: [])
-        expectEqual(plain.lines[0].cells[0].shown, "ann", "not a token: the text as stored")
     },
     test("a list of text, of numbers, of dates: a line each, then the waiting line reading add; read-only has none, and empty reads None") {
         let s = try Sheets()
@@ -214,8 +212,8 @@ private func problem(_ path: FieldPath, _ kind: FieldClass) -> FieldProblem { Fi
         let order = s.fold(s.book.fields(types: [FieldFixtures.orderID]).fields, mode: .kinds)
         expectEqual(order.lines.map(\.name), ["customer", "shipping address", "line items", "status", "tags", "gift", "gift note"])
         expectEqual(order.lines.map(\.isNeeded), [true, false, true, false, false, false, false])
-        expectEqual(order.lines.map { $0.cells[0].shown }, ["→", "", "List", "Choice", "List of Text", "Yes or no", "Text"])
-        expectEqual(order.lines[0].chip, FieldFixtures.personID)
+        expectEqual(order.lines.map { $0.cells[0].shown }, ["Text", "", "List", "Choice", "List of Text", "Yes or no", "Text"])
+        expectEqual(order.lines[0].chip, nil)
         expectEqual(order.lines[1].chip, FieldFixtures.addressID)
         expectEqual(order.lines.map { $0.cells[0].isEditable }, Array(repeating: false, count: 7))
         expectEqual(order.stops, [FieldStop(line: 1, column: -1), FieldStop(line: 2, column: -1)], "only the rows that open")
@@ -333,18 +331,8 @@ private func problem(_ path: FieldPath, _ kind: FieldClass) -> FieldProblem { Fi
         expectEqual(items.lines[1].cells[0].shown, "Mug")
         expectEqual(items.lines[6].cells[0].shown, "add")
         expectEqual(items.lines[6].cells[0].isStored, false)
-        let customer = s.sheet(try s.field("customer"), ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee")], presentation: .panel)
-        expectEqual(customer.lines.map { $0.cells[0].control }, [.link(FieldFixtures.personID)], "a pointer is one line, its pill")
-        let guests = s.sheet(try s.field("guests", of: FieldFixtures.kindsBID), ["guests": [link(to: FieldFixtures.annLeeID, "Ann Lee")]], types: [FieldFixtures.kindsBID], presentation: .panel)
-        expectEqual(guests.lines.count, 1)
-        expectEqual(guests.lines[0].disclosure, false, "a list of links is a triangle, closed")
-        expectEqual(guests.lines[0].cells[0].control, .more(.pills(targets: ["Ann Lee"], more: 0)))
-        expectEqual(guests.stops, [FieldStop(line: 0, column: -1)], "the triangle is the stop")
-        let hosts = try s.adHoc(#"{"type": "object", "properties": {"guests": {"type": "array", "items": {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "\#(FieldFixtures.uri(of: FieldFixtures.personID))"}}}}}"#)
-        let member = s.sheet(hosts, ["f": ["guests": [link(to: FieldFixtures.annLeeID, "Ann Lee")]]], types: [FieldFixtures.kindsBID], presentation: .panel, open: [FieldPath(field: "f"): true])
-        expectEqual(member.lines.count, 2)
-        expectEqual(member.lines[1].disclosure, false, "a member that is a list of links has its own triangle")
-        expectEqual(member.lines[1].cells[0].control, .more(.pills(targets: ["Ann Lee"], more: 0)))
+        let customer = s.sheet(try s.field("customer"), ["customer": "Ann Lee"], presentation: .panel)
+        expectEqual(customer.lines.map { $0.cells[0].control }, [.text(.text)], "a text is one line")
         let other = s.sheet(try s.adHoc("{}"), ["f": ["k": 1]], types: [], presentation: .panel)
         expectEqual(other.lines.count, 1)
         expectEqual(other.lines[0].cells[0].control, .json, "Other is the JSON box")
@@ -354,7 +342,7 @@ private func problem(_ path: FieldPath, _ kind: FieldClass) -> FieldProblem { Fi
         let rows = s.fold(s.book.fields(types: [FieldFixtures.orderID]).fields)
         expectEqual(rows.lines.map(\.name), ["customer", "shipping address", "line items", "status", "tags", "gift", "gift note"])
         expectEqual(rows.stops, [FieldStop(line: 0, column: 0), FieldStop(line: 1, column: -1), FieldStop(line: 2, column: -1), FieldStop(line: 3, column: 0),
-                                 FieldStop(line: 4, column: -1), FieldStop(line: 5, column: 0), FieldStop(line: 6, column: 0)], "the pointer is a stop; a row with more is the line")
+                                 FieldStop(line: 4, column: -1), FieldStop(line: 5, column: 0), FieldStop(line: 6, column: 0)], "a text is a stop; a row with more is the line")
         let branch = s.sheet(try s.field("payment", of: FieldFixtures.kindsBID), types: [FieldFixtures.kindsBID])
         expectEqual(branch.stops, [FieldStop(line: -1, column: 0), FieldStop(line: 0, column: 0)])
     },

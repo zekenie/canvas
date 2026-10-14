@@ -21,6 +21,8 @@ struct FormLevel {
     var from: FieldStop?
     /// An either's branch the person picked.
     var branch: Int?
+    /// The shape whose values the level is, when not the form's own: the arrow a row's card opened it from.
+    var owner: ShapeID? = nil
 }
 
 @MainActor
@@ -82,12 +84,19 @@ public final class FieldFormView: NSView {
     /// A pair renamed to a name another has: marked until the caret moves; nothing was written.
     var conflict: FieldStop?
     var choiceStop: FieldStop?
-    /// A link's list is open over its cell: the notes it lists, its window and the cell. Nothing is written until a pick.
-    var linkPicking: (picker: LinkPicker, window: CaretListWindow, stop: FieldStop)?
+    /// A note cell's list is open over it: the notes it lists, its window and the cell. Nothing is written until a pick.
+    var picking: (picker: any NotePicking, window: CaretListWindow, stop: FieldStop)?
+    /// Makes the list of notes a note cell of `shape` finds one in; nil makes none, and a cell then opens no list.
+    /// Whatever lists notes for a card sets it.
+    var makePicker: (@MainActor (_ shape: ShapeID) -> (any NotePicking)?)?
     var preferredWidthKept: CGFloat?
     var nameColumnKept: CGFloat?
     var bookRevision = -1
     var checkRevision = -1
+    /// The arrows a row's card shows a line of, and the notes at their other ends: a commit that names one reloads the form.
+    public internal(set) var owners: Set<ShapeID> = []
+    /// Whose values the cell with the caret is, when not the shape's own (an arrow's).
+    var typingOwner: ShapeID?
 
     public init(editor: CanvasEditor, shape: ShapeID, root: FieldFormRoot, mode: FieldFormMode, isReadOnly: Bool,
                 presentation: FieldFormContext.Presentation, cardKey: AnyHashable? = nil,
@@ -103,9 +112,12 @@ public final class FieldFormView: NSView {
         switch root {
         case .field(let path, let field, let kind):
             levels = [FormLevel(path: path, field: field, kind: kind, title: FieldName.words(of: field.field))]
-        case .fold(let fields):
+        case .fold(let fields), .shape(let fields):
             foldFields = fields
             let placeholder = Resolved.Field(field: ChainField(name: "", schema: .null), source: shape, introducedBy: shape)
+            levels = [FormLevel(path: FieldPath(), field: placeholder, kind: .group, title: "")]
+        case .relations(let relations):
+            let placeholder = Resolved.Field(field: ChainField(name: "", schema: .null), source: relations.row.key.type, introducedBy: relations.row.key.type)
             levels = [FormLevel(path: FieldPath(), field: placeholder, kind: .group, title: "")]
         }
         grid = FieldGridView()
@@ -173,25 +185,46 @@ public final class FieldFormView: NSView {
     // MARK: What it is made from
 
     var level: FormLevel { levels[levels.count - 1] }
-    var isFold: Bool { if case .fold = root { true } else { false } }
+    /// A level of lines that are each a field's own, under no row of the shape's: a fold's, and the shape's (an arrow's card).
+    var isFold: Bool {
+        switch root {
+        case .fold, .shape: true
+        case .field, .relations: false
+        }
+    }
+    var isShape: Bool { if case .shape = root { true } else { false } }
     var font: NSFont { presentation == .card ? TypesStyle.formCardFont : TypesStyle.formPanelFont }
+    /// The row's card, when it is one.
+    var relations: RelationCardRoot? { if case .relations(let root) = root { root } else { nil } }
     var types: [ShapeID] {
-        mode == .kinds ? [shape] : editor.document[shape]?[IsAProperty.self]?.map(\.shape) ?? []
+        if let relations { return [relations.row.key.type] }
+        // An arrow's card is its relationship types' fields; a plain type beside them is not the relationship's.
+        if isShape { return (editor.document[shape]?[IsAProperty.self] ?? []).map(\.shape).filter { editor.relationships?.graph.isRelationshipType($0) == true } }
+        return mode == .kinds ? [shape] : editor.document[shape]?[IsAProperty.self]?.map(\.shape) ?? []
     }
 
-    /// What the check says, less the cell with the caret: it is not red while it is typed in.
-    private func effectiveCheck() -> FieldCheck {
-        guard let record = editor.document[shape] else { return .clean }
-        let check = checkSource?(record) ?? editor.fieldChecks?.check(of: record) ?? .clean
-        return typingPath.map(check.leaving(out:)) ?? check
+    /// Whose values a cell is: its arrow's on a line of a row's card, else the level's, else the form's shape's.
+    func owner(of cell: FieldCell) -> ShapeID { cell.owner ?? level.owner ?? shape }
+
+    /// What the check says of a shape (the form's own, or an arrow of a row's card), less the cell with the caret: it is not red
+    /// while it is typed in.
+    func effectiveCheck(of id: ShapeID? = nil) -> FieldCheck {
+        let id = id ?? level.owner ?? shape
+        guard let record = editor.shape(inFile: id) else { return .clean }
+        let check = (id == shape ? checkSource?(record) : nil) ?? editor.fieldChecks?.check(of: record) ?? .clean
+        guard let path = typingPath, (typingOwner ?? shape) == id else { return check }
+        return check.leaving(out: path)
     }
 
     private func makeSheet() -> FieldSheet {
         guard let book = editor.fieldBook, let writer = editor.fieldWriter else { return FieldSheet() }
-        let values = writer.values(of: shape), check = effectiveCheck()
+        let at = level.owner ?? shape
+        let values = writer.values(of: at), check = effectiveCheck(of: at)
         let open = openNodes
         var made: FieldSheet
-        if isFold, depth == 0 {
+        if let relations, depth == 0 {
+            made = relationSheet(relations, book: book)
+        } else if isFold, depth == 0 {
             made = FieldSheets.foldSheet(foldFields, values: values, check: check, book: book, types: types, mode: mode, isReadOnly: isReadOnly)
         } else {
             let at = level
@@ -229,8 +262,19 @@ public final class FieldFormView: NSView {
     /// cell's stored value changed under it.
     public func reload() {
         guard editor.document[shape] != nil, revalidate() else { return }
+        reloadedAt = Reloaded(revision: editor.revision, book: editor.fieldBook?.revision ?? 0, checks: editor.fieldChecks?.revision ?? 0)
         reconcileDrafts()
         rebuild()
+    }
+
+    /// What `reload` last saw, so that a commit heard from two places (the service's, the relationship index's) reloads once.
+    private struct Reloaded: Equatable { var revision: Int, book: Int, checks: Int }
+    private var reloadedAt: Reloaded?
+
+    /// A reload unless this form already reloaded for this commit, as the book and the check are now.
+    func reloadOnce() {
+        if reloadedAt == Reloaded(revision: editor.revision, book: editor.fieldBook?.revision ?? 0, checks: editor.fieldChecks?.revision ?? 0) { return }
+        reload()
     }
 
     /// The panel's host: what it hands changed.
@@ -258,15 +302,24 @@ public final class FieldFormView: NSView {
         }
         if isFold {
             let fresh = book.fields(types: types)
-            let kept = foldFields.compactMap { fresh.field(named: $0.field.name) }
+            // A fold keeps the rows it hid that are still the types'; the shape's are all of them, as the types have them now.
+            let kept = isShape ? fresh.fields : foldFields.compactMap { fresh.field(named: $0.field.name) }
             if kept.isEmpty { onGone?() }
             foldFields = kept
         }
-        let starts = isFold ? 1 : 0
+        if let relations {
+            // The row is gone from the note (its types, the ends, the note itself): nothing is left to show.
+            guard editor.document[shape] != nil, row(of: relations) != nil else {
+                onGone?()
+                return false
+            }
+        }
+        let flat = isFold || relations != nil
+        let starts = flat ? 1 : 0
         var keep = starts
         for place in starts..<levels.count {
             var held = levels[place]
-            if isFold && place == 0 { keep = place + 1; continue }
+            if flat && place == 0 { keep = place + 1; continue }
             guard let field = resolve(held.path, book: book) else { break }
             held.field = field
             held.kind = book.kind(of: field)
@@ -281,7 +334,7 @@ public final class FieldFormView: NSView {
             levels.removeSubrange(keep...)
             focus = levels.last?.from
         }
-        if !isFold, !hasForm(levels[0].kind) { onGone?() }
+        if !flat, !hasForm(levels[0].kind) { onGone?() }
         return true
     }
 
@@ -298,7 +351,7 @@ public final class FieldFormView: NSView {
     /// Drafts follow what is stored: a list whose count differs is all stored again, pairs lose a gone key.
     private func reconcileDrafts() {
         guard let writer = editor.fieldWriter else { return }
-        let values = writer.values(of: shape)
+        let values = writer.values(of: level.owner ?? shape)
         for path in Array(drafts.keys) {
             drafts[path]?.reconcile(with: values.value(at: path))
         }
@@ -361,13 +414,13 @@ public final class FieldFormView: NSView {
 
     /// Puts the editor over the focused text cell, or takes it away.
     func syncEditor() {
-        // A link's list open: the editor stays over its cell, as a query.
-        if let picking = linkPicking {
-            if focus == picking.stop, let cell = cell(at: picking.stop), case .link = cell.control, cell.isEditable, !isReadOnly {
-                placeLinkEditor(at: picking.stop)
+        // A note cell's list open: the editor stays over its cell, as a query.
+        if let picking = picking {
+            if focus == picking.stop, let cell = cell(at: picking.stop), case .note = cell.control, cell.isEditable, !isReadOnly {
+                placeNoteEditor(at: picking.stop)
                 return
             }
-            endLinkPicking()
+            endNotePicking()
         }
         if let stop = focus, let cell = cell(at: stop), case .json = cell.control, cell.isEditable, !isReadOnly {
             syncJSON()
@@ -414,8 +467,9 @@ public final class FieldFormView: NSView {
         // The editor goes from cell to cell, and the window clears a text's undo only when the keyboard changes hands.
         cellEditor.undoManager?.removeAllActions()
         typingPath = cell.path
+        typingOwner = owner(of: cell)
         let current = showsCurrentCheck
-        editor.fieldChecks?.typing = (shape, cell.path)
+        editor.fieldChecks?.typing = (owner(of: cell), cell.path)
         if let window, window.firstResponder !== cellEditor { window.makeFirstResponder(cellEditor) }
         if !isRebuilding { refreshMarks() }
         keepCheckCurrent(if: current)
@@ -438,9 +492,11 @@ public final class FieldFormView: NSView {
     /// cell as the check marks it.
     func stopTyping() {
         guard let path = typingPath else { return }
+        let owner = typingOwner ?? shape
         typingPath = nil
+        typingOwner = nil
         let current = showsCurrentCheck
-        if let checks = editor.fieldChecks, let typing = checks.typing, typing.shape == shape, typing.path == path { checks.typing = nil }
+        if let checks = editor.fieldChecks, let typing = checks.typing, typing.shape == owner, typing.path == path { checks.typing = nil }
         if !isRebuilding { refreshMarks() }
         keepCheckCurrent(if: current)
     }
@@ -464,7 +520,7 @@ public final class FieldFormView: NSView {
     public override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
         if newWindow == nil, window != nil {
-            endLinkPicking()
+            endNotePicking()
             editorStop = nil
             jsonStop = nil
             stopTyping()
@@ -488,7 +544,7 @@ public final class FieldFormView: NSView {
     /// Moves the keyboard to a stop (nil: to the form itself, no stop).
     public func focus(_ stop: FieldStop?) {
         if let stop, !sheet.stops.contains(stop) { return }
-        if let picking = linkPicking, stop != picking.stop { endLinkPicking() }
+        if let picking = picking, stop != picking.stop { endNotePicking() }
         focus = stop
         syncEditor()
         // The keyboard is where the focus is, if it was somewhere else (a click on a control beside the form, and back).

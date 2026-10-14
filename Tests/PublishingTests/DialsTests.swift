@@ -32,6 +32,27 @@ import Topology
         expect(!registry.canBePublic("draft"), "never")
         expect(!registry.canBePublic("holder"))
     },
+    test("makePublic on a record is the one writer of public: a kind that holds it takes it, an always-public one already is, a never-public one refuses and is left as it was") {
+        let h = try publishingHarness()
+        let registry = h.editor.registry
+        let plaque = h.add(Plaque(plaqueFrame)), seal = h.add(Seal(plaqueFrame)), draft = h.add(Draft(plaqueFrame))
+        var record = try require(h.editor.document[plaque])
+        expect(registry.makePublic(&record))
+        expectEqual(record[PublicProperty.self], true)
+        expectEqual(h.editor.document[plaque]?[PublicProperty.self], nil, "a record, not the document")
+        expect(registry.makePublic(&record), "already public")
+        var sealed = try require(h.editor.document[seal])
+        expect(registry.makePublic(&sealed), "always public")
+        expectEqual(sealed[PublicProperty.self], nil, "and nothing written")
+        var drafted = try require(h.editor.document[draft])
+        let before = drafted
+        expect(!registry.makePublic(&drafted), "never public")
+        expect(drafted == before)
+        // The editor's writer goes through it.
+        h.editor.makePublic([plaque, draft])
+        expectEqual(h.editor.document[plaque]?[PublicProperty.self], true)
+        expectEqual(h.editor.document[draft]?[PublicProperty.self], nil)
+    },
     test("a definition that adopts both dials is refused when the registry is built") {
         do {
             _ = try Registry(plugins: publishingPlugins([Contributor(id: "both") { r in r.shape(BothDefinition()) }]))

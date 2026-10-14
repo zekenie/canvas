@@ -23,7 +23,7 @@ public struct TitleSource: Equatable, Sendable {
     public static let directive = "title", from = "x-canvas-from"
 
     /// The plain kind a field of this kind titles by; nil for one that can't title: a yes or no (a name is
-    /// never "yes"), and everything that is not plain (a pointer, a list, a group, another type's fields,
+    /// never "yes"), and everything that is not plain (a list, a group, another type's fields,
     /// pairs, an either even of two plain kinds, what no control suits).
     public static func titles(_ kind: FieldKind) -> PlainKind? {
         guard case .plain(let plain) = kind, plain != .yesNo else { return nil }

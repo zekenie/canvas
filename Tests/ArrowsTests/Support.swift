@@ -66,6 +66,7 @@ struct LabelFixturesPlugin: CanvasPlugin {
             gloss.mentionable(untitled: { $0.props.text.firstLine })
             gloss.typeWords(\.text, drawnIn: { _ in nil })
             gloss.canBeType()
+            gloss.canBeRelationshipType()
         }
         registrar.slashCommands(Arrow.self) {
             SlashCommand("head", edit: { arrow, _ in arrow.endArrowhead.toggle() })

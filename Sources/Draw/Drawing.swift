@@ -1,6 +1,7 @@
 import Canvas
 import CoreGraphics
 import DrawScript
+import Foundation
 import Topology
 
 // Resolving a script against the board as the run starts: each statement's kind, the shape its
@@ -51,10 +52,13 @@ struct ShapeItem {
     /// What `in "F"` names, when F holds shapes on its own board (a frame), as the run starts: the
     /// shape goes within it, and in it.
     var holder: AnyShapeRecord?
-    /// What it stands for, by title, when it's a stand-in the run makes for an edge's end that's on
-    /// another board (`Drawing.addStandIn`): the shape has no title or statement of its own, so its
-    /// messages say what it's for.
+    /// What it stands for, as a message names it (a title in quotes, or an id as written), when it's a stand-in the run
+    /// makes for an edge's end that's on another board (`Drawing.addStandIn`): the shape has no title or statement of its own,
+    /// so its messages say what it's for.
     var standsFor: String?
+    /// The id its statement wrote (`#7C1E…`, as written), when it names the shape by one: what a message calls a shape
+    /// that has no title.
+    var idWritten: String?
 
     /// A box a placement names, found.
     enum Found {
@@ -77,17 +81,24 @@ struct EdgeItem {
     /// The shapes its ends name: on the board, or, for an end elsewhere in the file, the shape there.
     let from: ShapeID
     let to: ShapeID
-    /// The titles its ends are named by.
-    let fromTitle: String
-    let toTitle: String
+    /// How its ends are named, for its row and for messages: by title, or an id as written.
+    let fromName: EndName
+    let toName: EndName
     /// The attributes it gives the plugin that makes edges (DrawEdges'), as written.
     let attributes: [String: String]
     /// The rest it writes, its kind's own (an arrow's text), read by the kind's schema, set on the
     /// connection once it's made.
     let settings: JSONObject
+    /// What it writes of the edge kind's identity keys, if it writes any: which of the pair's arrows it
+    /// is about (`EdgeIdentity`).
+    let identity: EdgeIdentity?
     /// The stand-in the run makes for it, if it makes one: a shape of the run, drawn before the arrow,
     /// which the arrow runs to (or from) in place of the end it stands for (`DrawStandIns.swift`).
     var standIn: NewStandIn?
+    /// The arrow as the run will make it, made before the layout (`Drawing.layOut()`), so the shapes the
+    /// run draws are laid out with the connections it draws. nil where it could not be made (`connect`
+    /// says why where it applies), and for a run with no edges.
+    var provisional: AnyShapeRecord?
 
     /// The shapes the arrow joins, as the run makes it: its ends, but for the stand-in in place of the
     /// one it stands for.
@@ -110,6 +121,13 @@ struct DeleteItem {
     /// the shapes on them: all deleted with it.
     var boards = 0
     var boardShapes = 0
+}
+
+extension DeleteStatement {
+    /// Whether it is a `delete edge` that writes attributes, which Draw reads as the identity of the arrows to remove.
+    var writesIdentity: Bool {
+        if case .edges(_, _, _, let attributes) = self { !attributes.isEmpty } else { false }
+    }
 }
 
 /// A connection on the board: which shapes it joins.
@@ -142,9 +160,6 @@ struct Drawing {
     /// edge that may go through a stand-in; `boardConnections()`); empty without DrawEdges.
     private var connections: [BoardConnection] = []
     private var connectionsRead = false
-    /// The other ends of the board's connections, by shape, but those the run deletes, once a stand-in
-    /// asks (`connected(to:)`).
-    private var connectedEnds: [ShapeID: [ShapeID]]?
     /// The board shapes the run moves, restated with placements, once a stand-in asks (`movesWithRun`).
     private var movingShapes: Set<ShapeID>?
     /// The board's connections that don't join two shapes (an end left free), by each shape they
@@ -154,18 +169,23 @@ struct Drawing {
     private(set) var deletes: [DeleteItem] = []
     /// The shapes `delete "X"` removes (their connections aside).
     private(set) var deletedShapes: Set<ShapeID> = []
+    /// The boards the deleted shapes own, worked out once for the shapes deleted so far (a name asks it once each).
+    let takenBoards = TakenBoards()
     /// Everything the deletes remove.
     private(set) var deleted: Set<ShapeID> = []
     var items: [ShapeItem] = []
     /// Each shape statement's title, folded, and its item.
     private(set) var itemByTitle: [String: Int] = [:]
+    /// The item of each board shape a statement restates, by id (named by its title or its id).
+    private(set) var itemByID: [ShapeID: Int] = [:]
     private(set) var edges: [EdgeItem] = []
     /// The stand-ins the run has made for edges, in order, for `share:` (`DrawStandIns.swift`).
     var madeStandIns: [MadeStandIn] = []
-    /// The board's direct stand-ins by what each stands for, once `share:` asks.
-    var boardStandInsByEnd: [ShapeID: [ShapeID]]?
+    /// The board's direct stand-ins by what each stands for, and what its arrows join, once something
+    /// asks (`standInIndex`).
+    var standInIndex: StandInRoute.Index?
     /// Each `delete edge`'s ends, for telling one written twice.
-    private var edgeDeletes: [(from: ShapeID, to: ShapeID, eitherWay: Bool, line: Int)] = []
+    private var edgeDeletes: [(from: ShapeID, to: ShapeID, eitherWay: Bool, line: Int, identity: EdgeIdentity?)] = []
     /// The stand-ins a delete took an arrow from (`delete edge`'s, or X's, which `delete "X"` takes),
     /// with the statement that did last, as a message says it: each goes too, once no arrow is left
     /// on it.
@@ -174,6 +194,8 @@ struct Drawing {
     /// Titles of statements that couldn't be resolved: whatever names them is left unresolved,
     /// without a second error.
     private(set) var unresolved: Set<String> = []
+    /// The same for the ids of shapes whose statements couldn't be resolved.
+    private(set) var unresolvedIDs: Set<ShapeID> = []
     /// What placing found to say: pushes, a shape resized over another.
     var notes: [DrawWarning] = []
     private var errors: [DrawError] = []
@@ -227,7 +249,7 @@ struct Drawing {
         if hasDeletes { _ = boardConnections() }
 
         for statement in script.statements {
-            guard case .delete(let delete) = statement.body else { continue }
+            guard case .delete(let delete) = statement.body, !delete.writesIdentity else { continue }
             do throws(DrawError) { try resolve(delete, statement) } catch { keep(error) }
         }
         // A stand-in the deletes left with no arrow goes with them.
@@ -239,6 +261,7 @@ struct Drawing {
             } catch {
                 keep(error)
                 if let title = shape.title { unresolved.insert(fold(title) ?? title) }
+                if let text = shape.name?.id, let uuid = UUID(uuidString: text) { unresolvedIDs.insert(ShapeID(uuid)) }
             }
         }
         // Every title the script draws, restates or renames to is known: a text may name them now.
@@ -248,12 +271,28 @@ struct Drawing {
                                         unresolved: unresolved, deleted: deletedShapes, fileNames: fileNames)
             textWriter = DrawTextWriter(registry: registry, formats: formats, lookup: lookup)
         }
+        // A `delete edge` that says which arrow (`is: "T"`) names a type by its title, which only a text
+        // writer can read; its ends' arrows go as the others' did.
+        if script.statements.contains(where: { if case .delete(let delete) = $0.body { delete.writesIdentity } else { false } }) {
+            for statement in script.statements {
+                guard case .delete(let delete) = statement.body, delete.writesIdentity else { continue }
+                do throws(DrawError) { try resolve(delete, statement) } catch { keep(error) }
+            }
+            do throws(DrawError) { try retireEmptiedStandIns() } catch { keep(error) }
+        }
         for index in items.indices {
             do throws(DrawError) { try complete(index) } catch { keep(error) }
         }
         for statement in script.statements {
             guard case .edge(let edge) = statement.body else { continue }
-            do throws(DrawError) { try resolve(edge, statement) } catch { keep(error) }
+            do throws(DrawError) { try resolve(edge, statement) } catch {
+                // Measuring says a name it can't find, and lays the shapes out without the edge.
+                if measuring, error.fromNameLookup {
+                    measureWarnings.append((statement.line, error.message + "; measured without it"))
+                } else {
+                    keep(error)
+                }
+            }
         }
         for style in script.styles {
             do throws(DrawError) { try check(style) } catch { keep(error) }
@@ -264,17 +303,86 @@ struct Drawing {
 
     /// Works out how much room each shape takes once drawn (`ShapeItem.room`): the frame its kind lays
     /// it out in, with the script's own shapes read as the file's (a type and its instance drawn
-    /// together, a stretch and the gauge it names), and a board shape the script doesn't restate read as
-    /// it is, but for those it deletes, which are not there. Only the size is kept: a shape is placed
-    /// where the layout says, so its origin is its own. What draw places and reports, and `canvas measure` answers with, so the two agree.
+    /// together, a stretch and the gauge it names), the connections the script draws laid in beside them
+    /// (`provisionalConnections()`: an end gives its type's notes a row), and a board shape the script
+    /// doesn't restate read as it is, but for those it deletes, shapes and connections, which are not there.
+    /// Only the size is kept: a shape is placed where the layout says, so its origin is its own. What draw
+    /// places and reports, and `canvas measure` answers with, so the two agree.
     private mutating func layOut() {
-        let beyond = namesBeyond.map { editor in { @MainActor (id: ShapeID) in editor.shape(inFile: id) } }
-        let context = target.shapes.layingOut(with: items.map(\.record), removing: deletedShapes, alsoReading: beyond)
+        // No shape to lay out, no room to ask: the arrows are not made for nothing (an edge-only run).
+        guard !items.isEmpty else { return }
+        // Over the open file's own context when a measure is given one: its services keep the types and the ends
+        // the script's shapes are laid out by, and nothing is written (the records are read as the file's).
+        let base = namesBeyond?.shapeContext ?? target.shapes
+        let connections = provisionalConnections()
+        let context = base.layingOut(with: items.map(\.record) + connections, removing: deleted)
         for index in items.indices {
             var sized = items[index].record
             sized.box = CGRect(origin: items[index].existing?.box?.origin ?? .zero, size: items[index].size)
             items[index].room = context.frame(of: sized)?.size ?? items[index].size
         }
+    }
+
+    /// The arrows the run will draw or change, made as `connect` makes them (`connection(for:matches:…)`, the one
+    /// function) over a document of the ends alone, to be laid in beside the shapes: a run that draws an end and
+    /// the notes of its type together is laid out with the row the end gives. An arrow the run leaves as it is
+    /// is not laid in (the file has it), and one that can't be made contributes nothing and says nothing:
+    /// `connect` throws what it throws, where it throws it. Each is kept on its edge for `connect` to hold the
+    /// arrow it draws to (debug builds).
+    private mutating func provisionalConnections() -> [AnyShapeRecord] {
+        guard let edging, let edgeKind, !edges.isEmpty else { return [] }
+        // A measure matches the arrows of the board it is given; a draw, those of its board as the run starts.
+        let board = measuring ? namesBeyond?.document : target.document
+        var drawn: [BoardConnection]
+        if measuring {
+            drawn = namesBeyond.map { Self.connections(in: $0.document, kind: edgeKind, edging: edging, registry: registry) } ?? []
+        } else {
+            drawn = boardConnections().filter { !deleted.contains($0.record.id) }
+        }
+        let place = Dictionary(drawn.enumerated().map { ($1.record.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let itemByID = Dictionary(items.enumerated().map { ($1.record.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func record(_ id: ShapeID) -> AnyShapeRecord? {
+            itemByID[id].map { items[$0].record } ?? board?[id] ?? editor.file.record(id) ?? namesBeyond?.shape(inFile: id)
+        }
+        var made: [AnyShapeRecord] = []
+        // The connections that join each pair, as `draw` keeps them while it connects: the board's, then the run's
+        // own, which are these arrows (ids of their own, never the committed ones: what a maker reads of an arrow
+        // beside is its bend and its ends, so the ends alone are given the arrows beside, as the transaction has them).
+        var pairs = Self.pairArrows(of: drawn)
+        var arrows = Dictionary(drawn.map { ($0.record.id, $0.record) }, uniquingKeysWith: { first, _ in first })
+        for index in edges.indices {
+            let edge = edges[index]
+            let document = board ?? target.document
+            let matches = addressedMatches(from: edge.from, to: edge.to, bothHeads: edge.edge.bothHeads, among: drawn, in: document, identity: edge.identity)
+            guard matches.count < 2 else { continue }
+            let ends = matches.first.map { ($0.connection.from, $0.connection.to) } ?? edge.bound
+            // The ends alone, as the run leaves them (an item's record is the shape the run draws).
+            var held: [AnyShapeRecord] = []
+            for id in [ends.0, ends.1] where !held.contains(where: { $0.id == id }) {
+                guard let end = record(id) else { break }
+                held.append(end)
+            }
+            guard held.count == Set([ends.0, ends.1]).count else { continue }
+            let alone = CanvasDocument(shapes: held + (pairs[[ends.0, ends.1]] ?? []).compactMap { arrows[$0] })
+            guard let arrow = try? connection(for: edge, matches: matches, beside: pairs, edging: edging, kind: edgeKind, in: alone,
+                                              shapes: ShapeContext(document: alone, registry: registry)) else { continue }
+            edges[index].provisional = arrow.record
+            if let match = matches.first {
+                if match.connection.record == arrow.record { continue }
+                // An arrow a statement changes is the arrow the next statement finds, as `apply` has it: a plain
+                // one that took a type is no longer the pair's plain arrow.
+                if let at = place[arrow.record.id], let ends = edging.ends(arrow.record, registry) {
+                    drawn[at] = BoardConnection(record: arrow.record, from: ends.from, to: ends.to)
+                    arrows[arrow.record.id] = arrow.record
+                }
+            }
+            made.append(arrow.record)
+            if matches.isEmpty {
+                pairs[[arrow.ends.from, arrow.ends.to], default: []].append(arrow.record.id)
+                arrows[arrow.record.id] = arrow.record
+            }
+        }
+        return made
     }
 
     /// Keeps a statement's error with the others (but one that only follows from another's).
@@ -296,8 +404,14 @@ struct Drawing {
               let ends = edging.ends(record, registry) else { return false }
         let drawn = [BoardConnection(record: record, from: ends.from, to: ends.to)]
         return edges.contains { edge in
-            let joins = !edgeMatches(from: edge.from, to: edge.to, bothHeads: edge.edge.bothHeads, among: drawn, in: editor.document).isEmpty
-            return joins && edge.settings.contains { !Self.alreadyHas(record, $0.key, $0.value, in: registry) }
+            // An arrow of another identity than the statement writes isn't its edge. A plain one is, as
+            // far as this arrow alone says (it takes the identity, if it's the pair's only plain one:
+            // not decided without the pair's others, and an edit ending first is no harm).
+            let joins = !addressedMatches(from: edge.from, to: edge.to, bothHeads: edge.edge.bothHeads, among: drawn,
+                                          in: editor.document, identity: edge.identity).isEmpty
+            // What it writes of the identity it is found by is that already, as `connect` leaves it.
+            let held = edge.identity.map { $0.matches(record) } ?? false
+            return joins && edge.settings.contains { (held && edge.identity?.written[$0.key] != nil) ? false : !Self.alreadyHas(record, $0.key, $0.value, in: registry) }
         }
     }
 
@@ -369,9 +483,14 @@ struct Drawing {
     /// `edge "A" -> "B" is drawn to "B", which is on "P"'s board, and this script draws on the root
     /// board`: a title that's on another board than the one the run draws on, where that can't be.
     func severalBoards(_ title: String, on other: BoardID, _ statement: Statement, for what: String, hint: String? = nil) -> DrawError {
-        guard let naming else { return DrawError(statement, .internal, "\(what) \(quoted(title)), which is on another board") }
+        severalBoards(said: quoted(title), on: other, statement, for: what, hint: hint)
+    }
+
+    /// The same for a shape a message already names (a title in quotes, or an id as written).
+    func severalBoards(said: String, on other: BoardID, _ statement: Statement, for what: String, hint: String? = nil) -> DrawError {
+        guard let naming else { return DrawError(statement, .internal, "\(what) \(said), which is on another board") }
         return DrawError(statement, .severalBoards,
-                         "\(what) \(quoted(title)), which is on \(FileNames.named(other, in: editor, naming: naming)), and this script draws on \(FileNames.named(target.board, in: editor, naming: naming))",
+                         "\(what) \(said), which is on \(FileNames.named(other, in: editor, naming: naming)), and this script draws on \(FileNames.named(target.board, in: editor, naming: naming))",
                          hint: hint ?? "a run draws on one board, and a shape is placed or connected only to shapes on its own")
     }
 
@@ -379,17 +498,29 @@ struct Drawing {
 
     private mutating func resolve(_ delete: DeleteStatement, _ statement: Statement) throws(DrawError) {
         switch delete {
-        case .shape(let written):
-            let title = try folded(written, statement)
-            guard let record = try boardShape(called: title, statement) else {
-                if deletes.contains(where: { $0.shape.flatMap(names.name(of:)) == title }) {
-                    throw DrawError(statement, .duplicate, "\(quoted(title)) is deleted twice", hint: "delete it once")
+        case .shape(let name):
+            // What the shape is called in a message, and what the statement is called in the one a stand-in's retiring says.
+            let record: AnyShapeRecord, said: String, deleting: String
+            switch name {
+            case .title(let written):
+                let title = try folded(written, statement)
+                guard let found = try boardShape(called: title, statement) else {
+                    if deletes.contains(where: { $0.shape.flatMap(names.name(of:)) == title }) {
+                        throw DrawError(statement, .duplicate, "\(quoted(title)) is deleted twice", hint: "delete it once")
+                    }
+                    let guesses = Suggestions.closest(to: title, among: names.ordered)
+                    throw DrawError(statement, .unknownTitle, "there's no shape called \(quoted(title)) to delete",
+                                    hint: guesses.isEmpty ? nil : "did you mean \(listed(guesses.map(quoted), or: true))?")
                 }
-                let guesses = Suggestions.closest(to: title, among: names.ordered)
-                throw DrawError(statement, .unknownTitle, "there's no shape called \(quoted(title)) to delete",
-                                hint: guesses.isEmpty ? nil : "did you mean \(listed(guesses.map(quoted), or: true))?")
+                (record, said, deleting) = (found, quoted(title), "\(Keyword.delete.rawValue) \(quoted(title))")
+            case .id(let text):
+                let id = try shapeID(text, statement), mark = name.written
+                let found = try fileShape(withID: id, written: mark, statement)
+                guard found.board == target.board else { throw severalBoards(said: mark, on: found.board, statement, for: "\(Keyword.delete.rawValue) names") }
+                if deletedShapes.contains(id) { throw DrawError(statement, .duplicate, "\(mark) is deleted twice", hint: "delete it once") }
+                (record, said, deleting) = (found.record, self.said(found.record, written: mark), "\(Keyword.delete.rawValue) \(mark)")
             }
-            try writable(record, statement, quoted(title), so: "it can't be deleted")
+            try writable(record, statement, said, so: "it can't be deleted")
             // The board it owns goes with it, and every board under that (a transaction takes them):
             // not at all if one of them holds a read-only shape, as the Finder won't trash a folder
             // holding a locked file.
@@ -397,17 +528,17 @@ struct Drawing {
             // Drawing on a board above the one shown, the window is inside what it'd take.
             if let shown = boards.first(where: editor.boardPath.contains) {
                 let holds = shown == editor.board ? "the board the window shows" : "a board above the one the window shows"
-                throw DrawError(statement, .boardShown, "\(quoted(title)) holds \(holds), so it can't be deleted",
+                throw DrawError(statement, .boardShown, "\(said) holds \(holds), so it can't be deleted",
                                 hint: "show a board above it first: \(program) show --root")
             }
             if boards.contains(where: { file[$0].shapes.contains(where: registry.isReadOnly) }) {
-                throw DrawError(statement, .readOnly, "\(quoted(title)) holds a read-only shape (locked, say) on its board, so it can't be deleted",
+                throw DrawError(statement, .readOnly, "\(said) holds a read-only shape (locked, say) on its board, so it can't be deleted",
                                 hint: "leave it out of the script, or ask the user to unlock what's on its board")
             }
             let attached = connections.filter { ($0.from == record.id || $0.to == record.id) && !deleted.contains($0.record.id) }
             let loose = (looseConnections[record.id] ?? []).filter { !deleted.contains($0.id) }
             for connection in attached.map(\.record) + loose {
-                try writable(connection, statement, "one of \(quoted(title))'s connections", so: "\(quoted(title)) can't be deleted with it")
+                try writable(connection, statement, "one of \(said)'s connections", so: "\(said) can't be deleted with it")
             }
             deletes.append(DeleteItem(statement: statement, shape: record, connections: attached, loose: loose, boards: boards.count,
                                       boardShapes: boards.reduce(0) { $0 + file[$1].shapes.count }))
@@ -420,23 +551,31 @@ struct Drawing {
             for connection in attached {
                 let other = connection.from == record.id ? connection.to : connection.from
                 if standIn(at: other, in: target.document) != nil {
-                    standInsEmptied[other] = (statement, "\(Keyword.delete.rawValue) \(quoted(title))")
+                    standInsEmptied[other] = (statement, deleting)
                 }
             }
-        case .edges(let fromWritten, let toWritten, let eitherWay):
-            let written = "\(quoted(fromWritten)) \(eitherWay ? EdgeArrow.both.rawValue : EdgeArrow.forward.rawValue) \(quoted(toWritten))"
-            guard edgeKind != nil else { throw noEdges(statement) }
-            let from = try folded(fromWritten, statement), to = try folded(toWritten, statement)
+        case .edges(let fromWritten, let toWritten, let eitherWay, let attributes):
+            let pair = "\(fromWritten.written) \(eitherWay ? EdgeArrow.both.rawValue : EdgeArrow.forward.rawValue) \(toWritten.written)"
+            let written = ([pair] + attributes.map { "\($0.key): \($0.value.written)" }).joined(separator: " ")
+            guard let edgeKind else { throw noEdges(statement) }
+            // Only what tells edges apart: `delete edge "A" -> "B" is: "T"` takes that one.
+            let connector = vocabulary(of: edgeKind)
+            let keys = identityKeys(connector) ?? []
+            var settings: JSONObject = [:]
+            for attribute in attributes {
+                guard keys.contains(attribute.key) else {
+                    let takes = keys.isEmpty ? "no attribute" : "\(keys.map { "\($0):" }.joined(separator: ", ")) and no other attribute"
+                    throw DrawError(statement, .unknownAttribute, "delete edge takes \(takes), not \(attribute.key):",
+                                    hint: keys.isEmpty ? "write delete edge \(pair)" : "write delete edge \(pair) \(keys.map { "\($0): …" }.joined(separator: " ")) to remove one of them")
+                }
+                settings[attribute.key] = try edgeValue(attribute, connector, written: "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(pair)", statement)
+            }
+            let identity = EdgeIdentity(keys: keys, settings: settings)
             // An end a `delete` above deletes is still that shape: the delete takes its edges, so
             // this asks for what's done already, which is fine, as it is written the other way round.
             // One that's on another board is the shape there, whose stand-in on this one the edge goes
-            // through (`DrawStandIns.swift`).
-            func end(_ title: String) throws(DrawError) -> EdgeEndFound? {
-                if let record = try boardShape(called: title, statement) ?? deletes.lazy.compactMap(\.shape).first(where: { names.name(of: $0) == title }) {
-                    return .here(record.id, item: nil)
-                }
-                return try farShape(called: title, statement).map { .away($0) }
-            }
+            // through (`DrawStandIns.swift`). Named by id, it is found as an edge's end is, the shape this script
+            // deletes included.
             func none(_ missing: String) -> DrawError {
                 let drawn = script.statements.contains { other in
                     if case .shape(let shape) = other.body, let title = shape.title { return fold(title) == missing } else { return false }
@@ -445,19 +584,40 @@ struct Drawing {
                 return DrawError(statement, .unknownTitle, "there's no shape called \(quoted(missing))",
                                  hint: "delete edge takes shapes the file has as the script starts")
             }
-            guard let a = try end(from) else { throw none(from) }
-            guard let b = try end(to) else { throw none(to) }
+            func end(_ name: ShapeName) throws(DrawError) -> (found: EdgeEndFound, said: String) {
+                switch name {
+                case .title(let text):
+                    let title = try folded(text, statement)
+                    if let record = try boardShape(called: title, statement) ?? deletes.lazy.compactMap(\.shape).first(where: { names.name(of: $0) == title }) {
+                        return (.here(record.id, item: nil), quoted(title))
+                    }
+                    guard let far = try farShape(called: title, statement) else { throw none(title) }
+                    return (.away(far), quoted(title))
+                case .id(let text):
+                    let id = try shapeID(text, statement), mark = name.written
+                    let shape = try fileShape(withID: id, written: mark, statement)
+                    let said = self.said(shape.record, written: mark)
+                    if shape.board == target.board { return (.here(id, item: nil), said) }
+                    if takenBoards.boards(owned: deletedShapes, in: editor.file).contains(shape.board) { throw deletedID(mark, statement, for: "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) names") }
+                    return (.away(FarShape(record: shape.record, board: shape.board)), said)
+                }
+            }
+            let (a, fromSaid) = try end(fromWritten)
+            let (b, _) = try end(toWritten)
             if case .away(let far) = a, case .away = b {
-                throw severalBoards(from, on: far.board, statement, for: "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(written) names")
+                throw severalBoards(said: fromSaid, on: far.board, statement, for: "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(written) names")
             }
             let pairs = eitherWay ? [(a.id, b.id), (b.id, a.id)] : [(a.id, b.id)]
-            if let earlier = edgeDeletes.first(where: { other in pairs.contains { $0 == (other.from, other.to) || other.eitherWay && $0 == (other.to, other.from) } }) {
+            if let earlier = edgeDeletes.first(where: { other in
+                if let identity, let theirs = other.identity, identity.differs(from: theirs) { return false }
+                return pairs.contains { $0 == (other.from, other.to) || other.eitherWay && $0 == (other.to, other.from) }
+            }) {
                 throw DrawError(statement, .duplicate, "delete edge \(written) is written twice, here and on line \(earlier.line)", hint: "keep one")
             }
-            edgeDeletes.append((a.id, b.id, eitherWay, statement.line))
+            edgeDeletes.append((a.id, b.id, eitherWay, statement.line, identity))
             // Drawn straight between them, or, as an edge to a shape on another board is, into a
-            // stand-in for it beside the other.
-            let found = edgeMatches(from: a.id, to: b.id, bothHeads: eitherWay, among: connections, in: target.document)
+            // stand-in for it beside the other. With an identity, those that hold what it writes.
+            let found = edgeMatches(from: a.id, to: b.id, bothHeads: eitherWay, among: connections, in: target.document, identity: identity)
             guard !found.isEmpty else { throw nothingToDelete(statement, written) }
             for match in found {
                 try writable(match.connection.record, statement, "one of the connections delete edge \(written) removes", so: "it can't be deleted")
@@ -475,18 +635,16 @@ struct Drawing {
     /// arrows alone.
     private mutating func retireEmptiedStandIns() throws(DrawError) {
         guard !standInsEmptied.isEmpty else { return }
-        // Those an arrow the run leaves holds still, found in one pass over the board's.
-        var held: Set<ShapeID> = []
-        for connection in connections where !deleted.contains(connection.record.id) {
-            for end in [connection.from, connection.to] where standInsEmptied[end] != nil { held.insert(end) }
-        }
+        // Those no arrow the run leaves holds, bound or loose.
+        let empty: Set<ShapeID> = standIns.map { Set(StandInRoute($0, registry: registry).emptied(by: deleted, in: target.document)) } ?? []
         for (id, emptied) in standInsEmptied.sorted(by: { ($0.value.statement.line, $0.key.description) < ($1.value.statement.line, $1.key.description) }) {
-            guard !deleted.contains(id), !held.contains(id), let standIn = target.document[id] else { continue }
-            guard (looseConnections[id] ?? []).allSatisfy({ deleted.contains($0.id) }) else { continue }
+            guard empty.contains(id), let standIn = target.document[id] else { continue }
             try writable(standIn, emptied.statement, "the \(standIn.kind) that \(emptied.written) leaves with no arrow", so: "it can't be deleted")
             deletes.append(DeleteItem(statement: emptied.statement, shape: standIn, connections: []))
             deleted.insert(id)
         }
+        // Said once: a later delete (one that names an arrow's type) asks about its own.
+        standInsEmptied = [:]
     }
 
     private func nothingToDelete(_ statement: Statement, _ written: String) -> DrawError {
@@ -512,15 +670,47 @@ struct Drawing {
     private mutating func find(_ shape: ShapeStatement, _ statement: Statement) throws(DrawError) {
         let kind = try drawable(shape.word, statement)
         let vocabulary = vocabulary(of: kind)
-        let title = try shape.title.map { written throws(DrawError) in try self.folded(written, statement) }
-        if let title, let earlier = itemByTitle[title] {
+        // Its name: a title (the shape the board has with it, or a new one), or an id (the shape the file has, never a new one).
+        var title: String?, idWritten: String?, byID: AnyShapeRecord?
+        switch shape.name {
+        case .title(let written)?:
+            title = try folded(written, statement)
+        case .id(let text)?:
+            let id = try shapeID(text, statement), mark = ShapeName.id(text).written
+            let found = try fileShape(withID: id, written: mark, statement)
+            if isDeleted(id, on: found.board) { throw deletedID(mark, statement, for: "\(shape.word) restates") }
+            guard found.board == target.board else {
+                throw severalBoards(said: mark, on: found.board, statement, for: "\(shape.word) restates")
+            }
+            byID = found.record
+            idWritten = mark
+            title = Drawing.title(of: found.record, names: names, naming: naming, registry: registry)
+        case nil:
+            break
+        }
+        if let byID, let earlier = itemByID[byID.id] {
+            throw DrawError(statement, .duplicate, "\(said(byID, written: idWritten ?? "")) is written twice, here and on line \(items[earlier].statement.line)",
+                            hint: "say everything about one shape in one statement")
+        }
+        if byID == nil, let title, let earlier = itemByTitle[title] {
             throw DrawError(statement, .duplicate, "\(quoted(title)) is written twice, here and on line \(items[earlier].statement.line)",
                             hint: "say everything about one shape in one statement")
         }
         var existing: AnyShapeRecord?
         var nearMiss: String?
-        if let title {
+        if let byID {
+            existing = byID
+            if byID.kind != kind {
+                let called = said(byID, written: idWritten ?? "")
+                throw DrawError(statement, .wrongKind, "\(called) is \(indefinite(byID.kind)) on the board, not \(indefinite(kind))",
+                                hint: "to change its kind, delete it and draw a new one in the same script")
+            }
+        } else if let title {
             existing = try boardShape(called: title, statement)
+            if let existing, let earlier = itemByID[existing.id] {
+                throw DrawError(statement, .duplicate, "\(quoted(title)) is written twice, here and on line \(items[earlier].statement.line)",
+                                hint: "say everything about one shape in one statement")
+            }
             if let existing, existing.kind != kind {
                 throw DrawError(statement, .wrongKind, "\(quoted(title)) is \(indefinite(existing.kind)) on the board, not \(indefinite(kind))",
                                 hint: "to change its kind, delete \(quoted(title)) and draw it again in the same script")
@@ -548,9 +738,11 @@ struct Drawing {
             throw DrawError(statement, .invalidValue, "\(key): \(written.written) is too small: \(indefinite(kind)) is at least \(Self.written(least))",
                             hint: "write \(key): \(fitted.written), or bigger")
         }
-        if let title { itemByTitle[title] = items.count }
+        // A shape named by its id answers to its title only where that title is its alone: two called the same stay `ambiguous_title`.
+        if let title, byID == nil || boardShapes(called: title).count < 2 { itemByTitle[title] = items.count }
+        if let existing { itemByID[existing.id] = items.count }
         items.append(ShapeItem(statement: statement, shape: shape, kind: kind, title: title, existing: existing, record: base, size: size,
-                               room: size, nearMiss: nearMiss))
+                               room: size, nearMiss: nearMiss, idWritten: idWritten))
     }
 
     /// The kind a statement's first word names, if its tool places it: a kind drawn by a gesture
@@ -756,6 +948,14 @@ struct Drawing {
                     }
                     guard let target = try find(title, statement, for: "\(subject) is placed against", mine: item.title) else { throw skip() }
                     found.append(target)
+                case .id(let text):
+                    let id = try shapeID(text, statement), mark = ShapeName.id(text).written
+                    if id == item.existing?.id {
+                        throw DrawError(statement, .circular, "\(subject) is placed against itself (\(clause.written))",
+                                        hint: "place it against another shape")
+                    }
+                    guard let target = try find(id: id, written: mark, statement, for: "\(subject) is placed against") else { throw skip() }
+                    found.append(target)
                 case .board:
                     found.append(.board)
                 case .view:
@@ -779,38 +979,46 @@ struct Drawing {
     /// read-only (it, or a subboard above it, locked).
     private mutating func contain(_ index: Int) throws(DrawError) {
         let item = items[index]
-        guard let written = item.shape.container, let fileNames, let title = fold(written) else { return }
-        let found = fileNames.container(called: title)
-        if case .board = found, target.isBoardReadOnly { throw readOnlyHolder(title, item.statement) }
+        guard let name = item.shape.container, let fileNames else { return }
+        // What the shape is called in a message, the box a placement names it by, and what it is.
+        let said: String, box: Target.Box, found: FileNames.Container
+        switch name {
+        case .title(let written):
+            guard let title = fold(written) else { return }
+            (said, box, found) = (quoted(title), .title(written), fileNames.container(called: title))
+        case .id(let text):
+            let id = try shapeID(text, item.statement)
+            (said, box, found) = (name.written, .id(text), fileNames.container(withID: id))
+        }
+        if case .board = found, target.isBoardReadOnly { throw readOnlyHolder(said, item.statement) }
         guard case .shape(let id, _) = found else { return }
         let statement = item.statement, subject = subject(of: item)
         guard let holder = target.document[id] else {
-            throw DrawError(statement, .internal, "\(quoted(title)) isn't on the board \(subject) is drawn on")
+            throw DrawError(statement, .internal, "\(said) isn't on the board \(subject) is drawn on")
         }
         if deletedShapes.contains(id) {
-            throw DrawError(statement, .unknownTitle, "\(subject) is in \(quoted(title)), which this script deletes",
-                            hint: "draw \(quoted(title)) again after deleting it, or leave in \(quoted(title)) out")
+            throw DrawError(statement, name.id == nil ? .unknownTitle : .unknownID, "\(subject) is in \(said), which this script deletes",
+                            hint: name.id == nil ? "draw \(said) again after deleting it, or leave in \(said) out" : "leave in \(said) out")
         }
         let kinds = registry.containingKinds
         if let existing = item.existing, existing.id == id || target.document.containers(of: id, containingKinds: kinds).contains(existing.id) {
             throw DrawError(statement, .circular,
-                            existing.id == id ? "\(subject) is in itself" : "\(subject) holds \(quoted(title)), so it can't be in it",
+                            existing.id == id ? "\(subject) is in itself" : "\(subject) holds \(said), so it can't be in it",
                             hint: "name another shape to hold it")
         }
-        if target.isReadOnly(holder) { throw readOnlyHolder(title, statement) }
+        if target.isReadOnly(holder) { throw readOnlyHolder(said, statement) }
         items[index].holder = holder
         let isIn = item.existing.map { target.document.containers(of: $0.id, containingKinds: kinds).contains(id) } ?? false
         if item.shape.clauses.isEmpty, !isIn {
-            items[index].shape.clauses.append(Clause(relation: .inside, targets: [Target(.title(written), part: .topLeft)],
-                                                     written: "in \(quoted(title))"))
+            items[index].shape.clauses.append(Clause(relation: .inside, targets: [Target(box, part: .topLeft)], written: "in \(said)"))
         }
     }
 
     /// `in "F"` names a shape that takes nothing: read-only (locked, say), a frame, or a subboard
     /// whose board is.
-    private func readOnlyHolder(_ title: String, _ statement: Statement) -> DrawError {
-        DrawError(statement, .readOnly, "\(quoted(title)) is read-only (locked, say), so nothing goes in it",
-                  hint: "leave in \(quoted(title)) out, or ask the user to unlock it")
+    private func readOnlyHolder(_ said: String, _ statement: Statement) -> DrawError {
+        DrawError(statement, .readOnly, "\(said) is read-only (locked, say), so nothing goes in it",
+                  hint: "leave in \(said) out, or ask the user to unlock it")
     }
 
     /// The shape with its attributes set, or which one it can't take.
@@ -984,17 +1192,25 @@ struct Drawing {
     private mutating func resolve(_ edge: EdgeStatement, _ statement: Statement) throws(DrawError) {
         guard let edging, let edgeKind else { throw noEdges(statement) }
         let written = "\(Keyword.edge.rawValue) \(edge.written)"
-        let fromTitle = try folded(edge.from, statement), toTitle = try folded(edge.to, statement)
         // An end is a shape the script draws, or the board has, or, elsewhere in the file, the shape
-        // there: the edge then goes through a stand-in beside the other end (`DrawStandIns.swift`).
-        func end(_ title: String) throws(DrawError) -> EdgeEndFound {
-            if let index = itemByTitle[title] { return .here(items[index].record.id, item: index) }
-            if unresolved.contains(title) { throw skip() }
-            if let record = try boardShape(called: title, statement) { return .here(record.id, item: nil) }
-            if names.ids[title] == nil, let far = try farShape(called: title, statement) { return .away(far) }
-            throw notFound(title, statement, for: "\(written) is drawn to", elsewhere: false)
+        // there: the edge then goes through a stand-in beside the other end (`DrawStandIns.swift`). Named by its title
+        // or, for a shape that has none, by its id.
+        func end(_ name: ShapeName) throws(DrawError) -> (found: EdgeEndFound, name: EndName) {
+            switch name {
+            case .id(let text):
+                return try endFound(id: try shapeID(text, statement), written: name.written, statement)
+            case .title(let text):
+                let title = try folded(text, statement)
+                if let index = itemByTitle[title] { return (.here(items[index].record.id, item: index), EndName(title: title)) }
+                if unresolved.contains(title) { throw skip() }
+                // A measure reads the ends the open file has wherever they are, and lays the arrow out straight: it draws no pill.
+                if measuring { return (.here(try measuredEnd(title, statement), item: nil), EndName(title: title)) }
+                if let record = try boardShape(called: title, statement) { return (.here(record.id, item: nil), EndName(title: title)) }
+                if names.ids[title] == nil, let far = try farShape(called: title, statement) { return (.away(far), EndName(title: title)) }
+                throw notFound(title, statement, for: "\(written) is drawn to", elsewhere: false)
+            }
         }
-        let fromFound = try end(fromTitle), toFound = try end(toTitle)
+        let (fromFound, fromName) = try end(edge.from), (toFound, toName) = try end(edge.to)
         let from = fromFound.id, to = toFound.id
         let via = try edge.via.map { word throws(DrawError) in try standInKind(named: word, statement, written: written) }
         // The edge maker's attributes (a channel), then its kind's own, as a shape's are.
@@ -1018,29 +1234,65 @@ struct Drawing {
                 throw DrawError(statement, .unknownAttribute, "an edge has no \(key): attribute",
                                 hint: (guess.map { "did you mean \($0)? " } ?? "") + "an edge takes \(takes.map { "\($0):" }.joined(separator: ", "))")
             }
-            let value: JSONValue
-            do throws(ValueRefusal) {
-                value = try connector.value(of: attribute)
-                try fits(value, key, edgeKind, connector)
-            } catch {
-                throw DrawError(statement, .invalidValue, "\(written): \(error.message)", hint: error.hint)
-            }
-            // Written now; joined with what the arrow holds when it is made (`DrawCommit`).
-            let texts = try writtenTexts(value, of: key, connector, prefix: "\(written): \(key)", statement)
-            settings[key] = try writtenValue(texts, of: key, connector, owner: nil, joining: nil, prefix: "\(written): \(key)", statement).written
+            settings[key] = try edgeValue(attribute, connector, written: written, statement)
         }
+        let identity = identityKeys(connector).flatMap { EdgeIdentity(keys: $0, settings: settings) }
         let pairs = edge.bothHeads ? [(from, to), (to, from)] : [(from, to)]
         if let earlier = edges.first(where: { other in
             let theirs = other.edge.bothHeads ? [(other.from, other.to), (other.to, other.from)] : [(other.from, other.to)]
+            // Two statements for one pair are two edges only if both say which, and differently.
+            if let identity, let theirIdentity = other.identity, identity.differs(from: theirIdentity) { return false }
             return pairs.contains { pair in theirs.contains { $0 == pair } }
         }) {
             throw DrawError(statement, .duplicate, "\(written) is written twice, here and on line \(earlier.statement.line)",
                             hint: "say everything about one edge in one statement")
         }
-        var item = EdgeItem(statement: statement, edge: edge, from: from, to: to, fromTitle: fromTitle, toTitle: toTitle, attributes: attributes,
-                            settings: settings)
-        item.standIn = try routeEdge(edge, statement, written: written, from: fromFound, to: toFound, fromTitle: fromTitle, toTitle: toTitle, via: via)
+        var item = EdgeItem(statement: statement, edge: edge, from: from, to: to, fromName: fromName, toName: toName, attributes: attributes,
+                            settings: settings, identity: identity)
+        if !measuring {
+            item.standIn = try routeEdge(edge, statement, written: written, from: fromFound, to: toFound, fromName: fromName, toName: toName, via: via,
+                                         identity: identity)
+        }
         edges.append(item)
+    }
+
+    /// The shape an edge's end names in a measure: one the open file has, on any board (found as a text names a shape).
+    private func measuredEnd(_ title: String, _ statement: Statement) throws(DrawError) -> ShapeID {
+        guard let lookup = textWriter?.lookup else {
+            var missing = DrawError(statement, .unknownTitle, "there's no shape called \(quoted(title))")
+            missing.fromNameLookup = true
+            throw missing
+        }
+        do throws(DrawError) {
+            return try lookup.shape(called: title, admitting: { _, _ in nil }).id
+        } catch {
+            guard error.reason != Self.skipped else { throw error }
+            throw error.said(error.message, on: statement)
+        }
+    }
+
+    /// An attribute of the edge kind, read by its schema and written as a statement's value is: joined
+    /// with what the arrow holds when it is made (`DrawCommit`).
+    private mutating func edgeValue(_ attribute: Attribute, _ connector: KindVocabulary, written: String,
+                                    _ statement: Statement) throws(DrawError) -> JSONValue {
+        guard let edgeKind else { throw noEdges(statement) }
+        let key = attribute.key, value: JSONValue
+        do throws(ValueRefusal) {
+            value = try connector.value(of: attribute)
+            try fits(value, key, edgeKind, connector)
+        } catch {
+            throw DrawError(statement, .invalidValue, "\(written): \(error.message)", hint: error.hint)
+        }
+        let texts = try writtenTexts(value, of: key, connector, prefix: "\(written): \(key)", statement)
+        return try writtenValue(texts, of: key, connector, owner: nil, joining: nil, prefix: "\(written): \(key)", statement).written
+    }
+
+    /// The edge kind's identity keys (`DrawEdging.identity`) that it has as properties (one it lacks,
+    /// because no plugin gave it to the kind in this app, tells nothing apart): nil when it has none,
+    /// so a statement is about the pair.
+    private func identityKeys(_ connector: KindVocabulary) -> [String]? {
+        let keys = (edging?.identity ?? []).filter(connector.isAttribute)
+        return keys.isEmpty ? nil : keys
     }
 
     // MARK: Styles
@@ -1065,7 +1317,7 @@ struct Drawing {
 
     /// How a message names a statement's shape: `"API"`, or `the card on line 3`.
     func subject(of item: ShapeItem) -> String {
-        item.title.map(quoted) ?? item.standsFor.map { "the \(item.kind) to \(quoted($0))" } ?? "the \(item.kind) on line \(item.statement.line)"
+        item.title.map(quoted) ?? item.idWritten ?? item.standsFor.map { "the \(item.kind) to \($0)" } ?? "the \(item.kind) on line \(item.statement.line)"
     }
 
     /// A board shape's middle.
@@ -1096,21 +1348,6 @@ struct Drawing {
             }
         }
         return connections
-    }
-
-    /// The shapes the board's connections join to this one, as the run starts, but those it deletes:
-    /// indexed the first time a shape is asked about, so a run that asks of many pays one pass over
-    /// the board's connections. Asked once the deletes are known, as an edge is resolved.
-    mutating func connected(to id: ShapeID) -> [ShapeID] {
-        if connectedEnds == nil {
-            var ends: [ShapeID: [ShapeID]] = [:]
-            for connection in boardConnections() where !deleted.contains(connection.record.id) && connection.from != connection.to {
-                ends[connection.from, default: []].append(connection.to)
-                ends[connection.to, default: []].append(connection.from)
-            }
-            connectedEnds = ends
-        }
-        return connectedEnds?[id] ?? []
     }
 
     /// Whether this run moves a board shape: restates it with placements, or moves a container that
@@ -1198,7 +1435,8 @@ extension Script {
     var mentionsTitles: Bool {
         statements.contains { statement in
             switch statement.body {
-            case .shape(let shape): shape.title != nil || shape.clauses.contains { $0.targets.contains { if case .title = $0.box { true } else { false } } }
+            case .shape(let shape):
+                shape.name != nil || shape.clauses.contains { $0.targets.contains(where: \.isName) }
             case .edge, .delete: true
             }
         }

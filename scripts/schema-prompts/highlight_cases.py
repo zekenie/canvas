@@ -667,22 +667,35 @@ case("order_roles",
      "one schema twice: each mention linked to its own use", names_schemas=True)
 
 
-# A link to a note of another type (a pointer), a field renamed by its title, and a setting that is no field.
+# Words that relate the thing to another type, a field renamed by its title, and a setting that is no field.
 
-case("h_link_pointer",
-     "an order: number, a link to a @Customer",
+case("h_rel_no_link",
+     "a feature has a purpose and is in a @Layer",
      {
-         "title": "Order",
+         "title": "Feature",
          "type": "object",
          "properties": {
-             "number": {"type": "string"},
-             "customer": {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "@Customer"}},
+             "purpose": {"type": "string"},
          },
      },
-     [("order", [ROOT, "/title"]),
-      ("number", ["/properties/number"]),
-      ("@Customer", ["/properties/customer"])],
-     "a link: the @ word goes to the property, never into its contentSchema", names_schemas=True)
+     [("feature", [ROOT, "/title"]),
+      ("purpose", ["/properties/purpose"]),
+      ("@Layer", [NEVER])],
+     "a relationship writes no property: the @ word is linked to nothing", names_schemas=True)
+
+case("h_rel_part_and_rel",
+     "a house: its @Address, and is in a @Street",
+     {
+         "title": "House",
+         "type": "object",
+         "properties": {
+             "address": {"$ref": "@Address"},
+         },
+     },
+     [("house", [ROOT, "/title"]),
+      ("@Address", ["/properties/address"]),
+      ("@Street", [NEVER])],
+     "a part is linked to its property, a relationship's word to nothing", names_schemas=True)
 
 case("h_renamed_title",
      "a contact: email, mobile number",

@@ -39,12 +39,14 @@ struct ReferenceLook {
     /// found none, in the room a dynamic pill reserves.
     var badge: String?
     var dashed: Bool
+    /// The name of the board its note is on, when that isn't the pill's board.
+    var board: String?
     /// Whether the pill reserves room for what a dynamic one shows at its trailing end.
     var reservesBadge: Bool
 
     /// `mismatch`: the pill stands for shapes that don't take the channel of an arrow attached to it
     /// (`ReferenceState.channelMismatch(of:)`), shown as a warning where a dynamic pill's count is.
-    init(_ condition: ReferenceCondition, mismatch: Bool = false) {
+    init(_ condition: ReferenceCondition, mismatch: Bool = false, board: String? = nil) {
         let missing = ReferenceStyle.missingStrength, finding = ReferenceStyle.findingStrength
         isPlaceholder = false
         trailing = nil
@@ -63,6 +65,7 @@ struct ReferenceLook {
             italic = false
             strength = 1
             dashed = false
+            self.board = board
         case .missing(let stored), .unavailable(let stored):
             leading = Symbol(name: ReferenceStyle.missingSymbol, tint: nil, strength: missing, size: ReferenceStyle.symbolSize)
             label = stored
@@ -76,6 +79,7 @@ struct ReferenceLook {
             strength = missing
             dashed = true
             trailing = Symbol(name: ReferenceStyle.eyeSymbol, tint: ReferenceStyle.eyeColor, strength: ReferenceStyle.eyeStrength, size: ReferenceStyle.eyeSize, blends: false)
+            self.board = board
         case .notInterpreted(let text), .cannotFind(let text):
             leading = Symbol.dynamic
             label = text
@@ -230,6 +234,7 @@ final class ReferenceMemo {
 
     private var labels: [LabelKey: Label] = [:]
     private var badges: [LabelKey: Label] = [:]
+    private var boards: [LabelKey: Label] = [:]
     private var symbols: [SymbolKey: NSImage] = [:]
     private var rasters: [RasterKey: Raster] = [:]
 
@@ -247,6 +252,21 @@ final class ReferenceMemo {
                                                                     .foregroundColor: color, .paragraphStyle: paragraph])
         let built = Label(string: string, width: ceil(string.size().width))
         labels[key] = built
+        made += 1
+        return built
+    }
+
+    /// A board's name, gray, at the pill's strength.
+    func board(_ text: String, strength: CGFloat) -> Label {
+        let key = LabelKey(text: text, italic: false, strength: strength, placeholder: true)
+        if let found = boards[key] { return found }
+        if boards.count >= ReferenceStyle.memoCapacity { boards.removeAll(keepingCapacity: true) }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let color = strength < 1 ? fading(ReferenceStyle.boardColor, to: strength) : ReferenceStyle.boardColor
+        let string = NSAttributedString(string: text, attributes: [.font: ReferenceStyle.boardFont, .foregroundColor: color, .paragraphStyle: paragraph])
+        let built = Label(string: string, width: ceil(string.size().width))
+        boards[key] = built
         made += 1
         return built
     }
@@ -379,6 +399,15 @@ extension ReferenceDefinition {
         guard !editing, !look.label.isEmpty else { return }
         let label = memo.label(look.label, italic: look.italic, strength: look.strength, placeholder: look.isPlaceholder)
         label.string.draw(with: layout.label, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        if let board = look.board {
+            let x = layout.label.minX + label.width + ReferenceStyle.boardGap
+            let room = layout.label.maxX - x
+            if room >= ReferenceStyle.boardRoomLeast {
+                let name = memo.board(board, strength: look.strength)
+                name.string.draw(with: CGRect(x: x, y: layout.label.minY, width: room, height: layout.label.height),
+                                 options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            }
+        }
     }
 
     /// A count in its capsule, its digits centered in it.

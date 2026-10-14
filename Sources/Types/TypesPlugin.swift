@@ -28,26 +28,54 @@ public struct TypesPlugin: ListedPlugin {
         // holds for their fields.
         registrar.declare(IsAProperty.self)
         registrar.declare(FieldValuesProperty.self)
+        // A type that says what an arrow between two notes holds (the mark), and an arrow's rule for the end
+        // it is (`relating()` kinds).
+        registrar.declare(RelationshipProperty.self)
+        registrar.declare(RelationshipEndProperty.self)
         registrar.edgeType(IsAEdge.self)
         registrar.edges(in: IsAProperty.self, as: IsAEdge.self)
-        // A pointer in a value (a mention token in a string), the edge it is.
-        registerFieldLinkEdges(into: &registrar)
         // The index first: the sync and what reads types hear each commit after it.
         registrar.service { TypeIndex(editor: $0) }
+        // What the file's relationships are: the ends of every relationship type, compiled from the arrows
+        // between it and other types; right after the index it hears after, before what reads it.
+        registrar.service { RelationshipIndex(editor: $0) }
         // What the types of a list give, resolved once and kept; it reads nothing as it is made.
         registrar.service { FieldBook(editor: $0) }
         registrar.service { TypeSync<TypeSchemaProperty>(editor: $0) }
         // What changes a shape's field values (one writer for every surface), what is said of them (the check),
         // and the card a row with more in it opens.
         registrar.service { FieldWriter(editor: $0) }
-        registrar.service { FieldChecks(editor: $0) }
+        registrar.service { editor in
+            let registry = editor.registry
+            return FieldChecks(editor: editor, rowKinds: Set(registry.kinds.filter { registry.typeRows(of: $0) != nil }))
+        }
         registrar.service { FieldCards(editor: $0) }
+        // What the writers and chips of IsA ask of the parts above it: the card that names a relationship type the drag
+        // between two types made and the arrow's card a chip opens, which are Form's, and the tone of an arrow's chip, which is the
+        // check's.
+        registrar.service { editor in
+            RelationshipHooks(nameIt: { [weak editor] id in editor?.nameRelationshipType(id) ?? false },
+                              tone: { [weak editor] id in
+                                  // Only a shape of a kind that relates can be a misfit: a note holding `is` is not asked of the check.
+                                  guard let editor, let arrow = editor.shape(inFile: id), editor.registry.relates(arrow.kind),
+                                        editor.fieldChecks?.check(of: arrow).isMisfit == true else { return .plain }
+                                  return .wrong
+                              },
+                              openCard: { [weak editor] id in editor?.openRelationshipCard(for: id) ?? false })
+        }
         // What a shape's rows are made of and the room they take, announced as a type changes: last, so it
         // hears each commit after the index, the field book and the sync.
         registrar.service { RowBook(editor: $0) }
         registrar.layoutInput(TypeRows.extent) { record, reading in RowBook.provide(record, reading) }
+        // And whether a relationship type that holds nothing is drawn small.
+        registrar.layoutInput(TypeRows.isCompact) { record, reading in RowBook.provideCompact(record, reading) }
         // A click on a row that answers a click, on the canvas and under the editor.
         registerRowFaces(into: &registrar)
+        // A click on a pill in a type's words that names a type it is not yet related to: `Relate to Layer`. Asked before
+        // Mentions' faces, since Types is listed after Mentions.
+        registerRelateOffer(into: &registrar)
+        // Deleting a relationship type deletes its end arrows in the same step, but a locked one.
+        registerRelationshipDeletes(into: &registrar)
         // Resting the pointer on a highlight's words shows the part of the schema they say; in the
         // editor, its own view asks (`TypeIndex.popover(at:on:)`).
         registrar.shapePopovers { editor, record, point in
@@ -56,13 +84,18 @@ public struct TypesPlugin: ListedPlugin {
         }
         registerIsACommand(into: &registrar)
         registerTypeMenus(into: &registrar)
+        // Needed and Only one, on the arrow that is an end: its menu (its panel is the details plugin's).
+        registerEndRuleMenu(into: &registrar)
         registerTypeChips(into: &registrar)
-        // A type's pill is its title in its color (Colors', else its id's), after the mark of a type; untitled, gray and dimmed.
-        // Asked of the kinds that hold a schema, a note's, and a plain note's pill is as it was.
+        // `from` or `to` beside an end's arrow that has no name.
+        registerEndSideMark(into: &registrar)
+        // A type's pill is its title in its color (Colors', else its id's), after the mark of a type (an arrow where a relationship
+        // type's is); untitled, gray and dimmed. Asked of the kinds that hold a schema, a note's, and a plain note's pill is as it was.
         registrar.titlePillLook(forShapesHolding: TypeSchemaProperty.self) { record, title, context in
             guard record[TypeSchemaProperty.self] != nil else { return nil }
+            let symbol = record[RelationshipProperty.self] == true ? TypesStyle.relationshipTypeSymbol : TypesStyle.typeSymbol
             let tint = title == nil ? nil : context.service(TypeIndex.self).map { $0.look(of: record.id).solid }
-            return TitlePillLook(symbol: TypesStyle.typeSymbol, tint: tint, placeholder: TypesStyle.untitledType)
+            return TitlePillLook(symbol: symbol, tint: tint, placeholder: TypesStyle.untitledType)
         }
         // A note that is one of a kind that draws rows shows no pill for a title copied from its field: the
         // name is already in its row, folded or not, and the chip above says what it is. Asked where the
@@ -86,10 +119,13 @@ public struct TypesPlugin: ListedPlugin {
 /// Validation's rules for types: a type's schema (`SchemaReadings.issues`): not JSON, or not an object,
 /// is an error; `required` naming no property, or a `type` that isn't JSON Schema's, a warning. A
 /// note's values against its types' fields (`FieldChecks`): each wrong value is an error (a needed
-/// field with no value is no issue), and a type whose JSON refers to a type that is gone, or whose `$title`
+/// field with no value, or a Needed relationship row left empty, an issue of Validation's third level, `.incomplete`:
+/// the shape stays valid and nothing shows on the board), and a type whose JSON refers to a type that is gone, or whose `$title`
 /// titles nothing, carries a warning. Neither has an `affected:`: a type's change reaches the notes through the service
 /// (`TypeIndex.onChange`, then `ValidationEngine.recheck`), since a rule's `affected:` hears a commit
-/// before the index does. After `TypesPlugin` and `ValidationPlugin`.
+/// before the index does. The rule over values has a `touches:`, the same reach for writes that have not committed
+/// (`FieldChecks.touched(by:reading:)`), which a run asks to say what it breaks on shapes it did not write.
+/// After `TypesPlugin` and `ValidationPlugin`.
 public struct TypeValidationPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "type-validation" }
@@ -101,29 +137,47 @@ public struct TypeValidationPlugin: ListedPlugin {
         // The values of a note are a function of the values and the file's types, never of where it is.
         // Without an editor (draw's check, before it commits) it asks the service through the reading its shapes
         // have, so a type the run writes is read as it stands; with none, it says nothing.
-        registrar.validateEveryShape(ignoringMoves: true) { shape, context in
+        // What writes that have not committed reach (a run's): the instances of a type they change, the notes at the ends
+        // of a relationship they draw or delete, the notes of an end type whose rows they change (`RunTouches`).
+        registrar.validateEveryShape(ignoringMoves: true, touches: { changes, shapes in
+            shapes.reading.map { FieldChecks.touched(by: changes, reading: $0) } ?? []
+        }) { shape, context in
             let check: FieldCheck
             if let checks = context.service(FieldChecks.self) {
-                check = checks.check(of: shape)
+                var shown = checks.check(of: shape)
+                // The field with the caret is left out of what shows, as a value half typed is no error; what a shape
+                // still needs shows nowhere, so it is said whether or not the caret is in that field.
+                if checks.typing?.shape == shape.id {
+                    let left = checks.fullCheck(of: shape).problems.filter { $0.kind == .needed && !shown.problems.contains($0) }
+                    if !left.isEmpty { shown = FieldCheck(problems: shown.problems + left) }
+                }
+                check = shown
             } else if let reading = context.reading, let checks = reading.service(FieldChecks.self) {
                 check = checks.check(of: shape, reading: reading)
             } else {
                 return []
             }
-            guard check.isWrong || check.hasWarnings else { return [] }
-            return check.problems.compactMap { problem in
-                let path = problem.path.isRoot ? nil : problem.path.pointer
+            guard !check.problems.isEmpty else { return [] }
+            // A needed value left empty is the third level: the shape is valid and flagged by nothing, and a query's
+            // `:incomplete` and a run's warning of a shape it did not write read it.
+            return check.problems.map { problem in
                 switch problem.kind {
-                case .wrong: return ValidationIssue.error(problem.message, field: problem.path.field, path: path)
-                case .warning: return ValidationIssue.warning(problem.message, field: problem.path.field, path: path)
-                case .needed: return nil
+                case .wrong: ValidationIssue.error(problem.message, field: problem.placeName, path: problem.pointer)
+                case .warning: ValidationIssue.warning(problem.message, field: problem.placeName, path: problem.pointer)
+                case .needed: ValidationIssue.incomplete(problem.message, field: problem.placeName, path: problem.pointer)
                 }
             }
         }
         // A type's own warnings, not the notes' of either: a type it refers to that is gone, and a `$title` that
         // titles nothing (only the type that wrote it: an Employee inheriting Person's says nothing).
+        // Without an editor (a run's check) it says the same over the reading; the types a run's writes reach are named
+        // by the rule above (a type that refers to one written, or builds on one).
         registrar.validateEveryShape(ignoringMoves: true) { shape, context in
-            guard shape[TypeSchemaProperty.self] != nil, let checks = context.service(FieldChecks.self) else { return [] }
+            guard shape[TypeSchemaProperty.self] != nil else { return [] }
+            guard let checks = context.service(FieldChecks.self) else {
+                guard let reading = context.reading, let checks = reading.service(FieldChecks.self) else { return [] }
+                return checks.typeWarnings(of: shape, reading: reading).map { ValidationIssue.warning($0, field: "schema") }
+            }
             var issues = checks.goneReferences(of: shape.id).map { ValidationIssue.warning(FieldCheckWords.refersToGone($0), field: "schema") }
             if let book = context.service(FieldBook.self),
                let problem = TitleSource.problem(book.fields(types: [shape.id]), writtenBy: shape.id) {
@@ -144,5 +198,7 @@ public struct TypeDetailsPlugin: ListedPlugin {
         registerTypePanel(into: &registrar)
         // The Types rows' fields and values, after them.
         registerFieldsPanel(into: &registrar)
+        // Needed and Only one, for an arrow that is an end.
+        registerEndRulePanel(into: &registrar)
     }
 }

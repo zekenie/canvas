@@ -43,40 +43,27 @@ private struct ProbePlugin: CanvasPlugin {
 }
 
 @MainActor let fieldRuleTests = Suite("The check as rules", [
-    test("a wrong value is one error with the problem's words, at its row; a needed one is none, and rings nothing") {
+    test("a wrong value is one error with the problem's words, at its row; a needed one is an issue of the third level, valid and ringing nothing") {
         let editor = try editor()
         let fresh = editor.addNote(of: [order])
-        expectEqual(editor.issues(fresh), [], "a fresh Order is needed, not wrong")
-        expect(editor.validation?.result(for: fresh) == nil, "no result, so no ring")
+        expectEqual(editor.issues(fresh).map(\.message), ["customer is needed", "line items is needed"], "a fresh Order is needed, not wrong")
+        expectEqual(editor.issues(fresh).map(\.severity), [.incomplete, .incomplete])
+        expectEqual(editor.issues(fresh).map(\.field), ["customer", "lineItems"])
+        expectEqual(editor.validation?.result(for: fresh)?.isValid, true)
+        expectEqual(editor.validation?.result(for: fresh)?.worst, nil, "nothing shows, so no ring")
         let wrong = editor.addNote(of: [person], ["email": "ann@"])
         let issues = editor.issues(wrong)
-        expectEqual(issues.map(\.message), [#"email should be an email address, not "ann@""#])
-        expectEqual(issues.map(\.severity), [.error])
-        expectEqual(issues.map(\.field), ["email"])
+        expectEqual(issues.map(\.message), ["name is needed", #"email should be an email address, not "ann@""#])
+        expectEqual(issues.map(\.severity), [.incomplete, .error])
+        expectEqual(issues.map(\.field), ["name", "email"])
         expectEqual(editor.validation?.result(for: wrong)?.isValid, false)
+        expectEqual(editor.validation?.result(for: wrong)?.worstFirst.map(\.severity), [.error], "and only the error shows")
     },
-    test("a pointer to a note that is gone is a warning on its field, and one that is no longer a Person an error; needed is never an issue") {
-        let editor = try editor()
-        let note = editor.addNote(of: [order], ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "lineItems": [["product": "Mug", "quantity": 1]]])
-        expectEqual(editor.issues(note), [])
-        editor.transact("Delete") { $0.delete([FieldFixtures.annLeeID]) }
-        expectEqual(messages(editor, note), ["customer links to “Ann Lee”, which is gone"])
-        expectEqual(editor.issues(note).map(\.severity), [.warning])
-        expectEqual(editor.issues(note).map(\.field), ["customer"])
-        expectEqual(editor.validation?.result(for: note)?.isValid, true, "a warning is not an error")
-        // A needed field is no issue: the gift needs its note, and the warning is all there is.
-        editor.transact("Gift") { $0.update(note) { $0[FieldValuesProperty.self] = FieldValues(["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "lineItems": [["product": "Mug", "quantity": 1]], "gift": true]) } }
-        expectEqual(editor.issues(note).map(\.severity), [.warning], "the gift note is needed, which is no issue")
-        // Bo stops being a Person: pointed at, an error.
-        editor.removeTypeLink(person, from: FieldFixtures.boParkID)
-        editor.transact("Point") { $0.update(note) { $0[FieldValuesProperty.self] = FieldValues(["customer": link(to: FieldFixtures.boParkID, "Bo Park"), "lineItems": [["product": "Mug", "quantity": 1]]]) } }
-        expectEqual(editor.issues(note).map(\.severity), [.error])
-        expectEqual(messages(editor, note, .error), ["customer links to “Bo Park”, which isn’t a Person"])
-    },
-    test("both: the error is there, and the note is still incomplete") {
+    test("both: the error is there, and the note is still incomplete, in Validation's words and the check's") {
         let editor = try editor()
         let id = editor.addNote(of: [person], ["email": "ann@"])
-        expectEqual(messages(editor, id).count, 1, "the missing name makes no issue")
+        expectEqual(messages(editor, id).count, 2, "the missing name is the third level, beside the error")
+        expectEqual(messages(editor, id, .incomplete), ["name is needed"])
         expect(try require(editor.fieldChecks).fullCheck(of: try require(editor.document[id])).isIncomplete)
     },
     test("a rule across fields is an error with no field") {
@@ -177,14 +164,14 @@ private struct ProbePlugin: CanvasPlugin {
     test("a type deleted warns the type that refers to it, by name, and no note; undoing the delete clears it") {
         let editor = try editor()
         let note = editor.addNote(of: [order])
-        expectEqual(editor.issues(order), [], "Order, whose shipping Address and customer Person are both there")
+        expectEqual(editor.issues(order), [], "Order, whose shipping Address is there")
         editor.transact("Delete") { $0.delete([address]) }
         expectEqual(messages(editor, order), ["Refers to “Address”, which is gone."])
         expectEqual(editor.issues(order).map(\.severity), [.warning])
         expectEqual(editor.issues(order).map(\.field), ["schema"])
-        expectEqual(editor.issues(note), [], "an instance is never warned")
+        expectEqual(editor.issues(note).map(\.severity), [.incomplete, .incomplete], "an instance is never warned: it still needs what it did")
         editor.transact("Delete") { $0.delete([person]) }
-        expectEqual(messages(editor, order), ["Refers to “Address”, which is gone.", "Refers to “Person”, which is gone."])
+        expectEqual(messages(editor, order), ["Refers to “Address”, which is gone."], "Person is not Order's to refer to: its customer is text")
         editor.undo()
         editor.undo()
         expectEqual(editor.issues(order), [])

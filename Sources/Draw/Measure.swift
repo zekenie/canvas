@@ -10,9 +10,11 @@ import Topology
 // tall as its text), how far its title's pill reaches above it, how wide a reference to a shape is
 // for its title, and the constants of the placement it will draw with. It reads the script as `draw`
 // does, ignores where shapes go (placements, `in`), and answers for each shape statement, and each edge
-// that says it goes through a reference (`via:`). It reads nothing on a board and changes nothing: the
-// shapes are made on a board of its own that is thrown away, by the same `Drawing` a draw uses, so the
-// sizes are the ones a draw makes, and no board's undo step opens.
+// that says it goes through a reference (`via:`). It changes nothing: the shapes are made on a board of
+// its own that is thrown away, by the same `Drawing` a draw uses, so the sizes are the ones a draw makes,
+// and no board's undo step opens. The edges that go through no reference are kept, to lay the shapes out
+// with: an end gives the notes of its type a row, a draw's `at` says so, and so must a measure. Given a
+// board, the script is laid out over that board's own editor (read, never written).
 
 /// What `measure` answers.
 public struct MeasureResult: Encodable {
@@ -92,9 +94,18 @@ public func measure(script text: String, program: String, in registry: Registry,
         case .shape(var shape):
             shape.clauses = []
             shape.container = nil
+            // Every shape is new in a measure, as it is for a title the file has: one that names a shape by its id is measured as
+            // a new shape of its kind with no title.
+            if shape.name?.id != nil { shape.name = nil }
             statements.append(Statement(line: statement.line, text: statement.text, body: .shape(shape)))
         case .edge(let edge):
-            if edge.via != nil { through.append((statement, edge)) }
+            // Through a reference, an edge is only the reference's size (a pill is sized, never drawn here: it may stand for a
+            // note that isn't public). Any other is laid out with the shapes (an end gives its type's notes a row), as draw does.
+            if edge.via != nil {
+                through.append((statement, edge))
+            } else if registry.drawEdging != nil {
+                statements.append(statement)
+            }
         case .delete:
             break
         }
@@ -121,7 +132,11 @@ public func measure(script text: String, program: String, in registry: Registry,
     for (statement, edge) in through {
         guard let word = edge.via else { continue }
         let kind = try Drawing.standInKind(named: word, among: standIns, statement, written: "\(Keyword.edge.rawValue) \(edge.written)")
-        let label = drawing.fold(edge.to) ?? edge.to
+        let label: String
+        switch edge.to {
+        case .title(let written): label = drawing.fold(written) ?? written
+        case .id(let text): label = drawing.measuredLabel(ofID: text) ?? edge.to.written
+        }
         guard let size = standIns.make(kind, standingFor: ShapeID(), label: label)?.box?.size else {
             throw DrawError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(quoted(label))")
         }

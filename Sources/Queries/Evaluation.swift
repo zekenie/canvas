@@ -493,6 +493,20 @@ final class Evaluation {
         return kinds
     }
 
+    /// The same for the shapes the word that names types takes as its argument (the types) alone: what a hint that
+    /// calls a title a type waits on. The shapes titled so, when the word does not say which it takes.
+    func kinds(namedAsTypes names: Set<String>) async throws(QueryError) -> [String: Set<ShapeKind>] {
+        guard let word = vocabulary.typeWord, case .fileRelation(let relation)? = vocabulary.contributedWords[word]?.meaning,
+              let argument = relation.argumentShapes, let prepared = snapshot.words[word] else { return try await kinds(named: names) }
+        let types = argument(prepared)
+        let index = try await titleIndex()
+        var kinds: [String: Set<ShapeKind>] = [:]
+        for name in names {
+            kinds[name] = Set((index.shapes(named: name) ?? []).filter(types.contains).compactMap { entry($0)?.record.kind })
+        }
+        return kinds
+    }
+
     /// A name standing where a container goes, refused when none of its shapes is of a kind that
     /// holds shapes (a board of them, or shapes on its own).
     private func holdsNothing(_ written: String, _ ids: [ShapeID], span: QuerySpan?) -> QueryError? {
@@ -1440,10 +1454,10 @@ final class Evaluation {
     /// they end. Nil for a shape that carries none.
     private func connection(of id: ShapeID) throws(QueryError) -> [Edge]? {
         let carried = snapshot.topology.edges(carriedBy: id)
-        guard let first = carried.first(where: { $0.slot.isEmpty }) else { return nil }
+        guard let first = carried.first(where: \.isConnection) else { return nil }
         guard case .forwarded = first.origin else { return [first] }
         let drawn = first.literal
-        var copies = carried.filter { $0.slot.isEmpty && $0.literal == drawn }
+        var copies = carried.filter { $0.isConnection && $0.literal == drawn }
         guard copies.count > 1 else { return copies }
         var keyed: [(edge: Edge, key: [Int])] = []
         keyed.reserveCapacity(copies.count)
@@ -1499,7 +1513,7 @@ extension PlanEdgeTypes {
 
     /// Whether the edge is a connection the word follows: one its carrier has in slot "" (an arrow's
     /// own, not a mention in a text's slot) of a type it admits.
-    func admitsConnection(_ edge: Edge) -> Bool { edge.slot.isEmpty && admits(edge.type) }
+    func admitsConnection(_ edge: Edge) -> Bool { edge.isConnection && admits(edge.type) }
 }
 
 // MARK: Walking a plan

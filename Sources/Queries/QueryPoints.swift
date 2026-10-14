@@ -234,6 +234,9 @@ struct ContributedFileRelation: Sendable {
     let transitive: Bool
     /// Whether its argument names types: what `.Name` is refused toward.
     let namesTypes: Bool
+    /// The shapes its argument names when `namesTypes` (the types), so a title is a type's when a shape so titled is
+    /// among them; nil where the plugin does not say, and any titled shape may be one.
+    let argumentShapes: (@Sendable (any Sendable) -> Set<ShapeID>)?
     let prepare: @MainActor (QueryFilePreparation) -> any Sendable
     let seeds: @Sendable (any Sendable) -> Set<ShapeID>
     let related: @Sendable (ShapeID, any Sendable) -> [ShapeID]
@@ -599,13 +602,15 @@ extension PluginRegistrar {
     /// `:word("Name")`); at most one word is.
     public mutating func queryRelation<Prepared: Sendable>(
         _ word: String, _ summary: String, example: String, reads _: QueryFileReads,
-        transitive: Bool, namesTypes: Bool = false,
+        transitive: Bool, namesTypes: Bool = false, argumentShapes: (@Sendable (Prepared) -> Set<ShapeID>)? = nil,
         prepare: @escaping @MainActor (QueryFilePreparation) -> Prepared,
         seeds: @escaping @Sendable (Prepared) -> Set<ShapeID>,
         related: @escaping @Sendable (ShapeID, Prepared) -> [ShapeID]
     ) {
+        let erased: (@Sendable (any Sendable) -> Set<ShapeID>)?
+        if let argumentShapes { erased = { (prepared: any Sendable) -> Set<ShapeID> in argumentShapes(prepared as! Prepared) } } else { erased = nil }
         let relation = ContributedFileRelation(
-            transitive: transitive, namesTypes: namesTypes,
+            transitive: transitive, namesTypes: namesTypes, argumentShapes: erased,
             prepare: { prepare($0) },
             seeds: { seeds($0 as! Prepared) },
             related: { shape, prepared in related(shape, prepared as! Prepared) })

@@ -36,10 +36,11 @@ public final class CanvasView: NSView {
 
     private enum PointerPlace { case canvas, minimap, editingView, covered, card }
 
-    /// How a menu the editor queued (`popUpMenu`) is shown, given the menu and the point in this view it
-    /// opens at (the bottom-left of the rect it is below): AppKit's pop-up, which runs the menu's
-    /// tracking, unless a test puts in one that notes it (a menu's tracking runs in no unshown window).
-    @_spi(Host) public var menuPresenter: (@MainActor (NSMenu, CGPoint) -> Void)?
+    /// How a menu the editor queued (`popUpMenu`) is shown, given the menu, the point in this view it
+    /// opens at (the bottom-left of the rect it is below) and the item it opens with highlighted, if
+    /// one: AppKit's pop-up, which runs the menu's tracking, unless a test puts in one that notes it
+    /// (a menu's tracking runs in no unshown window).
+    @_spi(Host) public var menuPresenter: (@MainActor (NSMenu, CGPoint, NSMenuItem?) -> Void)?
 
     /// Whether the minimap shows. Off unless the host turns it on (the app does, per board).
     public var showsMinimap = false {
@@ -611,14 +612,15 @@ extension CanvasView: NSMenuItemValidation {
     private func popUpWaitingMenu() {
         // Dropped meanwhile (a press began), or already popped up for an earlier turn's request.
         guard let waiting = editor.menuToPopUp else { return }
+        let highlighting = editor.menuItemToHighlight
         editor.menuDidPopUp()
         let rect = editor.camera.toView(waiting.rect)
         let point = CGPoint(x: rect.minX, y: rect.maxY)
         if let menuPresenter {
-            menuPresenter(waiting.menu, point)
+            menuPresenter(waiting.menu, point, highlighting)
         } else if window != nil {
             // A view taken off its window meanwhile has nowhere to open one: it's dropped.
-            waiting.menu.popUp(positioning: nil, at: point, in: self)
+            waiting.menu.popUp(positioning: highlighting, at: point, in: self)
         }
     }
 

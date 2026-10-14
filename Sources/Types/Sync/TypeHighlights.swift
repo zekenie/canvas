@@ -28,7 +28,7 @@ public enum TypeHighlights {
                        types: TypeIndex?) -> [PlacedHighlight] {
         guard let maps, let reading = SchemaReadings.reading(of: record), let root = reading.shownRoot else { return [] }
         return ProseHighlights.placed(SchemaTarget.self, of: record.id, words: words, json: reading.shownText, root: root, maps: maps,
-                                      references: SchemaPrompts.highlightsReferences, isType: { types?.isType($0) ?? true },
+                                      references: SchemaPrompts.highlightsReferences, isType: { types?.canBeEmbedded($0) ?? true },
                                       askingIf: { sync?.isInStep(record.id) == true && reading.document.isObject })
     }
 

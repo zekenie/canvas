@@ -216,6 +216,23 @@ func isAccent(_ p: [Int]) -> Bool { p[2] > p[0] + 60 }
         let hinted = pixel(finished(minimap, h), at: onMinimap(CGPoint(x: 250, y: 200), minimap))
         expect(isAccent(hinted), "a shape the canvas outlines is in the accent color: \(hinted)")
     },
+    test("a box laid out smaller than it stores is a silhouette of its smaller frame, and the board it fits is the frame's, not the stored box's") {
+        let h = try minimapEditor(file: CanvasFile(), [StretchesPlugin(shrinking: true)])
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 1000, y: 0, width: 100, height: 100), width: 200, height: 100))
+        let stretch = h.add(Stretch(CGRect(x: 0, y: 0, width: 800, height: 600), gauge: gauge))
+        expectEqual(h.editor.shapeBounds, CGRect(x: 0, y: 0, width: 1100, height: 100), "the frame and the gauge")
+        let (_, _, minimap) = try minimapped(h)
+        let rep = finished(minimap, h)
+        let at = { (world: CGPoint) in pixel(rep, at: onMinimap(world, minimap)) }
+        expect(isSilhouette(at(CGPoint(x: 100, y: 50))), "the frame: \(at(CGPoint(x: 100, y: 50)))")
+        expect(isBlank(at(CGPoint(x: 600, y: 50))), "past the frame, inside the stored box: \(at(CGPoint(x: 600, y: 50)))")
+        expect(isSilhouette(at(CGPoint(x: 1050, y: 50))), "the gauge: \(at(CGPoint(x: 1050, y: 50)))")
+        // Laid out larger again, the picture follows.
+        h.editor.transact("Gauge") { $0.update(gauge, as: CanvasTesting.Gauge.self) { $0.props.width = 700 } }
+        let grown = finished(minimap, h)
+        expect(isSilhouette(pixel(grown, at: onMinimap(CGPoint(x: 600, y: 50), minimap))), "the frame, grown")
+        expectEqual(h.editor.document[stretch]?.box, CGRect(x: 0, y: 0, width: 800, height: 600))
+    },
     test("a shape the canvas outlines in a color of its own is filled in that color, wherever it is: under the faint ones and the selection's, and one in several groups shows each, inside the one before") {
         let outlined = TintedByTest()
         let h = try minimapEditor([Contributor(id: "tinted") { $0.outlines { _ in Outlines(shapes: outlined.shapes, tinted: outlined.groups) } }])

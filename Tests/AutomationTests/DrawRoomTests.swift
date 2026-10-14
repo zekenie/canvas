@@ -33,8 +33,8 @@ private let gaugeFormat = Contributor(id: "gauge-format") { registrar in
     }
 }
 
-@MainActor private func roomEditor() throws -> CanvasEditor {
-    try makeEditor([roomNames(), gaugeFormat, StretchesPlugin(), pens])
+@MainActor private func roomEditor(shrinking: Bool = false) throws -> CanvasEditor {
+    try makeEditor([roomNames(), gaugeFormat, StretchesPlugin(shrinking: shrinking), pens])
 }
 
 /// What a stretch is stored at when a script says no `size:`: its tool's.
@@ -156,6 +156,31 @@ stretch "S" gauge: "G" right of "G"
             expectEqual(size, [Double(drawn.width), Double(drawn.height)], "statement \(index + 1)")
         }
         expectEqual(sizes[1], [300, 120])
+    },
+    test("a stretch laid out smaller than it stores: its row and measure say the smaller frame, its box stores the tool's, and a shape drawn beside it is clear of its visible edge, not the stored one") {
+        let editor = try roomEditor(shrinking: true)
+        let script = """
+        gauge "G" width: 40 height: 30
+        stretch "S" gauge: "G" right of "G"
+        tile "T" right of "S"
+        """
+        let measured = try run(["measure", "-"], on: editor, input: script).get()
+        let result = try drawn(script, on: editor)
+        let laidOut = try require(at(row(result, line: 2)))
+        expectEqual(laidOut.size, CGSize(width: 40, height: 30), "smaller than the 100 by 60 it stores")
+        let record = try require(stretch("S", in: editor))
+        expectEqual(record.box?.origin, laidOut.origin)
+        expectEqual(record.box?.size, storedSize, "what it stores is the tool's")
+        expectEqual(editor.shapeContext.frame(of: record.id), laidOut, "the frame the board has once the run has committed")
+        let sizes = (measured["shapes"]?.arrayValue ?? []).map { $0["size"]?.arrayValue?.compactMap(\.numberValue) }
+        expectEqual(sizes[1], [40, 30], "measure says it too")
+        let tile = try require(at(row(result, line: 3)))
+        expect(tile.minX >= laidOut.maxX + 40, "the tile at \(tile) is clear of \(laidOut)")
+        expect(tile.minX < laidOut.minX + storedSize.width + 40, "and not kept off the 100 it stores: \(tile)")
+        expectEqual(messages(result), [])
+        let again = try drawn(script, on: editor)
+        expectEqual(rows(again).map { $0["did"] }, ["unchanged", "unchanged", "unchanged"], "run again, unchanged")
+        expectStored(in: editor)
     },
     test("a stretch that names a gauge on the board, not in the script, is laid out by it") {
         let editor = try roomEditor()

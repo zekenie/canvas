@@ -325,7 +325,7 @@ public final class CanvasEditor {
     // The card showing (Cards.swift).
     @ObservationIgnored var shownCard: CanvasCard?
     // The menu waiting to be popped up (MenuPopUp.swift).
-    @ObservationIgnored var menuWaiting: (menu: NSMenu, rect: CGRect)?
+    @ObservationIgnored var menuWaiting: (menu: NSMenu, rect: CGRect, highlighting: NSMenuItem?)?
     /// An animation's frame is moving the camera: `zoomPercentage` stays its target's.
     @ObservationIgnored var isAnimationFrame = false
     // The press under way, for scrolling at the canvas's edges (EdgeScrolling.swift): where it was, in
@@ -468,8 +468,9 @@ public final class CanvasEditor {
     /// it took or brought, the board shown as it was. Read-only shapes stay as they are, as in any
     /// transaction, and so does a read-only board (`isReadOnly(board:)`: nothing on it changes, and
     /// nothing goes on it), but nothing shows the refusal, since they aren't shown. A transaction that would
-    /// take the board shown, or a board above it, with a shape it deletes, or that reaches the board
-    /// shown (moving shapes onto it, or settling there), commits nothing: `document` would go stale.
+    /// take the board shown, or a board above it, with a shape it deletes (on its own board or, with
+    /// `delete(_:on:)`, another), or that reaches the board shown (moving shapes onto it, or settling
+    /// there), commits nothing: `document` would go stale.
     /// Returns nil, doing nothing, for a board the editor can't show (`canShow`). One of the file's
     /// own values set there (`setFileValue`) is the file's, as from any board: a transaction that
     /// sets nothing else says no board changed.
@@ -483,14 +484,17 @@ public final class CanvasEditor {
         var transaction = Transaction(document: storedFile[target], board: target, isBoardReadOnly: registry.isReadOnly(board: target, in: storedFile),
                                       registry: registry, camera: leftCameras[target] ?? camera, keys: stackingKeys, file: fileAccess,
                                       layout: layoutSource)
+        transaction.mayReachBoardShown = false
         let result: T
         do {
             defer { isTransacting = false }
             result = try body(&transaction)
         }
-        // The owners too: an empty board isn't among the boards a deletion takes.
+        // The owners too: an empty board isn't among the boards a deletion takes. Whatever the transaction
+        // deleted counts, on whichever board, brought there or not.
         guard transaction.hasChanges, transaction.changes.boardsRemoved.isDisjoint(with: boardPath),
               transaction.changes.removed.isDisjoint(with: boardPath.lazy.compactMap(\.owner)),
+              transaction.deleted.isDisjoint(with: boardPath.lazy.compactMap(\.owner)),
               !transaction.changes.boardsReached.contains(board) else { return result }
         if isReplacingFile {
             commit(transaction, onHidden: target)
@@ -524,6 +528,11 @@ public final class CanvasEditor {
         guard let record = holding[id] else { return false }
         return registry.isReadOnly(record, in: holding) || registry.isReadOnly(board: board, in: file)
     }
+
+    /// Whether a shape can't change on its board, `holding`, by a rule of a plugin's or of a container it is in: the
+    /// shape's part of `isReadOnly(inFile:)`, blind to the board (`isReadOnly(board:)`), for a caller that asks of
+    /// many shapes of one board and asks the board once.
+    public func isReadOnly(_ record: AnyShapeRecord, in holding: CanvasDocument) -> Bool { registry.isReadOnly(record, in: holding) }
 
     /// Whether a board of the file can't change: the shape that owns it can't (a rule says so of it,
     /// or of a container it's in), or the board that one is on can't, and so on up to the root, which
@@ -699,15 +708,29 @@ public final class CanvasEditor {
     @discardableResult
     @_spi(Host) public func discardKeptAside(shapes ids: Set<ShapeID>, boards keys: Set<String>) -> Bool {
         precondition(!isTransacting, "a file can't be replaced inside a transaction")
-        let old = storedFile, access = FileAccess(old, boardOwningKinds: registry.boardOwningKinds)
-        var newFile = old, removed: Set<BoardID> = [], fileValues: Set<PropertyKey> = []
+        let old = storedFile
+        var newFile = old, removed: Set<BoardID> = [], changed: Set<BoardID> = [], added: Set<BoardID> = []
+        var fileValues: Set<PropertyKey> = []
         let byBoard = Dictionary(grouping: ids.filter { old.record($0)?.isOpaque == true }) { old.board(containing: $0)! }
         for (board, ids) in byBoard {
-            // Refused by nothing: a read-only board's hidden shapes go too.
-            var transaction = Transaction(document: old[board], board: board, isBoardReadOnly: false, registry: registry, camera: camera,
-                                          keys: stackingKeys, file: access, layout: nil)
+            // Refused by nothing: a read-only board's hidden shapes go too. Over the file as the shapes before
+            // it left it, so what one's handlers wrote on another board is read by the next.
+            var transaction = Transaction(document: newFile[board], board: board, isBoardReadOnly: false, registry: registry, camera: camera,
+                                          keys: stackingKeys, file: FileAccess(newFile, boardOwningKinds: registry.boardOwningKinds), layout: nil)
             transaction.discard(Set(ids))
-            newFile.set(transaction.document, for: board, changes: transaction.changes)
+            // The board, and every other board a handler wrote on or brought, as a commit writes them.
+            var written = [(board: board, document: transaction.document, changes: transaction.changes)], brought: [ShapeID: CanvasDocument] = [:]
+            for (staged, document) in transaction.stagedBoards where staged != board && !transaction.changes.boardsRemoved.contains(staged) {
+                if transaction.changes.boardsChanged.contains(staged) {
+                    written.append((staged, document, ChangeSet(from: newFile[staged], to: document)))
+                    changed.insert(staged)
+                } else if let owner = staged.owner {
+                    brought[owner] = document
+                    added.insert(staged)
+                }
+            }
+            newFile.set(written)
+            newFile.insertBoards(brought)
             removed.formUnion(transaction.changes.boardsRemoved)
             // What a `willDelete` handler set of the file's own values.
             if let values = transaction.stagedFileValues {
@@ -731,7 +754,8 @@ public final class CanvasEditor {
         var changes = ChangeSet(from: storedDocument, to: newFile[board])
         changes.replacedDocument = false
         changes.boardsRemoved = removed
-        changes.boardsChanged = Set(byBoard.keys).subtracting(removed).subtracting([board])
+        changes.boardsChanged = Set(byBoard.keys).union(changed).subtracting(removed).subtracting([board])
+        changes.boardsAdded = added.subtracting(removed)
         changes.elsewhere = newFile.shapesChanged(from: old, except: board)
         changes.fileValues = fileValues
         undoHistory.group("Delete Hidden Shapes") {

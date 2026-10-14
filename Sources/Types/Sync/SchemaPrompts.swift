@@ -14,7 +14,8 @@ import LanguageModels
 // it says of other schemas (and the frame they go in, the model, its effort and max_tokens out of
 // ProseMapPrompt.swift); each copies the request and the parse rule it tests, so the evals test what
 // ships. What the sync's two prompts say of a title from a field (`toSchemaTitle`, `toSchemaNewTitle`,
-// `toPromptTitle`) goes after each on every request. What a prompt
+// `toPromptTitle`) goes after each on every request, and what the to-schema prompt says of a relationship type
+// (`toSchemaRelationshipType`) after that, only for a request about the words of one. What a prompt
 // says of other schemas (`toSchemaReferences`, `toPromptReferences`, `highlightsReferences`) is
 // added after that only for a request that names some, so a type that refers to no other type is sent
 // no more than the titles. The prompts are raw string literals,
@@ -74,9 +75,10 @@ public enum SchemaPrompts {
     /// what's asked; nil or empty when there's none. `schemas` lists the other types the texts name,
     /// a word a line (`SchemaReferenceNames.list`), which the prompt names as `@` and the word, and
     /// the schema points to with that as its `$ref`; nil or empty for none, when nothing's said of
-    /// other schemas at all.
-    public static func toSchema(previousPrompt: String?, prompt: String, schema: String, schemas: String? = nil) -> ModelRequest {
-        request(system: system(.toSchema, schemas: schemas), maxTokens: toSchemaMaxTokens,
+    /// other schemas at all. `relationship` is for the words of a relationship type, which are also told what
+    /// such a type holds.
+    public static func toSchema(previousPrompt: String?, prompt: String, schema: String, schemas: String? = nil, relationship: Bool = false) -> ModelRequest {
+        request(system: system(.toSchema, schemas: schemas, relationship: relationship), maxTokens: toSchemaMaxTokens,
                 blocks: [("schemas", schemas), ("previous_prompt", previousPrompt), ("prompt", prompt), ("schema", schema)])
     }
 
@@ -88,14 +90,15 @@ public enum SchemaPrompts {
                 blocks: [("schemas", schemas), ("prompt", prompt), ("previous_schema", previousSchema), ("schema", schema)])
     }
 
-    /// A direction's system prompt: its base, then what it says of titles, then, only for a request
-    /// that names other schemas (`schemas` isn't blank), what it says of those, each a blank line
-    /// apart.
-    public static func system(_ direction: Direction, schemas: String? = nil) -> String {
+    /// A direction's system prompt: its base, then what it says of titles, then, only for the words of a
+    /// relationship type (`relationship`, the to-schema direction), what it says of such a type, then, only for a
+    /// request that names other schemas (`schemas` isn't blank), what it says of those, each a blank line apart.
+    public static func system(_ direction: Direction, schemas: String? = nil, relationship: Bool = false) -> String {
         let (base, titles, references) = direction == .toSchema
             ? (toSchemaSystem, toSchemaTitle + "\n" + toSchemaNewTitle, toSchemaReferences)
             : (toPromptSystem, toPromptTitle, toPromptReferences)
-        let system = base + "\n" + titles
+        var system = base + "\n" + titles
+        if relationship, direction == .toSchema { system += "\n" + toSchemaRelationshipType }
         guard let schemas, !schemas.allSatisfy(\.isWhitespace) else { return system }
         return system + "\n" + references
     }
@@ -314,10 +317,10 @@ For example, for the words "A library card: the member's name and phone, a short
     public static let toSchemaReferences = #"""
 Other schemas
 You also get <schemas>, first: other schemas the user keeps that the prompt or the schema names, one a line, each as @ and one word (@Address, @LineItem).
-- Where the prompt writes one of those words as part of the thing ("each order has a @Customer and some @LineItem rows", "shipped to a @Address"), point to that whole schema with the word as the "$ref", exactly as <schemas> lists it: {"$ref": "@Customer"}, or for a list of them an array whose "items" is {"$ref": "@LineItem"}. Never write its fields out or copy it into "$defs". A bare @ word, with nothing said of a link, is this.
-- Where the prompt says a field is a link to one of those words, or that it points to it or refers to it ("customer: a link to a @Customer", "the manager points to a @Person", "each order refers to a @Customer"; also "links to", "linked to", "a reference to", "pointer to"), the field holds a pointer to one of the user's notes of that kind, not a copy of it: {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "@Customer"}}. For several links, an array whose "items" is that pointer. Write the three members exactly so, with the word as written in <schemas>, and no fields beside it. When it is unclear whether the prompt means a link or the thing itself, it is the thing itself.
-- A "$ref" to one of those words, bare or inside a pointer's "contentSchema", stays exactly as written while the prompt names the word. When the prompt stops naming it (it's in <previous_prompt> but not in <prompt>), take out the property that points to it. When the prompt changes a field from the thing to a link to it, or back, change that field in place: same key, same position, the other form.
-- An @ word that <schemas> doesn't list is only the user's words, and so is a link to a name written without @: a field of plain text.
+- Where the prompt writes one of those words as part of the thing ("each order has a @Customer and some @LineItem rows", "its @Address", "shipped to a @Address"), point to that whole schema with the word as the "$ref", exactly as <schemas> lists it: {"$ref": "@Customer"}, or for a list of them an array whose "items" is {"$ref": "@LineItem"}. Never write its fields out or copy it into "$defs". A bare @ word, with nothing said of how the thing relates to it, is this.
+- Where the prompt says how the thing relates to one of those words instead of holding it ("is in a @Layer", "belongs to a @Team", "assigned to a @Person", "works at a @Company", "customer: a link to a @Customer", "points to", "refers to", "links to"), write no property for it at all: no "$ref", no text, id, name or key of the other thing, and no list of them. A schema holds what the thing has, never what it is related to. When it is unclear whether the prompt means a part or a relationship, it is the part.
+- A "$ref" to one of those words stays exactly as written while the prompt names the word. When the prompt stops naming it (it's in <previous_prompt> but not in <prompt>), take out the property that points to it. When the prompt changes the way it says the word, from a part to a relationship, take that property out; from a relationship to a part, write it.
+- An @ word that <schemas> doesn't list is only the user's words.
 
 """#
 
@@ -326,7 +329,7 @@ You also get <schemas>, first: other schemas the user keeps that the prompt or t
 Other schemas
 You also get <schemas>, first: other schemas the user keeps that the prompt or the schema names, one a line, each as @ and one word (@Address, @LineItem).
 - A "$ref" to one of those words ({"$ref": "@Customer"}) is that whole other schema: name it in the prompt by the word, exactly as <schemas> lists it, @ and all ("a @Customer", "a list of @LineItem"), never by its fields or in another form ("@Customers", "customer"). Such a word already in the prompt stays word for word.
-- A pointer, a string with "contentMediaType": "text/x-canvas-link" and a "contentSchema" whose "$ref" is one of those words, is a link to that schema's notes, not the schema itself: say "a link to a @Customer" ("links to @LineItem" for an array of them), the word as <schemas> lists it. A prompt that already says it with "points to" or "refers to" stays word for word.
+- Words in the prompt that relate the thing to one of those words, with no property for them in the schema ("is in a @Layer", "belongs to a @Team"), say a relationship, which a schema never holds. They stay word for word, are never a reason to change the prompt, and are never something you write yourself. Never say link, points to or reference for a type.
 
 """#
 
@@ -335,18 +338,30 @@ You also get <schemas>, first: other schemas the user keeps that the prompt or t
     public static let highlightsReferences = #"""
 Other schemas
 - A word written with @ (@Address) names another schema the user keeps, which this one points to with that word as its "$ref": link the @ word to the schema that points to it, a property ("/properties/shippingAddress") or a list's items ("/properties/lineItems/items").
-- A link ("a link to a @Customer") is also a property: a string whose "contentSchema" has that word as its "$ref". Link the @ word to the property ("/properties/customer"), never to its "contentSchema" or the "$ref" inside it.
+- An @ word that nothing in the schema points to gets no link, and neither do the words around it.
 
 """#
 
     // MARK: Titles
+
+    /// After the titles, in `toSchemaSystem`'s request, for the words of a relationship type (the shape holds the
+    /// mark): what such a type's schema holds. The model could not be told from the references alone that
+    /// "employment" is a relationship, so it wrote a field for its other party.
+    public static let toSchemaRelationshipType = #"""
+A relationship type
+This type is a relationship type: its schema says what one relationship between two things holds, and never who or what it relates. The two things are drawn as arrows to the type, its ends.
+- Write no property for either end, and no "$ref" to the type of either: not a person, company, employee, employer, owner, member, friend, from, to or party. This holds whether the prompt names them with @ words, in plain words ("a job a @Person holds at a @Company"), or by one word that implies them ("employment" relates an employee and an employer; "friendship", two friends).
+- The properties are only what the relationship itself holds: a role, a start date, an end date, a status, an amount, a note. A vague prompt gets the few such properties a relationship usually has, 2 to 5, never the things it relates.
+- Everything else is as for any schema: a property the schema has stays unless the prompt takes it out.
+
+"""#
 
     /// After `toSchemaSystem`, on every request: a title from a field.
     public static let toSchemaTitle = #"""
 A title from a field
 A type can say that a note of the type is titled by one of its fields: a "$title" member inside the top-level "properties", beside the fields, written {"x-canvas-from": "name"} where "name" is the key of one of this schema's fields. It is a setting, not a field: never counted among the fields, never in "required", never given a "type".
 - Write it when the prompt says the thing is called, titled, named or labelled by a field ("called by its name", "titled by its title", "named after the model"): "x-canvas-from" is that field's key, as the schema has it. It goes last in "properties", after the fields; a field you add goes before it.
-- The field is a plain one: text, a number, a date or a choice (enum). Never a yes/no, a list, a group of fields, or a link to another schema: when the prompt names one of those, write no "$title".
+- The field is a plain one: text, a number, a date or a choice (enum). Never a yes/no, a list, a group of fields, or another schema: when the prompt names one of those, write no "$title".
 - Keep an existing "$title" exactly as it is, whatever else the prompt changes. Change its "x-canvas-from" when the prompt names another field. Take the whole member out when the prompt says the thing is no longer called by a field, and when the field it names is taken out. A renamed field keeps its key, so a "$title" naming it stays as it is.
 - Never write a "$title" the prompt didn't ask for, except as "A new type's title" says.
 

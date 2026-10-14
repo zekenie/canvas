@@ -27,8 +27,10 @@ extension Budget {
     /// 10,000 asks of notes whose answers are kept (what a frame of notes in view pays: three reads of a note's added
     /// values, a lookup by id, two compares that end at the storage's identity and a stamp): some 3.3 ms (3.28, 3.33 and 3.51;
     /// 4.1 to 4.3 at load 7 to 40), 0.33 µs an ask, of which the reads of the record are some 0.3 (the design guessed
-    /// 0.2 to 0.5): held at the design's ceiling.
-    static let fieldChecksKept = 5.0
+    /// 0.2 to 0.5): held at the design's ceiling. 10,000 asks of arrows of a relationship type, whose answers also hold the
+    /// relationship part (the index's revision and the arrow's stamp, one more integer compare and one dictionary lookup),
+    /// are held to the same budget, re-set to 6 for it (RelationshipBenchmarks.swift): a proposal, not yet measured.
+    static let fieldChecksKept = 6.0
     /// Validation's first read of a file of 10,000 shapes with a thousand typed notes holding six values each, over the same
     /// read with their answers already kept: the answers made inside it (a note's values checked once). Some 1.5 ms (1.46,
     /// 0.39 and 1.48; the read itself is 50 ms and moves by that much between runs).
@@ -58,8 +60,11 @@ extension Budget {
     /// shape kept, and the unnamed members walked. Some 2 ms (1.7, 4.3 and 1.9 alone, load average 16 to 22; the run itself is some 50).
     static let drawTypedNotes = 6.0
     /// The same script run again with nothing changed, every row `unchanged`: 200 kept answers, a lookup each, and the row's
-    /// problems made from them. Some 2.9 ms (3.5, 2.9 and 2.5, load average 16 to 22).
-    static let drawTypedNotesUnchanged = 9.0
+    /// problems made from them. Some 2.9 ms (3.5, 2.9 and 2.5, load average 16 to 22), then 10.5 once a run says what it
+    /// brings to a shape it did not change: a note restated as it is counts as not written, so each is checked as the run
+    /// found it and as it leaves it (two checks a note more). Held at 15; the owner's bar is that nothing a person would
+    /// feel gets slower, and 8 ms on a run of 200 notes is not that.
+    static let drawTypedNotesUnchanged = 15.0
     /// The first script with the type restated in it and a field added: a book over the transaction and a checker made once for the
     /// list, however many notes it has, then each note checked by it. Some 4.4 ms (3.7, 4.4 and 5.8, load average 16 to 22).
     static let drawTypedNotesWithType = 14.0

@@ -22,9 +22,16 @@ private struct TypeInPocket {
     }
 }
 
-/// What the index told, commit after commit.
+/// What the index told, commit after commit: `changes` the types that came, went or changed (a commit that
+/// changed none adds nothing), `all` everything it delivered.
 @MainActor private final class Heard {
     var changes: [Set<ShapeID>] = []
+    var all: [TypeChange] = []
+
+    func hear(_ change: TypeChange) {
+        all.append(change)
+        if !change.types.isEmpty { changes.append(change.types) }
+    }
 }
 
 @MainActor let indexTests = Suite("The file's types", [
@@ -42,7 +49,7 @@ private struct TypeInPocket {
         let editor = try typeEditor()
         let types = try require(editor.types)
         let heard = Heard()
-        types.onChange { heard.changes.append($0) }
+        types.onChange { heard.hear($0) }
         let id = editor.add(memo("a pet"))
         let other = editor.add(memo("a book", at: CGPoint(x: 400, y: 40)))
         expectEqual(heard.changes, [], "no types yet")
@@ -88,10 +95,12 @@ private struct TypeInPocket {
         let ann = editor.addInstance("Ann", of: [person])
         let types = try require(editor.types)
         let heard = Heard()
-        types.onChange { heard.changes.append($0) }
+        types.onChange { heard.hear($0) }
         editor.addTypeLink(employee, to: ann)
         editor.removeTypeLink(person, from: ann)
-        expectEqual(heard.changes, [], "an instance's list changing tells nothing")
+        expectEqual(heard.changes, [], "an instance's list changing tells no type")
+        expectEqual(heard.all.map(\.lists), [[ann], [ann]], "it is told in `lists` alone")
+        expect(heard.all.allSatisfy { $0.types.isEmpty && $0.lineage.isEmpty && $0.marks.isEmpty && $0.membership.isEmpty && !$0.everything })
         editor.addTypeLink(person, to: employee)
         expectEqual(heard.changes, [[employee]], "Employee is a Person now")
         editor.undo()
@@ -126,7 +135,7 @@ private struct TypeInPocket {
         let editor = try typeEditor(file: tree.file, more: [PocketsPlugin()])
         let types = try require(editor.types)
         let heard = Heard()
-        types.onChange { heard.changes.append($0) }
+        types.onChange { heard.hear($0) }
         let other = typeRecord(TypeSchemaProperty.starter, title: "Other")
         editor.replaceFile(with: CanvasFile(root: CanvasDocument(shapes: [other])), showing: .root)
         expectEqual(types.types, [other.id])

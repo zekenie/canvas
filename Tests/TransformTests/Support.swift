@@ -41,7 +41,7 @@ func corralsTurnIntoPockets() -> Contributor {
         r.turnable(Corral.self, through: ContainerChannel.self)
         r.turnable(into: Pocket.self, through: ContainerChannel.self, label: "Pocket") { container, transaction in
             guard transaction.turn(container.id, into: Pocket(CGRect(origin: container.frame.origin, size: pocketSize))) else { return }
-            transaction.move(container.held, toBoardOwnedBy: container.id)
+            transaction.move(container.inside, toBoardOwnedBy: container.id)
         }
     }
 }

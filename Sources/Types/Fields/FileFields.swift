@@ -5,10 +5,11 @@ import Foundation
 /// every type of its own fields, a group's members, another type's fields' and a list's items'. What a query
 /// asks to say a path into `fieldValues` names a field no type has (`unknown`). Made when asked and kept until
 /// a type's schema, name or place in the chain changes (`FieldBook.fileFields`); it holds no shape and reads no value.
-/// And what `--ask` is told of them (`text(for:)`): a line for each titled type, its own fields, key first.
+/// And what `--ask` is told of them (`text(for:)`): a line for each titled type, its own fields, key first, and for a
+/// relationship type the types it relates, and the names typed on its ends and their flags.
 @MainActor
 public final class FileFields {
-    /// What a step can lead to: nothing more (a plain value or a pointer), anything (pairs, `Other`, a type
+    /// What a step can lead to: nothing more (a plain value), anything (pairs, `Other`, a type
     /// that is gone or a part of one, beyond the depth read), or members by key.
     private indirect enum Keys {
         case leaf
@@ -64,7 +65,7 @@ public final class FileFields {
         case .listOfGroups, .listOfTypeFields:
             guard let item = book.item(of: field) else { return .any }
             return keys(of: item, book: book, depth: depth)
-        case .plain, .choices, .list, .pointer, .pointers:
+        case .plain, .choices, .list:
             return .leaf
         case .pairs, .either, .other:
             return .any
@@ -127,8 +128,10 @@ extension FileFields {
     /// title, `builds on` and its parents' titles when it builds on any, then its own fields, each key first, then
     /// in quotes the name a person sees when the field's own `title` says another than the key's words, then its
     /// kind in parentheses), the types that share a word with `question` first, then by how many notes are one, then
-    /// by title. At most 8,000 characters: past them the last types are named on a last line, as many as fit. Empty
-    /// when no type is titled. Never a note's text or values.
+    /// by title. A relationship type's line says `relates A to B` after its name (`anything` for a side with no end) and
+    /// ends with `; rows:` and the rows its ends name or flag; an untitled one is told by `#` and its id. At most 8,000
+    /// characters: past them the last types are named on a last line, as many as fit. Empty when no type is titled.
+    /// Never a note's text or values.
     public func text(for question: String) -> String {
         let typeLines = lines
         guard !typeLines.isEmpty else { return "" }
@@ -175,13 +178,33 @@ extension FileFields {
 
     private func makeLines() -> [TypeLine] {
         guard let book, let index = editor?.types else { return [] }
+        let relationships = editor?.relationships?.graph
         var made: [TypeLine] = []
         for type in types {
-            guard let title = index.name(of: type), !title.isEmpty else { continue }
+            let relates = relationships.map { $0.isRelationshipType(type) } ?? false
+            // An untitled type is told only when it is a relationship type, by its id: an id is something an agent may be given.
+            let named = index.name(of: type).flatMap { $0.isEmpty ? nil : $0 }
+            guard let title = named ?? (relates ? "#" + type.rawValue.uuidString : nil) else { continue }
             let own = book.fields(types: [type]).fields.filter { $0.source == type }
             let parents = index.links(of: type).compactMap { link in index.isType(link.shape) ? index.name(of: link.shape) : nil }.filter { !$0.isEmpty }
-            var line = title + (parents.isEmpty ? "" : " builds on " + parents.joined(separator: ", ")) + ": "
+            var line = title + (parents.isEmpty ? "" : " builds on " + parents.joined(separator: ", "))
             var words = Self.words(in: title)
+            var rows = ""
+            if relates, let relationships {
+                let sides = relationships.sides(of: type)
+                func titled(_ side: RelationshipSide) -> String {
+                    let names = sides.types(on: side).map { index.name(of: $0).flatMap { $0.isEmpty ? nil : $0 } ?? "an untitled type" }
+                    return names.isEmpty ? "anything" : names.joined(separator: " or ")
+                }
+                line += " relates \(titled(.from)) to \(titled(.to))"
+                // What is told of the ends: the end types' titles are words of the line, and so are the names typed on the ends.
+                for end in sides.from + sides.to {
+                    if let name = index.name(of: end.type) { words.formUnion(Self.words(in: name)) }
+                    if let name = end.name { words.formUnion(Self.words(in: name)) }
+                }
+                rows = Self.rows(of: type, sides: sides, index: index)
+            }
+            line += ": "
             if own.isEmpty {
                 line += "no fields"
             } else {
@@ -193,9 +216,33 @@ extension FileFields {
                     words.formUnion(Self.words(in: FieldName.words(of: field.field)))
                 }
             }
+            line += rows
             made.append(TypeLine(id: type, title: title, line: line, size: line.count, words: words))
         }
         return made
+    }
+
+    /// `; rows: Person "jobs" (only one), Company "staff" (needed)`: for each row an end gives that has a name typed on
+    /// its arrow or a flag (Needed, Only one), the end type, the name in quotes and the flags in parentheses. A name
+    /// derived from a type's title is not told. Nothing when no row has either.
+    private static func rows(of type: ShapeID, sides: RelationshipSides, index: TypeIndex) -> String {
+        var clauses: [String] = []
+        for rows in RelationshipEnds.rows(of: type, sides: sides).sorted(by: { first, second in
+            let order = (sides.from + sides.to).map(\.type)
+            return (order.firstIndex(of: first.key) ?? 0) < (order.firstIndex(of: second.key) ?? 0)
+        }) {
+            let end = index.name(of: rows.key).flatMap { $0.isEmpty ? nil : $0 } ?? "an untitled type"
+            for row in rows.value {
+                var typed: String?
+                if case .typed(let name) = row.key.label { typed = name }
+                var flags: [String] = []
+                if row.rule.needed { flags.append("needed") }
+                if row.rule.onlyOne { flags.append("only one") }
+                guard typed != nil || !flags.isEmpty else { continue }
+                clauses.append(end + (typed.map { " \"\($0)\"" } ?? "") + (flags.isEmpty ? "" : " (\(flags.joined(separator: ", ")))"))
+            }
+        }
+        return clauses.isEmpty ? "" : "; rows: " + clauses.joined(separator: ", ")
     }
 
     /// A field as the block writes it: its key, the name a person sees in quotes when it is another than the key's
@@ -219,7 +266,7 @@ extension FileFields {
         }
     }
 
-    /// A kind's words: `text`, `whole number`, `draft|paid`, `list of text`, `link to Person`, `fields of Address`.
+    /// A kind's words: `text`, `whole number`, `draft|paid`, `list of text`, `fields of Address`.
     private static func word(of kind: FieldKind, book: FieldBook) -> String {
         func type(_ id: ShapeID) -> String { book.name(of: id).flatMap { $0.isEmpty ? nil : $0 } ?? (book.schemaText(of: id) == nil ? "a gone type" : "an untitled type") }
         switch kind {
@@ -230,8 +277,6 @@ extension FileFields {
         case .listOfTypeFields(let id): return "list of fields of " + type(id)
         case .group: return "group"
         case .typeFields(let id): return "fields of " + type(id)
-        case .pointer(let id): return "link to " + type(id)
-        case .pointers(let id): return "links to " + type(id)
         case .pairs(let value): return "pairs of " + word(of: value)
         case .either(let first, let second): return word(of: first, book: book) + " or " + word(of: second, book: book)
         case .other: return "other"
@@ -268,12 +313,16 @@ extension FileFields {
 }
 
 extension FieldBook {
-    /// The file's types' members, made again when a type comes, goes or changes its schema, name or own types.
+    /// The file's types' members, made again when a type comes, goes or changes its schema, name or own types, or a
+    /// relationship type's ends change (the index's revision).
     public var fileFields: FileFields? {
         guard let editor = editorForFileFields, let index = editor.types else { return nil }
-        if let kept = fileFieldsKept, kept.stamp == index.stamp { return kept.fields }
+        // The types' own fields and names move the stamp; the relationship types' ends, their typed names and flags, the
+        // relationship index's revision.
+        let revision = editor.relationships?.revision ?? 0
+        if let kept = fileFieldsKept, kept.stamp == index.stamp, kept.revision == revision { return kept.fields }
         let fields = FileFields(book: self, types: Array(index.types), editor: editor)
-        fileFieldsKept = (index.stamp, fields)
+        fileFieldsKept = (index.stamp, revision, fields)
         return fields
     }
 }

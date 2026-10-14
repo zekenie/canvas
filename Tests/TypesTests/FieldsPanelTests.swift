@@ -113,7 +113,7 @@ extension TypePanelWindow {
         expectEqual(try kinds([FieldFixtures.employeeID]), ["name: Text", "email: Text", "role: Text", "startDate: Date"], "Person's first")
         expectEqual(try kinds([FieldFixtures.kindsAID]), ["name: Text", "price: Number", "due: Date", "done: Yes or no", "status: Choice",
                                                           "roles: form", "tags: form", "venue: form", "shippingAddress: form"])
-        expectEqual(try kinds([FieldFixtures.kindsBID]), ["customer: form", "guests: form", "lineItems: form", "rooms: form", "size: Number/Text",
+        expectEqual(try kinds([FieldFixtures.kindsBID]), ["customer: Text", "guests: form", "lineItems: form", "rooms: form", "size: Number/Text",
                                                           "labels: form", "anything: form", "payment: form", "count: Number"])
         expectEqual(try kinds([FieldFixtures.personID], values: ["zeta": "z", "alpha": 1, "email": "a@b.c"]),
                     ["name: Text", "email: Text", "unnamed alpha", "unnamed zeta"], "in key order, after the fields")
@@ -281,8 +281,9 @@ extension TypePanelWindow {
         panel.window.spin { panel.neededDots.count == 3 }
         expectEqual(panel.neededDots.count, 3, "name, customer and line items")
         expect(panel.neededDots.allSatisfy { $0.frame.size == CGSize(width: TypesStyle.neededDotSize, height: TypesStyle.neededDotSize) })
-        let customer = try require(panel.forms.first)
-        let dotAboveForm = panel.neededDots.contains { panel.frame(of: $0).maxY <= panel.frame(of: customer).minY + 1 && panel.frame(of: customer).minY - panel.frame(of: $0).maxY < 30 }
+        let dotAboveForm = panel.forms.contains { form in
+            panel.neededDots.contains { panel.frame(of: $0).maxY <= panel.frame(of: form).minY + 1 && panel.frame(of: form).minY - panel.frame(of: $0).maxY < 30 }
+        }
         expect(dotAboveForm, "the dot is by the name above the form, not inside it")
         panel.editor.fieldWriter?.set("Ann", at: FieldPath(field: "name"), of: id)
         panel.window.spin { panel.neededDots.count == 2 }

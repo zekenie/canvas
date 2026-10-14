@@ -336,6 +336,17 @@ extension TitlePill: Adornment {
     public static var order: Int { 50 }
 }
 
+extension CanvasEditor {
+    /// The rect of a shape's title pill, in world units, at the zoom now, where the shape is (not where
+    /// a shake draws it): what something that hangs from the pill (a card to name the shape) goes by,
+    /// and what Find rings. Nil where the shape shows none: a plain untitled one, a look that hides the
+    /// pill, a shape drawn as a skeleton (zoomed out, its title is its cover, `titleCover(of:)`), a
+    /// pill left out for want of room, one not on the board.
+    public func titlePillRect(of id: ShapeID) -> CGRect? {
+        adornmentFrames(of: id).first { $0.adornment == .of(TitlePill.self) }?.rect
+    }
+}
+
 private struct TitleKey: Hashable { let kind: ShapeKind }
 private struct PillLooksKey: Hashable { let kind: ShapeKind }
 

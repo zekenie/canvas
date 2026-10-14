@@ -132,18 +132,33 @@ private let lineItems = FieldPath(field: "lineItems")
         expect(!writer.set("x", at: FieldPath([.index(0)]), of: id), "a path that starts with an index")
         expect(log.refusals.isEmpty)
     },
-    test("a shape on a board that isn't shown is refused") {
+    test("a shape on a board that isn't shown is read and written where it is: one step, undone whole, and refused when it cannot change") {
         let pocket = ShapeID(), card = ShapeID()
         let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 0, y: 0, width: 100, height: 100))))]),
                               children: [pocket: CanvasDocument(shapes: [instanceRecord("", of: [], at: .zero, id: card)])])
-        let editor = try typeEditor(file: file, more: [PocketsPlugin()])
+        let log = RefusalLog()
+        let editor = try typeEditor(file: file, more: [PocketsPlugin(), FreezingPlugin(log: log)])
         let writer = try require(editor.fieldWriter)
-        expect(!writer.set("x", at: giftNote, of: card))
+        expect(writer.set("x", at: giftNote, of: card), "written on the board it is on")
+        expectEqual(writer.values(of: card)["giftNote"], "x", "and read there")
+        expect(editor.document[card] == nil, "the board shown is the root")
+        expectEqual(editor.undoHistory.undoName, "Change Gift Note")
+        expect(writer.set("xy", at: giftNote, of: card), "typing on is the same step")
+        editor.undo()
+        expectEqual(writer.values(of: card), FieldValues(), "one Undo takes it back whole")
         expect(editor.showBoard(BoardID(owner: pocket)))
-        expect(writer.set("x", at: giftNote, of: card))
+        expect(writer.set("y", at: giftNote, of: card), "and on the board shown")
         expect(editor.showBoard(.root))
-        expectEqual(writer.values(of: card), FieldValues(), "not the board shown's")
-        expect(!writer.set("y", at: giftNote, of: card))
+        // A step the card holds reaches it too.
+        let before = writer.values(of: card)
+        expect(writer.set("z", at: giftNote, of: card, step: .card(key: "a card")))
+        expectEqual(writer.values(of: card)["giftNote"], "z")
+        editor.undo()
+        expectEqual(writer.values(of: card), before)
+        // Refused as a shape on the board shown is, and heard.
+        editor.transact { $0.update(inFile: card) { $0[Frozen.self] = true } }
+        expect(!writer.set("w", at: giftNote, of: card))
+        expect(log.refusals.contains { $0.contains(card) }, "services hear it")
     },
     test("typed text is stored as the kind reads it: 9.50 is 9.5, 02134 is text, a number below a minimum stays, empty clears") {
         let editor = try fieldEditor()

@@ -10,7 +10,8 @@ import Types
 
 private let person = FieldFixtures.personID, address = FieldFixtures.addressID
 private func ref(_ id: ShapeID) -> String { FieldFixtures.uri(of: id) }
-private let personLink = #"{"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "\#(ref(person))"}}"#
+/// What a field that named a note was written as: the app no longer reads it as anything but text.
+private let oldPointer = #"{"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "\#(ref(person))"}}"#
 
 /// A field the book can read: `schema` as the one property of a type's root, written as a chain does.
 @MainActor private func field(_ schema: String, holdsItself: Bool = false) throws -> Resolved.Field {
@@ -61,8 +62,8 @@ private let rows: [Row] = [
     Row(schema: #"{"type": "object", "properties": {"name": {"type": "string"}}}"#, kind: .group, label: "1 field", hasMore: true, opensOnType: true, members: 1),
     Row(schema: #"{"$ref": "\#(ref(address))"}"#, kind: .typeFields(address), label: "", hasMore: true, opensOnType: true),
     Row(schema: #"{"$ref": "\#(ref(address))", "properties": {"x": {"type": "string"}}}"#, kind: .typeFields(address), label: "", hasMore: true, opensOnType: true),
-    Row(schema: personLink, kind: .pointer(person), label: "→", hasMore: false, opensOnType: false),
-    Row(schema: #"{"type": "array", "items": \#(personLink)}"#, kind: .pointers(person), label: "List of →", hasMore: true, opensOnType: false),
+    Row(schema: oldPointer, kind: .plain(.text), label: "Text", hasMore: false, opensOnType: false),
+    Row(schema: #"{"type": "array", "items": \#(oldPointer)}"#, kind: .list(of: .text), label: "List of Text", hasMore: true, opensOnType: false),
     Row(schema: #"{"type": "array", "items": {"type": "object", "properties": {"product": {"type": "string"}}}}"#, kind: .listOfGroups, label: "List", hasMore: true, opensOnType: true),
     Row(schema: #"{"type": "array", "items": {"$ref": "\#(ref(address))"}}"#, kind: .listOfTypeFields(address), label: "List of", hasMore: true, opensOnType: true),
     Row(schema: #"{"anyOf": [{"type": "number"}, {"type": "string"}]}"#, kind: .either(.plain(.number(integer: false)), .plain(.text)), label: "Number or Text", hasMore: false, opensOnType: false),
@@ -82,7 +83,7 @@ private let rows: [Row] = [
     Row(schema: #"{"anyOf": [{"type": "string"}, {"type": "null"}]}"#, kind: .plain(.text), label: "Text", hasMore: false, opensOnType: false),
     Row(schema: #"{"oneOf": [{"type": "null"}, {"$ref": "\#(ref(address))"}]}"#, kind: .typeFields(address), label: "", hasMore: true, opensOnType: true),
     Row(schema: #"{"type": ["number", "string", "null"]}"#, kind: .either(.plain(.number(integer: false)), .plain(.text)), label: "Number or Text", hasMore: false, opensOnType: false),
-    Row(schema: #"{"anyOf": [\#(personLink), {"type": "null"}]}"#, kind: .pointer(person), label: "→", hasMore: false, opensOnType: false),
+    Row(schema: #"{"anyOf": [\#(oldPointer), {"type": "null"}]}"#, kind: .plain(.text), label: "Text", hasMore: false, opensOnType: false),
     Row(schema: #"{"type": "array", "items": {"type": ["string", "null"]}}"#, kind: .list(of: .text), label: "List of Text", hasMore: true, opensOnType: false),
     // An either with a branch that is not plain: a card, and `Either` on the type.
     Row(schema: #"{"anyOf": [{"type": "object", "properties": {"a": {"type": "string"}}}, {"type": "string"}]}"#,
@@ -141,7 +142,7 @@ private let rows: [Row] = [
         let b = book.fields(types: [FieldFixtures.kindsBID])
         expectEqual(b.fields.count, 9)
         let more: [(String, FieldKind, onType: Bool, onNote: Bool)] = [
-            ("customer", .pointer(person), false, false), ("guests", .pointers(person), false, true), ("lineItems", .listOfGroups, true, true),
+            ("customer", .plain(.text), false, false), ("guests", .list(of: .text), false, true), ("lineItems", .listOfGroups, true, true),
             ("rooms", .listOfTypeFields(address), true, true), ("labels", .pairs(value: .text), true, true), ("anything", .other, true, true),
             ("payment", .either(.group, .plain(.text)), true, true),
         ]
@@ -161,7 +162,7 @@ private let rows: [Row] = [
         let order = book.fields(types: [FieldFixtures.orderID])
         expectEqual(order.fields.map(\.field.name), ["customer", "shippingAddress", "lineItems", "status", "tags", "gift", "giftNote"])
         expectEqual(order.fields.map { book.kind(of: $0) }, [
-            .pointer(person), .typeFields(address), .listOfGroups, .plain(.choice(choices("draft", "paid", "shipped"))), .list(of: .text), .plain(.yesNo), .plain(.text),
+            .plain(.text), .typeFields(address), .listOfGroups, .plain(.choice(choices("draft", "paid", "shipped"))), .list(of: .text), .plain(.yesNo), .plain(.text),
         ])
         expectEqual(order.fields.filter(\.field.isRequired).map(\.field.name), ["customer", "lineItems"])
         expectEqual(Set(order.rules.flatMap(\.members).map(\.key)), ["if", "then"], "the gift note, needed while gift is ticked")
@@ -184,14 +185,12 @@ private let rows: [Row] = [
         expectEqual(read, .typeFields(gone), "a type that is gone still reads as its fields")
         expectEqual(read.chip, gone)
     },
-    test("the chip follows a field of another type's fields, a list of them and a link, and nothing else") {
+    test("the chip follows a field of another type's fields and a list of them, and nothing else") {
         expectEqual(FieldKind.typeFields(address).chip, address)
         expectEqual(FieldKind.listOfTypeFields(address).chip, address)
-        expectEqual(FieldKind.pointer(person).chip, person)
-        expectEqual(FieldKind.pointers(person).chip, person)
         expectEqual(FieldKind.group.chip, nil)
         expectEqual(FieldKind.plain(.text).chip, nil)
-        expectEqual(FieldKind.either(.pointer(person), .plain(.text)).chip, nil)
+        expectEqual(FieldKind.either(.typeFields(address), .plain(.text)).chip, nil)
     },
     test("the field a path names: through a group, a type's fields, a list of groups, pairs and an either") {
         let editor = try fieldEditor()
@@ -210,7 +209,7 @@ private let rows: [Row] = [
         expectEqual(kind(FieldPath(field: "tags").index(0), of: order), .plain(.text), "an element of a list of plain values")
         expectEqual(kind(FieldPath(field: "rooms").index(0), of: b), .typeFields(address))
         expectEqual(kind(FieldPath(field: "rooms").index(0).key("street"), of: b), .plain(.text))
-        expectEqual(kind(FieldPath(field: "guests").index(2), of: b), .pointer(person))
+        expectEqual(kind(FieldPath(field: "guests").index(2), of: b), .plain(.text))
         expectEqual(kind(FieldPath(field: "labels").key("size"), of: b), .plain(.text), "a pair's value, whatever its name")
         expectEqual(kind(FieldPath(field: "payment").key("cardNumber"), of: b), .plain(.text), "an either takes the branch that has the step")
         // Nothing names these.
@@ -246,14 +245,12 @@ private let rows: [Row] = [
         expectEqual(book.pairValue(of: try field(#"{"type": "string"}"#))?.field.name, nil)
         expectEqual(book.pairValue(of: try field(#"{"type": "object", "additionalProperties": false}"#))?.field.name, nil)
     },
-    test("a pointer whose contentSchema names a part of a type, or something else, is text; the media type is the literal; pointerSchema reads as a pointer") {
+    test("a schema that was a pointer reads as text, and a list of them as a list of text: the media type and the contentSchema are only words") {
+        expectEqual(try readKind(oldPointer), .plain(.text))
+        expectEqual(try readKind(#"{"type": "array", "items": \#(oldPointer)}"#), .list(of: .text))
         let fragment = #"{"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "\#(ref(person))#/$defs/x"}}"#
         expectEqual(try readKind(fragment), .plain(.text))
         let elsewhere = ##"{"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "#/$defs/x"}}"##
         expectEqual(try readKind(elsewhere), .plain(.text))
-        expectEqual(FieldKind.pointerMediaType, "text/x-canvas-link")
-        let json = String(decoding: try JSONEncoder().encode(JSONValue.object(FieldKind.pointerSchema(to: person))), as: UTF8.self)
-        expectEqual(try readKind(json), .pointer(person))
-        expectEqual(try readKind(#"{"type": "array", "items": \#(json)}"#), .pointers(person))
     },
 ])

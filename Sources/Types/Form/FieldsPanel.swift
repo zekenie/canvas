@@ -26,7 +26,7 @@ extension TypesStyle {
 public enum FieldsPanelRow: Identifiable {
     /// A field a box, a checkbox or a menu suits: the kinds it takes (an either's two), and what it holds.
     case plain(Resolved.Field, [PlainKind], JSONValue?)
-    /// Every other kind: a field with more in it, a pointer, pointers, `Other`.
+    /// Every other kind: a field with more in it, `Other`.
     case form(Resolved.Field, FieldKind)
     /// A value no field names: its key as written.
     case unnamed(String, JSONValue)

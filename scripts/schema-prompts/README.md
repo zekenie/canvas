@@ -157,15 +157,16 @@ object, as `SchemaDocument.fields` does: `$title` is a setting, not a field. `sa
 looks at `/properties` fails on a `$title` added to a type that had none. Added for the types cut:
 
 - `titleis:/ptr=a|b|`: the member's `title` is one of the alternatives (case-insensitive, trimmed); an empty one accepts no title.
-- `pointer:@Word=n`: n schemas, anywhere, that are a string with `contentMediaType` `text/x-canvas-link` and a
-  `contentSchema` that is exactly `{"$ref": "@Word"}`, with no member but those, a title and a description. All
-  three are demanded: the plan's fallback (`x-canvas-link`) is decided by whether Haiku drops one.
+- `noprop:/ptr=a|b|c`: none of the keys is a property at `/ptr` (the negation of `anyprop`; a `$`-key is no property).
 - `plainref:@Word=n`: n schemas that are exactly `{"$ref": "@Word"}`, not a `contentSchema`'s (`refs:` counts both).
 - `titlefrom:key`, `notitle`: `/properties/$title` is `{"x-canvas-from": key}`; there is none.
 - `lastkey:/ptr=key`: the last member of the object at `/ptr`, as the answer orders it, is `key`.
 - `onlydiff:/p1,/p2`: the answer is the input (its root `title` aside) except at and under the listed pointers.
 - `condtests`: every `if` has a non-empty `properties`; `condthen:key=a|b`: some `then` beside an `if` that tests `key` requires one of `a|b`.
-- `textcount:needle=n`: the answer's text holds `needle` exactly n times.
+
+Every to-schema answer also gets one check no case names, `pointer-like`: an answer that holds the old link media type
+(`text/x-canvas-link`) or a `contentSchema` with a `$ref` fails, whatever the case asks. Nothing in the prompts says a word of
+a field that names a note any more, so a model that writes one is writing it unasked.
 
 `python3 evals.py --check` also runs `selftest()`: for each new check, hand-written answers it passes and answers it
 fails, so every check is shown able to fail before a model is asked; and reads `cases.csv` to see that every check
@@ -174,7 +175,84 @@ hand-written to-prompt answers with `parse` (the ones `SyncTests`' `promptTests`
 so the two readers are held to the same answers), and scores a remark before a prompt with and without the tags (below).
 `highlight_evals.py --check` finds every case's words in its prompt.
 
-## The prompts of "Types and new shapes", slice 17 (run 2026-10-12, a lite round)
+## Relationships in the words (2026-10-12, the pointer goes)
+
+A field that named another note (a pointer, `text/x-canvas-link`) is gone from the app, and so from the prompts. The three
+references literals (`SchemaPrompts.swift`: `toSchemaReferences`, `toPromptReferences`, `highlightsReferences`) and the
+always-sent `toSchemaTitle` changed; nothing else did. What they say now: a word the prompt gives as a part of the thing ("its
+@Address", "shipped to a @Address") is a `$ref`, and so is a bare `@` word with nothing said of how the thing relates to it
+(the owner's pick, Q2 (b): it embeds as it did); a phrase that relates the thing to the word instead ("is in a @Layer", "belongs
+to a @Team", "assigned to a @Person", "works at a @Company", "links to", "points to", "refers to") writes no property at all, and
+the words stay word for word through every rewrite; an unclear phrase is a part (as it was), so the lite round below is what says
+whether the relationship cases hold. The pointer's cases are gone (`s_link_a`, `s_points_to`, `s_refers_to`, `s_link_list`,
+`s_link_and_part`, `s_link_no_pill`, `s_link_dropped`, `p_link_words`, `h_link_pointer`, the `pointer:` and `textcount:` checks);
+`s_bare_type` and `s_title_not_plain` are aimed at the `$ref`.
+
+New cases: to-schema `s_rel_in`, `s_rel_belongs`, `s_rel_assigned`, `s_rel_works_at`, `s_rel_links_to`, `s_rel_list`,
+`s_rel_and_part`, `s_rel_kept_edit`, `s_rel_ref_stays`, `s_rel_self`, `s_rel_no_pill`, and for a relationship type's own words
+`s_reltype_ends`, `s_reltype_vague`, `s_reltype_vague_friend` (its ends are arrows, never properties); to-prompt
+`p_rel_words_kept`, `p_rel_no_previous`, `p_rel_nochange`; the chain `chain_relate_stays` (five edits around a standing "is in a
+@Layer": after every schema no property for Layer, no `$ref` to it, nothing pointer-like; after the two to-prompt steps the words
+still say "is in a @Layer"); highlights `h_rel_no_link`, `h_rel_part_and_rel` (an `@` word nothing points to gets no link).
+
+The round to run is the lite one (a few dozen calls, no more: the 490-call round is not asked for), with the key in the
+environment or in Settings, never printed:
+
+    python3 evals.py --check && python3 highlight_evals.py --check          # offline, no key
+    python3 evals.py --round 34 --runs 3 --only s_rel_in,s_rel_belongs,s_rel_assigned,s_rel_works_at,s_rel_links_to,s_rel_list,s_rel_and_part,s_rel_kept_edit,s_rel_ref_stays,s_rel_self,s_rel_no_pill,s_reltype_ends,s_reltype_vague,s_reltype_vague_friend,p_rel_words_kept,p_rel_no_previous,p_rel_nochange,s_bare_type,s_ref_new,s_ref_added,s_ref_kept,s_ref_removed,s_ref_roles,s_ref_unlisted_at,s_title_not_plain,s_title_called,s_vague_pet,p_ref_from_nothing,p_ref_added,p_ref_removed,p_ref_kept,p_bare_words
+    python3 evals.py --round 34 --runs 3 --chains-only
+    python3 highlight_evals.py --runs 2 --only h_rel_no_link,h_rel_part_and_rel,order_roles
+
+Gates: the relation cases (`s_rel_*` except `s_rel_no_pill`, `s_reltype_*`, `p_rel_*`) 3 of 3 runs, and at most one miss in thirty
+runs overall, any miss a field the person can delete and never a broken note; `chain_relate_stays` 3 of 3 with no violation in
+fifteen steps; `s_ref_*`, `p_ref_*`, `s_bare_type` 3 of 3; every other case in the set as often as in the last round. If a relation
+case fails: reword the three literals and run again; then tell the request which types the type is related to (a `<related>`
+block); then, for a relationship type's own words only, one more literal; the ladder is built only on a failed gate.
+
+Run on 2026-10-12 (Haiku 5.5 at `medium`, rounds 34 and 35 in `results.csv`): to-schema 65 of 72 runs, to-prompt 24 of 24, the
+three highlights 6 of 6 (recall 18 of 18). What missed, and what was done:
+
+- `s_rel_ref_stays` 0 of 3 in round 34, all three `NO_CHANGE`: the case asked for a change, and none is right (a relationship added
+  beside a part writes nothing, so the schema is as it was). Its first check is now `nochange_or_same`; 3 of 3 in round 35.
+- `s_rel_assigned` 2 of 3 in round 34, the miss an `indent` (formatting, the fields right; `indent` has missed one to three runs a
+  round since round 20); 3 of 3 in round 35.
+- `s_reltype_vague` 0 of 3: for the one word "employment" the model writes an `employer` field. Nothing tells it that Employment is a
+  relationship type, so no rewording of the three literals can fix it: this is the ladder's last rung (one more literal, sent for a
+  relationship type's own words only), which needs the type's mark and is built with it. Until then a type called Employment written
+  from one vague word gets a field for its other party, which the person can delete. `s_reltype_ends` and `s_reltype_vague_friend` 3 of 3.
+- Every other relation case 3 of 3 (`s_rel_in`, `_belongs`, `_works_at`, `_links_to`, `_list`, `_and_part`, `_kept_edit`, `_self`,
+  `_no_pill`, `p_rel_*`), `s_ref_*`, `p_ref_*` and `s_bare_type` 3 of 3, `chain_relate_stays` passed twice with no violation.
+- `chain_roundtrip` failed at its first step in both rounds: asked for the words of the Order schema from nothing, the model answers
+  `NO_CHANGE` (five of five asks). That request is the to-prompt base and titles alone, which did not change here (it failed the same
+  way in round 22 and passed in 23 and 33), so it is not this change's; it is open.
+
+## The relationship type's literal (2026-10-12, the ladder's last rung)
+
+`s_reltype_vague` failed 0 of 3 in rounds 34 and 35: for the one word "employment" the model writes an `employer` field, and nothing
+in the request said that Employment is a relationship type. The to-schema system prompt now gets one more literal, sent for the words
+of a relationship type alone (the shape holds the mark), after the titles and before the references: `toSchemaRelationshipType`
+(`SchemaPrompts.swift`). It says the type describes a relationship between two things; that who or what it relates is drawn as arrows,
+never a property, however the prompt names them (`@` words, plain words, or one word that implies them); and that its properties are
+only what the relationship itself holds (a role, a start date), 2 to 5 for a vague prompt. `gen_cases.py` takes `relationship=True`
+and writes a `relationship` column; the `s_reltype_*` cases say so, and `evals.py` sends the literal for them and for no other case
+(`--check` holds the order and the cases). The to-prompt direction is told nothing.
+
+The round, with the key in the environment or in Settings, never printed:
+
+    python3 evals.py --check && python3 highlight_evals.py --check          # offline, no key
+    python3 evals.py --round 36 --runs 3 --only s_reltype_ends,s_reltype_vague,s_reltype_vague_friend
+    python3 evals.py --round 36 --runs 3 --only s_rel_in,s_rel_belongs,s_rel_assigned,s_rel_works_at,s_rel_links_to,s_rel_list,s_rel_and_part,s_rel_kept_edit,s_rel_ref_stays,s_rel_self,s_rel_no_pill,p_rel_words_kept,p_rel_no_previous,p_rel_nochange,s_bare_type,s_ref_new,s_ref_added,s_ref_kept,s_ref_removed,s_ref_roles,s_ref_unlisted_at,s_title_not_plain,s_title_called,s_vague_pet,p_ref_from_nothing,p_ref_added,p_ref_removed,p_ref_kept,p_bare_words
+    python3 evals.py --round 36 --runs 3 --chains-only
+
+Gates: the three `s_reltype_*` cases 3 of 3 runs, and every other case of the "Relationships in the words" set as often as in round 35 (the
+literal is sent to no other case, so they should not move). If `s_reltype_vague` still fails: reword the literal's second bullet; the
+ladder has no rung after this one.
+
+Run on 2026-10-12 (Haiku 5.5 at `medium`, round 36 in `results.csv`): the three `s_reltype_*` cases, three runs each, 9 of 9, so
+`s_reltype_vague` is 3 of 3 where it was 0 of 3 (no `employer`, no field for either party). The other two lines were not run again:
+the literal is sent for those three cases alone, so every other case's request is byte for byte what rounds 34 and 35 asked.
+
+## The prompts of "Types and new shapes", slice 17 (run 2026-10-12, a lite round; its pointer has since gone, see above)
 
 The prompts: a rename keeps the field's key and puts the
 new name in its `"title"` (and the words are written by that title); a pointer (`text/x-canvas-link`) is written for

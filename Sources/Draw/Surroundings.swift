@@ -30,6 +30,9 @@ public enum PlacingStyle {
     public static let sides: [Direction] = [.right, .below, .left, .above]
     /// The corners `inside` tries in a frame, in reading order: the first with room wins.
     public static let corners: [Part] = [.topLeft, .topRight, .bottomLeft, .bottomRight]
+    /// The room an arrow to or from a shape placed between two others needs, between the two edges it
+    /// joins: a body long enough to show a head and read as an arrow, as draw's `normal` gap leaves one.
+    public static let arrowRoom: CGFloat = GapName.normal.value
 }
 
 /// A board shapes land on, as `canvas draw` reads the board it places shapes on: read in place
@@ -83,23 +86,33 @@ public struct Surroundings {
     /// side placed there, it's put in the container as `inside(_:)` puts it, and raised above it.
     public func near(_ target: ShapeID, within holder: ShapeID? = nil) -> Landing? {
         guard let bounds = reading.shapes.geometry(of: target)?.bounds else { return nil }
-        return near(bounds, obstacle: obstacle(target), within: holder)
+        return near(bounds, obstacle: obstacle(target), within: holder, avoiding: [])
     }
 
-    private func near(_ bounds: CGRect, obstacle targetObstacle: Int?, within holder: ShapeID?) -> Landing? {
+    /// Beside a box that is not a shape of the board yet (or not there any more): as `near(_:within:)`
+    /// lands beside a shape with these bounds. `avoiding` are boxes a caller has planned and not put
+    /// down, which the landing keeps clear of as of any shape there.
+    public func near(_ rect: CGRect, avoiding: [CGRect] = [], within holder: ShapeID? = nil) -> Landing? {
+        near(rect, obstacle: nil, within: holder, avoiding: avoiding)
+    }
+
+    private func near(_ bounds: CGRect, obstacle targetObstacle: Int?, within holder: ShapeID?, avoiding: [CGRect],
+                      sides: [Direction] = PlacingStyle.sides) -> Landing? {
         guard !bounds.isNull, bounds.isFinite else { return nil }
-        var fixed = [LayoutProblem.Fixed(rect: bounds, obstacle: targetObstacle)]
+        // A point to land beside (the middle of two shapes) is no shape: it has no area, so a shape under it would be held by it at
+        // any size (the solver's zone (a)) and landed on. Marked as the board, nothing is a zone of it and what is under it is in the way.
+        var fixed = [LayoutProblem.Fixed(rect: bounds, obstacle: targetObstacle, word: bounds.width * bounds.height == 0 ? .board : nil)]
         var held: LayoutProblem.Holder?
         if let holder, let holding = reading.shapes.geometry(of: holder)?.bounds, !holding.isNull, holding.isFinite {
             fixed.append(LayoutProblem.Fixed(rect: holding, obstacle: obstacle(holder)))
             held = LayoutProblem.Holder(.fixed(1), written: "in \(Self.holder)", direct: true)
         }
         var best: (rect: CGRect, gap: CGFloat, zones: [ShapeID])?
-        for side in PlacingStyle.sides {
+        for side in sides {
             let clause = LayoutProblem.ResolvedClause(relation: .direction(side), targets: [LayoutProblem.ResolvedTarget(.fixed(0), written: Self.target)],
                                                        written: "\(side.rawValue) \(Self.target)")
             guard let placed = place(LayoutProblem.Free(line: 1, name: Self.moving, size: size, clauses: [clause], holder: held, carries: carries),
-                                     fixed: fixed)
+                                     fixed: fixed, avoiding: avoiding)
             else { continue }
             let gap = Self.gap(from: bounds, to: placed.rect, side)
             if best.map({ gap < $0.gap - Self.slack }) ?? true { best = (placed.rect, gap, placed.zones) }
@@ -110,6 +123,50 @@ public struct Surroundings {
             return Landing(board: reading.board, rect: CGRect(x: bounds.maxX + gap, y: bounds.midY - size.height / 2, width: size.width, height: size.height))
         }
         return Landing(board: reading.board, rect: best.rect, above: best.zones + (held == nil ? [] : [holder].compactMap { $0 }))
+    }
+
+    /// Between two shapes, which an arrow from the first to it and another from it to the second join:
+    /// across the gap the two leave between them, along the axis they are further apart on (the other if
+    /// the gap there can't hold it), centered in it and on the middle of the two across, with the room
+    /// each arrow needs (`room`, by default `PlacingStyle.arrowRoom`; a caller whose arrows carry names asks for more) left clear on each side, so each shows a body. The two
+    /// are read `growing` taller, as the caller is about to give each a row. Where that spot is taken
+    /// (something on the board in it, but the frames the two are in, which it is raised above) or neither gap holds it, beside the middle of the two as `near`
+    /// lands beside a box, clear of both: the nearer of the two sides across the line between them, never
+    /// along it. With one shape drawn, beside it (`near`); none, nil.
+    public func between(_ first: ShapeID, _ second: ShapeID, growing: CGFloat = 0, room: CGFloat? = nil) -> Landing? {
+        func grown(_ id: ShapeID) -> CGRect? {
+            guard var bounds = reading.shapes.geometry(of: id)?.bounds, !bounds.isNull, bounds.isFinite else { return nil }
+            bounds.size.height += max(0, growing)
+            return bounds
+        }
+        guard let a = grown(first), let b = grown(second) else { return grown(first) == nil ? near(second) : near(first) }
+        let middle = CGPoint(x: (a.midX + b.midX) / 2, y: (a.midY + b.midY) / 2)
+        let room = room ?? PlacingStyle.arrowRoom
+        // The gaps the two leave along each axis, the wider first; those that hold the box and its arrows' rooms.
+        let apart = [(horizontal: true, gap: max(b.minX - a.maxX, a.minX - b.maxX), start: min(a.maxX, b.maxX), size: size.width),
+                     (horizontal: false, gap: max(b.minY - a.maxY, a.minY - b.maxY), start: min(a.maxY, b.maxY), size: size.height)]
+            .sorted { $0.gap > $1.gap }
+        let gaps = apart.filter { $0.gap >= $0.size + 2 * room }
+        // The frames the two are in, at any depth, are regions the box sits on, not in its way (the solver's zones).
+        var frames: [ShapeID] = []
+        for id in [first, second] {
+            var up = reading.shapes.container(of: id)
+            while let frame = up, !frames.contains(frame) { frames.append(frame); up = reading.shapes.container(of: frame) }
+        }
+        let theirs = ([first, second] + frames).compactMap { obstacle($0) }
+        if let axis = gaps.first {
+            let along = axis.start + (axis.gap - axis.size) / 2
+            let rect = axis.horizontal
+                ? CGRect(x: along, y: middle.y - size.height / 2, width: size.width, height: size.height)
+                : CGRect(x: middle.x - size.width / 2, y: along, width: size.width, height: size.height)
+            let wanted = rect.insetBy(dx: -LayoutProblem.horizontalClearance, dy: -LayoutProblem.verticalClearance)
+            if !grid.obstacles(in: wanted).contains(where: { !theirs.contains($0.id) && $0.rect.intersects(wanted) }) {
+                return Landing(board: reading.board, rect: rect, above: frames)
+            }
+        }
+        // Beside the middle, across the line between the two.
+        return near(CGRect(origin: middle, size: .zero), obstacle: nil, within: nil, avoiding: [a, b],
+                    sides: apart[0].horizontal ? [.below, .above] : [.right, .left])
     }
 
     /// In `container`, a shape on this board that holds shapes (a frame), as draw places a shape
@@ -149,11 +206,32 @@ public struct Surroundings {
         return Landing(board: reading.board, rect: rect)
     }
 
+    /// A stand-in (a pill) of `size` at `spot`, as `canvas draw` places the one it makes for an edge:
+    /// against the shape it is beside, or, in a column of pills there, past the last (`StandInRoute`
+    /// says where; its placements are the ones a script's statement gets). The box is a made-up one
+    /// (`Free.implied`), like draw's. Nil for a spot with nothing drawn to be placed against.
+    func landing(of size: CGSize, at spot: StandInSpot, avoiding: [CGRect] = []) -> Landing? {
+        guard size.width.isFinite, size.height.isFinite else { return nil }
+        let against = spot.after ?? spot.near
+        guard let bounds = reading.shapes.geometry(of: against)?.bounds, !bounds.isNull, bounds.isFinite else { return nil }
+        let clauses = spot.clauses(near: Self.target, after: spot.after == nil ? nil : Self.column).map {
+            LayoutProblem.ResolvedClause($0, refs: [.fixed(0)])
+        }
+        let free = LayoutProblem.Free(line: 1, name: Self.moving, size: size, clauses: clauses, implied: true)
+        guard let placed = place(free, fixed: [LayoutProblem.Fixed(rect: bounds, obstacle: obstacle(against))], avoiding: avoiding) else { return nil }
+        return Landing(board: reading.board, rect: placed.rect, above: placed.zones)
+    }
+
     /// The free box placed among the board's obstacles by DrawScript's solver: where it goes, and the
     /// shapes it sits on there (the zones), back to front; nil if the solver can't place it.
-    private func place(_ free: LayoutProblem.Free, fixed: [LayoutProblem.Fixed] = []) -> (rect: CGRect, zones: [ShapeID])? {
+    private func place(_ free: LayoutProblem.Free, fixed: [LayoutProblem.Fixed] = [], avoiding: [CGRect] = []) -> (rect: CGRect, zones: [ShapeID])? {
         let grid = grid, shapes = reading.document.shapes
-        let problem = LayoutProblem(free: [free], fixed: fixed, obstacles: { grid.obstacles(in: $0) }, boardBounds: grid.bounds,
+        // Boxes a caller has planned come after every shape of the board, each its own number.
+        let planned = avoiding.filter(\.isFinite).enumerated().map { LayoutProblem.Obstacle(id: shapes.count + $0.offset, rect: $0.element) }
+        let extra = planned.isEmpty ? nil : ObstacleGrid(planned)
+        let problem = LayoutProblem(free: [free], fixed: fixed,
+                                    obstacles: { area in extra.map { grid.obstacles(in: area) + $0.obstacles(in: area) } ?? grid.obstacles(in: area) },
+                                    boardBounds: grid.bounds,
                                     viewMiddle: viewMiddle, view: reading.view)
         guard let solution = try? problem.solve(), let rect = solution.rects.first, rect.isFinite else { return nil }
         let zones = solution.zones.first?.compactMap { shapes.indices.contains($0.id) ? shapes[$0.id].id : nil } ?? []
@@ -181,5 +259,6 @@ public struct Surroundings {
     /// How the solver's messages, never shown, name the shape moved and the shape it's placed against.
     private static let moving = "the shape moved"
     private static let target = "the shape it goes to"
+    private static let column = "the pill before it"
     private static let holder = "the frame it stays in"
 }

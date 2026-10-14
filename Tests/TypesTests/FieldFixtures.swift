@@ -31,9 +31,6 @@ extension CanvasEditor {
     return editor
 }
 
-/// The value that points at a note, as a pointer's field stores it: one mention token, the name it holds.
-func link(to id: ShapeID, _ label: String) -> JSONValue { FieldLink(target: id, stored: label).value }
-
 extension FieldFixtures {
     /// `fieldEditor(scheduler:more:)`, spelled beside the shared fixtures.
     @MainActor static func fieldEditor(scheduler: any Scheduler = ManualScheduler(), more: [any CanvasPlugin] = []) throws -> CanvasEditor {

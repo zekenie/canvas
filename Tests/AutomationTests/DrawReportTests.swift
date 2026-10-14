@@ -22,7 +22,7 @@ import TestKit
 
 @MainActor func reportsPlugin(_ log: ReportLog = ReportLog()) -> Contributor {
     Contributor(id: "reports") { registrar in
-        registrar.drawReports { record, written, shapes in
+        registrar.drawReports { record, written, shapes, _ in
             let title = record.typed(as: Tile.self)?.props.label
             log.asked.append((title, written, shapes.document.shapes.count))
             var report = DrawShapeReport()
@@ -112,7 +112,7 @@ import TestKit
     },
 
     test("two plugins reporting refuse the plugin list") {
-        let twice = { (id: PluginID) in Contributor(id: id) { $0.drawReports { _, _, _ in DrawShapeReport() } } }
+        let twice = { (id: PluginID) in Contributor(id: id) { $0.drawReports { _, _, _, _ in DrawShapeReport() } } }
         expectThrows(RegistryError.conflict(point: "DrawReports", key: "draw reports", plugins: ["a", "b"])) {
             _ = try Registry(plugins: [DrawPlugin(), AutomationPlugin(), twice("a"), twice("b")])
         }

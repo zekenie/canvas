@@ -27,11 +27,6 @@ public enum FieldFixtures {
     /// The `$ref` a type is referred to by: `urn:uuid:` and its id, lowercase.
     public static func uri(of id: ShapeID) -> String { "urn:uuid:" + id.rawValue.uuidString.lowercased() }
 
-    /// A link to a note of a type, as a schema writes it (`contentMediaType`, `contentSchema`).
-    private static func pointer(to id: ShapeID) -> String {
-        #"{"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "\#(uri(of: id))"}}"#
-    }
-
     /// A name and an email, the name needed.
     public static let person: TypeText = (personID, "Person", "A person has a name and an email. It must have a name.", #"""
     {
@@ -66,14 +61,14 @@ public enum FieldFixtures {
     }
     """#)
 
-    /// Board 5: a customer (a link to a Person), a shipping Address, line items (each a product, a quantity
+    /// Board 5: a customer, a shipping Address, line items (each a product, a quantity
     /// of at least 1 and a price), a status, tags, and a gift note while it is a gift; a customer and a
     /// line item are needed.
-    public static let order: TypeText = (orderID, "Order", "An order has a customer (a link to a Person), a shipping Address, line items (each a product, a quantity of at least 1 and a price), a status (draft, paid or shipped), tags, and a gift note if it's a gift. It must have a customer and a line item.", #"""
+    public static let order: TypeText = (orderID, "Order", "An order has a customer, a shipping Address, line items (each a product, a quantity of at least 1 and a price), a status (draft, paid or shipped), tags, and a gift note if it's a gift. It must have a customer and a line item.", #"""
     {
       "type": "object",
       "properties": {
-        "customer": \#(pointer(to: personID)),
+        "customer": { "type": "string" },
         "shippingAddress": { "$ref": "\#(uri(of: addressID))" },
         "lineItems": {
           "type": "array",
@@ -100,8 +95,8 @@ public enum FieldFixtures {
 
     /// Two types that between them hold one field of every row of the plan's "Every kind of field" table
     /// (and a few it does not draw), nine fields each so neither folds. KindsA: text, number, date, yes or
-    /// no, a choice, several choices, a list of text, a group, another type's fields (Address). KindsB: a
-    /// link to a Person, several, a list of groups, a list of Address's fields, either of two plain kinds,
+    /// no, a choice, several choices, a list of text, a group, another type's fields (Address). KindsB: text,
+    /// a list of text (both types hold those two), a list of groups, a list of Address's fields, either of two plain kinds,
     /// named pairs, what no control suits, either with a group in it, an integer.
     public static let everyKind: (a: TypeText, b: TypeText) = (
         (kindsAID, "KindsA", "Nine fields: one of each of the first kinds.", #"""
@@ -128,8 +123,8 @@ public enum FieldFixtures {
         {
           "type": "object",
           "properties": {
-            "customer": \#(pointer(to: personID)),
-            "guests": { "type": "array", "items": \#(pointer(to: personID)) },
+            "customer": { "type": "string" },
+            "guests": { "type": "array", "items": { "type": "string" } },
             "lineItems": {
               "type": "array",
               "items": {
@@ -161,7 +156,7 @@ public enum FieldFixtures {
     }
 
     /// Person that titles a note by its name: `$title` names `name`. (Ids of their own: `person` is compared
-    /// whole by other suites, and Order's pointer points at its id.)
+    /// whole by other suites.)
     public static let namedPerson: TypeText = (namedPersonID, "Person", "A person has a name and an email. It must have a name. The name is its title.", #"""
     {
       "type": "object",

@@ -11,8 +11,9 @@ public struct ValidationDetailsPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.detailStatusForEveryShape(in: IssuesTab.self) { shape, context in
+            // What a shape still needs is no line here: `worstFirst` leaves it out, and so does the tone.
             (context.service(ValidationEngine.self)?.result(for: shape.id)?.worstFirst ?? [])
-                .map { DetailStatus($0.message, tone: DetailStatus.Tone($0.severity)) }
+                .compactMap { issue in DetailStatus.Tone(issue.severity).map { DetailStatus(issue.message, tone: $0) } }
         }
     }
 }
@@ -27,10 +28,12 @@ extension IssuesTab: DetailTab {
 }
 
 extension DetailStatus.Tone {
-    init(_ severity: Severity) {
-        self = switch severity {
-        case .warning: .warning
-        case .error: .error
+    /// Nil for what a shape still needs, which is no status.
+    init?(_ severity: Severity) {
+        switch severity {
+        case .warning: self = .warning
+        case .error: self = .error
+        case .incomplete: return nil
         }
     }
 }

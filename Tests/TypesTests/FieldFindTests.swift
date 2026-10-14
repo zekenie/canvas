@@ -130,24 +130,6 @@ private func lies(_ mark: CGRect, on row: ShownRow) -> Bool { row.rect.insetBy(d
             expect(lies(mark, on: try t.row(id, name)), "\(query) marks the \(name) row")
         }
     },
-    test("a pointer is found by the name it shows now, and renaming its target has the note that points at it read again") {
-        let t = try Bench()
-        t.add([FieldFixtures.person, FieldFixtures.everyKind.b])
-        t.editor.addFieldPeople()
-        let id = t.note([FieldFixtures.kindsBID], ["customer": link(to: FieldFixtures.annLeeID, "Ann"),
-                                                   "guests": [link(to: FieldFixtures.boParkID, "Bo"), "someone"]])
-        var find = try t.search("lee")
-        expect(find.results.map(\.id).contains(id), "found by the live name, not the one the token holds")
-        expectEqual(find.texts(of: id), ["Ann Lee", "Bo Park\nsomeone"])
-        let mark = try require(try t.marks(find, in: id).first)
-        let row = try t.row(id, "customer")
-        expect(lies(mark, on: row), "the mark is on the row the pill is in")
-        t.editor.transact("Rename") { $0.update(FieldFixtures.annLeeID) { $0[TitleProperty.self] = "Anna Lex" } }
-        find = try t.search("lex")
-        expect(find.results.map(\.id).contains(id), "found by the new name")
-        expectEqual(find.texts(of: id), ["Anna Lex", "Bo Park\nsomeone"])
-        expect(try t.search("lee").results.map(\.id).filter { $0 == id }.isEmpty, "and no longer by the old one")
-    },
     test("a field that is folded is found on the fold: `+12 more` at the left") {
         let t = try Bench()
         t.add([FieldFixtures.wide(20)])

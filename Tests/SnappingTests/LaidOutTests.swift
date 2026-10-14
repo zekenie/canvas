@@ -43,4 +43,21 @@ import TestKit
         expectEqual(h.origin(of: stretch), CGPoint(x: 200, y: 200))
         h.release()
     },
+    test("a stretch laid out smaller than it stores snaps its smaller right edge onto a box's left edge, and a box snaps to its smaller bottom edge, not the stored one") {
+        let h = try snapHarness(shapes: [FixturesPlugin(), StretchesPlugin(shrinking: true)])
+        h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 900, y: 700, width: 60, height: 40), width: 50, height: 30))
+        let stretch = h.add(Stretch(CGRect(x: 0, y: 200, width: 100, height: 60), gauge: gauge))
+        h.press(at: CGPoint(x: 20, y: 215))
+        h.drag(to: CGPoint(x: 367, y: 215))                          // its frame's right edge 3 short of 400; its stored box's would be 53 past
+        expectEqual(h.origin(of: stretch), CGPoint(x: 350, y: 200))
+        expectEqual(h.editor.snapGuides.count, 1)
+        h.release()
+        expectEqual(h.editor.document[stretch]?.box?.size, CGSize(width: 100, height: 60), "what it stores is what it did")
+        let box = h.add(Box(CGRect(x: 0, y: 500, width: 100, height: 100)))
+        h.press(at: CGPoint(x: 50, y: 550))
+        h.drag(to: CGPoint(x: 328, y: 283))                          // its top 3 under the frame's bottom (230); the stored box's (260) is 27 further
+        expectEqual(h.origin(of: box)?.y, 230)
+        h.release()
+    },
 ])

@@ -301,39 +301,6 @@ extension ScopedMentionText: MentionTextHolding {
 /// Mention text that may mention any mentionable shape.
 public typealias MentionText = ScopedMentionText<AnyMentionable>
 
-// MARK: One mention, alone
-
-/// One mention, alone: a string that is exactly one token (`@[label](shape:UUID)`) and nothing else,
-/// read and written as mention text reads and writes it. For a value that holds one shape's name as
-/// a string (a type's field that points at a note), so nothing but Mentions spells a token.
-public enum MentionToken {
-    /// `@[`, `](shape:`, an id of 36 characters and `)`: no shorter string is one.
-    private static let shortest = 2 + 8 + 36 + 1
-
-    /// The id and label of a string that is exactly one mention, whole; nil for anything else (text
-    /// around it, two mentions, a look-alike, an escaped `\@[`). The id as it reads (any hex case),
-    /// the label unescaped.
-    public static func read(_ string: String) -> (id: ShapeID, label: String)? {
-        let bytes = string.utf8
-        guard bytes.count >= shortest, bytes.first == 0x40, bytes.last == 0x29 else { return nil }
-        let runs = MentionGrammar.parse(string)
-        guard runs.count == 1, case .mention(let id, let label) = runs[0] else { return nil }
-        return (id, label)
-    }
-
-    /// The canonical token: the label escaped, a line break a space, the id in uppercase.
-    public static func write(_ id: ShapeID, label: String) -> String {
-        MentionGrammar.write([.mention(id, label: label)])
-    }
-
-    /// The title of a string that is exactly draw's shorthand `@[Title]` and nothing else (no
-    /// `(shape:...)`, no text around it), unescaped as a label is (`\]`, `\\`; no line break); nil
-    /// for anything else.
-    public static func shorthand(_ string: String) -> String? {
-        MentionGrammar.shorthand(string)
-    }
-}
-
 // MARK: The grammar
 
 /// The stored form, read and written. Scalar by scalar: every character the grammar gives a
@@ -420,15 +387,6 @@ enum MentionGrammar {
         labelEnd = end
         guard end < s.count, s[end] == close, let (id, mentionEnd) = shapeSuffix(in: s, at: end) else { return nil }
         return (id, label, mentionEnd)
-    }
-
-    /// The title of a string that is exactly `@[Title]`: its label scan ends at the last scalar's `]`.
-    static func shorthand(_ string: String) -> String? {
-        let s = Array(string.unicodeScalars)
-        guard s.count >= 3, s[0] == at, s[1] == open else { return nil }
-        let (title, end) = label(in: s, from: 2)
-        guard end == s.count - 1, s[end] == close, !title.isEmpty else { return nil }
-        return title
     }
 
     /// The runs `string` reads as.

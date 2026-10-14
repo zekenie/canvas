@@ -467,34 +467,6 @@ private extension Resolved {
         r.editor.undo()
         expect(form.chipName(FieldFixtures.addressID) == ("Address", false), "back whole when the delete is undone")
     },
-    test("a list of pointers opens a card, a line a pointer and a waiting one, and picks in it are the step of the row it came from; one pointer opens none; a locked note's pills are drawn and go") {
-        let r = try CardRig(log: RefusalLog(), types: [FieldFixtures.everyKind.a, FieldFixtures.everyKind.b])
-        defer { r.close() }
-        let ann = link(to: FieldFixtures.annLeeID, "Ann Lee")
-        let kinds = r.editor.addInstance("", of: [FieldFixtures.kindsBID], at: CGPoint(x: 40, y: 200))
-        r.editor.fieldWriter?.set([ann], at: r.path("guests"), of: kinds)
-        r.editor.undoHistory.seal()
-        expect(!r.open("customer", shape: kinds), "a pointer has nothing more to show")
-        expect(r.open("guests", shape: kinds))
-        expectEqual(r.editor.card?.stepName, "Change Guests")
-        let form = try require(r.cards.openForm)
-        expectEqual(form.sheet.lines.map { $0.cells[0].shown }, ["Ann Lee", ""])
-        expectEqual(form.focus, FieldStop(line: 0, column: 0))
-        form.focus(FieldStop(line: 1, column: 0))
-        r.window.type("bo")
-        expect(form.cellEditor.caretListWindow != nil, "the list is open over the waiting line")
-        r.window.pressReturn()
-        expectEqual(storedValues(r.editor, kinds)?["guests"], [ann, link(to: FieldFixtures.boParkID, "Bo Park")])
-        expectEqual(r.editor.undoHistory.undoName, "Change Guests")
-        r.editor.undo()
-        expectEqual(storedValues(r.editor, kinds)?["guests"], [ann], "one step")
-        r.cards.close()
-        r.editor.freeze([kinds])
-        expect(r.cards.open(r.request("guests", readOnly: true, shape: kinds)))
-        let shut = try require(r.cards.openForm)
-        expectEqual(shut.sheet.lines.map { $0.cells[0].shown }, ["Ann Lee"], "pills and no waiting line")
-        expectEqual(shut.sheet.stops, [])
-    },
 ])
 
 @MainActor private func storedValues(_ editor: CanvasEditor, _ shape: ShapeID) -> FieldValues? {

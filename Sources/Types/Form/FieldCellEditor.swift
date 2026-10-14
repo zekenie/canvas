@@ -5,7 +5,7 @@ import TextEditing
 /// quotes or dashes, no spelling marks and no `/` or `@` list. A long value is one line and scrolls sideways
 /// under the caret (the form keeps this in a clip view of the cell's size); a line break pasted in is kept in
 /// the value and the line shows the first. The form moves it from cell to cell, so what it could undo is
-/// forgotten each time. A link's cell has its list of notes at this view's caret, as every list is (`linkPicking`).
+/// forgotten each time. A note's cell has its list of notes at this view's caret, as every list is (`picking`).
 @MainActor
 public final class FieldCellEditor: EditingTextView {
     public init() {
@@ -36,16 +36,16 @@ public final class FieldCellEditor: EditingTextView {
         textContainer?.maximumNumberOfLines = 1
     }
 
-    /// The list of notes a link's cell finds in while it is typed over: the keys are the list's first.
-    var linkPicking: (picker: LinkPicker, window: CaretListWindow)?
+    /// The list of notes a note's cell finds in while it is typed over: the keys are the list's first.
+    var picking: (picker: any NotePicking, window: CaretListWindow)?
 
-    public override var caretListWindow: CaretListWindow? { linkPicking?.window }
+    public override var caretListWindow: CaretListWindow? { picking?.window }
 
-    /// While a link is picked, the keys are `LinkPicker.perform`'s: Return picks and Backspace on nothing closes. Tab and ⇧Tab are never a
+    /// While a note is picked, the keys are `NotePicking.perform`'s: Return picks and Backspace on nothing closes. Tab and ⇧Tab are never a
     /// pick (`EditingTextView` would hand them to the list): the list closes with nothing stored and the key goes on as it would with
     /// no list, to the form's delegate, which moves to the next cell.
     public override func doCommand(by selector: Selector) {
-        if let (picker, window) = linkPicking {
+        if let (picker, window) = picking {
             let (taken, action) = picker.perform(selector)
             if taken {
                 switch action {

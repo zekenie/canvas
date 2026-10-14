@@ -23,6 +23,7 @@ import StickyNotes
 import TestKit
 import TableOfContents
 import Titles
+import Topology
 import Types
 import Validation
 
@@ -57,10 +58,10 @@ private let petAnswer = """
         view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
         window.pressReturn()
         window.type("/is-a ")
-        expectEqual(view.slashCommands?.choices?.listed.map(\.title), ["Type"], "no types in the file: only Type")
+        expectEqual(view.slashCommands?.choices?.listed.map(\.title), ["Type", "Relationship Type"], "no types in the file: only Type and Relationship Type")
         expectEqual(view.slashCommands?.choices?.highlightedChoice?.title, "Type")
         window.type("type")
-        expectEqual(view.slashCommands?.choices?.listed.map(\.title), ["Type"], "titled so: no New type “Type”")
+        expectEqual(view.slashCommands?.choices?.listed.map(\.title), ["Type", "Relationship Type"], "titled so: no New type “Type”")
         window.pressReturn()
         window.settle()
         expectEqual(editor.document[note]?[TypeSchemaProperty.self]?.text, TypeSchemaProperty.starter)
@@ -130,12 +131,14 @@ private let petAnswer = """
         expectEqual(editor.document[note]?[PublicProperty.self], nil)
         expect(editor.types?.isType(note) == true)
     },
-    test("Is a ▸ sits in a shape's menu right after Lock, with no line between; an arrow's has it with the types and no Type, a frame's none; a locked note reads Unlock, Is a") {
+    test("Is a ▸ sits in a shape's menu right after Lock, with no line between; an arrow's has it with the relationship types and no Type, a frame's none; a locked note reads Unlock, Is a") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
         let (window, canvas) = windowed(editor)
         _ = editor.addTypeNote(TypeSchemaProperty.starter, title: "Person", frame: CGRect(x: 500, y: 100, width: 200, height: 200))
+        let employment = editor.addTypeNote(TypeSchemaProperty.starter, title: "Employment", frame: CGRect(x: 800, y: 100, width: 200, height: 200))
+        editor.transact { $0.update(employment) { $0[RelationshipProperty.self] = true } }
         let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Ann"))
         let arrow = editor.add(Arrow(start: .free(CGPoint(x: 40, y: 500)), end: .free(CGPoint(x: 340, y: 500))))
         let frame = editor.add(Frame(frame: CGRect(x: 40, y: 560, width: 300, height: 200)), title: "Group")
@@ -144,9 +147,10 @@ private let petAnswer = """
         }
         let noteMenu = outline(at: CGPoint(x: 200, y: 200), 1)
         let lock = try require(noteMenu.firstIndex(of: "Lock"))
-        expectEqual(Array(noteMenu[lock...].prefix(6)), ["Lock", "Is a ▸", "  Type", "  —", "  Person", "Color ▸"], "\(noteMenu)")
+        expectEqual(Array(noteMenu[lock...].prefix(7)), ["Lock", "Is a ▸", "  Type", "  Relationship Type", "  —", "  Person", "Color ▸"], "a note: plain types, \(noteMenu)")
         let arrowMenu = outline(at: CGPoint(x: 190, y: 500), 2)
-        expect(arrowMenu.contains("Is a ▸") && arrowMenu.contains("  Person") && !arrowMenu.contains("  Type"), "\(arrowMenu)")
+        expect(arrowMenu.contains("Is a ▸") && arrowMenu.contains("  Employment") && !arrowMenu.contains("  Person") && !arrowMenu.contains("  Type")
+               && !arrowMenu.contains("  Relationship Type"), "an arrow: relationship types, \(arrowMenu)")
         let frameMenu = outline(at: CGPoint(x: 200, y: 700), 3)
         expect(!frameMenu.contains("Is a ▸"), "\(frameMenu)")
         _ = (arrow, frame)
@@ -286,6 +290,8 @@ private let petAnswer = """
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
         let (window, _) = windowed(editor)
         let person = editor.addTypeNote(TypeSchemaProperty.starter, title: "Person", frame: CGRect(x: 500, y: 100, width: 200, height: 200))
+        let employment = editor.addTypeNote(TypeSchemaProperty.starter, title: "Employment", frame: CGRect(x: 800, y: 100, width: 200, height: 200))
+        editor.transact { $0.update(employment) { $0[RelationshipProperty.self] = true } }
         let zeke = editor.add(StickyNote(frame: CGRect(x: 500, y: 400, width: 200, height: 200), text: "Owner"), title: "Zeke")
         let ann = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Ann"))
         @MainActor func view() throws -> MentionTextView<AnyMentionable> {
@@ -298,7 +304,7 @@ private let petAnswer = """
         window.pressReturn()
         window.type("/is-a ")
         let rows = try require(editing.slashCommands?.choices, "the choices")
-        expectEqual(rows.listed.map(\.title), ["Type", "Person"], "no Zeke (not a type), and not Ann herself")
+        expectEqual(rows.listed.map(\.title), ["Type", "Relationship Type", "Person"], "no Zeke (not a type), not Ann herself, and no Employment: a relationship type is an arrow's")
         expectEqual(rows.highlightedChoice?.title, "Person", "the first type")
         window.type("per")
         expectEqual(rows.listed.map(\.title), ["Person", "New type “Per”"], "the match, then the new type, last")
@@ -325,16 +331,16 @@ private let petAnswer = """
         label.setSelectedRange(NSRange(location: 4, length: 0))
         window.pressReturn()
         window.type("/is-a ")
-        expectEqual(try require(label.slashCommands?.choices).listed.map(\.title), ["Person"], "no Type row on a label")
+        expectEqual(try require(label.slashCommands?.choices).listed.map(\.title), ["Employment"], "no Type row on a label, and no plain type")
         window.pressReturn()
         window.settle()
-        expectEqual(editor.document[arrow]?[IsAProperty.self]?.map(\.shape), [person])
+        expectEqual(editor.document[arrow]?[IsAProperty.self]?.map(\.shape), [employment])
         expectEqual(editor.document[arrow]?.typed(as: Arrow.self)?.props.text.plainText(), "keep\n")
         expectEqual(editor.undoHistory.undoName, "Add Type")
         window.pressEscape()
         let labelFrame = try require(editor.arrowLabelFrame(of: arrow))
         let arrowChips = editor.adornmentFrames(of: arrow).filter { $0.adornment == .of(TypeChips.self) }
-        expectEqual(arrowChips.map { $0.label.text ?? "" }, ["Person"])
+        expectEqual(arrowChips.map { $0.label.text ?? "" }, ["Employment"])
         expect(arrowChips[0].rect.maxY <= labelFrame.minY, "above the label")
     },
     test("/is-a company typed on a note offers New type “Company”; Return puts a white type note beside it, in editing, and links the note: one step, New Type; undo takes both, then the typing") {
@@ -443,8 +449,9 @@ private let petAnswer = """
         let made = try require(editor.document.shapes.map(\.id).first { $0 != arrow })
         expectEqual(editor.document[made]?.kind, StickyNote.kind, "a note")
         expectEqual(editor.document[arrow]?[IsAProperty.self]?.map(\.shape), [made])
+        expectEqual(editor.document[made]?[RelationshipProperty.self], true, "an arrow's new type is a relationship type, with no ends")
         expect(editor.editingShapeID != arrow, "the label's editing has ended")
-        expectEqual(editor.undoHistory.undoName, "New Type")
+        expectEqual(editor.undoHistory.undoName, "New Relationship Type")
 
         // In a frame, where it falls inside.
         let hold = editor.add(Frame(frame: CGRect(x: 1000, y: 100, width: 900, height: 500)), title: "Group")
@@ -513,7 +520,7 @@ private let petAnswer = """
             (editor.validation?.result(for: id)?.issues.map(\.message) ?? [], try require(editor.document[id]).map { checks.fullCheck(of: $0).problems.map(\.message) } ?? [])
         }
         let original = try said(ann)
-        expectEqual(original.messages, [#"email should be an email address, not "ann@""#])
+        expectEqual(original.messages, ["name is needed", #"email should be an email address, not "ann@""#], "what Person needs, and the email")
         expectEqual(original.problems.count, 2, "the email, and the name Person needs")
         let duplicates = editor.duplicate([ann])
         let duplicate = try require(duplicates.first)
@@ -687,5 +694,37 @@ private let petAnswer = """
         try command(on: bo)
         expectEqual(editor.document[bo]?[IsAProperty.self]?.map(\.shape), [person.id])
         expectEqual(editor.document[bo]?[TitleProperty.self], "Robert", "a title is never replaced")
+    },
+    test("a board written when a field named a note opens with no alert: the old schema reads as text, the token in it is that text, no pill is drawn, no check calls it wrong and no edge comes of it") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let person = typeNote(#"{"type": "object", "properties": {"name": {"type": "string"}}}"#, title: "Person")
+        var ann = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 600, width: 200, height: 200), text: "Ann Lee")))
+        ann[TitleProperty.self] = "Ann Lee"
+        ann[IsAProperty.self] = [TypeLink(person.id)]
+        let old = #"{"type": "object", "properties": {"customer": {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "\#(FieldFixtures.uri(of: person.id))"}}}, "required": ["customer"]}"#
+        let order = typeNote(old, title: "Order", frame: CGRect(x: 300, y: 0, width: 200, height: 200))
+        var held = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 300, y: 600, width: 240, height: 200), text: "Ann's order")))
+        held[IsAProperty.self] = [TypeLink(order.id)]
+        let token = MentionText([.mention(ann.id, label: "Ann Lee")]).stored
+        held[FieldValuesProperty.self] = FieldValues(["customer": .string(token)])
+        let board = BoardDocument()
+        board.start(with: CanvasDocument(shapes: [person, ann, order, held]))
+        let data = try board.data(ofType: boardType)
+        board.close()
+        let reopened = BoardDocument()
+        defer { reopened.close() }
+        try reopened.read(from: data, ofType: boardType)
+        expect(reopened.loadReport.isEmpty, "no alert")
+        let editor = reopened.editor
+        let row = try require(editor.rowBook?.rows(of: held.id).first { $0.name == "customer" }, "a row customer")
+        expectEqual(row.content, .text(token), "the token is text")
+        expectEqual(try require(editor.fieldChecks).check(of: try require(editor.document[held.id])), .clean)
+        expectEqual(editor.validation?.results.isEmpty, true, "nothing is wrong")
+        let edges = editor.topology?.edges(of: held.id, .either).filter { $0.type != IsAEdge.id }
+        expectEqual(edges?.isEmpty, true, "the token names no shape, as a mention in a text would")
+        editor.transact("Delete") { $0.delete([ann.id]) }
+        expectEqual(editor.document[held.id]?[FieldValuesProperty.self]?["customer"], .string(token), "a note deleted leaves the text")
     },
 ])

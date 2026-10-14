@@ -127,6 +127,16 @@ final class AdornmentState {
         return found
     }
 
+    /// Whether a shape in `AdornmentLayout.area(showing:scale:)` can have an adornment in `visible`: nothing is made, laid out or
+    /// drawn for one that cannot. The area is the widest case (a row slid along a slanted open shape reaches 400 view points
+    /// either way), which a closed shape has no part in: its own reach is `AdornmentLayout.reach(ofClosed:scale:)`. An open
+    /// shape stays.
+    func mayShow(_ record: AnyShapeRecord, in visible: CGRect, scale: CGFloat, shapes: ShapeContext) -> Bool {
+        guard let geometry = shapes.geometry(of: record.id), !geometry.outline.isEmpty, !geometry.bounds.isNull else { return false }
+        guard geometry.isClosed else { return true }
+        return visible.intersects(AdornmentLayout.reach(ofClosed: geometry.bounds, scale: scale))
+    }
+
     // MARK: Where
 
     /// The rect a shape's adornments are laid out against, in world units, at `zoom`: a closed
@@ -135,20 +145,67 @@ final class AdornmentState {
     /// about its center to `minAnchorWidth` view points where it is narrower, so a row of chips has
     /// room. Nil for a shape without an outline (nothing drawn), which has none.
     static func anchor(of id: ShapeID, in shapes: ShapeContext, zoom: CGFloat) -> CGRect? {
+        anchored(of: id, in: shapes, zoom: zoom)?.rect
+    }
+
+    /// A shape's anchor, and for an open shape the slope of its chord (the outline's first point to its last:
+    /// dy / dx in world units, y down; 0 when level or a point, infinite when upright), which slides what is
+    /// laid out against the anchor clear of its body. Nil slope for a closed shape: nothing is read for it.
+    struct Anchored {
+        let rect: CGRect
+        let slope: CGFloat?
+        /// An open shape with no label: the anchor is a point widened, and the row is centred on it.
+        var isPoint = false
+    }
+
+    static func anchored(of id: ShapeID, in shapes: ShapeContext, zoom: CGFloat) -> Anchored? {
         guard let geometry = shapes.geometry(of: id), !geometry.outline.isEmpty, !geometry.bounds.isNull else { return nil }
-        if geometry.isClosed { return geometry.bounds }
-        var anchor = geometry.label.flatMap { $0.isNull ? nil : $0 } ?? CGRect(origin: geometry.outline[geometry.outline.count / 2], size: .zero)
+        if geometry.isClosed { return Anchored(rect: geometry.bounds, slope: nil) }
+        let label = geometry.label.flatMap { $0.isNull ? nil : $0 }
+        var anchor = label ?? CGRect(origin: geometry.outline[geometry.outline.count / 2], size: .zero)
         let least = AdornmentLayout.minAnchorWidth * AdornmentLayout.scale(atZoom: zoom)
         if anchor.width < least { anchor = CGRect(x: anchor.midX - least / 2, y: anchor.minY, width: least, height: anchor.height) }
-        return anchor
+        var slope: CGFloat = 0
+        if let first = geometry.outline.first, let last = geometry.outline.last {
+            let dx = last.x - first.x, dy = last.y - first.y
+            if dx != 0 { slope = dy / dx } else if dy != 0 { slope = .infinity }
+        }
+        return Anchored(rect: anchor, slope: slope, isPoint: label == nil)
+    }
+
+    /// A shape's adornments' slots, into `slots`: the layout against its anchor, and the slope of an open shape's
+    /// chord, which slides the row clear of its body (a closed shape reads nothing of the sort).
+    /// Returns how far the row slid, in view points (`AdornmentLayout.slots`).
+    @discardableResult
+    func slots(of laidOut: LaidOutAdornments, anchored: Anchored, scale: CGFloat,
+               into slots: inout [AdornmentLayout.Slot?]) -> CGFloat {
+        let slant = anchored.slope.map {
+            AdornmentLayout.Slant(anchorHeight: anchored.rect.height / scale, slope: $0, maxSlide: AdornmentLayout.slideLimit(atScale: scale),
+                                  centersRow: anchored.isPoint)
+        }
+        return AdornmentLayout.slots(of: laidOut.items, width: anchored.rect.width / scale, slant: slant, into: &slots)
+    }
+
+    /// The anchor of a shape moved along with its row: where something that hangs from the row hangs (a card, a
+    /// menu), world units. The anchor itself where the row did not slide, nothing is shown, or the shape is closed.
+    func rowAnchor(of id: ShapeID) -> CGRect? {
+        let shapes = editor.shapeContext, zoom = editor.camera.zoom
+        guard let anchored = Self.anchored(of: id, in: shapes, zoom: zoom) else { return nil }
+        guard anchored.slope != nil, let record = editor.document[id], !editor.drawsSkeleton(of: id), let laidOut = laidOut(record) else { return anchored.rect }
+        let scale = AdornmentLayout.scale(atZoom: zoom)
+        var slots: [AdornmentLayout.Slot?] = []
+        let shift = self.slots(of: laidOut, anchored: anchored, scale: scale, into: &slots)
+        return anchored.rect.offsetBy(dx: shift * scale, dy: 0)
     }
 
     /// Where a shape's adornments are now, in world units: none on a shape drawn as a skeleton.
     func frames(of record: AnyShapeRecord) -> [AdornmentFrame] {
+        let shapes = editor.shapeContext, zoom = editor.camera.zoom
         guard !editor.drawsSkeleton(of: record.id), let laidOut = laidOut(record),
-              let anchor = Self.anchor(of: record.id, in: editor.shapeContext, zoom: editor.camera.zoom) else { return [] }
-        let scale = AdornmentLayout.scale(atZoom: editor.camera.zoom)
-        let slots = AdornmentLayout.slots(of: laidOut.items, width: anchor.width / scale)
+              let anchored = Self.anchored(of: record.id, in: shapes, zoom: zoom) else { return [] }
+        let anchor = anchored.rect, scale = AdornmentLayout.scale(atZoom: zoom)
+        var slots: [AdornmentLayout.Slot?] = []
+        self.slots(of: laidOut, anchored: anchored, scale: scale, into: &slots)
         return laidOut.shown.indices.compactMap { index in
             slots[index].map {
                 AdornmentFrame(adornment: laidOut.shown[index].id, label: laidOut.look(of: index, in: $0).label,
@@ -165,12 +222,16 @@ final class AdornmentState {
     func hit(at point: CGPoint, where include: (AnyShapeRecord) -> Bool) -> (shape: ShapeID, adornment: ShownAdornment, isOverflow: Bool)? {
         guard !isEmpty, !editor.drawsSkeletons || editor.editingShapeID != nil else { return nil }
         let scale = AdornmentLayout.scale(atZoom: editor.camera.zoom), shapes = editor.shapeContext
+        let near = CGRect(origin: point, size: .zero).insetBy(dx: -AdornmentLayout.hitMargin * scale, dy: -AdornmentLayout.hitMargin * scale)
         for record in editor.paintOrder(in: AdornmentLayout.area(around: point, scale: scale)).reversed()
-        where include(record) && !editor.drawsSkeleton(of: record.id) {
+        where include(record) && !editor.drawsSkeleton(of: record.id) && mayShow(record, in: near, scale: scale, shapes: shapes) {
             guard let laidOut = laidOut(record),
-                  let anchor = Self.anchor(of: record.id, in: shapes, zoom: editor.camera.zoom) else { continue }
+                  let anchored = Self.anchored(of: record.id, in: shapes, zoom: editor.camera.zoom) else { continue }
+            let anchor = anchored.rect
             var nearest: (index: Int, distance: CGFloat, isOverflow: Bool)?
-            for (index, slot) in AdornmentLayout.slots(of: laidOut.items, width: anchor.width / scale).enumerated() {
+            var slots: [AdornmentLayout.Slot?] = []
+            self.slots(of: laidOut, anchored: anchored, scale: scale, into: &slots)
+            for (index, slot) in slots.enumerated() {
                 guard let slot else { continue }
                 let corner = slot.corner(in: anchor)
                 let local = CGPoint(x: (point.x - corner.x) / scale, y: (point.y - corner.y) / scale)
@@ -259,7 +320,7 @@ struct LaidOutAdornments {
 }
 
 /// One adornment as a shape shows it: its label, which says something (text that isn't blank, or a
-/// symbol), and how far its text starts past its padding (a symbol before it).
+/// symbol), and the room its text needs besides itself (`lead`: a symbol before it, a number after it).
 @MainActor
 struct ShownAdornment {
     let id: AdornmentID
@@ -280,7 +341,8 @@ struct ShownAdornment {
         self.label = label
         isClickable = contribution.click != nil
         isText = label.text != nil
-        lead = AdornmentStyle.lead(of: label, in: id.placement)
+        // The layout leaves text the room it needs besides this: its symbol before it, and its number after it.
+        lead = AdornmentStyle.lead(of: label, in: id.placement) + AdornmentStyle.countRoom(of: label, in: id.placement)
         self.group = group
         overflowLabel = group == nil ? nil : AdornmentLabel(AdornmentStyle.overflowPrefix + String(remaining))
     }

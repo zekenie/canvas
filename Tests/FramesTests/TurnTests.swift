@@ -23,7 +23,7 @@ private let frameColorItems = ["Color ▸", "  Gray", "  Red", "  Orange", "  Ye
         r.title(Pocket.self)
         r.turnable(into: Pocket.self, through: ContainerChannel.self, label: "Pocket") { container, transaction in
             guard transaction.turn(container.id, into: Pocket(CGRect(origin: container.frame.origin, size: CGSize(width: 240, height: 160)))) else { return }
-            transaction.move(container.held, toBoardOwnedBy: container.id)
+            transaction.move(container.inside, toBoardOwnedBy: container.id)
         }
     }]
 }

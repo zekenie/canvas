@@ -52,7 +52,10 @@ enum QueryPrompt {
         #":edge-to("Auth", arrow)"#, #":edge-from("API gateway", note-link|mention)"#, #":edge-to("Payments", only arrow)"#,
         #":edge-from("API gateway", arrow)"#, #":edge-from("Warehouse")"#, #"sticky-note:mentions("Checkout")"#, #":mentioned-by("Checkout")"#, #"sticky-note:is-a("Person")"#,
         "sticky-note[schema]", #":is-a("Person")"#, #"sticky-note:is-a("Employee card")"#, #":edge-from("Ann", is-a)"#,
-        ":incomplete", #":is-a("Person"):incomplete"#, #":is-a("Order"):edge-to("Ann", field-link)"#, #":edge-to("Ann", mention)"#,
+        ":incomplete", #":is-a("Person"):incomplete"#, "arrow:misfit",
+        // The relationship types a type has, and the types at their far ends (the story has none: both answer nothing).
+        #"sticky-note[relationship]:connected-to("Order", arrow)"#,
+        #":end-of(arrow:starts-at(sticky-note[relationship]:connected-to("Order", arrow)))"#,
         #""Checkout":mentioned-by("API gateway")"#, #":connected-to("Checkout")"#, #":component-of("Warehouse")"#, #":upstream-of("Auth")"#,
         ":edge-from(:selected, arrow)", #"arrow:between("Auth", "API gateway")"#, ":start-of(arrow[channel=note-link])",
         ":end-of(arrow[channel=note-link])",
@@ -84,10 +87,15 @@ enum QueryPrompt {
         ("arrow:starts-at(ANCHOR)", .unknownKind), ("arrow:ends-at(ANCHOR)", .unknownKind), ("arrow:between(ANCHOR, ANCHOR)", .unknownKind),
         (":start-of(ANCHOR)", .unknownKind), (":end-of(ANCHOR)", .unknownKind),
         (":edge-to", .badArgument), (":edge-from", .badArgument),
+        // Types: a relationship type is not in the story, so what names one is refused for its title; a title after a comma
+        // is not an edge type.
+        (#":edge-to("Bo", "Friendship")"#, .badArgument), (#"arrow:is-a("Friendship")"#, .unknownTitle),
+        (#":end-of(arrow:is-a("Friendship"):starts-at("Ann"))"#, .unknownTitle), (#":start-of(arrow:is-a("Friendship"):ends-at("Ann"))"#, .unknownTitle),
+        (#":end-of(arrow:is-a("Placed by"):starts-at("Order 12"))"#, .unknownTitle),
+        (#"arrow:is-a("Friendship")[fieldValues.since<"2020-01-01"]"#, .unknownTitle),
+        (#"sticky-note:is-a("Order"):not([schema]):not(:start-of(arrow:is-a("Placed by")))"#, .unknownTitle),
         // Combining.
         (":not(S)", .unknownKind), (":is(S1, S2)", .unknownKind),
-        // Types.
-        (#":edge-from("Order 12", field-link)"#, .unknownTitle),
         // Rules: the words not to invent.
         (":parent-of", .unknownPseudoClass), (":child-of", .unknownPseudoClass), (":root", .unsupported), (":empty", .unsupported),
         (":first-child", .unsupported),

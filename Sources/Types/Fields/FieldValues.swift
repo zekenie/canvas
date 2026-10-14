@@ -1,4 +1,5 @@
 import Canvas
+import Foundation
 
 // What a shape holds under its types' fields: the values themselves, an added property of the kinds
 // that can be instances (`typeable()`), written by people and agents and read by both.
@@ -56,6 +57,41 @@ public struct FieldValues: Codable, Hashable, Sendable {
     }
 }
 
+extension FieldValues {
+    /// The most characters a note's name by its values keeps.
+    public static let nameLength = 60
+
+    /// What a note with no title and no words is called: its filled top-level plain values (text and numbers as they
+    /// read, a ticked box as its field's name) in key order, joined by ` · `, cut to `nameLength` characters. Nil
+    /// for a type's own note and for a note with none. It reads the record alone (a naming closure sees nothing
+    /// else), so the order is the keys', not the rows'.
+    public static func name<P: ShapeProps>(of record: ShapeRecord<P>) -> String? {
+        guard record[TypeSchemaProperty.self] == nil, let values = record[FieldValuesProperty.self] else { return nil }
+        return values.name
+    }
+
+    /// The same for values alone.
+    public var name: String? {
+        var parts: [String] = []
+        for key in values.keys.sorted() {
+            switch values[key] {
+            case .string(let text)?:
+                let line = text.split(whereSeparator: \.isNewline).first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
+                if !line.isEmpty { parts.append(line) }
+            case .number(let number)?:
+                parts.append(number == number.rounded() && abs(number) < 1e15 ? String(Int(number)) : String(number))
+            case .bool(true)?:
+                parts.append(key)
+            default:
+                break
+            }
+        }
+        guard !parts.isEmpty else { return nil }
+        let joined = parts.joined(separator: " · ")
+        return joined.count > Self.nameLength ? String(joined.prefix(Self.nameLength - 1)) + "…" : joined
+    }
+}
+
 extension FieldValues: SchemaDescribed {
     public static func schema(in definitions: inout SchemaDefinitions) -> JSONObject {
         definitions.reference("field-values", of: Self.self) { _ in
@@ -69,7 +105,7 @@ extension FieldValues: SchemaDescribed {
 public enum FieldValuesProperty {}
 
 extension FieldValuesProperty: ShapeProperty {
-    public static let key: PropertyKey = "fieldValues"
+    public static let key: PropertyKey = RelationshipKeys.fieldValues
     public static var defaultValue: FieldValues? { nil }
     public static func isNone(_ value: FieldValues) -> Bool { value.isEmpty }
     public static var keywords: PropertyKeywords<FieldValues> {

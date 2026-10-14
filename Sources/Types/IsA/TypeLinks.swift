@@ -85,6 +85,78 @@ extension CanvasEditor {
         }
     }
 
+    /// Makes the shape a relationship type, in one step ("Make Relationship Type"): a plain note first becomes a
+    /// type, as `makeType` makes one, and the type is marked. Nothing for a shape that is one already or whose kind
+    /// cannot hold the mark; a read-only shape is refused by the core, and shakes.
+    public func makeRelationshipType(_ id: ShapeID) { makeRelationshipTypes([id]) }
+
+    /// The same for several shapes, in one step.
+    public func makeRelationshipTypes(_ ids: [ShapeID]) {
+        var taking: [(id: ShapeID, schema: String?)] = []
+        for id in ids {
+            guard let record = document[id], registry.canBeRelationshipType(record.kind) else { continue }
+            if record[TypeSchemaProperty.self] == nil {
+                guard registry.canBeType(record.kind) else { continue }
+                let words = registry.typeWords(of: record.kind)?.words(record)
+                taking.append((id, words.flatMap(TypeWordsSchema.schema(fromWords:)) ?? TypeSchemaProperty.starter))
+            } else if record[RelationshipProperty.self] != true {
+                taking.append((id, nil))
+            }
+        }
+        guard !taking.isEmpty else { return }
+        transact(TypesStyle.makeRelationshipType) { transaction in
+            for (id, schema) in taking {
+                transaction.update(id) { record in
+                    if let schema { record[TypeSchemaProperty.self] = SchemaText(schema) }
+                    record[RelationshipProperty.self] = true
+                }
+            }
+        }
+    }
+
+    /// Takes the mark off a relationship type, in one step ("Make Plain Type"): it is still a type, with its words,
+    /// rows and instances. Nothing for a shape that isn't marked; a read-only shape is refused by the core, and shakes.
+    public func makePlainType(_ id: ShapeID) { makePlainTypes([id]) }
+
+    /// The same for several shapes, in one step.
+    public func makePlainTypes(_ ids: [ShapeID]) {
+        let taking = ids.filter { document[$0]?[RelationshipProperty.self] == true }
+        guard !taking.isEmpty else { return }
+        transact(TypesStyle.makePlainType) { transaction in
+            for id in taking { transaction.update(id) { $0[RelationshipProperty.self] = nil } }
+        }
+    }
+
+    /// Gives each arrow the relationship type, in the place of the one it has, in one step ("Add Type"): the entry
+    /// goes and the new one comes, so an arrow is of one relationship type at a time. The writer for outside a
+    /// press (a port's release gives its one type by `addTypeLink` alone, inside its own step). Nothing for a
+    /// shape that is no arrow of a relating kind; `addTypeLink` is still the one way a type is given.
+    public func setRelationshipType(_ type: ShapeID, of connections: [ShapeID]) {
+        let taking = connections.filter { id in shape(inFile: id).map { registry.relates($0.kind) } ?? false }
+        guard !taking.isEmpty else { return }
+        undoHistory.group(TypesStyle.addType) {
+            let marked = types?.graph.relationshipTypes ?? []
+            for id in taking {
+                for old in shape(inFile: id)?[IsAProperty.self]?.map(\.shape) ?? [] where old != type && marked.contains(old) { removeTypeLink(old, from: id) }
+                addTypeLink(type, to: id)
+            }
+        }
+    }
+
+    /// Gives the type the way a person asks for it, from `/is-a` and Is a ▸: an arrow given a relationship type
+    /// has it replace the one it has; any other shape has the type added. One step, "Add Type".
+    func giveType(_ type: ShapeID, to ids: [ShapeID]) {
+        // The role partition: an arrow is given relationship types only, and no other shape is.
+        let isRelationship = types?.graph.relationshipTypes.contains(type) == true
+        let arrows = ids.filter { id in shape(inFile: id).map { registry.relates($0.kind) } ?? false }
+        let replacing = isRelationship ? arrows : []
+        let rest = isRelationship ? [] : ids.filter { !arrows.contains($0) }
+        undoHistory.group(TypesStyle.addType) {
+            if !replacing.isEmpty { setRelationshipType(type, of: replacing) }
+            if !rest.isEmpty { addTypeLink(type, to: rest) }
+        }
+    }
+
     /// Makes the shape no longer a type, in one step ("Remove Type"): its schema goes, and its words
     /// stay, as does whether it's public. Undo brings the schema back. Nothing for a shape that isn't
     /// one; a read-only shape is refused by the core, and shakes.
@@ -96,7 +168,10 @@ extension CanvasEditor {
         guard !taking.isEmpty else { return }
         transact(TypesStyle.removeType) { transaction in
             for id in taking {
-                transaction.update(id) { $0[TypeSchemaProperty.self] = nil }
+                transaction.update(id) {
+                    $0[TypeSchemaProperty.self] = nil
+                    $0[RelationshipProperty.self] = nil
+                }
             }
         }
     }
@@ -106,7 +181,8 @@ extension CanvasEditor {
     /// A new type titled `name`, put down beside `owner` as `/move-near` puts a shape beside another
     /// (`Surroundings.near`), with the starter schema and no words, and `owner` made an instance of
     /// it: one step, "New Type", which stays open while the new note is edited, as a placed note's
-    /// does. Nil, with nothing changed, when nothing could be put down: `owner` is not on the board
+    /// does. For an owner that is an arrow (a kind that relates) it is a relationship type, with no ends,
+    /// in the step "New Relationship Type", and it replaces the relationship type the arrow had. Nil, with nothing changed, when nothing could be put down: `owner` is not on the board
     /// shown, no kind can be a type or has a tool to place it, `owner` has no box, or the board or
     /// the container it lands in is read-only (the core refuses it, and it shakes).
     @discardableResult
@@ -115,30 +191,40 @@ extension CanvasEditor {
         // Told which shape it made by the transform each record goes through.
         final class Made { var id: ShapeID? }
         let made = Made()
-        let placement = base.setting(TitleProperty.self, to: name)
+        let marks = ownerRelates(owner) && registry.canBeRelationshipType(kind)
+        var placement = base.setting(TitleProperty.self, to: name)
             .setting(TypeSchemaProperty.self, to: SchemaText(TypeSchemaProperty.starter))
-            .mapping { record in made.id = record.id; return record }
+        if marks { placement = placement.setting(RelationshipProperty.self, to: true) }
+        placement = placement.mapping { record in made.id = record.id; return record }
         guard let landing = Surroundings(on: board, moving: placement.size, in: self)?.near(owner) else { return nil }
-        return undoHistory.group(TypesStyle.newType) {
+        return undoHistory.group(marks ? TypesStyle.newRelationshipType : TypesStyle.newType) {
             place(placement, in: landing.rect)
             guard let id = made.id, document[id] != nil else { return nil }
-            addTypeLink(id, to: [owner])
+            giveType(id, to: [owner])
             return id
         }
     }
 
-    /// The kind a new type beside `owner` is: the owner's, if it can be a type, else the first that can.
+    /// Whether the owner is an arrow of a kind that relates, whose new type is a relationship type.
+    private func ownerRelates(_ owner: ShapeID) -> Bool { document[owner].map { registry.relates($0.kind) } ?? false }
+
+    /// The kind a new type beside `owner` is: the owner's, if it can be a type; for an owner that relates, the first
+    /// kind that can hold the mark as well; else the first that can be a type.
     func newTypeKind(for owner: ShapeID) -> ShapeKind? {
+        func usable(_ kind: ShapeKind) -> Bool { registry.canBeType(kind) && registry.placement(for: kind) != nil }
         if let record = document[owner], registry.canBeType(record.kind) { return record.kind }
-        return registry.kinds.first { registry.canBeType($0) && registry.placement(for: $0) != nil }
+        if ownerRelates(owner), let kind = registry.kinds.first(where: { usable($0) && registry.canBeRelationshipType($0) }) { return kind }
+        return registry.kinds.first(where: usable)
     }
 }
 
-/// `/is-a`: typed on a line of a shape's words, lists `Type` (while the shape can be one and isn't)
-/// and the types it may be (`TypeIndex.choices(for:)`: of the kinds that can be types, across the
-/// file, never the shape itself, a type it is already, one that is it in turn, or a pill), and a
-/// pick runs at once: `Type` makes the shape one ("Make Type"), a type adds it to the shape's types
-/// ("Add Type"). On any kind that holds `is`: a note, and an arrow in its label.
+/// `/is-a`: typed on a line of a shape's words, lists `Type` (while the shape can be one and isn't), `Relationship
+/// Type` (while it can be one and isn't) and the types it may be (`editor.typeChoices(for:)`: of the kinds that can
+/// be types, across the file, never the shape itself, a type it is already, one that is it in turn, or a pill; an
+/// arrow is offered relationship types, any other shape plain types), and a pick runs at once: `Type` makes the
+/// shape one ("Make Type"), `Relationship Type` one that relates ("Make Relationship Type"), a type adds it to the
+/// shape's types ("Add Type"; an arrow's relationship type is replaced). On any kind that holds `is`: a note, and an
+/// arrow in its label.
 @MainActor
 func registerIsACommand(into registrar: inout PluginRegistrar) {
     registrar.slashCommandsForEveryShape(where: { $0.holds(IsAProperty.self) }) {
@@ -149,7 +235,8 @@ func registerIsACommand(into registrar: inout PluginRegistrar) {
             // Asked again: the line was run as it was found.
             switch TypeChoice(choice) {
             case .type: editor.makeType(owner)
-            case .existing(let type): editor.addTypeLink(type, to: owner)
+            case .relationshipType: editor.makeRelationshipType(owner)
+            case .existing(let type): editor.giveType(type, to: [owner])
             case .new(let name): editor.newType(named: name, besides: owner)
             case .none: break
             }

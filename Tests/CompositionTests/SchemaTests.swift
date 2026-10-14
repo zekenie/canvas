@@ -155,6 +155,11 @@ private let stickyNoteSchema = #"""
       "type" : "boolean",
       "x-canvas-owner" : "publishing"
     },
+    "relationship" : {
+      "description" : "True on a type that says what an arrow between two notes holds and which types it runs from and to: a relationship type. Inert on a shape with no schema.",
+      "type" : "boolean",
+      "x-canvas-owner" : "types"
+    },
     "schema" : {
       "contentMediaType" : "application/schema+json",
       "description" : "A JSON Schema, as text, which makes the shape a type named by its title: its properties in the order written, kept as typed while it isn't JSON. A \"$ref\" to \"urn:uuid:\" and another type's id refers to that type.",

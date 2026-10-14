@@ -92,7 +92,7 @@ private struct ChitsPlugin: CanvasPlugin {
         expectEqual(state.commands(for: person).map(\.name), ["title", "is-a"], "a type too")
         expect(!state.run("is-a", on: ann, with: SlashArguments("Person")), "it never runs with arguments")
     },
-    test("its rows on a shape that is not a type: Type, then the file's types by name, Untitled last; not the shape, one it is, one that is it in turn, a shape that isn't a type, a pill") {
+    test("its rows on a shape that is not a type: Type and Relationship Type, then the file's plain types by name, Untitled last; not the shape, one it is, one that is it in turn, a shape that isn't a type, a pill") {
         let pocket = ShapeID(), far = ShapeID()
         let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 0, y: 600, width: 100, height: 100))))]),
                               children: [pocket: CanvasDocument(shapes: [typeRecord(TypeSchemaProperty.starter, title: "Far", id: far)])])
@@ -104,16 +104,16 @@ private struct ChitsPlugin: CanvasPlugin {
         _ = editor.add(memo("not a type", at: CGPoint(x: 600, y: 40)))
         _ = editor.add(Echo(stands: [Citation(person)]))
         let ann = editor.addInstance("Ann", of: [employee])
-        expectEqual(try titles(editor, on: ann), ["Type", "Far", "Person", "Zed", "Untitled"], "Employee is what Ann is; Far is on another board")
+        expectEqual(try titles(editor, on: ann), ["Type", "Relationship Type", "Far", "Person", "Zed", "Untitled"], "Employee is what Ann is; Far is on another board")
         let rows = try isA(editor, on: ann).choices()
-        expectEqual(rows.map(\.group), [0, 1, 1, 1, 1])
-        expectEqual(rows.map(\.isPreferred), [false, true, false, false, false], "the first type")
-        expectEqual(rows.map(\.step), ["Make Type", "Add Type", "Add Type", "Add Type", "Add Type"])
-        expectEqual(rows.map(\.symbol), Array(repeating: "curlybraces", count: 5))
+        expectEqual(rows.map(\.group), [0, 0, 1, 1, 1, 1])
+        expectEqual(rows.map(\.isPreferred), [false, false, true, false, false, false], "the first type")
+        expectEqual(rows.map(\.step), ["Make Type", "Make Relationship Type", "Add Type", "Add Type", "Add Type", "Add Type"])
+        expectEqual(rows.map(\.symbol), ["curlybraces", "arrow.right"] + Array(repeating: "curlybraces", count: 4))
         expect(rows.contains { $0.id == untitled.rawValue.uuidString })
         // No cycles: once Employee is a Person, Person may not be an Employee.
         editor.addTypeLink(person, to: employee)
-        expectEqual(try titles(editor, on: person), ["Far", "Zed", "Untitled"], "a type: no Type row; not Employee, which is a Person")
+        expectEqual(try titles(editor, on: person), ["Relationship Type", "Far", "Zed", "Untitled"], "a type: no Type row; not Employee, which is a Person")
         let manager = editor.addType(TypeSchemaProperty.starter, title: "Manager")
         editor.addTypeLink(employee, to: manager)
         expect(try !titles(editor, on: person).contains("Manager"), "Manager is an Employee, a Person")
@@ -121,12 +121,12 @@ private struct ChitsPlugin: CanvasPlugin {
         expect(try !titles(editor, on: manager).contains("Manager"))
         _ = zed
     },
-    test("/is-a type lists the Type row alone, which is titled so: no New type “Type”, on a shape that is a type already too") {
+    test("/is-a type lists the Type row and the Relationship Type row, which are titled so: no New type “Type”, on a shape that is a type already too") {
         let editor = try typeEditor()
         let ann = editor.add(memo("Ann"))
         let line = try IsALine(on: ann, in: editor)
         line.type("/is-a type")
-        expectEqual(line.titles, ["Type"])
+        expectEqual(line.titles, ["Type", "Relationship Type"])
         expectEqual(line.highlighted, "Type")
         line.returnKey()
         expectEqual(editor.schema(ann), TypeSchemaProperty.starter, "Return makes it a type")
@@ -135,22 +135,23 @@ private struct ChitsPlugin: CanvasPlugin {
         let bo = editor.add(memo("Bo", at: CGPoint(x: 600, y: 40)))
         let typed = try IsALine(on: bo, in: editor)
         typed.type("/is-a typ")
-        expectEqual(typed.titles, ["Type", "New type “Typ”"], "a title it only starts")
+        expectEqual(typed.titles, ["Type", "Relationship Type", "New type “Typ”"], "a title it only starts")
 
         let again = try IsALine(on: ann, in: editor)
         again.type("/is-a type")
-        expectEqual(again.titles, [], "Ann is a type now: no Type row, and the list's own word names no new type")
+        expectEqual(again.titles, ["Relationship Type"], "Ann is a type now: no Type row, and the list's own words name no new type")
     },
     test("the rows are chips: a type's color, Type and an untitled type gray") {
         let editor = try typeEditor()
         let person = editor.addType(TypeSchemaProperty.starter, title: "Person"), untitled = editor.addType(TypeSchemaProperty.starter)
         let ann = editor.addInstance("Ann", of: [])
         let rows = try isA(editor, on: ann).choices()
-        expectEqual(rows.map(\.title), ["Type", "Person", "Untitled"])
+        expectEqual(rows.map(\.title), ["Type", "Relationship Type", "Person", "Untitled"])
         expectEqual(rows[0].chip, TypesStyle.grayChip)
-        expectEqual(rows[1].chip, editor.types?.look(of: person).row)
-        expectEqual(rows[2].chip, TypesStyle.grayChip)
-        expectEqual(rows[1].chip, editor.types?.look(of: person).solid.color, "the pill's color")
+        expectEqual(rows[1].chip, TypesStyle.grayChip)
+        expectEqual(rows[2].chip, editor.types?.look(of: person).row)
+        expectEqual(rows[3].chip, TypesStyle.grayChip)
+        expectEqual(rows[2].chip, editor.types?.look(of: person).solid.color, "the pill's color")
         _ = untitled
     },
     test("a type whose shape holds a color is that color in the list: its solid, a hex value too; a name the file lacks is the id's") {
@@ -180,7 +181,7 @@ private struct ChitsPlugin: CanvasPlugin {
         expect(try pick("Person", on: chit, in: editor))
         expectEqual(editor.typesOf(chit), [person])
         let ann = editor.add(memo("Ann", at: CGPoint(x: 600, y: 40)))
-        expectEqual(try titles(editor, on: ann), ["Type", "Person"])
+        expectEqual(try titles(editor, on: ann), ["Type", "Relationship Type", "Person"])
     },
     test("Type makes the shape a type in one step, Make Type; undo is exact; a type takes no Type row") {
         let editor = try typeEditor()
@@ -289,7 +290,7 @@ private struct ChitsPlugin: CanvasPlugin {
         let command = try isA(editor, on: ann)
         var rows: [SlashChoice] = []
         let took = (0..<5).map { _ in threadCPUTime { rows = command.choices() } }.min() ?? .zero
-        expectEqual(rows.count, 1001)
+        expectEqual(rows.count, 1002)
         expect(took < .milliseconds(25), "a thousand types took \(took)")
     },
 ])

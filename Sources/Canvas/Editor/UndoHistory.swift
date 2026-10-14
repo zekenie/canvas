@@ -104,6 +104,9 @@ public final class UndoHistory {
     private var keyDown: KeyStroke?
     /// The card showing that holds a step: its id and the name of its step (`keep`).
     private var keptRun: (key: AnyHashable, name: String)?
+    /// The card was shown inside an action and takes its step on (`CanvasCard.adoptsPress`): when the
+    /// action ends, its open step stays open as the card's, to close with the card.
+    private var adoptsAction = false
 
     init() {}
 
@@ -199,10 +202,12 @@ public final class UndoHistory {
 
     /// A card with a step name shows: commits under `key` are one step called `name` until `letGo`. A
     /// step kept under another key or name closes. Opens nothing, so the press a card is shown in keeps
-    /// its own step.
-    func keep(_ key: AnyHashable, named name: String) {
+    /// its own step, unless the card `adopts` it and is shown inside an action: that action's step is
+    /// then the card's when the action ends, and keeps its name.
+    func keep(_ key: AnyHashable, named name: String, adopting adopts: Bool = false) {
         if case .kept(let kept)? = open?.holder, kept != key || keptRun?.name != name { close() }
         keptRun = (key, name)
+        adoptsAction = adopts && depth > 0
     }
 
     /// The card holds no step now (it closed, or its step name went): the step it held closes. Never
@@ -211,6 +216,7 @@ public final class UndoHistory {
     func letGo() {
         if case .kept? = open?.holder { close() }
         keptRun = nil
+        adoptsAction = false
     }
 
     /// A save point: closes the open step, whatever holds it. Later commits of the same press, run or
@@ -272,12 +278,15 @@ public final class UndoHistory {
         if editingBeganInAction, isEditing {
             open?.holder = .editing
             open?.editingName = editingName
+        } else if adoptsAction, let run = keptRun, open?.holder == .action {
+            open?.holder = .kept(run.key)
         } else if let key, open?.holder == .action {
             open?.holder = .held(key)
         } else if !isEditingStepOpen {
             close()
         }
         editingBeganInAction = false
+        adoptsAction = false
     }
 
     /// A press began. One whose release never came (a lost mouse-up) ends first.
@@ -351,6 +360,10 @@ public final class UndoHistory {
     /// one, which stays open and comes after it: the two are on different boards.
     func recordStep(on board: BoardID, name: String?, changes: ChangeSet, from old: CanvasFile, _ commit: () -> Void) {
         guard let editor else { return commit() }
+        // A step that holds a board this one reaches whole (a card's, that reached it), its own or any it
+        // adds, removes or changes, would take this one in, in its after and its before alike: it closes
+        // first, so each undoes and redoes exactly.
+        if let open, open.builder.holds(board) || changes.boardsReached.contains(where: open.builder.holds) { close() }
         var builder = DocumentDelta.Builder(board: board)
         builder.willCommit(changes, from: old)
         let before = snapshots()

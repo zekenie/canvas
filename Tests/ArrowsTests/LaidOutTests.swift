@@ -29,4 +29,25 @@ import TestKit
         h.editor.undo()
         expectEqual(try require(h.editor.arrowGeometry(of: arrow)).end, end, "and undone with the gauge")
     },
+    test("an arrow bound to a stretch laid out smaller than it stores ends on its smaller edge, and follows it as its gauge grows and shrinks") {
+        let h = try EditorHarness(plugins: arrowsPlugins(more: [StretchesPlugin(shrinking: true)]))
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 900, y: 700, width: 60, height: 40), width: 40, height: 30))
+        let stretch = h.add(Stretch(CGRect(x: 460, y: 80, width: 200, height: 120), gauge: gauge))     // stored to x 660, laid out to x 500
+        let arrow = h.add(Arrow(start: .free(CGPoint(x: 1200, y: 95)),
+                                end: .bound(ArrowBinding(shapeID: stretch, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))))
+        let end = try require(h.editor.arrowGeometry(of: arrow)).end
+        expect(end.x > 480 && end.x < 540, "ends at the laid-out right edge (500), not the stored one (660): \(end)")
+        expectEqual(h.editor.shapeContext.geometry(of: stretch)?.bounds, CGRect(x: 460, y: 80, width: 40, height: 30))
+        let stored = h.editor.document[stretch]
+        h.editor.transact("Gauge") { $0.update(gauge, as: CanvasTesting.Gauge.self) { $0.props.width = 100 } }
+        let grown = try require(h.editor.arrowGeometry(of: arrow)).end
+        expect(grown.x > 540 && grown.x < 600, "followed it to the new right edge (560): \(grown)")
+        h.editor.transact("Gauge") { $0.update(gauge, as: CanvasTesting.Gauge.self) { $0.props.width = 20 } }
+        let shrunk = try require(h.editor.arrowGeometry(of: arrow)).end
+        expect(shrunk.x > 470 && shrunk.x < 500, "and in to 480: \(shrunk)")
+        expectEqual(h.editor.document[stretch], stored, "the stretch is not edited")
+        h.editor.undo()
+        h.editor.undo()
+        expectEqual(try require(h.editor.arrowGeometry(of: arrow)).end, end, "and undone with the gauge")
+    },
 ])

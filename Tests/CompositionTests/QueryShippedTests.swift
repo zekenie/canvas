@@ -196,8 +196,9 @@ struct StoryQuery {
         // Beside the title like it, that mentions point at shapes that aren't there, which :dangling finds.
         let gone = try require(try refusal(#":mentions("Old ledger")"#))
         expectEqual(gone.message, "No shape is titled Old ledger.")
-        expectEqual(gone.hint, #"Did you mean "Ledger"? Some mention edges point at shapes that aren't there: :dangling(only mention) finds what carries them."#)
+        expectEqual(gone.hint, #"Did you mean "Ledger"? Some mention edges point at shapes that aren't there: :dangling(mention) finds what carries them."#)
         expectEqual(try refusal(":mentions(Checkout)")?.hint, #""Checkout" is the shape titled so."#, "a title without its quotes")
+        expectEqual(try refusal(#":edge-to("Checkout", field-link)"#)?.message, "field-link isn't an edge type.", "a field names no note, so there is no such edge")
         expectEqual(try refusal("note")?.hint, "Did you mean sticky-note (a Note)?")
         expectEqual(try refusal("note")?.message, "note isn't a kind.")
     },

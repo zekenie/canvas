@@ -177,95 +177,24 @@ private let orderSchema = #"""
         expectEqual(unnamed(try drawn(#"memo "Haunted" fieldValues: {"anything": 1}"#, on: editor)), [], "while a type is gone no key is called unnamed")
     },
 
-    // MARK: @[Title] is a pointer
+    // MARK: @[Title] is text
 
-    test("a string that is exactly @[Title], at the top, in a group and in a list, becomes the token of the shape called so; one drawn in the same script is no problem and no warning, in a run and a dry run") {
+    test("a string that is exactly @[Title], at the top and in a list, is stored as the ten characters it is, with no lookup, no warning and no problem, in a run and a dry run") {
         let editor = try typeNamesEditor()
-        let person = editor.addType("Person", schema: #"{"type": "object", "properties": {"name": {"type": "string"}}}"#)
-        editor.addType("Order", schema: pointerOrderSchema(person))
-        let script = """
-        memo "Ann Lee" is: "Person" fieldValues: {"name": "Ann"}
-        memo "Bo" below "Ann Lee" is: "Person"
-        memo "O1" below "Bo" is: "Order" fieldValues: {"customer": "@[Ann Lee]", "contact": {"owner": "@[Bo]"}, "cc": ["@[Bo]", "@[Ann Lee]"]}
-        """
+        editor.addType("Order", schema: #"{"type": "object", "properties": {"customer": {"type": "string"}, "cc": {"type": "array", "items": {"type": "string"}}}}"#)
+        let script = #"memo "O1" is: "Order" fieldValues: {"customer": "@[Ann Lee]", "cc": ["@[Bo]", "@[Nobody]"]}"#
         let dry = try drawn(script, on: editor, dryRun: true)
         expect(editor.shape(called: "O1") == nil, "a dry run drew nothing")
         let real = try drawn(script, on: editor)
-        let ann = try require(editor.shape(called: "Ann Lee")), bo = try require(editor.shape(called: "Bo"))
-        @MainActor func token(_ shape: AnyShapeRecord) -> JSONValue { .string(MentionToken.write(shape.id, label: editor.registry.title(of: shape) ?? "")) }
-        expectEqual(values(of: "O1", in: editor), ["customer": token(ann), "contact": ["owner": token(bo)], "cc": .array([token(bo), token(ann)])])
+        expectEqual(values(of: "O1", in: editor), ["customer": "@[Ann Lee]", "cc": ["@[Bo]", "@[Nobody]"]])
+        expectEqual("@[Ann Lee]".count, 10)
         for (name, result) in [("run", real), ("dry run", dry)] {
             let row = result["changes"]?.arrayValue?.first { $0["title"] == "O1" }
             expectEqual(row?["problems"], nil, "no problem in a \(name)")
             let said = (result["warnings"]?.arrayValue ?? []).compactMap { $0["message"]?.stringValue }
             expect(said.isEmpty, "no warning in a \(name): \(said)")
         }
-    },
-
-    test("a whole token is kept as written, a backslash before @[Title] writes it as text, @[ among other text is text") {
-        let editor = try typeNamesEditor()
-        let person = editor.addType("Person", schema: #"{"type": "object", "properties": {"name": {"type": "string"}}}"#)
-        editor.addType("Order", schema: pointerOrderSchema(person))
-        _ = try drawn(#"memo "Ann Lee" is: "Person""#, on: editor)
-        let ann = try require(editor.shape(called: "Ann Lee"))
-        let whole = MentionToken.write(ann.id, label: "Ann Lee")
-        let script = "memo \"O1\" is: \"Order\" fieldValues: {\"customer\": \"\(whole)\", \"note\": \"\\\\@[Ann Lee]\", \"memo\": \"see @[Nobody] soon\", \"also\": \"@[Ann Lee] and @[Bo]\"}"
-        _ = try drawn(script, on: editor)
-        let held = try require(values(of: "O1", in: editor))
-        expectEqual(held["customer"], .string(whole), "a whole token, as written")
-        expectEqual(held["note"], "@[Ann Lee]", "the backslash is dropped, the text kept")
-        expectEqual(held["memo"], "see @[Nobody] soon", "text around is text, and no title is looked up")
-        expectEqual(held["also"], "@[Ann Lee] and @[Bo]")
         expectEqual(dids(try drawn(script, on: editor)), ["unchanged"], "run again, nothing changes")
-    },
-
-    test("a blank @[], a title nobody has and a title two shapes share are refused as a mention in a text is, and nothing is committed") {
-        let editor = try typeNamesEditor()
-        let person = editor.addType("Person", schema: #"{"type": "object", "properties": {"name": {"type": "string"}}}"#)
-        editor.addType("Order", schema: pointerOrderSchema(person))
-        _ = try drawn(#"memo "Ann Lee" is: "Person""#, on: editor)
-        for y in [300, 400] as [CGFloat] {
-            var twin = AnyShapeRecord(ShapeRecord(Memo(frame: CGRect(x: 600, y: y, width: 240, height: 52))))
-            twin[TitleProperty.self] = "Twin"
-            editor.transact { $0.insert(twin) }
-        }
-        let before = editor.document.shapes.count
-        @MainActor func refusal(_ value: String) throws -> JSON {
-            try refused(#"memo "New" below "Ann Lee" is: "Order" fieldValues: {"customer": "\#(value)"}"#, on: editor)
-        }
-        let blank = try refusal("@[]")
-        expectEqual(blank["reason"], "invalid_value")
-        expectEqual(blank["message"]?.stringValue?.contains("\"New\": fieldValues: @[] is a mention with no title in it"), true, "\(blank)")
-        let unknown = try refusal("@[Ann Lea]")
-        expectEqual(unknown["reason"], "unknown_title")
-        expect(unknown["hint"]?.stringValue?.contains("Ann Lee") == true, "did you mean: \(unknown)")
-        expect(unknown["hint"]?.stringValue?.contains(#"to write @[ as text, write \\@["#) == true, "\(unknown)")
-        let twin = try refusal("@[Twin]")
-        expectEqual(twin["reason"], "ambiguous_title")
-        expectEqual(editor.document.shapes.count, before, "nothing committed")
-        expect(editor.shape(called: "New") == nil)
-    },
-
-    test("a pointer to a note that isn't of the field's type is wrong, in problems and as an error, and one to a note not in the file is warned about as a mention is") {
-        let editor = try typeNamesEditor()
-        let person = editor.addType("Person", schema: #"{"type": "object", "properties": {"name": {"type": "string"}}}"#)
-        editor.addType("Order", schema: pointerOrderSchema(person))
-        _ = try drawn("memo \"Ann Lee\" is: \"Person\"\nmemo \"Plain\" below \"Ann Lee\"", on: editor)
-        let result = try drawn(#"memo "O1" below "Plain" is: "Order" fieldValues: {"customer": "@[Plain]"}"#, on: editor)
-        let problems = try require(result["changes"]?.arrayValue?.first?["problems"]?.arrayValue)
-        expectEqual(problems.map { $0["class"]?.stringValue }, ["wrong"])
-        expectEqual(problems.first?["field"], "customer")
-        expectEqual(problems.first?["path"], "/customer")
-        let errors = (result["warnings"]?.arrayValue ?? []).filter { $0["severity"] == "error" }
-        expectEqual(errors.compactMap { $0["attribute"]?.stringValue }, ["customer"], "an error, on the field's key")
-        // The same field pointing at a note of the type is clean.
-        let fine = try drawn(#"memo "O1" fieldValues: {"customer": "@[Ann Lee]"}"#, on: editor)
-        expectEqual(fine["changes"]?.arrayValue?.first?["problems"], nil)
-        // A token of a shape that is not in the file: said, as a mention's is.
-        let gone = MentionToken.write(ShapeID(), label: "Ghost")
-        let missing = try drawn("memo \"O2\" below \"O1\" is: \"Order\" fieldValues: {\"customer\": \"\(gone)\"}", on: editor)
-        let said = (missing["warnings"]?.arrayValue ?? []).compactMap { $0["message"]?.stringValue }
-        expect(said.contains { $0.contains("fieldValues names shapes that aren't in the file") }, "\(said)")
     },
 
     test("a type restated in the script with a field made required gives a restated note the new problem in the same run, and a note the script doesn't name is left as it was") {
@@ -283,9 +212,3 @@ private let orderSchema = #"""
 ])
 
 private func scripted(_ text: String) -> String { text.replacingOccurrences(of: "\"", with: "\\\"") }
-
-/// An Order of pointers at `person`: one, one inside a group, and a list of them.
-private func pointerOrderSchema(_ person: ShapeID) -> String {
-    let link = String(decoding: (try? JSONEncoder().encode(JSONValue.object(FieldKind.pointerSchema(to: person)))) ?? Data(), as: UTF8.self)
-    return #"{"type": "object", "properties": {"customer": \#(link), "contact": {"type": "object", "properties": {"owner": \#(link)}}, "cc": {"type": "array", "items": \#(link)}}}"#
-}

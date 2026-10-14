@@ -140,6 +140,46 @@ let boxC = CGRect(x: 80, y: 600, width: 100, height: 100)
         expectEqual(changedPixels(unselected, several, in: insideA), 0)
         expect(changedPixels(unselected, several, in: CGRect(x: 290, y: 170, width: 150, height: 20)) > 0, "but it's outlined")
     },
+    test("a box moved onto a pocket's board with the arrow bound to it and free at the other end, then put where it lands as Moving's commit does (the box and what rode along): the arrow keeps its free end against the box; undo and redo exact") {
+        let a = ShapeRecord(Box(boxA)), pocket = ShapeRecord(Pocket(boxB)), inner = ShapeRecord(Box(boxA))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(a), AnyShapeRecord(pocket)]),
+                              children: [pocket.id: CanvasDocument(shapes: [AnyShapeRecord(inner)])])
+        let h = try EditorHarness(plugins: arrowsPlugins(before: [PocketsPlugin()]), file: file)
+        let free = CGPoint(x: 400, y: 400), delta = CGPoint(x: 1000, y: 500), there = BoardID(owner: pocket.id)
+        let arrow = h.add(Arrow(start: .bound(ArrowBinding(shapeID: a.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)),
+                                end: .free(free)))
+        let before = h.file
+        h.editor.transact("Move") { tx in
+            expect(tx.move([a.id], to: there))
+            expectEqual(tx.rodeAlong, [arrow], "the arrow rode along")
+            tx.translate(Set([a.id]).union(tx.rodeAlong), by: delta, on: there)
+        }
+        expectEqual(h.file.board(containing: arrow), there, "on the box's board")
+        expectEqual(h.file.record(a.id)?.box?.origin, boxA.origin + delta, "the box is where it landed")
+        let props = try require(h.file.record(arrow)?.typed(as: Arrow.self)?.props)
+        expectEqual(props.start.binding?.shapeID, a.id, "bound still")
+        expectEqual(props.end, .free(free + delta), "its free end is where it was against the box")
+        let after = h.file
+        h.editor.undo()
+        expectEqual(h.file, before, "undo")
+        h.editor.redo()
+        expectEqual(h.file, after, "redo")
+    },
+    test("an arrow bound at both ends to shapes that move rides along bound, nothing of it changed by the translation") {
+        let a = ShapeRecord(Box(boxA)), b = ShapeRecord(Box(boxB)), pocket = ShapeRecord(Pocket(boxC))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(a), AnyShapeRecord(b), AnyShapeRecord(pocket)]))
+        let h = try EditorHarness(plugins: arrowsPlugins(before: [PocketsPlugin()]), file: file)
+        let there = BoardID(owner: pocket.id)
+        let arrow = h.add(Arrow(start: .bound(ArrowBinding(shapeID: a.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)),
+                                end: .bound(ArrowBinding(shapeID: b.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))))
+        let bound = h.file.record(arrow)?.typed(as: Arrow.self)?.props
+        h.editor.transact("Move") { tx in
+            expect(tx.move([a.id, b.id], to: there))
+            tx.translate(Set([a.id, b.id]).union(tx.rodeAlong), by: CGPoint(x: 30, y: 40), on: there)
+        }
+        expectEqual(h.file.board(containing: arrow), there)
+        expectEqual(h.file.record(arrow)?.typed(as: Arrow.self)?.props, bound)
+    },
 ])
 
 /// The arrow with its bindings moved to other shapes: the same arrow on another board.

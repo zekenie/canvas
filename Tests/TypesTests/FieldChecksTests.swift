@@ -31,7 +31,7 @@ private func summary(_ check: FieldCheck) -> [String] {
 }
 
 private func filled(_ quantity: Double = 3) -> JSONObject {
-    ["customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "lineItems": [["product": "Mug", "quantity": .number(quantity)]]]
+    ["customer": "Ann Lee", "lineItems": [["product": "Mug", "quantity": .number(quantity)]]]
 }
 
 /// A type's schema written, in one step.

@@ -47,8 +47,9 @@ public final class MentionState {
     @ObservationIgnored private var observersByTarget: [ShapeID: Set<Int>] = [:]
     @ObservationIgnored private var nextObservation = 0
 
-    /// Every mentionable shape on every board the editor can show that its kind names (not the
-    /// "Untitled …" placeholder), ready to match.
+    /// Every mentionable shape on every board the editor can show that its kind names, ready to
+    /// match; the shapes it gives no name (the "Untitled …" placeholder) are in the catalog's side
+    /// table, read only by `candidates(…listingUnnamed: true)`.
     @ObservationIgnored private var catalog = MentionCatalog()
     /// The catalog's shapes each scope but `AnyMentionable` admits, and those of each set of kinds a
     /// text's command takes (`candidates(…kinds:)`), made when first asked about and kept up to date
@@ -357,7 +358,7 @@ public final class MentionState {
     /// when the `@` is in its first line; nearness is measured from it): every mentionable shape
     /// the scope admits on any board of the file the editor can show, but those kept aside and
     /// those its kind gives no name (called by the "Untitled …" placeholder: a mention of one
-    /// stays, but there's no point picking it). An empty query lists recent picks, then the shapes nearest the
+    /// stays, but there's no point picking it), unless `listingUnnamed` (below). An empty query lists recent picks, then the shapes nearest the
     /// owner on the board shown and, while there's room, the shapes whose boards it's inside, the
     /// board shown's own first; any other, one ranked list of the best matches (`FuzzyMatcher`'s
     /// tiers, then `MentionRanking`'s adjustments, nearness on the board shown among them; ties to
@@ -378,14 +379,23 @@ public final class MentionState {
     /// boards it's inside come those on the other boards, the nearest board first (`farther`). With
     /// none of either, which is every text but a command line's, nothing more is asked of a shape.
     ///
-    /// `among`, if given, is a set of shapes the caller has already found (a field that points at
-    /// notes of one type: the notes that are one), which a shape must be in too. It does what `kinds`
+    /// `among`, if given, is a set of shapes the caller has already found (a relationship row's
+    /// list: the notes that fit the row), which a shape must be in too. It does what `kinds`
     /// does for a set no kind names: only the given shapes of the catalog are ranked, so a typed query
     /// ranks them alone, and an empty one reads them whole and lists as many as a typed one, nearest on
     /// the board shown first, then on every other board. A shape of it that isn't in the catalog (kept
     /// aside, named by no mention) is dropped. With `kinds` too, the shapes of both.
+    ///
+    /// `listingUnnamed`, with `among` or `kinds`, lists the shapes their kind gives no name as well,
+    /// as members: after the named ones, an empty query reads them into the nearby (the board shown's,
+    /// nearest first) and then the other boards' (the nearest board first), and a typed one matches
+    /// them only by their placeholder label ("Untitled Note"), after the named matches. A list of
+    /// the notes that fit a relationship row asks, since a note with nothing in it fits and is
+    /// pickable; `@`, `/move-to` and the reference list do not, and nothing they cost moves. A shape
+    /// handed in `among` is of the catalog, or an unnamed one.
     public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owner: ShapeID?,
                                             kinds: Set<ShapeKind>? = nil, among: [ShapeID]? = nil,
+                                            listingUnnamed: Bool = false,
                                             admitting rule: (@MainActor (ShapeID) -> Bool)? = nil) -> MentionCandidates {
         refreshStale()
         let document = editor.document, file = editor.file, registry = registry
@@ -397,14 +407,27 @@ public final class MentionState {
         let scopeMembers = admitsAll ? nil : self.members(of: S.self)
         let kindMembers = kinds.map { self.members(ofKinds: $0) }
         // What the caller gave, in the catalog and of the kinds, once each (`given`); else the kinds' members.
+        // And, with `listingUnnamed`, the unnamed among them, apart: `given.ids` stays the named.
+        var unnamedIds: [ShapeID] = []
         let given: (ids: [ShapeID], contains: (ShapeID) -> Bool)?
         if let among {
             var seen = Set<ShapeID>()
-            let ids = among.filter { catalog.contains($0) && (kindMembers?.contains($0) ?? true) && seen.insert($0).inserted }
-            let kept = seen
+            var unnamedSeen = Set<ShapeID>()
+            let ids = among.filter {
+                if listingUnnamed, let unnamed = catalog.unnamed[$0] {
+                    if kinds?.contains(unnamed.kind) ?? true, unnamedSeen.insert($0).inserted { unnamedIds.append($0) }
+                    return false
+                }
+                return catalog.contains($0) && (kindMembers?.contains($0) ?? true) && seen.insert($0).inserted
+            }
+            let kept = seen.union(unnamedSeen)
             given = (ids, { kept.contains($0) })
         } else if let kindMembers {
-            given = (kindMembers.ids, kindMembers.contains)
+            if listingUnnamed, let kinds {
+                unnamedIds = catalog.unnamed.lazy.filter { kinds.contains($0.value.kind) }.map(\.key)
+            }
+            let kept = Set(unnamedIds)
+            given = (kindMembers.ids, { kindMembers.contains($0) || kept.contains($0) })
         } else {
             given = nil
         }
@@ -427,7 +450,7 @@ public final class MentionState {
 
         let q = FuzzyMatcher.Query(query)
         guard !q.isEmpty else {
-            let recentShown = Array(recent.lazy.filter { self.catalog.contains($0) && listable($0) }
+            let recentShown = Array(recent.lazy.filter { (self.catalog.contains($0) || (listingUnnamed && self.catalog.unnamed[$0] != nil)) && listable($0) }
                 .prefix(MentionRanking.recentShown)).map { candidate($0, matched: []) }
             var taken = Set(recentShown.map(\.id))
             if let owner { taken.insert(owner) }
@@ -444,6 +467,11 @@ public final class MentionState {
             if let given, nearby.count < room {
                 nearby += farther(given.ids, count: room - nearby.count, excluding: taken, admits: listable)
             }
+            // The unnamed come after every named one.
+            if nearby.count < room {
+                nearby += unnamedInOrder(unnamedIds, excluding: taken.union(nearby), admits: listable, distance: distance,
+                                         limit: room - nearby.count)
+            }
             return MentionCandidates(recent: recentShown, nearby: nearby.map { candidate($0, matched: []) }, matches: [])
         }
 
@@ -455,6 +483,9 @@ public final class MentionState {
         // Two linear passes over the catalog's keys, as every caret list matches (`rank`): every
         // tier but the typo's, then, if that found few, the typo's over the rest.
         var found: [Found] = []
+        var forgave = false
+        /// How many the other tiers than the typo's found.
+        var tierFound = 0
         /// A member's slot in the catalog, member for member (its entry may have gone since: nil).
         let memberSlots = members?.map { catalog.slot(of: $0) }
         q.withView { view in
@@ -462,7 +493,7 @@ public final class MentionState {
                 catalog.entries.withUnsafeBufferPointer { entries in
                     /// A place in the ranking's order: a catalog slot, or a member's, which has a slot of its own.
                     func slot(_ index: Int) -> Int? { memberSlots.map { $0[index] } ?? index }
-                    FuzzyMatcher.rank(view, count: members?.count ?? entries.count, wantSpans: false, label: { index in
+                    forgave = FuzzyMatcher.ranking(view, count: members?.count ?? entries.count, wantSpans: false, label: { index in
                         guard let slot = slot(index) else { return nil }
                         let entry = entries[slot]
                         guard !(leavesOutOwner && entry.id == owner), scopeAdmitted || admits(entry.id) else { return nil }
@@ -470,7 +501,10 @@ public final class MentionState {
                         if let rule, !rule(entry.id) { return nil }
                         return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
                     }) { index, score, _ in
-                        if let slot = slot(index) { found.append(Found(slot: slot, score: score)) }
+                        if let slot = slot(index) {
+                            found.append(Found(slot: slot, score: score))
+                            if score != FuzzyRanking.typo { tierFound += 1 }
+                        }
                     }
                 }
             }
@@ -502,12 +536,31 @@ public final class MentionState {
             }
             ranked.sort { isWorse($1, $0) }
         }
-        let matches = ranked.prefix(MentionRanking.maxMatches).map { found in
+        var matches = ranked.prefix(MentionRanking.maxMatches).map { found in
             let id = entries[found.slot].id
             let label = catalog.appearances[found.slot].label
             return candidate(id, matched: FuzzyMatcher.match(q, in: FuzzyMatcher.Label(label))?.matched ?? [])
         }
-        return MentionCandidates(recent: [], nearby: [], matches: matches)
+        // The unnamed, by their placeholder label alone (one match a label), after the named. The typo's tier is
+        // tried as the named are: only when the other tiers found fewer than `typoPassBelow` shapes, named and
+        // unnamed together, so a narrowed list and a fresh one agree (`forgave`).
+        if matches.count < MentionRanking.maxMatches, !unnamedIds.isEmpty {
+            var spans: [String: FuzzyMatch?] = [:]
+            var fits = unnamedIds.filter { id in
+                guard !(leavesOutOwner && id == owner), listable(id), let label = catalog.unnamed[id]?.appearance.label else { return false }
+                if spans[label] == nil { spans[label] = .some(FuzzyMatcher.match(q, in: FuzzyMatcher.Label(label))) }
+                return spans[label]! != nil
+            }
+            func isTypo(_ id: ShapeID) -> Bool { spans[catalog.unnamed[id]!.appearance.label]!!.score == FuzzyRanking.typo }
+            let firstPass = tierFound + fits.lazy.filter { !isTypo($0) }.count
+            let typoPass = firstPass < FuzzyRanking.typoPassBelow && q.withView { $0.characterCount } >= FuzzyRanking.typoMinimumQuery
+            if !typoPass { fits = fits.filter { !isTypo($0) } }
+            forgave = forgave || typoPass
+            for id in unnamedInOrder(fits, excluding: [], admits: { _ in true }, distance: distance, limit: MentionRanking.maxMatches - matches.count) {
+                matches.append(candidate(id, matched: spans[catalog.unnamed[id]!.appearance.label]!!.matched))
+            }
+        }
+        return MentionCandidates(recent: [], nearby: [], matches: matches, forgave: forgave)
     }
 
     /// The shapes in the catalog on the board shown nearest `origin` that can be listed, up to
@@ -581,8 +634,40 @@ public final class MentionState {
         return found
     }
 
+    /// The first `limit` of these unnamed shapes that can be listed, but those taken: the board shown's
+    /// first, nearest the owner first, then the other boards', the nearest board first, a board's in
+    /// document order where it has one, else by id. O(the shapes, and their boards' depth once, and
+    /// a logarithm of `limit` for each): a heap keeps the best `limit`, never a sort of all of them.
+    private func unnamedInOrder(_ ids: [ShapeID], excluding taken: Set<ShapeID>, admits: (ShapeID) -> Bool,
+                                distance: (ShapeID) -> Double?, limit: Int) -> [ShapeID] {
+        let shown = editor.boardPath, file = editor.file, document = editor.document
+        var boardsApart: [BoardID: Int] = [:]
+        typealias Place = (apart: Int, distance: Double, index: Int, id: ShapeID)
+        // The id's text only breaks a tie of the rest.
+        var best = BoundedHeap<Place>(capacity: limit) { a, b in
+            if a.apart != b.apart { return a.apart > b.apart }
+            if a.distance != b.distance { return a.distance > b.distance }
+            if a.index != b.index { return a.index > b.index }
+            return a.id.description > b.id.description
+        }
+        for id in ids where !taken.contains(id) {
+            guard let unnamed = catalog.unnamed[id], admits(id) else { continue }
+            let apart: Int
+            if let known = boardsApart[unnamed.board] {
+                apart = known
+            } else {
+                guard let path = file.path(to: unnamed.board) else { continue }
+                let shared = zip(shown, path).prefix { $0.0 == $0.1 }.count
+                apart = shown.count + path.count - 2 * shared
+                boardsApart[unnamed.board] = apart
+            }
+            best.insert((apart, apart == 0 ? distance(id) ?? .infinity : 0, apart == 0 ? document.index(of: id) ?? 0 : 0, id))
+        }
+        return best.sorted().map(\.id)
+    }
+
     private func candidate(_ id: ShapeID, matched: [Range<Int>]) -> MentionCandidate {
-        MentionCandidate(id: id, appearance: catalog.appearance(of: id)!, isReadOnly: isReadOnly(id), matched: matched)
+        MentionCandidate(id: id, appearance: catalog.anyAppearance(of: id)!, isReadOnly: isReadOnly(id), matched: matched)
     }
 
     /// Whether a shape, on whichever board of the file it's on, can't change: locked, in a locked
@@ -721,10 +806,16 @@ public final class MentionState {
     /// A shape's catalog entry, read again: out of the catalog if it can't be mentioned, or its kind
     /// gives it no name.
     private func readEntry(_ record: AnyShapeRecord, on board: BoardID) {
-        guard let appearance = appearance(of: record), !appearance.isPlaceholder else {
+        guard let appearance = appearance(of: record) else {
             removeEntry(record.id)
             return
         }
+        guard !appearance.isPlaceholder else {
+            removeEntry(record.id)
+            catalog.setUnnamed(record.id, kind: record.kind, appearance, on: board)
+            return
+        }
+        catalog.removeUnnamed(record.id)
         #if DEBUG
         entriesRead += 1
         #endif
@@ -734,6 +825,7 @@ public final class MentionState {
 
     /// Takes a shape out of the catalog, and out of every set of members.
     private func removeEntry(_ id: ShapeID) {
+        catalog.removeUnnamed(id)
         catalog.remove(id)
         for members in memberSets.values { members.remove(id) }
     }
@@ -879,11 +971,15 @@ public struct MentionCandidates: Hashable, Sendable {
     public var recent: [MentionCandidate]
     public var nearby: [MentionCandidate]
     public var matches: [MentionCandidate]
+    /// Whether the matcher's typo pass ran for the query: it reads every label, so a list that ranked a narrowed set
+    /// (`among:`) and not the whole one would have missed a typo of the query among the rest.
+    public var forgave: Bool
 
-    public init(recent: [MentionCandidate] = [], nearby: [MentionCandidate] = [], matches: [MentionCandidate] = []) {
+    public init(recent: [MentionCandidate] = [], nearby: [MentionCandidate] = [], matches: [MentionCandidate] = [], forgave: Bool = false) {
         self.recent = recent
         self.nearby = nearby
         self.matches = matches
+        self.forgave = forgave
     }
 
     /// Every row, in order.

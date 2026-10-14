@@ -181,6 +181,28 @@ private let views: [(name: String, view: EdgeView)] = [("resolved", .resolved), 
         expectEqual(h.editor.registry.edges(of: record), [edge(WireEdge.id, a, a, by: a)])
     },
 
+    test("the stand-ins whose record names a shape are told whether or not they stand for it: a shape that is gone, one re-pointed away from, one deleted and brought back") {
+        let a = ShapeID(), c = ShapeID(), r = ShapeID(), q = ShapeID(), gone = ShapeID()
+        let h = try standing(CanvasFile(root: board(box(a), box(c), proxy(r, [a]), proxy(q, [gone, a]))))
+        let topology = h.topology
+        expectEqual(Set(topology.standIns(naming: a)), [r, q])
+        expectEqual(topology.standIns(naming: gone), [q], "named, though it is nowhere")
+        expectEqual(topology.standIns(for: gone), [], "and stood for by nothing")
+        h.editor.transact { $0.update(r, as: Proxy.self) { $0.props.stands = [Citation(c)] } }
+        expectEqual(topology.standIns(naming: a), [q])
+        expectEqual(topology.standIns(naming: c), [r])
+        h.editor.transact { $0.delete([a]) }
+        expectEqual(topology.standIns(naming: a), [q], "a deleted shape is still named")
+        expectEqual(topology.standIns(for: a), [])
+        h.editor.undo()
+        h.editor.undo()
+        expectEqual(Set(topology.standIns(naming: a)), [r, q], "undone")
+        expectEqual(topology.standIns(naming: c), [])
+        h.editor.transact { $0.delete([q]) }
+        expectEqual(topology.standIns(naming: gone), [], "a stand-in that is gone names nothing")
+        expectEqual(topology.standIns(naming: ShapeID()), [])
+    },
+
     test("re-pointing a stand-in, deleting what it stands for and undoing set again only what's at it, and touch every end") {
         let a = ShapeID(), c = ShapeID(), b = ShapeID(), r = ShapeID(), l = ShapeID(), m = ShapeID(), far = ShapeID()
         let h = try standing(CanvasFile(root: board(box(a), box(c), box(b), box(far), proxy(r, [a]), link(l, b, r), memo(m, lead: r))))

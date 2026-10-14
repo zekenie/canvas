@@ -32,10 +32,10 @@ final class RowField: EditingTextView {
     /// The field has the keyboard, or lost it.
     var onFocus: (() -> Void)?
     var onBlur: (() -> Void)?
-    /// The list of notes a link's field finds in while it is typed in, and its window: the keys are the list's first.
-    var linkPicking: (picker: LinkPicker, window: CaretListWindow)?
+    /// The list of notes a relation row's field finds in while it is typed in, and its window: the keys are the list's first.
+    var picking: (picker: any NotePicking, window: CaretListWindow)?
 
-    override var caretListWindow: CaretListWindow? { linkPicking?.window }
+    override var caretListWindow: CaretListWindow? { picking?.window }
 
     /// What every character of the text is drawn in: nothing typed or pasted ever takes another look.
     private let plain: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: TypesStyle.rowFontSize), .foregroundColor: TypesStyle.rowInk]
@@ -165,9 +165,9 @@ final class RowField: EditingTextView {
     /// The keys of the table: Tab and ⇧Tab, ↑ and ↓, Return and Escape are the rows'. Everything else is a text
     /// view's.
     override func doCommand(by selector: Selector) {
-        // Picking a link: the list's keys come first, as `LinkPicker.perform` says them. Tab and ⇧Tab are never a pick:
+        // Picking a note for a relationship: the list's keys come first, as `NotePicking.perform` says them. Tab and ⇧Tab are never a pick:
         // the list closes with nothing stored, and the key goes on as the rows' (`EditingTextView` would hand it to the list).
-        if let (picker, window) = linkPicking {
+        if let (picker, window) = picking {
             let (taken, action) = picker.perform(selector)
             if taken {
                 switch action {

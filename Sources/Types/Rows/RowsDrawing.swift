@@ -222,7 +222,7 @@ extension RowBook {
             guard !template.items.isEmpty else { return RowBars() }
             spot = .rows
         }
-        let geometry = RowGeometry(block: block, hasLead: hasWords(record), longestName: template.nameColumn)
+        let geometry = RowGeometry(block: block, hasLead: hasWords(record), template: template)
         func bar(_ row: Int, width: CGFloat) -> CGRect {
             let rect = geometry.rect(row)
             return CGRect(x: rect.minX, y: rect.midY - TypesStyle.skeletonRowBarHeight / 2, width: max(1, width), height: TypesStyle.skeletonRowBarHeight)
@@ -257,6 +257,9 @@ extension RowBook {
                                            y: rect.midY - TypesStyle.skeletonFoldDot / 2, width: TypesStyle.skeletonFoldDot, height: TypesStyle.skeletonFoldDot)
                         if marked { bars.wrong.append(shape) } else { bars.plain.append(shape) }
                     }
+                case .relation(let relation):
+                    // A name's bar like a field's, and no value's: a skeleton reads no relations, and the dashed line has no bar.
+                    bars.plain.append(bar(row, width: min(relation.barWidth, TypesStyle.nameShare * block.width)))
                 }
             }
         }
@@ -279,7 +282,7 @@ extension RowBook {
             guard !template.items.isEmpty else { return }
         }
         let hasWords = hasWords(record)
-        let geometry = RowGeometry(block: block, hasLead: hasWords, longestName: template.nameColumn)
+        let geometry = RowGeometry(block: block, hasLead: hasWords, template: template)
         let reach = TypesStyle.tickInset + TypesStyle.tickWidth
         cg.saveGState()
         defer { cg.restoreGState() }
@@ -320,8 +323,21 @@ extension RowBook {
         if let words = layout.action { FieldLines.draw(words, at: layout.actionX, midY: rect.midY, in: cg) }
     }
 
+    /// The dashed line between the fields and the relation rows: one stroked path across the rows' width, `y` its middle.
+    func drawRule(at y: CGFloat, from start: CGFloat, to end: CGFloat, in cg: CGContext) {
+        cg.saveGState()
+        cg.setStrokeColor(CGColor(gray: 0, alpha: TypesStyle.relationRuleAlpha))
+        cg.setLineWidth(1)
+        cg.setLineDash(phase: 0, lengths: TypesStyle.relationRuleDash)
+        cg.move(to: CGPoint(x: start, y: y))
+        cg.addLine(to: CGPoint(x: end, y: y))
+        cg.strokePath()
+        cg.restoreGState()
+    }
+
     private func drawRows(of template: RowTemplate, in geometry: RowGeometry, to cg: CGContext) {
         let types = editor?.types
+        if let y = geometry.ruleY { drawRule(at: y, from: geometry.block.minX, to: geometry.block.maxX, in: cg) }
         for (row, item) in template.items.enumerated() {
             let rect = geometry.rect(row), name = geometry.nameRect(row), value = geometry.valueRect(row)
             switch item {
@@ -346,6 +362,21 @@ extension RowBook {
                     let words = FieldLines.line(fold.value + " ›", .kind, cutTo: value.width)
                     FieldLines.draw(words, at: value.maxX - words.width, midY: rect.midY, in: cg)
                 }
+            case .relation(let relation):
+                if let tick = relation.tick { drawTick(types?.look(of: tick).tick ?? TypesStyle.manyTick, in: rect, to: cg) }
+                let dotRoom = relation.isNeeded ? TypesStyle.neededDotGap + TypesStyle.neededDotSize : 0
+                let line = FieldLines.line(relation.name, relation.isFaint ? .faint : .name, cutTo: max(0, name.width - dotRoom))
+                FieldLines.draw(line, at: name.minX, midY: rect.midY, in: cg)
+                if dotRoom > 0 {
+                    let dot = CGRect(x: name.minX + line.width + TypesStyle.neededDotGap, y: rect.midY - TypesStyle.neededDotSize / 2,
+                                     width: TypesStyle.neededDotSize, height: TypesStyle.neededDotSize)
+                    cg.setFillColor(TypesStyle.neededInk.cgColor)
+                    cg.fillEllipse(in: dot)
+                }
+                // `→ Layer`, `↔ Person`, `← any`: the way it runs, then the types at the other end as chips.
+                let others = relation.row.others
+                drawKindParts(label: others.isEmpty ? relation.direction + " " + FieldWords.anyNote : relation.direction, chips: Array(others.prefix(2)),
+                              more: max(0, others.count - 2), hasChevron: false, isFaint: relation.isFaint, in: value, midY: rect.midY, types: types, to: cg)
             }
         }
     }
@@ -358,24 +389,39 @@ extension RowBook {
     /// A type's row at the right: its kind's label, the chip of the type it names, and `›`, from the right. An
     /// inherited row is faint all through: its kind at the strength of its name, its chip and its `›` too.
     private func drawKind(of field: FieldRowTemplate, in value: CGRect, midY: CGFloat, types: TypeIndex?, to cg: CGContext) {
-        let style: FieldLines.Style = field.isFaint ? .faint : .kind
+        drawKindParts(label: field.label, chips: field.chip.map { [$0] } ?? [], more: 0, hasChevron: field.opensOnType, isFaint: field.isFaint,
+                      in: value, midY: midY, types: types, to: cg)
+    }
+
+    /// The right of a type's row, from the right: `›`, `+N` for the chips not shown, the chips, the label. A field's is its
+    /// kind's label and the chip of the type it names; a relation row's is the way it runs and the types at the other end.
+    private func drawKindParts(label: String, chips: [ShapeID], more: Int, hasChevron: Bool, isFaint: Bool, in value: CGRect, midY: CGFloat,
+                               types: TypeIndex?, to cg: CGContext) {
+        let style: FieldLines.Style = isFaint ? .faint : .kind
         var right = value.maxX
-        if field.opensOnType {
+        if hasChevron {
             let chevron = FieldLines.line("›", style)
             FieldLines.draw(chevron, at: right - chevron.width, midY: midY, in: cg)
             right -= chevron.width + TypesStyle.partGap
         }
-        if let chip = field.chip, let types {
-            let label = TypeChips.label(for: TypeLink(chip), in: types)
-            let size = label.contentSize
-            cg.saveGState()
-            if field.isFaint { cg.setAlpha(TypesStyle.faintStrength) }
-            label.draw(at: CGPoint(x: right - size.width, y: midY - size.height / 2), in: cg)
-            cg.restoreGState()
-            right -= size.width + (field.label.isEmpty ? 0 : TypesStyle.partGap)
+        if more > 0 {
+            let count = FieldLines.line("+\(more)", style)
+            FieldLines.draw(count, at: right - count.width, midY: midY, in: cg)
+            right -= count.width + TypesStyle.partGap
         }
-        guard !field.label.isEmpty else { return }
-        let words = FieldLines.line(field.label, style, cutTo: max(0, right - value.minX))
+        if let types {
+            for (place, chip) in chips.enumerated().reversed() {
+                let pill = TypeChips.label(for: TypeLink(chip), in: types)
+                let size = pill.contentSize
+                cg.saveGState()
+                if isFaint { cg.setAlpha(TypesStyle.faintStrength) }
+                pill.draw(at: CGPoint(x: right - size.width, y: midY - size.height / 2), in: cg)
+                cg.restoreGState()
+                right -= size.width + (place == 0 && label.isEmpty ? 0 : TypesStyle.partGap)
+            }
+        }
+        guard !label.isEmpty else { return }
+        let words = FieldLines.line(label, style, cutTo: max(0, right - value.minX))
         FieldLines.draw(words, at: right - words.width, midY: midY, in: cg)
     }
 }
