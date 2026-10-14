@@ -34,7 +34,8 @@ enum InfiniteCanvasApp {
         }
         let app = NSApplication.shared
         app.delegate = delegate
-        BoardMenus.install(appName: "Infinite Canvas")
+        // The bundle's name, which the menu bar shows: a worktree's build says which it is (build.sh).
+        BoardMenus.install(appName: Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Infinite Canvas")
         app.run()
     }
 }
