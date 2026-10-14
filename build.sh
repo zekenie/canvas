@@ -1021,6 +1021,34 @@ api)
     ;;
 app)
     APP=build/InfiniteCanvas.app
+    # Which app this build is, to macOS. A checkout's build is the app, com.example.InfiniteCanvas,
+    # which owns board files. A linked git worktree's is a copy of it, an app of its own: an
+    # identifier and a name that say which worktree, and board files claimed as an alternate, so it
+    # opens them (Open With, `open -a`, a drag onto it) and a double-click never picks it. Every
+    # checkout's build was the one app once, and of several registered under one identifier macOS
+    # opens whichever it picks, by no rule that was found: board files opened in an old build in
+    # some worktree. The types' identifiers are the same in every copy (the sources spell them),
+    # so files, the pasteboard and drags pass between them. The app exports both it declares; a
+    # copy imports the board's, so the app's declaration is the one macOS goes by, and exports the
+    # other as the app does: the sources make that one with `UTType(exportedAs:)`, which complains
+    # in the log of an app that doesn't export it.
+    APP_BASE_ID=com.example.InfiniteCanvas
+    APP_ID=$APP_BASE_ID APP_NAME="Infinite Canvas" COPY="" rows_exported=""
+    # A worktree by git's own answer, when this folder is a checkout (and not a folder inside
+    # another's): a linked worktree's git directory is one of the repository's, and its name there
+    # is what git calls the worktree, which no two of a repository share. A clone is no copy, nor
+    # is a folder with no git: its build is the app.
+    checkout=$(git rev-parse --show-toplevel 2> /dev/null) || checkout=""
+    if [[ -n $checkout && ${checkout:A} == "${PWD:A}" ]]; then
+        git_dir=$(git rev-parse --git-dir) git_common=$(git rev-parse --git-common-dir)
+        if [[ ${git_dir:A} != "${git_common:A}" ]]; then COPY=${git_dir:A:t}; fi
+    fi
+    if [[ -n $COPY ]]; then
+        # An identifier is letters, digits, hyphens and periods.
+        APP_ID+=.worktree.${COPY//[^A-Za-z0-9-]/-}
+        APP_NAME+=" ($COPY)"
+        rows_exported=$'\n    </array>\n    <key>UTExportedTypeDeclarations</key>\n    <array>'
+    fi
     # The bundle changes only where its files do, each replaced by a new file (so a copy of the app
     # that's running keeps its own): macOS checks an executable it hasn't seen the first time it
     # runs, which costs a launch a quarter of a second, and an app that didn't change skips that.
@@ -1040,15 +1068,15 @@ app)
     (( ${#clis} == 1 )) || die "the cli layer should have one executable, the command line; it has ${#clis}"
     install_changed $OUT/$clis[1]/$clis[1] $APP/Contents/Helpers/$CLI_NAME
     ln -sf InfiniteCanvas.app/Contents/Helpers/$CLI_NAME build/$CLI_NAME
-    cat > $AUDIT/Info.plist <<'PLIST'
+    cat > $AUDIT/Info.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Infinite Canvas</string>
+    <string>${${${APP_NAME//&/&amp;}//</&lt;}//>/&gt;}</string>
     <key>CFBundleIdentifier</key>
-    <string>com.example.InfiniteCanvas</string>
+    <string>$APP_ID</string>
     <key>CFBundleExecutable</key>
     <string>InfiniteCanvas</string>
     <key>CFBundlePackageType</key>
@@ -1069,7 +1097,7 @@ app)
             <key>CFBundleTypeRole</key>
             <string>Editor</string>
             <key>LSHandlerRank</key>
-            <string>Owner</string>
+            <string>${${COPY:+Alternate}:-Owner}</string>
             <key>LSItemContentTypes</key>
             <array>
                 <string>com.example.InfiniteCanvas.board</string>
@@ -1078,7 +1106,7 @@ app)
             <string>BoardDocument</string>
         </dict>
     </array>
-    <key>UTExportedTypeDeclarations</key>
+    <key>UT${${COPY:+Imported}:-Exported}TypeDeclarations</key>
     <array>
         <dict>
             <key>UTTypeIdentifier</key>
@@ -1096,7 +1124,7 @@ app)
                     <string>canvasboard</string>
                 </array>
             </dict>
-        </dict>
+        </dict>$rows_exported
         <dict>
             <key>UTTypeIdentifier</key>
             <string>com.example.InfiniteCanvas.contents-rows</string>
@@ -1150,7 +1178,7 @@ PLIST
     <key>CFBundleName</key>
     <string>$appex</string>
     <key>CFBundleIdentifier</key>
-    <string>com.example.InfiniteCanvas.$appex</string>
+    <string>$APP_ID.$appex</string>
     <key>CFBundleExecutable</key>
     <string>$appexes[1]</string>
     <key>CFBundlePackageType</key>
@@ -1205,15 +1233,16 @@ PLIST
         : > build/.copies
         local lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
         [[ -x $lsregister ]] || return 0
-        # Each copy LaunchServices has of the app (a bundle with its identifier, above) on a volume
-        # that's mounted, a line: whether it has extensions, a tab, its path. And `unread` when the
-        # dump has no bundle's path or identifier where this looks for them: its form is documented
-        # nowhere, and reading nothing from it would be this bug again, unsaid.
-        local copies line copy holder appex had_extensions=0
+        # Each copy LaunchServices has of the app (an app's bundle with the app's identifier, or a
+        # copy's, which starts with it; above) on a volume that's mounted, a line: whether it has
+        # extensions, its identifier, its path, tabs between. And `unread` when the dump has no
+        # bundle's path or identifier where this looks for them: its form is documented nowhere,
+        # and reading nothing from it would be this bug again, unsaid.
+        local copies line rest copy id holder appex renamed="" was="" had_extensions=0
         typeset -a gone=() there=()
-        copies=$($lsregister -dump Bundle 2> /dev/null | awk '
+        copies=$($lsregister -dump Bundle 2> /dev/null | awk -v app=$APP_BASE_ID '
             function copy() {
-                if (id == "com.example.InfiniteCanvas" && path != "" && !unmounted) print (plugins ? "extensions" : "none") "\t" path
+                if ((id == app || index(id, app ".") == 1) && path ~ /\.app$/ && !unmounted) print (plugins ? "extensions" : "none") "\t" id "\t" path
                 path = ""; id = ""; plugins = 0; unmounted = 0
             }
             /^-+$/ { copy(); next }
@@ -1227,9 +1256,19 @@ PLIST
                 print -u2 "build.sh: lsregister's dump isn't in the form forget_copies_gone reads, so copies of the app that are gone stay registered (they can hide its Quick Look extensions)"
                 return 0
             fi
-            copy=${line#*$'\t'}
+            rest=${line#*$'\t'}; id=${rest%%$'\t'*} copy=${rest#*$'\t'}
             if [[ -e $copy ]]; then
-                if [[ $line == extensions$'\t'* ]]; then there+=$copy; fi
+                # This build, registered as another app (the one app every checkout's build was,
+                # before a worktree's was a copy with an identifier of its own): until it's next
+                # opened macOS goes on taking the bundle for what it registered, one more of the
+                # app to pick from, so that's forgotten like a copy that's gone, and opening this
+                # one registers what it is.
+                if [[ ${copy:A} == "${APP:A}" && $id != "$APP_ID" ]]; then
+                    renamed=$copy was=$id; gone+=$copy
+                    if [[ $line == extensions$'\t'* ]]; then had_extensions=1; fi
+                elif [[ $line == extensions$'\t'* ]]; then
+                    there+=$copy
+                fi
                 continue
             fi
             # Gone, and not only out of reach: the nearest folder above it that's there can be
@@ -1242,10 +1281,14 @@ PLIST
         done
         (( ${#gone} )) || return 0
         if ! $lsregister -u $gone > /dev/null 2>&1; then
-            print -u2 "build.sh: lsregister -u failed, so ${#gone} of the app's copies whose folders are gone stay registered"
+            print -u2 "build.sh: lsregister -u failed, so ${#gone} of the app's copies that are gone, or registered as what they aren't, stay registered"
             return 0
         fi
-        print "Unregistered ${#gone} of the app's copies whose folders are gone"
+        if [[ -n $renamed ]]; then
+            gone=(${gone:#${(b)renamed}})
+            print "Unregistered this build as $was: it's $APP_ID now, and opening it registers that"
+        fi
+        if (( ${#gone} )); then print "Unregistered ${#gone} of the app's copies whose folders are gone"; fi
         (( had_extensions )) || return 0
         for copy in $there; do
             for appex in $copy/Contents/PlugIns/*.appex(N); do pluginkit -a $appex > /dev/null 2>&1 || true; done
@@ -1256,6 +1299,6 @@ PLIST
         print "One had Quick Look extensions: the copies still here registered theirs again, and Quick Look's thumbnail agent was restarted"
     }
     if (( replaced )) || [[ ! -e build/.copies ]]; then forget_copies_gone; fi
-    print "Built $APP, with its Quick Look extensions, and build/$CLI_NAME (its command line)"
+    print "Built $APP${COPY:+ ($APP_NAME, this worktree's copy of the app)}, with its Quick Look extensions, and build/$CLI_NAME (its command line)"
     ;;
 esac
