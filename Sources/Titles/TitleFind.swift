@@ -31,7 +31,7 @@ public struct TitleFindPlugin: ListedPlugin {
                                 },
                                 rects: { record, _, ranges, context in
                                     let editor = context.editor
-                                    guard let pill = editor.adornmentFrames(of: record.id).first(where: { $0.adornment == .of(TitlePill.self) })?.rect,
+                                    guard let pill = editor.titlePillRect(of: record.id),
                                           let bounds = editor.shapeContext.geometry(of: record.id)?.bounds, !bounds.isNull else {
                                         return ranges.map { _ in [] }
                                     }

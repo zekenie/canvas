@@ -125,7 +125,11 @@ enum Budget {
     /// so 2,608 titles are each held twice, and `TitleValidationPlugin`'s index takes every one out
     /// (some 1.7 ms; main was at 15.2 of a frame's 16 before it). The owner chose raising it over
     /// keeping the index's titles per board and numbering the generated titles across the file.
-    static let subboardDeletion = frame + 2
+    /// Then a frame and 6: relationships brought two more services that hear the shapes of the boards a
+    /// deletion takes (the relationship index and the check of a note's rows, a lookup or two a shape), and
+    /// it measures 19.1 ms where main measured 16.3 (19.6 and 19.1 in two quiet runs). The owner, told of
+    /// it: a slowdown of that size does not matter. Not made faster.
+    static let subboardDeletion = frame + 6
     /// A drag event's input (its commit, without the frame) on a board beside or inside a subboard,
     /// on 10,000 shapes: some 0.25 ms, so a commit's upkeep of the whole file shows.
     static let dragInput = 1.0

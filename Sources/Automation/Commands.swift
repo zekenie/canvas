@@ -20,7 +20,8 @@ public struct AutomationPlugin: ListedPlugin {
                 A script is one statement a line: a shape (its kind, its title in double quotes, its attributes and \
                 where it goes against other shapes: right of "API"), an edge (edge "API" -> "DB"), a delete, or a \
                 style. A statement about a title the board has changes that shape; one about a title it doesn't \
-                makes a new one. It's applied all at once, as one step of the app's undo, or not at all, and the \
+                makes a new one. A shape with no title is named by its id (#<id>), the one a query's row gives, \
+                where a statement names a shape that's there: it never makes one. It's applied all at once, as one step of the app's undo, or not at all, and the \
                 result says what each statement did and where its shape landed. A title names a shape on any board \
                 of the file (the one the window shows first), and in "X" puts a shape on the board X holds (a \
                 subboard's), or in X, where X holds shapes on its own board (a frame's): a run draws on the board \

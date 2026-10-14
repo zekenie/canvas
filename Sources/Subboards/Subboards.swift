@@ -72,7 +72,7 @@ public struct SubboardsPlugin: ListedPlugin {
         registrar.turnable(into: Subboard.self, through: ContainerChannel.self) { container, transaction in
             // A refused turn leaves the shape as it was, which owns no board to move onto.
             guard transaction.turn(container.id, into: Subboard(frame: CGRect(origin: container.frame.origin, size: Subboard.defaultSize))) else { return }
-            transaction.move(container.held, toBoardOwnedBy: container.id)
+            transaction.move(container.inside, toBoardOwnedBy: container.id)
         }
     }
 }

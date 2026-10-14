@@ -234,6 +234,18 @@ import TestKit
         expectEqual(h.editor.shapeContext.frame(of: copy), CGRect(x: 1850, y: 1950, width: 300, height: 100), "its middle on the point")
         expectEqual(h.editor.document[copy]?.box, CGRect(x: 1850, y: 1950, width: 100, height: 60), "and it stores what it did")
     },
+    test("a stretch laid out smaller than it stores is pasted centered by its smaller frame, and stores what it did") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard, [StretchesPlugin(shrinking: true)])
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 0, y: 500, width: 60, height: 40), width: 60, height: 20))
+        let stretch = h.add(Stretch(CGRect(x: 1000, y: 150, width: 100, height: 60), gauge: gauge))
+        h.editor.copy([stretch])
+        h.editor.paste(centeredAt: CGPoint(x: 2000, y: 2000))
+        let copy = try require(h.editor.selection)
+        expectEqual(h.editor.shapeContext.frame(of: copy), CGRect(x: 1970, y: 1990, width: 60, height: 20), "its middle on the point, not the stored box's")
+        expectEqual(h.editor.document[copy]?.box, CGRect(x: 1970, y: 1990, width: 100, height: 60), "and it stores what it did")
+    },
     test("a gauge and its stretch pasted together into a corral are settled by the frame the pasted gauge lays the pasted stretch out in, in the paste's one step") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }

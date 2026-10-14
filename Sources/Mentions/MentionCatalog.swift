@@ -22,6 +22,18 @@ struct MentionCatalog {
         var recentRank: Int
     }
 
+    /// A shape its kind gives no name (the "Untitled …" placeholder), kept aside from the entries: no
+    /// keys, no slot, so the named ones are ranked as they were. Only a list that asks for them reads these, but
+    /// the catalog holds them (read at open, hashed when any shape is taken out).
+    struct Unnamed {
+        var board: BoardID
+        let kind: ShapeKind
+        var appearance: MentionAppearance
+    }
+
+    /// The unnamed mentionable shapes, by id.
+    private(set) var unnamed: [ShapeID: Unnamed] = [:]
+
     private(set) var entries: [Entry] = []
     /// Beside `entries`, index for index.
     private(set) var appearances: [MentionAppearance] = []
@@ -40,6 +52,18 @@ struct MentionCatalog {
     func contains(_ id: ShapeID) -> Bool { slots[id] != nil }
 
     func appearance(of id: ShapeID) -> MentionAppearance? { slots[id].map { appearances[$0] } }
+
+    /// Puts an unnamed shape in the side table, or updates it.
+    mutating func setUnnamed(_ id: ShapeID, kind: ShapeKind, _ appearance: MentionAppearance, on board: BoardID) {
+        unnamed[id] = Unnamed(board: board, kind: kind, appearance: appearance)
+    }
+
+    mutating func removeUnnamed(_ id: ShapeID) {
+        if !unnamed.isEmpty { unnamed[id] = nil }
+    }
+
+    /// A shape's appearance, named or not.
+    func anyAppearance(of id: ShapeID) -> MentionAppearance? { appearance(of: id) ?? unnamed[id]?.appearance }
 
     /// Puts a shape in, or updates it: its label's keys are folded again only if its label changed.
     mutating func set(_ id: ShapeID, _ appearance: MentionAppearance, on board: BoardID, recentRank: Int) {

@@ -373,24 +373,4 @@ private struct Graph {
         // Where the line isn't, the canvas is the canvas's: between the rings, and past the second.
         for x in [5.5, 6.5, 10] { expect(color(x)[0] > 230 && color(x)[1] > 230, "the canvas, \(x) out: \(color(x))") }
     },
-    test("a pointer lights as a mention does: hovering the Order outlines the Person it points at in mentions' teal, and hovering her the Order in the lavender") {
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        let (ann, order) = (ShapeID(), ShapeID())
-        var person = note(ann, 1, 0)
-        person[TitleProperty.self] = "Ann Lee"
-        person[IsAProperty.self] = [TypeLink(FieldFixtures.personID)]
-        var placed = note(order, 0, 0)
-        placed[IsAProperty.self] = [TypeLink(FieldFixtures.orderID)]
-        placed[FieldValuesProperty.self] = FieldValues(["customer": FieldLink(target: ann, stored: "Ann Lee").value])
-        let types = [typeNote(FieldFixtures.person.schema, title: "Person", id: FieldFixtures.personID), typeNote(FieldFixtures.order.schema, title: "Order", id: FieldFixtures.orderID)]
-        let h = try shipped(CanvasFile(root: CanvasDocument(shapes: [person, placed] + types)), pasteboard)
-        let lights = try Lights(h.editor.registry)
-        h.editor.hovered = order
-        h.settleLights()
-        expectEqual(h.lit, [Lit(lights.mentions, 0, [ann])])
-        h.editor.hovered = ann
-        h.settleLights()
-        expectEqual(h.lit, [Lit(lights.mentionedBy, 0, [order])])
-    },
 ])

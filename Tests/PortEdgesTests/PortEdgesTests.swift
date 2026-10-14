@@ -18,7 +18,15 @@ import TestKit
         expectEqual(links(in: editor), ["A -> B on wire", "C -> D on pipe", "A -> C on wire"])
         expectEqual(edgeRows(result).map { $0["channel"] }, ["wire", "pipe", "wire"])
         expectEqual(edgeRows(result).map { $0["did"] }, ["connected", "connected", "connected"])
+        // A run with no shape to lay out lays out no arrows: asked once an edge, to draw it.
         expectEqual(requests.made.map(\.channel), [Wire.id, Pipe.id, Wire.id])
+        // A run that draws a shape asks twice an edge: once to lay the run out with the arrow (`Drawing.provisionalConnections()`), once to draw it.
+        requests.made = []
+        _ = try drawn("""
+            tile "E" right of "B"
+            edge "E" -> "B"
+            """, on: editor)
+        expectEqual(requests.made.map(\.channel), [Wire.id, Wire.id])
     },
     test("with none shared it's no_channel, saying what each end connects on; channel: none draws a plain one anyway") {
         let editor = try edgesEditor()
@@ -105,6 +113,18 @@ import TestKit
 ])
 
 @MainActor let upsertTests = Suite("An edge drawn again", [
+    test("a run asks the connector for each edge with the connections that already join its pair, either way: a new arrow of a pair is the connector's to bend") {
+        let requests = Requests()
+        let editor = try edgesEditor(requests)
+        _ = try drawn(board, on: editor)
+        _ = try drawn("""
+            edge "A" -> "B"
+            edge "B" -> "A"
+            edge "A" -> "C"
+            """, on: editor)
+        let told: [Int?] = requests.made.map { $0.beside?.count }
+        expectEqual(told, [0, 1, 0])
+    },
     test("written again as it is, it's unchanged; named sides or other heads change it, and nothing else") {
         let requests = Requests()
         let editor = try edgesEditor(requests)
@@ -215,7 +235,7 @@ import TestKit
         expectEqual(edgeRows(result).map { $0["channel"] }, ["wire", "wire"])
         expectEqual(edgeRows(result).map { $0["via"] }, ["relay", "relay"])
         expectEqual(editor.relays().count, 2)
-        expectEqual(requests.made.map(\.channel), [Wire.id, Wire.id])
+        expectEqual(requests.made.map(\.channel), [Wire.id, Wire.id, Wire.id, Wire.id], "each asked to lay the run out and again to draw it")
     },
     test("not what a relay takes by itself, on every channel: from a card, whose pipe a far tile doesn't take, there's none, saying what each connects on") {
         let editor = try Harbor().editor()

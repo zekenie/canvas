@@ -107,7 +107,8 @@ struct Block {
                     let moved = source == shown ? transaction.move(ids, to: target) : transaction.move(ids, from: source, to: target)
                     guard moved else { throw Refused(shapes: transaction.refusedShapes) }
                 }
-                transaction.translate(ids, by: delta, on: target)
+                // What the move took along (an arrow bound only to them) goes as far as they do.
+                transaction.translate(ids.union(transaction.rodeAlong), by: delta, on: target)
                 guard transaction.refusedShapes.isEmpty else { throw Refused(shapes: transaction.refusedShapes) }
                 if target == source {
                     // Raised over what they're put on that paints above any of them, together, in their order.

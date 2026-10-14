@@ -9,10 +9,15 @@ public enum TypesStyle {
     /// The steps.
     public static let makeType = "Make Type"
     public static let removeType = "Remove Type"
+    /// The mark by hand: a relationship type made, and taken back to the plain type it still is.
+    public static let makeRelationshipType = "Make Relationship Type"
+    public static let makePlainType = "Make Plain Type"
     /// The step `/is-a` takes, and what the chips' and the panel's Remove take back with Remove Type's.
     public static let addType = "Add Type"
     /// The step a new type is made in: the note and the link.
     public static let newType = "New Type"
+    /// The same, for an arrow's label: the new type is a relationship type.
+    public static let newRelationshipType = "New Relationship Type"
     /// The row offered for what was typed, last: `New type “Company”`.
     static func newTypeRow(_ name: String) -> String { "New type “\(name)”" }
     /// What `/is-a` takes, beside its name in the list.
@@ -20,6 +25,9 @@ public enum TypesStyle {
     /// `/is-a`'s rows: `Type`, which makes the shape one, and the mark each has.
     static let typeChoice = "Type"
     static let typeSymbol = "curlybraces"
+    /// `Relationship Type`, beside `Type`, and the mark its pill and its rows carry where a type's has braces.
+    static let relationshipTypeChoice = "Relationship Type"
+    static let relationshipTypeSymbol = "arrow.right"
     /// The chips: what a type that has no title, or is gone and was never known by one, is called.
     static let untitledType = "Untitled"
     static let deletedType = "Deleted"

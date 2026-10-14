@@ -84,7 +84,7 @@ public final class QueryState {
             let list = try SelectorList(parsing: text)
             return try QueryPlan(resolving: list, text: text, vocabulary: vocabulary, presentEdgeTypes: present, kindOf: kind(of:))
         } catch {
-            throw vocabulary.settled(error, kindOf: kind(of:), titled: nil)
+            throw vocabulary.settled(error, kindOf: kind(of:), titled: nil, typed: nil)
         }
     }
 
@@ -274,10 +274,10 @@ public final class QueryState {
         let titles = vocabulary.titlesAwaited(by: error)
         guard !titles.isEmpty else { return error }
         do throws(QueryError) {
-            let titled = try await perform(words: [], formats: []) { (evaluation: Evaluation) async throws(QueryError) -> [String: Set<ShapeKind>] in
-                try await evaluation.kinds(named: titles)
+            let (titled, typed) = try await perform(words: vocabulary.typeWord.map { [$0] } ?? [], formats: []) { (evaluation: Evaluation) async throws(QueryError) -> ([String: Set<ShapeKind>], [String: Set<ShapeKind>]) in
+                (try await evaluation.kinds(named: titles), try await evaluation.kinds(namedAsTypes: titles))
             }.answer
-            return vocabulary.settled(error, kindOf: kind(of:), titled: titled)
+            return vocabulary.settled(error, kindOf: kind(of:), titled: titled, typed: typed)
         } catch {
             return error
         }

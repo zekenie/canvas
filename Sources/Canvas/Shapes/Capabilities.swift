@@ -1,9 +1,10 @@
 import AppKit
 import Geometry
 
-/// A box kind whose shapes may be laid out larger than the box they store (a note with rows no
-/// record holds). The laid-out frame has the stored box's origin and is never smaller than it
-/// either way: the core takes the larger of each side. Everything that asks how much room the
+/// A box kind whose shapes may be laid out at another size than the box they store: larger (a note
+/// with rows no record holds) or smaller (a note drawn small while it holds nothing). The laid-out
+/// frame has the stored box's origin and the size the kind answers, as it answers it; the core takes
+/// the box's own size for an answer that isn't finite and above zero on both sides. Everything that asks how much room the
 /// shape takes goes by it (`ShapeContext.frame(of:)`); the kind's geometry, outline and editing
 /// frame are it unless the kind says otherwise. A kind that holds shapes (`ShapeContaining`) can't
 /// be one: a container's edge is its box.

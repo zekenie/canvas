@@ -197,7 +197,7 @@ private func shared(_ title: String) -> [String] { ["“\(title)” is another s
         h.editor.replaceFile(with: file([c, d]))
         expectEqual(h.warnings, [c.id: shared("Billing"), d.id: shared("Billing")])
     },
-    test("outside the engine, a shape on another board is warned given the editor (a query's check), and not without one (draw's)") {
+    test("outside the engine, a shape on another board is warned given the editor (a query's check), and not over a plain context, which reads no file") {
         let outer = card("API"), inner = card("API"), box = pocket(x: 300)
         let h = try harness(file([outer, box], [box.id: [inner]]))
         let board = h.file[BoardID(owner: box.id)], registry = h.editor.registry
@@ -205,5 +205,48 @@ private func shared(_ title: String) -> [String] { ["“\(title)” is another s
         expectEqual(registry.validationIssues(of: record, in: ShapeContext(document: board, registry: registry), editor: h.editor).map(\.message),
                     shared("API"))
         expectEqual(registry.validationIssues(of: record, in: ShapeContext(document: board, registry: registry)), [])
+    },
+    test("writes that have not committed: the rule reads the titles as the transaction leaves them, and says which other holders they reach, on another board too") {
+        let a = card("Checkout"), b = card("Cart", x: 200), c = card("Notes", x: 400), far = card("Billing"), box = pocket(x: 600)
+        let h = try harness(file([a, b, c, box], [box.id: [far]]))
+        let registry = h.editor.registry, board = BoardID(owner: box.id)
+        expectEqual(h.warnings, [:])
+        struct Thrown: Error {}
+        /// What the writes touch, and what the rule then says of each shape named, over its own board, by title.
+        @MainActor func uncommitted(_ body: (inout Transaction) -> Void) -> [String: [String]] {
+            var found: [String: [String]] = [:]
+            try? h.editor.transact { transaction in
+                body(&transaction)
+                let shapes = transaction.shapes
+                for id in registry.validationTouched(by: transaction.pending, in: shapes) {
+                    guard let on = transaction.board(containing: id) else { continue }
+                    let there = transaction.contents(of: on)
+                    guard let record = there[id] else { continue }
+                    found[record[TitleProperty.self] ?? "?"] = registry.validationIssues(of: record, in: shapes.over(there)).map(\.message)
+                }
+                // And of the shape written, which the run checks as its own.
+                if let record = transaction.document[b.id] { found["written"] = registry.validationIssues(of: record, in: shapes).map(\.message) }
+                throw Thrown()
+            }
+            return found
+        }
+        expectEqual(uncommitted { $0.update(b.id) { $0[TitleProperty.self] = "Checkout" } }, ["Checkout": shared("Checkout"), "written": shared("Checkout")])
+        expectEqual(uncommitted { $0.update(b.id) { $0[TitleProperty.self] = "Billing" } }, ["Billing": shared("Billing"), "written": shared("Billing")],
+                    "the other holder is on the pocket's board")
+        expectEqual(uncommitted { $0.update(b.id) { $0[TitleProperty.self] = "Basket" } }, ["written": []], "a title nobody has reaches nobody")
+        expectEqual(uncommitted { $0.update(b.id, as: Card.self) { $0.props.text = "words" } }, ["written": []], "a write that changes no title")
+        expectEqual(h.warnings, [:], "nothing was committed")
+        expectEqual(registry.validationIssues(of: try require(h.file[board][far.id]), in: h.editor.shapeContext.over(h.editor.contents(of: board))), [],
+                    "and the committed file, read through the editor's own reading, says nothing of Billing")
+        // A title taken from one of two holders reaches the one left, which is warned of no longer; deleting one does too.
+        h.rename(b.id, "Checkout")
+        expectEqual(h.warnings, [a.id: shared("Checkout"), b.id: shared("Checkout")])
+        expectEqual(uncommitted { $0.update(b.id) { $0[TitleProperty.self] = "Cart" } }, ["Checkout": [], "written": []])
+        expectEqual(uncommitted { $0.delete([b.id]) }, ["Checkout": []])
+        // Two shapes the same transaction retitles to one title share it, and neither is the other's to name.
+        expectEqual(uncommitted {
+            $0.update(b.id) { $0[TitleProperty.self] = "Twin" }
+            $0.update(c.id) { $0[TitleProperty.self] = "Twin" }
+        }, ["Checkout": [], "written": shared("Twin")])
     },
 ])

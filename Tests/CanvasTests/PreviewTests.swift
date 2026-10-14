@@ -186,6 +186,21 @@ private func rect(drawing preview: BoardPreviews.Preview, at scale: CGFloat, put
         expect(preview.frame.height < 150, "the board is as tall as stored: \(preview.frame)")
         expectEqual(log.sizes.count, 0, "nothing was asked how big it is")
     },
+    test("a board's preview draws a box laid out smaller than it stores at its stored box, as it does one laid out larger, and asks nobody") {
+        let gauge = ShapeRecord(StretchGauge(CGRect(x: 300, y: 0, width: 10, height: 10), width: 20, height: 20))
+        let stretch = ShapeRecord(Stretch(CGRect(x: 0, y: 0, width: 100, height: 100), gauge: gauge.id))
+        let pocket = ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 240, height: 160)))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)]),
+                              children: [pocket.id: CanvasDocument(shapes: [AnyShapeRecord(gauge), AnyShapeRecord(stretch)])])
+        let board = BoardID(owner: pocket.id)
+        let log = StretchLog()
+        let previews = BoardPreviews(registry: try Registry(plugins: [FixturesPlugin(), PocketsPlugin(), StretchesPlugin(log: log, shrinking: true)]))
+        _ = previews.preview(of: board, in: file)
+        previews.build(in: file, until: later)
+        let preview = try require(previews.preview(of: board, in: file))
+        expect(try isShape(preview, at: CGPoint(x: 50, y: 50)), "its stored box, past the 20 it is laid out at")
+        expectEqual(log.sizes.count, 0, "nothing was asked how big it is")
+    },
     test("a container's silhouette is its outline, stroked, so what it holds shows on it") {
         let corral = ShapeRecord(Corral(CGRect(x: 0, y: 0, width: 400, height: 200)))
         let held = AnyShapeRecord(ShapeRecord(Box(CGRect(x: 250, y: 50, width: 100, height: 100)))).copy(as: ShapeID(), container: corral.id)

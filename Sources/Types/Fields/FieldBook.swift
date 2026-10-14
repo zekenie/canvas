@@ -19,20 +19,11 @@ public final class FieldBook {
     /// instances parses their type once; shared by every reading of the file (`ReadingTypes`).
     private var readLevels: [ShapeID: (text: String, level: ChainLevel)] = [:]
     /// The file's types' members, kept until the chain moves (`fileFields`).
-    var fileFieldsKept: (stamp: Int, fields: FileFields)?
+    var fileFieldsKept: (stamp: Int, revision: Int, fields: FileFields)?
     var editorForFileFields: CanvasEditor? { scope == nil ? editor : nil }
     /// What a book over a reading reads types through, and the editor's book it shares levels with; nil
     /// for the editor's own.
     private let scope: (types: ReadingTypes, shared: FieldBook)?
-    /// What each pointer's target was when something last answered from it (`remember`), so a commit finds the
-    /// pointers it changed by the targets whose state differs, and reads no pointer.
-    private var targetStates: [ShapeID: TargetState] = [:]
-    /// A target's link revision: moved when its state changed, so an answer made from it is made again.
-    private var linkRevisions: [ShapeID: Int] = [:]
-    /// The carriers of the commit last asked (`linkCarriers`): its change set, and `editor.revision` when it was
-    /// asked. Both, since a commit heard out of turn is asked at the revision of the one heard before it, and two
-    /// commits in a row may change the same shapes.
-    private var carriersKept: (revision: Int, changes: ChangeSet, carriers: Set<ShapeID>)?
 
     #if DEBUG
     /// How many lists have been resolved (debug builds only): tests hold it to one for each distinct list.
@@ -86,115 +77,6 @@ public final class FieldBook {
         return resolved
     }
 
-    /// Whether the type a pointer points at is still a type: a pointer to a gone one is read-only words in a form, its values kept and not
-    /// checked. A book over a reading asks the reading (a type the run made or deleted counts as it stands).
-    func isType(_ id: ShapeID) -> Bool {
-        guard let scope else { return editor?.types?.isType(id) == true }
-        return scope.types.shape(id)?[TypeSchemaProperty.self] != nil
-    }
-
-    /// What a pointer shows now: the target's name as a mention of it shows (`MentionState.resolve`), or, when
-    /// it is gone or on a board the app can't show, the name it holds (`MentionResolution.shownLabel(stored:)`).
-    public func shown(_ link: FieldLink) -> String {
-        resolution(of: link).shownLabel(stored: link.stored)
-    }
-
-    /// Its resolution, for the pill's look: gone (`.missing`) when no shape of the file has the id.
-    public func resolution(of link: FieldLink) -> MentionResolution {
-        remember(link.target)
-        return editor?.mentions?.resolve(link.target) ?? .missing
-    }
-
-    // MARK: What a target was
-
-    /// What of a pointer's target a pointing note's answers depend on: what a mention of it shows, what it is,
-    /// and whether it is a type.
-    struct TargetState: Equatable {
-        var resolution: MentionResolution
-        var isList: [ShapeID]
-        var holdsSchema: Bool
-    }
-
-    private func state(of target: ShapeID) -> TargetState {
-        let resolution = editor?.mentions?.resolve(target) ?? .missing
-        let record = editor?.shape(inFile: target)
-        return TargetState(resolution: resolution, isList: record?[IsAProperty.self]?.map(\.shape) ?? [], holdsSchema: record?[TypeSchemaProperty.self] != nil)
-    }
-
-    /// Notes that something answered from `target`: kept, with what it was, until a commit changes it. Every
-    /// answer about a target (the live name, the check's state) goes through here, so a commit that changes the
-    /// target finds what depends on it.
-    func remember(_ target: ShapeID) {
-        if let shared = scope?.shared { return shared.remember(target) }
-        guard targetStates[target] == nil else { return }
-        targetStates[target] = state(of: target)
-    }
-
-    /// Whether anything answered from a pointer's target: a commit finds nothing to look at while none did.
-    public var tracksTargets: Bool { !targetStates.isEmpty }
-
-    /// A target's link revision: moves when `linkCarriers` found its state changed, whether or not any note
-    /// points at it, so an answer that stored the number it saw knows it is out of date.
-    public func linkRevision(of target: ShapeID) -> Int { linkRevisions[target] ?? 0 }
-
-    /// The notes that point at a target whose state this commit changed: for each id the commit added,
-    /// removed, changed other than by moving, or touched elsewhere that something answered from, its state
-    /// read again, and where it differs the entry updated, its link revision moved and the sources of its
-    /// incoming `field-link` edges (kept for the commit, by its change set: whoever asks first asks Topology, the
-    /// rest read it; a commit heard out of turn, after one a service made while hearing it, is asked of its own).
-    /// An id nothing answered from is passed over, so a keystroke in a note no one points at costs a
-    /// dictionary miss, and one in a target that leaves its name costs one state read.
-    func linkCarriers(touchedBy changes: ChangeSet) -> Set<ShapeID> {
-        guard let editor else { return [] }
-        if changes.replacedDocument {
-            forgetTargets()
-            return []
-        }
-        guard !targetStates.isEmpty else { return [] }
-        // (A change set handed on is the same storage, so the compare is a few identities.)
-        if let carriersKept, carriersKept.revision == editor.revision, carriersKept.changes == changes { return carriersKept.carriers }
-        var changed: [ShapeID] = []
-        func check(_ id: ShapeID) {
-            guard let before = targetStates[id] else { return }
-            let now = state(of: id)
-            guard now != before else { return }
-            targetStates[id] = now
-            linkRevisions[id, default: 0] += 1
-            changed.append(id)
-        }
-        for id in changes.removed { check(id) }
-        for id in changes.added { check(id) }
-        for id in changes.changed where !changes.moved.contains(id) { check(id) }
-        for id in changes.elsewhere { check(id) }
-        var carriers: Set<ShapeID> = []
-        if !changed.isEmpty, let topology = editor.topology {
-            topology.catchUp(changes)
-            for id in changed {
-                for edge in topology.edges(of: id, .incoming, types: .only(FieldLinkEdge.id)) { carriers.insert(edge.source) }
-            }
-        }
-        carriersKept = (editor.revision, changes, carriers)
-        return carriers
-    }
-
-    /// The notes that point at any of `targets` that something answered from: those a change to the types they
-    /// are reached through concerns.
-    func linkCarriers(ofTargetsIn reached: Set<ShapeID>) -> Set<ShapeID> {
-        guard !targetStates.isEmpty, let topology = editor?.topology else { return [] }
-        var carriers: Set<ShapeID> = []
-        for id in reached where targetStates[id] != nil {
-            for edge in topology.edges(of: id, .incoming, types: .only(FieldLinkEdge.id)) { carriers.insert(edge.source) }
-        }
-        return carriers
-    }
-
-    /// A file put in place: what was answered from is another file's.
-    func forgetTargets() {
-        targetStates = [:]
-        linkRevisions = [:]
-        carriersKept = nil
-    }
-
     /// The same for a record: its `is` list; a type's own note asks `fields(types: [itsID])`.
     public func fields(of record: AnyShapeRecord) -> Resolved {
         fields(types: record[IsAProperty.self]?.map(\.shape) ?? [])
@@ -228,7 +110,7 @@ public final class FieldBook {
     /// The fields a group holds, in order: its `properties` (the group's own `required`), or, for a field
     /// that is a `$ref` to a type, that type's fields (`fields(types: [type]).fields`, the chain's,
     /// inherited first; with `properties` beside it, the type's only, the rest still checked). Empty for
-    /// anything else, a pointer included, a reference to a part of a type (`urn:uuid:…#/…`) and a type
+    /// anything else, a reference to a part of a type (`urn:uuid:…#/…`) and a type
     /// that is gone.
     public func members(of field: Resolved.Field) -> [Resolved.Field] {
         let schema = field.field.schema
@@ -245,8 +127,8 @@ public final class FieldBook {
     /// The members of `written`, a value a script wrote for a note's values (a JSON object by field key), that
     /// no field of `types` names, in key order at each object, each with the row it sits under: a key no field
     /// has is one and is not looked into; a member written `null` (it clears) never is. It looks into a group,
-    /// another type's fields and a list's items, and no further: not into pairs, `Other`, a plain value, a
-    /// pointer, an either, nor a reference to a type that is gone or to a part of one (whose members no field
+    /// another type's fields and a list's items, and no further: not into pairs, `Other`, a plain value, an
+    /// either, nor a reference to a type that is gone or to a part of one (whose members no field
     /// of the book names, so every one would read as unnamed).
     public func unnamed(in written: JSONObject, types: [ShapeID]) -> [UnnamedMember] {
         let resolved = fields(types: types)
@@ -354,11 +236,9 @@ public struct UnnamedMember: Sendable, Equatable {
 }
 
 extension FieldBook: EditorService {
-    /// It keeps nothing per shape or per board but what pointers' targets were, so a switch needs no change set (the
-    /// default works one out): a file put in place moves the index's stamp, and drops what the targets were.
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
-        if change.isFileReplaced { forgetTargets() }
-    }
+    /// It keeps nothing per shape or per board, so a switch needs no change set (the default works one out): a file put
+    /// in place moves the index's stamp.
+    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
 }
 
 extension CanvasEditor {

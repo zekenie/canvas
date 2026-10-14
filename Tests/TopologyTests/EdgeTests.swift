@@ -33,6 +33,8 @@ import Topology
         expectEqual(x.index.edges(carriedBy: x.l), [edge(WireEdge.id, x.a, x.b, by: x.l)], "an arrow-like carrier is neither end, in no slot")
         expectEqual(x.index.edges(carriedBy: x.a), [], "a box carries nothing")
         expectEqual(x.index.edges(carriedBy: ShapeID()), [])
+        expect(x.index.edges(carriedBy: x.l).allSatisfy(\.isConnection), "the carrier's own edge, in the empty slot, is the connection")
+        expect(x.index.edges(carriedBy: x.m).allSatisfy { !$0.isConnection }, "an edge a property holds is not")
     },
 
     test("a shape's edges, either way, by carrier in the order they came; a self-edge once") {

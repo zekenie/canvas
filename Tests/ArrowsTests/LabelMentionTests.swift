@@ -84,8 +84,9 @@ private func isClose(_ a: CGRect, _ b: CGRect, within tolerance: CGFloat) -> Boo
     let h: EditorHarness
     let arrow: ShapeID
     let groceries: ShapeID
-    /// A type called Person, on the board.
+    /// A type called Person, on the board, and a relationship type called Employment: what an arrow's `/is-a` offers.
     let person: ShapeID
+    let employment: ShapeID
     let window: NSWindow
     let textView: MentionTextView<AnyMentionable>
 
@@ -93,6 +94,9 @@ private func isClose(_ a: CGRect, _ b: CGRect, within tolerance: CGFloat) -> Boo
         h = try EditorHarness(plugins: labelPlugins())
         groceries = h.editor.addBox("Groceries", at: CGRect(x: 100, y: 300, width: 100, height: 80))
         person = h.editor.addType("Person", at: CGRect(x: 300, y: 300, width: 100, height: 80))
+        let marked = h.editor.addType("Employment", at: CGRect(x: 500, y: 300, width: 100, height: 80))
+        h.editor.transact { $0.update(marked) { $0[RelationshipProperty.self] = true } }
+        employment = marked
         arrow = h.add(Arrow(start: .free(CGPoint(x: 100, y: 200)), end: .free(CGPoint(x: 500, y: 200)), text: text))
         h.editor.selection = arrow
         expect(h.editor.beginEditing(arrow))
@@ -356,7 +360,7 @@ private final class LabelCanvas: NSView {
 ])
 
 @MainActor let labelTypeTests = Suite("Arrow labels: /is-a", [
-    test("an arrow offers /is-a, taking one choice: the list on its line holds the types and no Type row, Groceries being none; Return picks one and runs the line") {
+    test("an arrow offers /is-a, taking one choice: the list on its line holds the relationship types and no Type row, Groceries and Person being none; Return picks one and runs the line") {
         let session = try EditedLabel("keep")
         let typing = try require(session.textView.slashCommands)
         session.window.pressReturn()
@@ -364,10 +368,10 @@ private final class LabelCanvas: NSView {
         expectEqual(typing.picker?.highlightedCommand?.name, "is-a")
         session.window.press("\t", code: 48)
         let choices = try require(typing.choices, "the choices")
-        expectEqual(choices.listed.map(\.title), ["Person"], "Groceries is no type, and an arrow's label has no Type row")
+        expectEqual(choices.listed.map(\.title), ["Employment"], "Groceries is no type, Person is a plain one, and an arrow's label has no Type row")
         session.window.pressReturn()
         session.window.settle()
-        expectEqual(session.h.editor.document[session.arrow]?[IsAProperty.self]?.map(\.shape), [session.person], "the arrow is a Person")
+        expectEqual(session.h.editor.document[session.arrow]?[IsAProperty.self]?.map(\.shape), [session.employment], "the arrow is an Employment")
         expectEqual(session.committed, "keep\n", "the line is gone from the label, its line break is not")
         expectEqual(session.h.editor.undoHistory.undoName, "Add Type")
         session.h.editor.undo()

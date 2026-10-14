@@ -38,7 +38,10 @@ public final class ReferenceState {
     /// out for (`drawnCondition(of:target:_:)`): a frame of a thousand pills looks up none of their
     /// shapes again. A commit lets go of those it changed and those that name a shape it changed
     /// (the reverse map, as the rows' `affected`), a file put in place of all.
-    private var drawnConditions: [ShapeID: (target: ReferenceTarget, condition: ReferenceCondition)] = [:]
+    /// With the name of the board its shape is on when that isn't the pill's board (`drawnBoard(of:)`),
+    /// and the owners of the boards named (a change to one lets go of the names kept).
+    private var drawnConditions: [ShapeID: (target: ReferenceTarget, condition: ReferenceCondition, board: String?)] = [:]
+    private var drawnBoardOwners: Set<ShapeID> = []
     /// What each pill drawn shows of a channel mismatch (`drawnMismatch(of:)`), kept until a change to
     /// the edges touches its reference: what bumps the revision `mismatches` is kept by, heard
     /// without reading one (each read makes an observation's key path, a cost a frame of a thousand
@@ -147,9 +150,19 @@ public final class ReferenceState {
     func drawnCondition(of id: ShapeID, target: ReferenceTarget, _ compute: () -> ReferenceCondition) -> ReferenceCondition {
         if let kept = drawnConditions[id], kept.target == target { return kept.condition }
         let condition = compute()
-        drawnConditions[id] = (target, condition)
+        var board: String?
+        if condition.appearance != nil, let there = editor.file.board(containing: target.id), there != editor.file.board(containing: id) {
+            board = editor.publishing?.boardName(of: there)
+            if let owner = there.owner { drawnBoardOwners.insert(owner) }
+        }
+        drawnConditions[id] = (target, condition, board)
         return condition
     }
+
+    /// The name of the board the shape a direct pill stands for is on, when it isn't the pill's board
+    /// (the pill says it, after the shape's name); nil for a pill on the same board as its shape, or one
+    /// whose shape isn't there. As `drawnCondition` kept it: a board's rename lets go of it.
+    public func drawnBoard(of id: ShapeID) -> String? { drawnConditions[id]?.board }
 
     /// `channelMismatch(of:)`, for a render: kept until a change to the edges touches the reference.
     func drawnMismatch(of id: ShapeID) -> ChannelMismatch? {
@@ -175,6 +188,13 @@ public final class ReferenceState {
         if !drawnConditions.isEmpty {
             for id in touched.keys { drawnConditions.removeValue(forKey: id) }
             for id in references(namingWhatChanged: changes) { drawnConditions.removeValue(forKey: id) }
+            // A board's name changes with its owner: the names kept are worked out again.
+            if !drawnBoardOwners.isEmpty, changes.changed.contains(where: { drawnBoardOwners.contains($0) })
+                || changes.removed.contains(where: { drawnBoardOwners.contains($0) })
+                || changes.elsewhere.contains(where: { drawnBoardOwners.contains($0) }) {
+                for (id, kept) in drawnConditions where kept.board != nil { drawnConditions.removeValue(forKey: id) }
+                drawnBoardOwners = []
+            }
         }
         if !drawnMismatches.isEmpty {
             for id in changes.removed { drawnMismatches.removeValue(forKey: id) }
@@ -253,6 +273,7 @@ public final class ReferenceState {
         referencesTo = [:]
         known = []
         drawnConditions = [:]
+        drawnBoardOwners = []
         drawnMismatches = [:]
         let file = editor.file
         func scan(_ document: CanvasDocument) {

@@ -184,6 +184,12 @@ public struct AdornmentLabel: Hashable, Sendable {
         case success
     }
 
+    /// The inks of plain text (`line(_:ink:)`), each following the appearance: the canvas's label color, and the
+    /// softer one (secondary text).
+    public enum LineInk: Hashable, Sendable {
+        case primary, secondary
+    }
+
     /// On one line: each run of whitespace, newlines included, folds into a space. Blank shows nothing.
     public let text: String?
     /// An SF Symbol: with text, drawn small before it, in a place as wide as the text is tall;
@@ -204,6 +210,13 @@ public struct AdornmentLabel: Hashable, Sendable {
     public private(set) var tag: AdornmentTag?
     /// What it names is gone (`missing()`): no fill, a dashed stroke, the text in italic.
     public private(set) var isMissing: Bool
+    /// It says something is wrong (`wrong()`): a chip in red with a wavy underline.
+    public private(set) var isWrong: Bool
+    /// Plain text with no capsule, in this ink (`line(_:ink:)`); nil for a chip.
+    public private(set) var lineInk: LineInk?
+    /// A number after the text, in a softer ink (`counted(_:)`): how many of something the chip stands for. Kept whole
+    /// where the text gives way. Nil for none.
+    public private(set) var count: Int?
     /// The smaller face this label may be drawn in (`compact(_:)`): at most one, held in an array
     /// since a label can't hold itself.
     private var compactFaces: [AdornmentLabel]
@@ -231,6 +244,9 @@ public struct AdornmentLabel: Hashable, Sendable {
         self.isPlaceholder = isPlaceholder
         tag = nil
         isMissing = false
+        isWrong = false
+        lineInk = nil
+        count = nil
         compactFaces = []
         tint = nil
     }
@@ -244,8 +260,43 @@ public struct AdornmentLabel: Hashable, Sendable {
         isPlaceholder = false
         tag = nil
         isMissing = false
+        isWrong = false
+        lineInk = nil
+        count = nil
         compactFaces = []
         tint = nil
+    }
+
+    /// Plain text with no capsule, in `ink`, which follows the appearance: a word in the row where a name would be (an
+    /// arrow's `from`), laid out there as a chip of its width is. Blank shows nothing.
+    public static func line(_ text: String, ink: LineInk = .primary) -> AdornmentLabel {
+        var label = AdornmentLabel(text)
+        label.lineInk = ink
+        return label
+    }
+
+    /// Whether it is plain text (`line(_:ink:)`).
+    public var isLine: Bool { lineInk != nil }
+
+    /// What is wrong is red, in either appearance.
+    static var wrongColor: NSColor { .systemRed }
+
+    /// The same label, saying something is wrong: a chip is a red fill at 14%, its text and symbol red and a
+    /// wavy line under the text, whatever its tint. A missing label stays as it is.
+    public func wrong() -> AdornmentLabel {
+        var label = self
+        label.isWrong = true
+        label.tint = AdornmentTint(Self.wrongColor, style: .light)
+        return label
+    }
+
+    /// The same label with a number after its text, in its ink at `AdornmentStyle.countStrength`: how many of something
+    /// the chip stands for (a relationship's fields). The text gives way before the number does. None for a label with
+    /// no text or a plain line (`line(_:ink:)`), and a negative number is none.
+    public func counted(_ count: Int?) -> AdornmentLabel {
+        var label = self
+        label.count = text == nil || lineInk != nil ? nil : count.flatMap { $0 < 0 ? nil : $0 }
+        return label
     }
 
     /// The same label, drawn this opaque (0 to 1), its compact face too.
@@ -265,10 +316,10 @@ public struct AdornmentLabel: Hashable, Sendable {
     }
 
     /// The same label drawn in `tint`'s color (a missing label ignores it, and keeps its dashes): a
-    /// tint wins over the tone. Its compact face is its own label, tinted if whoever made it did.
+    /// tint wins over the tone, and a wrong label (`wrong()`) keeps its red. Its compact face is its own label, tinted if whoever made it did.
     public func tinted(_ tint: AdornmentTint) -> AdornmentLabel {
         var label = self
-        label.tint = tint
+        if !isWrong { label.tint = tint }
         return label
     }
 
@@ -496,6 +547,17 @@ extension CanvasEditor {
     public func adornmentFrames(of id: ShapeID) -> [AdornmentFrame] {
         guard let state = adornmentState, let record = document[id] else { return [] }
         return state.frames(of: record)
+    }
+
+    /// The rect a shape's adornment row is laid out against, in world units, at the zoom now: a closed
+    /// shape's bounds (a note's top-left is the row's), an open shape's label's if it has one, else a zero-size
+    /// rect at the middle of its outline, either widened about its center to what a row needs. What
+    /// something that hangs from the same place (a menu under an arrow, a card at a shape's pill) goes by,
+    /// so it hangs where the row does: on a slanted open shape the anchor is moved along by the row's slide clear of the
+    /// body (`AdornmentLayout`), so a falling arrow's is at its chip's left. Nil for a shape that isn't there or has nothing drawn, and where no
+    /// plugin places adornments.
+    public func adornmentAnchor(of id: ShapeID) -> CGRect? {
+        adornmentState?.rowAnchor(of: id)
     }
 
     /// How far above its top edge a shape reaches with the adornments it would show at 100%, in world

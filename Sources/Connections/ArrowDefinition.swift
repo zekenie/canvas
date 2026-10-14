@@ -362,6 +362,7 @@ public struct ArrowsPlugin: ListedPlugin {
                 return ArrowLabels.placement(of: arrow.props.text, in: label)
             })
             arrow.typeable()
+            arrow.relating()                                   // and may be the end of a relationship type
         }
         registrar.service { ArrowTargeting(editor: $0) }
         registrar.service { ArrowRowNesting(editor: $0) }

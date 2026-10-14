@@ -42,9 +42,6 @@ public indirect enum FieldKind: Equatable, Sendable {
     case group
     /// A bare `$ref` to a type; the type may be gone.
     case typeFields(ShapeID)
-    /// A link to a note of a type (slice 14 builds the value; the kind is read now).
-    case pointer(ShapeID)
-    case pointers(ShapeID)
     /// An object whose `additionalProperties` is a plain schema.
     case pairs(value: PlainKind)
     /// Two kinds; `hasMore` when a branch has.
@@ -53,11 +50,10 @@ public indirect enum FieldKind: Equatable, Sendable {
 }
 
 extension FieldKind {
-    /// A row ends in `›` and opens a card: everything but a plain kind, a pointer, and an either of two
-    /// of those. The rule of a note that is one; a type's note draws its own (`opensOnType`).
+    /// A row ends in `›` and opens a card: everything but a plain kind and an either of two of those. The rule of a note that is one; a type's note draws its own (`opensOnType`).
     public var hasMore: Bool {
         switch self {
-        case .plain, .pointer: false
+        case .plain: false
         case .either(let first, let second): first.hasMore || second.hasMore
         default: true
         }
@@ -65,20 +61,20 @@ extension FieldKind {
 
     /// Whether the row on a type's note ends in `›` and opens a read-only card, as board 5 panel 7 draws
     /// it: a group, another type's fields, a list of groups or of type fields, pairs and what no control
-    /// suits, and an either with a branch that is one. `Choices`, `List of Text` and the links have none:
-    /// a type's card has nothing to show for them.
+    /// suits, and an either with a branch that is one. `Choices` and `List of Text` have none: a type's card
+    /// has nothing to show for them.
     public var opensOnType: Bool {
         switch self {
         case .group, .typeFields, .listOfGroups, .listOfTypeFields, .pairs, .other: true
         case .either(let first, let second): first.opensOnType || second.opensOnType
-        case .plain, .choices, .list, .pointer, .pointers: false
+        case .plain, .choices, .list: false
         }
     }
 
     /// The type whose chip follows the label.
     public var chip: ShapeID? {
         switch self {
-        case .typeFields(let type), .listOfTypeFields(let type), .pointer(let type), .pointers(let type): type
+        case .typeFields(let type), .listOfTypeFields(let type): type
         default: nil
         }
     }
@@ -95,8 +91,6 @@ extension FieldKind {
         case .listOfTypeFields: "List of"
         case .group: FieldWords.fields(memberCount)
         case .typeFields: ""
-        case .pointer: "→"
-        case .pointers: "List of →"
         case .pairs: "Pairs"
         case .either(let first, let second):
             if case .plain(let a) = first, case .plain(let b) = second, case let joined = "\(a.label) or \(b.label)", joined.count <= Self.eitherLimit {
@@ -109,16 +103,6 @@ extension FieldKind {
     }
 
     private static let eitherLimit = 22
-
-    /// A pointer's `contentMediaType`: a string that is a link to a note (`MetaSchema.linkMediaType`, which
-    /// the meta-schema offers first).
-    public static let pointerMediaType = MetaSchema.linkMediaType
-
-    /// The schema of a pointer to a note of `type`: a string of that media type whose `contentSchema` is a
-    /// bare `$ref` to the type (`SchemaReferences.uri`). The one place that writes the pointer's JSON.
-    public static func pointerSchema(to type: ShapeID) -> JSONObject {
-        ["type": "string", "contentMediaType": .string(pointerMediaType), "contentSchema": ["$ref": .string(SchemaReferences.uri(of: type))]]
-    }
 }
 
 extension PlainKind {
@@ -181,7 +165,7 @@ extension FieldBook {
             return members(of: field).first { $0.field.name == key }
         case (.pairs, .key):
             return pairValue(of: field)
-        case (.list, .index), (.choices, .index), (.listOfGroups, .index), (.listOfTypeFields, .index), (.pointers, .index):
+        case (.list, .index), (.choices, .index), (.listOfGroups, .index), (.listOfTypeFields, .index):
             return item(of: field)
         case (.either, _):
             for branch in branches(of: field) {
@@ -205,11 +189,6 @@ enum FieldKindReader {
     /// the schema.
     static func kind(of written: SchemaValue) -> FieldKind {
         let schema = withoutNull(written)
-        // A pointer: a string that is a link to a note of a type, or a list of them.
-        if let target = pointer(schema) { return .pointer(target) }
-        if types(of: schema) == ["array"], let items = schema["items"], items.isObject, let target = pointer(withoutNull(items)) {
-            return .pointers(target)
-        }
         // Another type's fields: a bare `$ref` to a type. A reference to a part of one, or to anything
         // else, is none that a row can show.
         if let ref = schema["$ref"]?.string {
@@ -231,7 +210,7 @@ enum FieldKindReader {
     static func plain(_ written: SchemaValue) -> PlainKind? {
         let schema = withoutNull(written)
         if let options = options(of: schema) { return options.isEmpty ? nil : .choice(options) }
-        guard schema["$ref"] == nil, pointer(schema) == nil else { return nil }
+        guard schema["$ref"] == nil else { return nil }
         switch types(of: schema) {
         case ["boolean"]: return .yesNo
         case ["integer"]: return .number(integer: true)
@@ -267,20 +246,9 @@ enum FieldKindReader {
         }
     }
 
-    /// A string that links to a note of a type: `contentMediaType: "text/x-canvas-link"`, its
-    /// `contentSchema` a bare `$ref` to the type.
-    private static func pointer(_ schema: SchemaValue) -> ShapeID? {
-        guard types(of: schema) == ["string"], schema["contentMediaType"]?.string == FieldKind.pointerMediaType,
-              let ref = schema["contentSchema"]?["$ref"]?.string,
-              let target = SchemaReferences.target(of: ref), target.fragment.isEmpty else { return nil }
-        return target.shape
-    }
-
-
     private static func list(of schema: SchemaValue) -> FieldKind {
         guard schema["prefixItems"] == nil, let written = schema["items"], written.isObject else { return .other }
         let items = withoutNull(written)
-        if let target = pointer(items) { return .pointers(target) }
         if let ref = items["$ref"]?.string {
             guard let target = SchemaReferences.target(of: ref), target.fragment.isEmpty else { return .other }
             return .listOfTypeFields(target.shape)

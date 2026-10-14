@@ -13,8 +13,13 @@ whatever its form.
 
 - `cases.tsv` is the cases: 51 on the story file (`QueryStory.swift`, the file every query example
   runs on), 19 on the eval board (`QueryEvalBoard.swift`, 59 shapes on six boards, with
-  look-alike titles, plain arrows, and a note mentioned from two boards away) and 9 on the fields
-  board (`QueryFieldsBoard.swift`: two types and six notes with field values, a link and a mention).
+  look-alike titles, plain arrows, and a note mentioned from two boards away) and 19 on the fields
+  board (`QueryFieldsBoard.swift`: two types, two relationship types (Placed by, Friendship) and six notes
+  with field values, a mention, the relationships between them and one that is a misfit). Its ten
+  relationship cases are r01 to r10 (who is Ann Lee friends with, which orders she placed, who placed an
+  order, which friendships began before 2020, which orders have no customer, which relationships don't fit,
+  which relationship types Order has, who has the most friends, a mention that is not a relationship, and
+  what an order can be related to); f05 and f06 ask the same of Placed by that they once asked of a field.
 - `results.tsv` gets a row per run of a round, when you ask for one (`QUERY_EVAL_OUT`).
 - `copy_prompt.py` copies the prompt (`Shipped/ask-prompt.txt`) into the canvas skill's `query-prompt.md` after the
   prompt changes (the "Query prompt" suite holds the two equal).
@@ -189,7 +194,7 @@ appended to `results.tsv`.
 quotes, its kind) and the prompt teaches what to do with it, so nine cases ask about a note's values,
 on a third file, `QueryFieldsBoard.swift` (ids `…F00NN`, `selection` always `-`). Types **Person**
 (`name`, which titles it, `email`, `dob` a person calls "birthday"; `name` required) and **Order**
-(`number`, `customer` a link to a Person, `status` draft, paid or shipped, `due` a date, `total` a
+(`number`, `customer` text, `status` draft, paid or shipped, `due` a date, `total` a
 number, `lineItems` a list of `product` and `qty`, `gift` yes or no, `giftNote` which a gift asks
 for; `number`, `customer`, `status` and `due` required). Notes **Ann Lee** (born 1990-05-02) and
 **Bo Park** (2001-11-30); **Order 12** (for Ann, paid, due 2026-10-05, total 18, a Mug and a Pen),
@@ -203,14 +208,14 @@ mentions Ann Lee in its text. Each case's `reference` runs in `./test.sh` with n
 | `f02` | which orders have a wrong value? | `:incomplete`: Order 14 |
 | `f03` | orders with a Mug line | a path that doesn't go into the list |
 | `f04` | orders due before November 2026 | a date compared as text, or a wrong key |
-| `f05` | orders for Ann Lee | no `:is-a`, or any mention (Standup) |
-| `f06` | who is Order 12 for? | no edge type (the `is-a` edge brings in Order) |
+| `f05` | orders for Ann Lee | no `:is-a`, or a mention (Standup) in place of the field's text |
+| `f06` | orders for Bo Park | the same, for the other customer |
 | `f07` | people born before 2000 | a key guessed from the words (`birthday`, `born`) |
 | `f08` | orders with a priority above 3 | UNANSWERABLE, never a made-up `[fieldValues.priority>3]` |
 | `f09` | which notes mention Ann Lee? | `:edge-to("Ann Lee", mention)`: the orders come in |
 
 The prompt changed for every question (a `<fields>` line in "You get", the quoted date, a bullet on
-`[fieldValues…]`, `:incomplete`, `field-link` and a rule on unknown fields, some 1.8 KB), so the
+`[fieldValues…]`, `:incomplete` and a rule on unknown fields, some 1.8 KB), so the
 round that counts is every case, in one go, before the new ones are read: all 79, three runs, Haiku
 5.5 at `high`, the bar above (95% after repair, 85% first try, no category under 90%). The nine
 join `types` (seven), `unanswerable` and `mentions`. Run on 2026-10-12 with two runs a case (Haiku 5.5 at `high`, the shipped
@@ -219,9 +224,58 @@ above 89% first try and 96% after repair, and the bar met. The nine new cases pa
 first try. The one failure is s20 ("which subboard is Refund policy directly in?"), the few-percent miss
 noted above; s12 ("notes that mention TODO") now needs its repair turn (it was 3 of 3 first try
 before): it writes `:mentions("TODO")` and is repaired to `:contains`. Not appended to `results.tsv`. Where a case fails: `f07` says whether `<fields>` shows keys first (a guessed
-`birthday`); `f05` and `f09` whether `field-link` under `mention` reads as the prompt says
-(`:mentions` is exact, `mention` takes both); `f03` and `f04` whether the path and the quoted date
+`birthday`); `f05` and `f06` whether a customer's name is asked of its field's text and not of a mention, and `f09` whether `:mentions` is exact; `f03` and `f04` whether the path and the quoted date
 are the grammar's; a path no type has is a warning, not a refusal, so a typo is answered
 with nothing and the case fails by its set. The earlier rounds' sizes and token counts
 above are from the prompt before this one: the system prompt is longer by the lines above, and
 the user message by the `<fields>` block (at most 8,000 characters, a few hundred for this board).
+
+## After the pointer went (2026-10-12)
+
+A field that named another note is gone, and so is `field-link` from the prompt and from the two
+examples that used it; `f05` and `f06` ask a customer's name of its field's text ("orders for Ann
+Lee", "orders for Bo Park"). A lite run, not a full round (the full one comes when the prompt gains
+its passage on relationships): `QUERY_RUNS=2 QUERY_CASES=f01,f02,f03,f04,f05,f06,f07,f08,f09,s50,s51`,
+Haiku 5.5 at `high`: 22 runs, 22 first try, none repaired, none failed. Not appended to `results.tsv`.
+
+## Relationships (2026-10-13)
+
+The prompt gained its passage on relationships (a relationship is an arrow of a relationship type,
+picked by `arrow:is-a("…")` and never by an edge word's second argument; `:end-of` and `:start-of`
+for the notes at its ends; a value it holds as a field of the arrow; `arrow:misfit`), `<fields>`
+gained a line for each relationship type, and the cases gained `r01` to `r10` on the fields board
+(with `f05` and `f06` asked of the Placed by relationship). The round that counts is every case:
+all 89, three runs, Haiku 5.5 at `high`, the bar above.
+
+Round `relationships-1`, the passage as first written: 267 runs, first try 254 (95%), after repair
+259 (97%), failed 8, and the bar missed on two cases. `r01` to `r09` passed 3 of 3. `r10` ("what can
+an order be related to?") failed 3 of 3: the model answered with the people orders are placed by,
+where the question asks for types. `s43` ("delete the locked notes") failed 3 of 3 with
+`sticky-note[locked]`, and 6 of 6 asked again; with the prompt as it was before this change it failed
+2 of 6 the same day (it had been 3 of 3 on 2026-10-08), so the case was already at the edge and the
+longer prompt tipped it.
+
+Two changes, then the round again. A rule: a request to change the board is UNANSWERABLE even when
+a query could find the shapes it names, with four examples, none the case's own words (`s43` then
+6 of 6). Two sentences in the passage: the relationship types a type has
+(`sticky-note[relationship]:connected-to("Order", arrow)`), and that what a type can be related to
+is a question about types, the types at the far ends of those.
+
+Round `relationships-2`, the prompt as shipped: 267 runs, first try 261 (98%), after repair 264
+(99%), failed 3; every category at or above 95% after repair, `types` 63 of 63, `unanswerable` 15 of
+15, and the bar met. The failures: `s20` twice (the few-percent miss noted above), and `e13` once
+("types linked to Customer" answered as the relationship types of Customer, a reading the new
+sentence invites; 2 of 3 are right). `s10`, `s12` and `e05` each needed their repair turn once.
+Both rounds are in `results.tsv`.
+
+## `:incomplete` says relationship rows too, and is Validation's (2026-10-13)
+
+The prompt's line for `:incomplete` said fields only. A note whose relationship row an end marks
+Needed is incomplete while the row is empty, and the line says so now. A lite run, not a full
+round: `QUERY_RUNS=2 QUERY_CASES=f01,f02,r05,r06,s50,s51` (`f01`'s Order 14 is incomplete by its
+Needed `customer` row), Haiku 5.5 at `high`: 12 runs, 12 first try, none repaired, none failed.
+
+The same day the word moved to Validation, which keeps what a shape still needs as an issue of
+its own level: in `<vocabulary>` it now comes after `:invalid` and `:warned`, summarised "it still
+needs something", and the prompt's own text did not change. The same lite run again: 12 runs, 12
+first try. Neither is appended to `results.tsv`.

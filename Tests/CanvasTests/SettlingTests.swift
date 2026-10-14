@@ -303,6 +303,23 @@ private func eased(_ t: CGFloat) -> CGFloat {
         expectEqual(h.origin(of: going), CGPoint(x: 516, y: 250))
         expectEqual(h.editor.document[going]?.box?.size, CGSize(width: 100, height: 60), "nothing about the frame is stored")
     },
+    test("a stretch laid out smaller than it stores is judged by its smaller frame: stored mostly outside and laid out wholly inside goes in where it is, and stored wholly inside and laid out mostly outside goes out") {
+        let h = try settleHarness([StretchesPlugin(shrinking: true)])
+        let held = h.add(Corral(pen))
+        let gauge = h.add(StretchGauge(CGRect(x: 900, y: 900, width: 60, height: 40), width: 60, height: 60))
+        let coming = h.add(Stretch(CGRect(x: 400, y: 250, width: 300, height: 60), gauge: gauge))         // stored 33% in, laid out wholly in
+        expectEqual(h.settle([coming]), .settled(nudges: [:]), "no nudge: its frame is inside")
+        expectEqual(h.editor.holder(of: coming), held)
+        expectEqual(h.origin(of: coming), CGPoint(x: 400, y: 250))
+        let tall = h.add(StretchGauge(CGRect(x: 900, y: 950, width: 60, height: 40), width: 100, height: 60))
+        let going = h.add(Stretch(CGRect(x: 450, y: 250, width: 40, height: 60), gauge: tall))             // stored wholly in, laid out 50%
+        expectEqual(h.editor.holder(of: going), nil, "before the settle")
+        h.editor.transact { $0.setContainer(going, to: held) }
+        expectEqual(h.settle([going]), .settled(nudges: [going: CGPoint(x: 66, y: 0)]), "out, as far as its frame reaches")
+        expectEqual(h.editor.holder(of: going), nil)
+        expectEqual(h.origin(of: going), CGPoint(x: 516, y: 250))
+        expectEqual(h.editor.document[going]?.box?.size, CGSize(width: 40, height: 60), "nothing about the frame is stored")
+    },
     test("a stretch laid out too big for a container can't be in it, though it is mostly inside, and a gauge that grows later settles nothing") {
         let h = try settleHarness([StretchesPlugin()])
         let held = h.add(Corral(pen))

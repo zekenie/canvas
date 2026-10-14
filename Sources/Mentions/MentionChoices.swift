@@ -4,7 +4,7 @@ import Titles
 
 /// A candidate and where it is: the name of its board when that isn't the board shown (nil on it).
 /// What a list of shapes to pick from shows for each (the `@` picker's rows, a reference's, a
-/// pointer's).
+/// row's list of notes).
 public struct MentionChoice: Hashable, Sendable {
     public let candidate: MentionCandidate
     public let board: String?

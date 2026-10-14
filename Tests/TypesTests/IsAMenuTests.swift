@@ -49,7 +49,7 @@ import Types
         let outline = try b.menu(on: note).outline
         expect(outline.contains("Is a ▸"), "\(outline)")
         let at = try require(outline.firstIndex(of: "Is a ▸"))
-        expectEqual(Array(outline[at...].prefix(5)), ["Is a ▸", "  Type", "  —", "  Person", "  Zed"])
+        expectEqual(Array(outline[at...].prefix(6)), ["Is a ▸", "  Type", "  Relationship Type", "  —", "  Person", "  Zed"])
     },
     test("checks: an item every selected shape has is checked, a type some have is not (there is no mixed state)") {
         let b = try Bench()

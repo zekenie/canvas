@@ -23,6 +23,13 @@ public enum TypeRows {
     /// shape with no rows. Types provides it (`RowBook`), for the kinds that say where their rows go
     /// (`typeRows(drawnIn:)`).
     public static let extent = LayoutInputKey<RowsExtent>("type-rows")
+
+    /// Whether a shape is drawn small: a relationship type that holds no words and no fields, and has nothing
+    /// to show (no bars, no reason), is an empty one, and a kind that shows rows lays it out at its compact
+    /// size, however much it stores. Types provides it (`RowBook`) beside `extent`, from the same things, so a
+    /// note's words, a field, the mark taken off or the sync reading all make it full again from its top-left,
+    /// and nothing is written when it grows or shrinks. True or absent: a shape that is not drawn small has no answer.
+    public static let isCompact = LayoutInputKey<Bool>("type-compact")
 }
 
 /// Where each kind draws its rows: one contribution a kind. Owner Types.

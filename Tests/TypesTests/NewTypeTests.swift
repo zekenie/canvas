@@ -120,7 +120,7 @@ private struct NewChitsPlugin: CanvasPlugin {
         expectEqual(try titles("compan"), ["Company", "New type “Compan”"])
         expectEqual(try titles("purchase"), ["Purchase Order", "New type “Purchase”"])
         expectEqual(try titles("vendor"), ["New type “Vendor”"], "nothing matches: the only row")
-        expectEqual(try titles(""), ["Type", "Company", "Purchase Order"], "nothing typed: none")
+        expectEqual(try titles(""), ["Type", "Relationship Type", "Company", "Purchase Order"], "nothing typed: none")
     },
     test("nothing offers it where no kind can be a type, or none has a tool to place one") {
         let bare = try typeEditor()

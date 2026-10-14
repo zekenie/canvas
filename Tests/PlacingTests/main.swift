@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([surroundingsTests])
+runTests([surroundingsTests, betweenTests])

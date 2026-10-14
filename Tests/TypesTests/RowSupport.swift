@@ -81,9 +81,10 @@ struct RowSlipsPlugin: CanvasPlugin {
         registrar.shape(RowSlipDefinition()) { slip in
             slip.title()
             slip.mentionText { [$0.placement] }
-            slip.mentionable(untitled: { $0.props.text.firstLine })
+            slip.mentionable(untitled: { $0.props.text.firstLine ?? FieldValues.name(of: $0) })
             slip.typeWords(\.text, drawnIn: { $0.placement }, fitting: { RowSlipStyle.fit(&$0) })
             slip.canBeType()
+            slip.canBeRelationshipType()
             slip.typeable()
             slip.typeRows(drawnIn: { shape, context in shape.rowsBlock(in: context) })
         }
@@ -154,8 +155,7 @@ extension CanvasEditor {
         return types.map(\.id)
     }
 
-    /// Ann Lee and Bo Park (`FieldFixtures.annLeeID`, `boParkID`) as slips that are Persons, titled, far below the rest: what a pointer
-    /// points at. The Person type and Employee are added already (`rowFieldEditor`).
+    /// Ann Lee and Bo Park (`FieldFixtures.annLeeID`, `boParkID`) as slips that are Persons, titled, far below the rest: notes for a test to name. The Person type and Employee are added already (`rowFieldEditor`).
     func addFieldPeople() {
         let records = [(FieldFixtures.annLeeID, "Ann Lee"), (FieldFixtures.boParkID, "Bo Park")].enumerated().map { place, person -> AnyShapeRecord in
             var record = slipRecord("", of: [FieldFixtures.personID], at: CGPoint(x: 40 + Double(place) * 300, y: 2400), id: person.0)

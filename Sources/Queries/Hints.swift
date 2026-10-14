@@ -93,11 +93,14 @@ extension QueryVocabulary {
     /// the kinds, the shapes the app has now by id (`kindOf`) and, once read, the titles (`titled`:
     /// the kinds of the shapes each folded title names; nil before they're read) say. A `:has()`
     /// combinator's form, whose shapes can hold none, leaves its hint to the kinds that can.
-    func settled(_ error: QueryError, kindOf: (ShapeID) -> ShapeKind?, titled: [String: Set<ShapeKind>]?) -> QueryError {
+    func settled(_ error: QueryError, kindOf: (ShapeID) -> ShapeKind?, titled: [String: Set<ShapeKind>]?, typed: [String: Set<ShapeKind>]?) -> QueryError {
         func one(_ problem: QueryError) -> QueryError {
-            guard let premise = problem.premise, let verdict = holds(premise.claim, kindOf: kindOf, titled: titled) else { return problem }
+            guard let premise = problem.premise, let verdict = holds(premise.claim, kindOf: kindOf, titled: titled, typed: typed) else { return problem }
             var settled = problem.settled { _ in verdict }
             if verdict, case .typeWord(let name) = premise.claim, let word = typeWord { settled.hint = ":\(word)(\(quoted(name)))" }
+            if verdict, case .titledArgument(let word, let anchors, let title) = premise.claim, let hint = typeArgumentHint(word: word, anchors: anchors, title: title) {
+                settled.hint = hint
+            }
             if !verdict, settled.hint == nil, case .holdShapes = premise.claim { settled.hint = containersListed }
             return settled
         }
@@ -117,7 +120,9 @@ extension QueryVocabulary {
                 for compound in compounds { if case .title(let title, _)? = compound.head { titles.insert(fold(title)) } }
             case .typeWord(let name)? where typeWord != nil && naming != nil:
                 titles.insert(fold(name))
-            case .typeWord?, .namedKind?, nil:
+            case .titledArgument(_, _, let title)? where typeWord != nil && naming != nil:
+                titles.insert(fold(title))
+            case .typeWord?, .titledArgument?, .namedKind?, nil:
                 break
             }
         }
@@ -125,7 +130,7 @@ extension QueryVocabulary {
     }
 
     /// Whether a claim holds: nil where only what isn't known yet could say.
-    private func holds(_ claim: HintPremise.Claim, kindOf: (ShapeID) -> ShapeKind?, titled: [String: Set<ShapeKind>]?) -> Bool? {
+    private func holds(_ claim: HintPremise.Claim, kindOf: (ShapeID) -> ShapeKind?, titled: [String: Set<ShapeKind>]?, typed: [String: Set<ShapeKind>]?) -> Bool? {
         switch claim {
         case .titled(let title):
             return titled.map { !($0[fold(title)] ?? []).isEmpty }
@@ -143,9 +148,35 @@ extension QueryVocabulary {
             guard let entry = kind(ShapeKind(rawValue: name)) else { return true }
             return naming != nil && entry.names != QueryNameSource.none
         case .typeWord(let name):
-            // A word that finds a type's shapes, and a shape titled so for it to name.
+            // A word that finds a type's shapes, and a type titled so for it to name.
             guard typeWord != nil, naming != nil else { return false }
-            return titled.map { !($0[fold(name)] ?? []).isEmpty }
+            return typed.map { !($0[fold(name)] ?? []).isEmpty }
+        case .titledArgument(_, _, let title):
+            // The same, and no edge type of that name: a title that is one is an edge type written as a title.
+            guard typeWord != nil, naming != nil, !edgeTypes.contains(where: { $0.type.rawValue == title }) else { return false }
+            return typed.map { !($0[fold(title)] ?? []).isEmpty }
+        }
+    }
+
+    /// What to write in place of an edge word given the title of a type where it takes edge types: the arrows of that
+    /// type, through the word that finds a type's shapes (`:is-a`), then the ends the word was after. A relationship is
+    /// one hop, so the words that follow arrows far get a sentence and no query. Nil for a word with neither.
+    private func typeArgumentHint(word: String, anchors: [String], title: String) -> String? {
+        guard let typeWord, let first = anchors.first else { return nil }
+        let arrows = ":\(typeWord)(\(quoted(title)))"
+        let said = "\(title) is a type, not an edge type: write "
+        switch word {
+        case Word.edgeTo.rawValue: return said + ":\(Word.startOf.rawValue)(\(arrows):\(Word.endsAt.rawValue)(\(first)))"
+        case Word.edgeFrom.rawValue: return said + ":\(Word.endOf.rawValue)(\(arrows):\(Word.startsAt.rawValue)(\(first)))"
+        case Word.connectedTo.rawValue:
+            return said + ":\(Word.endOf.rawValue)(\(arrows):\(Word.startsAt.rawValue)(\(first))), :\(Word.startOf.rawValue)(\(arrows):\(Word.endsAt.rawValue)(\(first)))"
+        case Word.startsAt.rawValue, Word.endsAt.rawValue: return said + "\(arrows):\(word)(\(first))"
+        case Word.between.rawValue:
+            guard anchors.count == 2 else { return nil }
+            return said + "\(arrows):\(Word.between.rawValue)(\(first), \(anchors[1]))"
+        case Word.downstreamOf.rawValue, Word.upstreamOf.rawValue, Word.componentOf.rawValue:
+            return "\(title) is a type, not an edge type, and a relationship is one hop: \(arrows) finds the arrows of the type, and :\(Word.endOf.rawValue) and :\(Word.startOf.rawValue) the notes at their ends."
+        default: return nil
         }
     }
 

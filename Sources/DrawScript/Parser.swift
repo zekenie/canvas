@@ -193,7 +193,11 @@ struct LineParser {
         subject = word
         if let token = peek(), token.kind == .quoted {
             at += 1
-            statement.title = try title(token)
+            statement.name = .title(try title(token))
+            subject = "\(word) \(token.raw)"
+        } else if let token = peek(), Self.isIDWord(token) {
+            at += 1
+            statement.name = .id(try id(token))
             subject = "\(word) \(token.raw)"
         } else if let token = peek(), token.kind == .word, !startsPlacement(token), !(peek(1)?.isWord(Word.of.rawValue) ?? false),
                   !Self.isBraced(token), equalsAttribute(at: at) == nil {
@@ -228,7 +232,7 @@ struct LineParser {
                 let joined = at > 2 && tokens[at - 1].kind == .quoted
                 throw error("\(token.raw) is a title where none goes",
                             hint: joined ? "join several shapes with and: \(tokens[at - 1].raw) and \(token.raw)"
-                                : statement.title == nil ? "a shape's title goes right after its kind: \(word) \(token.raw)"
+                                : statement.name == nil ? "a shape's title goes right after its kind: \(word) \(token.raw)"
                                 : "a value with spaces is quoted after its key: text: \(token.raw)")
             case .comma: throw error("a \",\" here joins nothing", hint: "a comma separates the shapes a placement names: right of \"A\", \"B\" and \"C\"")
             case .open, .close, .json: throw error("\(token.raw) is out of place", hint: "brackets hold a placement's gap: right of \"A\" (gap: wide)")
@@ -253,7 +257,7 @@ struct LineParser {
         subject = "\(Keyword.edge.rawValue) \(statement.written)"
         if let next = peek(), next.kind == .word, EdgeArrow(rawValue: next.text) != nil || Lexer.looksLikeArrow(next.text) {
             throw error(.unsupported, "an edge joins two shapes, and this one goes on to a third",
-                        hint: "write each edge on a line of its own: edge \(quote(to)) -> …")
+                        hint: "write each edge on a line of its own: edge \(to.written) -> …")
         }
         if let next = peek(), next.kind == .quoted {
             throw error("\(next.raw) is a title where none goes", hint: "what an edge says is written after a key: text: \(next.raw)")
@@ -300,7 +304,9 @@ struct LineParser {
                     case .word("true"):
                         statement.share = .any
                     case .quoted(let text) where text.contains(where: { !$0.isWhitespace }):
-                        statement.share = .beside(text)
+                        statement.share = .beside(.title(text))
+                    case .word(let word) where word.hasPrefix(String(ShapeName.idMark)):
+                        statement.share = .beside(.id(try id(word: word)))
                     default:
                         throw error(.invalidValue, "\(token.raw) \(value.written) isn't true or the title of a shape",
                                     hint: "write \(token.raw) true to reuse a reference to the same end, or \(token.raw) \"A\" for the one beside A; leave \(token.raw) out to make its own")
@@ -313,13 +319,31 @@ struct LineParser {
         return statement
     }
 
-    mutating func edgeEnd(example: String) throws(ScriptError) -> String {
+    mutating func edgeEnd(example: String) throws(ScriptError) -> ShapeName {
         guard let token = take() else { throw error("an edge joins two shapes, by their titles", hint: "write \(example)") }
-        guard token.kind == .quoted else {
-            if token.kind == .word { throw error("\(token.raw) isn't quoted, and titles are in double quotes", hint: "write \(example)") }
-            throw error("an edge joins two shapes, by their titles", hint: "write \(example)")
+        if token.kind == .quoted { return .title(try title(token)) }
+        if Self.isIDWord(token) { return .id(try id(token)) }
+        if token.kind == .word { throw error("\(token.raw) isn't quoted, and titles are in double quotes", hint: "write \(example)") }
+        throw error("an edge joins two shapes, by their titles", hint: "write \(example)")
+    }
+
+    /// Whether a token is a word that starts like an id (`#…`): where a name goes, it is meant as one.
+    static func isIDWord(_ token: Token) -> Bool {
+        token.kind == .word && token.text.hasPrefix(String(ShapeName.idMark))
+    }
+
+    /// The id a token `#…` names, as written (without the `#`), or why it isn't one.
+    func id(_ token: Token) throws(ScriptError) -> String { try id(word: token.text) }
+
+    func id(word: String) throws(ScriptError) -> String {
+        let text = String(word.dropFirst())
+        if ShapeName.isID(text) { return text }
+        let message = "\(ShapeName.idMark) takes a shape's id, and \(word) isn't one"
+        if !text.isEmpty, text.allSatisfy({ $0.isASCII && $0.isHexDigit || $0 == "-" }) {
+            throw error(.notAnID, message, hint: "an id is 32 hex digits in groups of 8, 4, 4, 4 and 12, as a query's row gives it")
         }
-        return try title(token)
+        throw error(.notAnID, message, hint: text.isEmpty || text.contains(where: \.isWhitespace) ? "a shape is named by its title in double quotes, or by an id a query gave"
+                    : "a title is in double quotes: write \(quote(text)); an id is what a query's row gives")
     }
 
     mutating func delete() throws(ScriptError) -> DeleteStatement {
@@ -330,14 +354,18 @@ struct LineParser {
         if token.isWord(Keyword.edge.rawValue) {
             at += 1
             let edge = try edge()
-            guard edge.attributes.isEmpty, edge.fromSide == nil, edge.toSide == nil, edge.via == nil, edge.share == nil else {
-                throw error("deleting takes no attributes", hint: "write delete edge \(edge.written)")
+            guard edge.fromSide == nil, edge.toSide == nil, edge.via == nil, edge.share == nil else {
+                throw error("deleting takes no from:, to:, via: or share:", hint: "write delete edge \(edge.written)")
             }
             subject = "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(edge.written)"
-            statement = .edges(from: edge.from, to: edge.to, eitherWay: edge.arrow == .both)
+            statement = .edges(from: edge.from, to: edge.to, eitherWay: edge.arrow == .both, attributes: edge.attributes)
         } else if token.kind == .quoted {
             at += 1
-            statement = .shape(title: try title(token))
+            statement = .shape(.title(try title(token)))
+            subject = "\(Keyword.delete.rawValue) \(token.raw)"
+        } else if Self.isIDWord(token) {
+            at += 1
+            statement = .shape(.id(try id(token)))
             subject = "\(Keyword.delete.rawValue) \(token.raw)"
         } else if token.kind == .word {
             throw error("\(token.raw) isn't quoted, and titles are in double quotes", hint: "write delete \(quote(token.text))")
@@ -557,16 +585,16 @@ struct LineParser {
     mutating func container(of statement: inout ShapeStatement) throws(ScriptError) {
         at += 1
         let opening = Word.in.rawValue
-        guard let token = peek(), token.kind == .quoted else {
+        guard let token = peek(), token.kind == .quoted || Self.isIDWord(token) else {
             if let token = peek(), token.kind == .word, PlaceWord(rawValue: token.text) == nil {
                 throw error("\(token.raw) isn't quoted, and titles are in double quotes", hint: "write \(opening) \(quote(token.text))")
             }
             throw error("\(opening) names no shape", hint: "write \(opening) \"A\": the shape that holds it")
         }
         at += 1
-        let title = try title(token)
+        let name: ShapeName = token.kind == .quoted ? .title(try title(token)) : .id(try id(token))
         if let earlier = statement.container {
-            throw error("\(opening) is written twice, \(opening) \(quote(earlier)) and \(opening) \(token.raw)",
+            throw error("\(opening) is written twice, \(opening) \(earlier.written) and \(opening) \(token.raw)",
                         hint: "a shape is in one shape: keep one")
         }
         // A part (`top-left`), but not a placement starting with a word parts share (`right of`,
@@ -579,7 +607,7 @@ struct LineParser {
         if let next = peek(), next.kind == .comma || next.isWord(Word.and.rawValue) {
             throw error("\(opening) \(token.raw) names one shape, and a shape is in one", hint: "name the one that holds it")
         }
-        statement.container = title
+        statement.container = name
     }
 
     mutating func clause() throws(ScriptError) -> Clause {
@@ -650,14 +678,15 @@ struct LineParser {
     mutating func targets(after opening: String, partFirst: Bool) throws(ScriptError) -> [Target] {
         var targets: [Target] = []
         repeat {
-            guard let token = peek(), token.kind == .quoted || token.kind == .word && PlaceWord(rawValue: token.text) != nil else {
+            guard let token = peek(), token.kind == .quoted || Self.isIDWord(token) || token.kind == .word && PlaceWord(rawValue: token.text) != nil else {
                 if let token = peek(), token.kind == .word, !token.isWord(Word.and.rawValue) {
                     throw error("\(token.raw) isn't quoted, and titles are in double quotes", hint: "write \(opening) \(quote(token.text))")
                 }
                 throw error("\(opening) names nothing", hint: "write \(opening) \"A\"")
             }
             at += 1
-            let box: Target.Box = token.kind == .quoted ? .title(try title(token)) : token.text == PlaceWord.board.rawValue ? .board : .view
+            let box: Target.Box = token.kind == .quoted ? .title(try title(token)) : Self.isIDWord(token) ? .id(try id(token))
+                : token.text == PlaceWord.board.rawValue ? .board : .view
             targets.append(Target(box, part: try part(partFirst: partFirst)))
             guard joinsAnother() else { break }
             if let next = peek(), startsPlacement(next) { throw joined(after: "\(opening) \(listed(targets.map(\.written)))") }

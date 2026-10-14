@@ -104,6 +104,11 @@ extension Transaction {
     try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin(), StretchesPlugin(log: log)])
 }
 
+/// Stretches laid out at their gauge's size, smaller than they store too.
+@MainActor func shrinkingEditor(_ log: StretchLog = StretchLog()) throws -> EditorHarness {
+    try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin(), StretchesPlugin(log: log, shrinking: true)])
+}
+
 @MainActor func providedEditor(_ log: ProvidedLog) throws -> EditorHarness {
     try EditorHarness(plugins: [FixturesPlugin(), ProvidedKinds(log: log)])
 }
@@ -210,6 +215,71 @@ extension Transaction {
         expectEqual(frame(), box, "a width that isn't finite counts as the box")
         h.editor.transact { $0.update(gauge, as: StretchGauge.self) { $0.props.width = 200; $0.props.height = .nan } }
         expectEqual(frame(), box, "and so does a height")
+    },
+    test("a kind may be laid out smaller than it stores: the frame is the kind's size from the stored origin, and so are its geometry, outline and editing frame; the stored box is what it was; a size that isn't finite or above zero counts as the box") {
+        let h = try shrinkingEditor()
+        let box = CGRect(x: 10, y: 20, width: 200, height: 120)
+        let gauge = h.add(StretchGauge(.zero, width: 100, height: 40))
+        let stretch = h.add(Stretch(box, gauge: gauge))
+        let small = CGRect(x: 10, y: 20, width: 100, height: 40)
+        @MainActor func frame() -> CGRect? { h.editor.shapeContext.frame(of: stretch) }
+        expectEqual(frame(), small, "smaller on both sides, from the same top-left")
+        expectEqual(h.editor.shapeContext.geometry(of: stretch)?.bounds, small, "its geometry is it")
+        expectEqual(h.editor.shapeContext.geometry(of: stretch)?.outline, small.polygon, "and its outline")
+        expectEqual(h.editor.frame(inFile: stretch), small, "on any board")
+        expectEqual(h.editor.outlinePath(of: h.editor.document[stretch]!)?.boundingBox, small, "its outline path")
+        expectEqual(h.editor.document[stretch]?.box, box, "the stored box is what it was")
+        expect(h.editor.beginEditing(stretch))
+        expectEqual(h.editor.editingFrame, small, "the editing view is laid over it")
+        h.editor.endEditing()
+        h.editor.transact { $0.update(gauge, as: StretchGauge.self) { $0.props.width = 300; $0.props.height = 20 } }
+        expectEqual(frame(), CGRect(x: 10, y: 20, width: 300, height: 20), "wider and shorter than it stores")
+        for (width, height) in [(CGFloat.infinity, 40), (100, .nan), (0, 40), (100, 0), (-5, 40), (100, -1)] as [(CGFloat, CGFloat)] {
+            h.editor.transact { $0.update(gauge, as: StretchGauge.self) { $0.props.width = width; $0.props.height = height } }
+            expectEqual(frame(), box, "\(width) by \(height) counts as the box")
+        }
+        // The default fixture keeps a stretch no smaller than it stores, as most tests rely on.
+        let keeping = try stretchEditor(StretchLog())
+        let keepGauge = keeping.add(StretchGauge(.zero, width: 100, height: 40))
+        let kept = keeping.add(Stretch(box, gauge: keepGauge))
+        expectEqual(keeping.editor.shapeContext.frame(of: kept), box, "the larger of each side")
+    },
+    test("the kept extent follows the laid-out frame: a point or a view in the stored box and outside the frame hits nothing and draws nothing, and the board's bounds are the frame") {
+        let h = try shrinkingEditor()
+        let gauge = h.add(StretchGauge(CGRect(x: 1000, y: 1000, width: 60, height: 40), width: 100, height: 40))
+        let stretch = h.add(Stretch(CGRect(x: 0, y: 0, width: 300, height: 200), gauge: gauge))
+        expectEqual(h.editor.shape(at: CGPoint(x: 50, y: 20)), stretch, "in the frame")
+        expectEqual(h.editor.shape(at: CGPoint(x: 250, y: 150)), nil, "in the stored box, outside the frame")
+        expectEqual(h.editor.paintOrder(in: CGRect(x: 40, y: 10, width: 10, height: 10)).map(\.id), [stretch])
+        expectEqual(h.editor.paintOrder(in: CGRect(x: 240, y: 140, width: 10, height: 10)).map(\.id), [], "in view by its frame only")
+        expectEqual(h.editor.shapeBounds, CGRect(x: 0, y: 0, width: 100, height: 40).union(CGRect(x: 1000, y: 1000, width: 60, height: 40)),
+                    "the board's bounds, Zoom to Fit's and a first visit's, the frame and not the stored box")
+        // Laid out again, the extent moves with it, down as well as up.
+        h.editor.transact("Gauge") { $0.update(gauge, as: StretchGauge.self) { $0.props.width = 250; $0.props.height = 150 } }
+        expectEqual(h.editor.shape(at: CGPoint(x: 240, y: 140)), stretch, "grown")
+        expectEqual(h.editor.shapeBounds.minX, 0)
+        expectEqual(h.editor.paintOrder(in: CGRect(x: 240, y: 140, width: 5, height: 5)).map(\.id), [stretch])
+        h.editor.undo()
+        expectEqual(h.editor.shape(at: CGPoint(x: 240, y: 140)), nil, "and back down with the undo")
+        expectEqual(h.editor.paintOrder(in: CGRect(x: 240, y: 140, width: 5, height: 5)).map(\.id), [])
+        // The minimap hears where it shrank.
+        let mark = h.editor.damageMark
+        h.editor.transact("Gauge") { $0.update(gauge, as: StretchGauge.self) { $0.props.width = 20 } }
+        expect(h.editor.damage(since: mark).contains(CGRect(x: 0, y: 0, width: 100, height: 40)), "the area it left is redrawn")
+    },
+    test("a shape placed at a point is the stored size centered on it, whatever it is laid out at: the frame hangs from that origin, up and left of the point when it is smaller") {
+        let h = try shrinkingEditor()
+        let gauge = h.add(StretchGauge(CGRect(x: 1000, y: 1000, width: 60, height: 40), width: 40, height: 20))
+        let placement = try require(h.editor.registry.placement(for: Stretch.kind)).mapping { record in
+            var stretch = record.typed(as: Stretch.self)!
+            stretch.props.gauge = GaugeLink(gauge)
+            return AnyShapeRecord(stretch)
+        }
+        expectEqual(placement.shape(at: CGPoint(x: 500, y: 500)).box, CGRect(x: 450, y: 470, width: 100, height: 60), "the stored size, centered")
+        h.editor.place(placement, at: CGPoint(x: 500, y: 500))
+        let placed = try require(h.editor.document.shapes.first { $0.kind == Stretch.kind })
+        expectEqual(placed.box, CGRect(x: 450, y: 470, width: 100, height: 60))
+        expectEqual(h.editor.shapeContext.frame(of: placed.id), CGRect(x: 450, y: 470, width: 40, height: 20), "laid out smaller from the same origin")
     },
     test("the size is kept: a drag and its undo ask nothing, a resize of the stored box or another gauge asks once more, and a deleted shape's is let go") {
         let log = StretchLog()

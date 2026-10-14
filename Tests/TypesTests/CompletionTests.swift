@@ -601,20 +601,10 @@ private let shapeKeys = ["name", "kind", "size", "radius", "side", "visible", "o
         _ = TypeCompletions.completions(in: #"{"type": ""}"#, at: 10, types: types)
         expectEqual(asked.count, 1, "not at a key, nor at another value")
     },
-    test("a type: a pointer is made by completion alone: the first media type offered is the link to a note, and its contentSchema's $ref offers the file's types by name") {
+    test("a type: a contentMediaType offers the usual media types, and none for a link to a note") {
         let c = try require(complete(#"{"type": "string", "contentMediaType": "|"}"#))
-        expectEqual(labels(c).first, FieldKind.pointerMediaType)
-        expect(labels(c).contains("application/json"))
-        let person = ShapeID()
-        let types = { @MainActor () -> [JSONCompletionOffer] in [TypeCompletions.type(person, named: "Person", detail: "3 fields")] }
-        let marked = ##"{"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "|"}}"##
-        let (text, offset) = unmarked(marked)
-        let refs = try require(TypeCompletions.completions(in: text, at: offset, types: types))
-        expectEqual(labels(refs).last, "Person")
-        expectEqual(refs.items.last?.insert, "\"\(SchemaReferences.uri(of: person))\"")
-        let inItems = ##"{"type": "array", "items": {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "|"}}}"##
-        let (itemsText, itemsOffset) = unmarked(inItems)
-        expectEqual(labels(TypeCompletions.completions(in: itemsText, at: itemsOffset, types: types)).last, "Person", "at any depth: a list of pointers too")
+        expectEqual(labels(c).first, "application/json")
+        expect(!labels(c).contains { $0.contains("canvas") })
     },
     test("a type: what a caller adds where a value goes comes after the rest, and only where it says") {
         let extra: @Sendable (JSONCompletionPlace) -> [JSONCompletionOffer] = { place in

@@ -213,7 +213,8 @@ final class ReferenceEditor: NSView, NSTextViewDelegate {
                 props.target = original.target
                 props.words = original.words
                 props.query = original.query
-                ReferenceEdits.fit(&props)
+                // What it was opened with, so its width as well: a note on another board had room for the board's name.
+                props.frame.size = original.frame.size
             } else {
                 ReferenceEdits.find(&props, words: text)
             }
@@ -262,7 +263,7 @@ final class ReferenceEditor: NSView, NSTextViewDelegate {
     /// What a row of the list does: a shape's names it, and the words row's commits the words.
     private func pick(_ row: ReferencePickerRow) {
         switch row {
-        case .shape(let choice): pickTarget(choice.candidate)
+        case .shape(let choice): pickTarget(choice.candidate, board: choice.board)
         case .words: commitWords()
         case .empty: break
         }
@@ -270,8 +271,8 @@ final class ReferenceEditor: NSView, NSTextViewDelegate {
 
     /// The pill stands for the shape, named as a mention of it shows it: one write, the words and query
     /// let go of, the width refit to its name; and editing ends.
-    private func pickTarget(_ candidate: MentionCandidate) {
-        context.update { ReferenceEdits.pick(&$0, ReferenceTarget(id: candidate.id, label: candidate.appearance.label)) }
+    private func pickTarget(_ candidate: MentionCandidate, board: String?) {
+        context.update { ReferenceEdits.pick(&$0, ReferenceTarget(id: candidate.id, label: candidate.appearance.label), board: board) }
         context.service(MentionState.self)?.didPick(candidate.id)
         context.end()
     }

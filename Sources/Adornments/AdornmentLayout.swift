@@ -7,12 +7,34 @@ import Geometry
 ///
 /// - the row above the top edge (`rowGap` above it, `rowHeight` tall): its right end leftward from
 ///   the right edge, whole, then its left end rightward from the left edge, in the room left (text
-///   gives way, ending in "…", and needs `minTextRoom`, and its `lead` more, a symbol before it, or
+///   gives way, ending in "…", and needs `minTextRoom`, and its `lead` more (a symbol before it, a number after it), or
 ///   it and the rest are left out), unless it isn't shown whole and a right-end item's compact face
 ///   gives it more room (`Item.compact`: the right end's items take theirs, nearest the edge first,
 ///   as many as give the text the most room it can get, and no more, all of them when it gets none);
 /// - the top-right corner (`cornerHeight` tall, centered on the top edge), leftward from
 ///   `cornerOverhang` past the right edge.
+///
+/// On an open shape that is slanted (`Slant.slope`, the chord's dy / dx, y down), the shape's own body runs
+/// through the middle of its anchor, and the row above it slides along the anchor, toward the side the body
+/// leaves clear, only as far as it must to keep `margin` between the body's centre line and an edge (grown by
+/// `margin` on every side, a slot is never crossed by it). The row moves whole, its
+/// right end and the corner with its left end, so each keeps its own packing; the layout slides the slots against
+/// an anchor that does not move, so it stays pure, and `editor.adornmentAnchor(of:)` is the anchor moved by the row's
+/// slide (the layout returns it), so what hangs from the row hangs from where it is; a level shape (slope 0) is laid
+/// out exactly as it was. The chord is the body's direction for a straight shape and the tangent's at its middle for a
+/// bent one, whose arc may still cross a slot, more as it bends. The row's bottom is `h + rowGap` above the
+/// anchor's middle, `h` half the anchor's height: where the body falls to the right (slope > 0) it is above the
+/// middle on the left, so the row's leftmost point is no farther left than `-(h + rowGap - margin) / slope + margin`
+/// from the middle; where it rises (slope < 0), mirrored, its rightmost no farther right than
+/// `(h + rowGap - margin) / |slope| - margin`. The slide is at most `maxSlide` world units, or what a 120-point
+/// anchor needs if that is more (`slideLimit(atScale:)`, `Slant.maxSlide` in view points), which bounds the reach
+/// of an anchor as wide as an arrow's label.
+///
+/// An open shape with no label has no rect of its own to lay the row against, so its anchor is a point (the middle of
+/// its outline) widened to `minAnchorWidth`, and the row is centred on that middle as one run (`Slant.centersRow`:
+/// the middle of its extent, the left end and the right end together, is the anchor's middle; the corner rides along);
+/// the slide of a slanted body then starts from there, moving the row only as far as it must. A shape with a label
+/// keeps its row from the label's left edge, and a closed shape reads nothing of this.
 ///
 /// The row ends a point above the corner's top (`rowGap` is half the corner's height, and one
 /// more). The row's right end and the corner reach no more than `maxRun` from their starts:
@@ -43,11 +65,26 @@ public enum AdornmentLayout {
     public static let minAnchorWidth: CGFloat = 120
     /// Below this zoom adornments shrink with the shapes.
     public static let fullSizeZoom: CGFloat = 0.25
+    /// The clear space kept between a slanted shape's body (its centre line) and the edge of a slot that
+    /// slid clear of it, on every side.
+    public static let margin: CGFloat = 4
+    /// The farthest the row slides along its anchor to keep clear of the body, in world units (an arrow's
+    /// label is at most some 250 wide, so its row slides at most half of that and the margin): it bounds the
+    /// reach of the row on an anchor as wide as a label, which culling goes by (`area(showing:scale:)`).
+    public static let maxSlide: CGFloat = 200
+
+    /// The farthest the row slides, in view points, at `scale` world units per view point: `maxSlide` world
+    /// units, but never less than a 120-point anchor with the longest run of the row's right end needs to
+    /// clear any body (half the anchor, the margin and `maxRun`), so zoomed out the cap never keeps an ordinary
+    /// anchor's row from clearing.
+    public static func slideLimit(atScale scale: CGFloat) -> CGFloat {
+        max(minAnchorWidth / 2 + margin + maxRun, maxSlide / scale)
+    }
 
     /// One adornment to lay out: its place, how wide it is (text as long as it's drawn, measured; a
     /// symbol's disc as wide as its place is tall), whether it's text, which gives way at the row's
-    /// left end, and for text, how far it starts past its padding (`lead`: a symbol before it, and
-    /// the gap after that), which it needs room for besides `minTextRoom`.
+    /// left end, and for text, the room it needs besides `minTextRoom` (`lead`: a symbol before it and the
+    /// gap after that, and a number after it and the gap before that, `AdornmentLabel.counted(_:)`).
     public struct Item: Equatable, Sendable {
         public var placement: AdornmentPlacement
         public var width: CGFloat
@@ -91,6 +128,24 @@ public enum AdornmentLayout {
         placement == .onTopRightCorner ? cornerHeight : rowHeight
     }
 
+    /// What an open shape's row goes by, in view points: how tall its anchor is, and the slope of the chord from its
+    /// outline's first point to its last (dy / dx, y down; infinite for an upright chord, 0 for a level one), which
+    /// slides the row clear of a slanted shape's body. A closed shape has none.
+    public struct Slant: Equatable, Sendable {
+        public var anchorHeight: CGFloat
+        public var slope: CGFloat
+        /// The farthest the row slides, in view points (`AdornmentLayout.slideLimit(atScale:)`).
+        public var maxSlide: CGFloat
+        /// The anchor is a point (an open shape with no label): the row is centred on its middle before it slides.
+        public var centersRow: Bool
+        public init(anchorHeight: CGFloat, slope: CGFloat = 0, maxSlide: CGFloat = AdornmentLayout.slideLimit(atScale: 1), centersRow: Bool = false) {
+            self.anchorHeight = anchorHeight
+            self.slope = slope
+            self.maxSlide = maxSlide
+            self.centersRow = centersRow
+        }
+    }
+
     /// How far above its top edge a shape `width` points wide reaches with these adornments, in view
     /// points (so in world units at 100%, where adornments keep their size): what the row above holds
     /// reaches `rowGap + rowHeight`, a chip on the corner `cornerHeight / 2`, nothing 0. Only what is
@@ -104,9 +159,9 @@ public enum AdornmentLayout {
     }
 
     /// Each item's frame, in the order given (the order they're claimed), for a shape `width`
-    /// points wide; nil for one left out.
-    public static func frames(of items: [Item], width: CGFloat) -> [CGRect?] {
-        slots(of: items, width: width).map { slot in slot.map { $0.frame(width: width) } }
+    /// points wide; nil for one left out. `slant` is an open shape's: without it the row is laid out as a closed shape's.
+    public static func frames(of items: [Item], width: CGFloat, slant: Slant? = nil) -> [CGRect?] {
+        slots(of: items, width: width, slant: slant).map { slot in slot.map { $0.frame(width: width) } }
     }
 
     /// Where an item goes: its frame from the top corner its place runs from, the right one for the
@@ -135,9 +190,9 @@ public enum AdornmentLayout {
         }
     }
 
-    static func slots(of items: [Item], width: CGFloat) -> [Slot?] {
+    static func slots(of items: [Item], width: CGFloat, slant: Slant? = nil) -> [Slot?] {
         var slots: [Slot?] = []
-        self.slots(of: items, width: width, into: &slots)
+        self.slots(of: items, width: width, slant: slant, into: &slots)
         return slots
     }
 
@@ -150,7 +205,17 @@ public enum AdornmentLayout {
     /// So as the shape widens the faces change once: compact, until the full faces and the whole
     /// text fit together, then full. A row with no text at its left end, or whose text is whole
     /// beside the full faces, keeps them. Items with no compact face cost no more than they did.
-    static func slots(of items: [Item], width: CGFloat, into slots: inout [Slot?]) {
+    ///
+    /// Returns how far the row slid along the anchor, in view points (0 for a level shape, one not read, or a row
+    /// already clear): where something that hangs from the row (a card, a menu) hangs.
+    @discardableResult
+    static func slots(of items: [Item], width: CGFloat, slant: Slant? = nil, into slots: inout [Slot?]) -> CGFloat {
+        placeRow(items, width: width, into: &slots)
+        return slideRow(items, width: width, slant: slant, into: &slots)
+    }
+
+    /// The row and the corner, with the compact faces where they give the left end's text the most room.
+    private static func placeRow(_ items: [Item], width: CGFloat, into slots: inout [Slot?]) {
         var compactable = 0
         for item in items where item.placement == .aboveTopRight && item.compact != nil { compactable += 1 }
         place(items, width: width, compacting: 0, into: &slots)
@@ -270,6 +335,44 @@ public enum AdornmentLayout {
         }
     }
 
+    /// Slides the row and the corner along the anchor, whole, clear of a slanted shape's body (see the header):
+    /// the row's extent (its items' frames, not the corner's) is held to the side of the anchor's middle the
+    /// body leaves clear, and moves no farther than `maxSlide`. Nothing moves for a level shape or one that
+    /// isn't read (`slant` nil), nor for a row already clear. Returns the slide, in view points.
+    private static func slideRow(_ items: [Item], width: CGFloat, slant: Slant?, into slots: inout [Slot?]) -> CGFloat {
+        guard let slant else { return 0 }
+        let slides = slant.slope != 0 && !slant.slope.isNaN
+        guard slant.centersRow || slides else { return 0 }
+        var lowest = CGFloat.infinity, highest = -CGFloat.infinity
+        for i in items.indices where items[i].placement == .aboveTopLeft || items[i].placement == .aboveTopRight {
+            guard let slot = slots[i] else { continue }
+            let frame = slot.frame(width: width)
+            lowest = min(lowest, frame.minX)
+            highest = max(highest, frame.maxX)
+        }
+        guard lowest <= highest else { return 0 }
+        // A point anchor: the row's extent is centred on the anchor's middle first, and the slide starts from there.
+        var shift: CGFloat = slant.centersRow ? width / 2 - (lowest + highest) / 2 : 0
+        lowest += shift
+        highest += shift
+        if slides {
+            // From the anchor's left edge: the middle is `width / 2`; the row's bottom edge is `h + rowGap` above it.
+            let drop = slant.anchorHeight / 2 + rowGap - margin
+            if slant.slope > 0 {
+                shift += min(max(0, width / 2 - drop / slant.slope + margin - lowest), slant.maxSlide)
+            } else {
+                shift += max(min(0, width / 2 + drop / -slant.slope - margin - highest), -slant.maxSlide)
+            }
+        }
+        guard shift != 0 else { return 0 }
+        for i in items.indices {
+            guard let slot = slots[i] else { continue }
+            slots[i] = Slot(frame: slot.frame.offsetBy(dx: shift, dy: 0), isFromRight: slot.isFromRight, isCompact: slot.isCompact,
+                            isOverflow: slot.isOverflow)
+        }
+        return shift
+    }
+
     /// What text at the row's left end leaves for the group after it: the "+N" chip that stands for
     /// all of it, and the gap before it. Nil with no group after.
     private static func reservation(after index: Int, in items: [Item]) -> CGFloat? {
@@ -292,12 +395,36 @@ public enum AdornmentLayout {
 
     /// The world rect whose shapes may have adornments in `visible`: grown by as far as they reach
     /// from their shapes, at `scale` world units per point. Up by the corner's reach below the top
-    /// edge, down by the row's above it, left by the corner's overhang, and right by the longest run.
+    /// edge, down by the row's above it, left by the corner's overhang past an anchor widened to 120, and right
+    /// by the longest run.
+    ///
+    /// A slanted shape's row slides along the anchor (the header), which widens both sides: centred on a point anchor
+    /// it is within about 100 points of the middle, and it slides at most `slideLimit` (264 view points, zoomed out),
+    /// so 2 × `maxRun` either way holds it; zoomed in, the slide is `maxSlide` world units, and the row reaches past an
+    /// anchor's edge no farther than that and its own run: the second term of each side, in world units, bounds an
+    /// anchor as wide as a label, whose edge the shape's bounds hold.
     public static func area(showing visible: CGRect, scale: CGFloat) -> CGRect {
-        let reachLeft = cornerOverhang + minAnchorWidth / 2
-        return CGRect(x: visible.minX - reachLeft * scale, y: visible.minY - cornerHeight / 2 * scale,
-               width: visible.width + (reachLeft + maxRun) * scale,
-               height: visible.height + (cornerHeight / 2 + rowGap + rowHeight) * scale)
+        let reachLeft = max(max(cornerOverhang + minAnchorWidth / 2, 2 * maxRun) * scale, maxSlide + cornerOverhang * scale)
+        let reachRight = max(2 * maxRun * scale, maxSlide + maxRun * scale)
+        let reachUp = cornerHeight / 2
+        return CGRect(x: visible.minX - reachLeft, y: visible.minY - reachUp * scale,
+               width: visible.width + reachLeft + reachRight,
+               height: visible.height + (reachUp + rowGap + rowHeight) * scale)
+    }
+
+    /// How far past its frame a slot's drawing can reach, in view points: a dashed line's half, a descender, a wave. A slot whose frame grown by this misses the view draws nothing in it.
+    public static let slotMargin: CGFloat = 4
+
+    /// The world rect a closed shape's row and corner lie in, whatever they hold, `bounds` the shape's (a closed
+    /// shape's anchor, **Anchors**): the row above the top edge, its left end within the shape's width and its right
+    /// end leftward from the right edge by at most `maxRun`, and the corner from its overhang past the right edge
+    /// leftward by at most `maxRun`. What `area(showing:scale:)` can only bound by its widest case, a row slid along
+    /// an open shape, which a closed shape has none of: a shape in the area whose reach misses what is shown has
+    /// nothing to make or draw.
+    public static func reach(ofClosed bounds: CGRect, scale: CGFloat) -> CGRect {
+        let left = min(bounds.minX, bounds.maxX - maxRun * scale), right = bounds.maxX + cornerOverhang * scale
+        let top = bounds.minY - (rowGap + rowHeight) * scale, bottom = bounds.minY + cornerHeight / 2 * scale
+        return CGRect(x: left, y: top, width: right - left, height: bottom - top)
     }
 
     /// The world rect whose shapes may have an adornment within `hitMargin` of `point`.

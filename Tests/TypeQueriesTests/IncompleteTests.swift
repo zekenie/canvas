@@ -9,9 +9,10 @@ import Titles
 import Types
 import Validation
 
-// `:incomplete`, in Types: a shape with a field its types need left empty, from the check of its
-// values (`FieldChecks`). The Order is the shared fixture (`FieldFixtures.order`, board 5's), over this
-// target's own memo kind.
+// `:incomplete`, Validation's word (`ValidationQueriesPlugin`), over what Types' rule over values says: a shape with a
+// field its types need left empty, or a relationship row an end marks Needed, is a shape with an issue of the third level.
+// The Order is the shared fixture (`FieldFixtures.order`, board 5's), over this target's own memo kind. Types registers no such
+// word of its own.
 
 private let orderID = FieldFixtures.orderID
 
@@ -33,8 +34,11 @@ private func order(_ n: Int, _ values: JSONObject = [:], is types: [ShapeID] = [
 
 private let filled: JSONObject = ["customer": "c", "lineItems": [["product": "Mug", "quantity": 1]]]
 
+/// Types' plugins and Validation's words.
+@MainActor private func plugins() -> [any CanvasPlugin] { typeQueryPlugins() + [ValidationQueriesPlugin()] }
+
 @MainActor private func harness(_ shapes: [AnyShapeRecord]) throws -> EditorHarness {
-    try EditorHarness(plugins: typeQueryPlugins(), document: CanvasDocument(shapes: [orderType()] + shapes))
+    try EditorHarness(plugins: plugins(), document: CanvasDocument(shapes: [orderType()] + shapes))
 }
 
 @MainActor let incompleteTests = Suite(":incomplete in canvas query", [
@@ -57,7 +61,7 @@ private let filled: JSONObject = ["customer": "c", "lineItems": [["product": "Mu
         var type = AnyShapeRecord(ShapeRecord(id: done, Memo(frame: CGRect(x: 40, y: 1000, width: 240, height: 52))))
         type[TitleProperty.self] = "Chore"
         type[TypeSchemaProperty.self] = SchemaText(#"{"type": "object", "properties": {"done": {"type": "boolean"}}, "required": ["done"]}"#)
-        let h = try EditorHarness(plugins: typeQueryPlugins(), document: CanvasDocument(shapes: [type, order(1, [:], is: [done])]))
+        let h = try EditorHarness(plugins: plugins(), document: CanvasDocument(shapes: [type, order(1, [:], is: [done])]))
         expectMatches([":incomplete": []], on: h)
     },
     test("a note that is incomplete and invalid matches both words: needed is no error, and wrong is no more than incomplete") {
@@ -65,12 +69,12 @@ private let filled: JSONObject = ["customer": "c", "lineItems": [["product": "Mu
         wrongToo.removeValue(forKey: "customer")
         wrongToo["lineItems"] = [["product": "Mug", "quantity": 0]]
         let shapes = [order(1, wrongToo), order(2, ["customer": "c", "lineItems": [["product": "Mug", "quantity": 0]]]), order(3)]
-        let h = try EditorHarness(plugins: typeQueryPlugins() + [ValidationQueriesPlugin()], document: CanvasDocument(shapes: [orderType()] + shapes))
+        let h = try EditorHarness(plugins: plugins(), document: CanvasDocument(shapes: [orderType()] + shapes))
         expectMatches([":incomplete": [1, 3], ":invalid": [1, 2], ":incomplete:invalid": [1], ":incomplete:not(:invalid)": [3]], on: h)
     },
     test("a row says which fields are needed and where, and only the needed ones: :invalid lists the wrong") {
         let values: JSONObject = ["lineItems": [["product": "Mug", "quantity": 0]], "gift": true]
-        let h = try EditorHarness(plugins: typeQueryPlugins() + [ValidationQueriesPlugin()],
+        let h = try EditorHarness(plugins: plugins(),
                                   document: CanvasDocument(shapes: [orderType(), order(1, values), order(2, filled)]))
         let needed = try answer(":incomplete", on: h, properties: .none).rows
         expectEqual(needed.map(\.id), [1].map(id))
@@ -99,7 +103,7 @@ private let filled: JSONObject = ["customer": "c", "lineItems": [["product": "Mu
         lost[IsAProperty.self] = [TypeLink(ghost)]
         let file = CanvasFile(root: CanvasDocument(shapes: [orderType(), AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 0, y: 0, width: 100, height: 100))))]),
                               children: [pocket: CanvasDocument(shapes: [note, lost])])
-        let h = try EditorHarness(plugins: typeQueryPlugins() + [PocketsPlugin()], file: file)
+        let h = try EditorHarness(plugins: plugins() + [PocketsPlugin()], file: file)
         let result = try answer(":incomplete", on: h, properties: .none)
         expectEqual(result.rows.map(\.id), [inside], "the Order on the other board; the note of a gone type is not")
     },
@@ -113,15 +117,17 @@ private let filled: JSONObject = ["customer": "c", "lineItems": [["product": "Mu
         h.editor.transact { $0.update(orderID) { $0[TypeSchemaProperty.self] = SchemaText(FieldFixtures.order.schema.replacingOccurrences(of: #""required": ["customer", "lineItems"]"#, with: #""required": ["customer", "lineItems", "status"]"#)) } }
         expectMatches([":incomplete": [1]], on: h)
     },
-    test("the vocabulary lists the word, which reads the editor, and without the plugin it is an unknown word") {
+    test("the vocabulary lists the word, which is Validation's and reads the editor; without Validation's words it is an unknown word, Types registering none") {
         let h = try harness([order(1)])
         let queries = try require(h.editor.queries)
         expect(queries.vocabulary.text.contains(":incomplete"), queries.vocabulary.text)
-        expect(queries.vocabulary.text.contains("it has a field its types need, left empty"))
+        expect(queries.vocabulary.text.contains("it still needs something"))
+        expect(!queries.vocabulary.text.contains("a relationship row that is needed"), "the summary is true of any rule, not Types' alone")
+        expectEqual(queries.vocabulary.words.first { $0.word == "incomplete" }?.from, "validation-queries")
         let plan = try queries.check(":incomplete")
         expectEqual(plan.editorWords, [":incomplete"])
         expect(!plan.readsOnlyTheFile)
-        let none = try EditorHarness(plugins: typeQueryPlugins(typeWords: false), document: CanvasDocument(shapes: [orderType(), order(1)]))
+        let none = try EditorHarness(plugins: typeQueryPlugins(), document: CanvasDocument(shapes: [orderType(), order(1)]))
         expectEqual(try require(try refusal(":incomplete", on: none)).reason, .unknownPseudoClass)
     },
 ])

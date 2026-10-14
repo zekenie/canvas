@@ -6,10 +6,17 @@ extension PluginID {
     public static let validation: PluginID = "validation"
 }
 
-/// Two channels, as ESLint's: an error makes a shape invalid, a warning only flags it.
+/// Two channels, as ESLint's: an error makes a shape invalid, a warning only flags it. And a third under
+/// them, which is no flag: the shape still needs something (a value its type calls needed, left empty), as
+/// any rule may say. It is kept like any issue and read by whoever asks for it (a query's `:incomplete`, a
+/// run's warning of a shape it did not write), and it shows nowhere on the board: no ring, no dot, no line of
+/// the Issues tab (`shows`).
 public enum Severity: Int, Comparable, Sendable {
-    case warning, error
+    case incomplete, warning, error
     public static func < (a: Severity, b: Severity) -> Bool { a.rawValue < b.rawValue }
+
+    /// Whether an issue of it shows on the board (a ring, a dot, a line of the Issues tab): not what a shape still needs.
+    public var shows: Bool { self != .incomplete }
 }
 
 public struct ValidationIssue: Hashable, Sendable {
@@ -34,6 +41,11 @@ public struct ValidationIssue: Hashable, Sendable {
     public static func warning(_ message: String, field: String? = nil, path: String? = nil) -> ValidationIssue {
         ValidationIssue(message, severity: .warning, field: field, path: path)
     }
+    /// Says the shape still needs something: it stays valid and is not flagged, nothing shows on the board, and a query
+    /// can ask for it (`:incomplete`).
+    public static func incomplete(_ message: String, field: String? = nil, path: String? = nil) -> ValidationIssue {
+        ValidationIssue(message, severity: .incomplete, field: field, path: path)
+    }
 }
 
 public struct ValidationResult: Equatable, Sendable {
@@ -41,12 +53,15 @@ public struct ValidationResult: Equatable, Sendable {
     public init(issues: [ValidationIssue]) { self.issues = issues }
     /// Derived, never stored: valid means no error-severity issue.
     public var isValid: Bool { !issues.contains { $0.severity == .error } }
-    /// Worked out as it's read, making nothing: the overlay reads it for every shape in view.
-    public var worst: Severity? { issues.lazy.map(\.severity).max() }
-    /// Worst first (the errors, then the warnings), each severity in the rules' order: how every list
-    /// of them reads.
+    /// The worst severity that shows on the board (an error, else a warning); nil when the shape has none, though it
+    /// may still need something (`.incomplete` issues). Worked out as it's read, making nothing: the overlay reads it
+    /// for every shape in view.
+    public var worst: Severity? { issues.lazy.map(\.severity).filter(\.shows).max() }
+    /// The issues that show on the board, worst first (the errors, then the warnings), each severity in the rules'
+    /// order: how every list of them reads. What a shape still needs is not among them.
     public var worstFirst: [ValidationIssue] {
         issues.enumerated()
+            .filter { $0.element.severity.shows }
             .sorted { $0.element.severity != $1.element.severity ? $0.element.severity > $1.element.severity : $0.offset < $1.offset }
             .map(\.element)
     }
@@ -121,11 +136,22 @@ public struct ValidationRule {
     /// the board shown again, and those on a board it keeps, once that board is shown. It runs on
     /// every commit, so it costs what the commit changed, never the board.
     let affected: (@MainActor (ChangeSet, CanvasEditor) -> Set<ShapeID>)?
+    /// The same question of writes that have not committed (a run's, which may never commit: a transaction's
+    /// `pending`), for a rule whose issues on one shape follow from another: given what the writes added, changed
+    /// and removed (`elsewhere`: on other boards) and the shapes as the writer has them (`transaction.shapes`,
+    /// whose `reading` is the file mid-way and lends the editor's services, committed), the other shapes, on any
+    /// board of the file, whose issues this rule may now find differently. It may name more than change (whoever
+    /// asks compares each one's issues before and after) and never fewer. It costs what was written and what
+    /// that reaches, never the board. A rule that looks other shapes up through `context.shape(_:)` alone needs
+    /// none: the engine's kept lookups answer for it (`registry.validationTouched(by:in:)`).
+    let touches: (@MainActor (ChangeSet, ShapeContext) -> Set<ShapeID>)?
     public init(ignoringMoves: Bool = false, affected: (@MainActor (ChangeSet, CanvasEditor) -> Set<ShapeID>)? = nil,
+                touches: (@MainActor (ChangeSet, ShapeContext) -> Set<ShapeID>)? = nil,
                 _ check: @escaping @MainActor (AnyShapeRecord, ValidationContext) -> [ValidationIssue]) {
         self.check = check
         ignoresMoves = ignoringMoves
         self.affected = affected
+        self.touches = touches
     }
 }
 
@@ -138,10 +164,12 @@ public enum ValidationRules: ExtensionPoint {
 
 extension ShapeRegistrar {
     /// A rule for this kind, with its props typed; `ignoringMoves` for one whose issues follow from
-    /// what shapes are, never where, and `affected` for one that reads a service (`ValidationRule`).
+    /// what shapes are, never where, `affected` for one that reads a service, and `touches` for the
+    /// same question of writes not yet committed (`ValidationRule`).
     public mutating func validate(ignoringMoves: Bool = false, affected: (@MainActor (ChangeSet, CanvasEditor) -> Set<ShapeID>)? = nil,
+                                  touches: (@MainActor (ChangeSet, ShapeContext) -> Set<ShapeID>)? = nil,
                                   _ rule: @escaping @MainActor (ShapeRecord<Definition.Props>, ValidationContext) -> [ValidationIssue]) {
-        contribute(ValidationRule(ignoringMoves: ignoringMoves, affected: affected) { record, context in
+        contribute(ValidationRule(ignoringMoves: ignoringMoves, affected: affected, touches: touches) { record, context in
             record.typed(as: Definition.Props.self).map { rule($0, context) } ?? []
         }, to: ValidationRules.self)
     }
@@ -151,16 +179,18 @@ extension PluginRegistrar {
     /// A rule for a kind another plugin registers.
     public mutating func validate<P: ShapeProps>(_: P.Type, ignoringMoves: Bool = false,
                                                  affected: (@MainActor (ChangeSet, CanvasEditor) -> Set<ShapeID>)? = nil,
+                                                 touches: (@MainActor (ChangeSet, ShapeContext) -> Set<ShapeID>)? = nil,
                                                  _ rule: @escaping @MainActor (ShapeRecord<P>, ValidationContext) -> [ValidationIssue]) {
-        contribute(ValidationRule(ignoringMoves: ignoringMoves, affected: affected) { record, context in
+        contribute(ValidationRule(ignoringMoves: ignoringMoves, affected: affected, touches: touches) { record, context in
             record.typed(as: P.self).map { rule($0, context) } ?? []
         }, to: ValidationRules.self, for: .kind(P.kind))
     }
 
     /// A rule for every kind.
     public mutating func validateEveryShape(ignoringMoves: Bool = false, affected: (@MainActor (ChangeSet, CanvasEditor) -> Set<ShapeID>)? = nil,
+                                            touches: (@MainActor (ChangeSet, ShapeContext) -> Set<ShapeID>)? = nil,
                                             _ rule: @escaping @MainActor (AnyShapeRecord, ValidationContext) -> [ValidationIssue]) {
-        contribute(ValidationRule(ignoringMoves: ignoringMoves, affected: affected, rule), to: ValidationRules.self, for: .any)
+        contribute(ValidationRule(ignoringMoves: ignoringMoves, affected: affected, touches: touches, rule), to: ValidationRules.self, for: .any)
     }
 }
 
@@ -211,6 +241,9 @@ public final class ValidationEngine {
         var placedLookups = LookupTable()
         /// The shapes rules' `affected` named while the board was kept, not shown.
         var namedAway: Set<ShapeID> = []
+        /// The shapes whose issues of the third level say words that are one change behind (`recheckWords`): kept,
+        /// not checked again until one asks (`result(for:)`) or a commit names the shape.
+        var worded: Set<ShapeID> = []
     }
 
     private unowned let editor: CanvasEditor
@@ -245,13 +278,18 @@ public final class ValidationEngine {
         heardRevision = editor.revision
     }
 
-    /// Only shapes with at least one issue.
+    /// Only shapes with at least one issue. An issue of the third level may say its words as of one rename of a name
+    /// it mentions (`recheckWords`); `result(for:)` has them current.
     public var results: [ShapeID: ValidationResult] {
         refreshIfNeeded()
         return board?.cache ?? [:]
     }
 
-    public func result(for id: ShapeID) -> ValidationResult? { results[id] }
+    /// A shape's issues, their words current (`recheckWords`).
+    public func result(for id: ShapeID) -> ValidationResult? {
+        if board?.worded.contains(id) == true { board?.unchecked.insert(id) }
+        return results[id]
+    }
 
     /// A shape's issues as the engine last found them, if that still holds, checking nothing: for a
     /// reader that mustn't make the engine read a board (`results` checks what's waiting, and every
@@ -261,7 +299,7 @@ public final class ValidationEngine {
     /// rules looked up did); unknown otherwise, where only running its rules can say
     /// (`registry.validationIssues(of:in:)`). It never runs a rule.
     public func cachedResult(for id: ShapeID) -> CachedVerdict {
-        guard heardRevision == editor.revision, let board, !board.unchecked.contains(id), !board.moved.contains(id),
+        guard heardRevision == editor.revision, let board, !board.unchecked.contains(id), !board.moved.contains(id), !board.worded.contains(id),
               editor.withoutObservingDocument({ editor.document[id] != nil }) else { return .unknown }
         return .current(board.cache[id])
     }
@@ -275,6 +313,20 @@ public final class ValidationEngine {
             found.formUnion(board.steadyLookups.by[id] ?? [])
             found.formUnion(board.placedLookups.by[id] ?? [])
         }
+    }
+
+    /// The shapes whose rules looked up a shape that writes not yet committed changed (`Transaction.pending`),
+    /// as the commit would check them again: those whose rules of any sort looked up a shape the writes added,
+    /// removed or changed other than by moving it, and, for one they only moved, those whose rules that don't
+    /// ignore moves did. Of the board shown, which is the board it keeps lookups of.
+    public func dependents(on changes: ChangeSet) -> Set<ShapeID> {
+        guard let board else { return [] }
+        var found: Set<ShapeID> = []
+        for id in changes.shapeIDs {
+            found.formUnion(board.placedLookups.by[id] ?? [])
+            if !changes.moved.contains(id) { found.formUnion(board.steadyLookups.by[id] ?? []) }
+        }
+        return found
     }
 
     /// The shapes whose issues a commit may change though it doesn't change them, for a plugin that
@@ -334,6 +386,16 @@ public final class ValidationEngine {
         editor.setNeedsDisplay()
     }
 
+    /// Says that the words of these shapes' issues of the third level are stale and nothing else of them is: a name they
+    /// mention was changed (a Needed row's end renamed, with a keystroke a key). Nothing is checked or shown by it: the
+    /// board's frame does not pay for it, and a reader of the words asks for them (`result(for:)`, `cachedResult(for:)`
+    /// not current, so a query runs the rules). On a board it keeps, they are checked again when it is taken back.
+    public func recheckWords(_ ids: Set<ShapeID>) {
+        guard !ids.isEmpty else { return }
+        let here = mark(ids)
+        board?.worded.formUnion(here)
+    }
+
     private func refreshIfNeeded() {
         let document = editor.document
         if heardRevision != editor.revision {
@@ -359,6 +421,7 @@ public final class ValidationEngine {
                 check(shape, in: shapes, into: &board)
             } else {
                 board.cache[id] = nil
+                board.worded.remove(id)
                 board.steadyIssues[id] = nil
                 board.steadyLookups.forget(id)
                 board.placedLookups.forget(id)
@@ -366,7 +429,8 @@ public final class ValidationEngine {
         }
         for id in moved {
             guard let shape = document[id] else { continue }
-            check(shape, in: shapes, onlyPlaced: true, into: &board)
+            // A shape whose words are stale says them again: the rules that ignore moves found them before the name changed.
+            check(shape, in: shapes, onlyPlaced: !board.worded.contains(id), into: &board)
         }
         self.board = board
     }
@@ -379,6 +443,7 @@ public final class ValidationEngine {
             board.cache[shape.id] = nil
             return
         }
+        board.worded.remove(shape.id)
         let lookups = Lookups()
         let context = ValidationContext(shapes: shapes, registry: shapes.registry, schemaVerdicts: schemaVerdicts, lookups: lookups, editor: editor)
         let kept = onlyPlaced ? board.steadyIssues[shape.id] : nil
@@ -467,6 +532,27 @@ extension Registry {
         let context = ValidationContext(shapes: shapes, registry: self, schemaVerdicts: SchemaVerdicts(), lookups: Lookups(), editor: editor)
         return contributions(to: ValidationRules.self, for: record.kind).flatMap { $0.check(record, context) }
     }
+
+    /// The shapes, on any board of the file, whose issues writes that have not committed may change though they
+    /// don't change them: what every rule's `touches` names for them, and, where `shapes` is an editor's or a
+    /// transaction's and Validation has checked the board shown, the shapes whose rules looked one of the written
+    /// shapes up (`ValidationEngine.dependents(on:)`: what the commit would check again). `changes` is what was
+    /// written (`transaction.pending`) and `shapes` the file as the writer has it (`transaction.shapes`). Never one
+    /// of the written shapes themselves. It may name a shape whose issues stay as they were: compare
+    /// `validationIssues(of:in:)` before and after. It costs what was written and what that reaches, never the board.
+    public func validationTouched(by changes: ChangeSet, in shapes: ShapeContext) -> Set<ShapeID> {
+        var found: Set<ShapeID> = []
+        for rule in contributions(to: ValidationRules.self) {
+            if let touches = rule.value.touches { found.formUnion(touches(changes, shapes)) }
+        }
+        if let engine = shapes.service(ValidationEngine.self) { found.formUnion(engine.dependents(on: changes)) }
+        guard !found.isEmpty else { return found }
+        found.subtract(changes.added)
+        found.subtract(changes.changed)
+        found.subtract(changes.removed)
+        found.subtract(changes.elsewhere)
+        return found
+    }
 }
 
 extension Severity {
@@ -476,6 +562,7 @@ extension Severity {
         switch self {
         case .error: ValidationStyle.error
         case .warning: ValidationStyle.warning
+        case .incomplete: .clear         // shows nowhere: `worst` leaves it out, so no reader asks
         }
     }
 }
@@ -635,9 +722,9 @@ final class ValidationRings {
         return path
     }
 
-    /// Drops the rings of shapes that no longer have issues (or are gone).
+    /// Drops the rings of shapes that no longer have issues that show (or are gone).
     func forget(allBut results: [ShapeID: ValidationResult]) {
-        for id in rings.keys.filter({ results[$0] == nil }) { rings[id] = nil }
+        for id in rings.keys.filter({ results[$0]?.worst == nil }) { rings[id] = nil }
     }
 
     var count: Int { rings.count }

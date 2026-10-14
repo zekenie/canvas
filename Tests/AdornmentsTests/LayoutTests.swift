@@ -97,6 +97,19 @@ func rect(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) -> CG
         }
         expect(shown > cases, "most items are shown: \(shown) of \(cases) cases")
     },
+    test("a closed shape's reach is the rect its row and corner lie in, at any scale: what the property above holds them to") {
+        for scale: CGFloat in [0.125, 1, 2.5, 4] {
+            for width: CGFloat in [0, 50, 200, 201, 400] {
+                let bounds = CGRect(x: 30, y: 40, width: width * scale, height: 100)
+                let reach = AdornmentLayout.reach(ofClosed: bounds, scale: scale)
+                let least = min(0, width - 200)
+                let expected = CGRect(x: bounds.minX + least * scale, y: bounds.minY - 27 * scale,
+                                      width: (width + 6 - least) * scale, height: 35 * scale)
+                expect(abs(reach.minX - expected.minX) + abs(reach.minY - expected.minY) + abs(reach.width - expected.width)
+                       + abs(reach.height - expected.height) < 1e-6, "width \(width) at \(scale): \(reach) is not \(expected)")
+            }
+        }
+    },
     test("adornments keep their size on screen down to 25%, then shrink with the shapes") {
         for zoom: CGFloat in [4, 2, 1, 0.5, 0.25] { expectClose(AdornmentLayout.scale(atZoom: zoom), 1 / zoom) }
         for zoom: CGFloat in [0.2, 0.125, 0.05] { expectClose(AdornmentLayout.scale(atZoom: zoom), 4) }

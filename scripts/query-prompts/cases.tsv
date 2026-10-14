@@ -73,8 +73,18 @@ f01	fields	which orders still need something?	-	Order 14	types	:is-a("Order"):in
 f02	fields	which orders have a wrong value?	-	Order 13	types	:is-a("Order"):invalid
 f03	fields	orders with a Mug line	-	Order 12, Order 13	types	:is-a("Order")[fieldValues.lineItems.product="Mug"]
 f04	fields	orders due before November 2026	-	Order 12	types	:is-a("Order")[fieldValues.due<"2026-11-01"]
-f05	fields	orders for Ann Lee	-	Order 12, Order 14	types	:is-a("Order"):edge-to("Ann Lee", field-link)
-f06	fields	who is Order 12 for?	-	Ann Lee	types	:edge-from("Order 12", field-link)
+f05	fields	orders for Ann Lee	-	Order 12	types	:start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))
+f06	fields	orders for Bo Park	-	Order 13	types	:start-of(arrow:is-a("Placed by"):ends-at("Bo Park"))
 f07	fields	people born before 2000	-	Ann Lee	types	:is-a("Person")[fieldValues.dob<"2000-01-01"]
 f08	fields	orders with a priority above 3	-	UNANSWERABLE	unanswerable	-
 f09	fields	which notes mention Ann Lee?	-	Standup	mentions	:mentions("Ann Lee")
+r01	fields	who is Ann Lee friends with?	-	Bo Park	types	:end-of(arrow:is-a("Friendship"):starts-at("Ann Lee")), :start-of(arrow:is-a("Friendship"):ends-at("Ann Lee"))
+r02	fields	which orders did Ann Lee place?	-	Order 12	types	:start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))
+r03	fields	who placed Order 12?	-	Ann Lee	types	:end-of(arrow:is-a("Placed by"):starts-at("Order 12"))
+r04	fields	which friendships began before 2020?	-	00000000-0000-4000-8000-0000000F0053	types	arrow:is-a("Friendship")[fieldValues.since<"2020-01-01"]
+r05	fields	which orders have no customer?	-	Order 14	types	sticky-note:is-a("Order"):not([schema]):not(:start-of(arrow:is-a("Placed by")))
+r06	fields	which relationships don't fit their type?	-	00000000-0000-4000-8000-0000000F0054	types	arrow:misfit
+r07	fields	which relationship types does Order have?	-	Placed by	types	sticky-note[relationship]:connected-to("Order", arrow)
+r08	fields	who has the most friends?	-	UNANSWERABLE	unanswerable	-
+r09	fields	who does Ann Lee mention?	-	none	mentions	:mentioned-by("Ann Lee")
+r10	fields	what can an order be related to?	-	Person	types	:end-of(arrow:starts-at(sticky-note[relationship]:connected-to("Order", arrow)))

@@ -19,7 +19,7 @@ extension PluginID {
     public static let drawEngine: PluginID = "draw-engine"
 }
 
-/// The draw engine's plugin: it owns the six points the plugins that own a concern fill with this
+/// The draw engine's plugin: it owns the seven points the plugins that own a concern fill with this
 /// app's words (DrawPoints.swift), and contributes the engine's mark. A plugin that isn't a language
 /// runs the engine through the free functions `draw` (here), `measure` (Measure.swift) and `kinds`
 /// (Kinds.swift); the command line's commands over it are Automation's.
@@ -105,6 +105,10 @@ struct DrawChange: Sendable {
     var kind: String
     /// What it's called now (a deleted shape: what it was called).
     var title: String?
+    /// Its id, the one a query's row gives and a script names a shape with no title by (`#<id>`): for a shape the file has, and
+    /// for one a real run made; a dry run's `created` row has none, since the shape it would make has no id yet. A deleted
+    /// shape's row says it only when the statement named the shape by its id.
+    var id: String?
     /// What it was called, if the statement renamed it.
     var was: String?
     /// Where it is: [[x, y], [width, height]], world units.
@@ -113,9 +117,12 @@ struct DrawChange: Sendable {
     var inView: Bool?
     /// What it was pushed past to keep clear of it, by title (or `<kind> at x,y`).
     var pushedPast: [String]?
-    /// An edge's ends, by title.
+    /// An edge's ends, by title, or, for a shape with none, by the id the statement wrote.
     var from: String?
     var to: String?
+    /// The id of each end the statement named by id.
+    var fromID: String?
+    var toID: String?
     /// The kind of stand-in an edge's arrow goes through, when it does: it runs into (or out of) one
     /// that stands for the end it's written to, whichever way it came to.
     var via: String?
@@ -128,13 +135,15 @@ struct DrawChange: Sendable {
     var problems: [ShapeProblem]?
     /// An edge's attributes as it has them now (those DrawEdges declares), by key.
     var attributes: [String: JSONValue] = [:]
+    /// What a plugin's report adds to the row (`DrawReports`' declared members), by key.
+    var members: [String: JSONValue] = [:]
 }
 
 extension DrawChange: Encodable {
-    /// A row's own members, which an edge's attributes (written beside them) can't be named
-    /// (`DrawEdges.check`).
+    /// A row's own members, which an edge's attributes (written beside them) and a report's members can't be named
+    /// (`DrawEdges.check`, `DrawReports.check`).
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case line, did, kind, title, was, at, inView, pushedPast, from, to, via, shared, sharedWith, problems
+        case line, did, kind, title, id, was, at, inView, pushedPast, from, to, fromId, toId, via, shared, sharedWith, problems
     }
 
     private struct AttributeKey: CodingKey {
@@ -150,25 +159,29 @@ extension DrawChange: Encodable {
         try container.encode(did, forKey: .did)
         try container.encode(kind, forKey: .kind)
         try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(id, forKey: .id)
         try container.encodeIfPresent(was, forKey: .was)
         try container.encodeIfPresent(at, forKey: .at)
         try container.encodeIfPresent(inView, forKey: .inView)
         try container.encodeIfPresent(pushedPast, forKey: .pushedPast)
         try container.encodeIfPresent(from, forKey: .from)
         try container.encodeIfPresent(to, forKey: .to)
+        try container.encodeIfPresent(fromID, forKey: .fromId)
+        try container.encodeIfPresent(toID, forKey: .toId)
         try container.encodeIfPresent(via, forKey: .via)
         try container.encodeIfPresent(shared, forKey: .shared)
         try container.encodeIfPresent(sharedWith, forKey: .sharedWith)
         try container.encodeIfPresent(problems, forKey: .problems)
-        guard !attributes.isEmpty else { return }
+        guard !attributes.isEmpty || !members.isEmpty else { return }
         var more = encoder.container(keyedBy: AttributeKey.self)
         for (key, value) in attributes.sorted(by: { $0.key < $1.key }) { try more.encode(value, forKey: AttributeKey(stringValue: key)) }
+        for (key, value) in members.sorted(by: { $0.key < $1.key }) { try more.encode(value, forKey: AttributeKey(stringValue: key)) }
     }
 }
 
 /// Something a draw did that it should say, though it did it: an issue on a shape it drew (its
-/// severity `error` or `warning`), a push, a near miss. `line` is the statement's; none for what's
-/// about the whole run.
+/// severity `error` or `warning`; `incomplete` for what a shape the run did not write still needs), a push, a
+/// near miss. `line` is the statement's; none for what's about the whole run.
 struct DrawWarning: Encodable, Sendable {
     var line: Int?
     var message: String
@@ -176,13 +189,23 @@ struct DrawWarning: Encodable, Sendable {
     /// The property it's about, if one.
     var attribute: String?
 
-    enum Severity: String, Encodable, Sendable { case error, warning }
+    enum Severity: String, Encodable, Sendable { case error, warning, incomplete }
 
     init(line: Int?, _ message: String, severity: Severity = .warning, attribute: String? = nil) {
         self.line = line
         self.message = message
         self.severity = severity
         self.attribute = attribute
+    }
+
+    /// An issue of the shape called `name`, at the level it has.
+    init(line: Int?, _ name: String, issue: DrawIssue) {
+        let severity: Severity = switch issue.level {
+        case .warning: .warning
+        case .error: .error
+        case .incomplete: .incomplete
+        }
+        self.init(line: line, "\(name): \(issue.message)", severity: severity, attribute: issue.field)
     }
 }
 
@@ -277,7 +300,15 @@ private func apply(_ drawing: Drawing, to editor: CanvasEditor, reveals: Bool, d
             // An agent's change, not the person's: what acts on a person's edits leaves it be.
             transaction.byAgent = true
             let result = try drawing.apply(to: &transaction, reveals: reveals)
-            if dryRun { throw DryRun(result: DrawResult(changes: result.changes, warnings: result.warnings, dryRun: true)) }
+            if dryRun {
+                // A shape the run would make has no id yet: a dry run's row would say one that never was.
+                let rows = result.changes.map { row -> DrawChange in
+                    var row = row
+                    if row.did == .created { row.id = nil }
+                    return row
+                }
+                throw DryRun(result: DrawResult(changes: rows, warnings: result.warnings, dryRun: true))
+            }
             return result
         }
         guard let result else { throw DrawError("the board went away", reason: ScriptError.Reason.internal.rawValue) }

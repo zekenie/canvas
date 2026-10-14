@@ -44,7 +44,7 @@ SWIFT = os.path.join(SOURCES, "Types", "Sync", "SchemaPrompts.swift")
 # `swift_settings` fills in the values, and MODEL and EFFORT, from the Swift.
 CONFIG = {
     "to_schema": {"system": "toSchemaSystem", "titles": ["toSchemaTitle", "toSchemaNewTitle"], "references": "toSchemaReferences",
-                  "max_tokens_name": "toSchemaMaxTokens"},
+                  "relationship": "toSchemaRelationshipType", "max_tokens_name": "toSchemaMaxTokens"},
     "to_prompt": {"system": "toPromptSystem", "titles": ["toPromptTitle"], "references": "toPromptReferences",
                   "max_tokens_name": "toPromptMaxTokens"},
 }
@@ -303,12 +303,14 @@ def literal(name):
     return SYSTEMS[name]
 
 
-def system_prompt(direction, schemas=""):
-    """The direction's system prompt, what it says of titles after it on every request and, for a
-    request that names other schemas, what it says of them after that, each a blank line apart
-    (SchemaPrompts.system(_:schemas:))."""
+def system_prompt(direction, schemas="", relationship=False):
+    """The direction's system prompt, what it says of titles after it on every request, for the words of a
+    relationship type (to-schema only) what it says of such a type, and, for a request that names other schemas,
+    what it says of them after that, each a blank line apart (SchemaPrompts.system(_:schemas:relationship:))."""
     cfg = CONFIG[direction]
     text = literal(cfg["system"]) + "".join("\n" + literal(name) for name in cfg["titles"])
+    if relationship and cfg.get("relationship"):
+        text += "\n" + literal(cfg["relationship"])
     return text + "\n" + literal(cfg["references"]) if (schemas or "").strip() else text
 
 
@@ -346,13 +348,13 @@ def swift_settings():
     JSON_WORDS_OVER = over.pop()
 
 
-def call(key, direction, user, schemas=""):
+def call(key, direction, user, schemas="", relationship=False):
     cfg = CONFIG[direction]
     body = json.dumps({
         "model": MODEL,
         "max_tokens": cfg["max_tokens"],
         "output_config": {"effort": os.environ.get("EVAL_EFFORT") or EFFORT},
-        "system": system_prompt(direction, schemas),
+        "system": system_prompt(direction, schemas, relationship),
         "messages": [{"role": "user", "content": user}],
     }).encode("utf-8")
     headers = {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01"}
@@ -452,6 +454,8 @@ def auto_schema_checks(text, obj, inp):
                 walk(v)
 
     walk(obj)
+    if is_pointer_like(obj):
+        failed.append("pointer-like")
     lines = text.split("\n")
     if len(lines) < 3 or not lines[1].startswith('  "') or lines[1].startswith('   '):
         failed.append("indent")
@@ -486,6 +490,8 @@ def auto_prompt_checks(text, words=""):
     return failed
 
 
+# The media type of the pointer the app no longer has: an answer that holds it, or a "contentSchema" with a "$ref", is
+# `pointer-like`, and fails every to-schema case (the prompts say no word of a link to a note).
 POINTER_MEDIA_TYPE = "text/x-canvas-link"
 
 
@@ -500,14 +506,15 @@ def schemas_in(node, inside_content=False):
             yield from schemas_in(v, False)
 
 
-def pointers_to(obj, word):
-    """The schemas that are a pointer to `word`: a string, `contentMediaType` the link's, `contentSchema` exactly
-    its `$ref`, and nothing else but a title or a description. All three members are demanded."""
+def is_pointer_like(obj):
+    """Whether an answer holds a pointer to a note: the old link media type anywhere, or a "contentSchema" that is, or has, a "$ref"."""
     for node, _ in schemas_in(obj):
-        if node.get("type") == "string" and node.get("contentMediaType") == POINTER_MEDIA_TYPE \
-                and node.get("contentSchema") == {"$ref": word} \
-                and set(node) <= {"type", "contentMediaType", "contentSchema", "title", "description"}:
-            yield node
+        if node.get("contentMediaType") == POINTER_MEDIA_TYPE:
+            return True
+        content = node.get("contentSchema")
+        if isinstance(content, dict) and any(True for _ in refs_in(content)):
+            return True
+    return False
 
 
 def plain_refs_to(obj, word):
@@ -587,7 +594,7 @@ def run_check(check, direction, kind, out_text, out_obj, case):
             return None if resolve(obj, ptr)[0] else f"missing {ptr}"
         if name == "absent":
             return None if not resolve(obj, ptr)[0] else f"present {ptr}"
-        if name in ("props", "anyprop", "propsexact", "count", "order"):
+        if name in ("props", "anyprop", "noprop", "propsexact", "count", "order"):
             ok, node = resolve(obj, ptr)
             keys = list(node.keys()) if ok and isinstance(node, dict) else []
             if [s for s in ptr.split("/") if s][-1:] == ["properties"]:
@@ -598,6 +605,9 @@ def run_check(check, direction, kind, out_text, out_obj, case):
                 return None if not m else f"missing {m} in {keys}"
             if name == "anyprop":
                 return None if any(a in keys for a in spec.split("|")) else f"none of {spec} in {keys}"
+            if name == "noprop":
+                found = [k for k in keys if k in spec.split("|")]
+                return None if not found else f"{found} in {keys}"
             if name == "propsexact":
                 return None if set(keys) == set(spec.split(",")) else f"props {keys}"
             if name == "count":
@@ -654,10 +664,6 @@ def run_check(check, direction, kind, out_text, out_obj, case):
             t = v.get("title", "")
             got = t.strip().lower() if isinstance(t, str) else None
             return None if got in {a.strip().lower() for a in spec.split("|")} else f"{ptr} title {v.get('title')!r}"
-        if name == "pointer":
-            word, _, n = arg.partition("=")
-            count = sum(1 for _ in pointers_to(obj, word))
-            return None if count == int(n) else f"{count} pointers to {word}"
         if name == "plainref":
             word, _, n = arg.partition("=")
             count = sum(1 for _ in plain_refs_to(obj, word))
@@ -686,10 +692,6 @@ def run_check(check, direction, kind, out_text, out_obj, case):
                         and any(a in (then.get("required") or []) for a in spec.split("|")):
                     return None
             return f"no if on {key} whose then requires {spec}"
-        if name == "textcount":
-            needle, _, n = arg.rpartition("=")
-            count = text.count(needle)
-            return None if count == int(n) else f"{count} of {needle!r}"
         return f"unknown check {name}"
 
     # to_prompt
@@ -728,21 +730,37 @@ def known_check(direction, name):
 
 
 def check_cases_file():
-    """Every check named in cases.csv is one run_check knows, so a mistyped one is found here and not when a case runs."""
+    """Every check named in cases.csv is one run_check knows, so a mistyped one is found here and not when a case runs.
+    A case that says it is a relationship type's is a to-schema case, and the Swift has the literal it is sent."""
     unknown = []
+    flagged = []
     with open(os.path.join(HERE, "cases.csv"), newline="", encoding="utf-8") as f:
         for c in csv.DictReader(f):
             for check in [x for x in c["checks"].split("\n") if x.strip()]:
                 if not known_check(c["direction"], check.partition(":")[0]):
                     unknown.append(f"{c['id']}: {check}")
+            if c.get("relationship"):
+                flagged.append(c["id"])
+                if c["direction"] != "to_schema":
+                    unknown.append(f"{c['id']}: a relationship type's words are only sent to-schema")
     if unknown:
         raise Fatal("cases.csv names checks run_check doesn't have: " + "; ".join(unknown))
+    # The literal is sent for the cases that say so and for none other: `s_reltype_*` all say so.
+    missing = [i for i in ("s_reltype_ends", "s_reltype_vague", "s_reltype_vague_friend") if i not in flagged]
+    if missing:
+        raise Fatal("these cases are a relationship type's words and don't say so: " + ", ".join(missing))
+    relationship = literal(CONFIG["to_schema"]["relationship"])
+    if system_prompt("to_schema", relationship=True) != system_prompt("to_schema") + "\n" + relationship \
+            or system_prompt("to_prompt", relationship=True) != system_prompt("to_prompt") \
+            or system_prompt("to_schema", "@A", True) != system_prompt("to_schema") + "\n" + relationship + "\n" + literal(CONFIG["to_schema"]["references"]):
+        raise Fatal("the relationship type's literal is not sent as SchemaPrompts.system(_:schemas:relationship:) sends it")
+    print(f"{len(flagged)} cases are a relationship type's: {', '.join(flagged)}; {CONFIG['to_schema']['relationship']}, {len(relationship)} characters, after the titles and before the references")
 
 
 def selftest():
     """Each check added for the types cut, shown able to fail before a model is asked: for each, answers it passes and answers it
     fails, hand-written. Nothing is called."""
-    customer = {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "@Customer"}}
+    pointer = {"type": "string", "contentMediaType": POINTER_MEDIA_TYPE, "contentSchema": {"$ref": "@Customer"}}
     contact = {"type": "object", "properties": {
         "email": {"type": "string"}, "phone": {"type": "string", "pattern": "^x$"}, "description": {"type": "string"}}, "required": ["email", "phone"]}
 
@@ -762,12 +780,9 @@ def selftest():
         ("titleis:/properties/phone=mobile number", contact, [with_phone(title="Mobile Number ")], [contact, with_phone(title="cell")]),
         ("titleis:/properties/phone=cell|mobile|", contact, [with_phone(title="cell"), contact], [with_phone(title="work")]),
         ("titleis:/properties/phone=", contact, [contact], [with_phone(title="phone")]),
-        ("pointer:@Customer=1", {}, [props(customer=customer), props(customers={"type": "array", "items": customer})],
-         [props(customer={"$ref": "@Customer"}), props(customer={"type": "string", "contentSchema": {"$ref": "@Customer"}}),
-          props(customer={"type": "string", "contentMediaType": "text/x-canvas-link"}),
-          props(customer=dict(customer, **{"properties": {}})), props(customer=customer, other=customer)]),
-        ("pointer:@Customer=0", {}, [props(customer={"$ref": "@Customer"})], [props(customer=customer)]),
-        ("plainref:@Customer=1", {}, [props(customer={"$ref": "@Customer"})], [props(customer=customer), props(a={"$ref": "@Customer"}, b={"$ref": "@Customer"})]),
+        ("noprop:/properties=layer|layers", {}, [pet, props(purpose={"type": "string"})], [props(layer={"type": "string"}), props(purpose={}, layers={})]),
+        ("noprop:/properties=layer", {}, [props(**{"$title": {"x-canvas-from": "name"}, "name": {}})], [props(name={}, layer={})]),
+        ("plainref:@Customer=1", {}, [props(customer={"$ref": "@Customer"})], [props(customer=pointer), props(a={"$ref": "@Customer"}, b={"$ref": "@Customer"})]),
         ("titlefrom:name", {}, [pet_title], [pet, props(name={"type": "string"}, **{"$title": {"x-canvas-from": "age"}})]),
         ("notitle", {}, [pet], [pet_title]),
         ("lastkey:/properties=$title", {}, [pet_title], [props(**{"$title": {"x-canvas-from": "name"}, "name": {"type": "string"}}), pet]),
@@ -783,7 +798,6 @@ def selftest():
          [dict(props(gift={"type": "boolean"}), allOf=[{"if": {"properties": {"gift": {"const": True}}}, "then": {"required": ["other"]}}]),
           dict(props(gift={"type": "boolean"}), allOf=[{"if": {"properties": {"method": {"const": "x"}}}, "then": {"required": ["giftNote"]}}]),
           props(gift={"type": "boolean"})]),
-        ("textcount:text/x-canvas-link=1", {}, [props(customer=customer)], [props(customer=customer, other=customer), props(customer={"$ref": "@Customer"})]),
         # the listing checks leave a `$`-key out, as SchemaDocument.fields does; `same:` does not
         ("propsexact:/properties=name,age", {}, [pet, pet_title], [props(name={"type": "string"}, age={}, extra={})]),
         ("count:/properties=2..2", {}, [pet_title], [props(name={}, age={}, extra={})]),
@@ -792,6 +806,18 @@ def selftest():
         ("same:/properties", pet, [pet], [pet_title]),
     ]
     failures = []
+    # The global check: an answer that holds a pointer to a note, in any form, fails every case; a bare `$ref` and a plain text field pass.
+    pointer_like = [props(customer=pointer), props(customers={"type": "array", "items": pointer}),
+                    props(customer={"type": "string", "contentMediaType": POINTER_MEDIA_TYPE}),
+                    props(customer={"type": "string", "contentSchema": {"$ref": "@Customer"}})]
+    for answer in pointer_like:
+        failed, _ = auto_schema_checks(json.dumps(answer), answer, "")
+        if "pointer-like" not in failed:
+            failures.append(f"pointer-like should fail {json.dumps(answer)[:100]}")
+    for answer in [props(customer={"$ref": "@Customer"}), props(customer={"type": "string"}), props(note={"type": "string", "contentMediaType": "text/plain"})]:
+        failed, _ = auto_schema_checks(json.dumps(answer), answer, "")
+        if "pointer-like" in failed:
+            failures.append(f"pointer-like should pass {json.dumps(answer)[:100]}")
     for check, original, passes, fails in rows:
         case = {"schema": json.dumps(original), "prompt": ""}
         for answer in passes:
@@ -855,8 +881,7 @@ def selftest():
               ("lacks:schema|json|string", "A contact: email (required), phone (required), description.",
                "There is no <prompt>, so I write one. Fields: email (string, required), phone (string, required), description (string)."),
               ("maxlen:200", order, remark + " The customer is a $ref to @Customer, the type itself."),
-              ("lacks_re:link|point|refer", order, "The customer is a bare $ref, not a link, so I name the type by its word."),
-              ("lacks:its fields", "An order: number, a link to a @Customer, total", "A pointer is a link to the type, never its fields.")]
+              ("lacks_re:link|point|refer", order, "The customer is a bare $ref, not a link, so I name the type by its word.")]
     for check, words, said in scored:
         for answer, passes in ((f"{said}\n\n{a}\n{words}\n{z}", True), (f"{said}\n\n{words}", False)):
             kind, value, failed, warn = evaluate({"direction": "to_prompt", "prompt": "", "checks": check}, {"text": answer, "stop_reason": "end_turn"})
@@ -865,7 +890,7 @@ def selftest():
             if ("untagged" in warn) == passes or ("remark" in warn) != passes:
                 failures.append(f"{answer[:80]!r} should warn {'remark' if passes else 'untagged'}, not {warn}")
     tested = {row[0].partition(":")[0] for row in rows}
-    for name in ("titleis", "pointer", "plainref", "titlefrom", "notitle", "lastkey", "onlydiff", "condtests", "condthen", "textcount"):
+    for name in ("titleis", "noprop", "plainref", "titlefrom", "notitle", "lastkey", "onlydiff", "condtests", "condthen"):
         if name not in tested:
             failures.append(f"{name} has no self-test")
         if not known_check("to_schema", name):
@@ -934,7 +959,7 @@ def evaluate(case, result):
 
 def step(key, direction, **kw):
     user = user_message(direction, **kw)
-    r = call(key, direction, user)
+    r = call(key, direction, user, kw.get("schemas", ""))
     kind, value = parse(direction, r["text"], r["stop_reason"])
     if kind == "error":
         value = f"{value} | raw: {r['text'][:400]}"
@@ -1146,7 +1171,85 @@ def chain_rename_roundtrip(key):
     return fails, log, calls
 
 
-CHAINS = [chain_hand_edit, chain_roundtrip, chain_pet_both_ways, chain_contact_both_ways, chain_rename_roundtrip]
+def chain_relate_stays(key):
+    """Five edits around a standing 'is in a @Layer': the words that relate the thing to Layer write no property for it, and no
+    rewrite, by the model or by hand, takes them out of the words or puts Layer in the schema (the ratchet's measure).
+    1. words -> schema; 2. an edit about something else -> schema; 3. a field added by hand -> words; 4. another words edit ->
+    schema; 5. a field taken out by hand -> words. After every schema no property is named for Layer, none is a `$ref` to it and
+    none is a pointer; after steps 3 and 5 the words still say 'is in a @Layer'."""
+    from gen_cases import FEATURE
+    schemas = "@Layer"
+    p0 = "a feature: a purpose, and is in a @Layer"
+    log, calls, fails = [], [], []
+
+    def schema_violations(step_name, text):
+        try:
+            obj = json.loads(text)
+        except ValueError:
+            return [f"{step_name} not JSON"]
+        out = []
+        if any(ref == "@Layer" for ref in refs_in(obj)):
+            out.append(f"{step_name} $ref to @Layer")
+        if is_pointer_like(obj):
+            out.append(f"{step_name} pointer-like")
+        if any("layer" in k.lower() for k in (obj.get("properties") or {})):
+            out.append(f"{step_name} a property for Layer")
+        return out
+
+    def words_violations(step_name, text):
+        return [] if "is in a @Layer" in text else [f"{step_name} lost 'is in a @Layer': {text[:120]!r}"]
+
+    k, s1, r = step(key, "to_schema", prompt=p0, schema=STARTER, schemas=schemas)
+    calls.append(r)
+    log.append(("s1", s1))
+    if k != "schema":
+        return [f"step1 {k}"], log, calls
+    fails += schema_violations("step1", s1)
+    p1 = p0 + ", a priority (1 to 5)"
+    k, s2, r = step(key, "to_schema", previous_prompt=p0, prompt=p1, schema=s1, schemas=schemas)
+    calls.append(r)
+    log.append(("s2", s2))
+    if k != "schema":
+        return fails + [f"step2 {k}"], log, calls
+    fails += schema_violations("step2", s2)
+    o2 = json.loads(s2)
+    o3 = json.loads(json.dumps(o2))
+    o3["properties"]["estimate"] = {"type": "integer", "minimum": 0}
+    s3 = fmt(o3)
+    k, p3, r = step(key, "to_prompt", prompt=p1, previous_schema=s2, schema=s3, schemas=schemas)
+    calls.append(r)
+    log.append(("p3", p3))
+    if k == "prompt":
+        fails += words_violations("step3", p3)
+        words = p3
+    elif k == "nochange":
+        fails.append("step3 NO_CHANGE for a field added by hand")
+        words = p1
+    else:
+        return fails + [f"step3 {k}"], log, calls
+    p4 = words + ", an owner"
+    k, s4, r = step(key, "to_schema", previous_prompt=words, prompt=p4, schema=s3, schemas=schemas)
+    calls.append(r)
+    log.append(("s4", s4))
+    if k != "schema":
+        return fails + [f"step4 {k}"], log, calls
+    fails += schema_violations("step4", s4)
+    o5 = json.loads(s4)
+    o5["properties"].pop("estimate", None)
+    s5 = fmt(o5)
+    k, p5, r = step(key, "to_prompt", prompt=p4, previous_schema=s4, schema=s5, schemas=schemas)
+    calls.append(r)
+    log.append(("p5", p5))
+    if k == "prompt":
+        fails += words_violations("step5", p5)
+    elif k == "nochange":
+        fails.append("step5 NO_CHANGE for a field taken out by hand")
+    else:
+        fails.append(f"step5 {k}")
+    return fails, log, calls
+
+
+CHAINS = [chain_hand_edit, chain_roundtrip, chain_pet_both_ways, chain_contact_both_ways, chain_rename_roundtrip, chain_relate_stays]
 
 
 # ------------------------------------------------------------------ main
@@ -1208,7 +1311,7 @@ def main():
         c = prepare(c)
         user = user_message(c["direction"], prompt=c["prompt"], schema=c["schema"],
                             previous_prompt=c["previous_prompt"], previous_schema=c["previous_schema"], schemas=c.get("schemas", ""))
-        r = call(key, c["direction"], user, c.get("schemas", ""))
+        r = call(key, c["direction"], user, c.get("schemas", ""), c.get("relationship") == "1")
         kind, value, failed, warn = evaluate(c, r)
         return c, run, r, kind, value, failed, warn
 

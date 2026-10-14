@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Frames
 import LanguageModels
@@ -130,5 +131,32 @@ import TestKit
         window.settle()
         expectEqual(editor.file.board(containing: note), BoardID(owner: polish))
         expectEqual(editor.board, BoardID(owner: bugs), "the window stays on Bugs' board")
+    },
+
+    test("/move-to @Plans with an arrow bound to the note and free at the other end: the arrow goes to the subboard's board with the note, its free end as far from the note as it was; Undo Move brings both back") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let e = Errands(pasteboard)
+        let free = CGPoint(x: 900, y: 150)
+        let arrow = e.editor.add(Arrow(start: .bound(ArrowBinding(shapeID: e.note, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)),
+                                       end: .free(free)))
+        let origin = try require(e.frame(e.note)).origin
+        _ = try e.type("/move-to @pla")
+        e.window.pressReturn()
+        e.window.pressReturn()
+        e.window.settle()
+        let plans = BoardID(owner: e.plans)
+        expectEqual(e.editor.file.board(containing: e.note), plans)
+        expectEqual(e.editor.file.board(containing: arrow), plans, "the arrow went with the note")
+        let landed = try require(e.frame(e.note)).origin
+        let props = try require(e.editor.file.record(arrow)?.typed(as: Arrow.self)?.props)
+        expectEqual(props.start.binding?.shapeID, e.note, "still bound to it")
+        guard case .free(let end) = props.end else { return expect(false, "its other end is still free") }
+        expectEqual(CGPoint(x: end.x - landed.x, y: end.y - landed.y), CGPoint(x: free.x - origin.x, y: free.y - origin.y), "as far from the note as it was")
+        expectEqual(e.editor.undoHistory.undoName, "Move")
+        e.editor.undo()
+        expectEqual(e.editor.file.board(containing: arrow), .root)
+        expectEqual(e.editor.file.record(arrow)?.typed(as: Arrow.self)?.props.end, .free(free), "and the free end where it was")
+        expectEqual(e.frame(e.note)?.origin, origin)
     },
 ])

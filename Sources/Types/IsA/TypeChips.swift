@@ -14,6 +14,12 @@ import Selection
 /// the shape can't change); for "+N", the same for every type it is. On the kinds that hold `is`; on
 /// an arrow the row sits above its label (Adornments' anchor), and nothing is shown on a shape drawn
 /// as a skeleton.
+///
+/// On an arrow of a relationship type the chip is the relationship's: it says after its name how many fields the type gives
+/// the arrow (`friendship 2`, none for a type with none), whose values are never shown on the board; a click on the chip
+/// of a relationship type that has fields opens the arrow's card (`RelationshipHooks.openCard`, Form's) with the arrow
+/// selected, and the menu is for the rest; and while the check calls an end of the arrow a misfit
+/// (`RelationshipHooks.tone`, the check's) the chip is red with a wave, and plain where there is no check.
 public enum TypeChips {}
 
 extension TypeChips: Adornment {
@@ -24,12 +30,32 @@ extension TypeChips: Adornment {
 
 extension TypeChips: ClickableAdornment {
     public static func click(_ click: AdornmentClick, in editor: CanvasEditor) {
+        if opensCard(click, in: editor) { return }
         guard let menu = TypeChipMenus.menu(for: click, in: editor) else { return }
         editor.popUpMenu(menu, below: click.rect)
     }
 }
 
 extension TypeChips {
+    /// Whether a click on a chip opens the arrow's card, which it did when it answers true: the chip of a relationship
+    /// type, on a shape of a kind that relates (an arrow), and the card has fields to show.
+    @MainActor
+    static func opensCard(_ click: AdornmentClick, in editor: CanvasEditor) -> Bool {
+        guard !click.isOverflow, let raw = click.tag.flatMap({ UUID(uuidString: $0.raw) }),
+              let relationships = editor.relationships, relationships.graph.isRelationshipType(ShapeID(raw)),
+              let record = editor.shape(inFile: click.shape), editor.registry.relates(record.kind),
+              let hooks = editor.service(RelationshipHooks.self) else { return false }
+        return hooks.openCard(click.shape)
+    }
+
+    /// How many fields a relationship type gives an arrow of it (its own and those of the types it builds on), nil for
+    /// none: what its chip's number says. The values are in the arrow's card, which a click on the chip opens.
+    @MainActor
+    static func fieldCount(of type: ShapeID, in book: FieldBook) -> Int? {
+        let count = book.fields(types: [type]).fields.count
+        return count > 0 ? count : nil
+    }
+
     /// The chip for one type a shape is.
     @MainActor
     static func label(for link: TypeLink, in types: TypeIndex) -> AdornmentLabel {
@@ -46,7 +72,19 @@ extension TypeChips {
 func registerTypeChips(into registrar: inout PluginRegistrar) {
     registrar.adornmentsForEveryShape(TypeChips.self, where: { $0.holds(IsAProperty.self) }) { shape, context in
         guard let types = context.service(TypeIndex.self) else { return [] }
-        return (shape[IsAProperty.self] ?? []).map { TypeChips.label(for: $0, in: types) }
+        let links = shape[IsAProperty.self] ?? []
+        // On an arrow, a relationship type's chip says how many fields it gives the arrow, and turns red with a wave while an
+        // end of it is a misfit; any other chip is as it was.
+        let relates = !links.isEmpty && context.registry.relates(shape.kind)
+        let relationships = relates ? context.service(RelationshipIndex.self) : nil
+        let isWrong = relationships != nil && context.service(RelationshipHooks.self)?.tone(shape.id) == .wrong
+        let book = relationships != nil ? context.service(FieldBook.self) : nil
+        return links.map { link in
+            let label = TypeChips.label(for: link, in: types)
+            guard let relationships, relationships.graph.isRelationshipType(link.shape) else { return label }
+            let counted = label.counted(book.flatMap { TypeChips.fieldCount(of: link.shape, in: $0) })
+            return isWrong ? counted.wrong() : counted
+        }
     }
 }
 

@@ -125,16 +125,20 @@ private let viewSize = CGSize(width: 1000, height: 700)
         expectEqual(h.frame(of: s), at(450, 100), "above it, draw's 80 clear of it, on the first ring that's clear")
     },
 
-    test("onto a pocket's board, what's bound to it across the edge lets go where it was drawn, not where it lands, as after a cut: a pin stays at the middle of where it was") {
-        let p = ShapeID(), s = ShapeID(), pin = ShapeID()
-        let h = try movingHarness(CanvasFile(root: board(pocket(p, 0, 0), box(s, 400, 0), AnyShapeRecord(ShapeRecord(id: pin, Pin(target: s, at: .zero))))),
+    test("onto a pocket's board, what's bound to it across the edge lets go where it was drawn, not where it lands, as after a cut: a locked pin stays at the middle of where it was; one that isn't goes with it") {
+        let p = ShapeID(), s = ShapeID(), pin = ShapeID(), free = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(pocket(p, 0, 0), box(s, 400, 0), AnyShapeRecord(ShapeRecord(id: pin, Pin(target: s, at: .zero))),
+                                                         AnyShapeRecord(ShapeRecord(id: free, Pin(target: s, at: .zero))))),
                                   [PinsPlugin()])
         h.editor.viewportDidResize(to: viewSize)
+        h.freeze([pin])
         expect(h.run("move-to", on: s, with: p))
         expectEqual(h.frame(of: s), at(450, 300), "on the pocket's board, at its view's middle")
         let released = try require(h.editor.document[pin]?.typed(as: Pin.self)?.props)
         expectEqual(released.target, nil)
         expectEqual(released.at, CGPoint(x: 450, y: 50), "where the box was drawn on the root, not (500, 350)")
+        expectEqual(h.file.board(containing: free), BoardID(owner: p), "a pin bound only to it moves with it")
+        expectEqual(h.file.record(free)?.typed(as: Pin.self)?.props.target, s, "bound still")
     },
 
     test("a shape being edited, moved onto a pocket's board, is gone from the board shown, so it isn't edited") {

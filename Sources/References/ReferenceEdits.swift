@@ -7,11 +7,14 @@ import CoreGraphics
 @MainActor
 public enum ReferenceEdits {
     /// Stands for `target`: its words and query are let go of.
-    public static func pick(_ props: inout Reference, _ target: ReferenceTarget) {
+    ///
+    /// `board`: the name of the board the shape is on, when the pill isn't, which the pill says after
+    /// the shape's name (`ReferenceStyle.boardGap`), so the width has room for it.
+    public static func pick(_ props: inout Reference, _ target: ReferenceTarget, board: String? = nil) {
         props.target = target
         props.words = ""
         props.query = nil
-        fit(&props)
+        fit(&props, board: board)
     }
 
     /// Stands for what `words` find, by `query` once they've been interpreted (nil: they haven't):
@@ -40,29 +43,30 @@ public enum ReferenceEdits {
     /// (a dynamic pill's count, or a direct one's eye or warning, which come and go with no write, so
     /// their room is always there), and the trailing pad, never under `minWidth` or over `maxWidth`;
     /// an empty pill is the width it was placed at.
-    public static func width(of props: Reference) -> CGFloat {
+    public static func width(of props: Reference, board: String? = nil) -> CGFloat {
         let style = ReferenceStyle.self
         switch props.mode {
         case .empty:
             return style.defaultWidth
         case .direct:
             guard let target = props.target else { return style.defaultWidth }
-            return fitted(label: target.label, trailing: style.glyphRoom)
+            return fitted(label: target.label, trailing: style.glyphRoom, board: board)
         case .dynamic:
             return fitted(label: props.text, trailing: style.badgeRoom)
         }
     }
 
-    private static func fitted(label: String, trailing: CGFloat) -> CGFloat {
+    private static func fitted(label: String, trailing: CGFloat, board: String? = nil) -> CGFloat {
         let style = ReferenceStyle.self
         // As wide as it's set either way: a pill that comes to stand for nothing says it in italic.
         let text = max(ReferenceMemo.shared.width(of: label, italic: false), ReferenceMemo.shared.width(of: label, italic: true))
-        let width = style.leadingPad + style.symbolBox + style.gap + text + trailing + style.trailingPad
+        let named = board.map { style.boardGap + ReferenceMemo.shared.board($0, strength: 1).width } ?? 0
+        let width = style.leadingPad + style.symbolBox + style.gap + text + named + trailing + style.trailingPad
         return min(style.maxWidth, max(style.minWidth, ceil(width)))
     }
 
     /// Fits the pill to what it says.
-    static func fit(_ props: inout Reference) {
-        props.frame.size = CGSize(width: width(of: props), height: ReferenceStyle.height)
+    static func fit(_ props: inout Reference, board: String? = nil) {
+        props.frame.size = CGSize(width: width(of: props, board: board), height: ReferenceStyle.height)
     }
 }

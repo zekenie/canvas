@@ -27,12 +27,18 @@ public struct ShownRow: Equatable, Sendable {
         case text(String), empty(String), box(Bool), choice(String?), summary(String)
         /// A row whose type is gone: its dashed chip.
         case gone(ShapeID)
-        /// A link to a note, or several: their pills as laid out, left to right, and how many more did not fit.
-        case links([ShownLink], more: Int)
+        /// A note that is one, a relation row that holds relationships: their pills as laid out, left to right, and how
+        /// many more did not fit. (A relation row that holds none is `.empty("add layer")`.)
+        case related([ShownPill], more: Int)
+        /// A type's note, a relation row: the way it runs (`→` this type is the from end, `←` the to end, `↔` both), the
+        /// types at the other end (two at most) and how many more; no types: any note.
+        case relationType(direction: String, chips: [ShapeID], more: Int)
     }
 
-    /// The row's field; nil for a fold.
+    /// The row's field; nil for a fold and for a relation row.
     public var path: FieldPath?
+    /// The relation row this is; nil for a field and a fold.
+    public var relation: RelationshipRowKey? = nil
     public var name: String
     public var content: Content
     /// The type's dot.
@@ -41,26 +47,71 @@ public struct ShownRow: Equatable, Sendable {
     public var tick: ShapeID?
     public var isFaint: Bool
     public var rect: CGRect, nameRect: CGRect, valueRect: CGRect
+
+    /// The fold: a row that is neither a field's nor a relation's.
+    var isFold: Bool { path == nil && relation == nil }
+
+    /// The pills a relation row shows.
+    var pills: [ShownPill] {
+        if case .related(let pills, _) = content { pills } else { [] }
+    }
 }
 
-/// One pill of a pointer's row: the link, and where it is laid out.
-public struct ShownLink: Equatable, Sendable {
-    public let link: FieldLink
-    /// The link as mention text, one mention and nothing else: what its pill is drawn from, read once with the row
-    /// so a frame neither writes the token nor reads it again. The name it shows is looked up at each draw.
+/// Which row of a note: a field's, or a relation row's.
+public enum RowIdentity: Equatable, Sendable {
+    case field(String)
+    case relation(RelationshipRowKey)
+}
+
+extension ShownRow {
+    /// Whether this is the row `identity` names.
+    func isRow(_ identity: RowIdentity) -> Bool {
+        switch identity {
+        case .field(let key): path?.field == key
+        case .relation(let key): relation == key
+        }
+    }
+}
+
+/// One pill of a row that names notes: a relationship the note has, seen from the row: the note at the other end
+/// of its arrow and where the pill is laid out.
+public struct ShownPill: Equatable, Sendable {
+    /// The note it stands for: a note, or a note a pill may not stand for yet (`.notAdmitted`); nil for the rest.
+    public let target: ShapeID?
+    /// The pill on the arrow's far end, when the arrow ends on one (a reference): nil when it ends on the note.
+    public let via: ShapeID?
+    /// The relationship's arrow.
+    public let arrow: ShapeID
+    /// What the far end is: only a `.note` is drawn solid.
+    public let state: EndReading
+    /// The name the pill holds: what it shows while its target isn't live.
+    public let label: String
+    /// The pill as mention text, one mention and nothing else: what it is drawn from, made once with the row so a
+    /// frame neither writes it nor reads it again. The name it shows is looked up at each draw.
     public let text: MentionText
     /// The pill's left and its width, from the left of the value column (world units, at the rows' font).
     public var x: CGFloat, width: CGFloat
-    /// Whether its target is a note the app shows: only a live pill is a face.
-    public var isLive: Bool
+    /// Whether the arrow breaks its relationship type's rule at this end (red, with the wave).
+    public var isWrong: Bool
+    /// Whether it is drawn solid: its state is a note the app shows. A live pill goes to its note; a dashed one to the pill.
+    public let isLive: Bool
 
-    init(link: FieldLink, x: CGFloat, width: CGFloat, isLive: Bool) {
-        self.link = link
-        text = MentionText(stored: link.value.stringValue ?? "")
+    init(target: ShapeID?, via: ShapeID?, arrow: ShapeID, state: EndReading, label: String, drawn: ShapeID, x: CGFloat, width: CGFloat,
+         isLive: Bool, isWrong: Bool = false) {
+        self.target = target
+        self.via = via
+        self.arrow = arrow
+        self.state = state
+        self.label = label
+        text = MentionText([.mention(drawn, label: label)])
         self.x = x
         self.width = width
         self.isLive = isLive
+        self.isWrong = isWrong
     }
+
+    /// Where a click on it goes: its note while it is live, else the pill the arrow ends on.
+    public var destination: ShapeID? { isLive ? target : via }
 }
 
 /// Who a shape's rows are for: a type's note, whose own types are itself, or a note that is one.
@@ -98,9 +149,29 @@ struct FoldTemplate {
     var folded: [Resolved.Field]
 }
 
+/// A relationship row: what a relationship type's end at this type gives its notes (`RelationshipRow`), by its
+/// types and the ends drawn and never by any arrow, so a note is as tall as its types and the drawn ends say.
+struct RelationRowTemplate {
+    var row: RelationshipRow
+    /// The row's name as shown: a typed one as typed, a derived one in lower case, and `company · Employment` for
+    /// the later of two relationship types' rows of one name.
+    var name: String
+    var nameWidth: CGFloat
+    /// The bar zoomed out, counted as a field's is.
+    var barWidth: CGFloat
+    /// `→` this type is the from end, `←` the to end, `↔` both under one name.
+    var direction: String
+    /// A type's note: the type that gave an inherited row, which is then faint with a tick.
+    var tick: ShapeID?
+    var isFaint: Bool
+    /// A type's note: the row's end is Needed, which puts the amber dot after the name (as a required field has).
+    var isNeeded = false
+}
+
 enum RowTemplateItem {
     case field(FieldRowTemplate)
     case fold(FoldTemplate)
+    case relation(RelationRowTemplate)
 }
 
 /// The rows of one list of types, worked out once: what a drag, a frame and ten thousand notes of the same
@@ -112,6 +183,19 @@ struct RowTemplate {
     /// Whether a name of a type is said in it (`from Person`), so a rename makes it again.
     var usesNames: Bool
     var renames: Int
+    /// The index of the first relation row; nil with none.
+    var relationStart: Int?
+
+    init(items: [RowTemplateItem], nameColumn: CGFloat, usesNames: Bool, renames: Int, relationStart: Int? = nil) {
+        self.items = items
+        self.nameColumn = nameColumn
+        self.usesNames = usesNames
+        self.renames = renames
+        self.relationStart = relationStart
+    }
+
+    /// Whether a dashed line runs between the fields and the relation rows: only with both.
+    var hasRule: Bool { (relationStart ?? 0) > 0 }
 }
 
 /// Keeps what a shape's rows are made of: a template for each distinct list of types, the room a shape's
@@ -128,7 +212,23 @@ public final class RowBook {
     /// service by its type costs more than the ask.
     private let sync: TypeSync<TypeSchemaProperty>?
     private var templates: [RowSubject: RowTemplate] = [:]
+    /// The words of each kind that has them, found once (the registry never changes; `Registry.typeWords(of:)` makes an array
+    /// of its contributions on each ask, and a layout asks for the words of every type's note).
+    private let wordsOf: [ShapeKind: TypeWordsContribution]
     private var seenChain: Int
+    /// The relationships, found once: a template asks whether its ends moved each time it is asked for.
+    let relationships: RelationshipIndex?
+    private var seenRelations: Int
+    /// The types that had a relationship type's end at them when relationships were last announced: what an announcement
+    /// of everything lays out, with the ones it has now.
+    private var endTypes: Set<ShapeID> = []
+    /// The name each pill was laid out with, by the note it names, and the notes whose rows show a pill for it: nothing
+    /// announces a note's rename to the notes that show its name, so a commit compares what it changed (`letGo`) with
+    /// these. Filled as the rows are built, and let go of with them.
+    public internal(set) var pillLabels: [ShapeID: String] = [:]
+    public internal(set) var holders: [ShapeID: Set<ShapeID>] = [:]
+    /// By pill: the notes whose rows read a far end through it. A commit that changes the pill lets go of their rows.
+    public internal(set) var viaHolders: [ShapeID: Set<ShapeID>] = [:]
     /// How often a type was renamed: a template that says a type's name is made again after one.
     var renames = 0
     #if DEBUG
@@ -143,9 +243,12 @@ public final class RowBook {
     /// The failed read each type's note was last laid out for (`footFailure`), by shape: what `spotChanged` tells a
     /// status that moves the foot from one that does not. Only types whose read failed are in it.
     private var feet: [ShapeID: RowSpot] = [:]
-    /// The row of a link being picked in: its field is over its value, so the render draws no value there. Set and
-    /// cleared by the rows view.
-    public internal(set) var picking: (shape: ShapeID, key: String)?
+    /// The row being picked in: its field is over its value, so the render draws no value there. Set and cleared by
+    /// the rows view.
+    public internal(set) var picking: (shape: ShapeID, row: RowIdentity)?
+    /// Makes the list of notes a relation row of `shape` finds one in (`RelationPicker`, in the product); nil makes none,
+    /// and a row then opens no list. The rows view hosts the list (`NotePicking`).
+    public var makePicker: (@MainActor (_ shape: ShapeID, _ row: RelationshipRow) -> (any NotePicking)?)?
     /// The one view over the rows of the shape being edited, if any.
     weak var rowsView: RowsView?
     /// The instances the last change to what a list resolves to reached (`reached(by:)`), by the revision of the
@@ -156,6 +259,9 @@ public final class RowBook {
     /// moving.
     var shown: [ShapeID: ShownRows] = [:]
     static let shownCapacity = 2_048
+    /// The width each pill is laid out at, by what it is made of (`pillWidth`). The style and the fonts never change, so
+    /// nothing lets an entry go but the capacity.
+    var pillWidths: [PillWidthKey: CGFloat] = [:]
     #if DEBUG
     /// What the check says of a shape's values in place of `FieldChecks`' (debug builds): tests draw marks before
     /// the check is there, and as it is.
@@ -165,11 +271,22 @@ public final class RowBook {
     init(editor: CanvasEditor) {
         self.editor = editor
         let registry = editor.registry
-        kinds = Set(registry.kinds.filter { registry.typeRows(of: $0) != nil })
+        let kinds = Set(registry.kinds.filter { registry.typeRows(of: $0) != nil })
+        self.kinds = kinds
+        wordsOf = Dictionary(uniqueKeysWithValues: registry.kinds.compactMap { kind in registry.typeWords(of: kind).map { (kind, $0) } })
+        // A relation row's list: the notes that fit it, on any board (a double of the tests may replace it).
+        makePicker = { [weak editor] shape, row in editor.map { RelationPicker(editor: $0, owner: shape, row: row, kinds: kinds) } }
         seenChain = editor.types?.chainRevision ?? 0
+        relationships = editor.relationships
+        seenRelations = relationships?.revision ?? 0
+        endTypes = relationships.map { Set($0.graph.ends.rows.keys) } ?? []
         sync = editor.typeSync
         // A service may reach another as it is made; both are registered ahead of this one.
-        editor.types?.onChange { [weak self] changed in self?.typesChanged(changed) }
+        editor.types?.onChange { [weak self] change in
+            // Only a change to a type: a mark or a list alone changes nothing a chain resolves to.
+            if !change.types.isEmpty { self?.typesChanged(change.types) }
+        }
+        relationships?.onChange { [weak self] change in self?.relationsChanged(change) }
         sync?.onSpotChange { [weak self] id in self?.spotChanged(id) }
     }
 
@@ -182,14 +299,17 @@ public final class RowBook {
     }
 
     func hasWords(_ record: AnyShapeRecord) -> Bool {
-        guard let words = editor?.registry.typeWords(of: record.kind)?.words(record) else { return false }
-        return !words.stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard let words = wordsOf[record.kind]?.words(record) else { return false }
+        // Whatever is not white space: the string trimmed is not empty, without making the trimmed string.
+        return !words.stored.unicodeScalars.allSatisfy(CharacterSet.whitespacesAndNewlines.contains)
     }
 
     // MARK: Templates
 
     func template(_ subject: RowSubject) -> RowTemplate {
+        // Two compares an ask: what a list resolves to, and what ends are drawn.
         if let index = editor?.types, seenChain != index.chainRevision { dropTemplates(to: index.chainRevision) }
+        if let relationships, seenRelations != relationships.revision { dropTemplates(toRelations: relationships.revision) }
         if let kept = templates[subject], !kept.usesNames || kept.renames == renames { return kept }
         let made = makeTemplate(subject)
         templates[subject] = made
@@ -198,8 +318,26 @@ public final class RowBook {
 
     private func dropTemplates(to revision: Int) {
         seenChain = revision
+        letGoOfTemplates()
+    }
+
+    private func dropTemplates(toRelations revision: Int) {
+        seenRelations = revision
+        letGoOfTemplates()
+    }
+
+    /// Every template goes, and the rows built from them with what is kept to compare them by.
+    private func letGoOfTemplates() {
         templates = [:]
+        letGoOfShown()
+    }
+
+    /// Every note's rows as shown go, and with them the names their pills were laid out with.
+    func letGoOfShown() {
         shown = [:]
+        pillLabels = [:]
+        holders = [:]
+        viaHolders = [:]
     }
 
     private func makeTemplate(_ subject: RowSubject) -> RowTemplate {
@@ -243,7 +381,42 @@ public final class RowBook {
                                                 sources: fold.sources, folded: fold.folded)))
             }
         }
-        return RowTemplate(items: items, nameColumn: column, usesNames: usesNames, renames: renames)
+        // The relationship rows come after the fields, whatever the note's arrows are.
+        let relationStart = items.count
+        var relationsMade = 0
+        if let relationships, let types = editor.types {
+            var named: Set<String> = []
+            for row in relationships.rows(for: subject.list, isType: subject.isType) {
+                let derived: Bool
+                if case .typed = row.key.label { derived = false } else { derived = true }
+                var name = row.name(in: types.graph)
+                // The later of two relationship types' rows of one name says whose it is.
+                if !named.insert(name).inserted { name += " · " + (types.graph.names[row.key.type] ?? TypesStyle.untitledType) }
+                usesNames = usesNames || derived || name != row.name(in: types.graph)
+                let inherited = subject.isType && row.source != subject.list[0]
+                let width = FieldLines.width(of: name, inherited ? .faint : .name)
+                let needed = subject.isType && row.rule.needed
+                column = max(column, width + (needed ? dotRoom : 0))
+                items.append(.relation(RelationRowTemplate(row: row, name: name, nameWidth: width,
+                                                           barWidth: CGFloat(SkeletonText.columns(of: name)) * TypesStyle.skeletonRowColumn,
+                                                           direction: Self.direction(of: row), tick: inherited ? row.source : nil, isFaint: inherited,
+                                                           isNeeded: needed)))
+                relationsMade += 1
+            }
+        }
+        return RowTemplate(items: items, nameColumn: column, usesNames: usesNames, renames: renames, relationStart: relationsMade > 0 ? relationStart : nil)
+    }
+
+    /// `→` the type is the row's from end, `←` its to end, `↔` both: a word that needs no translation.
+    private static func direction(of row: RelationshipRow) -> String {
+        row.sides.count == 2 ? "↔" : row.sides.contains(.from) ? "→" : "←"
+    }
+
+    /// What a type's note says of a relation row: its direction, the first two types at the other end and how many
+    /// more; no types: any note.
+    static func relationType(_ relation: RelationRowTemplate) -> ShownRow.Content {
+        let others = relation.row.others
+        return .relationType(direction: relation.direction, chips: Array(others.prefix(2)), more: max(0, others.count - 2))
     }
 
     // MARK: The spot
@@ -254,17 +427,19 @@ public final class RowBook {
         return spot(of: record, template: template(subject))
     }
 
-    func spot(of record: AnyShapeRecord, template: RowTemplate) -> RowSpot? {
+    /// `hasWords` is what the caller already knows of the record's words, else it is read (only when the answer needs it).
+    /// A layout (`observing: false`) is told of a change by `spotChanged`, and reads the status without observing it.
+    func spot(of record: AnyShapeRecord, template: RowTemplate, hasWords known: Bool? = nil, observing: Bool = true) -> RowSpot? {
         guard record[TypeSchemaProperty.self] != nil else { return nil }
         if !template.items.isEmpty { return .rows }
-        guard let sync = editor?.typeSync else { return hasWords(record) ? .noFields : nil }
+        guard let sync = editor?.typeSync else { return (known ?? hasWords(record)) ? .noFields : nil }
         let id = record.id
-        switch sync.status(of: id) {
+        switch observing ? sync.status(of: id) : sync.statusUnobserved(of: id) {
         case .updating(.schema): return .reading
         case .failed(let failure): return Self.spot(failure)
         default: break
         }
-        guard hasWords(record) else { return nil }
+        guard known ?? hasWords(record) else { return nil }
         // The first words of a new type are being typed and nothing has answered: `No fields` would flash
         // under the caret and widen the note at the first keystroke.
         if sync.isWaiting(id), !sync.hasAnswered(id) { return nil }
@@ -306,7 +481,7 @@ public final class RowBook {
         let template = template(subject)
         let count: Int
         if subject.isType {
-            switch spot(of: record, template: template) {
+            switch spot(of: record, template: template, observing: false) {
             case nil: return nil
             case .rows?: count = template.items.count + (footFailure(of: record.id) == nil ? 0 : 1)
             case .reading?: count = TypesStyle.spotBarShares.count
@@ -316,11 +491,13 @@ public final class RowBook {
             guard !template.items.isEmpty else { return nil }
             count = template.items.count
         }
-        return extent(rows: count, hasWords: hasWords(record))
+        return extent(rows: count, hasWords: hasWords(record), hasRule: template.hasRule)
     }
 
-    private func extent(rows count: Int, hasWords: Bool) -> RowsExtent {
-        RowsExtent(minimumWidth: TypesStyle.rowsMinimumWidth, height: (hasWords ? TypesStyle.rowsLead : 0) + CGFloat(count) * TypesStyle.rowHeight)
+    /// `count` rows with words over them or not, and the dashed line when fields and relation rows both are there.
+    private func extent(rows count: Int, hasWords: Bool, hasRule: Bool = false) -> RowsExtent {
+        RowsExtent(minimumWidth: TypesStyle.rowsMinimumWidth,
+                   height: (hasWords ? TypesStyle.rowsLead : 0) + CGFloat(count) * TypesStyle.rowHeight + (hasRule ? TypesStyle.relationRuleHeight : 0))
     }
 
     /// The provider of `TypeRows.extent`, cheapest test first: a board first shown asks it of every note,
@@ -331,18 +508,49 @@ public final class RowBook {
         return reading.isCommitted ? book.extent(of: record) : book.extent(of: record, reading: reading)
     }
 
+    /// The provider of `TypeRows.isCompact`: a relationship type (the mark on a shape that holds `schema`) with no
+    /// words and nothing to show where its rows go (no field, no relation row, no bars, no reason) is drawn
+    /// small. The cheapest test first: a plain note costs one added-value lookup. True, else none.
+    static func provideCompact(_ record: AnyShapeRecord, _ reading: LayoutReading) -> Bool? {
+        guard record[RelationshipProperty.self] == true, record[TypeSchemaProperty.self] != nil else { return nil }
+        guard let book = reading.service(RowBook.self), book.kinds.contains(record.kind), !book.hasWords(record) else { return nil }
+        return book.hasNoRows(record, reading: reading) ? true : nil
+    }
+
+    /// Whether a type's note, known to have no words, has nothing to show where its rows go: `extent(of:)` is nil. The committed
+    /// file's answer is the template and the spot, asked with the words known to be none (the extent would read the words again).
+    private func hasNoRows(_ record: AnyShapeRecord, reading: LayoutReading) -> Bool {
+        guard reading.isCommitted else { return extent(of: record, reading: reading) == nil }
+        return spot(of: record, template: template(RowSubject(list: [record.id], isType: true)), hasWords: false, observing: false) == nil
+    }
+
     /// The same mid-transaction (a draw, a paste, a duplicate, `/is-a` itself, a type and its instance written
     /// together): resolved over the shapes as the transaction leaves them, since what is kept is of the file
     /// before. No template is built and no text measured.
     private func extent(of record: AnyShapeRecord, reading: LayoutReading) -> RowsExtent? {
         guard let subject = subject(of: record), let book = editor?.fieldBook else { return nil }
         let resolved = Chain.resolve(types: subject.list, in: ReadingTypes(book: book, reading: reading, record: record))
-        let count = RowList.count(of: resolved, own: Set(subject.list))
+        let fields = RowList.count(of: resolved, own: Set(subject.list))
+        let relations = relationCount(of: subject, reading: reading)
+        let count = fields + relations
         let hasWords = hasWords(record)
         // A type's foot is the sync's, which knows the shape by its id whatever the transaction did to it.
-        if count > 0 { return extent(rows: count + (subject.isType && footFailure(of: record.id) != nil ? 1 : 0), hasWords: hasWords) }
+        if count > 0 {
+            return extent(rows: count + (subject.isType && footFailure(of: record.id) != nil ? 1 : 0), hasWords: hasWords, hasRule: fields > 0 && relations > 0)
+        }
         // A type with no fields: as its status idle and not waiting says, blank with no words, else one row.
         return subject.isType && hasWords ? extent(rows: 1, hasWords: true) : nil
+    }
+
+    /// How many relation rows the subject gets from the ends the reading has, none of its arrows: the graph the
+    /// reading sees, which is the committed one until a run's own ends are read (so a transaction that makes an end and
+    /// the notes of its types together sizes the notes without the new rows, and the announcement after the commit
+    /// lays them out).
+    private func relationCount(of subject: RowSubject, reading: LayoutReading) -> Int {
+        guard let relationships else { return 0 }
+        let graph = relationships.graph(in: reading)
+        guard !graph.ends.rows.isEmpty else { return 0 }
+        return graph.rows(for: subject.list, isType: subject.isType).count
     }
 
     // MARK: The rows as shown
@@ -371,7 +579,7 @@ public final class RowBook {
         #if DEBUG
         rowsShown += 1
         #endif
-        let geometry = RowGeometry(block: block, hasLead: hasWords(record), longestName: template.nameColumn)
+        let geometry = RowGeometry(block: block, hasLead: hasWords(record), template: template)
         return template.items.enumerated().map { row, item in
             let rect = geometry.rect(row), name = geometry.nameRect(row), value = geometry.valueRect(row)
             switch item {
@@ -381,6 +589,9 @@ public final class RowBook {
             case .fold(let fold):
                 return ShownRow(path: nil, name: fold.name, content: .fold(fold.value), isNeeded: false, tick: fold.sources.count == 1 ? fold.sources[0] : nil,
                                 isFaint: !fold.isMore, rect: rect, nameRect: fold.isMore ? rect : name, valueRect: fold.isMore ? .zero : value)
+            case .relation(let relation):
+                return ShownRow(path: nil, relation: relation.row.key, name: relation.name, content: Self.relationType(relation), isNeeded: false,
+                                tick: relation.tick, isFaint: relation.isFaint, rect: rect, nameRect: name, valueRect: value)
             }
         }
     }
@@ -407,6 +618,38 @@ public final class RowBook {
         }
     }
 
+    /// What a commit changed in the relationships (`RelationshipIndex`), told after the index has it. An end drawn,
+    /// deleted or re-aimed changes the room the notes of its types take: those, near and far, and the type notes (the
+    /// types are in `layout` themselves) are laid out again. A relationship drawn or deleted changes no note's room, only
+    /// what its two notes show: their rows, and the rows of any note whose pill is on one of the arrows, are let go of.
+    /// A row's name or its other types changing with no change of count is a redraw.
+    private func relationsChanged(_ change: RelationshipChange) {
+        guard let editor, let index = editor.types, let relationships else { return }
+        let before = endTypes
+        endTypes = Set(relationships.graph.ends.rows.keys)
+        if change.everything {
+            // Anything may have changed: every table goes, and the types that had an end and have one now, with their notes.
+            letGoOfTemplates()
+            seenRelations = relationships.revision
+            let ended = before.union(endTypes)
+            editor.shapesDidChangeLayout(ended.union(index.affected(by: ended)))
+            rowsChanged()
+            return
+        }
+        for id in change.notes { shown[id] = nil }
+        if !change.arrows.isEmpty, !shown.isEmpty {
+            let stale = shown.filter { !$0.value.arrows.isDisjoint(with: change.arrows) }.keys
+            for id in stale { shown[id] = nil }
+        }
+        if !change.layout.isEmpty {
+            letGoOfTemplates()
+            seenRelations = relationships.revision
+            editor.shapesDidChangeLayout(change.layout.union(index.affected(by: change.layout)))
+        }
+        editor.setNeedsDisplay()
+        rowsChanged()
+    }
+
     /// The sync's status or wait changed for a shape: a type with no rows has a spot that moved with no
     /// commit to show it (bars to a reason), and its height or presence may be another. One with rows
     /// shows the same but for a failed read, a row more at their foot: it is laid out again only when
@@ -431,20 +674,38 @@ extension RowBook: EditorService {
         rowsChanged()
     }
 
-    /// Lets go of the rows of the shapes a commit changed, and of the notes that point at a target whose name or kind it
-    /// changed (a pill's width is the target's name's): those are returned.
-    @discardableResult
-    private func letGo(of changes: ChangeSet) -> Set<ShapeID> {
+    /// Lets go of the rows of the shapes a commit changed.
+    private func letGo(of changes: ChangeSet) {
         if changes.replacedDocument {
             dropEverything()
-            return []
+            return
         }
-        let carriers = editor?.fieldBook?.linkCarriers(touchedBy: changes) ?? []
         if !shown.isEmpty {
             for id in changes.added.union(changes.removed).union(changes.changed.subtracting(changes.moved)).union(changes.elsewhere) { shown[id] = nil }
-            for id in carriers { shown[id] = nil }
         }
-        return carriers
+        // A pill is laid out with the name of the note it stands for, and nothing tells the notes that show it when that
+        // is renamed (or when the note goes or comes back): compare what the commit changed with the names the pills
+        // were laid out with. A commit that changed no note a pill names costs a dictionary miss for each shape.
+        if !viaHolders.isEmpty {
+            for ids in [changes.added, changes.removed, changes.elsewhere, changes.changed.subtracting(changes.moved)] {
+                for id in ids { for holder in viaHolders[id] ?? [] { shown[holder] = nil } }
+            }
+        }
+        guard !pillLabels.isEmpty else { return }
+        for ids in [changes.added, changes.removed, changes.elsewhere, changes.changed.subtracting(changes.moved)] {
+            for id in ids {
+                guard let kept = pillLabels[id] else { continue }
+                let now = pillLabel(of: id)
+                guard now != kept else { continue }
+                pillLabels[id] = now
+                for holder in holders[id] ?? [] { shown[holder] = nil }
+            }
+        }
+    }
+
+    /// The name a pill for this note shows now: what Mentions calls it while it is live, else nothing.
+    func pillLabel(of id: ShapeID) -> String {
+        editor?.mentions?.resolve(id).appearance?.label ?? ""
     }
 
     /// The shapes a commit changes the texts of without changing them, for Find (`FieldFindPlugin`'s `affected`): the
@@ -457,10 +718,11 @@ extension RowBook: EditorService {
         guard let editor else { return [] }
         if !changes.replacedDocument, changes.added.isEmpty, changes.removed.isEmpty, changes.elsewhere.isEmpty,
            changes.changed.count == changes.moved.count { return [] }
-        let carriers = letGo(of: changes)
+        letGo(of: changes)
         editor.types?.documentDidChange(changes, in: editor)
-        guard let reached = chainReached, reached.revision == editor.revision else { return carriers }
-        return reached.ids.union(carriers)
+        editor.relationships?.catchUp(changes)
+        guard let reached = chainReached, reached.revision == editor.revision else { return [] }
+        return reached.ids
     }
 
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
@@ -469,9 +731,10 @@ extension RowBook: EditorService {
 
     private func dropEverything() {
         templates = [:]
-        shown = [:]
+        letGoOfShown()
         feet = [:]
         seenChain = editor?.types?.chainRevision ?? 0
+        seenRelations = relationships?.revision ?? 0
     }
 }
 

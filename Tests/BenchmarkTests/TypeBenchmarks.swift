@@ -197,7 +197,7 @@ extension Budget {
             let first = median(runs: 1, onThread: true, open)
             let opening = median(runs: 21, onThread: true, open)
             let rows = command.choices()
-            expect(rows.first?.title == "Type" && rows.dropFirst().allSatisfy { index.isType(ShapeID(UUID(uuidString: $0.id)!)) }, "Type, then the types")
+            expect(rows.prefix(2).map(\.title) == ["Type", "Relationship Type"] && rows.dropFirst(2).allSatisfy { index.isType(ShapeID(UUID(uuidString: $0.id)!)) }, "Type, Relationship Type, then the types")
             report(String(format: "%6d shapes, %d types, the /is-a list: the first open %6.3f ms, then %6.3f ms (budget %.0f)",
                           size, types.count, first, opening, Budget.isAListOpen))
             if holdsToBudgets {

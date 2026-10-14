@@ -10,7 +10,7 @@ import Validation
 
 // Fixtures only: CanvasTesting's cards, tags and pockets (whose boards nest), with rules of this
 // target's, each counting its runs: a card whose text starts "bad" has an error and one whose text
-// starts "meh" a warning; a tag whose shape isn't on its board has an error, which only a rule run
+// starts "meh" a warning, one whose text has "need" in it still needs a name (the third level) and "warn" a warning; a tag whose shape isn't on its board has an error, which only a rule run
 // against the tag's own board gets right.
 
 /// How many times the fixtures' rules have run.
@@ -27,6 +27,11 @@ func rulesPlugin(_ runs: RuleRuns) -> Contributor {
             if card.props.text.hasPrefix("deep") { return [.error("Line 1 is bad.", field: "lines", path: "/lines/0"), .warning("Mind it.", field: "lines")] }
             if card.props.text.hasPrefix("meh") { return [.warning("It's so-so.")] }
             return []
+        }
+        // What a card still needs, as a rule of a plugin that is not Types may say: "need" in its text, and "warn" in it flags it too.
+        registrar.validate(Card.self) { card, _ in
+            (card.props.text.contains("need") ? [.incomplete("It needs a name.", field: "name", path: "/name")] : [])
+                + (card.props.text.contains("warn") ? [.warning("Mind it.")] : [])
         }
         registrar.validate(Tag.self) { tag, context in
             runs.count += 1

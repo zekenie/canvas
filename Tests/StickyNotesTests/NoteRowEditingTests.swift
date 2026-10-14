@@ -19,9 +19,6 @@ import Types
 // and end it. Headless where a view is not needed; a real `CanvasView` in an unshown window where the keys and
 // the first responder are the point.
 
-/// The value that points at a note, as a pointer's field stores it.
-private func link(_ id: ShapeID, _ name: String) -> JSONValue { FieldLink(target: id, stored: name).value }
-
 private struct Failure: Error {
     let message: String
     init(_ message: String) { self.message = message }
@@ -69,16 +66,6 @@ private final class Bench {
         let record = AnyShapeRecord(note)
         editor.transact { $0.insert(record) }
         return record.id
-    }
-
-    /// Ann Lee, Anders Holm and Dana Novak: titled Persons far below the window, a pointer's targets.
-    func people() -> (ann: ShapeID, anders: ShapeID, dana: ShapeID) {
-        func person(_ name: String, at x: Double) -> ShapeID {
-            let id = note(of: [FieldFixtures.personID], words: "", at: CGPoint(x: x, y: 2000))
-            editor.transact { $0.update(id) { $0[TitleProperty.self] = name } }
-            return id
-        }
-        return (person("Ann Lee", at: 40), person("Anders Holm", at: 340), person("Dana Novak", at: 640))
     }
 
     func set(_ id: ShapeID, _ values: JSONObject) {
@@ -715,24 +702,6 @@ private final class Bench {
         expect(request.isReadOnly)
         expectEqual(b.editor.editingShapeID, nil)
     },
-    test("a locked note: a click on a link row's value shakes it once, opens no list and writes nothing; a click on its pill still goes to the note") {
-        let b = try Bench()
-        let people = b.people()
-        let id = b.note(of: [FieldFixtures.orderID], ["customer": link(people.ann, "Ann Lee")])
-        b.editor.freeze([id])
-        let row = try b.row(id, "customer")
-        guard case .links(let pills, _) = row.content else { throw Failure("a pill") }
-        b.click(CGPoint(x: row.valueRect.minX + pills[0].x + pills[0].width / 2, y: row.rect.midY))
-        b.h.scheduler.advance(by: .zero)
-        expectEqual(b.editor.selection, people.ann, "going changes nothing, so it goes")
-        expectEqual(b.log.refusals, [], "and nothing is refused")
-        b.set(id, [:])
-        let empty = try b.row(id, "customer")
-        b.click(CGPoint(x: empty.valueRect.minX + 8, y: empty.rect.midY))
-        expectEqual(b.log.refusals, [[id]], "a click on the rest of the value shakes the note")
-        expectEqual(b.editor.editingShapeID, nil)
-        expect(b.field == nil && b.book.picking == nil)
-    },
     test("the rows change under a focused row: the focus stays with the row of the same field; the field taken out, the caret is back in the words") {
         let b = try Bench()
         let id = b.note(of: [FieldFixtures.personID], ["name": "Ann"])
@@ -767,161 +736,5 @@ private final class Bench {
         expectEqual(b.focused, "status")
         let focused = ink(bitmap(), in: local, paper: paper, by: 10)
         expect(focused > unfocused + 5, "`▾` and the outline's end: \(focused) against \(unfocused)")
-    },
-    test("Tab onto a link row focuses it; typing opens the list of the type's notes over its value and the render draws no value under the field; nothing is stored until a pick") {
-        let b = try Bench()
-        let people = b.people()
-        let id = b.note(of: [FieldFixtures.orderID], ["customer": link(people.ann, "Ann Lee")])
-        expect(b.editor.beginEditing(id))
-        b.down()
-        expectEqual(b.focused, "customer")
-        expect(b.window.firstResponder === b.rowsView, "the row is focused, no field yet")
-        expectEqual(b.book.picking?.key, nil)
-        b.window.type("an")
-        let field = try require(b.field, "a field over the value took the characters")
-        expectEqual(field.string, "an")
-        let list = try require((field as? EditingTextView)?.caretListWindow?.list, "the list is open")
-        expectEqual(list.rows.compactMap(\.item).map(\.title).first, "Ann Lee")
-        expect(list.rows.compactMap(\.item).count >= 2, "Ann Lee and Anders Holm at least")
-        expectEqual(b.book.picking?.key, "customer", "the render draws nothing under the field")
-        expectEqual(b.value(id, "customer"), link(people.ann, "Ann Lee"), "nothing stored")
-        expect(b.editor.undoHistory.undoName != "Change Customer")
-    },
-    test("↓ and Return pick the highlighted line: the token is written, one step `Change Customer`, the row stays focused with the new pill") {
-        let b = try Bench()
-        let people = b.people()
-        let id = b.note(of: [FieldFixtures.orderID])
-        expect(b.editor.beginEditing(id))
-        b.down()
-        b.window.type("an")
-        let list = try require((b.field as? EditingTextView)?.caretListWindow?.list)
-        let titles = list.rows.compactMap(\.item).map(\.title)
-        b.down()
-        expectEqual(list.highlighted, 1)
-        b.window.pressReturn()
-        let picked = try require(b.editor.document[id]?[FieldValuesProperty.self]?["customer"].flatMap(FieldLink.init))
-        expectEqual(picked.stored, titles[1])
-        expect([people.ann, people.anders, people.dana].contains(picked.target))
-        expectEqual(b.editor.undoHistory.undoName, "Change Customer")
-        expect(b.field == nil && b.book.picking == nil, "the field and the list are gone")
-        expectEqual(b.focused, "customer")
-        expect(b.window.firstResponder === b.rowsView)
-        guard case .links(let pills, _) = try b.row(id, "customer").content, pills.count == 1 else { throw Failure("one pill") }
-        expectEqual(pills[0].link, picked)
-        b.editor.undo()
-        expectEqual(b.value(id, "customer"), nil, "one undo takes the pick")
-    },
-    test("Tab while picking, with a line highlighted, picks nothing and goes to the next row; ⇧Tab from the first goes back to the words") {
-        let b = try Bench()
-        let people = b.people()
-        let id = b.note(of: [FieldFixtures.orderID], ["customer": link(people.ann, "Ann Lee")])
-        expect(b.editor.beginEditing(id))
-        b.down()
-        b.window.type("anders")
-        expect(try require((b.field as? EditingTextView)?.caretListWindow?.list.highlighted) == 0)
-        b.window.press("\t", code: 48)
-        expectEqual(b.focused, "shipping address", "the next row")
-        expect(b.field == nil || b.focused == "shipping address")
-        expectEqual(b.value(id, "customer"), link(people.ann, "Ann Lee"), "the value is as it was")
-        b.up()
-        expectEqual(b.focused, "customer")
-        b.window.type("x")
-        b.backtab()
-        expectEqual(b.focused, nil, "⇧Tab from the first row")
-        expect(b.words_ != nil, "the words have the keyboard")
-        expectEqual(b.value(id, "customer"), link(people.ann, "Ann Lee"))
-    },
-    test("Space on the focused row opens the list with nothing typed; Escape closes it keeping the old value and the focus, a second Escape ends editing; Return with no match stores nothing") {
-        let b = try Bench()
-        let people = b.people()
-        let id = b.note(of: [FieldFixtures.orderID], ["customer": link(people.ann, "Ann Lee")])
-        expect(b.editor.beginEditing(id))
-        b.down()
-        b.space()
-        let field = try require(b.field)
-        expectEqual(field.string, "")
-        let list = try require((field as? EditingTextView)?.caretListWindow?.list)
-        expect(list.rows.compactMap(\.item).count >= 3, "the notes of the type, on any board")
-        b.window.pressEscape()
-        expect(b.field == nil && b.book.picking == nil, "the list and the field are gone")
-        expectEqual(b.focused, "customer", "the row is still focused")
-        expectEqual(b.editor.editingShapeID, id)
-        expectEqual(b.value(id, "customer"), link(people.ann, "Ann Lee"))
-        b.window.pressEscape()
-        expectEqual(b.editor.editingShapeID, nil, "a second Escape ends editing")
-        // Return with nothing that matches.
-        expect(b.editor.beginEditing(id))
-        b.down()
-        b.window.type("zzqx")
-        let none = try require((b.field as? EditingTextView)?.caretListWindow?.list)
-        expectEqual(none.rows, [.empty("No matches")])
-        b.window.pressReturn()
-        expect(b.field != nil, "nothing was picked, so the field stays")
-        expectEqual(b.value(id, "customer"), link(people.ann, "Ann Lee"), "what is typed is never stored")
-    },
-    test("Delete on the focused row clears the value, one step, and undo brings it back; a click on the row's value of a note that is not edited begins editing with the list open a turn later") {
-        let b = try Bench()
-        let people = b.people()
-        let id = b.note(of: [FieldFixtures.orderID], ["customer": link(people.ann, "Ann Lee")])
-        expect(b.editor.beginEditing(id))
-        b.down()
-        b.window.press("\u{7F}", code: 51)
-        expectEqual(b.value(id, "customer"), nil)
-        expectEqual(b.editor.undoHistory.undoName, "Change Customer")
-        expectEqual(b.focused, "customer", "the row stays focused")
-        b.editor.undo()
-        expectEqual(b.value(id, "customer"), link(people.ann, "Ann Lee"))
-        b.editor.endEditing()
-        b.editor.selection = nil
-        let value = try require(b.book.rows(of: id).first { $0.name == "status" }?.valueRect)
-        _ = value
-        let pill = try b.row(id, "customer")
-        guard case .links(let pills, _) = pill.content else { throw Failure("a pill") }
-        // Off the pill, on the rest of the value: a link row's value is the pill alone, so click the empty row instead.
-        b.set(id, [:])
-        let empty = try b.row(id, "customer")
-        expect(!pills.isEmpty)
-        b.click(CGPoint(x: empty.valueRect.minX + 8, y: empty.rect.midY))
-        expectEqual(b.editor.editingShapeID, id, "a click on the value begins editing")
-        expectEqual(b.focused, "customer")
-        b.h.scheduler.advance(by: .zero)
-        expect(b.field != nil, "the list is open a turn later")
-        expect(b.book.picking != nil)
-    },
-    test("a click on a live pill of the note being edited ends editing and shows the note it points at after the scheduler's turn") {
-        let b = try Bench()
-        let people = b.people()
-        let id = b.note(of: [FieldFixtures.orderID], ["customer": link(people.ann, "Ann Lee")])
-        expect(b.editor.beginEditing(id))
-        b.down()
-        let row = try b.row(id, "customer")
-        guard case .links(let pills, _) = row.content else { throw Failure("a pill") }
-        try b.press(at: CGPoint(x: row.valueRect.minX + pills[0].x + pills[0].width / 2, y: row.rect.midY))
-        b.h.scheduler.advance(by: .zero)
-        expectEqual(b.editor.editingShapeID, nil, "editing ended")
-        expectEqual(b.editor.selection, people.ann, "and the note is shown")
-    },
-    test("a list of pointers is a row with a card: a click on a pill goes to the note, a click off the pills and Return on the focused row open the card of its lines") {
-        let b = try Bench()
-        let people = b.people()
-        let id = b.note(of: [FieldFixtures.kindsBID], ["guests": [link(people.ann, "Ann Lee"), link(people.anders, "Anders Holm")]])
-        let cards = try require(b.editor.fieldCards)
-        expect(b.editor.beginEditing(id))
-        b.down(); b.down()
-        expectEqual(b.focused, "guests")
-        b.window.pressReturn()
-        expectEqual(cards.openTarget?.target, .field(FieldPath(field: "guests")), "Return on the focused row opens its card")
-        expectEqual(cards.openForm?.sheet.lines.map { $0.cells[0].shown }, ["Ann Lee", "Anders Holm", ""])
-        b.window.pressEscape()
-        expect(cards.openTarget == nil)
-        let row = try b.row(id, "guests")
-        try b.press(at: CGPoint(x: row.valueRect.maxX - 4, y: row.rect.midY))
-        b.h.scheduler.advance(by: .zero)
-        expect(cards.openTarget != nil, "a click off the pills opens the card")
-        cards.close()
-        guard case .links(let pills, _) = row.content else { throw Failure("pills") }
-        try b.press(at: CGPoint(x: row.valueRect.minX + pills[1].x + pills[1].width / 2, y: row.rect.midY))
-        b.h.scheduler.advance(by: .zero)
-        expectEqual(b.editor.selection, people.anders, "a click on a pill goes to its note")
     },
 ])

@@ -437,7 +437,7 @@ import TestKit
         expectEqual(quoted.via, "card", "a quoted word is read as the bare one, its ends trimmed")
         expectEqual(parseError(#"edge "A" -> "B" {"via": "relay", "from": "right"}"#)?.hint, "write via: relay from: right",
                     "braces are refused, and the language's keys written without quotes, as from: and to: are")
-        expectEqual(parseError(#"delete edge "A" -> "B" via: relay"#)?.message, #"edge "A" -> "B": deleting takes no attributes"#)
+        expectEqual(parseError(#"delete edge "A" -> "B" via: relay"#)?.message, #"edge "A" -> "B": deleting takes no from:, to:, via: or share:"#)
     },
     test("via: refuses what isn't a kind, and says it twice") {
         expectEqual(parseError(#"edge "A" -> "B" via: relay via: card"#)?.reason, .duplicate)
@@ -461,7 +461,7 @@ import TestKit
         expectEqual(host.from, "B")
         guard case .edge(let literal) = try parse(#"edge "A" -> "B" share: "true""#) else { throw RequireFailed() }
         expectEqual(literal.share, .beside("true"), "quoted, it is a shape called true")
-        expectEqual(parseError(#"delete edge "A" -> "B" share: true"#)?.message, #"edge "A" -> "B": deleting takes no attributes"#)
+        expectEqual(parseError(#"delete edge "A" -> "B" share: true"#)?.message, #"edge "A" -> "B": deleting takes no from:, to:, via: or share:"#)
     },
     test("share: refuses false, a blank or other value, and says it twice") {
         expectEqual(parseError(#"edge "A" -> "B" share: true share: "C""#)?.reason, .duplicate)
@@ -495,16 +495,30 @@ import TestKit
         expectEqual(parseError("edge")?.message, "edge: an edge joins two shapes, by their titles")
     },
     test("delete a shape by its title, or the edges from one to another") {
-        expectEqual(try parse(#"delete "Old""#), .delete(.shape(title: "Old")))
+        expectEqual(try parse(#"delete "Old""#), .delete(.shape("Old")))
         expectEqual(try parse(#"delete edge "A" -> "B""#), .delete(.edges(from: "A", to: "B", eitherWay: false)))
         expectEqual(try parse(#"delete edge "B" <- "A""#), .delete(.edges(from: "A", to: "B", eitherWay: false)))
         expectEqual(try parse(#"delete edge "A" <-> "B""#), .delete(.edges(from: "A", to: "B", eitherWay: true)))
+    },
+    test("delete edge takes attributes, for the caller to check: the ones that tell edges apart") {
+        let is_ = Attribute(key: "is", value: .quoted("T"))
+        expectEqual(try parse(#"delete edge "A" -> "B" is: "T""#), .delete(.edges(from: "A", to: "B", eitherWay: false, attributes: [is_])))
+        expectEqual(try parse(#"delete edge "B" <- "A" is: "T""#), .delete(.edges(from: "A", to: "B", eitherWay: false, attributes: [is_])))
+        expectEqual(try parse(#"delete edge "A" <-> "B" is: null kind: x"#),
+                    .delete(.edges(from: "A", to: "B", eitherWay: true,
+                                   attributes: [Attribute(key: "is", value: .word("null")), Attribute(key: "kind", value: .word("x"))])))
+        expectEqual(try parse(#"delete edge "A" -> "B""#), .delete(.edges(from: "A", to: "B", eitherWay: false)), "none is the empty list")
+        expectEqual(parseError(#"delete edge "A" -> "B" is: "T" is: "U""#)?.reason, .duplicate)
+        for refused in ["from: left", "to: left", "via: relay", "share: true"] {
+            expectEqual(parseError(#"delete edge "A" -> "B" is: "T" \#(refused)"#)?.message,
+                        #"edge "A" -> "B": deleting takes no from:, to:, via: or share:"#, refused)
+        }
     },
     test("delete takes one quoted title and nothing more") {
         expectEqual(parseError("delete")?.hint, #"write delete "A", or delete edge "A" -> "B""#)
         expectEqual(parseError("delete Old")?.hint, #"write delete "Old""#)
         expectEqual(parseError(#"delete "A" "B""#)?.message, #"delete "A": delete takes one title, and nothing after it ("B")"#)
-        expectEqual(parseError(#"delete edge "A" -> "B" from: left"#)?.message, #"edge "A" -> "B": deleting takes no attributes"#)
+        expectEqual(parseError(#"delete edge "A" -> "B" from: left"#)?.message, #"edge "A" -> "B": deleting takes no from:, to:, via: or share:"#)
     },
 ])
 
@@ -629,7 +643,7 @@ import TestKit
         let error = ScriptError(line: 3, reason: .syntax, "bad", hint: "fix it")
         expectEqual(error.description, "line 3: bad (fix it)")
         expectEqual(ScriptError.Reason.noRoom.rawValue, "no_room")
-        expectEqual(ScriptError.Reason.allCases.count, 31)
+        expectEqual(ScriptError.Reason.allCases.count, 33)
     },
 ])
 

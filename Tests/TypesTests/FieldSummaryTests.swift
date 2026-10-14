@@ -103,34 +103,13 @@ private let us = Locale(identifier: "en_US")
         expectEqual(s.summary(["cardNumber": "4242"], payment), .items(["4242"]), "the group branch")
         expectEqual(s.summary(true, payment), .value("true"), "a value no branch fits")
     },
-    test("what no control suits reads as JSON; a pointer reads the name it shows, text that is no token as stored") {
+    test("what no control suits reads as JSON; a field that was a pointer reads the text it holds, a list of them the items") {
         let s = try Summaries()
         expectEqual(s.summary(["a": 1], try s.field("anything", of: FieldFixtures.kindsBID)), .json)
         expectEqual(FieldSummary.json.text, "edited as JSON in the panel")
         let customer = try s.field("customer", of: FieldFixtures.kindsBID), guests = try s.field("guests", of: FieldFixtures.kindsBID)
-        expectEqual(s.summary("token", customer), .value("token"), "not a token: the text as stored")
-        expectEqual(s.summary(["a", "b"], guests), .pills(targets: ["a", "b"], more: 0))
-        expectEqual(s.summary(link(to: FieldFixtures.annLeeID, "Ann Lee"), customer), .value("Ann Lee"))
-        expectEqual(s.summary([link(to: FieldFixtures.annLeeID, "Ann"), link(to: FieldFixtures.boParkID, "Bo")], guests),
-                    .pills(targets: ["Ann Lee", "Bo Park"], more: 0), "the live name, not the one the token holds")
-        expectEqual(FieldSummary.pills(targets: ["Ann Lee", "Bo Park"], more: 1).text, "Ann Lee, Bo Park, +1")
-        expectEqual(FieldSummary.pills(targets: ["Ann Lee", "Bo Park"], more: 0).text, "Ann Lee, Bo Park")
-    },
-    test("a pointer to a note that is gone reads the name it held, `Deleted` when it held none; an untitled target reads what a mention of it shows") {
-        let s = try Summaries()
-        let customer = try s.field("customer", of: FieldFixtures.kindsBID)
-        s.editor.transact("Delete") { $0.delete([FieldFixtures.annLeeID]) }
-        expectEqual(s.summary(link(to: FieldFixtures.annLeeID, "Ann Lee"), customer), .value("Ann Lee"), "the stored name")
-        expectEqual(s.summary(link(to: FieldFixtures.annLeeID, ""), customer), .value("Deleted"), "no name held")
-        s.editor.transact("Untitle") { $0.update(FieldFixtures.boParkID) { $0[TitleProperty.self] = nil } }
-        let shown = try require(s.editor.mentions?.resolve(FieldFixtures.boParkID).appearance?.label)
-        expectEqual(s.summary(link(to: FieldFixtures.boParkID, "Bo Park"), customer), .value(shown), "what Mentions shows for an untitled note")
-        expect(!shown.isEmpty)
-    },
-    test("a group holding a pointer reads the name it shows, as text") {
-        let s = try Summaries()
-        let field = try s.adHoc(#"{"type": "object", "properties": {"place": {"type": "string"}, "host": {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "\#(FieldFixtures.uri(of: FieldFixtures.personID))"}}}}"#)
-        expectEqual(s.summary(["place": "The Loft", "host": link(to: FieldFixtures.annLeeID, "Ann")], field), .items(["The Loft", "Ann Lee"]))
+        expectEqual(s.summary("Ann Lee", customer), .value("Ann Lee"))
+        expectEqual(s.summary(["Ann Lee", "Bo Park"], guests), .items(["Ann Lee", "Bo Park"]))
     },
     test("nothing filled reads add and the name, faint italic: a missing value, one that is empty, a group of empties") {
         let s = try Summaries()

@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Mentions
 
 // Every key of rows-and-cards. A text cell's editor hands the form its commands (`textView(_:doCommandBy:)`:
 // Tab, ⇧Tab, Return, Esc, Up, Down, Backspace on an empty line); every other stop has the keyboard itself
@@ -10,7 +11,7 @@ extension FieldFormView: NSTextViewDelegate {
         guard !isLoadingEditor else { return }
         if (notification.object as AnyObject?) === jsonEditor { return jsonTyped() }
         guard (notification.object as AnyObject?) === cellEditor else { return }
-        if linkPicking != nil { return linkQueryChanged() }
+        if picking != nil { return noteQueryChanged() }
         typedInCell()
     }
 
@@ -44,7 +45,6 @@ extension FieldFormView: NSTextViewDelegate {
     public override func keyDown(with event: NSEvent) {
         let shift = event.modifierFlags.contains(.shift)
         guard event.modifierFlags.isDisjoint(with: [.command, .control, .option]) else { return super.keyDown(with: event) }
-        if clearLink(event: event) { return }
         switch event.keyCode {
         case 48: tab(forward: !shift)
         case 36, 76: returnKey()
@@ -55,7 +55,9 @@ extension FieldFormView: NSTextViewDelegate {
         case 125: vertical(1)
         case 123: horizontal(-1)
         case 124: horizontal(1)
-        default: if !typeToPickLink(event) { super.keyDown(with: event) }
+        // A line of a row's card, with its note focused: Backspace or Delete takes it out.
+        case 51, 117: if !removeFocusedRelation() { super.keyDown(with: event) }
+        default: if !typeToPickNote(event) { super.keyDown(with: event) }
         }
     }
 
@@ -120,7 +122,9 @@ extension FieldFormView: NSTextViewDelegate {
         case .more: return activate(stop)
         case .check, .clear: return activate(stop)
         case .choice where isReadOnly: return tryAtReadOnly()
-        case .link: return startLinkPicking(at: stop)
+        // A pill goes to its note; the blank line lists the notes it may name.
+        case .note(let target?): return editor.mentions?.follow(target) ?? ()
+        case .note: return startNotePicking(at: stop)
         default: break
         }
         if sheet.layout == .rows && held.list == nil {
@@ -158,7 +162,7 @@ extension FieldFormView: NSTextViewDelegate {
         if held.disclosure != nil { return toggleNode(held) }
         switch cell.control {
         case .yesNo, .check, .clear, .choice: activate(stop)
-        case .link: startLinkPicking(at: stop)
+        case .note: startNotePicking(at: stop)
         default: break
         }
     }
@@ -178,7 +182,7 @@ extension FieldFormView: NSTextViewDelegate {
         case .more: open(cell, from: stop)
         case .check: toggleCheck(cell)
         case .clear: clearChecks(cell)
-        case .link: startLinkPicking(at: stop)
+        case .note: startNotePicking(at: stop)
         case .label: break
         }
     }
@@ -191,7 +195,7 @@ extension FieldFormView: NSTextViewDelegate {
         guard presentation == .card, mode == .kinds ? kind.opensOnType : kind.hasMore else { return }
         var title = FieldName.words(of: cell.field.field)
         if title.isEmpty { title = level.title }
-        levels.append(FormLevel(path: cell.path, field: cell.field, kind: kind, title: title, from: stop))
+        levels.append(FormLevel(path: cell.path, field: cell.field, kind: kind, title: title, from: stop, owner: cell.owner ?? level.owner))
         if isFold, depth == 1, mode == .values, !isReadOnly { editor.setCardStep(FieldName.stepName(of: cell.field.field)) }
         focus = nil
         sheet = FieldSheet()

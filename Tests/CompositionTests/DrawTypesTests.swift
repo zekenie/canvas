@@ -210,4 +210,47 @@ import Types
         let found = try JSON(text: canvas(server, ["query", "--brief", #"arrow:is-a("Friendship")"#]).output)
         expectEqual(found["count"], 1)
     },
+
+    test("two arrows of one pair are two edges told apart by is:: each restated unchanged, a bare edge ambiguous, delete edge ... is: takes one") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        func dids(_ output: String) throws -> [String] {
+            try JSON(text: output)["changes"]?.arrayValue?.compactMap { $0["did"]?.stringValue } ?? []
+        }
+        @MainActor func arrows(_ type: String? = nil) throws -> Int {
+            try JSON(text: canvas(server, ["query", "--brief", type.map { #"arrow:is-a("\#($0)")"# } ?? "arrow"]).output)["count"]?.numberValue.map(Int.init) ?? -1
+        }
+        let setup = try canvas(server, ["draw", """
+        sticky-note "Friendship" schema: "{\\"type\\": \\"object\\"}"
+        sticky-note "Mentorship" right of "Friendship" schema: "{\\"type\\": \\"object\\"}"
+        sticky-note "Ann" below "Friendship"
+        sticky-note "Bo" right of "Ann"
+        """])
+        expectEqual(setup.status, 0, setup.error)
+        let two = """
+        edge "Ann" -> "Bo" is: "Friendship"
+        edge "Ann" -> "Bo" is: "Mentorship"
+        """
+        let first = try canvas(server, ["draw", two])
+        expectEqual(first.status, 0, first.error)
+        expectEqual(try dids(first.output), ["connected", "connected"])
+        expectEqual(try arrows(), 2)
+        let again = try canvas(server, ["draw", two])
+        expectEqual(try dids(again.output), ["unchanged", "unchanged"])
+        let bare = try canvas(server, ["draw", #"edge "Ann" -> "Bo""#])
+        expect(bare.status != 0)
+        expect(bare.error.contains("ambiguous_edge") && bare.error.contains("write is: to say which"), bare.error)
+        let removed = try canvas(server, ["draw", #"delete edge "Ann" -> "Bo" is: "Friendship""#])
+        expectEqual(removed.status, 0, removed.error)
+        expectEqual(try dids(removed.output), ["deleted"])
+        expectEqual(try arrows("Friendship"), 0)
+        expectEqual(try arrows("Mentorship"), 1)
+        let other = try canvas(server, ["draw", #"delete edge "Ann" -> "Bo" text: "x""#])
+        expect(other.status != 0 && other.error.contains("delete edge takes is: and no other attribute"), other.error)
+    },
 ])

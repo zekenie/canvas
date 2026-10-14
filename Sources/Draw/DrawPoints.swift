@@ -4,9 +4,12 @@ import Queries
 // What `canvas draw` needs from concerns it doesn't own, each an extension point with at most one
 // contribution, from the plugins that own the concerns (AutomationTests bind them to fixtures of
 // their own): what a shape is called (DrawNames, Titles'), what an edge is (DrawEdges,
-// Connections'), what's wrong with a shape drawn (DrawChecks, Validation's), how text of a
-// media type is written (DrawTextFormats, one for each media type, Mentions' for mention text) and
-// how a value a script writes joins what a shape holds (DrawValueWriters, one for each property).
+// Connections'), what's wrong with a shape drawn and which other shapes a run's writes reach (DrawChecks,
+// Validation's), how text of a
+// media type is written (DrawTextFormats, one for each media type, Mentions' for mention text),
+// how a value a script writes joins what a shape holds (DrawValueWriters, one for each property),
+// what a shape with no title is called for the pill that stands for it (DrawLabels, Mentions') and what
+// each row of a run reports (DrawReports, Types').
 // Without one, `draw` does without: no titles (a titled statement is `no_names`), no edges
 // (`no_edges`), only the schemas' bounds checked, text kept as written and a value replacing what
 // the shape holds.
@@ -34,6 +37,27 @@ extension DrawNames: KeyedExtensionPoint {
     public static func uniqueKeys(of _: DrawNaming, for _: ShapeTarget) -> [AnyHashable] { [DrawPointKey(name: label)] }
     public static func summary(of _: DrawNaming, for _: ShapeTarget) -> String { label }
     static let label = "draw names"
+}
+
+// MARK: Labels
+
+/// What a shape with no title is called where a pill stands for it, as `canvas draw` makes one for a far note an edge ends at:
+/// the name the plugin that names shapes in words gives it (Mentions': its first line, else its values), which a title
+/// would be, if it had one. Only the sugar makes one (`registrar.drawLabels`).
+@MainActor
+public struct DrawLabeling {
+    let label: @MainActor (AnyShapeRecord, Registry) -> String?
+}
+
+/// What names a shape that has no title for the pill that stands for it: at most one plugin.
+public enum DrawLabels {}
+
+extension DrawLabels: KeyedExtensionPoint {
+    public typealias Contribution = DrawLabeling
+    public static var owner: PluginID { .drawEngine }
+    public static func uniqueKeys(of _: DrawLabeling, for _: ShapeTarget) -> [AnyHashable] { [DrawPointKey(name: label)] }
+    public static func summary(of _: DrawLabeling, for _: ShapeTarget) -> String { label }
+    static let label = "draw labels"
 }
 
 // MARK: Edges
@@ -73,10 +97,13 @@ public struct EdgeRequest: Hashable, Sendable {
     public var fromStandsFor: [ShapeKind]
     /// The kinds of what its end stands for, when it's a stand-in; none otherwise.
     public var toStandsFor: [ShapeKind]
+    /// The connections already joining the pair, for a maker that draws a second apart from the first
+    /// (`registry.drawConnection(beside:)`); nil: the maker reads them.
+    public var beside: [ShapeID]?
 
     public init(from: ShapeID, to: ShapeID, fromSide: Side? = nil, toSide: Side? = nil, bothHeads: Bool = false,
                 attributes: [String: String] = [:], fromName: String = "", toName: String = "", written: String = "",
-                fromStandsFor: [ShapeKind] = [], toStandsFor: [ShapeKind] = []) {
+                fromStandsFor: [ShapeKind] = [], toStandsFor: [ShapeKind] = [], beside: [ShapeID]? = nil) {
         self.from = from
         self.to = to
         self.fromSide = fromSide
@@ -88,6 +115,7 @@ public struct EdgeRequest: Hashable, Sendable {
         self.written = written
         self.fromStandsFor = fromStandsFor
         self.toStandsFor = toStandsFor
+        self.beside = beside
     }
 }
 
@@ -99,6 +127,9 @@ public struct EdgeRequest: Hashable, Sendable {
 public struct DrawEdging {
     let kind: @MainActor (Registry) -> ShapeKind?
     let attributes: [String]
+    /// The property keys of the edge kind that tell two edges of one pair apart (an arrow's `is`): an
+    /// edge is its pair and, for a statement that writes one, these. None: the pair alone.
+    let identity: [String]
     let sides: @MainActor (ShapeKind, Registry) -> [EdgeRequest.Side: [String]]
     let ends: @MainActor (AnyShapeRecord, Registry) -> (from: ShapeID, to: ShapeID)?
     let make: @MainActor (EdgeRequest, AnyShapeRecord?, ShapeContext) throws(DrawError) -> AnyShapeRecord
@@ -130,33 +161,69 @@ extension DrawEdges: KeyedExtensionPoint {
                 guard !rowKeys.contains(key) else { throw refuse("a draw result's row has \(key) of its own") }
                 guard seen.insert(key).inserted else { throw refuse("it's declared twice") }
             }
+            // An identity key is a property of the edge kind (checked per run, against its vocabulary).
+            var keys: Set<String> = []
+            for key in edging.identity {
+                func refuse(_ reason: String) -> RegistryError { .invalid(point: "DrawEdges", reason: "identity \(key): \(reason)") }
+                guard !key.isEmpty, !key.contains(where: { $0.isWhitespace || $0 == ":" || $0 == "\"" }) else {
+                    throw refuse("a key is a word a script can write before a colon")
+                }
+                guard !languageEdgeKeys.contains(key) else { throw refuse("the language keeps \(key): for itself") }
+                guard !edging.attributes.contains(key) else { throw refuse("it's one of the maker's attributes, and an identity key is a property of the kind's schema") }
+                guard keys.insert(key).inserted else { throw refuse("it's declared twice") }
+            }
         }
     }
 }
 
 // MARK: Checks
 
-/// Something wrong with a shape a script drew (an error: it's invalid; or a warning), and the
-/// property it's about, if one. `canvas draw` reports it with the statement's line, and draws
-/// anyway.
+/// Something wrong with a shape a script drew (an error: it's invalid; or a warning), or something it still
+/// needs, and the property it's about, if one. `canvas draw` reports it with the statement's line, and draws
+/// anyway. What a shape still needs is no warning of a shape the script wrote (its row's `problems` say it);
+/// of one the script did not write, a run says it as it says any other issue it brings.
 public struct DrawIssue: Hashable, Sendable {
+    /// How much it matters.
+    public enum Level: Hashable, Sendable {
+        /// The shape is flagged, and as valid as it was.
+        case warning
+        /// The shape is invalid.
+        case error
+        /// The shape still needs something: not flagged, not invalid.
+        case incomplete
+    }
+
     public var message: String
-    public var isError: Bool
+    public var level: Level
     /// The property it's about (`title`), if it's about one.
     public var field: String?
 
-    public init(_ message: String, isError: Bool = false, field: String? = nil) {
+    public init(_ message: String, level: Level, field: String? = nil) {
         self.message = message
-        self.isError = isError
+        self.level = level
         self.field = field
     }
+
+    /// A warning, or (`isError`) an error.
+    public init(_ message: String, isError: Bool = false, field: String? = nil) {
+        self.init(message, level: isError ? .error : .warning, field: field)
+    }
+
+    public var isError: Bool { level == .error }
+    public var isIncomplete: Bool { level == .incomplete }
 }
 
 /// What's wrong with a shape, as it's about to be drawn, against the shapes of the board it's
-/// drawn on (with the rest of the script). Only the sugar makes one (`registrar.drawChecks`).
+/// drawn on (with the rest of the script); and, of what a run wrote, which other shapes to look at
+/// (`touched`: those whose issues the writes may change though the run did not write them, on any board,
+/// given what the transaction did so far, `Transaction.pending`, and its shapes). `rest` is how to see
+/// the issues a run brought to more shapes than it says (a command to ask). Only the sugar makes one
+/// (`registrar.drawChecks`).
 @MainActor
 public struct DrawCheck {
     let check: @MainActor (AnyShapeRecord, ShapeContext) -> [DrawIssue]
+    let touched: (@MainActor (ChangeSet, ShapeContext) -> Set<ShapeID>)?
+    let rest: String?
 }
 
 /// What checks shapes drawn for `canvas draw`: at most one plugin. Without one, a shape is checked
@@ -264,20 +331,27 @@ extension DrawTextFormats: KeyedExtensionPoint {
 public struct DrawShapeReport: Sendable {
     public var warnings: [DrawIssue]
     public var problems: [ShapeProblem]
+    /// Members the shape's row carries, by key, flat beside its own (`is`, say): only the keys the plugin declared
+    /// (`registrar.drawReports(members:)`); any other is left out.
+    public var members: [String: JSONValue]
 
-    public init(warnings: [DrawIssue] = [], problems: [ShapeProblem] = []) {
+    public init(warnings: [DrawIssue] = [], problems: [ShapeProblem] = [], members: [String: JSONValue] = [:]) {
         self.warnings = warnings
         self.problems = problems
+        self.members = members
     }
 }
 
 /// How a plugin reports on a shape: `written` is what the statement wrote for each of its properties, by
 /// key, after the value writers wrote them and before they joined what the shape held (nil for a shape
 /// whose statement changed nothing: a restated one is reported on, never warned about), and `shapes` the
-/// board as the script leaves it. Only the sugar makes one (`registrar.drawReports`).
+/// board as the script leaves it; `bothHeads` is whether the statement of a connection wrote `<->` (false for any
+/// other shape). Only the sugar makes one (`registrar.drawReports`).
 @MainActor
 public struct DrawReporting {
-    let report: @MainActor (AnyShapeRecord, _ written: JSONObject?, ShapeContext) -> DrawShapeReport
+    /// The keys of the members the report may add to a row.
+    let members: [String]
+    let report: @MainActor (AnyShapeRecord, _ written: JSONObject?, ShapeContext, _ bothHeads: Bool) -> DrawShapeReport
 }
 
 /// What reports on each shape and edge a run made, changed or restated, as the script leaves the board:
@@ -288,8 +362,30 @@ extension DrawReports: KeyedExtensionPoint {
     public typealias Contribution = DrawReporting
     public static var owner: PluginID { .drawEngine }
     public static func uniqueKeys(of _: DrawReporting, for _: ShapeTarget) -> [AnyHashable] { [DrawPointKey(name: label)] }
-    public static func summary(of _: DrawReporting, for _: ShapeTarget) -> String { label }
+    public static func summary(of reporting: DrawReporting, for _: ShapeTarget) -> String {
+        reporting.members.isEmpty ? label : label + " members " + reporting.members.joined(separator: ", ")
+    }
     static let label = "draw reports"
+
+    /// The members a report adds to a row are words a script reads beside the row's own: none blank, none twice,
+    /// none the row's own (`line`, `did`, `kind`, `problems`), none an attribute an edge's row carries
+    /// (`DrawEdges`), so a clash is a registry error and not a value lost.
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        let rowKeys = Set(DrawChange.CodingKeys.allCases.map(\.stringValue))
+        let attributes = Set(registry.contributions(to: DrawEdges.self).flatMap { $0.value.attributes })
+        for reporting in registry.contributions(to: DrawReports.self).map(\.value) {
+            var seen: Set<String> = []
+            for key in reporting.members {
+                func refuse(_ reason: String) -> RegistryError { .invalid(point: "DrawReports", reason: "member \(key): \(reason)") }
+                guard !key.isEmpty, !key.contains(where: { $0.isWhitespace || $0 == ":" || $0 == "\"" }) else {
+                    throw refuse("a key is a word a row can carry")
+                }
+                guard !rowKeys.contains(key) else { throw refuse("a draw result's row has \(key) of its own") }
+                guard !attributes.contains(key) else { throw refuse("an edge's row carries \(key) as an attribute") }
+                guard seen.insert(key).inserted else { throw refuse("it's declared twice") }
+            }
+        }
+    }
 }
 
 // MARK: Value writers
@@ -335,9 +431,12 @@ struct DrawPointKey: Hashable, CustomStringConvertible {
 extension PluginRegistrar {
     /// Reports on each shape and edge `canvas draw` makes, changes or restates, once the script's shapes
     /// are all in the transaction (so a type drawn further down is read): `problems` go on the shape's
-    /// row, `warnings` among the run's, with the statement's line. At most one plugin reports.
-    public mutating func drawReports(_ report: @escaping @MainActor (AnyShapeRecord, _ written: JSONObject?, ShapeContext) -> DrawShapeReport) {
-        contribute(DrawReporting(report: report), to: DrawReports.self)
+    /// row, `warnings` among the run's, with the statement's line, and `members` (the keys declared here)
+    /// beside the row's own. It is also asked of each connection a run deletes, with the record as it was,
+    /// which the transaction no longer has: for its members and warnings only. At most one plugin reports.
+    public mutating func drawReports(members: [String] = [],
+                                     _ report: @escaping @MainActor (AnyShapeRecord, _ written: JSONObject?, ShapeContext, _ bothHeads: Bool) -> DrawShapeReport) {
+        contribute(DrawReporting(members: members, report: report), to: DrawReports.self)
     }
 
     /// Writes the values of the property `key` in `canvas draw`: `write` gets the value as the script
@@ -364,8 +463,17 @@ extension PluginRegistrar {
         contribute(DrawNaming(name: name, namingProperty: namingProperty, isDerived: isDerived, fold: fold), to: DrawNames.self)
     }
 
+    /// Names a shape that has no title for the pill `canvas draw` puts beside the shape an edge ends at on another board:
+    /// `label` is what the shape is called where it is named in words (nil for none). At most one plugin names them.
+    public mutating func drawLabels(_ label: @escaping @MainActor (AnyShapeRecord, Registry) -> String?) {
+        contribute(DrawLabeling(label: label), to: DrawLabels.self)
+    }
+
     /// Makes edges for `canvas draw`: `kind` is what connections are (nil: nothing draws them now,
     /// and an edge is `no_edges`), `attributes` the keys an edge takes beside `from:` and `to:`,
+    /// `identity` the property keys of the edge kind that tell two edges of one pair apart (a statement
+    /// that writes one addresses the edge of the pair that holds that value; one that writes none, any
+    /// edge of the pair, and two are `ambiguous_edge`),
     /// `sides` which sides of a kind an edge may leave by and what it carries from each (what
     /// `canvas kinds` lists), `ends` which shapes a connection starts and ends on (nil: not two), and
     /// `make` a connection as a request asks, not inserted: new (`existing` nil), or `existing`
@@ -374,18 +482,23 @@ extension PluginRegistrar {
     /// line. Its closure says so, `{ request, existing, shapes throws(DrawError) in … }`, as a
     /// command's does. `shapes` is the board as the script leaves it, so either end may be new. At
     /// most one plugin makes edges.
-    public mutating func drawEdges(kind: @escaping @MainActor (Registry) -> ShapeKind?, attributes: [String] = [],
+    public mutating func drawEdges(kind: @escaping @MainActor (Registry) -> ShapeKind?, attributes: [String] = [], identity: [String] = [],
                                    sides: @escaping @MainActor (ShapeKind, Registry) -> [EdgeRequest.Side: [String]],
                                    ends: @escaping @MainActor (AnyShapeRecord, Registry) -> (from: ShapeID, to: ShapeID)?,
                                    make: @escaping @MainActor (EdgeRequest, AnyShapeRecord?, ShapeContext) throws(DrawError) -> AnyShapeRecord) {
-        contribute(DrawEdging(kind: kind, attributes: attributes, sides: sides, ends: ends, make: make), to: DrawEdges.self)
+        contribute(DrawEdging(kind: kind, attributes: attributes, identity: identity, sides: sides, ends: ends, make: make), to: DrawEdges.self)
     }
 
     /// Checks each shape `canvas draw` makes or changes, as the script leaves the board: what it
-    /// finds is reported as warnings (an error too: the shape is drawn, invalid). At most one plugin
-    /// checks shapes.
-    public mutating func drawChecks(_ check: @escaping @MainActor (AnyShapeRecord, ShapeContext) -> [DrawIssue]) {
-        contribute(DrawCheck(check: check), to: DrawChecks.self)
+    /// finds is reported as warnings (an error too: the shape is drawn, invalid). `touched` says, of
+    /// what a run wrote (the transaction's `pending`, and its shapes), which other shapes to look at,
+    /// on any board of the file: the run checks each as it found it and as it leaves it, by `check`,
+    /// and warns of each issue it brought to one (at most `Drawing.broughtLimit` shapes, then a count
+    /// and `rest`, a command that lists them all). It may name more shapes than change, never fewer.
+    /// Without it a run says only what is wrong with the shapes it wrote. At most one plugin checks shapes.
+    public mutating func drawChecks(touched: (@MainActor (ChangeSet, ShapeContext) -> Set<ShapeID>)? = nil, rest: String? = nil,
+                                    _ check: @escaping @MainActor (AnyShapeRecord, ShapeContext) -> [DrawIssue]) {
+        contribute(DrawCheck(check: check, touched: touched, rest: rest), to: DrawChecks.self)
     }
 
     /// Writes the strings of a script whose schema says `contentMediaType: mediaType`: `write` gets
@@ -410,10 +523,36 @@ extension Registry {
         return naming.namingProperty(kind, self) != nil || naming.isDerived(kind, self)
     }
 
+    /// Whether something makes connections for `canvas draw`, and so `drawConnection` can.
+    @MainActor public var drawsConnections: Bool { drawEdging?.kind(self) != nil }
+
+    /// A new connection from one shape to another, by id: the maker `canvas draw` makes `edge "A" -> "B"`
+    /// with, on the channel policy it picks (the first channel the start has a dot on that the end
+    /// takes; a plain connection when neither has ports), not inserted. Nil when nothing makes
+    /// connections or the maker refuses the pair (an end that can't be connected, no channel they
+    /// share), which `draw` would say with a reason. `shapes` is the board the connection is made
+    /// in, either end in it. `standingFor` is what an end stands for when it is a stand-in
+    /// (`EdgeRequest.fromStandsFor`, `toStandsFor`): the ends are then connected as what they stand for
+    /// is. `beside` names the connections already joining the pair, for a maker that draws a second
+    /// apart from the first; nil: the maker reads them.
+    @MainActor public func drawConnection(from: ShapeID, to: ShapeID, in shapes: ShapeContext,
+                                          standingFor: (from: [ShapeKind], to: [ShapeKind]) = ([], []),
+                                          beside: [ShapeID]? = nil) -> AnyShapeRecord? {
+        guard let edging = drawEdging, let kind = edging.kind(self) else { return nil }
+        let request = EdgeRequest(from: from, to: to, fromStandsFor: standingFor.from, toStandsFor: standingFor.to, beside: beside)
+        guard let made = try? edging.make(request, nil, shapes), made.kind == kind else { return nil }
+        return made
+    }
+
     /// What names shapes, if something does.
     public var drawNaming: DrawNaming? { contributions(to: DrawNames.self).first?.value }
     var drawEdging: DrawEdging? { contributions(to: DrawEdges.self).first?.value }
     var drawCheck: DrawCheck? { contributions(to: DrawChecks.self).first?.value }
+
+    /// What a shape with no title is called for a pill, if something says.
+    @MainActor func drawLabel(of record: AnyShapeRecord) -> String? {
+        contributions(to: DrawLabels.self).first?.value.label(record, self)
+    }
 
     var drawReporting: DrawReporting? { contributions(to: DrawReports.self).first?.value }
 

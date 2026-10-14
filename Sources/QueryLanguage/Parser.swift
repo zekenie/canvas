@@ -597,8 +597,14 @@ struct Parser {
         let takes = word == .between ? "two shapes, then edge types: a comma after them starts the types."
             : "one shape, then edge types: a comma after the shape starts them."
         let restStart = lexer.base + afterComma
+        // A title alone where the edge types go may name a type and not an edge type: the app says, once it has read the titles.
+        var premise: HintPremise?
+        if rest.selectors.count == 1, rest.selectors[0].compounds.count == 1, case .title(let title, _)? = rest.selectors[0].compounds[0].head,
+           rest.selectors[0].compounds[0].filters.isEmpty {
+            premise = HintPremise(.titledArgument(word: word.rawValue, anchors: anchors.map(Printer.complex), title: title), hint: nil)
+        }
         throw QueryError(.badArgument, ":\(word.rawValue) takes \(takes)", hint: ":\(word.rawValue)(\(rewritten.joined(separator: ", ")))",
-                         span: QuerySpan(offset: restStart, length: rest.selectors[rest.selectors.count - 1].span.end - restStart))
+                         premise: premise, span: QuerySpan(offset: restStart, length: rest.selectors[rest.selectors.count - 1].span.end - restStart))
     }
 
     /// `type-term ( | type-term )*`, leaving the position past the whitespace after it.

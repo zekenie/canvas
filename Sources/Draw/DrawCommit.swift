@@ -1,17 +1,21 @@
 import Canvas
 import CoreGraphics
 import DrawScript
+import Foundation
 import Geometry
+import Queries
 
 // Applying a placed script, in one transaction: the deletes, the shapes (each after every script
 // shape it's drawn inside or on, or in, new ones added on top, restated ones updated in place and
 // raised above a shape they're moved inside or on, or a zone they sit in where they land; a
-// container moved taking what it holds along); then, with every one where it goes, each put down as
+// container moved taking what it holds along); then the edges, through DrawEdges, against the board
+// as the transaction has it (so an end may be new), before the shapes are put down so that what puts them
+// down judges by a transaction that holds them (the room a shape takes can depend on an arrow, and
+// `Drawing.layOut()` made the same arrows to give it); then, with every one where it goes, each put down as
 // by hand, settled in or out of the containers it's over (`Transaction.settle`), those that hold no
-// shapes first, then the containers; then the edges, through DrawEdges, against the board
-// as the transaction has it (so an end may be new). Then what it did, read from the transaction's
-// document, and what it should say: each shape's issues (DrawChecks), pushes, nudges, near misses,
-// edges whose side faces away, shapes out of view. Anything wrong throws, and the transaction
+// shapes first, then the containers. Then what it did, read from the transaction's
+// document, and what it should say: each shape's issues (DrawChecks), the issues it brought to shapes it
+// did not write (DrawBrought.swift), pushes, nudges, near misses, edges whose side faces away, shapes out of view. Anything wrong throws, and the transaction
 // commits nothing.
 
 extension Drawing {
@@ -19,6 +23,8 @@ extension Drawing {
         var changes: [DrawChange] = []
         var warnings = notes
         let before = target.shapes
+        // The connections this run deletes, with where their rows are: a report may add members to these and warn.
+        var goneRows: [(row: Int, line: Int, name: String, record: AnyShapeRecord, written: JSONObject?)] = []
 
         // Deletes, and what they took.
         if !deleted.isEmpty { transaction.delete(deleted) }
@@ -31,7 +37,13 @@ extension Drawing {
         for delete in deletes {
             if let shape = delete.shape {
                 let title = Drawing.title(of: shape, names: names, naming: naming, registry: registry)
-                changes.append(DrawChange(line: delete.statement.line, did: .deleted, kind: shape.kind.rawValue, title: title))
+                // Its id is said when the statement named it so: the shape is gone, and nothing else would say which it was.
+                var row = DrawChange(line: delete.statement.line, did: .deleted, kind: shape.kind.rawValue, title: title)
+                // Not a stand-in the delete left with no arrow, that the statement did not name.
+                if case .delete(.shape(.id(let text))) = delete.statement.body, UUID(uuidString: text).map(ShapeID.init) == shape.id {
+                    row.id = shape.id.description
+                }
+                changes.append(row)
                 // What went with it, unasked: said, as a delete's connections are.
                 if delete.boardShapes > 0 {
                     let more = delete.boards > 1 ? ", and \(delete.boards - 1) more under it" : ""
@@ -41,10 +53,22 @@ extension Drawing {
                                                 "\(title.map(quoted) ?? named(shape)) held a board\(more): \(what) deleted with it"))
                 }
             }
+            // The ends a `delete edge` wrote as ids, as written: a row calls such an end so, and says which shape it was.
+            var writtenIDs: [ShapeID: String] = [:]
+            if case .delete(.edges(let from, let to, _, _)) = delete.statement.body {
+                for name in [from, to] { if case .id(let text) = name, let uuid = UUID(uuidString: text) { writtenIDs[ShapeID(uuid)] = name.written } }
+            }
             for connection in delete.connections {
-                var row = DrawChange(line: delete.statement.line, did: .deleted, kind: connection.record.kind.rawValue,
-                                     from: end(connection.from, in: before), to: end(connection.to, in: before))
+                let from = end(connection.from, in: before, written: writtenIDs), to = end(connection.to, in: before, written: writtenIDs)
+                var row = DrawChange(line: delete.statement.line, did: .deleted, kind: connection.record.kind.rawValue, from: from.name, to: to.name)
+                row.fromID = from.id?.description
+                row.toID = to.id?.description
                 row.via = (standIn(at: connection.from, in: before.document) ?? standIn(at: connection.to, in: before.document))?.kind.rawValue
+                // Nothing written for a `delete edge` that names no identity (a pair's every arrow goes); `[:]` for the rest.
+                var named = delete.shape != nil
+                if case .delete(let statement) = delete.statement.body, statement.writesIdentity { named = true }
+                goneRows.append((changes.count, delete.statement.line, "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(from.said) \(EdgeArrow.forward.rawValue) \(to.said)",
+                                 connection.record, named ? [:] : nil))
                 changes.append(row)
             }
             // One with an end left free joins no two shapes to name.
@@ -81,6 +105,30 @@ extension Drawing {
                 raise(item, in: &transaction)
             }
         }
+        // Edges, before the settle, so it judges by a transaction that holds them: an end gives its type's notes a
+        // row, and the settle reads the notes at the size they will have (`Drawing.layOut()` made the same
+        // arrows, laid in, to give `room`).
+        var edgeRows: [(EdgeItem, Connected)] = []
+        if let edging, let edgeKind, !edges.isEmpty {
+            var drawn = Drawing.connections(in: transaction.document, kind: edgeKind, edging: edging, registry: registry)
+            let place = Dictionary(drawn.enumerated().map { ($1.record.id, $0) }, uniquingKeysWith: { first, _ in first })
+            // The connections that join each pair, either way: the board's, then the run's own as it makes them
+            // (Topology holds neither of the run's), so the second of a pair is made apart from the first. The same
+            // list `provisionalConnections()` keeps (there by the arrows it lays out), so the arrow laid out is the
+            // arrow drawn.
+            var pairs = Drawing.pairArrows(of: drawn)
+            for edge in edges {
+                let row = try connect(edge, among: drawn, beside: pairs, edging: edging, kind: edgeKind, in: &transaction)
+                if row.did == .connected { pairs[[row.ends.from, row.ends.to], default: []].append(row.record.id) }
+                edgeRows.append((edge, row))
+                // An arrow a statement changed is the arrow the next statement finds: a plain one that took
+                // a type is no longer the pair's plain arrow, so a second typed statement draws its own
+                // (`provisionalConnections()` does the same).
+                if row.did == .reconnected, let index = place[row.record.id], let ends = edging.ends(row.record, registry) {
+                    drawn[index] = BoardConnection(record: row.record, from: ends.from, to: ends.to)
+                }
+            }
+        }
         // Put down: new, moved by a placement, or resized where it is; once there's a container on
         // the board to put them in or out of (settling looks at the whole board, so a board without
         // one isn't looked at for each). The shapes that hold none go down first, each into the
@@ -96,19 +144,12 @@ extension Drawing {
             }
         }
 
-        // Edges.
-        var edgeRows: [(EdgeItem, Connected)] = []
-        if let edging, let edgeKind, !edges.isEmpty {
-            let drawn = Drawing.connections(in: transaction.document, kind: edgeKind, edging: edging, registry: registry)
-            for edge in edges {
-                edgeRows.append((edge, try connect(edge, among: drawn, edging: edging, kind: edgeKind, in: &transaction)))
-            }
-        }
-
-        // What it did.
+        // What it did, and what it should say, read from one context taken once every write is done (a context
+        // is a snapshot, and anything worked out over one is worked out again for the next).
+        let shapes = transaction.shapes
         var changed: [(line: Int, name: String, record: AnyShapeRecord)] = []
         // Each row a plugin may report on: where it is in `changes`, the shape, what its statement wrote.
-        var reported: [(row: Int, line: Int, name: String, record: AnyShapeRecord, written: JSONObject?)] = []
+        var reported: [(row: Int, line: Int, name: String, record: AnyShapeRecord, written: JSONObject?, bothHeads: Bool)] = []
         var outside = 0
         for item in items {
             guard let now = transaction.document[item.record.id] else {
@@ -119,7 +160,7 @@ extension Drawing {
             // `canvas measure` says of the statement.
             let at = now.box.map { CGRect(origin: $0.origin, size: item.room) }
             var row = DrawChange(line: item.statement.line, did: .created, kind: item.kind.rawValue,
-                                 title: naming?.name(now, registry), at: at)
+                                 title: naming?.name(now, registry), id: now.id.description, at: at)
             if let existing = item.existing {
                 if item.rename != nil {
                     row.did = .renamed
@@ -141,12 +182,15 @@ extension Drawing {
             }
             if !item.pushedPast.isEmpty { row.pushedPast = item.pushedPast }
             if row.did != .unchanged { changed.append((item.statement.line, subject(of: item), now)) }
-            reported.append((changes.count, item.statement.line, subject(of: item), now, row.did == .unchanged ? nil : item.written))
+            reported.append((changes.count, item.statement.line, subject(of: item), now, row.did == .unchanged ? nil : item.written, false))
             changes.append(row)
         }
         for (edge, connected) in edgeRows {
             let record = connected.record
-            var row = DrawChange(line: edge.statement.line, did: connected.did, kind: record.kind.rawValue, from: edge.fromTitle, to: edge.toTitle)
+            var row = DrawChange(line: edge.statement.line, did: connected.did, kind: record.kind.rawValue, from: edge.fromName.plain, to: edge.toName.plain)
+            // An end the statement named by id says which shape that was.
+            row.fromID = edge.fromName.id?.description
+            row.toID = edge.toName.id?.description
             row.via = connected.via?.rawValue
             if connected.shared { row.shared = true }
             row.sharedWith = connected.sharedWith
@@ -156,10 +200,10 @@ extension Drawing {
             }
             let edgeName = "\(Keyword.edge.rawValue) \(edge.edge.written)"
             reported.append((changes.count, edge.statement.line, edgeName, record,
-                             connected.did == .unchanged ? nil : edge.settings.filter { registry.drawValueWriters[$0.key] != nil }))
+                             connected.did == .unchanged ? nil : edge.settings.filter { registry.drawValueWriters[$0.key] != nil }, edge.edge.bothHeads))
             changes.append(row)
             if connected.did != .unchanged { changed.append((edge.statement.line, edgeName, record)) }
-            warnings += facingAway(edge, ends: connected.ends, in: transaction.shapes)
+            warnings += facingAway(edge, ends: connected.ends, in: shapes)
         }
 
         // What it should say.
@@ -167,20 +211,40 @@ extension Drawing {
             guard let now = transaction.document[item.record.id] else { continue }
             warnings += namingWarnings(of: now, item, in: transaction)
         }
+        // What each shape's row says it still has to fix, for a warning not to say it again.
+        var rowsSay: [ShapeID: Set<String>] = [:]
         if let reporting = registry.drawReporting {
+            let declared = Set(reporting.members)
             for shape in reported {
-                let report = reporting.report(shape.record, shape.written, transaction.shapes)
-                if !report.problems.isEmpty { changes[shape.row].problems = report.problems }
+                let report = reporting.report(shape.record, shape.written, shapes, shape.bothHeads)
+                if !report.problems.isEmpty {
+                    changes[shape.row].problems = report.problems
+                    rowsSay[shape.record.id, default: []].formUnion(report.problems.map(\.message))
+                }
+                changes[shape.row].members = report.members.filter { declared.contains($0.key) }
                 for issue in report.warnings {
-                    warnings.append(DrawWarning(line: shape.line, "\(shape.name): \(issue.message)", severity: issue.isError ? .error : .warning, attribute: issue.field))
+                    warnings.append(DrawWarning(line: shape.line, shape.name, issue: issue))
+                }
+            }
+            // A deleted connection is a record the transaction no longer has: its members and warnings, no problems.
+            for gone in goneRows {
+                let report = reporting.report(gone.record, gone.written, shapes, false)
+                changes[gone.row].members = report.members.filter { declared.contains($0.key) }
+                for issue in report.warnings {
+                    warnings.append(DrawWarning(line: gone.line, gone.name, issue: issue))
                 }
             }
         }
         for (line, name, record) in changed {
-            for issue in issues(of: record, in: transaction.shapes) {
-                warnings.append(DrawWarning(line: line, "\(name): \(issue.message)", severity: issue.isError ? .error : .warning, attribute: issue.field))
+            // What the shape still needs is no warning of a shape the run wrote: its row's `problems` say it.
+            for issue in issues(of: record, in: shapes) where !issue.isIncomplete {
+                warnings.append(DrawWarning(line: line, name, issue: issue))
             }
         }
+        // And every issue the run brought to a shape it did not write (DrawBrought.swift).
+        // A shape a statement restated as it is has a row too: what its `problems` say it still needs is not said again.
+        warnings += brought(by: transaction, before: before, after: shapes, written: changed.map { ($0.line, $0.record.id) },
+                            restated: rowsSay)
         if outside > 0, !reveals {
             warnings.append(DrawWarning(line: nil, "\(outside) \(outside == 1 ? "shape" : "shapes") landed outside the view — --reveal brings them into view"))
         }
@@ -262,26 +326,37 @@ extension Drawing {
         var sharedWith: String?
     }
 
-    /// Draws one edge, or changes the one drawn (only what the statement names), or leaves it be. The
-    /// one drawn is any that's the edge: straight between its ends, or between one of them and a
-    /// stand-in for the other (`edgeMatches`); the edge not drawn yet is made between its ends, or, if
-    /// the run made a stand-in for it, between that and the end that stays.
-    private func connect(_ edge: EdgeItem, among drawn: [BoardConnection], edging: DrawEdging, kind: ShapeKind,
-                         in transaction: inout Transaction) throws(DrawError) -> Connected {
+    /// The arrow an edge statement makes: the connection as it will stand, found and changed as the statement
+    /// says, or new. It only reads: what `connect` puts in the transaction, and what `layOut()` lays in beforehand
+    /// (`Drawing.provisionalConnections()`), so the two are one function. `matches` are the pair's arrows the
+    /// statement addresses; `document` holds the ends (the transaction's, or the ends alone) and `shapes` is a
+    /// context over it. `pairs` names the connections that join each pair of shapes: a new arrow between a pair is
+    /// made beside them (`EdgeRequest.beside`), which the maker reads from `document`, so it holds them (the
+    /// transaction's does; the ends alone are given them), and the two callers hold the same ones.
+    func connection(for edge: EdgeItem, matches: [EdgeMatch], beside pairs: [Set<ShapeID>: [ShapeID]], edging: DrawEdging,
+                    kind: ShapeKind, in document: CanvasDocument, shapes: ShapeContext) throws(DrawError) -> (record: AnyShapeRecord, ends: (from: ShapeID, to: ShapeID), reversed: Bool) {
         let statement = edge.statement, written = "\(Keyword.edge.rawValue) \(edge.edge.written)"
-        let document = transaction.document
-        let matches = edgeMatches(from: edge.from, to: edge.to, bothHeads: edge.edge.bothHeads, among: drawn, in: document)
         let arrow = edge.edge.bothHeads ? EdgeArrow.both.rawValue : EdgeArrow.forward.rawValue
-        let pair = "\(quoted(edge.fromTitle)) \(arrow) \(quoted(edge.toTitle))"
+        let pair = "\(edge.fromName.said) \(arrow) \(edge.toName.said)"
         guard matches.count < 2 else {
-            throw DrawError(statement, .ambiguousEdge, "\(pair) is drawn \(matches.count) times",
-                            hint: "write delete edge \(pair) above this line to replace them")
+            let vocabulary = KindVocabulary(kind, in: registry)
+            let keys = edging.identity.filter(vocabulary.isAttribute).map { "\($0):" }
+            let hint: String
+            if let identity = edge.identity {
+                let said = edge.edge.attributes.filter { identity.written[$0.key] != nil }.map { "\($0.key): \($0.value.written)" }
+                hint = "write delete edge \(([pair] + said).joined(separator: " ")) above this line to replace them"
+            } else if keys.isEmpty {
+                hint = "write delete edge \(pair) above this line to replace them"
+            } else {
+                hint = "write \(keys.joined(separator: " or ")) to say which, or delete edge \(pair) above this line to replace them"
+            }
+            throw DrawError(statement, .ambiguousEdge, "\(pair) is drawn \(matches.count) times", hint: hint)
         }
         let match = matches.first
         // `via:` says what the edge goes through, which an arrow drawn another way isn't: it's drawn,
         // and left as it is, for the person to say if it should go.
         if let via = edge.edge.via, let match, match.standIn?.place != .to {
-            let how = match.standIn.map { "through \(indefinite($0.kind)) to \(quoted(edge.fromTitle))" } ?? "straight to \(quoted(edge.toTitle))"
+            let how = match.standIn.map { "through \(indefinite($0.kind)) to \(edge.fromName.said)" } ?? "straight to \(edge.toName.said)"
             throw DrawError(statement, .invalidValue, "the edge \(pair) is drawn \(how)",
                             hint: "write delete edge \(pair) above this line to draw it through \(indefinite(via))")
         }
@@ -297,16 +372,17 @@ extension Drawing {
         // Asked the way the edge is drawn, when `<->` finds one drawn the other way.
         let reversed = match?.reversed ?? false
         var request = EdgeRequest(from: ends.0, to: ends.1, fromSide: side(edge.edge.fromSide), toSide: side(edge.edge.toSide),
-                                  bothHeads: edge.edge.bothHeads, attributes: edge.attributes, fromName: quoted(edge.fromTitle),
-                                  toName: quoted(edge.toTitle), written: edge.edge.written,
-                                  fromStandsFor: standsFor(ends.0, in: document), toStandsFor: standsFor(ends.1, in: document))
+                                  bothHeads: edge.edge.bothHeads, attributes: edge.attributes, fromName: edge.fromName.said,
+                                  toName: edge.toName.said, written: edge.edge.written,
+                                  fromStandsFor: standsFor(ends.0, in: document), toStandsFor: standsFor(ends.1, in: document),
+                                  beside: pairs[[ends.0, ends.1]] ?? [])
         if reversed {
             swap(&request.fromSide, &request.toSide)
             swap(&request.fromName, &request.toName)
         }
         func make(changing existing: AnyShapeRecord?) throws(DrawError) -> AnyShapeRecord {
             do throws(DrawError) {
-                return try edging.make(request, existing, transaction.shapes)
+                return try edging.make(request, existing, shapes)
             } catch {
                 throw DrawError(error.message, reason: error.reason, hint: error.hint,
                                 line: statement.line, statement: statement.text)
@@ -319,10 +395,16 @@ extension Drawing {
         // The kind's own attributes it writes (an arrow's text), set as a shape's are. What the edge
         // says as written (its heads, by its arrow) has the last word: made again, the connection
         // keeps every one of them, or one says otherwise.
-        if !edge.settings.isEmpty {
+        // An arrow found by what the statement writes of its identity is that already, by meaning (a
+        // list of the same ids in another order): it isn't written again.
+        var edgeSettings = edge.settings
+        if let identity = edge.identity, let held = match?.connection.record, identity.matches(held) {
+            for key in identity.written.keys { edgeSettings[key] = nil }
+        }
+        if !edgeSettings.isEmpty {
             // A value a property's writer joins with what the arrow holds (the connection as the maker left it).
-            var settings = edge.settings
-            for (key, written) in edge.settings {
+            var settings = edgeSettings
+            for (key, written) in edgeSettings {
                 if let writer = registry.drawValueWriters[key] { settings[key] = writer.merge(written, made.propertiesJSON?[key]) }
             }
             do throws(ShapePropertiesError) {
@@ -331,16 +413,42 @@ extension Drawing {
                 throw DrawError(statement, .invalidValue, "\(written) can't have those attributes: \(error)")
             }
             let again = try make(changing: made).propertiesJSON ?? [:], set = made.propertiesJSON ?? [:]
-            if let key = edge.settings.keys.sorted().first(where: { again[$0] != set[$0] }) {
+            if let key = edgeSettings.keys.sorted().first(where: { again[$0] != set[$0] }) {
                 let value = edge.edge.attributes.first { $0.key == key }?.value.written ?? ""
                 throw DrawError(statement, .invalidValue, "\(written): \(key): \(value) isn't what the edge as written says",
                                 hint: "leave \(key): out; how the edge is written (its arrow, its sides) says it")
             }
         }
         // What it's bound to is on the board as the script leaves it: nothing would ever let go of one that isn't.
-        guard made.boundShapes(in: transaction.shapes).allSatisfy({ document[$0] != nil }) else {
+        guard made.boundShapes(in: shapes).allSatisfy({ document[$0] != nil }) else {
             throw DrawError(statement, .internal, "\(written) came out bound to a shape that isn't on the board")
         }
+        return (made, ends, reversed)
+    }
+
+    /// Draws one edge, or changes the one drawn (only what the statement names), or leaves it be. The
+    /// one drawn is any that's the edge: straight between its ends, or between one of them and a
+    /// stand-in for the other (`edgeMatches`); the edge not drawn yet is made between its ends, or, if
+    /// the run made a stand-in for it, between that and the end that stays.
+    private func connect(_ edge: EdgeItem, among drawn: [BoardConnection], beside pairs: [Set<ShapeID>: [ShapeID]], edging: DrawEdging,
+                         kind: ShapeKind, in transaction: inout Transaction) throws(DrawError) -> Connected {
+        let statement = edge.statement, written = "\(Keyword.edge.rawValue) \(edge.edge.written)"
+        let document = transaction.document
+        // The pair's arrows, and of them those the statement is about: all, if it writes no identity;
+        // else those that hold what it writes, or, when none does, the pair's one plain arrow (which
+        // takes it), or none (a new arrow).
+        let matches = addressedMatches(from: edge.from, to: edge.to, bothHeads: edge.edge.bothHeads, among: drawn, in: document, identity: edge.identity)
+        let (made, ends, reversed) = try connection(for: edge, matches: matches, beside: pairs, edging: edging, kind: kind, in: document,
+                                                      shapes: transaction.shapes)
+        let match = matches.first
+        #if DEBUG
+        // The arrow `layOut()` laid in is this one but for its id: a room that disagreed with the board would be a bug.
+        if let provisional = edge.provisional, match == nil {
+            assert(provisional.kind == made.kind && provisional.propertiesJSON == made.propertiesJSON
+                   && provisional.boundShapes(in: transaction.shapes) == made.boundShapes(in: transaction.shapes),
+                   "\(written) was laid out as another arrow than the one drawn")
+        }
+        #endif
         let through = (standIn(at: ends.0, in: document) ?? standIn(at: ends.1, in: document))?.kind
         let joined = reversed ? (from: ends.1, to: ends.0) : (from: ends.0, to: ends.1)
         let sharing = sharing(of: edge, match: match, among: drawn)
@@ -366,6 +474,13 @@ extension Drawing {
         return Connected(record: inserted, did: .connected, ends: joined, via: through, shared: sharing.shared, sharedWith: sharing.with)
     }
 
+    /// The connections that join each pair of shapes, either way.
+    static func pairArrows(of drawn: [BoardConnection]) -> [Set<ShapeID>: [ShapeID]] {
+        var pairs: [Set<ShapeID>: [ShapeID]] = [:]
+        for connection in drawn { pairs[[connection.from, connection.to], default: []].append(connection.record.id) }
+        return pairs
+    }
+
     /// Whether an edge's arrow runs to a stand-in shared with another (`share:`), and beside whom, if the
     /// edge named a host. A stand-in the run reused says so; for an edge drawn already (a run again) the
     /// stand-in it is drawn to is shared when an arrow from another shape runs to it too, and beside the
@@ -381,9 +496,13 @@ extension Drawing {
         switch share {
         case .any:
             return (!users.isEmpty, nil)
-        case .beside(let written):
+        case .beside(.title(let written)):
             guard let title = fold(written), boardShapes(called: title).contains(where: users.contains) else { return (false, nil) }
             return (true, title)
+        case .beside(.id(let text)):
+            guard let uuid = UUID(uuidString: text), users.contains(ShapeID(uuid)) else { return (false, nil) }
+            let host = target.document[ShapeID(uuid)].flatMap { Drawing.title(of: $0, names: names, naming: naming, registry: registry) }
+            return (true, host ?? ShapeName.id(text).written)
         }
     }
 
@@ -489,11 +608,18 @@ extension Drawing {
     }
 
     /// A deleted connection's end, as a row names it: a stand-in by what it stands for, the shape the
-    /// edge was written to.
-    private func end(_ id: ShapeID, in shapes: ShapeContext) -> String {
-        guard var record = shapes.shape(id) else { return "a shape" }
+    /// edge was written to. By its title; with none, by the id the statement wrote (`written`, with `id` the shape's), else
+    /// by where it is. `said` is the same for a message.
+    private func end(_ id: ShapeID, in shapes: ShapeContext, written: [ShapeID: String]) -> (name: String, said: String, id: ShapeID?) {
+        guard var record = shapes.shape(id) else { return ("a shape", quoted("a shape"), nil) }
         if standIn(at: id, in: shapes.document) != nil, let stoodFor = standsForShape(id, in: shapes.document) { record = stoodFor }
-        return Drawing.title(of: record, names: names, naming: naming, registry: registry) ?? Drawing.location(of: record, in: shapes)
+        let mark = written[record.id]
+        if let title = Drawing.title(of: record, names: names, naming: naming, registry: registry) {
+            return (title, quoted(title), mark == nil ? nil : record.id)
+        }
+        if let mark { return (mark, mark, record.id) }
+        let place = Drawing.location(of: record, in: shapes)
+        return (place, quoted(place), nil)
     }
 
     /// A side an edge names that faces away from the other end: the line still leaves (or arrives
@@ -511,8 +637,8 @@ extension Drawing {
             }
         }
         var said: [DrawWarning] = []
-        for (key, side, mine, other, me, them) in [(EdgeKey.from, edge.edge.fromSide, a, anchor(b, edge.edge.toSide), edge.fromTitle, edge.toTitle),
-                                                   (EdgeKey.to, edge.edge.toSide, b, anchor(a, edge.edge.fromSide), edge.toTitle, edge.fromTitle)] {
+        for (key, side, mine, other, me, them) in [(EdgeKey.from, edge.edge.fromSide, a, anchor(b, edge.edge.toSide), edge.fromName.said, edge.toName.said),
+                                                   (EdgeKey.to, edge.edge.toSide, b, anchor(a, edge.edge.fromSide), edge.toName.said, edge.fromName.said)] {
             guard let side else { continue }
             let away = switch side {
             case .left: other.x > mine.minX
@@ -525,9 +651,9 @@ extension Drawing {
             let (relation, facing): (String, EdgeSide) = abs(dx) >= abs(dy) ? (dx >= 0 ? ("right of", .right) : ("left of", .left))
                 : (dy >= 0 ? ("below", .bottom) : ("above", .top))
             guard facing != side else { continue }
-            let does = key == .from ? "leaves \(quoted(me)) by" : "arrives at \(quoted(me)) on"
+            let does = key == .from ? "leaves \(me) by" : "arrives at \(me) on"
             said.append(DrawWarning(line: edge.statement.line,
-                                    "\(key.rawValue): \(side.rawValue): \(quoted(them)) is \(relation) \(quoted(me)), so the line \(does) its \(facing.rawValue) side — name a side that faces \(quoted(them)), or leave \(key.rawValue): out"))
+                                    "\(key.rawValue): \(side.rawValue): \(them) is \(relation) \(me), so the line \(does) its \(facing.rawValue) side — name a side that faces \(them), or leave \(key.rawValue): out"))
         }
         return said
     }

@@ -1,5 +1,6 @@
 import Canvas
 import Draw
+import Types
 
 /// Draw's edges, in Connections: `canvas draw`'s edges are Connections' connections. An edge is
 /// what the connector draws (`registry.connectorKind`, while it makes connections without a drag),
@@ -14,6 +15,7 @@ public struct PortEdgesPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.drawEdges(kind: { registry in registry.makesConnections ? registry.connectorKind : nil },
                             attributes: [ChannelProperty.key.rawValue],
+                            identity: [IsAProperty.key.rawValue],
                             sides: { kind, registry in EdgeChannels.sides(of: kind, in: registry) },
                             ends: { record, registry in registry.connectionEnds(of: record) },
                             make: { request, existing, shapes throws(DrawError) in
@@ -149,7 +151,8 @@ enum EdgeChannels {
             channel = try pick(request, from: from, to: to, written: written, in: registry)
         }
         let made = registry.connection(ConnectionRequest(from: request.from, to: request.to, fromSide: request.fromSide?.port,
-                                                         toSide: request.toSide?.port, channel: channel, bothHeads: request.bothHeads),
+                                                         toSide: request.toSide?.port, channel: channel, bothHeads: request.bothHeads,
+                                                         beside: request.beside),
                                        existing: existing, in: shapes)
         guard let made else {
             throw refuse(.cannotConnect, "\(request.fromName) can't be connected to \(request.toName)\(channel.map { " on \($0)" } ?? "")",

@@ -1,13 +1,16 @@
 import Canvas
 import Foundation
 import Mentions
+import SwiftUI
 import TableOfContents
 import Topology
+import Types
 
 extension ShapeRegistrar where Definition == ArrowDefinition {
     /// The arrow's row in the table of contents, under the shape it starts from (as data-canvas's
-    /// edges): its label's first line, each mention with its shape's name as it is now, else "Arrow",
-    /// dimmed; a rename of a shape its label mentions remakes the row (`MentionRows.affected`). Where
+    /// edges): a relationship's is its relationship type's title in the type's color (the label stays on the
+    /// arrow, its chip and its card; `ArrowTypeRows` tells the list when the title changes); else its
+    /// label's first line, each mention with its shape's name as it is now, else "Arrow", dimmed; a rename of a shape its label mentions remakes the row (`MentionRows.affected`). Where
     /// it starts at a stand-in that stands for exactly one shape its record names, on the board the
     /// stand-in is on, the row is under that shape, where the arrow reads as starting from (Topology's
     /// resolved edge); else under the stand-in, as for any shape. `ArrowRowNesting` tells the list
@@ -17,8 +20,13 @@ extension ShapeRegistrar where Definition == ArrowDefinition {
             guard let start = arrow.props.start.binding?.shapeID else { return nil }
             return context.service(TopologyIndex.self)?.nestingParent(ofArrowStartingAt: start) ?? start
         }, affected: MentionRows.affected) { arrow, context in
-            ContentsLabel(Arrow.firstLine(of: context.plainText(arrow.props.text)) ?? "", placeholder: "Arrow", systemImage: ArrowStyle.symbol,
-                         color: context.color(of: arrow))
+            // An arrow of a relationship type is listed as its type, in the type's color.
+            if let type = ArrowTypeRows.relationshipType(of: arrow, context: context), let types = context.service(TypeIndex.self),
+               case .live(let title?) = types.name(of: TypeLink(type)) {
+                return ContentsLabel(title, placeholder: "Arrow", systemImage: ArrowStyle.symbol, color: Color(nsColor: types.look(of: type).row))
+            }
+            return ContentsLabel(Arrow.firstLine(of: context.plainText(arrow.props.text)) ?? "", placeholder: "Arrow", systemImage: ArrowStyle.symbol,
+                                 color: context.color(of: arrow))
         }
     }
 }
@@ -41,6 +49,42 @@ final class ArrowRowNesting {
             if !arrows.isEmpty { editor.contentsDidChange(for: arrows) }
         }
     }
+}
+
+/// Keeps a relationship's row in the table of contents titled by its relationship type: the row is made again when
+/// the arrow is given a type, loses it or is re-aimed (the relationships say which arrows) and when the type is
+/// renamed (the type index says which types), for the arrows of that type. A row reads the title when it is next
+/// drawn, and a keystroke in a type's title costs the arrows of the type a dictionary entry forgotten each.
+@MainActor
+final class ArrowTypeRows {
+    init(editor: CanvasEditor) {
+        // Registered after Types; a list without it has no relationships.
+        guard let relationships = editor.relationships, let types = editor.types else { return }
+        relationships.onChange { [weak editor] change in
+            guard let editor, !change.arrows.isEmpty else { return }
+            editor.contentsDidChange(for: change.arrows)
+        }
+        types.onChange { [weak editor, weak types] change in
+            guard let editor, let types else { return }
+            let renamed = change.types.intersection(types.graph.relationshipTypes)
+            guard !renamed.isEmpty else { return }
+            var arrows: Set<ShapeID> = []
+            for type in renamed { arrows.formUnion(types.instances(of: type)) }
+            if !arrows.isEmpty { editor.contentsDidChange(for: arrows) }
+        }
+    }
+
+    /// The first relationship type in the arrow's `is` list: the one that titles its row.
+    static func relationshipType(of arrow: ShapeRecord<Arrow>, context: ContentsContext) -> ShapeID? {
+        guard let list = arrow[IsAProperty.self], !list.isEmpty, let types = context.service(TypeIndex.self) else { return nil }
+        let marked = types.graph.relationshipTypes
+        return list.map(\.shape).first(where: marked.contains)
+    }
+}
+
+extension ArrowTypeRows: EditorService {
+    /// Nothing: showing another board changes no relationship.
+    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
 }
 
 extension ArrowRowNesting: EditorService {

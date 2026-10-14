@@ -20,7 +20,7 @@ private let wideStage = CGSize(width: 900, height: 520)
 
 /// Board 5's Order, as panel 2 reads it: filled, a gift with no note.
 private let filledOrder: JSONObject = [
-    "customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "shippingAddress": ["street": "12 Main St", "city": "Leeds"],
+    "customer": "Ann Lee", "shippingAddress": ["street": "12 Main St", "city": "Leeds"],
     "lineItems": [["product": "Mug", "quantity": 2], ["product": "Plate", "quantity": 1]],
     "status": "paid", "tags": ["gift", "mugs"], "gift": true,
 ]
@@ -50,7 +50,6 @@ let checkStates: [GalleryState] = [
     },
     GalleryState("Flow5-p2-gift-note-needed", answers: "Flow5 p2", "the filled Order, a gift: no ring, `add gift note` amber (a gift needs a note)", size: tallNote) { stage in
         stage.editor.offstage([FieldFixtures.order, FieldFixtures.person, FieldFixtures.address])
-        stage.editor.offstagePeople()
         stage.editor.instance(of: [FieldFixtures.orderID], words: "Order for Ann: two mugs, ships Friday.", filledOrder, at: CGPoint(x: 100, y: 40))
         stage.editor.selection = nil
         return canvas(stage)

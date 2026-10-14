@@ -52,10 +52,23 @@ final class LayoutSource {
     /// What this source asked afresh, for as long as it lives: nil for the editor's, which keeps in
     /// `sizes`. A context is a snapshot, so what it asked holds for it.
     let fresh: LaidOutSizes?
+    /// Every write of this source's reader that is not a move, in order (what `isChanged` reads as a set); empty
+    /// for the editor's own.
+    let writes: [ShapeID]
+    /// Which log this is: sources of one run, made as it went on, have the same number and each one's log
+    /// begins with the entries of the earlier; 0 for the editor's.
+    let run: Int
+
+    private static var runs = 0
+    /// A number no other log has had.
+    static func nextRun() -> Int {
+        runs &+= 1
+        return runs
+    }
 
     init(inputs: LayoutInputs, sizes: LaidOutSizes, lend: @escaping @MainActor (ObjectIdentifier) -> (any EditorService)?,
-         shape: @escaping @MainActor (ShapeID) -> AnyShapeRecord?, fileValues: @escaping @MainActor () -> FileValues,
-         isChanged: (@MainActor (ShapeID) -> Bool)? = nil) {
+         shape: @escaping @MainActor (ShapeID) -> AnyShapeRecord?, fileValues: @escaping @MainActor () -> FileValues, isChanged: (@MainActor (ShapeID) -> Bool)? = nil,
+         writes: [ShapeID] = [], run: Int = 0) {
         self.inputs = inputs
         self.sizes = sizes
         self.lend = lend
@@ -63,6 +76,8 @@ final class LayoutSource {
         self.fileValues = fileValues
         self.isChanged = isChanged
         fresh = isChanged == nil ? nil : LaidOutSizes()
+        self.writes = writes
+        self.run = run
     }
 
     /// The value set for a shape, nil for one this source's reader changed: the value was made from
@@ -151,6 +166,23 @@ public struct LayoutReading {
         guard let isChanged = source.isChanged else { return false }
         return isChanged(id) || source.shape(id) == nil
     }
+
+    /// The writes this reading's reader has made that are not moves, in order, each time a shape was added,
+    /// changed other than by moving it, put in or moved onto another board, or deleted (a shape written twice is
+    /// in it twice): what `isChanged` reads as a set. Append-only, and empty while `isCommitted`. A service that
+    /// keeps an answer over the changed shapes keeps how far it has read, and applies only the entries since
+    /// (`changes[cursor...]`) when it is asked again of a reading with the same `runID`, so a run of n shapes
+    /// written one at a time costs n applications, not n squared. A shape `shape(inFile:)` says nothing of is
+    /// deleted or never there.
+    public var changes: [ShapeID] { source.writes }
+
+    /// How many writes there are: `changes.count`.
+    public var writeCount: Int { source.writes.count }
+
+    /// Which log `changes` is a part of: readings of one transaction, taken as it went on, have the same
+    /// `runID` and the shorter one's `changes` is the start of the longer's; a reading that lays records in
+    /// (`layingOut(with:)`) has a `runID` of its own. 0 while `isCommitted`.
+    public var runID: Int { source.run }
 }
 
 extension ShapeContext {
@@ -193,7 +225,7 @@ extension ShapeContext {
 
 extension ShapeContext {
     /// The frame a shape of this context's document is laid out in, in world units: its box, or,
-    /// for a `LaidOutBox` kind, its box grown to what the kind says. Nil for a shape without a box,
+    /// for a `LaidOutBox` kind, the box's origin at the size the kind says (larger or smaller). Nil for a shape without a box,
     /// or not there. What anything that asks how much room a shape takes reads, in place of
     /// `record.box`; `record.box` is what is stored, and what a write changes.
     public func frame(of id: ShapeID) -> CGRect? {
@@ -228,13 +260,12 @@ extension ShapeContext {
         }
     }
 
-    /// The kept size at the box's origin, else the kind's, grown to hold the box, kept.
+    /// The kept size at the box's origin, else the kind's as it says it (larger or smaller than the box,
+    /// but finite and above zero on both sides, else the box's), kept.
     private func laidOut(_ box: CGRect, id: ShapeID, in layout: LayoutSource, asking ask: () -> CGSize?) -> CGRect {
         if let size = layout.keptSize(of: id) { return CGRect(origin: box.origin, size: size) }
         var size = box.size
-        if let asked = ask(), asked.width.isFinite, asked.height.isFinite {
-            size = CGSize(width: max(asked.width, box.width), height: max(asked.height, box.height))
-        }
+        if let asked = ask(), asked.width.isFinite, asked.height.isFinite, asked.width > 0, asked.height > 0 { size = asked }
         layout.keep(size, for: id)
         return CGRect(origin: box.origin, size: size)
     }
@@ -244,26 +275,27 @@ extension ShapeContext {
     /// afresh whatever the editor keeps for those ids (and so is anything this context's own source
     /// reads as changed: made from a transaction's `shapes`, a shape the transaction changed stays asked
     /// afresh). It keeps no geometry and no size, and never
-    /// touches what the editor keeps. Draw's, for a script's shapes. A context that lays nothing out
-    /// (a plain one) gives one that lays nothing out.
+    /// touches what the editor keeps. Draw's, for a script's shapes and the connections it draws, laid over the
+    /// editor's own context (`canvas measure` lays a script over the open file's, which it reads and never writes). A
+    /// context that lays nothing out (a plain one) gives one that lays nothing out.
     /// `removing` are shapes of the file the caller is deleting: read as not there.
     public func layingOut(with records: [AnyShapeRecord], removing removed: Set<ShapeID> = []) -> ShapeContext {
-        layingOut(with: records, removing: removed, alsoReading: nil)
-    }
-
-    /// `layingOut(with:removing:)`, also reading `beyond` for a shape neither the records nor this
-    /// context's file has: measure's, given a board (the open file's types, read, never written). Such
-    /// a shape is read as changed, so it is laid out afresh and kept by this context alone.
-    public func layingOut(with records: [AnyShapeRecord], removing removed: Set<ShapeID> = [],
-                          alsoReading beyond: (@MainActor (ShapeID) -> AnyShapeRecord?)?) -> ShapeContext {
         guard let layout else { return ShapeContext(document: storedDocument, registry: registry, camera: storedCamera) }
         let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        // What it lays in and removes are writes of its own, after those of the reader it lays over.
         let source = LayoutSource(inputs: layout.inputs, sizes: layout.sizes, lend: layout.lend,
-                                  shape: { byID[$0] ?? (removed.contains($0) ? nil : layout.shape($0) ?? beyond?($0)) },
-                                  fileValues: layout.fileValues, isChanged: { id in
-            byID[id] != nil || layout.isChanged?(id) == true
-                || (!removed.contains(id) && layout.shape(id) == nil && beyond?(id) != nil)
-        })
+                                  shape: { byID[$0] ?? (removed.contains($0) ? nil : layout.shape($0)) },
+                                  fileValues: layout.fileValues, isChanged: { id in byID[id] != nil || layout.isChanged?(id) == true },
+                                  writes: layout.writes + records.map(\.id) + Array(removed),
+                                  run: LayoutSource.nextRun())
         return ShapeContext(document: storedDocument, registry: registry, camera: storedCamera, index: nil, layout: source)
+    }
+
+    /// This context's reading of the file, over another board's shapes: lookups in `document` (another board as
+    /// this context's reader has it: `transaction.contents(of:)`, `editor.contents(of:)`), each laid out as this
+    /// context lays shapes out, its services and its `reading` the same. For what checks a shape on a board other
+    /// than the one this context is over, mid-transaction too. It keeps no geometry.
+    public func over(_ document: CanvasDocument) -> ShapeContext {
+        ShapeContext(document: document, registry: registry, camera: storedCamera, index: nil, layout: layout)
     }
 }

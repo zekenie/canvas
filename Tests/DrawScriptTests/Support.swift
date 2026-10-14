@@ -148,6 +148,7 @@ func draw(_ source: String, on board: Board = Board(), obstacleOrder: @escaping 
                     return fixedRef("\"\(title)\"") {
                         LayoutProblem.Fixed(rect: board.shapes[at].rect, gap: stays[title] ?? nil, obstacle: at)
                     }
+                case .id: return .fixed(-1)
                 case .board: return fixedRef("board") { LayoutProblem.Fixed(rect: boardBounds ?? .zero, word: .board) }
                 case .view: return fixedRef("view") { LayoutProblem.Fixed(rect: board.view ?? .zero, word: .view) }
                 }

@@ -37,7 +37,7 @@ public struct Registry {
     /// Those drawn as a line (`StrokedShape`), found once: a tinted outline of an open shape is
     /// stroked to cover its line, and asks only these.
     let strokedShapes: [ShapeKind: any StrokedShape]
-    /// Kinds laid out past their box (`LaidOutBox`), found once: every shape's frame asks.
+    /// Kinds laid out at another size than their box (`LaidOutBox`), found once: every shape's frame asks.
     let laidOutBoxes: [ShapeKind: any LaidOutBox]
     /// What provides each layout input (`registrar.layoutInput`), by the key's name, found once: a
     /// shape laid out asks for its inputs.
@@ -227,7 +227,7 @@ public struct Registry {
 
     public func definition(for kind: ShapeKind) -> (any ShapeDefinition)? { definitions[kind] }
 
-    /// Whether a kind's shapes may be laid out past their box (`LaidOutBox`).
+    /// Whether a kind's shapes may be laid out at another size than their box (`LaidOutBox`).
     public func isLaidOutBox(_ kind: ShapeKind) -> Bool { laidOutBoxes[kind] != nil }
 
     /// A shape's outline as its kind draws it (its kind's `indicatorPath`), in world units: on the

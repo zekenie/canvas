@@ -79,6 +79,16 @@ private func isLightCanvas(_ color: [Int]) -> Bool { color[0...2].allSatisfy { $
         // is 610 × 300, and without a layout it would be 610 × 100.
         expectEqual(picture.size(within: CGSize(width: 2000, height: 2000)), CGSize(width: 674, height: 364), "at 100%, with 64 in all")
     },
+    test("a box laid out smaller than it stores takes room in the picture by its smaller frame: the board's bounds, and so the picture's size, are the frame's") {
+        let gauge = ShapeRecord(Gauge(CGRect(x: 400, y: 100, width: 10, height: 10), width: 50, height: 30))
+        let stretch = ShapeRecord(Stretch(CGRect(x: 100, y: 100, width: 800, height: 400), gauge: gauge.id))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(gauge), AnyShapeRecord(stretch)]))
+        let registry = try Registry(plugins: [FixturesPlugin(), StretchesPlugin(shrinking: true)])
+        let picture = BoardPicture(file: file, registry: registry)
+        // The stretch is laid out 50 × 30 from (100, 100); with the gauge at its right the board is 310 × 30,
+        // and by its stored box it would be 800 × 400.
+        expectEqual(picture.size(within: CGSize(width: 2000, height: 2000)), CGSize(width: 374, height: 94), "at 100%, with 64 in all")
+    },
     test("it draws the whole board centered on the canvas, upright, each shape where the fit puts it") {
         // 500 × 300 at 100% in 564 × 364: the board from (32, 32), so the top-left box is at
         // (32, 32, 200 × 100) and the bottom-right one at (432, 232, 100 × 100).

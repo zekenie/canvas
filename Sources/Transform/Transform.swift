@@ -199,7 +199,7 @@ extension PluginRegistrar {
     ///
     ///     registrar.turnable(into: Subboard.self, through: ContainerChannel.self) { container, transaction in
     ///         guard transaction.turn(container.id, into: Subboard(frame: …)) else { return }
-    ///         transaction.move(container.held, toBoardOwnedBy: container.id)
+    ///         transaction.move(container.inside, toBoardOwnedBy: container.id)
     ///     }
     ///
     /// It brings Turn into `label` to the context menu of any shapes that can all turn into `P` (`label` is what

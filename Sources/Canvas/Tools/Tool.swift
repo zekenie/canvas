@@ -49,6 +49,11 @@ public protocol Session: AnyObject {
     /// is, whenever the camera moves (a scroll, a pinch, the edge's own), so what it drags stays
     /// under the pointer.
     var scrollsAtEdges: Bool { get }
+    /// The shapes this drag is still changing (an arrow whose end it is moving), for a service that
+    /// would count them as they are before the drag or not at all until it ends. It is the drag's
+    /// until the press ends: `editor.session` is still this session when `end` and `cancel` run, so
+    /// it names them then too. Empty for a drag that changes none such.
+    var touching: Set<ShapeID> { get }
     func drag(_ pointer: Pointer, in editor: CanvasEditor)
     /// The button came up. The editor clears the session afterwards unless this started another.
     func end(_ pointer: Pointer, in editor: CanvasEditor)
@@ -64,6 +69,7 @@ extension Session {
     public func cursor(in editor: CanvasEditor) -> CanvasCursor? { nil }
     public var hidesOutlines: Bool { false }
     public var scrollsAtEdges: Bool { false }
+    public var touching: Set<ShapeID> { [] }
     public func end(_ pointer: Pointer, in editor: CanvasEditor) {}
     public func cancel(in editor: CanvasEditor) -> Bool { false }
     public func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor) {}

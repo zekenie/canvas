@@ -47,56 +47,12 @@ enum FieldCheckWords {
         }
     }
 
-    /// What a pointer's type is called in a line: its name, else "its type".
-    private static func typeName(_ type: TypeLinkName) -> String {
-        switch type {
-        case .live(let title), .missing(let title): title ?? "its type"
-        }
-    }
-
-    /// `customer isn’t a link to a Person`; `… to a note of its type` for a type with no name.
-    static func notALink(_ place: [String], to type: TypeLinkName) -> String {
-        let name = typeName(type)
-        return place.joined(separator: separator) + " isn’t a link to " + (name == "its type" ? "a note of its type" : "a \(name)")
-    }
-
-    /// `customer links to “Ann Lee”, which is gone`; `a note` for a link that holds no name.
-    static func linkGone(_ place: [String], stored: String) -> String {
-        place.joined(separator: separator) + " links to “\(stored.isEmpty ? "a note" : stored)”, which is gone"
-    }
-
-    /// `customer links to “Ann Lee”, which isn’t a Person`; `which isn’t of its type` for a type with no name.
-    static func linkNotOne(_ place: [String], shown: String, type: TypeLinkName) -> String {
-        let name = typeName(type)
-        return place.joined(separator: separator) + " links to “\(shown)”, which isn’t " + (name == "its type" ? "of its type" : "a \(name)")
-    }
-
     /// A validator's detail without its closing full stop: it ends a problem's line.
     static func trimmed(_ detail: String) -> String { detail.hasSuffix(".") ? String(detail.dropLast()) : detail }
 }
 
-/// Where a list's schema holds a pointer: the steps from the note's values to its value (a key for a field
-/// or a member, any index for an item of a list), and the type it points at.
-struct LinkSite: Hashable {
-    enum Step: Hashable { case key(String), anyIndex }
-    var steps: [Step]
-    var type: ShapeID
-}
-
-/// What a pointer's target is, to the type it points at.
-public enum LinkState: Sendable {
-    /// A note whose chain reaches the type.
-    case one
-    /// A note that is not one: it lost the type, stopped building on it, or became a type.
-    case notOne
-    /// No shape of the file has the id.
-    case gone
-    /// A shape the check can't read (kept aside): neither warned nor wrong.
-    case elsewhere
-}
-
 /// What a list of types checks a value against, public for what asks it without an editor's service: a check
-/// over the file's types and a state for each pointer's target (`linkProblems`).
+/// over the file's types.
 @MainActor
 public final class FieldChecker {
     let types: [ShapeID]
@@ -112,15 +68,6 @@ public final class FieldChecker {
     private let rowIndex: [String: Int]
     /// The check of no values: every untouched note of the list shares it. Kept with the rename count it was made at.
     private var emptyKept: (names: Int, check: FieldCheck)?
-    /// Where the list's schema holds pointers, at any depth: empty for most lists, so a check of a note with
-    /// no pointer costs nothing more.
-    let linkSites: [LinkSite]
-    /// The type of each pointer the list's schema holds, sites or not, and whether it was a type then: one that
-    /// goes or comes back makes the checker stale, as its sites are no longer the ones it would read.
-    private let linkTypes: [ShapeID: Bool]
-    /// Whether the list's schema holds a pointer.
-    public var holdsLinks: Bool { !linkSites.isEmpty }
-
     /// Most problems one answer keeps, however many a note has; the cap keeps one of each class.
     static let capacity = 100
 
@@ -144,12 +91,10 @@ public final class FieldChecker {
             (rule.source, validator(SchemaValue.object(rule.members).json.objectValue ?? [:]))
         }
         inputs = resources.met
-        (linkSites, linkTypes) = Self.linkSites(of: resolved, book: book)
     }
 
-    /// The types a `$ref` of the list's schemas met when it was made, and the types its pointers point at, gone or
-    /// not: what else the checker is a function of.
-    var referencedTypes: [ShapeID] { Array(inputs.keys) + linkTypes.keys.filter { inputs[$0] == nil } }
+    /// The types a `$ref` of the list's schemas met when it was made, gone or not: what else the checker is a function of.
+    var referencedTypes: [ShapeID] { Array(inputs.keys) }
 
     /// The check of no values, shared by every untouched note of the list. A rule across fields that fails on an
     /// empty note says its type's name, and a rename leaves this checker current: that answer is made again
@@ -163,105 +108,10 @@ public final class FieldChecker {
 
     private static func object(_ value: JSONValue) -> JSONObject { value.objectValue ?? [:] }
 
-    // MARK: Pointers
-
-    /// The deepest a pointer is looked for (a group in a group, another type's fields in another's).
-    private static let linkDepth = 16
-
-    /// The pointers of the list's fields: a top-level field, a member of a group or of another type's fields,
-    /// an item of a list of groups or of pointers, at any depth, another type's fields followed once on any
-    /// path. A pointer to a type that isn't one is left out: its values are kept and not checked. An
-    /// `either`'s branches aren't followed: a pointer there is an `Other`. With the sites, every pointer's type
-    /// and whether it was a type, left out or not.
-    private static func linkSites(of resolved: Resolved, book: FieldBook) -> ([LinkSite], [ShapeID: Bool]) {
-        var sites: [LinkSite] = []
-        var types: [ShapeID: Bool] = [:]
-        func site(_ steps: [LinkSite.Step], _ type: ShapeID) {
-            let isType = types[type] ?? book.isType(type)
-            types[type] = isType
-            if isType { sites.append(LinkSite(steps: steps, type: type)) }
-        }
-        func collect(_ field: Resolved.Field, _ steps: [LinkSite.Step], _ depth: Int, _ following: Set<ShapeID>) {
-            guard depth < linkDepth else { return }
-            switch book.kind(of: field) {
-            case .pointer(let type):
-                site(steps, type)
-            case .pointers(let type):
-                site(steps + [.anyIndex], type)
-            case .group:
-                for member in book.members(of: field) { collect(member, steps + [.key(member.field.name)], depth + 1, following) }
-            case .typeFields(let type):
-                guard !following.contains(type) else { return }
-                for member in book.members(of: field) { collect(member, steps + [.key(member.field.name)], depth + 1, following.union([type])) }
-            case .listOfGroups:
-                if let item = book.item(of: field) { collect(item, steps + [.anyIndex], depth + 1, following) }
-            case .listOfTypeFields(let type):
-                guard !following.contains(type), let item = book.item(of: field) else { return }
-                collect(item, steps + [.anyIndex], depth + 1, following.union([type]))
-            default:
-                break
-            }
-        }
-        for field in resolved.fields { collect(field, [.key(field.field.name)], 0, []) }
-        return (sites, types)
-    }
-
-    /// What the pointers in `values` say: each site's values walked (an index for each item of a list), by
-    /// `state` of each target (given the type it points at). A value that is not exactly one token is wrong, a
-    /// token whose target is gone a warning, one that is no longer a note of the type wrong. Pure: the state is
-    /// handed in, so a check over a reading says the same of a note the editor doesn't hold.
-    public func linkProblems(in values: FieldValues, state: (_ target: ShapeID, _ type: ShapeID) -> LinkState) -> [FieldProblem] {
-        guard !linkSites.isEmpty else { return [] }
-        var problems: [FieldProblem] = []
-        let root = JSONValue.object(values.values)
-        for site in linkSites {
-            // A type that has gone since the sites were read: its values are kept and not checked.
-            guard book.isType(site.type) else { continue }
-            let type = TypeLinkName.live(book.name(of: site.type))
-            func visit(_ value: JSONValue, _ steps: ArraySlice<LinkSite.Step>, _ path: [FieldPath.Step]) {
-                guard let step = steps.first else {
-                    let path = FieldPath(path), place = place(of: path, values: values)
-                    guard let link = FieldLink(value) else {
-                        problems.append(FieldProblem(path: path, kind: .wrong, keyword: "link", place: place, message: FieldCheckWords.notALink(place, to: type)))
-                        return
-                    }
-                    switch state(link.target, site.type) {
-                    case .one, .elsewhere:
-                        break
-                    case .gone:
-                        problems.append(FieldProblem(path: path, kind: .warning, keyword: "link", place: place, message: FieldCheckWords.linkGone(place, stored: link.stored)))
-                    case .notOne:
-                        problems.append(FieldProblem(path: path, kind: .wrong, keyword: "link", place: place,
-                                                     message: FieldCheckWords.linkNotOne(place, shown: book.shown(link), type: type)))
-                    }
-                    return
-                }
-                switch (step, value) {
-                case (.key(let key), .object(let members)):
-                    if let member = members[key] { visit(member, steps.dropFirst(), path + [.key(key)]) }
-                case (.anyIndex, .array(let items)):
-                    for (number, item) in items.enumerated() { visit(item, steps.dropFirst(), path + [.index(number)]) }
-                default:
-                    break
-                }
-            }
-            visit(root, site.steps[...], [])
-        }
-        return problems
-    }
-
-    /// The validator's answer and the pointers' together, as `check(_:)` would have made one: deduped, capped
-    /// and sorted.
-    func merged(_ base: FieldCheck, with links: [FieldProblem]) -> FieldCheck {
-        guard !links.isEmpty else { return base }
-        return FieldCheck(problems: sorted(capped(deduped(base.problems + links))))
-    }
-
-    /// Whether the resolution, everything the resolver gave and which pointers' types are types are what
-    /// they were: then so are the validators, the sites, and every answer this made.
+    /// Whether the resolution and everything the resolver gave are what they were: then so are the validators and
+    /// every answer this made.
     func isCurrent() -> Bool {
         guard book.fields(types: types) == resolved else { return false }
-        for (type, wasType) in linkTypes where book.isType(type) != wasType { return false }
         let resources = Resources(book: book)
         for (type, input) in inputs where resources.input(for: type) != input { return false }
         return true
@@ -397,10 +247,10 @@ public final class FieldChecker {
 
     /// A field asked for by the root and by a rule is one problem; two wrongs at one path are two.
     private func deduped(_ problems: [FieldProblem]) -> [FieldProblem] {
-        var neededPaths: Set<FieldPath> = [], seen: Set<FieldProblem> = []
+        var neededPlaces: Set<FieldLocus> = [], seen: Set<FieldProblem> = []
         return problems.filter { problem in
             switch problem.kind {
-            case .needed: neededPaths.insert(problem.path).inserted
+            case .needed: neededPlaces.insert(problem.locus).inserted
             case .wrong, .warning: seen.insert(problem).inserted
             }
         }

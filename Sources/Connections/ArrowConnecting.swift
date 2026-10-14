@@ -58,12 +58,16 @@ extension ShapeContext {
     public func canBindArrow(to id: ShapeID) -> Bool { Connectables(shapes: self)[id] != nil }
 }
 
-/// A drag drawing an arrow for a port's drag (`beginArrow`): where its end may bind, and
-/// what finishes it once it has.
+/// A drag drawing an arrow for a port's drag (`beginArrow`): where its end may bind, what finishes it once it
+/// has, and what is told once the arrow is finished.
 @MainActor
 struct ArrowConnecting {
     let canBind: @MainActor (AnyShapeRecord) -> Bool
     let complete: @MainActor (inout AnyShapeRecord, ShapeID) -> Void
+    /// Called with the arrow after the transaction that completed it and before the press ends, so what it
+    /// changes is the press's step (`ArrowPortsPlugin` has Types read what the arrow is and give it a type).
+    /// Nil: only the relationships are told the drag is over (`connectionReleased`).
+    var finished: (@MainActor (ShapeID) -> Void)? = nil
 }
 
 extension CanvasEditor {
@@ -75,18 +79,19 @@ extension CanvasEditor {
     /// the shape, aiming at its center (imprecise), and its end at `origin` (world units), then
     /// following the pointer and binding by tldraw's rules, as a re-aimed end does, but only to
     /// shapes `canBind` accepts, looking through the rest. Released bound, `complete` finishes it (in the transaction that does, with the shape
-    /// its end is bound to); released free, or on Escape, it's deleted, so nothing is drawn. The
+    /// its end is bound to) and `finished` hears of it, still in the press; released free, or on Escape, it's deleted, so nothing is drawn. The
     /// selection and the tool are left alone. Returns the session that drags it, for the caller to
     /// hand the drag to; nil if an arrow can't bind to `shape`, or the board takes no shapes
     /// (`isBoardReadOnly`: its transaction would drop the arrow).
     func beginArrow(from shape: ShapeID, at origin: CGPoint, canBind: @escaping @MainActor (AnyShapeRecord) -> Bool,
-                    complete: @escaping @MainActor (inout AnyShapeRecord, ShapeID) -> Void) -> (any Session)? {
+                    complete: @escaping @MainActor (inout AnyShapeRecord, ShapeID) -> Void,
+                    finished: (@MainActor (ShapeID) -> Void)? = nil) -> (any Session)? {
         guard !isBoardReadOnly, canBindArrow(to: shape), let targeting = service(ArrowTargeting.self) else { return nil }
         targeting.cancelPreciseTimer()
         let start = ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)
         let arrow = ShapeRecord(Arrow(start: .bound(start), end: .free(origin)))
         transact("Add Arrow") { $0.insert(arrow) }
         return ArrowHandleDragSession(arrowID: arrow.id, handle: .terminal(.end), handleOffset: .zero, isPrecise: false,
-                                      targeting: targeting, connecting: ArrowConnecting(canBind: canBind, complete: complete))
+                                      targeting: targeting, connecting: ArrowConnecting(canBind: canBind, complete: complete, finished: finished))
     }
 }

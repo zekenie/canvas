@@ -39,8 +39,9 @@ public struct Statement: Sendable, Equatable {
 public struct ShapeStatement: Sendable, Equatable {
     /// The first word: a kind, for the caller to find.
     public var word: String
-    /// Its title as written (escapes undone), or nil for an untitled shape. Never blank.
-    public var title: String?
+    /// What it is called as written: a title (escapes undone, never blank), or, for a shape that has none, an id (`#7C1E…`) that
+    /// names a shape the file already has; nil for an untitled shape.
+    public var name: ShapeName?
     /// `size:`, from the statement or a style: both sides, or a width alone.
     public var size: Size?
     /// `gap:`, from the statement or a style.
@@ -56,14 +57,14 @@ public struct ShapeStatement: Sendable, Equatable {
     public var attributes: [Attribute]
     /// Where it goes, in the order written.
     public var clauses: [Clause]
-    /// `in "X"`: the title of the shape it goes in (a subboard, whose board it's drawn on), as
+    /// `in "X"`: the name of the shape it goes in (a subboard, whose board it's drawn on), as
     /// written. Not a placement: it says which shape holds it, not where it sits.
-    public var container: String?
+    public var container: ShapeName?
 
-    public init(word: String, title: String? = nil, size: Size? = nil, gap: Gap? = nil, overlapAllowed: Bool = false,
-                newTitle: String? = nil, styles: [String] = [], attributes: [Attribute] = [], clauses: [Clause] = [], container: String? = nil) {
+    public init(word: String, title: String? = nil, name: ShapeName? = nil, size: Size? = nil, gap: Gap? = nil, overlapAllowed: Bool = false,
+                newTitle: String? = nil, styles: [String] = [], attributes: [Attribute] = [], clauses: [Clause] = [], container: ShapeName? = nil) {
         self.word = word
-        self.title = title
+        self.name = name ?? title.map { .title($0) }
         self.size = size
         self.gap = gap
         self.overlapAllowed = overlapAllowed
@@ -73,14 +74,51 @@ public struct ShapeStatement: Sendable, Equatable {
         self.clauses = clauses
         self.container = container
     }
+
+    /// Its title as written, if it is named by one (nil for an untitled shape, and for one named by its id).
+    public var title: String? { name?.title }
+}
+
+/// How a statement names a shape the file has: by its title, in quotes, or, for a shape that has none, by its id, in the
+/// query language's spelling (`#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`). The language keeps an id as text and checks only its
+/// shape (8-4-4-4-12 hex digits); what it names, and whether any shape has it, is for the caller.
+public enum ShapeName: Sendable, Hashable, ExpressibleByStringLiteral {
+    /// The shape called this, as written (escapes undone).
+    case title(String)
+    /// The shape with this id, as written after the `#`.
+    case id(String)
+
+    public init(stringLiteral title: String) { self = .title(title) }
+
+    public var title: String? { if case .title(let title) = self { title } else { nil } }
+    public var id: String? { if case .id(let id) = self { id } else { nil } }
+
+    /// As a script writes it: `"Hub"`, `#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`.
+    public var written: String {
+        switch self {
+        case .title(let title): quote(title)
+        case .id(let id): "\(Self.idMark)\(id)"
+        }
+    }
+
+    /// The character an id starts with.
+    public static let idMark: Character = "#"
+
+    /// Whether `text` (without the `#`) is an id's shape: 36 characters, hex digits in groups of 8, 4, 4, 4 and 12.
+    public static func isID(_ text: some StringProtocol) -> Bool {
+        guard text.count == 36 else { return false }
+        return text.enumerated().allSatisfy { index, character in
+            [8, 13, 18, 23].contains(index) ? character == "-" : character.isASCII && character.isHexDigit
+        }
+    }
 }
 
 /// `edge "<a>" -> "<b>" { attribute }`: a connection from one shape to another.
 public struct EdgeStatement: Sendable, Equatable {
-    /// The title of the shape it starts from (for `"B" <- "A"`, "A").
-    public var from: String
-    /// The title of the shape it ends on.
-    public var to: String
+    /// The name of the shape it starts from (for `"B" <- "A"`, "A").
+    public var from: ShapeName
+    /// The name of the shape it ends on.
+    public var to: ShapeName
     /// As written: `->`, `<-` (the ends written the other way round), or `<->` (heads at both ends).
     public var arrow: EdgeArrow
     /// `from:`, the side its start aims at.
@@ -97,7 +135,7 @@ public struct EdgeStatement: Sendable, Equatable {
     /// `PortEdgesPlugin`).
     public var attributes: [Attribute]
 
-    public init(from: String, to: String, arrow: EdgeArrow = .forward, fromSide: EdgeSide? = nil, toSide: EdgeSide? = nil,
+    public init(from: ShapeName, to: ShapeName, arrow: EdgeArrow = .forward, fromSide: EdgeSide? = nil, toSide: EdgeSide? = nil,
                 via: String? = nil, share: EdgeShare? = nil, attributes: [Attribute] = []) {
         self.from = from
         self.to = to
@@ -114,7 +152,7 @@ public struct EdgeStatement: Sendable, Equatable {
 
     /// Its ends as written: `"A" -> "B"`, `"B" <- "A"`.
     public var written: String {
-        arrow == .backward ? "\(quote(to)) \(arrow.rawValue) \(quote(from))" : "\(quote(from)) \(arrow.rawValue) \(quote(to))"
+        arrow == .backward ? "\(to.written) \(arrow.rawValue) \(from.written)" : "\(from.written) \(arrow.rawValue) \(to.written)"
     }
 }
 
@@ -122,16 +160,18 @@ public struct EdgeStatement: Sendable, Equatable {
 public enum EdgeShare: Sendable, Equatable {
     /// `share: true`: one already there for the same end, in the start's container.
     case any
-    /// `share: "A"`: the one beside the shape titled A (as written), whose own arrow goes into it.
-    case beside(String)
+    /// `share: "A"`: the one beside the shape named A (a title as written, or an id), whose own arrow goes into it.
+    case beside(ShapeName)
 }
 
 /// `delete "<title>"`, or `delete edge "<a>" -> "<b>"`.
 public enum DeleteStatement: Sendable, Equatable {
-    /// The shape with this title, and every connection with an end on it.
-    case shape(title: String)
-    /// The connections from one shape to another; either way round for `<->`.
-    case edges(from: String, to: String, eitherWay: Bool)
+    /// The shape with this name, and every connection with an end on it.
+    case shape(ShapeName)
+    /// The connections from one shape to another; either way round for `<->`. `attributes` are the
+    /// keys that tell two connections of one pair apart (`delete edge "A" -> "B" is: "T"`), as
+    /// written, for the caller to check: the language knows no kind.
+    case edges(from: ShapeName, to: ShapeName, eitherWay: Bool, attributes: [Attribute] = [])
 }
 
 /// `style <name> attribute { attribute }`: attributes to give any shape that names it.
@@ -261,6 +301,8 @@ public struct Target: Sendable, Hashable {
     public enum Box: Sendable, Hashable {
         /// The shape with this title (as written; the caller folds it).
         case title(String)
+        /// The shape with this id (as written, after the `#`).
+        case id(String)
         /// `board`: the bounds of every shape the script doesn't move.
         case board
         /// `view`: the part of the board in the window.
@@ -275,10 +317,19 @@ public struct Target: Sendable, Hashable {
         self.part = part
     }
 
+    /// Whether it names a shape (by its title or its id) rather than a word of the language.
+    public var isName: Bool {
+        switch box {
+        case .title, .id: true
+        case .board, .view: false
+        }
+    }
+
     /// As a script writes it: `"Hub"`, `"Hub" top-right`, `view top-right`.
     public var written: String {
         let named = switch box {
         case .title(let title): quote(title)
+        case .id(let id): ShapeName.id(id).written
         case .board: PlaceWord.board.rawValue
         case .view: PlaceWord.view.rawValue
         }

@@ -18,17 +18,12 @@
 ///   "description": …}`, in the order they're offered: the type names, the formats (first the six the
 ///   model is taught, `SchemaPrompts`) and the content encodings (those validation §8.3 points to,
 ///   RFC 4648's and quoted-printable; none for the identity encoding, which is no `contentEncoding`),
-///   the last two with a branch that lets any other string through. Media types (a link to a note, `linkMediaType`, first) and `$schema`'s URI
+///   the last two with a branch that lets any other string through. Media types and `$schema`'s URI
 ///   are `examples`.
 /// - One annotation isn't JSON Schema's: `"x-canvas-when": {"type": ["string"]}` on a keyword says
 ///   it matters only in an object whose member `type` is, or lists, one of those (`minLength` on a
 ///   string). A keyword without one matters whatever the type.
 public enum MetaSchema {
-    /// The media type of a string that is a link to a note, the first of `contentMediaType`'s examples.
-    /// A pointer field is written with it (`FieldKind.pointerMediaType` is this constant): its home is
-    /// here, under the document that offers it, since nothing under a field may be named from here.
-    public static let linkMediaType = "text/x-canvas-link"
-
     /// The document, as JSON.
     public static let text = ##"""
     {
@@ -248,7 +243,7 @@ public enum MetaSchema {
           "description": "Media type of the string's contents",
           "x-canvas-when": { "type": ["string"] },
           "type": "string",
-          "examples": ["\##(linkMediaType)", "application/json", "text/plain", "text/html", "text/markdown", "text/csv", "application/xml",
+          "examples": ["application/json", "text/plain", "text/html", "text/markdown", "text/csv", "application/xml",
                        "image/png", "image/jpeg", "application/pdf", "application/jwt"]
         },
         "contentEncoding": {

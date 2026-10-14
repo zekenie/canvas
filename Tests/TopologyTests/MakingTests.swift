@@ -105,11 +105,28 @@ extension PhantomDefinition: ShapeDefinition {
 /// way to be made, and a phantom whose rule says how but that no tool places.
 struct EchoesPlugin: CanvasPlugin {
     var needs: String? = "ajar"
+    var fulfils = true
+    /// A fulfilling that changes the copy, then answers this: false, or true without having made it admissible.
+    var changesThenAnswers: Bool?
     var id: PluginID { "echoes" }
 
     func register(into registrar: inout PluginRegistrar) {
+        var fulfilling: (@MainActor (inout AnyShapeRecord, Registry) -> Bool)?
+        if let answer = changesThenAnswers {
+            fulfilling = { record, _ in
+                record.meta[Ajar.self] = false
+                return answer
+            }
+        } else if fulfils {
+            fulfilling = { record, _ in
+                record.meta[Ajar.self] = true
+                return true
+            }
+        }
         registrar.shape(EchoDefinition()) { echo in
             echo.standsIn(admitting: { target, _ in target.meta[Ajar.self] == true }, needs: needs,
+                          fulfilling: fulfilling,
+                          calls: { shape, _ in shape.props.says.isEmpty ? nil : shape.props.says },
                           makes: { props, target, label in
                               props.cites = Citation(target)
                               props.says = label
@@ -200,6 +217,46 @@ func ajar(_ id: ShapeID) -> AnyShapeRecord {
         // The kind's hook gets the blank, and the label as given, however long.
         let long = try require(standIns.make(Echo.kind, standingFor: target, label: String(repeating: "w", count: 40)))
         expectEqual(long.typed(as: Echo.self)?.props.frame.width, Echo.width(saying: String(repeating: "w", count: 40)))
+    },
+    test("what a stand-in calls what it stands for is its kind's word for it, or nothing: a kind that says nothing, one that calls it nothing, a shape that doesn't stand in") {
+        let target = ShapeID()
+        let h = try graph(CanvasFile(root: board(ajar(target))), more: [EchoesPlugin()])
+        let standIns = h.editor.registry.standIns
+        let made = try require(standIns.make(Echo.kind, standingFor: target, label: "Target"))
+        expectEqual(standIns.calls(made), "Target")
+        expectEqual(standIns.calls(try require(standIns.make(Echo.kind, standingFor: target, label: ""))), nil, "called nothing")
+        expectEqual(standIns.calls(AnyShapeRecord(ShapeRecord(Mute(unit, cites: target)))), nil, "the mute says nothing")
+        expectEqual(standIns.calls(try require(h.editor.document[target])), nil, "a box doesn't stand in")
+    },
+    test("a shape is fulfilled by the kind's own word, on a copy kept only if the kind then admits it: an admitted one is left, one the kind can't make so is left") {
+        let shut = ShapeID(), open = ShapeID()
+        let h = try graph(CanvasFile(root: board(box(shut), ajar(open))), more: [EchoesPlugin()])
+        let standIns = h.editor.registry.standIns
+        var record = try require(h.editor.document[shut])
+        expect(!standIns.admits(Echo.kind, record))
+        expect(standIns.fulfil(Echo.kind, &record))
+        expectEqual(record.meta[Ajar.self], true, "made so")
+        expect(standIns.admits(Echo.kind, record))
+        expect(h.editor.document[shut]?.meta[Ajar.self] == nil, "a record, not the document")
+        var admitted = try require(h.editor.document[open])
+        expect(standIns.fulfil(Echo.kind, &admitted), "already admitted")
+        var other = try require(h.editor.document[shut])
+        expect(standIns.fulfil(Mute.kind, &other), "a kind that says nothing and admits anything has nothing to do")
+        expect(!standIns.fulfil(Box.kind, &other), "a kind that doesn't stand in")
+        expect(other.meta[Ajar.self] == nil, "and nothing written")
+        // A fulfilling that does not make it admissible leaves the record as it was.
+        let stubborn = try graph(CanvasFile(root: board(box(shut))), more: [EchoesPlugin(fulfils: false)])
+        var untouched = try require(stubborn.editor.document[shut])
+        expect(!stubborn.editor.registry.standIns.fulfil(Echo.kind, &untouched))
+        expect(untouched.meta[Ajar.self] == nil)
+        // One that changes the copy first, then fails or admits nothing, leaves the record as it was too.
+        for answer in [false, true] {
+            let spoiling = try graph(CanvasFile(root: board(box(shut))), more: [EchoesPlugin(changesThenAnswers: answer)])
+            var record = try require(spoiling.editor.document[shut])
+            let before = record
+            expect(!spoiling.editor.registry.standIns.fulfil(Echo.kind, &record), "not fulfilled (answering \(answer))")
+            expectEqual(record, before, "unchanged (answering \(answer))")
+        }
     },
     test("a kind that says nothing of how it's made, or whose tool doesn't place it, can't be made to stand for a shape") {
         let target = ShapeID()

@@ -310,8 +310,8 @@ extension RandomSchemas: RandomNumberGenerator {
             expect(words.first?.isUppercase == true && !words.hasSuffix(".") && words.count <= 48, "\(value): \(words)")
         }
         let mediaTypes = try require(keyword("contentMediaType")?["examples"]?.elements)
-        expectEqual(mediaTypes.first?.string, FieldKind.pointerMediaType, "a link to a note is the first offer")
-        expectEqual(mediaTypes.dropFirst().first?.string, "application/json")
+        expectEqual(mediaTypes.first?.string, "application/json")
+        expect(!mediaTypes.contains { $0.string == "text/x-canvas-link" }, "no media type is offered for a link to a note")
         expect(mediaTypes.allSatisfy { $0.string?.contains("/") == true })
         expectEqual(keyword("$schema")?["examples"]?.elements?.map(\.string), [JSONSchema.dialect])
     },

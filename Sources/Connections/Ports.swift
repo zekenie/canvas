@@ -207,9 +207,14 @@ public struct ConnectionRequest: Hashable, Sendable {
     public var toSide: PortSide?
     public var channel: ChannelID?
     public var bothHeads: Bool
+    /// The connections already joining the pair, for a new arrow aimed at both centers, which is bent apart
+    /// from them (into the first offset none of them holds); nil: read when it is made. A run of `canvas draw` says it: it has arrows of its own the
+    /// file doesn't hold yet.
+    public var beside: [ShapeID]?
 
     public init(from: ShapeID, to: ShapeID, fromSide: PortSide? = nil, toSide: PortSide? = nil, channel: ChannelID? = nil,
-                bothHeads: Bool = false) {
+                bothHeads: Bool = false, beside: [ShapeID]? = nil) {
+        self.beside = beside
         self.from = from
         self.to = to
         self.fromSide = fromSide

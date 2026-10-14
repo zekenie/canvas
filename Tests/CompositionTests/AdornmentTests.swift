@@ -51,7 +51,7 @@ private let onPill = CGPoint(x: 112, y: 82)
         h.wait(2_000)                                                               // the open lock fades
         expectEqual(try h.editor.rect(of: TitlePill.self, on: note), CGRect(x: 100, y: 73, width: 200, height: 18), "unlocked, to the right edge")
     },
-    test("a locked arrow's lock is above its label's words, or above the middle of an unlabelled one, 120 points wide at least") {
+    test("a locked arrow's lock is above its label's words, or centred above the middle of an unlabelled one") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, pasteboard: pasteboard, model: ScriptedLanguageModel()) }
@@ -62,7 +62,7 @@ private let onPill = CGPoint(x: 112, y: 82)
         let lock = try h.editor.rect(of: LockChip.self, on: said)
         expectEqual(lock.minY, label.minY - 27, "the row, above the words and not above the arrow's bounds")
         expectEqual(lock.maxX, max(label.maxX, label.midX + 60), "at the right end of the label, widened to 120 about its middle")
-        expectEqual(try h.editor.rect(of: LockChip.self, on: silent), CGRect(x: 342, y: 473, width: 18, height: 18), "above its middle (300, 500), 60 either way")
+        expectEqual(try h.editor.rect(of: LockChip.self, on: silent), CGRect(x: 291, y: 473, width: 18, height: 18), "above its middle (300, 500), centred on it: 300 - 18 / 2")
     },
     test("a click on a note's pill selects the note, and a drag from it moves the note; a locked note's shakes instead") {
         let pasteboard = NSPasteboard.withUniqueName()

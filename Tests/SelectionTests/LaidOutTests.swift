@@ -10,8 +10,8 @@ import TestKit
 // selected, boxed and brushed by the frame it is laid out in; the select tool resizes only what is
 // stored.
 
-@MainActor private func selectionHarness() throws -> EditorHarness {
-    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), StretchesPlugin()])
+@MainActor private func selectionHarness(shrinking: Bool = false) throws -> EditorHarness {
+    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), StretchesPlugin(shrinking: shrinking)])
 }
 
 @MainActor let laidOutSelectionTests = Suite("Selecting laid-out frames", [
@@ -34,6 +34,34 @@ import TestKit
         h.editor.transact("Gauge") { $0.update(gauge, as: CanvasTesting.Gauge.self) { $0.props.width = 300 } }
         expectEqual(h.editor.selectionBounds, CGRect(x: 10, y: 20, width: 300, height: 90), "and with the gauge's commit")
         #endif
+    },
+    test("a stretch laid out smaller than it stores is selected, boxed and brushed by its smaller frame: a press in the stored box outside it is the canvas's, and its marquee takes nothing") {
+        let h = try selectionHarness(shrinking: true)
+        let gauge = h.add(CanvasTesting.Gauge(CGRect(x: 900, y: 700, width: 60, height: 40), width: 100, height: 40))
+        let stretch = h.add(Stretch(CGRect(x: 0, y: 0, width: 300, height: 200), gauge: gauge))
+        h.editor.selectedShapeIDs = [stretch]
+        expectEqual(h.editor.selectionBounds, CGRect(x: 0, y: 0, width: 100, height: 40), "the frame it is laid out in")
+        h.editor.selectedShapeIDs = []
+        // A marquee over the part of the stored box outside the frame takes nothing.
+        h.press(at: CGPoint(x: 150, y: 80))
+        h.drag(to: CGPoint(x: 280, y: 180))
+        expectEqual(h.editor.selectedShapeIDs, [])
+        h.release()
+        expectEqual(h.editor.selectedShapeIDs, [])
+        // A press there selects nothing and drags nothing.
+        h.click(at: CGPoint(x: 250, y: 150))
+        expectEqual(h.editor.selectedShapeIDs, [])
+        // A marquee that reaches the frame takes it.
+        h.press(at: CGPoint(x: 150, y: 80))
+        h.drag(to: CGPoint(x: 50, y: 20))
+        expectEqual(h.editor.selectedShapeIDs, [stretch])
+        h.release()
+        // A press in the frame takes it, and a drag moves it by what it is.
+        h.editor.selectedShapeIDs = []
+        h.press(at: CGPoint(x: 50, y: 20))
+        h.drag(to: CGPoint(x: 80, y: 20))
+        h.release()
+        expectEqual(h.editor.document[stretch]?.box, CGRect(x: 30, y: 0, width: 300, height: 200))
     },
     test("the marquee takes a stretch by its grown part, which its stored box doesn't reach") {
         let h = try selectionHarness()

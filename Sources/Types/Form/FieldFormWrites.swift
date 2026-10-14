@@ -22,7 +22,7 @@ extension FieldFormView {
         guard let book = editor.fieldBook, let writer, let field = book.field(at: path, types: types) else { return nil }
         // An either's field has no kind of its own to say pairs: the sheet drew them or not, and the draft goes with that.
         let drawn = sheet.lines.contains { $0.list == path && $0.isPair }
-        return FieldSheets.draft(at: path, kind: book.kind(of: field), values: writer.values(of: shape), isReadOnly: isReadOnly, drawnAsPairs: drawn)
+        return FieldSheets.draft(at: path, kind: book.kind(of: field), values: writer.values(of: level.owner ?? shape), isReadOnly: isReadOnly, drawnAsPairs: drawn)
     }
 
     /// What the form keeps of the list or pairs at `path`: made as it is first needed, then followed.
@@ -48,11 +48,15 @@ extension FieldFormView {
         }
     }
 
+    /// Whose values a line is: its arrow's on a row's card, else the level's, else the form's shape's.
+    func owner(of line: FieldLine) -> ShapeID { line.owner ?? level.owner ?? shape }
+
     /// A value for a cell: in a file's own place, or, for a line of a list that is not stored, as a new item.
     func put(_ value: JSONValue?, cell: FieldCell, line held: FieldLine) {
         guard let writer else { return }
+        let target = owner(of: cell)
         guard let list = held.list else {
-            writer.set(value, at: cell.path, of: shape, step: step)
+            writer.set(value, at: cell.path, of: target, step: step)
             return reload()
         }
         var held_ = draft(at: list)
@@ -60,10 +64,10 @@ extension FieldFormView {
         if held_.isPairs {
             // A pair's value cell is a plain value of a stored pair; a pair that is not stored has no name to put it under.
             guard held_.slots[held.slot].isStored else { return }
-            writer.set(value, at: cell.path, of: shape, step: step)
+            writer.set(value, at: cell.path, of: target, step: step)
             return reload()
         }
-        let before = writer.values(of: shape)
+        let before = writer.values(of: target)
         let items = before.value(at: list)?.arrayValue ?? []
         if held_.slots[held.slot].isStored {
             if value == nil {
@@ -72,7 +76,7 @@ extension FieldFormView {
                 if after < items.count { held_.blank(line: held.slot) }
             }
             drafts[list] = held_
-            writer.set(value, at: cell.path, of: shape, step: step)
+            writer.set(value, at: cell.path, of: target, step: step)
         } else {
             guard let value else { return }
             var made = value
@@ -81,7 +85,7 @@ extension FieldFormView {
             inserted.insert(made, at: min(held_.storedIndex(ofLine: held.slot), inserted.count))
             held_.store(line: held.slot)
             drafts[list] = held_
-            writer.set(.array(inserted), at: list, of: shape, step: step)
+            writer.set(.array(inserted), at: list, of: target, step: step)
         }
         reload()
     }
@@ -91,6 +95,7 @@ extension FieldFormView {
     /// A pair's name or value typed. Both halves, and a name no other pair has, store it; until then it is a slot.
     private func typedInPair(_ text: String, column: Int, line held: FieldLine, list: FieldPath) {
         guard let writer, held.cells.count == 2 else { return }
+        let shape = owner(of: held)
         var pairs = draft(at: list)
         guard pairs.slots.indices.contains(held.slot) else { return }
         var valueKind = PlainKind.text
@@ -191,6 +196,7 @@ extension FieldFormView {
     func toggleCheck(_ cell: FieldCell) {
         guard !isReadOnly else { return tryAtReadOnly() }
         guard let option = cell.value, let writer else { return }
+        let shape = owner(of: cell)
         var picked = writer.values(of: shape).value(at: cell.path)?.arrayValue ?? []
         if let place = picked.firstIndex(of: option) { picked.remove(at: place) } else { picked.append(option) }
         let order = sheet.lines.compactMap { held -> JSONValue? in
@@ -205,7 +211,7 @@ extension FieldFormView {
     /// `None` clears them all.
     func clearChecks(_ cell: FieldCell) {
         guard !isReadOnly else { return tryAtReadOnly() }
-        writer?.set(nil, at: cell.path, of: shape, step: step)
+        writer?.set(nil, at: cell.path, of: owner(of: cell), step: step)
         reload()
     }
 
@@ -227,6 +233,7 @@ extension FieldFormView {
     /// Takes a line out of its list: the draft first, then the stored item or pair, if it was one.
     func remove(_ held: FieldLine, column: Int) {
         guard let list = held.list, let writer else { return }
+        let shape = owner(of: held)
         var slots = draft(at: list)
         guard slots.slots.indices.contains(held.slot) else { return }
         let slot = slots.slots[held.slot], index = slots.storedIndex(ofLine: held.slot)

@@ -15,8 +15,9 @@ import TestKit
     test("an untitled shape alone lands in the middle of the view; the result says what and where") {
         let editor = try drawEditor()
         let result = try drawn("card", on: editor)
-        expectEqual(rows(result), [["line": 1, "did": "created", "kind": "card", "title": "Card, 100 × 60", "at": [[450, 370], [100, 60]],
+        expectEqual(withoutIDs(rows(result)), [["line": 1, "did": "created", "kind": "card", "title": "Card, 100 × 60", "at": [[450, 370], [100, 60]],
                                     "inView": true]])
+        expectEqual(rows(result).first?["id"], .string(try require(editor.document.shapes.first).id.description), "a real run says the id of the shape it made")
         expectEqual(result["warnings"], [])
         expectEqual(result["dryRun"], nil)
         expectEqual(editor.document.shapes.count, 1)
@@ -25,7 +26,8 @@ import TestKit
     test("titled shapes placed against one another, drawn together in the middle of the view") {
         let editor = try drawEditor()
         let result = try drawn(threeShapes, on: editor)
-        expectEqual(rows(result), [
+        expectEqual(rows(result).map { $0["id"] }, editor.document.shapes.map { .string($0.id.description) }, "each row says the id of its shape")
+        expectEqual(withoutIDs(rows(result)), [
             ["line": 1, "did": "created", "kind": "tile", "title": "Hub", "at": [[340, 290], [120, 80]], "inView": true],
             ["line": 2, "did": "created", "kind": "tile", "title": "East", "at": [[540, 290], [120, 80]], "inView": true],
             ["line": 3, "did": "created", "kind": "card", "title": "AB", "at": [[350, 450], [100, 60]], "inView": true],
@@ -44,8 +46,9 @@ import TestKit
         let editor = try drawEditor()
         _ = try drawn(threeShapes, on: editor)
         let revision = editor.revision
+        let east = try require(shape("East", in: editor))
         expectEqual(rows(try drawn(#"tile "East" finish: glossy"#, on: editor)),
-                    [["line": 1, "did": "updated", "kind": "tile", "title": "East", "at": [[540, 290], [120, 80]], "inView": true]])
+                    [["line": 1, "did": "updated", "kind": "tile", "title": "East", "id": .string(east.id.description), "at": [[540, 290], [120, 80]], "inView": true]])
         expectEqual(shape("East", in: editor)?.typed(as: Tile.self)?.props.finish, .glossy)
         // Level with AB's middle (480), and where it was across.
         expectEqual(rows(try drawn(#"tile "East" level with "AB""#, on: editor)).first?["at"], [[540, 440], [120, 80]])
@@ -82,8 +85,9 @@ import TestKit
     test("title: renames; the next run knows the shape by its new title") {
         let editor = try drawEditor()
         _ = try drawn(threeShapes, on: editor)
+        let east = try require(shape("East", in: editor))
         expectEqual(rows(try drawn(#"tile "East" title: "West""#, on: editor)),
-                    [["line": 1, "did": "renamed", "kind": "tile", "title": "West", "was": "East", "at": [[540, 290], [120, 80]], "inView": true]])
+                    [["line": 1, "did": "renamed", "kind": "tile", "title": "West", "id": .string(east.id.description), "was": "East", "at": [[540, 290], [120, 80]], "inView": true]])
         expectEqual(shape("West", in: editor)?.typed(as: Tile.self)?.props.label, "West")
         expectEqual(rows(try drawn(#"tile "West" finish: glossy"#, on: editor)).first?["did"], "updated")
         let taken = try refused(#"tile "Hub" title: "West""#, on: editor)
@@ -245,7 +249,7 @@ extension Reading: ShapeProperty {
         expectEqual(rows(try drawn(#"edge "Hub" -> "East""#, on: editor)),
                     [["line": 1, "did": "connected", "kind": "link", "from": "Hub", "to": "East"]])
         let request = try require(log.requests.last)
-        expectEqual(request, EdgeRequest(from: hub.id, to: east.id, fromName: #""Hub""#, toName: #""East""#, written: #""Hub" -> "East""#))
+        expectEqual(request, EdgeRequest(from: hub.id, to: east.id, fromName: #""Hub""#, toName: #""East""#, written: #""Hub" -> "East""#, beside: []))
         expectEqual(log.existing.last, .some(nil))
         let revision = editor.revision
         expectEqual(rows(try drawn(#"edge "Hub" -> "East""#, on: editor)).first?["did"], "unchanged")
@@ -394,7 +398,9 @@ extension Reading: ShapeProperty {
         expectEqual(editor.document.shapes.count, 3)
         let real = try drawn(script, on: editor)
         expectEqual(real["dryRun"], nil)
-        expectEqual(rows(real), rows(dry))
+        expectEqual(withoutIDs(rows(real)), withoutIDs(rows(dry)))
+        expectEqual(rows(dry).filter { $0["did"] == "created" }.compactMap { $0["id"] }, [], "a dry run's created rows have no id: the shapes aren't made")
+        expectEqual(rows(dry).filter { $0["did"] == "updated" }.compactMap { $0["id"] }.count, 1, "a shape the file has says its id on a dry run too")
         expectEqual(editor.document.shapes.count, 5)
         // A dry run that would fail fails the same.
         expectEqual(try refused(#"tile "Hub" rank: 0.5"#, on: editor, ["--dry-run"]).reason, "invalid_value")

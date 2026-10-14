@@ -57,4 +57,34 @@ extension Host: CanvasEditorDelegate {
         _ = h.editor.panPointerDown(PointerEvent(location: .zero, timestamp: 1, modifiers: [], clickCount: 1))
         expect(h.editor.menuToPopUp == nil)
     },
+    test("a menu asked for with an item to highlight waits with it; asked for without, with none") {
+        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let menu = NSMenu(title: "Types")
+        _ = menu.addItem(withTitle: "One", action: nil, keyEquivalent: "")
+        let two = menu.addItem(withTitle: "Two", action: nil, keyEquivalent: "")
+        h.editor.popUpMenu(menu, below: .zero)
+        expect(h.editor.menuItemToHighlight == nil)
+        h.editor.popUpMenu(menu, below: .zero, highlighting: two)
+        expect(h.editor.menuItemToHighlight === two)
+        expect(h.editor.menuToPopUp?.menu === menu)
+    },
+    test("a menu asked for with an item waits with it; asked again without, the item is gone; a press drops both") {
+        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let e = h.editor
+        let menu = NSMenu()
+        let item = menu.addItem(withTitle: "One", action: nil, keyEquivalent: "")
+        e.popUpMenu(menu, below: CGRect(x: 10, y: 10, width: 20, height: 20), highlighting: item)
+        expect(e.menuItemToHighlight === item)
+        expect(e.menuToPopUp?.menu === menu)
+        e.popUpMenu(menu, below: CGRect(x: 10, y: 10, width: 20, height: 20))
+        expect(e.menuItemToHighlight == nil, "today's call carries none")
+        e.popUpMenu(menu, below: CGRect(x: 10, y: 10, width: 20, height: 20), highlighting: item)
+        h.press(at: CGPoint(x: 500, y: 500))
+        expect(e.menuToPopUp == nil)
+        expect(e.menuItemToHighlight == nil)
+        h.release()
+        e.popUpMenu(menu, below: CGRect(x: 10, y: 10, width: 20, height: 20), highlighting: item)
+        e.menuDidPopUp()
+        expect(e.menuItemToHighlight == nil)
+    },
 ])

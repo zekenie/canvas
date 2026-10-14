@@ -272,7 +272,7 @@ def stored(schema):
     return None, schema if isinstance(schema, str) else fmt(schema) if schema is not None else ""
 
 
-def case(id, direction, checks, prompt="", previous_prompt="", schema=None, previous_schema=None, core=1, note="", schemas="", name=None):
+def case(id, direction, checks, prompt="", previous_prompt="", schema=None, previous_schema=None, core=1, note="", schemas="", name=None, relationship=False):
     """`name` is the note's title, which TypeSync sends as the schema's root "title" (evals.py does the
     same): by default the title the schema here has, taken out of the stored text; "" is an untitled
     note (the model's title names it); a name given beside a schema that has a title is a title the
@@ -285,6 +285,7 @@ def case(id, direction, checks, prompt="", previous_prompt="", schema=None, prev
         "core": core,
         "name": had or "" if name is None else name,
         "schemas": schemas,
+        "relationship": "1" if relationship else "",
         "prompt": prompt,
         "previous_prompt": previous_prompt,
         "schema": text,
@@ -834,16 +835,18 @@ case("p_ref_kept", "to_prompt", [
     note="another change: the word stays word for word")
 
 
-# ---------------------------------------------------------------- the types cut: renames, pointers, a title from a field, bigger types, conditions
+# ---------------------------------------------------------------- the types cut: renames, relationships in the words, a title from a field, bigger types, conditions
 
-# A rename keeps the field's key and puts the new name in its "title"; a pointer is a link to a note of a
-# type; `$title` says a note of the type is titled by one of its fields; a condition names the field it tests.
+# A rename keeps the field's key and puts the new name in its "title"; a phrase that relates the thing to a
+# type's word writes no property; `$title` says a note of the type is titled by one of its fields; a condition
+# names the field it tests.
 
 S_ORDER = {"title": "Order", "type": "object", "properties": {"number": {"type": "string"}, "total": {"type": "number"}}}
 PERSON = {"title": "Person", "type": "object",
           "properties": {"name": {"type": "string"}, "email": {"type": "string", "format": "email"}}}
 PERSON_TITLED = with_props(PERSON, add={"$title": {"x-canvas-from": "name"}})
-POINTER = {"type": "string", "contentMediaType": "text/x-canvas-link", "contentSchema": {"$ref": "@Customer"}}
+FEATURE = {"title": "Feature", "type": "object", "properties": {"purpose": {"type": "string"}}}
+FEATURE_PRIORITY = with_props(FEATURE, add={"priority": {"type": "integer", "minimum": 1, "maximum": 5}})
 
 # -- renames
 
@@ -888,46 +891,80 @@ case("p_titles_from_nothing", "to_prompt", [
         "dob": {"type": "string", "format": "date", "title": "date of birth"}}},
     note="written from nothing: a field is called by its title, never its key")
 
-# -- pointers (schemas="@Customer" unless said)
+# -- relationships in the words (schemas="@Customer" unless said): a phrase that relates the thing to a word
+# ("is in a @Layer", "links to a @Customer") writes no property; a part ("its @Address") and a bare word are the
+# type itself, a $ref.
 
-for _id, _prompt, _note in [
-    ("s_link_a", "an order: number, a link to a @Customer, total", "a link to a type: a pointer, not the type itself"),
-    ("s_points_to", "an order: number, the customer points to a @Customer, total", "'points to' is a link"),
-    ("s_refers_to", "an order: number, customer refers to a @Customer, total", "'refers to' is a link"),
+for _id, _prompt, _word, _field, _note in [
+    ("s_rel_in", "a feature: a purpose, and is in a @Layer", "@Layer", "purpose", "'is in a' relates the thing to the type: no property"),
+    ("s_rel_belongs", "a task: a summary, and belongs to a @Project", "@Project", "summary|description|name", "'belongs to' is a relationship"),
+    ("s_rel_assigned", "an issue: a summary, assigned to a @Person", "@Person", "summary|description", "'assigned to' is a relationship"),
+    ("s_rel_works_at", "a person: a name, works at a @Company", "@Company", "name|fullName", "'works at' is a relationship"),
 ]:
-    case(_id, "to_schema", ["changed", "pointer:@Customer=1", "plainref:@Customer=0", "count:/properties=3..3"],
-         prompt=_prompt, schema=S_ORDER, schemas="@Customer", note=_note)
+    case(_id, "to_schema", ["changed", "title", "count:/properties=1..1", f"anyprop:/properties={_field}", f"refs:{_word}=0",
+                            f"lacks_text:{_word[1:].lower()}"],
+         prompt=_prompt, schema=STARTER, schemas=_word, note=_note)
 
-case("s_bare_type", "to_schema", ["changed", "plainref:@Customer=1", "pointer:@Customer=0", "count:/properties=3..3"],
+case("s_rel_links_to", "to_schema", ["changed", "title", "count:/properties=1..1", "refs:@Customer=0", "lacks_text:customer"],
+     prompt="an order: a number, links to a @Customer", schema=STARTER, schemas="@Customer", name="Order",
+     note="what the pointer's phrasing used to write: a relationship now, no property")
+
+case("s_rel_list", "to_schema", ["changed", "count:/properties=1..1", "refs:@Person=0"],
+     prompt="a project: name, links to its @Person members", schema=STARTER, schemas="@Person", name="Project",
+     note="several: still a relationship, no property")
+
+case("s_rel_and_part", "to_schema", ["changed", "refs:@Address=1", "refs:@Customer=0", "count:/properties=2..2"],
+     prompt="an order: a number, its @Address, and is placed by a @Customer", schema=STARTER, schemas="@Address\n@Customer", name="Order",
+     note="one word a part, the other a relationship")
+
+case("s_rel_kept_edit", "to_schema", ["changed", "same:/properties/purpose", "anyprop:/properties=priority", "refs:@Layer=0", "count:/properties=2..2"],
+     previous_prompt="a feature: a purpose, and is in a @Layer", prompt="a feature: a purpose, and is in a @Layer, a priority (1 to 5)",
+     schema=FEATURE, schemas="@Layer", note="an edit about something else: still no property for the relationship")
+
+case("s_rel_ref_stays", "to_schema", ["nochange_or_same", "same:/properties/address", "refs:@Address=1", "refs:@Person=0", "count:/properties=3..3"],
+     previous_prompt="A house: its @Address, bedrooms (required), year built",
+     prompt="A house: its @Address, bedrooms (required), year built, and is owned by a @Person",
+     schema=HOUSE_AT, schemas="@Address\n@Person",
+     note="a part's $ref stays; the relationship added beside it writes nothing, so the schema is as it was (NO_CHANGE, or the same schema)")
+
+case("s_rel_self", "to_schema", ["changed", "refs:@Person=0", "count:/properties=1..1"],
+     prompt="a person: a name, friends with another @Person", schema=STARTER, schemas="@Person", name="Person",
+     note="a type related to itself: no property")
+
+case("s_rel_no_pill", "to_schema", ["changed", "title", "count:/properties=1..2"],
+     prompt="a feature: a purpose, and is in a layer", schema=STARTER,
+     note="a relationship written with no @: a field like any other, never a pointer (the global check holds that)")
+
+case("s_reltype_ends", "to_schema", [
+    "changed", "anyprop:/properties=role|position|jobTitle", "noprop:/properties=person|company|employee|employer|from|to", "refs:@Person=0", "refs:@Company=0",
+], prompt="A job a @Person holds at a @Company: a role, and a start date", schema=STARTER, schemas="@Person\n@Company", name="Employment", relationship=True,
+    note="a relationship type's words name its ends: the ends are arrows, no property for either")
+
+case("s_reltype_vague", "to_schema", [
+    "changed", "noprop:/properties=person|company|employee|employer|from|to|party", "count:/properties=2..8",
+], prompt="employment", schema=STARTER, name="Employment", relationship=True, note="a relationship type's vague words: fields, but not its ends")
+
+case("s_reltype_vague_friend", "to_schema", ["changed", "noprop:/properties=person|friend|from|to|party|a|b"],
+     prompt="a friendship: since when", schema=STARTER, name="Friendship", relationship=True, note="a relationship type's vague words: not its ends")
+
+case("s_bare_type", "to_schema", ["changed", "plainref:@Customer=1", "count:/properties=3..3"],
      prompt="an order: number, a @Customer, total", schema=S_ORDER, schemas="@Customer",
-     note="a bare @ word, nothing said of a link: the type itself")
+     note="a bare @ word, nothing said of how it relates: the type itself")
 
-case("s_link_list", "to_schema", [
-    "changed", "pointer:@Person=1", "plainref:@Person=0", "text:\"type\": \"array\"",
-], prompt="a project: name, links to its @Person members", schema=STARTER, schemas="@Person", name="Project",
-    note="several links: an array whose items is a pointer")
+case("p_rel_words_kept", "to_prompt", [
+    "changed", "contains:is in a @Layer", "contains:priority", "keeps:0.8", "lacks_re:link|point|refer",
+], prompt="A feature: a purpose, and is in a @Layer", previous_schema=FEATURE, schema=FEATURE_PRIORITY, schemas="@Layer",
+    note="a field added by hand: the words about the relationship stay, word for word")
 
-case("s_link_and_part", "to_schema", [
-    "changed", "plainref:@Address=1", "pointer:@Customer=1", "pointer:@Address=0", "plainref:@Customer=0",
-], prompt="an order: billed to a @Address, and a link to its @Customer", schema=STARTER, schemas="@Address\n@Customer",
-    name="Order", note="one word a part, the other a link")
+case("p_rel_no_previous", "to_prompt", [
+    "contains:is in a @Layer", "lacks_re:link|point|refer", "maxlen:200",
+], prompt="A feature: a purpose, and is in a @Layer", schema=FEATURE_PRIORITY, schemas="@Layer",
+    note="no previous schema: the words about the relationship stay")
 
-case("s_link_no_pill", "to_schema", [
-    "changed", "pointer:@Customer=1", "textcount:text/x-canvas-link=1",
-], prompt="an order: number, a link to a @Customer, and a link to a Person", schema=STARTER, schemas="@Customer",
-    name="Order", note="a link to a name written without @ is a field of plain text")
-
-case("s_link_dropped", "to_schema", [
-    "changed", "absent:/properties/customer", "same:/properties/number", "pointer:@Customer=0",
-], previous_prompt="an order: number, a link to a @Customer", prompt="an order: number",
-    schema={"title": "Order", "type": "object", "properties": {"number": {"type": "string"}, "customer": POINTER}},
-    schemas="@Customer", note="the prompt stops naming the type: the pointer goes")
-
-case("p_link_words", "to_prompt", [
-    "changed", "contains:a link to a @Customer", "lacks:its fields", "maxlen:200",
-], previous_schema=STARTER, schemas="@Customer",
-    schema={"title": "Order", "type": "object", "properties": {"number": {"type": "string"}, "customer": POINTER, "total": {"type": "number"}}},
-    note="a pointer is a link to the type's word")
+case("p_rel_nochange", "to_prompt", ["nochange_or_same"],
+     prompt="A feature: a purpose, and is in a @Layer", previous_schema=FEATURE,
+     schema=with_props(FEATURE, add={"$title": {"x-canvas-from": "purpose"}}), schemas="@Layer",
+     note="a change that is not a field: the words are left alone")
 
 case("p_bare_words", "to_prompt", [
     "changed", "contains:@Customer", "lacks_re:link|point|refer", "maxlen:200",
@@ -951,9 +988,9 @@ case("s_title_not_wanted", "to_schema", ["changed", "notitle"],
      prompt="a contact: email required, phone required, description", schema=STARTER,
      note="a first field that isn't a name: no $title")
 
-case("s_title_not_plain", "to_schema", ["changed", "pointer:@Customer=1", "notitle"],
-     prompt="an order: customer (a link to a @Customer), number, called by its customer", schema=STARTER, schemas="@Customer",
-     name="Order", note="a link is no plain field: no $title")
+case("s_title_not_plain", "to_schema", ["changed", "plainref:@Customer=1", "notitle"],
+     prompt="an order: its @Customer, number, called by its customer", schema=STARTER, schemas="@Customer",
+     name="Order", note="another type's fields are no plain field: no $title")
 
 case("s_title_other_field", "to_schema", ["changed", "titlefrom:title"],
      prompt="a book: isbn, title, author, called by its title", schema=STARTER,
@@ -1107,7 +1144,7 @@ case("s_if_edit_value", "to_schema", [
 
 if __name__ == "__main__":
     with open(os.path.join(HERE, "cases.csv"), "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["id", "direction", "core", "name", "schemas", "prompt", "previous_prompt", "schema", "previous_schema", "checks", "note"])
+        w = csv.DictWriter(f, fieldnames=["id", "direction", "core", "name", "schemas", "relationship", "prompt", "previous_prompt", "schema", "previous_schema", "checks", "note"])
         w.writeheader()
         for c in cases:
             w.writerow(c)

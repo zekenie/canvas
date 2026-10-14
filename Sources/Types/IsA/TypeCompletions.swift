@@ -188,11 +188,11 @@ public enum TypeCompletions {
 
 extension TypeIndex {
     /// The types a `$ref` in the schema of `id` can point to, as its JSON's completions offer them:
-    /// every other titled type of the file, by its name (what its mentions show), its fields counted,
+    /// every other titled type of the file but a relationship type (`canBeEmbedded`), by its name (what its mentions show), its fields counted,
     /// in the order of their names.
     public func referenceTargets(from id: ShapeID) -> [JSONCompletionOffer] {
         var found: [(name: String, type: ShapeID, detail: String)] = []
-        for type in types where type != id {
+        for type in types where type != id && canBeEmbedded(type) {
             guard let name = name(of: type), let schema = schemaText(of: type) else { continue }
             let shown = SchemaReadings.reading(of: schema, for: type).shown
             found.append((name, type, TypePanelText.subtitle(shown) ?? ""))

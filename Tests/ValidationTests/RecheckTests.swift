@@ -33,6 +33,9 @@ private final class DisplayCounter: CanvasEditorDelegate {
     editor.validation?.result(for: id)?.issues.map(\.message) ?? []
 }
 
+/// The name a rule says in its words, which a test renames.
+@MainActor private enum RuleName { static var current = "layer" }
+
 @MainActor let recheckTests = Suite("Checking shapes again without a commit", [
     test("a rule's outside state changing is heard only through recheck, and the redraw is asked for") {
         let flag = Flag()
@@ -117,5 +120,26 @@ private final class DisplayCounter: CanvasEditorDelegate {
         let id = bare.editor.add(Box(CGRect(x: 0, y: 0, width: 40, height: 40)))
         bare.editor.validation?.recheck([id])
         expectEqual(shown(bare.editor, id), [])
+    },
+    test("a shape only moved after its words went stale says the new words") {
+        RuleName.current = "layer"
+        let rules = Contributor(id: "named-rules") { r in
+            r.validate(Box.self, ignoringMoves: true) { _, _ in
+                [.incomplete("\(RuleName.current) is needed", field: RuleName.current)]
+            }
+        }
+        let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), rules])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 40, height: 40)))
+        let engine = try require(h.editor.validation)
+        _ = engine.results
+        RuleName.current = "tier"
+        engine.recheckWords([box])
+        expectEqual(engine.cachedResult(for: box), .unknown)
+        h.editor.transact("Move") { $0.translate([box], by: CGPoint(x: 10, y: 0)) }
+        _ = engine.results
+        if case .current(let found) = engine.cachedResult(for: box) {
+            expectEqual(found?.issues.map(\.message), ["tier is needed"], "a verdict called current has the new words")
+        }
+        expectEqual(engine.result(for: box)?.issues.map(\.message), ["tier is needed"])
     },
 ])

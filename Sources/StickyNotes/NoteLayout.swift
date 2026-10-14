@@ -15,12 +15,18 @@ struct NoteLayout {
 
     /// With no rows, the stored frame and its words inset by the padding, nothing measured: the note
     /// as it was drawn before it had any. With rows, the frame `size(of:rows:)` says, its words at the
-    /// width the rows leave them, and the rows right under the words.
+    /// width the rows leave them, and the rows right under the words. A relationship type that holds
+    /// nothing (`TypeRows.isCompact`) is the small paper from its stored top-left, with nothing in it.
     init(_ shape: ShapeRecord<StickyNote>, in context: ShapeContext) {
         let p = NoteStyle.padding
         guard let rows = context.layoutInput(TypeRows.extent, of: shape) else {
-            frame = shape.frame
-            words = shape.frame.insetBy(dx: p, dy: p)
+            if NoteLayout.isCompact(shape, in: context) {
+                frame = CGRect(origin: shape.frame.origin, size: NoteStyle.compactSize)
+                words = frame.insetBy(dx: p, dy: p)
+            } else {
+                frame = shape.frame
+                words = shape.frame.insetBy(dx: p, dy: p)
+            }
             block = nil
             return
         }
@@ -31,6 +37,12 @@ struct NoteLayout {
         frame = CGRect(origin: shape.frame.origin, size: size)
         words = CGRect(x: frame.minX + p, y: frame.minY + p, width: inner, height: height)
         block = CGRect(x: frame.minX + p, y: frame.minY + p + height + gap, width: inner, height: rows.height)
+    }
+
+    /// Whether the note is drawn small: Types says a relationship type with no words and no fields is. A compact note
+    /// has no rows (it is the case of none), so this is asked only where there are none: a plain note costs one lookup.
+    static func isCompact(_ shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> Bool {
+        context.layoutInput(TypeRows.isCompact, of: shape) == true
     }
 
     /// The paper's size: the stored one, no rows. With rows, as wide as they read at and as tall as

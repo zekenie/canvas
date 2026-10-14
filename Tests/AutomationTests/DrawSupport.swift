@@ -159,6 +159,15 @@ struct DrewAnyway: Error, CustomStringConvertible {
 /// A result's rows.
 func rows(_ result: JSON) -> [JSON] { result["changes"]?.arrayValue ?? [] }
 
+/// Rows without their `id`, which a test over fixtures can't know before the run makes the shapes.
+func withoutIDs(_ rows: [JSON]) -> [JSON] {
+    rows.map { row in
+        guard case .object(var members) = row else { return row }
+        members["id"] = nil
+        return .object(members)
+    }
+}
+
 /// A result's warnings' messages.
 func messages(_ result: JSON) -> [String] { (result["warnings"]?.arrayValue ?? []).compactMap { $0["message"]?.stringValue } }
 

@@ -5,8 +5,9 @@ import AppKit
 // tests of the laid-out frame draw with, so they never depend on Types or StickyNotes. A stretch
 // stands in for a typed note, and a gauge for its type.
 
-/// A box that names a gauge and is laid out no smaller than the gauge says: what tests make taller
-/// and wider than it stores.
+/// A box that names a gauge and is laid out at the gauge's size, no smaller than it stores (what
+/// tests make taller and wider than it stores), or, in a plugin made `shrinking`, exactly the gauge's
+/// size, smaller than it stores too.
 public struct Stretch: BoxShapeProps {
     public static let kind: ShapeKind = "stretch"
     public static let properties = Properties<Stretch> {
@@ -111,6 +112,7 @@ public enum Stretches {
 
 struct StretchDefinition {
     let log: StretchLog
+    let shrinking: Bool
 }
 
 extension StretchDefinition: ShapeDefinition {
@@ -125,7 +127,8 @@ extension StretchDefinition: LaidOutBox {
     func laidOutSize(of shape: ShapeRecord<Stretch>, in context: ShapeContext) -> CGSize {
         log.sizes.append(shape.id)
         guard let room = context.layoutInput(Stretches.room, of: shape) else { return shape.frame.size }
-        return CGSize(width: room.width, height: room.height)
+        if shrinking { return CGSize(width: room.width, height: room.height) }
+        return CGSize(width: max(room.width, shape.frame.width), height: max(room.height, shape.frame.height))
     }
 }
 
@@ -197,12 +200,19 @@ extension GaugeDefinition: ShapeDefinition {
 /// Apart from `FixturesPlugin`, as `CorralsPlugin` is, so the registry reports tests pin don't change.
 public struct StretchesPlugin: CanvasPlugin {
     public let log: StretchLog
-    public init(log: StretchLog = StretchLog()) { self.log = log }
+    /// Whether a stretch is laid out at its gauge's size whatever it stores (`LaidOutBox` may be
+    /// smaller than the box): the default keeps a stretch no smaller than it stores, as most tests
+    /// of a laid-out frame rely on.
+    public let shrinking: Bool
+    public init(log: StretchLog = StretchLog(), shrinking: Bool = false) {
+        self.log = log
+        self.shrinking = shrinking
+    }
     public var id: PluginID { "stretches" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        let log = log
-        registrar.shape(StretchDefinition(log: log)) { stretch in
+        let log = log, shrinking = shrinking
+        registrar.shape(StretchDefinition(log: log, shrinking: shrinking)) { stretch in
             stretch.tool(label: "Stretch", systemImage: "arrow.up.left.and.arrow.down.right",
                          placing: stretch.placement(size: CGSize(width: 100, height: 60)) { Stretch(.zero) })
         }

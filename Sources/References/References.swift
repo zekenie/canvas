@@ -186,6 +186,8 @@ public struct ReferencesPlugin: ListedPlugin {
             // `canvas draw` puts one beside what points at a shape on another board.
             reference.standsIn(maxTargets: ReferenceStyle.maxTargets, admitting: { target, registry in registry.isPublic(target) },
                                needs: "public",
+                               fulfilling: { record, registry in registry.makePublic(&record) },
+                               calls: { shape, _ in shape.props.target?.label ?? (shape.props.mode == .dynamic ? shape.props.text : nil) },
                                makes: { props, target, label in ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label)) }) { shape, _ in
                 if let target = shape.props.target { return .shapes([target.id]) }
                 if let query = shape.props.query { return .provided(ReferenceState.key(query: query, all: shape.props.all)) }

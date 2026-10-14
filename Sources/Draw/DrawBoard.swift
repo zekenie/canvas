@@ -1,10 +1,12 @@
 import Canvas
 import CoreGraphics
 import DrawScript
+import Foundation
 import Topology
 
 // Which board a script draws on: worked out from what it names, never said. A title names a shape
-// wherever it is in the file (the board shown's first), `in "X"` puts a shape on the board X holds
+// wherever it is in the file (the board shown's first), and so does an id (`#7C1E…`, for a shape with no title: the board
+// it is on), `in "X"` puts a shape on the board X holds
 // (a subboard's), or in X, on the board X is on, where X holds shapes on its own board (a frame), and
 // a script that names nothing on the file draws on the board shown. A run draws on one board, as one
 // transaction and one undo step: a script that names shapes on two is refused. Only boards the app
@@ -37,7 +39,7 @@ public struct FileNames {
     private(set) var titles: [String] = []
     /// Each board's named shapes, in document order: what `BoardNames` is made from.
     private var byBoard: [BoardID: [(name: String, id: ShapeID)]] = [:]
-    private let editor: CanvasEditor
+    let editor: CanvasEditor
     private let naming: DrawNaming
 
     public init(_ editor: CanvasEditor, naming: DrawNaming) {
@@ -180,11 +182,16 @@ public struct FileNames {
 @MainActor
 private struct BoardClaims {
     /// A board a statement puts the run on, with the statement and why (and, for an end of an edge
-    /// between boards that no stand-in could stand for, its title, which the hint asks the user about).
+    /// between boards that no stand-in could stand for, its name, which the hint asks the user about).
     typealias Claim = (board: BoardID, statement: Statement, why: String, crossing: String?)
-    /// An end of an edge: its title, the board it's on, and the shape (nil if two on that board are
-    /// called that).
-    typealias End = (title: String, board: BoardID, record: AnyShapeRecord?)
+    /// An end of an edge: the name a message calls it (its title in quotes, or an id as written), the board it's on, and the
+    /// shape (nil if two on that board are called that).
+    typealias End = (said: String, board: BoardID, record: AnyShapeRecord?)
+    /// What an edge's end names, folded: a title, or an id.
+    private enum EndKey {
+        case title(String)
+        case id(ShapeID, written: String)
+    }
 
     private let editor: CanvasEditor
     private let names: FileNames
@@ -203,7 +210,7 @@ private struct BoardClaims {
     /// The titles on several boards, none of them the board shown, which the rest may settle.
     private(set) var unsettled: [(title: String, boards: [BoardID], statement: Statement)] = []
     /// The edges between boards, each of which needs one end on the board the run draws on.
-    private(set) var crossings: [(statement: Statement, from: (title: String, board: BoardID), to: (title: String, board: BoardID))] = []
+    private(set) var crossings: [(statement: Statement, from: (said: String, board: BoardID), to: (said: String, board: BoardID))] = []
     /// The boards the run may draw on that nothing claims hard, in statement order: for an edge
     /// between boards whose two ends stand-ins could stand for, the start's; for an edge to a shape
     /// the script draws, that of the end the file has, where one could.
@@ -239,41 +246,78 @@ private struct BoardClaims {
         }
     }
 
-    /// An edge joins its ends, and its ends are on one board, as a statement's titles say; or on two,
+    /// The run is on the board the shape a name names is on: a title's, if a board has one, or an id's, if the app can show it.
+    mutating func claim(_ name: ShapeName, _ statement: Statement) {
+        switch name {
+        case .title(let written):
+            claim(written, statement)
+        case .id(let text):
+            guard let uuid = UUID(uuidString: text), let place = names.place(ofID: ShapeID(uuid)) else { return }
+            claims.append((place.board, statement, said(.id(ShapeID(uuid), written: name.written)), nil))
+        }
+    }
+
+    /// An edge joins its ends, and its ends are on one board, as a statement's names say; or on two,
     /// and one of them can be stood for; or one is a shape the script draws, which is on the board the
     /// run draws on, and the other is the file's.
-    mutating func claimEdge(_ fromWritten: String, _ toWritten: String, via: Bool, bothHeads: Bool, _ statement: Statement) {
-        guard let from = naming.fold(fromWritten), let to = naming.fold(toWritten) else {
+    mutating func claimEdge(_ fromWritten: ShapeName, _ toWritten: ShapeName, via: Bool, bothHeads: Bool, _ statement: Statement) {
+        guard let from = key(fromWritten), let to = key(toWritten) else {
             claim(fromWritten, statement)
             claim(toWritten, statement)
             return
         }
         switch (settled(from), settled(to)) {
         case let (start?, end?) where start.board != end.board:
-            claimCrossing((from, start.board, start.record), (to, end.board, end.record), via: via, bothHeads: bothHeads, statement)
+            claimCrossing((said(from), start.board, start.record), (said(to), end.board, end.record), via: via, bothHeads: bothHeads, statement)
         case let (nil, end?) where isDrawnOnly(from):
-            claimEdgeToDrawn((to, end.board, end.record), isStart: false, via: via, statement)
+            claimEdgeToDrawn((said(to), end.board, end.record), isStart: false, via: via, statement)
         case let (start?, nil) where isDrawnOnly(to):
-            claimEdgeToDrawn((from, start.board, start.record), isStart: true, via: via, statement)
+            claimEdgeToDrawn((said(from), start.board, start.record), isStart: true, via: via, statement)
         default:
             claim(fromWritten, statement)
             claim(toWritten, statement)
         }
     }
 
-    /// The board a title names a shape on, with the shape (nil if two on it are called that), when
+    /// What a name is, folded; nil for a title that is blank, or an id that isn't one.
+    private func key(_ name: ShapeName) -> EndKey? {
+        switch name {
+        case .title(let written): naming.fold(written).map(EndKey.title)
+        case .id(let text): UUID(uuidString: text).map { EndKey.id(ShapeID($0), written: name.written) }
+        }
+    }
+
+    /// How a message calls an end: a title in quotes; an id by the title its shape has, else as written.
+    private func said(_ key: EndKey) -> String {
+        switch key {
+        case .title(let title): return quoted(title)
+        case .id(let id, let written):
+            guard let record = names.place(ofID: id).flatMap({ editor.file.record($0.id) }),
+                  let title = naming.name(record, editor.registry) else { return written }
+            return quoted(title)
+        }
+    }
+
+    /// The board a name names a shape on, with the shape (nil if two on it are called that), when
     /// it's one the run's board can be told from: the shown board's, or the only one.
-    private func settled(_ title: String) -> (board: BoardID, record: AnyShapeRecord?)? {
-        let boards = names.boards(of: title)
-        guard let first = boards.first, first == editor.board || boards.count == 1 else { return nil }
-        let there = (names.places[title] ?? []).filter { $0.board == first }
-        return (first, there.count == 1 ? editor.file.record(there[0].id) : nil)
+    private func settled(_ key: EndKey) -> (board: BoardID, record: AnyShapeRecord?)? {
+        switch key {
+        case .title(let title):
+            let boards = names.boards(of: title)
+            guard let first = boards.first, first == editor.board || boards.count == 1 else { return nil }
+            let there = (names.places[title] ?? []).filter { $0.board == first }
+            return (first, there.count == 1 ? editor.file.record(there[0].id) : nil)
+        case .id(let id, _):
+            guard let place = names.place(ofID: id) else { return nil }
+            return (place.board, editor.file.record(id))
+        }
     }
 
     /// Whether the script draws a shape with this title and no board has one: it goes on the board
-    /// the run draws on, whichever that is.
-    private func isDrawnOnly(_ title: String) -> Bool {
-        drawn.contains(title) && names.boards(of: title).isEmpty
+    /// the run draws on, whichever that is. An id names a shape the file has.
+    private func isDrawnOnly(_ key: EndKey) -> Bool {
+        guard case .title(let title) = key else { return false }
+        return drawn.contains(title) && names.boards(of: title).isEmpty
     }
 
     /// Whether some kind can be made to stand for the shape.
@@ -289,14 +333,14 @@ private struct BoardClaims {
     /// `via:` puts a stand-in for the end beside the start, so the start is never stood for.
     private mutating func claimCrossing(_ start: End, _ end: End, via: Bool, bothHeads: Bool, _ statement: Statement) {
         if let there = drawnThrough(start, end, bothHeads: bothHeads) {
-            claims.append((there.board, statement, quoted(there.near), nil))
+            claims.append((there.board, statement, there.near, nil))
             return
         }
         let softStart = !via && canBeStoodFor(start.record), softEnd = canBeStoodFor(end.record)
-        crossings.append((statement, (start.title, start.board), (end.title, end.board)))
-        if softStart && softEnd { softStarts.append((start.board, statement, quoted(start.title))) }
-        if !softStart { claims.append((start.board, statement, quoted(start.title), via ? nil : start.title)) }
-        if !softEnd { claims.append((end.board, statement, quoted(end.title), end.title)) }
+        crossings.append((statement, (start.said, start.board), (end.said, end.board)))
+        if softStart && softEnd { softStarts.append((start.board, statement, start.said)) }
+        if !softStart { claims.append((start.board, statement, start.said, via ? nil : start.said)) }
+        if !softEnd { claims.append((end.board, statement, end.said, end.said)) }
     }
 
     /// An edge between a shape the script draws and one the file has. The script's goes on the board
@@ -308,9 +352,9 @@ private struct BoardClaims {
         // `via:` puts a stand-in for the end beside the start: the start is never stood for.
         let stoodFor = !(isStart && via)
         if stoodFor && canBeStoodFor(end.record) {
-            softStarts.append((end.board, statement, quoted(end.title)))
+            softStarts.append((end.board, statement, end.said))
         } else {
-            claims.append((end.board, statement, quoted(end.title), stoodFor ? end.title : nil))
+            claims.append((end.board, statement, end.said, stoodFor ? end.said : nil))
         }
     }
 
@@ -323,7 +367,7 @@ private struct BoardClaims {
         for near in [start, end] {
             let found = Drawing.edgeMatches(from: from, to: to, bothHeads: bothHeads, among: connections(on: near.board),
                                             in: editor.contents(of: near.board), standIns: standIns)
-            if found.contains(where: { $0.standIn != nil }) { return (near.board, near.title) }
+            if found.contains(where: { $0.standIn != nil }) { return (near.board, near.said) }
         }
         return nil
     }
@@ -367,25 +411,31 @@ extension Drawing {
         for statement in script.statements {
             switch statement.body {
             case .shape(let shape):
-                if let written = shape.container {
+                if let name = shape.container {
                     do throws(DrawError) {
-                        let board = try container(written, statement, names: names, drawn: drawn, naming: naming, editor: editor)
-                        book.claim(board, statement, why: "in \(quoted(naming.fold(written) ?? written))")
+                        let board = try container(name, statement, names: names, drawn: drawn, naming: naming, editor: editor)
+                        book.claim(board, statement, why: "in \(name.title.map { quoted(naming.fold($0) ?? $0) } ?? name.written)")
                     } catch {
                         errors.append(error)
                     }
                     // Its titles are that board's.
                     continue
                 }
-                if let title = shape.title { book.claim(title, statement) }
+                if let name = shape.name { book.claim(name, statement) }
                 for clause in shape.clauses {
-                    for target in clause.targets { if case .title(let title) = target.box { book.claim(title, statement) } }
+                    for target in clause.targets {
+                        switch target.box {
+                        case .title(let title): book.claim(title, statement)
+                        case .id(let text): book.claim(ShapeName.id(text), statement)
+                        case .board, .view: break
+                        }
+                    }
                 }
             case .edge(let edge):
                 book.claimEdge(edge.from, edge.to, via: edge.via != nil, bothHeads: edge.bothHeads, statement)
-            case .delete(.shape(let title)):
-                book.claim(title, statement)
-            case .delete(.edges(let from, let to, let eitherWay)):
+            case .delete(.shape(let name)):
+                book.claim(name, statement)
+            case .delete(.edges(let from, let to, let eitherWay, _)):
                 book.claimEdge(from, to, via: false, bothHeads: eitherWay, statement)
             }
         }
@@ -408,7 +458,7 @@ extension Drawing {
         // Each edge between boards needs one end on the board the run draws on, and a stand-in for the other.
         if let crossing = book.crossings.first(where: { $0.from.board != anchor.board && $0.to.board != anchor.board }) {
             throw DrawError(crossing.statement, .severalBoards,
-                            "this script draws on \(named(anchor.board)) (\(anchor.why), line \(anchor.statement.line)) and on \(named(crossing.from.board)) (\(quoted(crossing.from.title)))",
+                            "this script draws on \(named(anchor.board)) (\(anchor.why), line \(anchor.statement.line)) and on \(named(crossing.from.board)) (\(crossing.from.said))",
                             hint: "a run draws on one board, and an edge between boards needs one end on it: split the script into a run for each")
         }
         return (anchor.board, names)
@@ -416,9 +466,27 @@ extension Drawing {
 
     /// The board `in "X"` puts a shape on: the one X holds (a subboard's), or the one X is on, for
     /// a container there (a frame), which the shape goes in.
-    private static func container(_ written: String, _ statement: Statement, names: FileNames, drawn: Set<String>, naming: DrawNaming,
+    private static func container(_ name: ShapeName, _ statement: Statement, names: FileNames, drawn: Set<String>, naming: DrawNaming,
                                   editor: CanvasEditor) throws(DrawError) -> BoardID {
-        guard let title = naming.fold(written) else {
+        if case .id(let text) = name {
+            guard let uuid = UUID(uuidString: text) else {
+                throw DrawError(statement, .notAnID, "\(ShapeName.idMark) takes a shape's id, and \(name.written) isn't one",
+                                hint: "an id is 32 hex digits in groups of 8, 4, 4, 4 and 12, as a query's row gives it")
+            }
+            switch names.container(withID: ShapeID(uuid)) {
+            case .board, .shape:
+                return names.container(withID: ShapeID(uuid)).board!
+            case .none, .ambiguous:
+                throw DrawError(statement, .unknownID, "there's no shape with the id \(name.written) to be in",
+                                hint: "in names a shape that holds others (a subboard, or a frame): run the query that gave its id again")
+            case .holdsNone(let record):
+                // An arrow or a pill is no shape a script can name at all, as at every site that takes an id.
+                if !editor.registry.drawCanName(record.kind) { throw Drawing.unnameable(name.written, record.kind, statement) }
+                throw DrawError(statement, .cannotContain, "\(name.written) is \(indefinite(record.kind)), which holds no shapes",
+                                hint: "in names a shape that holds others (a subboard, or a frame)")
+            }
+        }
+        guard case .title(let written) = name, let title = naming.fold(written) else {
             throw DrawError(statement, .syntax, "a title can't be blank", hint: "in names the shape that holds it")
         }
         let found = names.container(called: title)

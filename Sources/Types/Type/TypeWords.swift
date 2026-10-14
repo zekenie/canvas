@@ -24,12 +24,21 @@ extension TypeWords: KeyedExtensionPoint {
     public static func summary(of _: TypeWordsContribution, for target: ShapeTarget) -> String { "type words → \(target)" }
 
     /// A kind that can be a type, or an instance of one, says what it holds in words: `canBeType()`
-    /// and `typeable()` need `typeWords`.
+    /// and `typeable()` need `typeWords`. The mark of a relationship type needs `schema`, and a kind that
+    /// relates (`relating()`, `endRule`) is an instance of types: it holds `is` and `fieldValues`.
     public static func check(_ registry: Registry) throws(RegistryError) {
-        for kind in registry.kinds where registry.contributions(to: TypeWords.self, for: kind).isEmpty {
+        for kind in registry.kinds {
             let properties = registry.properties(for: kind)
-            if properties.contains(TypeSchemaProperty.key) { throw .invalid(point: "TypeWords", reason: "\(kind) holds schema but has no typeWords") }
-            if properties.contains(IsAProperty.key) { throw .invalid(point: "TypeWords", reason: "\(kind) holds is but has no typeWords") }
+            if registry.contributions(to: TypeWords.self, for: kind).isEmpty {
+                if properties.contains(TypeSchemaProperty.key) { throw .invalid(point: "TypeWords", reason: "\(kind) holds schema but has no typeWords") }
+                if properties.contains(IsAProperty.key) { throw .invalid(point: "TypeWords", reason: "\(kind) holds is but has no typeWords") }
+            }
+            if properties.contains(RelationshipProperty.key), !properties.contains(TypeSchemaProperty.key) {
+                throw .invalid(point: "TypeWords", reason: "\(kind) holds relationship but not schema")
+            }
+            if properties.contains(RelationshipKeys.endRule), !properties.contains(IsAProperty.key) || !properties.contains(RelationshipKeys.fieldValues) {
+                throw .invalid(point: "TypeWords", reason: "\(kind) holds endRule but not both is and fieldValues")
+            }
         }
     }
 }

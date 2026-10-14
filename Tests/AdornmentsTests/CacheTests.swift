@@ -119,6 +119,17 @@ final class DisplayCounter: CanvasEditorDelegate {
         expectEqual(h.editor.adornmentFrames(of: a).first?.label.text, "150 wide")
         expectEqual(calls.counts, [a: 3, b: 1], "once more for the early read, which isn't kept, and once for the frame")
     },
+    test("a narrow shape just right of the view, whose row runs leftward into it, is drawn") {
+        let h = try adornedHarness([everyShape(Flag.self) { _ in flagLabel }])
+        let plain = try adornedHarness()
+        // Its right edge is 14 points past the view's, its flag 18 wide from there: 4 points of it are in.
+        let narrow = CGRect(x: 410, y: 100, width: 4, height: 40)
+        let box = h.add(Box(narrow))
+        plain.add(Box(narrow))
+        expectEqual(try require(h.editor.adornmentFrames(of: box).first).rect, CGRect(x: 396, y: 73, width: 18, height: 18))
+        let drawn = changedPixels(render(plain), render(h), in: wholeView)
+        expect(drawn > 10, "drawn: \(drawn)")
+    },
     test("a frame makes labels only for the shapes whose adornments may be in view") {
         let calls = Calls()
         let h = try adornedHarness([countedCaptions(calls)])
@@ -133,9 +144,12 @@ final class DisplayCounter: CanvasEditorDelegate {
             }
         }
         _ = render(h)
-        let reach = AdornmentLayout.area(showing: wholeView, scale: 1)
-        let expected = Set(frames.filter { $0.value.touches(reach) }.keys)
+        // The area is the widest reach any shape has (a row slid clear of a slanted body reaches 400 points either way);
+        // a closed shape has its own, a row and a corner.
+        let area = AdornmentLayout.area(showing: wholeView, scale: 1)
+        let expected = Set(frames.filter { AdornmentLayout.reach(ofClosed: $0.value, scale: 1).touches(wholeView) }.keys)
         expectEqual(Set(calls.counts.keys), expected)
-        expect(expected.count < 40, "about 20 of 1,000: \(expected.count)")
+        expect(expected.isSubset(of: Set(frames.filter { $0.value.touches(area) }.keys)), "all of them in the area")
+        expect(expected.count < 30, "about 20 of 1,000, the row and the corner reaching 200 points left and 6 right of a shape: \(expected.count)")
     },
 ])

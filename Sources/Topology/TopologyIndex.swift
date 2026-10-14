@@ -185,6 +185,11 @@ public final class TopologyIndex {
     /// The stand-ins that stand for `target` now, in the order they came to: what stands for it.
     public func standIns(for target: ShapeID) -> [ShapeID] { tables.standIns(for: target) }
 
+    /// The stand-ins whose record names `target`, whether or not they stand for it now (an admission they
+    /// don't meet, a target on a board the editor can't show, or one that is gone): who points at it, for a
+    /// reader that treats a direct stand-in as the shape it names. Provided ones are not here. No order.
+    public func standIns(naming target: ShapeID) -> [ShapeID] { Array(declaredBy[target] ?? []) }
+
     /// Whether any shape on a board the editor can show is a stand-in (of a kind that stands in,
     /// whatever it stands for now): a follower that looks for stand-ins among a change's shapes
     /// looks at none when there are none. O(1).

@@ -99,7 +99,7 @@ The result goes to standard output: JSON when standard output isn't a terminal (
 - **`query`**: the query that ran, as the language writes it: comments and extra spaces left out, its own words in lowercase, titles in double quotes. With `--ask`, it's the query Claude wrote, and **`asked`** is the question.
 - **`count`**: how many shapes match, listed or not.
 - **`rows`**: the first `--limit` of them, in file order. Each has:
-  - `id`: the shape's id. Use it to name the shape in a later query (`#00000000-…`), and for nothing else: `draw` names shapes only by title.
+  - `id`: the shape's id. Use it to name the shape in a later query (`#00000000-…`), and, for a shape that has no title, in a later `draw` ([the canvas skill](../SKILL.md#titles-are-names)): `draw` names a shape by its title, and an id is for one with none.
   - `kind`, and `title`, unless it has none.
   - `board`: the board it's on, `"root"` for the top board, else the id of the shape that owns it.
   - `inside`: the names of the subboards and frames it's inside, outermost first, as the path over the canvas names a board (an untitled subboard's is "Untitled Subboard"), and a frame by its title (an untitled one's is "Frame"). Left out for a shape inside nothing.
@@ -107,7 +107,7 @@ The result goes to standard output: JSON when standard output isn't a terminal (
   - `cut`: the attributes cut at 500 characters (their text ends with `…`). `--fields` lists them whole.
   - `connection`, for a connection (an arrow bound at both ends): its edge `type`, and the shapes it runs `from` and `to`, each by `id` and `title`. An end on a shape that stands for other shapes is read at what it stands for: `from` and `to` are then the first such pair in file order, `via` says which stand-in each end went through (`{"to": {"id": …}}`, by `id`: a stand-in has no title, and only an end that was one is there), and `more` lists the other pairs (`{"from": …, "to": …}`, in file order) when it stands for several. A connection as it was drawn has neither.
   - `editing: true` while the person is typing into it.
-  - `problems`, in a query that names `:invalid` or `:incomplete`: for that row alone, each thing it still needs or has wrong: `field` (the key in `fieldValues`), `path` (where in it, as `/teams/0/name`), `class` (`needed` or `wrong`) and `message`, as the app says it. A field's problem names it; an error that is about the whole shape (a type's JSON, a title too long) has a `field` when validation gives one and no `path`. Left out of a row with none, and of a query that counts. As the app has the shape when asked.
+  - `problems`, in a query that names `:invalid` or `:incomplete`: for that row alone, each thing it still needs or has wrong: `field` (the key in `fieldValues`, or a relationship row's name on a note), `path` (where in it, as `/teams/0/name`), `class` (`needed` or `wrong`) and `message`, as the app says it. A field's problem names it; an error that is about the whole shape (a type's JSON, a title too long) has a `field` when validation gives one and no `path`. Left out of a row with none, and of a query that counts. As the app has the shape when asked.
 - **`warnings`**, when there are any, each a `reason` and a `message`:
   - `limited`: more shapes match than are listed (`2 of 7 listed. …`);
   - `editing`: a shape listed, or one whose text the query read, is being typed into: it's read as typed so far, and may still change;
@@ -512,7 +512,7 @@ sticky-note:edge-to(*, note-link)
 sticky-note:dangling(mention)
 ```
 
-A shape that's gone has no title a query can name, so the shapes that mention it are found with `:dangling`, not by its name, as the refusal's hint says ("Some mention edges point at shapes that aren't there: :dangling(only mention) finds what carries them."):
+A shape that's gone has no title a query can name, so the shapes that mention it are found with `:dangling`, not by its name, as the refusal's hint says ("Some mention edges point at shapes that aren't there: :dangling(mention) finds what carries them."):
 
 ```query-error
 /* reason: unknown_title */
@@ -617,20 +617,30 @@ Words the app's plugins add, as this app has them. Without a plugin, its words a
 | `:mentioned-by(S)` | `mention-queries` | a shape S matches mentions it |
 | `:invalid` | `validation-queries` | it has an error |
 | `:warned` | `validation-queries` | it has a warning |
+| `:incomplete` | `validation-queries` | it still needs something |
 | `:is-a(S)` | `type-queries` | it is, however far, a type S matches: its types and theirs |
-| `:incomplete` | `type-queries` | it has a field its types need, left empty |
+| `:misfit` | `type-queries` | it is an arrow whose ends do not fit its relationship type |
 | `:selected` | `selection-queries` | the person has it selected |
 
 - `:mentions` and `:mentioned-by` follow mention edges: `:mentions(S)` is `:edge-to(S, only mention)`. A shape that mentions itself counts.
-- `:invalid` and `:warned` are what validation finds, on every board of the file, not only the one shown: an error outlines a shape in red, warnings alone in orange. Its rows say each error, in `problems`, a field's with where in it.
+- `:invalid` and `:warned` are what validation finds, on every board of the file, not only the one shown: an error outlines a shape in red, warnings alone in orange. Its rows say each error, in `problems`, a field's with where in it. A note with more than one relationship in a row an end marks Only one is `:invalid` for it, the row's name in `field`.
 - `:is-a(S)` follows `is` however far, so it is transitive and ends where a cycle comes back: Ann is a Person through Employee card, which is one. It is `:edge-to(S, is-a)` that stays direct, one step. Read where a shape lists its types, a type is its title: `[is~="Person"]` finds the shapes that say Person themselves, and a row's `is` lists titles.
 - `.Person` is refused (`unsupported`) and its hint is this word, `:is-a("Person")`.
-- `:incomplete` is a field its types need with no value, on every board of the file. It is not an error: the shape is not `:invalid` for it, and can be both (a wrong value elsewhere). A needed yes or no never counts, since an unticked box is a value. Its rows say what each needs, in `problems`.
+- `:incomplete` is a shape that still needs something, on every board of the file, as `:invalid` and `:warned` are what validation finds: a field its types need with no value is one. It is not an error: the shape is not `:invalid` for it, and can be both (a wrong value elsewhere); nothing is drawn on the board for it beyond the amber row. A needed yes or no never counts, since an unticked box is a value. A note whose relationship row an end marks Needed is incomplete while the row is empty, and its `problems` name the row (`staff is needed`). Its rows say what each needs, in `problems`.
+- `:misfit` is an arrow of a relationship type whose ends do not fit it: an end that is none of the type's from or to types, or one that builds on none of them, on every board of the file. A side the relationship type draws no end on takes any note. An end that cannot be read gives no verdict: an arrow with an end free, or to a reference that is gone, not available now, or stands for several notes, is not a misfit. It lists the arrows, and `arrow:misfit:invalid` gives each its `problems` (`field` `from` or `to`, `class` `wrong`, and what is wrong in words). [relationships.md](relationships.md) has the types and their ends.
+- **A relationship is read by the arrow's type.** `sticky-note[relationship]` is the relationship types, `arrow:is-a("Employment")` the relationships of one (the arrow is a thing of that type, as a note is), and the notes at their ends are `:end-of` and `:start-of` of the arrows: `:end-of(arrow:is-a("Employment"):starts-at("Ann"))` is where Ann works, `:start-of(arrow:is-a("Employment"):ends-at("Acme"))` who works at Acme. A value a relationship holds is read as a note's is: `arrow:is-a("Employment")[fieldValues.since<"2022-01-01"]`. Never put the type as an edge word's second argument: a title in quotes after a comma is not an edge type, and `:edge-to("Acme", "Employment")` is refused (`bad_argument`), with the form to write when a shape is titled Employment. [relationships.md](relationships.md) runs them all on a story of its own.
 - `:selected` is what the person had selected as the query started.
 
 ```query
 /* matches: "Ann" */
 :incomplete
+```
+
+The story has no relationship type, so no arrow is a misfit:
+
+```query
+/* count: 0 */
+arrow:misfit
 ```
 
 ```query
@@ -712,7 +722,6 @@ The edge types this app has. A type takes in those under it.
 |---|---|---|
 | `stands-for` | — | from a shape to each shape it stands for |
 | `mention` | — | a mention in a shape's text, from that shape to the shape it names |
-| `field-link` | `mention` | a field's link to a note, from the note that holds it to the note it names |
 | `is-a` | — | from a shape to each type it is, in the order of its list |
 | `arrow` | — | an arrow bound at both ends, from the shape it starts on to the shape it ends on, whatever its arrowheads |
 | `note-link` | `arrow` | an arrow drawn on the note-link channel |
@@ -721,8 +730,6 @@ The edge types this app has. A type takes in those under it.
 `stands-for` is the app's own, from a shape that stands for others to each of them. A `reference` that names a shape stands for it while it's public, so an arrow into the reference is an arrow into that shape ([references.md](references.md) runs on a file that has one).
 
 `is-a` is from an instance to each type its `is` names (a type may be one of types itself), so `:edge-to("Person", is-a)` finds the shapes that are a Person, directly.
-
-`field-link` is from a note to the note one of its fields links to, under `mention`: `:edge-to("Ann", mention)` takes it in, and `:mentions` doesn't (it is only text).
 
 A type the app doesn't declare but the file has (a newer app's channel) is accepted as it's written; one the app doesn't declare and the file doesn't have is `unknown_edge_type`, with the type like it.
 
@@ -748,7 +755,7 @@ A title or an id that no shape has is refused, never answered 0, so a no always 
 
 `build/canvas query --board 2 --ask "which notes mention the gateway?"` has the app ask Claude (Claude Haiku 5.5, the model the app's evaluation of this prompt picked: it answered 1,907 of its 1,920 runs right, 1,904 of them the first time; with the key the person saved in Infinite Canvas › Settings…) to write the query, runs it, and answers as a query does, with `asked`, the question, and `query`, what Claude wrote: read it, to check it asks what the person meant. A query Claude writes that's refused, or an answer that isn't one, is sent back once, with what was wrong, if that happens within 40 seconds; the answer warns `repaired` when it's the second. It waits up to 60 seconds.
 
-What leaves the machine: the question, what the app's queries can name (`query-vocabulary`'s `vocabulary`), the names of the boards on the way to the one shown, what's selected (by title and kind, or kind and id), and up to 200 titles with their kinds and boards, and the types of the file with their fields' keys and kinds (at most 8,000 characters). Never a shape's text or values.
+What leaves the machine: the question, what the app's queries can name (`query-vocabulary`'s `vocabulary`), the names of the boards on the way to the one shown, what's selected (by title and kind, or kind and id), and up to 200 titles with their kinds and boards, and the types of the file with their fields' keys and kinds (at most 8,000 characters), and, for each relationship type, the types it relates and the names typed on its ends and whether they are needed or only one. Never a shape's text or values.
 
 Use it to pass on the person's own question. When you know what to ask, write the query yourself: you see a refusal and fix it in one step. [../query-prompt.md](../query-prompt.md) is what the app tells Claude, word for word, with how to give yourself what it's given; its direction procedure for edge words is the one above.
 

@@ -6,7 +6,7 @@ import TestKit
 import Topology
 import Validation
 
-// `:invalid` and `:warned` on every board of the file: from Validation's cache on the board shown
+// `:invalid`, `:warned` and `:incomplete` on every board of the file: from Validation's cache on the board shown
 // while it's current, else by running the shape's rules against the board it's on as the app has
 // it, in the query's main slices.
 
@@ -80,8 +80,8 @@ import Validation
         let runs = RuleRuns()
         let vocabulary = try require(try checkedHarness(runs).editor.queries).vocabulary
         let words = vocabulary.words.filter { $0.from == ValidationQueriesPlugin().id }
-        expectEqual(words.map(\.form), [":invalid", ":warned"])
-        expectEqual(words.map(\.summary), ["it has an error", "it has a warning"])
+        expectEqual(words.map(\.form), [":invalid", ":warned", ":incomplete"])
+        expectEqual(words.map(\.summary), ["it has an error", "it has a warning", "it still needs something"])
         let bare = try EditorHarness(plugins: [TopologyPlugin(), FixturesPlugin(), CardsPlugin(), ValidationPlugin(), QueriesPlugin()])
         expectEqual(try refusal(":invalid", on: bare)?.reason, .unknownPseudoClass)
     },
@@ -104,5 +104,54 @@ import Validation
             expectEqual(warned.map(\.id), [2, 4].map(id))
             expect(warned.allSatisfy { $0.problems == nil }, "`:warned` is not asked")
         }
+    },
+    test(":incomplete is a shape with an issue of the third level, on every board, from a rule that is not Types': the other words leave it out") {
+        let runs = RuleRuns()
+        let file = CanvasFile(root: CanvasDocument(shapes: [record(1, Card(unit, text: "need")), record(2, Card(unit, text: "bad")), record(3, Card(unit, text: "fine")),
+                                                          record(4, Card(unit, text: "needwarn")), record(5, Card(unit, text: "badneed")), record(6, Pocket(unit))]),
+                              children: [id(6): CanvasDocument(shapes: [record(11, Card(unit, text: "need")), record(12, Card(unit, text: "fine"))])])
+        for cached in [true, false] {
+            let h = try EditorHarness(plugins: validationPlugins(runs), file: file)
+            if cached { _ = h.editor.validation?.results }
+            expectEqual(try matched(":incomplete", on: h), [1, 4, 5, 11].map(id), "cached: \(cached)")
+            expectEqual(try matched(":invalid", on: h), [2, 5].map(id), "needing something is no error")
+            expectEqual(try matched(":warned", on: h), [4].map(id), "nor a warning")
+            expectEqual(try matched(":incomplete:not(:warned):not(:invalid)", on: h), [1, 11].map(id))
+            expectEqual(try matched(":invalid, :incomplete", on: h), [1, 2, 4, 5, 11].map(id), "both words list both, once")
+            expectEqual(try matched(":incomplete:invalid", on: h), [5].map(id))
+            if cached {
+                expectEqual(h.editor.validation?.result(for: id(1))?.isValid, true, "valid, and nothing shows")
+                expectEqual(h.editor.validation?.result(for: id(1))?.worst, nil)
+            }
+        }
+    },
+    test("a row of :incomplete lists what the shape still needs, a field's with where in it, from the cache or from the rules, and not its errors or warnings") {
+        let runs = RuleRuns()
+        let file = CanvasFile(root: CanvasDocument(shapes: [record(1, Card(unit, text: "needwarn")), record(2, Card(unit, text: "badneed")), record(3, Card(unit, text: "fine"))]))
+        let needs = ShapeProblem(field: "name", path: "/name", class: "needed", message: "It needs a name.")
+        for cached in [true, false] {
+            let h = try EditorHarness(plugins: validationPlugins(runs), file: file)
+            if cached { _ = h.editor.validation?.results }
+            let queries = try require(h.editor.queries)
+            let asked = queries.problemsAsked
+            let rows = try awaitResult { try await queries.run(QueryRequest(":incomplete", limit: 10, properties: .none)) }.rows
+            expectEqual(rows.map(\.id), [1, 2].map(id), "cached: \(cached)")
+            expectEqual(rows.map(\.problems), [[needs], [needs]], "the warning and the error are not what it needs (cached: \(cached))")
+            expectEqual(queries.problemsAsked - asked, 2)
+            let both = try awaitResult { try await queries.run(QueryRequest(":invalid, :incomplete", limit: 10, properties: .none)) }.rows
+            expectEqual(both.map(\.problems), [[needs], [needs, ShapeProblem(field: nil, path: nil, class: "wrong", message: "It's bad.")]],
+                        "a query that names both lists both, the words in the order of their names (cached: \(cached))")
+        }
+    },
+    test("without the plugin the word is refused, and a query that counts asks nothing of problems") {
+        let bare = try EditorHarness(plugins: [TopologyPlugin(), FixturesPlugin(), CardsPlugin(), ValidationPlugin(), QueriesPlugin()])
+        expectEqual(try refusal(":incomplete", on: bare)?.reason, .unknownPseudoClass)
+        let runs = RuleRuns()
+        let h = try EditorHarness(plugins: validationPlugins(runs), file: CanvasFile(root: CanvasDocument(shapes: [record(1, Card(unit, text: "need"))])))
+        let queries = try require(h.editor.queries)
+        let asked = queries.problemsAsked
+        let counted = try awaitResult { try await queries.run(QueryRequest(":incomplete", limit: 10, countOnly: true, properties: .none)) }
+        expectEqual(counted.count, 1)
+        expectEqual(queries.problemsAsked, asked)
     },
 ])

@@ -82,6 +82,20 @@ public struct ChangeSet: Equatable, Sendable {
 
     init() {}
 
+    /// The part of it that is about `ids`: those of the shapes it added, changed, moved, removed and reached
+    /// elsewhere that are among them, and nothing else of it. For asking of a few of a transaction's writes what is
+    /// asked of them all (which statement of a run reached a shape: `Transaction.pending`).
+    public func restricted(to ids: Set<ShapeID>) -> ChangeSet {
+        var part = ChangeSet()
+        part.added = added.intersection(ids)
+        part.changed = changed.intersection(ids)
+        part.moved = moved.intersection(ids)
+        part.removed = removed.intersection(ids)
+        part.elsewhere = elsewhere.intersection(ids)
+        part.byAgent = byAgent
+        return part
+    }
+
     /// Only shapes elsewhere: what changed on other boards while a board wasn't shown, which a
     /// service that kept what it knew of that board hands, on going back to it, to what reads other
     /// shapes (the table of contents' rows, through their `affected`).

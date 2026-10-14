@@ -76,5 +76,5 @@ extension TypesStyle {
     public static let neededDotSize: CGFloat = 5
     public static let neededDotGap: CGFloat = 5
     /// A wrong pill's wave starts and ends this far in from its ends, clear of the round corners.
-    static let linkWaveInset: CGFloat = 7
+    static let pillWaveInset: CGFloat = 7
 }

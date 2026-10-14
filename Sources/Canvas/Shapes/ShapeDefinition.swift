@@ -67,6 +67,11 @@ public struct ShapeContext {
         generation = index?.generation ?? 0
     }
 
+    /// One of the editor's services, if this context is the editor's, a transaction's or a run's: what a maker
+    /// that works without a gesture reads besides the shapes (Topology's arrows, say), as the editor holds it
+    /// committed, not as a transaction in flight leaves it. Nil if no installed plugin registers it.
+    public func service<S: EditorService>(_: S.Type) -> S? { layout?.lend(ObjectIdentifier(S.self)) as? S }
+
     private var currentIndex: ShapeIndex? {
         guard let index, index.generation == generation else { return nil }
         return index

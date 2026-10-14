@@ -54,12 +54,6 @@ extension CanvasEditor {
         return id
     }
 
-    /// Ann Lee and Bo Park, Persons of the file off the stage: what an Order's customer and a note's guests point at.
-    func offstagePeople() {
-        instance(of: [FieldFixtures.personID], words: "Ann Lee", ["name": "Ann Lee"], at: CGPoint(x: farOff.x, y: farOff.y + 400), id: FieldFixtures.annLeeID)
-        instance(of: [FieldFixtures.personID], words: "Bo Park", ["name": "Bo Park"], at: CGPoint(x: farOff.x + 300, y: farOff.y + 400), id: FieldFixtures.boParkID)
-    }
-
     /// The types, off the stage.
     func offstage(_ types: [FieldFixtures.TypeText]) {
         for (place, type) in types.enumerated() { put(type, at: CGPoint(x: farOff.x + CGFloat(place) * 300, y: farOff.y)) }
@@ -148,9 +142,8 @@ let valueStates: [GalleryState] = [
         stage.editor.transact("Delete") { $0.delete([FieldFixtures.personID]) }
         return canvas(stage)
     },
-    GalleryState("Flow5-p2-order", answers: "Flow5 p2", "an Order: the address and its items summarized, the status, the tags, a ticked box, `add gift note`; the customer's stored name, plain until pointers", size: tallNote) { stage in
+    GalleryState("Flow5-p2-order", answers: "Flow5 p2", "an Order: the address and its items summarized, the status, the tags, a ticked box, `add gift note`; the customer's name as text", size: tallNote) { stage in
         stage.editor.offstage([FieldFixtures.order, FieldFixtures.person, FieldFixtures.address])
-        stage.editor.offstagePeople()
         stage.editor.instance(of: [FieldFixtures.orderID], words: "Ann's order.", orderValues, at: CGPoint(x: 100, y: 40))
         return canvas(stage)
     },
@@ -162,11 +155,10 @@ let valueStates: [GalleryState] = [
         ], at: CGPoint(x: 100, y: 40))
         return canvas(stage)
     },
-    GalleryState("Flow5-p7-values-b", answers: "Flow5 p7", "KindsB filled: a link, links, a list of groups, a list of Address's fields, either, pairs, what no control suits, either with a group, an integer", size: tallNote) { stage in
+    GalleryState("Flow5-p7-values-b", answers: "Flow5 p7", "KindsB filled: a text, a list of text, a list of groups, a list of Address's fields, either, pairs, what no control suits, either with a group, an integer", size: tallNote) { stage in
         stage.editor.offstage([FieldFixtures.everyKind.b, FieldFixtures.person, FieldFixtures.address])
-        stage.editor.offstagePeople()
         stage.editor.instance(of: [FieldFixtures.kindsBID], words: "A note of the other kinds.", [
-            "customer": link(to: FieldFixtures.boParkID, "Bo Park"), "guests": [link(to: FieldFixtures.annLeeID, "Ann Lee"), link(to: FieldFixtures.boParkID, "Bo Park")], "lineItems": [["product": "Mug", "quantity": 2], ["product": "Plate", "quantity": 1]],
+            "customer": "Bo Park", "guests": ["Ann Lee", "Bo Park"], "lineItems": [["product": "Mug", "quantity": 2], ["product": "Plate", "quantity": 1]],
             "rooms": [["street": "12 Main St", "city": "Leeds"]], "size": 12, "labels": ["size": "L", "colour": "red"], "anything": ["note": "x"],
             "payment": ["cardNumber": "4111"], "count": 3,
         ], at: CGPoint(x: 100, y: 40))
@@ -237,7 +229,6 @@ let valueStates: [GalleryState] = [
     },
     GalleryState("values-gone-type", "an Order whose Address is gone: the dashed chip in the shipping address row, its value kept", size: tallNote) { stage in
         stage.editor.offstage([FieldFixtures.order, FieldFixtures.person, FieldFixtures.address])
-        stage.editor.offstagePeople()
         stage.editor.instance(of: [FieldFixtures.orderID], words: "Ann's order.", orderValues, at: CGPoint(x: 100, y: 40))
         stage.editor.transact("Delete") { $0.delete([FieldFixtures.addressID]) }
         return canvas(stage)
@@ -256,7 +247,6 @@ let valueStates: [GalleryState] = [
     },
     GalleryState("values-zoomed-out", "notes that are one at 30%: two bars a row, the value's bar missing where the row is empty, red where it is wrong", size: CGSize(width: 560, height: 360)) { stage in
         stage.editor.offstage([FieldFixtures.order, FieldFixtures.person, FieldFixtures.address])
-        stage.editor.offstagePeople()
         stage.editor.instance(of: [FieldFixtures.orderID], words: "Ann's order.", orderValues, at: CGPoint(x: 40, y: 40))
         let ann = stage.editor.instance(of: [FieldFixtures.personID], words: "Ann Lee.", ["name": "Ann Lee", "email": "ann@"], at: CGPoint(x: 400, y: 40))
         stage.editor.rowBook?.checks = { record in record.id == ann ? FieldCheck(problems: [problem(FieldPath(field: "email"), .wrong)]) : .clean }
@@ -284,7 +274,7 @@ let valueStates: [GalleryState] = [
 
 /// Board 5's Order, as panel 2 reads it.
 private let orderValues: JSONObject = [
-    "customer": link(to: FieldFixtures.annLeeID, "Ann Lee"), "shippingAddress": ["street": "12 Main St", "city": "Leeds"],
+    "customer": "Ann Lee", "shippingAddress": ["street": "12 Main St", "city": "Leeds"],
     "lineItems": [["product": "Mug", "quantity": 2], ["product": "Plate", "quantity": 1]],
     "status": "paid", "tags": ["gift", "mugs"], "gift": true,
 ]

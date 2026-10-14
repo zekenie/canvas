@@ -25,8 +25,12 @@ struct RowFace: Hashable, Sendable {
         case name
         /// A note that is one: the value of a row, which acts by what the row holds (`RowClass`).
         case value
-        /// A note that is one: a live pill of a link, which goes to the note it points at.
+        /// A note that is one: a pill of a relation row, which goes to its note while it is live, else to the pill its arrow ends on.
         case pill(ShapeID)
+        /// A type's note: a relation row, which goes to its relationship type.
+        case relationType(ShapeID)
+        /// A note that is one: the `›` that ends a relation row that holds a relationship, which opens the card of its relationships.
+        case chevron
     }
 
     let shape: ShapeID
@@ -88,7 +92,7 @@ extension RowBook {
         guard let record = editor?.document[id], let subject = subject(of: record), subject.isType, let block = rowsRect(of: record) else { return nil }
         let template = template(subject)
         guard case let (reason, action?, row)? = failure(of: record, template: template) else { return nil }
-        let geometry = RowGeometry(block: block, hasLead: hasWords(record), longestName: template.nameColumn)
+        let geometry = RowGeometry(block: block, hasLead: hasWords(record), template: template)
         return FailureLayout(reason, action: action, in: geometry.rect(row)).actionRect
     }
 
@@ -128,35 +132,38 @@ extension RowBook {
         let local = CGPoint(x: point.x - edited.block.minX, y: point.y - edited.block.minY)
         guard let hit = target(at: local, in: edited) else { return nil }
         if hit.onValue, let pointed = pill(at: local, row: hit.row, in: edited) { return RowFace(shape: record.id, row: hit.row, part: .pill(pointed), at: point) }
+        if hit.onValue, isChevron(local, row: hit.row, in: edited) { return RowFace(shape: record.id, row: hit.row, part: .chevron, at: point) }
         if hit.onValue { return edited.classes[hit.row] == .still ? nil : RowFace(shape: record.id, row: hit.row, part: .value, at: point) }
         return RowFace(shape: record.id, row: hit.row, part: .name, at: point)
     }
 
-    /// The target of the live pill of a link row under a point in the block's coordinates; a dashed pill is no face.
+    /// Where the pill of a relation row under a point in the block's coordinates goes: its note while it is live, else the
+    /// pill its arrow ends on; nil off every pill, and for a dashed one whose arrow ends on no pill.
     func pill(at local: CGPoint, row: Int, in edited: EditedRows) -> ShapeID? {
         let shown = edited.shown.rows[row]
-        guard case .links(let links, _) = shown.content, shown.valueRect.contains(local) else { return nil }
+        guard case .related(let pills, _) = shown.content, shown.valueRect.contains(local) else { return nil }
         let x = local.x - shown.valueRect.minX
-        return links.first { $0.isLive && x >= $0.x && x <= $0.x + $0.width }?.link.target
+        return pills.first { x >= $0.x && x <= $0.x + $0.width }?.destination
     }
 
     private func part(at point: CGPoint, on record: AnyShapeRecord, in block: CGRect) -> RowFace? {
         guard let subject = subject(of: record), subject.isType else { return nil }
         let template = template(subject)
         guard let spot = spot(of: record, template: template) else { return nil }
-        let geometry = RowGeometry(block: block, hasLead: hasWords(record), longestName: template.nameColumn)
+        let geometry = RowGeometry(block: block, hasLead: hasWords(record), template: template)
         let id = record.id
         switch spot {
         case .failed(let reason, let action?):
             guard let words = FailureLayout(reason, action: action, in: geometry.rect(0)).actionRect, words.contains(point) else { return nil }
             return RowFace(shape: id, row: 0, part: action == .retry ? .retry : .settings, at: point)
         case .rows:
-            let row = Int(((point.y - geometry.top) / TypesStyle.rowHeight).rounded(.down))
+            // Nil on the dashed line and above the first row.
+            guard let row = geometry.row(at: point.y) else { return nil }
             if row == template.items.count, case .failed(let reason, let action?)? = footFailure(of: id) {
                 guard let words = FailureLayout(reason, action: action, in: geometry.rect(row)).actionRect, words.contains(point) else { return nil }
                 return RowFace(shape: id, row: row, part: action == .retry ? .retry : .settings, at: point)
             }
-            guard template.items.indices.contains(row), point.y >= geometry.top else { return nil }
+            guard template.items.indices.contains(row) else { return nil }
             switch template.items[row] {
             case .fold:
                 return RowFace(shape: id, row: row, part: .more, at: point)
@@ -164,6 +171,9 @@ extension RowBook {
                 if field.opensOnType { return RowFace(shape: id, row: row, part: .more, at: point) }
                 if field.kind.hasOptions, geometry.valueRect(row).contains(point) { return RowFace(shape: id, row: row, part: .options, at: point) }
                 return nil
+            case .relation(let relation):
+                // A type's relation row goes to its relationship type, wherever in the row the click is.
+                return RowFace(shape: id, row: row, part: .relationType(relation.row.key.type), at: point)
             }
         default:
             return nil
@@ -178,6 +188,9 @@ extension RowBook {
         case .value: performValue(face)
         // Going to the note changes nothing in this one, so a read-only note goes too.
         case .pill(let target): editor?.mentions?.follow(target)
+        // Going to the relationship type changes nothing in this note either.
+        case .relationType(let type): editor?.goTo([type])
+        case .chevron: performChevron(face)
         default: performOnType(face)
         }
     }
@@ -202,11 +215,22 @@ extension RowBook {
             if let key = edited.shown.rows[row].path?.field { toggle(key, of: id) }
         case .choice:
             if editor.isReadOnly(id) { editor.refuseChanges(to: [id]) } else { popChoiceMenu(row: row, of: edited) }
-        case .link:
+        case .relation:
             // The session begins in the row and its list opens a turn later (`RowsView.begin`).
             if editor.isReadOnly(id) { editor.refuseChanges(to: [id]) } else { editor.beginEditing(id, at: face.at) }
         case .still:
             break
+        }
+    }
+
+    /// A click on the `›` of a relation row: its card. A read-only note opens it to be read; any other begins the session in the
+    /// row and the card is asked for on its next turn (`RowsView.begin`).
+    private func performChevron(_ face: RowFace) {
+        guard let editor, let record = editor.document[face.shape], let edited = editedRows(for: record), edited.classes.indices.contains(face.row) else { return }
+        if editor.isReadOnly(face.shape) {
+            openCard(valuesCardRequest(row: face.row, of: edited, closed: {}, tabbedOut: { _ in }))
+        } else {
+            editor.beginEditing(face.shape, at: face.at)
         }
     }
 
@@ -224,9 +248,9 @@ extension RowBook {
             let template = template(subject)
             guard template.items.indices.contains(face.row), case .field(let field) = template.items[face.row],
                   let block = rowsRect(of: record), let menu = RowMenus.options(of: field.kind) else { return }
-            let geometry = RowGeometry(block: block, hasLead: hasWords(record), longestName: template.nameColumn)
+            let geometry = RowGeometry(block: block, hasLead: hasWords(record), template: template)
             editor.popUpMenu(menu, below: geometry.valueRect(face.row))
-        case .name, .value, .pill:
+        case .name, .value, .pill, .relationType, .chevron:
             break
         }
     }
@@ -235,7 +259,7 @@ extension RowBook {
     private func cardRequest(for face: RowFace, subject: RowSubject, record: AnyShapeRecord) -> FieldCardRequest? {
         let template = template(subject)
         guard template.items.indices.contains(face.row), let block = rowsRect(of: record) else { return nil }
-        let geometry = RowGeometry(block: block, hasLead: hasWords(record), longestName: template.nameColumn)
+        let geometry = RowGeometry(block: block, hasLead: hasWords(record), template: template)
         let id = face.shape
         let target: FieldCardRequest.Target, folded: [Resolved.Field], isMore: Bool
         let path: FieldPath?
@@ -244,13 +268,16 @@ extension RowBook {
             (target, folded, isMore, path) = (.field(field.path), [], false, field.path)
         case .fold(let fold):
             (target, folded, isMore, path) = (.fold, fold.folded, fold.isMore, nil)
+        case .relation:
+            // A relation row goes to its type and opens no card (only a face of `.more` asks for one).
+            return nil
         }
         // Where the row is now: its place among the rows as drawn, asked while the card is open; nil once it
         // is gone (the card closes).
         let now: @MainActor () -> CGRect? = { [weak self] in
             self?.rows(of: id).first { row in
                 if let path { return row.path == path }
-                return row.path == nil && (row.content == .fold("")) == isMore
+                return row.isFold && (row.content == .fold("")) == isMore
             }?.rect
         }
         return FieldCardRequest(shape: id, target: target, mode: .kinds, isReadOnly: true, rowRect: geometry.rect(face.row), folded: folded,
@@ -284,7 +311,7 @@ func registerRowFaces(into registrar: inout PluginRegistrar) {
                          // Without it the second press of a fast pair would open the note for editing.
                          doubleClick: { face, editor in
                              switch face.part {
-                             case .more, .options, .value, .pill: editor.rowBook?.perform(face)
+                             case .more, .options, .value, .pill, .relationType, .chevron: editor.rowBook?.perform(face)
                              // A name only selects; its second press edits the words, as one on the note does.
                              case .name: editor.open(face.shape, at: face.at, clickCount: 2)
                              case .retry, .settings: break

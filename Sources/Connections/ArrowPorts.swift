@@ -1,6 +1,7 @@
 import Canvas
 import CoreGraphics
 import Topology
+import Types
 
 extension PluginID {
     public static let arrowPorts: PluginID = "arrow-ports"
@@ -32,6 +33,8 @@ public struct ArrowPortsPlugin: ListedPlugin {
     public var id: PluginID { .arrowPorts }
 
     public func register(into registrar: inout PluginRegistrar) {
+        // A relationship's row in the table of contents is titled by its type; after Types, whose changes it hears.
+        registrar.service { ArrowTypeRows(editor: $0) }
         registrar.connects(Arrow.self, edgeType: ArrowEdge.self, canConnect: { id, shapes in shapes.canBindArrow(to: id) },
                            make: { request, existing, shapes in ArrowConnections.arrow(for: request, existing: existing, in: shapes) },
                            ends: { ArrowConnections.ends(of: $0) }) { connection, editor in
@@ -40,7 +43,20 @@ public struct ArrowPortsPlugin: ListedPlugin {
                               complete: { arrow, end in
                                   guard let shape = editor.document[end] else { return }
                                   arrow[ChannelProperty.self] = editor.channel(of: connection, endingAt: shape)
-                              })
+                                  // A second arrow of a pair, aimed at the centers, is bent apart from the first.
+                                  guard var typed = arrow.typed(as: Arrow.self), let topology = editor.topology,
+                                        let start = typed.props.start.binding, let finish = typed.props.end.binding else { return }
+                                  let beside = ArrowConnections.parallels(of: start.shapeID, finish.shapeID, except: arrow.id, in: topology)
+                                  let bend = ArrowConnections.pairBend(of: typed.props, beside: beside, in: editor.document)
+                                  guard bend != 0 else { return }
+                                  typed.props.bend = bend
+                                  var bent = AnyShapeRecord(typed)
+                                  bent.meta = arrow.meta
+                                  arrow = bent
+                              },
+                              // Released bound: what the arrow is (an end, a relationship, a relationship type
+                              // between two types) is Types', in the press's own step.
+                              finished: { editor.connectionDrawn($0) })
         }
         registrar.arrowBindingRule { query in
             guard let channel = query.arrow[ChannelProperty.self], query.registry.declares(channel) else { return true }
@@ -93,6 +109,14 @@ enum ArrowConnections {
         }
         arrow.props.startArrowhead = request.bothHeads
         arrow.props.endArrowhead = true
+        // A new arrow aimed at the centers beside another of the pair is bent apart from it (`request.beside`
+        // names them; none: read now, from Topology's committed arrows).
+        if existing == nil {
+            let beside = request.beside ?? shapes.service(TopologyIndex.self).map {
+                parallels(of: request.from, request.to, except: arrow.id, in: $0)
+            } ?? []
+            arrow.props.bend = pairBend(of: arrow.props, beside: beside, in: shapes.document)
+        }
         var made = AnyShapeRecord(arrow)
         if let existing { made.meta = existing.meta }
         let registry = shapes.registry

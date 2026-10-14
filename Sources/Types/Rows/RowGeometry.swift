@@ -27,8 +27,13 @@ extension TypesStyle {
     public static let spotBarShares: [CGFloat] = [0.56, 0.44, 0.52]
     /// Between a failure's reason and its action's words.
     public static let actionGap: CGFloat = 8
-    /// Between the pills of a list of links, and before the `+N` that counts the rest.
-    public static let linkGap: CGFloat = 6
+    /// Between a row's pills, and before the `+N` that counts the rest.
+    public static let pillGap: CGFloat = 6
+    /// The dashed line between a note's fields and its relation rows takes this much room, and is drawn with this
+    /// dash (on, off) at this strength of black: fixed, since the paper is light in both appearances.
+    public static let relationRuleHeight: CGFloat = 8
+    static let relationRuleDash: [CGFloat] = [3, 3]
+    static let relationRuleAlpha: CGFloat = 0.25
 }
 
 @MainActor
@@ -38,15 +43,43 @@ struct RowGeometry {
     let top: CGFloat
     /// The name column's width: the longest shown name's, at most `nameShare` of the block.
     let nameColumn: CGFloat
+    /// The row the dashed line comes before: the first relation row, when a field or a fold is above it; nil with
+    /// no line. Every row from it down is `relationRuleHeight` lower.
+    private let ruleBefore: Int?
 
-    init(block: CGRect, hasLead: Bool, longestName: CGFloat) {
+    /// The geometry of a template's rows in `block`: the template carries the dashed line's place, so no site that
+    /// places a row can forget it.
+    init(block: CGRect, hasLead: Bool, template: RowTemplate) {
         self.block = block
         top = block.minY + (hasLead ? TypesStyle.rowsLead : 0)
-        nameColumn = min(longestName, TypesStyle.nameShare * block.width)
+        nameColumn = min(template.nameColumn, TypesStyle.nameShare * block.width)
+        ruleBefore = template.hasRule ? template.relationStart : nil
     }
 
     func rect(_ row: Int) -> CGRect {
-        CGRect(x: block.minX, y: top + CGFloat(row) * TypesStyle.rowHeight, width: block.width, height: TypesStyle.rowHeight)
+        CGRect(x: block.minX, y: top + CGFloat(row) * TypesStyle.rowHeight + offset(of: row), width: block.width, height: TypesStyle.rowHeight)
+    }
+
+    /// How far the dashed line pushes a row down.
+    private func offset(of row: Int) -> CGFloat {
+        if let ruleBefore, row >= ruleBefore { TypesStyle.relationRuleHeight } else { 0 }
+    }
+
+    /// The row at a height (an index that may be past the rows there are), nil above the first row and on the dashed
+    /// line: the inverse of `rect(_:)`.
+    func row(at y: CGFloat) -> Int? {
+        let down = y - top
+        guard down >= 0 else { return nil }
+        guard let ruleBefore else { return Int((down / TypesStyle.rowHeight).rounded(.down)) }
+        let ruleTop = CGFloat(ruleBefore) * TypesStyle.rowHeight
+        if down < ruleTop { return Int((down / TypesStyle.rowHeight).rounded(.down)) }
+        if down < ruleTop + TypesStyle.relationRuleHeight { return nil }
+        return ruleBefore + Int(((down - ruleTop - TypesStyle.relationRuleHeight) / TypesStyle.rowHeight).rounded(.down))
+    }
+
+    /// Where the dashed line goes (its middle), when there is one.
+    var ruleY: CGFloat? {
+        ruleBefore.map { top + CGFloat($0) * TypesStyle.rowHeight + TypesStyle.relationRuleHeight / 2 }
     }
 
     func nameRect(_ row: Int) -> CGRect {
