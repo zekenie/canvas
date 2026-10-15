@@ -80,7 +80,7 @@ extension InspectorWindow {
         }
         let panel = try require(w.editor.detailPanel)
         expectEqual(panel.layout(for: try require(w.editor.document[groceries.id])).tabs.map(\.title), ["Connections", "Style"], "a note's tabs")
-        expectEqual(panel.layout(for: try require(w.editor.document[plans.id])).tabs.map(\.title), ["Board", "Connections", "Style"])
+        expectEqual(panel.layout(for: try require(w.editor.document[plans.id])).tabs.map(\.title), ["Connections", "Style"])
         expectEqual(panel.layout(for: try require(w.editor.document[ship.id])).tabs.map(\.title), ["Connections", "Style"], "it mentions, and nothing mentions it")
 
         w.editor.selection = groceries.id

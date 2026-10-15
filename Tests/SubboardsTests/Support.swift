@@ -170,9 +170,4 @@ final class PanelWindow {
     var titleField: NSTextField? {
         hosting.descendants(NSTextField.self).first { $0.isEditable && $0.convert($0.bounds, to: hosting).maxY <= 44 }
     }
-
-    /// Buttons below the header's 44 points (its back button is up there).
-    var buttons: [NSButton] {
-        hosting.descendants(NSButton.self).filter { !($0 is NSPopUpButton) && $0.convert($0.bounds, to: hosting).minY >= 44 }
-    }
 }

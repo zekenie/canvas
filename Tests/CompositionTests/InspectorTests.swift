@@ -9,6 +9,7 @@ import Find
 import Geometry
 import LanguageModels
 import Mentions
+import Neighbors
 import Selection
 import ShippedTesting
 import StickyNotes
@@ -228,7 +229,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         let panels: [(id: ShapeID, kind: ShapeKind, tabs: [any DetailTab.Type])] = [
             (titled.id, StickyNote.kind, []),
             (card.id, StickyNote.kind, [TypeSchemaTab.self]),
-            (sub.id, Subboard.kind, [BoardTab.self]),
+            (sub.id, Subboard.kind, [NeighborsTab.self, StyleTab.self]),
         ]
         @MainActor func choose<Tab: DetailTab>(_ tab: Tab.Type, for kind: ShapeKind, in editor: CanvasEditor) throws {
             try require(editor.detailPanel).choose(.of(tab), for: kind)

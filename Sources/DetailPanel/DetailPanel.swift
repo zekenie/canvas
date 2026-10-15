@@ -13,9 +13,9 @@ extension PluginID {
 /// declare one; it shows for a shape when a section that applies to the shape names it, or when the
 /// shape has status lines for it (`DetailStatuses`).
 ///
-///     public enum BoardTab {}
-///     extension BoardTab: DetailTab {
-///         public static var title: String { "Board" }
+///     public enum TypesTab {}
+///     extension TypesTab: DetailTab {
+///         public static var title: String { "Types" }
 ///         public static var order: Int { 50 }
 ///     }
 ///
@@ -134,11 +134,12 @@ public struct DetailSection<Value> {
     }
 
     /// The section, its controls working on a read-only shape (a locked one) too, where the panel
-    /// disables every other section's: for controls that change nothing of the shape, as Boards'
-    /// Open, which goes into it. What they write is refused there all the same.
+    /// disables every other section's: for controls that change nothing of the shape, as the
+    /// Connections tab's rows, which go to what's connected. What they write is refused there all
+    /// the same.
     ///
-    ///     DetailSection(in: BoardTab.self) { _ in
-    ///         DetailCommandButton("Open", command: .openSelection)
+    ///     DetailSection(in: NeighborsTab.self, id: "neighbors") { shape in
+    ///         NeighborListView(subject: shape.shapeID, list: shape.service(NeighborList.self))
     ///     }
     ///     .enabledWhileReadOnly()
     public func enabledWhileReadOnly() -> Self {

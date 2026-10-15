@@ -1,6 +1,5 @@
 import Canvas
 import ContextMenus
-import DetailPanel
 import Keyboard
 import Selection
 import SwiftUI
@@ -8,8 +7,8 @@ import Titles
 
 /// Boards, as a plugin: getting around a file's boards, whatever kind owns them. A kind whose shapes
 /// own boards (the core's `BoardOwning`) opts in with one line, `x.opensBoard(placeholder:systemImage:)`,
-/// and its shapes open onto their boards: a double-click, Return, ⌘↓, their row, Open in their
-/// context menu and in their panel. ⌘↑ (`.enclosingBoard`) goes back up, selecting the shape whose
+/// and its shapes open onto their boards: a double-click, Return, ⌘↓, their row and Open in their
+/// context menu. ⌘↑ (`.enclosingBoard`) goes back up, selecting the shape whose
 /// board it left, and `BoardPath` shows where you are over the canvas. What a board is called is its
 /// owner's title (Titles), else its kind's placeholder. The core never learns what a board is called.
 extension PluginID {
@@ -53,13 +52,6 @@ public struct BoardKind: Sendable {
 public enum BoardsMenuGroup {}
 extension BoardsMenuGroup: MenuGroup {
     public static var order: Int { 0 }
-}
-
-/// The tab opening a board brings to the kinds that opt in: after the kind's own, before Style.
-public enum BoardTab {}
-extension BoardTab: DetailTab {
-    public static var title: String { "Board" }
-    public static var order: Int { 50 }
 }
 
 /// A horizontal any board-owning kind opts into (`x.opensBoard(…)`): opening its shapes shows their

@@ -109,7 +109,7 @@ extension ConnectionGroup {
 }
 
 @MainActor let connectionsShippedTests = Suite("Connections, as shipped", [
-    test("every kind's panel has the Connections tab: a note's first, a subboard's after its Board, a type note's after its Schema") {
+    test("every kind's panel has the Connections tab: a note's first, a type note's after its Schema") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let note = editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Milk"))
         let subboard = editor.add(Subboard(frame: CGRect(x: 300, y: 0, width: 240, height: 160)))
@@ -126,7 +126,7 @@ extension ConnectionGroup {
             tabs.append(panel.layout(for: record).tabs.map(\.title))
         }
         expectEqual(kinds, Set(editor.registry.kinds), "every kind there is")
-        expectEqual(tabs, [["Connections", "Style"], ["Board", "Connections", "Style"], ["Connections", "Style"], ["Connections", "Style"], ["Connections"], ["Schema", "Connections", "Style"]])
+        expectEqual(tabs, [["Connections", "Style"], ["Connections", "Style"], ["Connections", "Style"], ["Connections", "Style"], ["Connections"], ["Schema", "Connections", "Style"]])
     },
 
     test("a note with an arrow out and an arrow in lists the notes at the other ends under Points To and Pointed To By, and no arrow, with a count each") {
@@ -324,7 +324,8 @@ extension ConnectionGroup {
             return panel.currentTab(in: panel.layout(for: record), for: record.kind)
         }
         h.editor.selection = s
-        expect(try current() != tab, "the subboard's own tab first")
+        panel.choose(.of(StyleTab.self), for: Subboard.kind)
+        expect(try current() != tab, "on another tab first")
         expectEqual(h.editor.makePrivate([s]), [s], "held: refused")
         expectEqual(try current(), tab, "the panel is on Connections now")
         expectEqual(h.editor.document[s]?[PublicProperty.self], true, "nothing else changes")
