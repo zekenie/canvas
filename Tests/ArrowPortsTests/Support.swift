@@ -1,4 +1,5 @@
 import Adornments
+import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import Colors

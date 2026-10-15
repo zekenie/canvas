@@ -149,12 +149,12 @@ the Keyboard horizontal's, which every key is registered with ([Keyboard
 shortcuts](#keyboard-shortcuts)). [A vertical plugin](#a-vertical-plugin) goes through it part by
 part.
 
-**2. Declare it in `Package.swift`**, on one line, with its layer. Patches is a vertical (a
-shape kind and its tool), and the modules of this project it imports are the core and
+**2. Declare it in `Package.swift`**, on one line, with its layer. Patches is a product, a
+vertical (a shape kind and its tool), and the modules of this project it imports are the core and
 Keyboard, for its key:
 
 ```swift
-.target(name: "Patches", dependencies: ["Canvas", "Keyboard"], path: "Examples/Patches"), // layer: vertical
+.target(name: "Patches", dependencies: ["Canvas", "Keyboard"], path: "Examples/Patches"), // layer: product
 ```
 
 `path:` is only for a module outside `Sources`. The dependencies must be exactly the modules the
@@ -164,7 +164,7 @@ compiling, and says what's wrong in a line:
 ```
 Examples/Patches/Patches.swift:3: Patches imports Geometry, but Package.swift doesn't list it as a dependency of Patches
 Patches lists Geometry in Package.swift but never imports it
-build.sh: Patches (vertical) may not depend on StickyNotes (vertical); vertical may use: foundation surface concern
+build.sh: Patches (product) may not depend on StickyNotes (product); product may use: core platform
 build.sh: Examples/Patches isn't a target in Package.swift
 ```
 
@@ -250,7 +250,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Define a kind's properties: how boards write it, and its JSON Schema | `static let properties = Properties<K> { Property("text", \.text) }`, and `init()`; `registry.schema(for:)` | [Properties](#a-kinds-own-properties) |
 | Bound a property (a length, a range), so a shape outside the bounds gets a validation warning | A modifier: `Property("text", \.text).maxLength(200)`, or an added property's `keywords`; Validation checks every shape against its kind's schema | [Checking shapes](#checking-shapes-against-their-schemas) |
 | Add a shape without a frame (a line, a path) | `ShapeProps`; `geometry`, `hitTest` (with its `hitMargin`) and `CustomTranslation`; a tool that inserts it | [A freehand line](#a-shape-without-a-frame) |
-| Work out a kind's geometry from other shapes (a connector) | Look them up through the `ShapeContext`: `shape(_:)`, `geometry(of:)`, `hitTest(_:shape:)` | [Arrows](../Sources/Connections/Connectables.swift) |
+| Work out a kind's geometry from other shapes (a connector) | Look them up through the `ShapeContext`: `shape(_:)`, `geometry(of:)`, `hitTest(_:shape:)` | [Arrows](../Sources/Arrows/Connectables.swift) |
 | Hit or outline a shape more exactly than its frame | Override `geometry`, `hitTest` or `indicatorPath` | [A freehand line](#a-shape-without-a-frame), [StickyNotes](../Sources/StickyNotes/StickyNotes.swift)' rounded outline |
 | Have a line kind covered, not striped, by a tinted outline (a light) | `StrokedShape`: say how wide the line is, `lineWidth(of:in:)`, in world units; overlays that decorate along it read `registry.lineWidth(of:in:)` | [A freehand line](#a-shape-without-a-frame), [Outlines](#outlines) |
 | Decorate a closed shape outside its outline without drawing over the tinted rings round it | `OverlayContext.tintedOutset(of:)` (view points) added to the distance, `greatestTintedOutset` for culling | [Outlines](#outlines), [Validation](#a-horizontal-plugin)'s rings |
@@ -260,7 +260,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Add a tool that handles its own press and drag | `registrar.tool` (or a kind's `x.tool(...)`), a `Tool` and a `Session` | [The Frame tool](#tools-and-sessions) |
 | Give a tool its key | `shortcut:` on the call that registers the tool (Keyboard's) | [Patches](#your-first-plugin) |
 | Make a key do something, or give a menu's command its key | `registrar.shortcut(chord, "Title") { ... }`, `registrar.command(_:shortcuts:)` | [Keyboard shortcuts](#keyboard-shortcuts) |
-| Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Connections/ArrowDefinition.swift) |
+| Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Let a box kind's shapes be resized: eight handles, ⇧ for proportions, ⌥ from the center, a minimum size | Selection's `x.resizable(minimumSize:)` | [Resizing](#resizing) |
 | Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [Types](#the-full-showcase-a-types-schema-tab) |
 | Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [Boards](#contributing) |
@@ -288,7 +288,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Let the user put a flag on a shape, and show it | An added property, a menu item that sets it, and an adornment whose label reads it | [Something the user turns on](#something-the-user-turns-on) |
 | Keep a service's state for going back to a board | `EditorService.boardWillChange` and `boardDidChange`, with a `BoardStash` (else a switch is heard as a commit of every shape) | [Showing a board](#showing-a-board) |
 | Write to a shape on a board that isn't shown (an answer that lands late), as an undo step made there | `editor.transact(on: board, "Name") { … }`; services hear it in `ChangeSet.boardsChanged` and `elsewhere` | [Boards that aren't shown](#boards-that-arent-shown) |
-| Draw above every shape something that isn't one shape's adornment (a status outline, hints) | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Validation](../Sources/Validation/Validation.swift), [Arrows](../Sources/Connections/ArrowDefinition.swift)' binding hints |
+| Draw above every shape something that isn't one shape's adornment (a status outline, hints) | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Validation](../Sources/Validation/Validation.swift), [Arrows](../Sources/Arrows/ArrowDefinition.swift)' binding hints |
 | Outline shapes in a color of your own (a highlight), a ring for each group a shape is in, filled in the minimap too | `registrar.outlines { … Outlines(tinted: [TintedOutlines(color:shapes:ring:)]) }`: stroked under every other outline | [Outlines](#outlines), [Neighbors](#neighbors) |
 | Act on shapes about to be deleted (delete what depends on them) | `registrar.willDelete` | [The document](#the-editor-the-document-and-drawing) |
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
@@ -305,7 +305,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Let a kind's shapes be turned into another kind's (a frame into a subboard), from their menu and as a command, without either kind naming the other | `x.turnable(through: ContainerChannel.self)` on the kind that offers it; `registrar.turnable(into: P.self, through: C.self) { source, transaction in … }` on the kind that takes it, turning with `transaction.turn` and `transaction.move` | [Transform](#transform) |
 | Say what a shape hands over when it turns into another kind (what its target is given) | A `TransformChannel`: `name`, `admits(_:)` and `source(of:in:)`; `ContainerChannel` is the one that ships | [Offering and taking a channel](#offering-and-taking-a-channel), [The container channel](#the-container-channel) |
 | Make a shape another kind under its id, so what binds or names it goes on doing so, and move shapes onto another board of the file, put down there | `transaction.turn(_:into:)`, and `transaction.move(_:to:)` (`move(_:toBoardOwnedBy:)` onto the board below, `move(_:from:to:)` off a board that isn't shown) with `transaction.translate(_:by:on:)`, `move(_:above:on:)` and `settle(_:on:)`, the core's | [Containers](#containers), [Boards in a file](#the-editor-and-the-file) |
-| Place a shape among others as `canvas draw` places one (beside a shape, in a frame, where the view is clear), from a plugin that isn't a language | Draw's `Surroundings` (`near`, `inside`, `between`, `anywhere`: DrawScript's `LayoutProblem` and `ObstacleGrid`, over a board read in place and its solids) | [Moving](#moving) |
+| Place a shape among others as `canvas draw` places one (beside a shape, in a frame, where the view is clear), from any plugin | Draw's `Surroundings` (`near`, `inside`, `between`, `anywhere`: DrawScript's `LayoutProblem` and `ObstacleGrid`, over a board read in place and its solids) | [Moving](#moving) |
 | Show on a shape what the board it owns holds | `context.drawBoardPreview(ofBoardOwnedBy:in:)` in its render: a rough picture, false until it's built | [Board previews](#the-cores-part-board-previews) |
 | Keep a kind from being selected | `x.unselectable()`, or `x.selectable { ... }` | [Selection](#selection) |
 | Go to shapes, as following a link does (select them, bring them into view, ⌘[ returns), or only bring them into view | Selection's `editor.goTo(_:)`, `editor.reveal(_:)` | [Selection](#selection) |
@@ -319,7 +319,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Make part of a shape's content answer a click without taking the shape's press (a mention's pill, a link, a checkbox) | Selection's `registrar.shapeFaces(at:click:doubleClick:hovering:)` | [Faces](#faces-clickable-parts-of-a-shape) |
 | Connect shapes with arrows: dots beside a kind's sides, dragged to another shape | `x.ports(C.self, sides:role:)`, on a channel; `ArrowPortsPlugin` draws the arrow | [Ports](#a-kinds-ports), [`ArrowPortsPlugin`](#the-connector-arrows) |
 | Declare a channel: a kind of connection, and which kinds take it | A `Channel` type, `registrar.channel(C.self)`; `ports` on each kind that takes it | [Channels](#channels) |
-| Say what an arrow's end may bind to (tldraw's canBind) | Connections' `registrar.arrowBindingRule { query in ... }` | [`ArrowPortsPlugin`](#the-connector-arrows) |
+| Say what an arrow's end may bind to (tldraw's canBind) | Arrows' `registrar.arrowBindingRule { query in ... }` | [`ArrowPortsPlugin`](#the-connector-arrows) |
 | Connect two shapes without a drag, as a connector would from a port | `make` and `ends` on `registrar.connects`; `registry.connection(_:existing:in:)`, `registry.connectionEnds(of:)` | [Connecting without a drag](#connecting-without-a-drag) |
 | Let agents (or scripts) do something to a board from outside the app | `registrar.automationCommand("name", "…", params: P.self) { params, context in … }`: a `canvas` command | [The command line](#the-command-line) |
 | Have a command answer later (it waits on a model, or runs off the main actor), its output written off the main actor | `registrar.automationCommand(…, runAsync: { params, context async throws(AutomationError) in … })` | [A command may be async](#a-command-may-be-async) |
@@ -330,7 +330,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Change where a drag puts the shapes it moves (snap them, keep them on a grid), and draw while it does | `registrar.translationAdjuster { editor, start in … }`, a `TranslationAdjuster`: Snapping claims it | [The translation adjuster](#the-cores-part-the-translation-adjuster) |
 | Ask Claude something (and test it without the network) | `editor.languageModel?.respond(to: ModelRequest(...))`; `ScriptedLanguageModel` in tests | [Language models](#language-models) |
 | Say which words of a text say which part of a lower-level text (a schema, code, a query), to highlight them | A `ProseTarget` (a name and a guide); `editor.proseMaps?.map(T.self, of:prose:target:askingIf:)` where the words are drawn | [Prose maps](#prose-maps) |
-| Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Connections/ArrowDefinition.swift) |
+| Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Let a kind's shapes be mentioned in text, as pills | `x.mentionable(untitled:symbol:…)` (Mentions), or `registrar.mentionable(K.self)` for another plugin's kind | [Mentions](#mentionable-kinds) |
 | Let a kind's text mention shapes, drawn with pills and edited with a picker | A `MentionText` property; `x.mentionText { … }` and `context.drawMentionText`; a `MentionTextView` editor, or `MentionTextArea` in the panel | [Mentions](#mention-text-and-its-stored-form), [In the panel](#in-the-panel-mentiontextarea) |
 | Go to what mentions a shape | `mentions.mentioners(of:)`, `showWhatMentions(_:)`; Show What Mentions in the context menu; every shape's Connections tab lists them | [What mentions a shape](#what-mentions-a-shape) |
@@ -365,17 +365,20 @@ definition adopts; behavior any plugin can add to any kind is an extension point
 
 ## Horizontal and vertical
 
-A **vertical** plugin is a shape kind: its props, its definition, the tool that places it, and its opt-ins to
-concerns. Sticky notes, subboards, frames and references are verticals.
+A **vertical** plugin is a shape kind that holds something of its own: its props, its definition,
+the tool that places it, and its opt-ins to horizontals. A note holds its text, an arrow its ends
+and its label, a frame a region of the board, a subboard a board of its own. Sticky notes, arrows,
+subboards and frames are verticals, and they are the product: what the app is made of beyond what
+every shape gets.
 
-A **horizontal** plugin cuts across kinds. A concern declares an extension point (or a property)
-and a surface declares one or is built on by other plugins, and any kind can take part by
-contributing to it. Validity is the canonical example: *a shape can be valid or invalid* is
+A **horizontal** plugin is an interface verticals plug into: something a shape has, or shows up
+on, whatever its kind. A horizontal declares an extension point (or a property), and any kind takes
+part by contributing to it. Validity is the canonical example: *a shape can be valid or invalid* is
 horizontal; *a note whose schema isn't JSON is invalid* is one plugin opting in. Titles are
 another. The horizontal owns the contract, the engine, and whatever it draws. Shapes never know
 they're invalid; the validation plugin outlines them.
 
-A concern can also come with a tab in the [detail panel](#the-detail-panel) and items in the
+A horizontal can also come with a tab in the [detail panel](#the-detail-panel) and items in the
 [context menu](#context-menus) for the kinds that opt in.
 Getting around a file's [boards](#boards) is the example: one line,
 `sub.opensBoard(placeholder:systemImage:)`, makes every subboard open onto the board it owns, with
@@ -392,9 +395,11 @@ and a plugin whose tool or command has a key registers it there. So is [locking]
 shape can be locked, and Locking owns the lock and its chip (an adornment; the shake a refused change gives is Selection's, the fade Adornments'), while the
 core only refuses to change the shapes a plugin says are read-only. So is [publishing](#publishing): any
 kind can be public, and Publishing owns which are, its chip and what stands for a shape, while Topology only forwards through the
-stand-ins a kind declares. So are [ports](#ports): any
+stand-ins a kind declares. So is [referencing](#references): any public shape can be stood for by a
+pill, a kind written after References too, and the pill holds nothing of its own, only another shape
+shown in a second place, so References is a horizontal though it declares a kind. So are [ports](#ports): any
 kind can have them, on the channels it takes, and Connections owns the dots, what a drag from one
-may end on and the arrow it draws, while the plugin that owns a channel's meaning declares it. So is what's shown on shapes:
+may end on and the interface of the one connector that draws it, while the plugin that owns a channel's meaning declares it. So is what's shown on shapes:
 [Adornments](#adornments) lays out and draws what any plugin puts on them, a title's pill beside a
 lock, so none overlaps another. So are [mentions](#mentions): any kind can be mentioned, and any
 kind's text can hold mentions, while Mentions owns the stored form, the pills, the picker, what
@@ -404,105 +409,97 @@ the list at the slash and running the line, the plugin that owns a meaning says 
 does (Titles' `/title`, Locking's `/lock`), and the text view that hosts it is where it's typed (Mentions'). So is what connects and contains what:
 [Topology](#topology) keeps the file's graph of edges (an arrow bound at both ends, a mention),
 typed by the plugins that own what each means and read out of the shapes that carry them, while
-Connections and Mentions only say what their shapes carry. So is finding shapes: [Queries](#queries)
-answers a query about the whole file (kinds, attributes by their schemas, what's inside what, what
-connects to what), while each [concern](#what-plugins-add) says, from its own module, what shapes
-are called and what more a query may ask. So is turning a shape into another kind:
+Arrows and Mentions only say what their shapes carry. So is turning a shape into another kind:
 [Transform](#transform) owns the channels, the menu item, the command and the turn itself, all or nothing,
 while one kind offers a channel and another takes it, so Frames and Subboards meet in one and neither
-names the other. And a surface may declare no point at
-all and only lend something:
-[LanguageModels](#language-models) lends every editor the model plugins ask, and
-[ProseMaps](#prose-maps) what a text's words say of a lower-level text, which it asks that model.
+names the other.
 
-Horizontals are four layers, which say which way an edge between two of them goes:
+Horizontals are part of the **platform**: what every shape gets, whatever its kind. The platform
+holds three more groups, which are not interfaces a kind plugs into but are still every shape's:
 
-- **Surfaces** are something other plugins build on or show themselves on, so anything can appear
-  on one without it knowing: the keys, the selection, the detail panel, context menus, slash
-  commands, the table of contents, adornments, the graph ([Topology](#topology)), the language
-  model, prose maps (what words say of a lower-level text, [ProseMaps](#prose-maps)), the query
-  engine ([Queries](#queries)), the draw engine ([Draw](#draw)) and the translation of English
-  into a query (QueryTranslation). They know no concern; any plugin may run a query or a draw, or
-  ask for a query to be written, and the words a concern gives them come from the concern's own
-  module, through the engine's points.
-- **Concerns** are meanings shapes carry or kinds opt into (validity, titles, locks, connections, mentions,
-  boards, the clipboard, transforms), shown on the surfaces they import. One may build on another
-  (Mentions imports Titles, whose names its pills show), and one may own the kind it's drawn as
-  (Connections' arrow). They know no language.
-- **Features** are cross-cutting behaviors the person uses (a palette, a command, a gesture) that nothing
-  builds on: horizontal in reach, a leaf in the graph. They declare no kind, no extension point and no
-  property, and no plugin imports one. Jump To (⌘K) is a palette over every titled shape, Moving is two
-  slash commands and the table of contents' drops, Snapping is what a drag lines up with, and
-  [Reordering](#every-shape-reordering) is every kind's Arrange menu: each works on the shapes its rule covers
-  (Snapping: those with a frame) and no kind opts in. Each imports at most surfaces and concerns, as a vertical
-  may, but a feature isn't a surface or a concern: Jump To reaches into Titles and Boards itself, Moving and
-  Reordering import no concern, and Snapping imports only the core and Geometry. Jump To isn't a surface: a point
-  for it would have one contributor, Titles, and a point made only to change a layer is the wrong fix.
-- **Languages** are what agents read and write the canvas in: the [command line](#the-command-line)
-  (Automation: `draw`, `show`, `kinds` and `measure`) and `canvas query` (QueryCommands), whose
-  words are the query language's and their owners'. The engines that answer a draw and a query are
-  surfaces, not languages, since every plugin may run them. What a language says of a concern comes
-  through its engine's points, so it knows no concern.
+- **Things you do**: a palette, a command or a gesture the person uses, that no kind opts into and
+  nothing builds on. Jump To (⌘K) is a palette over every titled shape, Moving is two slash commands
+  and the table of contents' drops, Snapping is what a drag lines up with, the clipboard is cut, copy
+  and paste, and [Reordering](#every-shape-reordering) is every kind's Arrange menu: each works on the
+  shapes its rule covers (Snapping: those with a frame) and no kind opts in. Jump To reaches into
+  Titles and Boards itself; it isn't an interface, and a point for it would have one contributor,
+  Titles: a point made only to change a module's place is the wrong fix.
+- **Engines**: what any plugin may run or ask. The query engine ([Queries](#queries)), the draw
+  engine ([Draw](#draw)), the translation of English into a query (QueryTranslation), the language
+  model ([LanguageModels](#language-models)), prose maps (what words say of a lower-level text,
+  [ProseMaps](#prose-maps)) and the lights a hovered shape shows ([Neighbors](#neighbors)). An engine
+  knows no meaning a horizontal owns: the words a horizontal gives it come from the horizontal's own
+  module, through the engine's points. And an engine may declare no point at all and only lend
+  something: LanguageModels lends every editor the model plugins ask, and ProseMaps what a text's
+  words say of a lower-level text, which it asks that model.
+- **What agents speak**: the [command line](#the-command-line) (Automation: `draw`, `show`, `kinds`
+  and `measure`) and `canvas query` (QueryCommands), whose words are the query language's and their
+  owners'. The engines that answer a draw and a query are engines, not these, since every plugin may
+  run them.
 
-A feature or a vertical builds on surfaces and concerns, and imports no language.
+Below the platform is the **core**, the canvas and plain libraries, which knows no plugin; above the
+product is the **app**, the window, the app and the command line, which take their plugins from the
+list of what ships and never import one. Those are the four rungs [the module graph](#the-module-graph)
+checks: a module imports only from its own rung or those below it, and nothing imports a product.
 
 Opting in goes in one of four directions:
 
 - **The vertical imports the horizontal** and contributes from inside its own `register`.
   StickyNotes does this for Types: `note.canBeType()`.
-- **A concern imports the surfaces it shows itself on.** A module that owns a meaning imports the
-  module whose surface shows it: Validation imports DetailPanel and TableOfContents, for its Issues
+- **A horizontal imports the horizontals it shows itself on.** A module that owns a meaning imports the
+  module that shows it: Validation imports DetailPanel and TableOfContents, for its Issues
   tab and its rows' dots, as Titles imports them for its header and its rows' names, and Titles and
   Mentions import Validation, for the rules they add (warnings about titles two shapes share, and
   about mentions that can't work). A face a plugin list should be able to leave out is a plugin
   value of its own in the owner's module (`ValidationDetailsPlugin`, `ValidationContentsPlugin`,
   `MentionValidationPlugin` and `TitleValidationPlugin`): the registry refuses a contribution whose
   point's owner isn't installed, so a list with Validation and no panel installs `ValidationPlugin()`
-  alone. A surface shows itself on another the same way: the table of contents is the detail
+  alone. One in the window shows itself on another the same way: the table of contents is the detail
   panel's overview (`ContentsOverviewPlugin`), Find's panel its takeover (`FindPanelPlugin`), and
   Boards heads both their lists with a board's name (`BoardContentsPlugin`, `BoardFindPlugin`).
 - **A word in a language is given by the module that owns its meaning**, as a plugin value of its
   own, through the engine's points; when the owner sits below the engine, the engine's module
-  gives it. The query engine is a surface, not a language, so [queries](#queries)' points are
-  filled by the concerns themselves: Titles' `TitleQueriesPlugin` gives queries shapes' names,
+  gives it. The query engine is an engine, not what agents speak, so [queries](#queries)' points are
+  filled by the horizontals themselves: Titles' `TitleQueriesPlugin` gives queries shapes' names,
   Boards' `BoardQueriesPlugin` boards' names, Mentions' `MentionQueriesPlugin` `:mentions`,
   `:mentioned-by` and mention text as it reads, Validation's `ValidationQueriesPlugin` `:invalid`,
   `:warned` and `:incomplete`, Types' `TypeQueriesPlugin` `:is-a`, `:misfit`, a path into a note's values and
   the `<fields>` block `--ask` is told, and, Selection being below Queries, Queries' own `SelectionQueriesPlugin`
   `:selected`. Queries has never heard of titles, boards, mentions, validity or types, so QueriesTests
-  fill its points with words of their own, and a list without a concern leaves its words out.
-- **A concern fills the engine's points.** [`canvas draw`](#draw)'s engine (Draw) takes what
+  fill its points with words of their own, and a list without a horizontal leaves its words out.
+- **A horizontal fills the engine's points.** [`canvas draw`](#draw)'s engine (Draw) takes what
   shapes are called, what an edge is, what's wrong with a shape drawn and what a mention's text is
   from points of its own, though it has never heard of titles, ports, validity or mentions:
   Titles' `TitleNamesPlugin` gives it names, Connections' `PortEdgesPlugin` edges, Validation's
   `ValidationChecksPlugin` warnings, Mentions' `MentionTextsPlugin` mention text, and Types'
   `TypeNamesPlugin` and `FieldValuesPlugin` a type named by its title and a note's values. An engine
-  that knew a concern couldn't be tested with fixtures in its place (AutomationTests fills the
+  that knew a horizontal couldn't be tested with fixtures in its place (AutomationTests fills the
   points with its own, which is why they stay points though one module fills each), and a list
-  without a concern leaves its words out. What names the shipped kinds is in no module: `--ask`'s
+  without a horizontal leaves its words out. What names the shipped kinds is in no module: `--ask`'s
   prompt, whose examples write `sticky-note` and `subboard`, is a text file of the product's
   (`Shipped/ask-prompt.txt`), which the build puts in the product's executables and the core reads
   back (`ShippedText`).
 
 No module joins two others. There's no bridge, a module that imports two others to join them where
 it isn't settled which should know the other (a `PatchTitles` bridge would give patches a title,
-though Patches has never heard of titles and Titles has never heard of patches): the layers settle
-it, and Patches would import Titles and say `patch.title()`, as notes do. `build.sh` refuses an
-edge the layers don't allow: a surface importing a concern, a concern, a feature or a vertical
-importing a language, a language importing a concern, a plugin importing a feature or a vertical.
-In each direction the edge is visible in `Package.swift`, and the dependency always points from
-the vertical to the horizontal, or from a concern to the surfaces that show it, never back.
+though Patches has never heard of titles and Titles has never heard of patches): the meaning settles
+it, and Patches would import Titles and say `patch.title()`, as notes do. The rungs keep a product
+from being imported, and the graph having no cycle keeps an edge between two platform modules going
+one way once it's drawn (Titles imports Queries, so Queries can never import Titles). In each
+direction the edge is visible in `Package.swift`, and the dependency always points from the
+vertical to the horizontal, or from a horizontal to the ones that show it, never back.
 
-A concern may also own the one kind it's drawn as, so that nothing has to join them:
-[Connections](#ports) holds ports, channels and the arrow, the shape a connection is drawn as, and
-notes and subboards import it to declare their channels without importing a vertical. Each part
-is a plugin value of its own (`PortsPlugin`, `ArrowsPlugin` and `ArrowPortsPlugin`, which makes
-arrows what a drag from a port draws and is the only code in the module that knows both arrows and
-channels), so a list can have arrows without ports, or ports with a connector of its own.
+What other plugins build on is the platform's, so nothing has to join a kind to it: ports and
+channels are [Connections](#ports)', and notes and subboards import it to declare their channels
+without importing a kind. The arrow, the shape a connection is drawn as, is a vertical of its own,
+[Arrows](#the-connector-arrows), in three plugin values (`ArrowsPlugin`, the kind; `ArrowPortsPlugin`,
+which makes arrows what a drag from a port draws and is the only code that knows both arrows and
+channels; and `ArrowLightsPlugin`), so a list can have arrows without ports, or ports with a
+connector of its own.
 
 ## The module graph
 
-Every plugin lives in a Swift module (a module may hold several plugin values, as Connections
+Every plugin lives in a Swift module (a module may hold several plugin values, as Arrows
 does), and `Package.swift` is the single place the dependencies between modules are written.
 `build.sh` reads it, refuses to build anything it doesn't match, and compiles each module on its
 own, with only its dependency closure on the include path.
@@ -517,48 +514,48 @@ own, with only its dependency closure on the include path.
 Each target is one line, with its layer:
 
 ```swift
-.target(name: "StickyNotes", dependencies: ["Canvas", "Connections", "DetailPanel", "Keyboard", "Mentions", "Selection", "TableOfContents", "TextEditing", "Titles"]), // layer: vertical
-.target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Queries", "SlashCommands", "TableOfContents", "Validation"]), // layer: concern
+.target(name: "StickyNotes", dependencies: ["Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: product
+.target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Queries", "SlashCommands", "TableOfContents", "Validation"]), // layer: platform
 ```
 
-Each layer answers one question, which says what belongs in it:
+Modules sit on four rungs; each imports only from its own rung or those below it:
 
-| Layer | Why it exists | May depend on | Modules |
+| Rung | What it is | May depend on | Modules |
 |---|---|---|---|
-| wire | What the app and its command line say to each other, so `canvas` builds without the app | wire | CanvasRPC (what the app and its [command line](#the-command-line) say to each other) |
-| foundation | What every plugin stands on and no plugin shapes: the core, its host contract, and pure libraries | foundation, wire | Geometry, Canvas (the core, which holds [what a window puts around its canvas](#host-slots), said by plugins and placed by the window, and so names SwiftUI's views and the wire's types for the commands the app's server runs), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on), FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) and Palette ([the color math](#palette): the roles one color is drawn in on the light canvas and the dark, and the one test for a dark appearance) |
-| ui | The window around the canvas, so no plugin reaches the window and the window reaches no plugin | foundation, wire | CanvasUI (the AppKit view, the SwiftUI toolbar, the chrome around the canvas, `CanvasFocus`, the Settings window, and the command line's server) |
-| surface | Something other plugins build on or show themselves on; it knows no concern, so anything can appear on it without it knowing | foundation, surface | Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, LanguageModels, ProseMaps, Topology, Find, Queries, Draw, QueryTranslation, Neighbors |
-| concern | A meaning shapes carry or kinds opt into (a property on shapes, or a point kinds fill), shown on surfaces | foundation, surface, concern | Validation, Clipboard, Titles, Locking, Publishing, Connections, Mentions, Boards, Transform, Types, Colors |
-| feature | A cross-cutting behavior the person uses (a palette, a command, a gesture) that nothing builds on: horizontal in reach, a leaf in the graph | foundation, surface, concern | JumpTo, Moving, Snapping, Reordering |
-| language | Where an agent's request arrives over the wire and is answered; the only plugin layer that speaks the wire | foundation, surface, language, wire | Automation, QueryCommands |
-| vertical | A shape kind: its props, definition, tool, and its opt-ins to concerns. Kinds never know each other | foundation, surface, concern | StickyNotes, Subboards, Frames, References |
-| app | The product's executables: the one place the shipped list is composed, which no module imports; the app, and what it carries (`of` the app: an extension macOS runs on its own) | foundation, ui, wire | InfiniteCanvas (it names no plugin: its plugins are [the list's](#what-ships), linked in and made by name, `+ shipped`) and CanvasQuickLook (`// layer: app of InfiniteCanvas`: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk), packaged into the app's bundle; `+ shipped`, as the app is) |
-| cli | The command line, which knows only the wire | wire | CanvasCLI (`canvas`, an executable: it knows the wire, never the app) |
-| testsupport, test | What the tests stand on and the tests themselves, which see more of the graph than a plugin does | (see Package.swift) | TestKit, CanvasTesting, ShippedTesting (the tests' way to the product's plugins), `*Tests` |
+| app | The window, the app and the command line: what the person runs, which takes its plugins from the list of what ships | core, app | CanvasUI (the window: the AppKit view, the SwiftUI toolbar, the chrome around the canvas, `CanvasFocus`, the Settings window, and the command line's server), InfiniteCanvas (it names no plugin: its plugins are [the list's](#what-ships), linked in and made by name, `+ shipped`), CanvasQuickLook (`// layer: app of InfiniteCanvas`: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk), packaged into the app's bundle; `+ shipped`, as the app is) and CanvasCLI (`canvas`: it knows the wire, never the app) |
+| product | The verticals, shapes that hold something of their own; nothing imports one, so no kind knows another | core, platform | Arrows, StickyNotes, Subboards, Frames |
+| platform | What every shape gets, whatever its kind; its modules build on one another, grouped under headings nothing checks | core, platform | Horizontals in the window: Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, Find. Horizontals that are shape traits: Topology, Validation, Titles, Locking, Connections, Mentions, Publishing, Boards, Transform, Colors, Types, References. Things you do: Clipboard, Snapping, JumpTo, Moving, Reordering. Engines: LanguageModels, ProseMaps, Queries, Draw, QueryTranslation, Neighbors. What agents speak: Automation, QueryCommands |
+| core | The canvas and plain libraries, which know no plugin | core | Geometry, Canvas (the core, which holds [what a window puts around its canvas](#host-slots), said by plugins and placed by the window, and so names SwiftUI's views and the wire's types for the commands the app's server runs), CanvasRPC (the wire: what the app and its [command line](#the-command-line) say to each other), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on), FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) and Palette ([the color math](#palette): the roles one color is drawn in on the light canvas and the dark, and the one test for a dark appearance) |
+| testsupport, test | What the tests stand on and the tests themselves, which see more of the graph than a plugin does; their tags say what kind of target a line is, not where it sits | (see Package.swift) | TestKit, CanvasTesting, ShippedTesting (the tests' way to the product's plugins), `*Tests` |
+
+The four rungs replaced twelve layers (wire, foundation, ui, surface, concern, feature, language,
+vertical, app and cli, and the tests' two): too many to hold in mind, each layer's purpose and how
+it differed from the next. Four rules those layers held are kept by naming their modules, below.
+What the others held, conventions hold now: a horizontal in the window importing no shape trait, an
+engine knowing no meaning a horizontal owns, nothing importing a thing you do, and only what agents
+speak importing the wire (it is core, so any plugin may).
 
 What `./build.sh audit` enforces:
 
-- **No cycles.** The graph is sorted topologically; a cycle is printed as a path.
-- **Layers.** A surface, concern or language can't import a feature or a vertical, and a feature
-  or a vertical can't import a language, a feature or another vertical. A surface can't import a
-  concern, a concern can't import a language, and a language can't import a concern: a concern
-  fills the engine's points. A word in a language is given by the module that owns its meaning, as
-  a plugin value of its own, through the engine's points; when the owner sits below the engine,
-  the engine's module gives it (Titles, Boards, Mentions and Validation give queries their words,
-  and Queries gives the selection's; Titles, Connections, Validation and Mentions give draw
-  theirs). The app imports no plugin: its plugins are the list's, made by name, and what it takes
-  of one comes through the registry ([Host slots](#host-slots)). Nothing but the app, its Quick
-  Look extension and tests sees CanvasUI.
-- **A layer is what it is for.** In the non-test sources of a surface, concern, feature or vertical,
-  the audit looks for the declarations that make the layer's test: a `ShapeKind`, a `PropertyKey`,
-  and a conformance to `ExtensionPoint` or `KeyedExtensionPoint`. A vertical declares a `ShapeKind`
-  (else a cross-cutting behavior is a feature). A feature declares no `ShapeKind`, no extension point
-  and no `PropertyKey`, and no plugin imports it. A concern declares an extension point or a
-  `PropertyKey`. A surface declares an extension point or is a dependency of another plugin module.
+- **No cycles.** The graph is sorted topologically; a cycle is printed as a path. Between two
+  platform modules this is what holds the direction: the module that owns a meaning imports what it
+  builds on and what shows it, and once one edge is drawn the other can't be.
+- **Rungs.** A module imports only from its own rung or those below it: the core knows no plugin,
+  no plugin imports the window, and nothing but a test imports a product, so a product never knows
+  another. A word in a language is given by the module that owns its meaning, as a plugin value of
+  its own, through the engine's points; when the owner sits below the engine, the engine's module
+  gives it (Titles, Boards, Mentions and Validation give queries their words, and Queries gives the
+  selection's; Titles, Connections, Validation and Mentions give draw theirs). The app imports no
+  plugin: its plugins are the list's, made by name, and what it takes of one comes through the
+  registry ([Host slots](#host-slots)).
+- **Four rules by name.** The wire (CanvasRPC) imports nothing, and the command line (CanvasCLI)
+  only the wire, so `canvas` builds without the app; the host API and loading the list whole are
+  fenced off (below); and a plugin that ships is in a platform or a product module.
+- **A product is a kind.** In the non-test sources of a product, the audit looks for a `ShapeKind`
+  it declares; one that declares none is what every shape gets, and so platform.
 - **A test of a module tests it alone.** `<M>Tests`, or a test target that says it tests a plugin
   of M (`// layer: test of M`, as Titles' TitleQueriesTests does), may use only M, what M uses,
-  and the test-support and ui modules, so a plugin's tests can't lean on a shipped kind.
+  and the test-support modules and the window, so a plugin's tests can't lean on a shipped kind.
 - **An `of` names the target's subject.** A test says what it tests, an app what carries it
   (`// layer: app of InfiniteCanvas`, as CanvasQuickLook's line does). A test must depend on its
   subject; an app need not, since an executable can't depend on one, and must be of the app itself,
@@ -588,9 +585,9 @@ What `./build.sh audit` enforces:
   tool by its shortcut or label) aren't audited.
 - **The host API is fenced off.** What `CanvasView` calls on the editor (input, the cursor,
   drawing, the delegate) is `@_spi(Host)`. Only modules that `@_spi(Host) import Canvas` see it,
-  and only the ui, testsupport and test layers may; a plugin that calls it doesn't compile.
+  and only the window (CanvasUI), testsupport and test modules may; a plugin that calls it doesn't compile.
 - **What ships is real.** Every line of the list names a public struct of that module that is a
-  `ListedPlugin`, once, in a module of a plugin layer; a target may end `+ shipped` only if it's the
+  `ListedPlugin`, once, in a platform or product module; a target may end `+ shipped` only if it's the
   app, its extension, or a test of what ships or its support, and what depends on a library that
   does says so too; and the app and its extension import none of the list's modules.
 - **Loading the list whole is fenced off.** `ShippedList.plugins()`, which makes the plugins that
@@ -607,28 +604,28 @@ it can be named at all, and every module compiles with `MemberImportVisibility`,
 from a module you didn't import is an error rather than a silent transitive edge. (Importing a
 transitive dependency without declaring it is what the import check above catches.)
 
-**Adding a module** is [Your first plugin](#your-first-plugin), steps 2 to 4. Every non-app module
-is compiled by `./test.sh`, even before anything depends on it.
+**Adding a module** is [Your first plugin](#your-first-plugin), steps 2 to 4. Every module but the
+app is compiled by `./test.sh`, even before anything depends on it.
 
 ### Placing a new module
 
-Ask in this order, and the first yes is the layer:
+Ask in this order, and the first yes is the rung:
 
-1. Is it an executable? Then app, cli or test.
-2. Does it know no plugin? Then foundation (or wire, or ui).
-3. Does it define a shape kind? Then vertical. A concern may own the one kind it is drawn as (Connections' arrow).
-4. Does it speak the wire? Then language.
-5. Does it give shapes a meaning, a property they carry or a point kinds fill? Then concern.
-6. Does something build on it, through its points or by importing it? Then surface, and it must know no concern.
-7. Otherwise, feature.
+1. Is it an executable, or the window? Then app (or test).
+2. Does it know no plugin? Then core.
+3. Is it a shape that holds something of its own, which no other plugin need build on? Then product.
+4. Otherwise, platform: what every shape gets, whatever its kind. Under which heading: an interface
+   a kind plugs into, something a shape shows up on or has, is a horizontal; a palette, a command or
+   a gesture nothing builds on is a thing you do; what any plugin runs or asks is an engine; what
+   speaks the wire to an agent is for agents.
 
-The audit's tests above are necessary, not sufficient: a module can pass both the surface and the
-concern test, and which it is then comes from the question its layer answers. A point declared only
-so a module can change layer, with one contributor, is the wrong fix; declare one when more than
-one plugin genuinely fills it, as Find does. And a module is its own, apart from another, only when
-something must build without the other (the command line without the app) or a layer forbids an
-import the merged module would need: the host slots are the core's points, so the core declares
-them.
+A kind other plugins must build on is platform, as References is: a product can't be imported.
+A point declared only so a module can change its place, with one contributor, is the wrong fix;
+declare one when more than one plugin genuinely fills it, as Find does. And a module is its own,
+apart from another, only when something must build without the other (the command line without the
+app) or a rung forbids an import the merged module would need: ports are Connections' and the arrow
+Arrows', since notes must declare their channels without importing a kind; the host slots are the
+core's points, so the core declares them.
 
 ### What ships
 
@@ -1154,13 +1151,13 @@ The tool stays current after a line. Its id is the kind's,
 `ToolID(placing: Polyline.kind)`, as a place tool's is, so a line is called after the tool
 (`registry.label(of:)`): "Line", with the tool's symbol, in the detail panel's header and its row.
 
-[Arrows](../Sources/Connections/ArrowDefinition.swift) is the full-size version: a kind without a frame
+[Arrows](../Sources/Arrows/ArrowDefinition.swift) is the full-size version: a kind without a frame
 that also has handles (`HandleProviding`), an exact marquee test (`BrushHitTesting`), a paint order
-of its own (`PaintOrderAnchored`), and a translation that keeps its bindings. It's the arrow of
-[Connections](#ports), the horizontal that owns it with ports. It lends other plugins one thing, and
-knows no channel ([ArrowConnecting.swift](../Sources/Connections/ArrowConnecting.swift)): rules for what
+of its own (`PaintOrderAnchored`), and a translation that keeps its bindings. It's the kind of
+Arrows, a product of its own, and the connector that [Connections](#ports)' ports draw with. It lends other plugins one thing, and
+knows no channel ([ArrowConnecting.swift](../Sources/Arrows/ArrowConnecting.swift)): rules for what
 an arrow's end may bind to (`ArrowBindingRules`, tldraw's canBind). An arrow drawn for a port's drag
-(`editor.beginArrow`) is internal to Connections: [`ArrowPortsPlugin`](#the-connector-arrows) calls it,
+(`editor.beginArrow`) is internal to Arrows: [`ArrowPortsPlugin`](#the-connector-arrows) calls it,
 which is how ports draw theirs, the only way a person draws one. No tool places an arrow, so it says
 what its kind is called itself:
 
@@ -1178,7 +1175,7 @@ the `@` picker, a mention's pill in the panel), so a kind has one color in every
 asks another plugin for it. A kind that declares none is untinted.
 
 Zoomed out, an arrow draws a [skeleton](#skeletons) of its own
-([ArrowSkeleton.swift](../Sources/Connections/ArrowSkeleton.swift)), since its render looks up the
+([ArrowSkeleton.swift](../Sources/Arrows/ArrowSkeleton.swift)), since its render looks up the
 shapes it joins and clips its ends every frame: `ArrowSkeleton` reads only its kept geometry's
 three points (its start, the middle of its body, its end) and works nothing out again, drawing the
 arc through them, or the line from start to end where the middle is less than a quarter of a view
@@ -1199,7 +1196,7 @@ its line and a point more, instead of a thin stripe down the middle of it.
 
 ## A horizontal plugin
 
-A concern or a surface declares an extension point, gives other plugins a pleasant way to
+A horizontal declares an extension point, gives other plugins a pleasant way to
 contribute, and consumes what they contribute. [Titles](../Sources/Titles/Titles.swift) is a small
 one: what a shape is called, a trait any kind can opt into.
 
@@ -1685,7 +1682,7 @@ the two never disagree:
   `PropertyModifiers`, which an added property's `keywords` take too.
 - **A string enum** adopts `SchemaCases` and titles its cases (`schemaTitle`): its schema is
   `oneOf` a `const` per case, with its title.
-- **A struct in the props** is `SchemaDefined` too, with a list of its own (Connections' `ArrowBinding`),
+- **A struct in the props** is `SchemaDefined` too, with a list of its own (Arrows' `ArrowBinding`),
   written out where it's used. Given a name, it's a shared definition instead, which each use refers
   to: CanvasTesting's `Properties<MemoNote>(definition: "memo-note")` is `canvastesting.memo-note`
   in a schema, named after the module that declares the type, so a type has one name wherever it's
@@ -1693,7 +1690,7 @@ the two never disagree:
   name, and its definition then refers to itself.
 - **A dictionary keyed by strings** is an object whose members, named anything, are each its
   value's type (`additionalProperties`).
-- **A type that codes itself by hand** writes its schema by hand, as a `SchemaDescribed`: Connections'
+- **A type that codes itself by hand** writes its schema by hand, as a `SchemaDescribed`: Arrows'
   `ArrowTerminal`, an object with one member, `free` or `bound`, is `oneOf` the two.
 - **A value that names shapes** (`ShapeNaming`, a mention) is found through the lists: a struct
   that holds one adopts `ShapeNaming` too, and the registry refuses one that doesn't ([Values that
@@ -1839,7 +1836,7 @@ with each of its own properties, then each added property it opts into, marked w
 `required`, and nothing else is allowed. A kind whose shapes own boards (`BoardOwning`) is marked
 `"x-canvas-board" : true`.
 Shared definitions are under `$defs`, named after the modules that declare them (`core.rect`, `mentions.text`,
-`connections.terminal`), and every `$ref` is local. The sticky note's, abbreviated (CompositionTests pins
+`arrows.terminal`), and every `$ref` is local. The sticky note's, abbreviated (CompositionTests pins
 it whole):
 
 ```json
@@ -2360,7 +2357,7 @@ shakes them).
   `Editable`; a read-only shape of an `Editable` kind counts, since opening it is refused and the
   refusal shows (a locked note shakes), while an opener runs whatever the shape's lock (entering a
   board changes nothing). The title names it where it's offered (a menu item).
-- Connections (to select the arrow it draws, for its handles, and for its dots, which are [canvas
+- Arrows (to select an arrow and for its handles) and Connections (for its dots, which are [canvas
   buttons](#canvas-buttons)), DetailPanel (to follow the selection), ContextMenus (the menu is for
   the selection), TableOfContents (to list and select shapes) and Adornments (a clickable adornment
   is a canvas button, and every adornment is its shape's through `DecorationHits`) import Selection
@@ -2762,9 +2759,9 @@ What the shipped app's keys do:
 ## TextEditing
 
 TextEditing ([`Sources/TextEditing`](../Sources/TextEditing)) is the text under every editable text
-in the app, and the one list shown at a caret. It's a foundation module that depends on no other
+in the app, and the one list shown at a caret. It's a core module that depends on no other
 module of the project, so it knows no canvas, registry, plugin or panel, and a plugin that types
-into text imports it without importing the inspector: Connections for an arrow's label, StickyNotes for its editor on the canvas, DetailPanel for its text boxes, Mentions for its text view
+into text imports it without importing the inspector: Arrows for an arrow's label, StickyNotes for its editor on the canvas, DetailPanel for its text boxes, Mentions for its text view
 and its picker, SlashCommands for its list at a slash. It holds `EditingTextView`, how the app
 checks the spelling of what's typed (`Spelling`), the caret list (`CaretList` and
 `CaretListWindow`), `CaretListSubstitutions`, `StringDrawingLayout` ([where string drawing puts
@@ -2902,7 +2899,7 @@ stand-ins in it, an arrow's label's too: it's mention text).
 ## FuzzyMatching
 
 FuzzyMatching ([`Sources/FuzzyMatching`](../Sources/FuzzyMatching)) matches what's typed against
-text: three matchers on one folding, and a heap for the best few of what they match, a foundation module that depends on no other module of the
+text: three matchers on one folding, and a heap for the best few of what they match, a core module that depends on no other module of the
 project (it knows no canvas, registry or plugin, and not TextEditing), pure and nonisolated, so any
 thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on TestKit alone.
 
@@ -2967,7 +2964,7 @@ thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on Test
 
 ## Palette
 
-Palette ([`Sources/Palette`](../Sources/Palette)) is the color math: a foundation module that depends
+Palette ([`Sources/Palette`](../Sources/Palette)) is the color math: a core module that depends
 on no other module of the project (it knows no canvas, registry, plugin, kind or named color), pure,
 nonisolated and `Sendable` but for the few lines that make AppKit's colors. A module that makes a
 color that follows the appearance, or checks that one reads, imports it. PaletteTests hold it on
@@ -3022,8 +3019,8 @@ A board's window puts things around its canvas that are plugins': the path of cr
 a palette, the inspector beside it, the window's subtitle, the panes of the Settings window, the
 toolbar's tips. And the app takes one more thing from them: the commands its command server
 runs. A plugin can't import the window (CanvasUI) or the
-app, and neither can import a plugin (the app and CanvasUI may use only the foundation and the
-wire). So what passes between them is declared beneath both, in the core,
+app, and neither can import a plugin (the app and CanvasUI may use only the core and the app's
+own modules). So what passes between them is declared beneath both, in the core,
 [`Sources/Canvas/Plugins/HostSlots.swift`](../Sources/Canvas/Plugins/HostSlots.swift): six
 extension points a plugin contributes to and the host reads. The core imports SwiftUI for them,
 since its slots hold views, and the wire (CanvasRPC), for the types the commands are said in; it
@@ -3899,7 +3896,7 @@ Issues tab in `ValidationDetailsPlugin`.
 ### Every shape: Reordering
 
 [`Examples/Reordering`](../Examples/Reordering/Reordering.swift) gives every shape an Arrange
-submenu, as in Keynote and tldraw, in a group of its own after the rest. It's a feature: no kind opts into
+submenu, as in Keynote and tldraw, in a group of its own after the rest. It's a thing you do: no kind opts into
 it and nothing imports it. It picks kinds by
 capability: one painted by anchor (an arrow, drawn just above the shapes it joins) is left out,
 since document order doesn't decide where it's drawn. A line, which has no frame, is in.
@@ -4452,7 +4449,7 @@ as Find closes, if that's what showed it); CompositionTests'
 
 The detail panel has [an overview](#the-overview-and-takeovers), a view it shows where it has no
 one shape to show, and the table of contents gives its list as that, from a plugin value of its
-own, so TableOfContents imports DetailPanel (a surface on a surface) and the list of what ships names
+own, so TableOfContents imports DetailPanel (one horizontal on another) and the list of what ships names
 the plugin, after both:
 
 ```swift
@@ -4637,7 +4634,7 @@ point as one run (the middle of its extent, the left end and the right end toget
 middle; the corner rides along), so a chip, a `from` or a `to` sits above the shape's middle; a labelled
 shape keeps its row from the label's left edge, and a closed shape reads nothing of this.
 Nothing about this is the arrow's: Adornments reads the geometry any shape has, so a plugin with a
-label on an open shape gets it as Connections' arrows do. A locked, labelled arrow's lock is above
+label on an open shape gets it as Arrows' arrows do. A locked, labelled arrow's lock is above
 its label, and not at the corner of its bounds. Culling grows by the widening (the anchor reaches
 60 points past the label's center, and the corner 6 more), so a line just outside the view whose
 chips reach in is drawn and hit.
@@ -5360,12 +5357,14 @@ connection, and the arrow may end only on a shape that takes its channel, so a n
 while a subboard takes every
 channel, so anything with ports links to one, and one to anything with ports. They belong to
 Connections ([`Sources/Connections`](../Sources/Connections)), a horizontal any kind opts into,
-built on Selection, whose [canvas buttons](#canvas-buttons) the dots are (and on TableOfContents
-and TextEditing, for the arrow's row and its label's spelling, and on Draw, whose edges its
-connections are) and on [Mentions](#mentions), which draws,
-edits and finds an arrow's label, mention text. It holds ports, channels and the arrow, in three plugin values, `PortsPlugin`,
-`ArrowsPlugin` and `ArrowPortsPlugin`, so a list can have arrows without ports, or ports with a
-connector of its own. The core has never heard of a port, the ports code has never heard of an
+built on Selection, whose [canvas buttons](#canvas-buttons) the dots are, on Draw, whose edges its
+connections are, and on Types, whose `is` tells two connections of one pair apart. It holds ports,
+channels and the connector's interface, in two plugin values, `PortsPlugin` and `PortEdgesPlugin`,
+and names no arrow. The connector is [Arrows](#the-connector-arrows) ([`Sources/Arrows`](../Sources/Arrows)),
+a product of its own on Connections (and on TableOfContents and TextEditing, for the arrow's row and
+its label's spelling, and on [Mentions](#mentions), which draws, edits and finds an arrow's label,
+mention text), in plugin values of its own, `ArrowsPlugin` and `ArrowPortsPlugin`, so a list can
+have arrows without ports, or ports with a connector of its own. The core has never heard of a port, the ports code has never heard of an
 arrow, nor the arrow code of a channel: `ArrowPortsPlugin` ([below](#the-connector-arrows)) makes
 arrows what a drag from a port draws. The same rules hold for a connection made by name, with no
 drag ([Connecting without a drag](#connecting-without-a-drag)), as `canvas draw`'s edges are.
@@ -5561,8 +5560,9 @@ that deletes stand-ins keeps none of their ports. A move costs the upkeep nothin
 
 An arrow whose end is [re-aimed](#the-connector-arrows) is judged the same way. The binding rule
 `ArrowPortsPlugin` contributes is static (per kind), so on its own it would let any channel bind to
-a stand-in; Connections' `ArrowTargeting` also asks `PortState` whether the arrow's channel is taken
-now, in that end's role (the start as a source, the end as a target), and an end looks through a
+a stand-in; Arrows' `ArrowTargeting` also asks Connections (`editor.portsAllow(_:as:at:)`, over
+`PortState`) whether the arrow's channel is taken now, in that end's role (the start as a source, the
+end as a target), and an end looks through a
 stand-in that doesn't take it, as it does through any shape that doesn't. Only the translation of
 an arrow keeps the static rule: it keeps a binding that already exists.
 
@@ -5653,7 +5653,7 @@ transaction's, for a connection asked for by name); `make` and `ends`, both opti
 shapes [without a drag](#connecting-without-a-drag); and `begin`, given the drag's `Connection`
 (the port's shape and side, the dot's channels in the port table's order, and where it was
 pressed, in world units), returns the session that draws it, which the dot's press hands the drag
-to, or nil to draw nothing. `ArrowPortsPlugin` ([ArrowPorts.swift](../Sources/Connections/ArrowPorts.swift))
+to, or nil to draw nothing. `ArrowPortsPlugin` ([ArrowPorts.swift](../Sources/Arrows/ArrowPorts.swift))
 makes arrows the connector, though the arrow code has never heard of a channel, and names their
 family of edges:
 
@@ -5713,7 +5713,7 @@ registrar.arrowBindingRule { query in
   the arrow kind's name, taken from `Arrow.kind` rather than written again, so the string is said
   once. A connector without `ends` carries no edges.
 
-The arrow code knows no channel ([ArrowConnecting.swift](../Sources/Connections/ArrowConnecting.swift)),
+The arrow code knows no channel ([ArrowConnecting.swift](../Sources/Arrows/ArrowConnecting.swift)),
 and lends any plugin what follows, but for `beginArrow`, which is internal:
 
 - **`ArrowBindingRules`** (`registrar.arrowBindingRule { query in ... }`, a list) is tldraw's
@@ -5751,7 +5751,7 @@ and lends any plugin what follows, but for `beginArrow`, which is internal:
   label's frame out again by the names its pills show now (`arrow.mentionLayout { $0.props.text }`:
   Mentions sets a layout input on the arrows whose names differ from the text's, on any board), with
   no transaction and nothing stored; the text keeps the names it was written with.
-- **For [Neighbors](#neighbors)**, `ArrowLightsPlugin` (Connections', after Neighbors and
+- **For [Neighbors](#neighbors)**, `ArrowLightsPlugin` (Arrows', after Neighbors and
   `ArrowPortsPlugin`, whose `arrow` edges its queries name) gives two lights: what the hovered shape
   points to, in green, and what points to it, in purple (`ArrowStyle.pointsToLight`,
   `pointedToByLight`), titled Points To and Pointed To By, the arrows between with them (each light's
@@ -5803,7 +5803,7 @@ A public shape is one another shape may stand for, so what a lot of shapes point
 note, a glossary) needs no arrow from each of them: a pill that stands for it takes theirs, and an
 arrow to the pill counts, for queries, the table of contents and everything that reads
 [Topology](#topology), as an arrow to the shape. Only a public shape can be stood for. Publishing
-([`Sources/Publishing`](../Sources/Publishing), a concern, on Adornments, ContextMenus, DetailPanel,
+([`Sources/Publishing`](../Sources/Publishing), a horizontal, on Adornments, ContextMenus, DetailPanel,
 Neighbors, Selection, SlashCommands, TableOfContents, Titles and Topology) says which shapes are, shows it,
 and sends the panel to what stands for one, in Neighbors' Connections tab; it knows no kind that stands in (no reference), only
 what Topology says stands for a shape (`topology.standIns(for:)`), and no core knows of it.
@@ -5914,7 +5914,7 @@ holds mentions and which can be mentioned, subboards, which can be mentioned (fo
 of one enters it), and frames, which can be mentioned too; a type's words mention other types, each
 mention a `$ref`
 in its schema ([References between types](#references-between-types)).
-An arrow's label holds mentions too (Connections is a concern on Mentions, and the arrow, which
+An arrow's label holds mentions too (Arrows is a product on Mentions, and the arrow, which
 can't itself be mentioned, draws its label, edits it and has it found as a note's text is). A shape's panel lists what
 mentions it, in the Connections tab, and its context menu goes to what does. The core knows no mention;
 what Mentions needs of it is generic: [names](#values-that-name-shapes) of shapes that may outlive
@@ -7052,8 +7052,8 @@ it for text that matches what's typed, as a browser's ⌘F searches a page, high
 its shape draws it, and lists the shapes it's in, in the detail panel's place. Matching is
 [FuzzyMatching](#fuzzymatching)'s `TextSearch`: folded (case, diacritics, width), a phrase, every
 exact place first, then word-anchored places one typo off for words of four letters or more, at
-most 100 hits a text. Find is a surface (on Canvas, DetailPanel, FuzzyMatching, Geometry, Keyboard,
-Selection and Topology) and knows no kind and no concern: what a shape shows as text, and where it
+most 100 hits a text. Find is a horizontal in the window (on Canvas, DetailPanel, FuzzyMatching, Geometry, Keyboard,
+Selection and Topology) and knows no kind and no shape trait: what a shape shows as text, and where it
 draws it, the plugins that draw it say. Its plugin is `FindPlugin()`, id `find-in-boards` (never
 `find`, which is the command's name, `CanvasCommand.find`). It never transacts.
 
@@ -7285,7 +7285,7 @@ kept aside (`record.isOpaque`) carries none, nor does a shape on a board the edi
   ```
 - **Shipped:** `stands-for` (`StandingEdge`, Topology's own, declared by `TopologyPlugin`: a
   [stand-in](#stand-ins-forwarding)'s edge to each shape it stands for), a root, so every
-  vocabulary lists it first; `arrow` (`ArrowEdge`, Connections'), a plain arrow's type, and under it
+  vocabulary lists it first; `arrow` (`ArrowEdge`, Arrows'), a plain arrow's type, and under it
   each channel's, `note-link` and `subboard-link`; `mention` (`MentionEdge`, Mentions'), a root; and `is-a` (`IsAEdge`, Types'), a root, from a shape to each
   type its `is` names, derived with the property rule below. A channel is an
   edge type of the same name, which `registrar.channel(C.self)` declares with it
@@ -7650,11 +7650,11 @@ owner isn't installed is `ownerNotInstalled`.
 Queries ([`Sources/Queries`](../Sources/Queries)) finds the shapes of a file a query matches: a
 selector in a CSS-like language over every shape on every board the app can show, by kind, title,
 id, attributes typed by their kind's schema, text, Topology's containment and typed edges, and the
-words plugins add. It's a surface on Selection and Topology, over the core and QueryLanguage
-(DrawScript lends it only its "did you mean", `Suggestions`), knows no concern, and hears no
+words plugins add. It's an engine on Selection and Topology, over the core and QueryLanguage
+(DrawScript lends it only its "did you mean", `Suggestions`), knows no horizontal's meaning, and hears no
 commit: the engine every plugin may run, where the language agents write is `canvas query` and the
 words their owners give it. Agents ask through [`canvas query`](#query); any plugin may ask too (a
-word for a concern comes from the concern's own module):
+word for a horizontal's meaning comes from the horizontal's own module):
 
 ```swift
 guard let queries = editor.queries else { return }                 // nil without QueriesPlugin
@@ -7675,7 +7675,7 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   and `:word`s: `"Payments" sticky-note[text*="retry" i]:mentions("Auth")`. A selector answers with
   the shapes its last compound matches, as in CSS, and a list with those any of its selectors does,
   each once.
-- **QueryLanguage** ([`Sources/QueryLanguage`](../Sources/QueryLanguage)), a foundation module that
+- **QueryLanguage** ([`Sources/QueryLanguage`](../Sources/QueryLanguage)), a core module that
   knows no canvas, registry or plugin, reads it: `SelectorList(parsing:)`, a tree whose every part
   knows its place in the text (`QuerySpan`, in characters of the query as sent), and `canonical`,
   the one form it prints (its own words in lowercase, titles in double quotes, one space around `>`,
@@ -7975,7 +7975,7 @@ the edges ([stand-ins](#stand-ins-forwarding), Topology's). All are generic: not
 
 ### What plugins add
 
-Queries knows no concern: what shapes are called, what an untitled owner's board is called, words
+Queries knows no horizontal's meaning: what shapes are called, what an untitled owner's board is called, words
 beyond the language's, how text of a media type reads, and what's selected come through points
 Queries declares ([QueryPoints.swift](../Sources/Queries/QueryPoints.swift)), which the modules
 that own each meaning fill with this app's words, a plugin value for each (Queries' own for the
@@ -8810,7 +8810,7 @@ subboard ([Transform](#transform)).
 ## Transform
 
 Transform ([`Sources/Transform`](../Sources/Transform)) turns a shape into another kind: a frame into a
-subboard, from its context menu or as a command. It's a concern on [context menus](#context-menus) and
+subboard, from its context menu or as a command. It's a horizontal on [context menus](#context-menus) and
 [slash commands](#slash-commands), and it exists because the two kinds can't meet any other way. A vertical
 imports no other vertical, so Frames can't name Subboards (the audit refuses even the string `"subboard"`
 in Frames) and Subboards can't name Frames. What turns into what is a graph, and its edges are
@@ -9002,7 +9002,7 @@ a frame, which owns no board for `move` to move onto (`move` would move nothing 
 Jump To ([`Sources/JumpTo`](../Sources/JumpTo)) is ⌘K, and Go › Jump To…: a palette that goes to a
 shape by what it's called and where it is, as VS Code's file switcher goes to a file. Name a
 subboard, skip one, name another two levels down, then the shape, and the list narrows. It looks at
-titles and the containment tree and never at contents (that's Find's). It's a feature (no kind opts into
+titles and the containment tree and never at contents (that's Find's). It's a thing you do (no kind opts into
 it and nothing imports it, as with [Reordering](#every-shape-reordering)): a shape is listed
 when its kind has a title ([Titles](#a-horizontal-plugin), named or derived), and that's all a kind
 does for it. It builds on Boards (a pick is `editor.follow`, below), Titles, Topology (the tree),
@@ -9074,7 +9074,7 @@ they're typed in: `/move-to @Groceries` puts a note in a frame, or onto a subboa
 none free, on the side that frees up nearest. Both reach every board of the file the app can show,
 not only the one shown, and the shape each takes is a pill picked with `@` on its line, where the
 picker lists only what it takes (for `/move-to`, with nothing typed, every frame and subboard it
-takes, on every board, nearest first). It's a feature (no kind opts into it and nothing imports it, as with
+takes, on every board, nearest first). It's a thing you do (no kind opts into it and nothing imports it, as with
 [Jump To](#jump-to) and [Reordering](#every-shape-reordering)): on [slash
 commands](#slash-commands) for the commands, on the [table of contents](#dragging-rows) for its
 drops that move shapes (`ContentsMoves`), and on Draw for where a shape
@@ -9208,7 +9208,7 @@ how, and the arrows between are colored too. The minimap fills the same shapes i
 so what's connected off screen shows there (the rest of it dims while anything is lit, and a shape
 in two lights shows both, one inside the other), and a connected shape on another board (inside a
 subboard) lights the card that holds it. Select a shape and its panel's Connections tab lists what's
-connected to it by the same ways, then what it's inside and what it holds. It's a surface: what an
+connected to it by the same ways, then what it's inside and what it holds. It's an engine: what an
 edge's owner shows its edges on. It builds on Queries (which finds the shapes), Selection (the hover,
 and the one a list sets for a shape the canvas doesn't show), Topology (when a shape's edges change),
 the file (where a shape on another board is drawn), the core's [tinted outlines](#outlines), and, for
@@ -9216,7 +9216,7 @@ the tab, [the detail panel](#the-detail-panel), [FuzzyMatching](#fuzzymatching) 
 [table of contents](#the-table-of-contents) (what a listed shape with no title is called), and
 it knows no kind, edge type or concern: what counts as connected is a **light**, a title, a color
 and a query, which the plugin that owns the edges contributes to its point
-(`registrar.neighborLight`). Arrows' two are Connections' (`ArrowLightsPlugin`) and mentions' two are
+(`registrar.neighborLight`). Arrows' two are Arrows' own (`ArrowLightsPlugin`) and mentions' two are
 Mentions' (`MentionLightsPlugin`), each a plugin value of its own, so a list without Neighbors leaves
 them out.
 
@@ -9246,7 +9246,7 @@ some color-vision deficiencies.
 // and those (the arrows): outlined with them, never listed. `caption` is a line under a listed
 // shape's name, from the editor, the shape the list is of and the listed one.
 
-// Connections (ArrowLightsPlugin, id `arrow-lights`):
+// Arrows (ArrowLightsPlugin, id `arrow-lights`):
 let arrow = ArrowEdge.id.rawValue, standing = StandingEdge.id.rawValue
 registrar.neighborLight(ArrowStyle.pointsTo, color: ArrowStyle.pointsToLight, query: {
     ":edge-from(\($0), \(arrow)|\(standing)), :end-of(\($0), \(arrow))"
@@ -9399,7 +9399,7 @@ registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedB
   table of contents calls it (`ContentsState.name(of:)`: an untitled note's text on one line, "Empty
   Note", a pill by what it stands for), read once for an answer as the row is drawn, and for every row
   by a search's first keystroke; with no table of contents, its kind's name. So Neighbors imports
-  TableOfContents, a surface, and no Titles.
+  TableOfContents, a horizontal in the window, and no Titles.
 - **Folding and searching.** Each list folds (by its place among the lists, kept while the editor
   lives, for every shape); a folded list is only counted, and unfolding one whose rows weren't read
   asks. Typed text keeps, in every list, folded or not, the rows whose names match, ranked as every
@@ -9446,7 +9446,7 @@ registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedB
   another board (a lit shape moved down a board and back, deleted and undone), never for an unrelated
   edit, a restack or a drag; and the canvas drawing again only when what's outlined changed.
   CompositionTests' NeighborsShippedTests hold the four shipped lights as the registry has them
-  (arrows' from Connections, then mentions' from Mentions; none in a list without the three plugins,
+  (arrows' from Arrows, then mentions' from Mentions; none in a list without the three plugins,
   and a list with a light and no Neighbors refused; each face's two queries, and its refusal without
   Neighbors, are held in its owner's tests too, ArrowPortsTests' and MentionsTests' `LightTests`),
   the shipped table of
@@ -9472,7 +9472,7 @@ registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedB
 
 ## References
 
-References ([`Sources/References`](../Sources/References)) is the vertical that makes [stand-ins](#stand-ins-forwarding)
+References ([`Sources/References`](../Sources/References)) is the horizontal that makes [stand-ins](#stand-ins-forwarding)
 something a person can place: the `reference` kind, a pill that stands for another shape anywhere in the
 file, so that a shape too many others point at needs no arrow from each. An arrow drawn into the pill is,
 for everything that reads the graph (queries, the table of contents, Topology's readers), an arrow into
@@ -9659,7 +9659,7 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   imports Boards), an untitled one by what its kind is called, fainter. The reference's own row is where it is, as any shape's: in a frame, under the
   frame's row. `rowsAffected(by:)` names the rows whose path was read from a shape a commit
   changed (`pathReaders`, O(what changed); a move names none), and PathTests hold it. An arrow that starts at a reference nests under the
-  shape the reference stands for when that's on the same board ([Connections' arrow row](#the-table-of-contents),
+  shape the reference stands for when that's on the same board ([Arrows' arrow row](#the-table-of-contents),
   generic over stand-ins), else under the reference.
 - **Tests.** ReferencesTests hold it over CanvasTesting's boxes and tiles as what it stands for (its `makes` too, through `registry.standIns`: a reference made for a public shape, fitted, standing for it once inserted, and for nothing where the shape isn't public); CompositionTests'
   `referencesShippedTests` the shipped pieces (an arrow drawn by hand into a pill, in the graph and a query, nesting, a drag
@@ -9693,22 +9693,22 @@ The modules, one job each:
 
 | Module | Layer | What it does |
 |---|---|---|
-| CanvasRPC | wire | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener, which answers each request as a main-actor task of its own (one that waits holds up neither the main actor nor another connection), each connection's answers in the order its requests came, and cancels the requests still running (not notifications) once its client hangs up. Knows no canvas, plugin or AppKit. |
-| CanvasCLI | cli | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
-| CanvasUI's `CommandServer` | ui | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
-| Automation | language | The commands plugins give the command line (`AutomationCommands`), its own four, `draw`, `kinds` and `measure` (each resolving its board, calling the draw engine (Draw) and saying its `DrawError` as the wire's `AutomationError`) and `show`, which borrows Draw's naming. The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
-| Colors | concern | The color a shape of a kind that opted in holds ([Colors](#colors)): the property, the built-in names and a file's own, the book that says what every color looks like, the panel's row, `/color`, Color ▸, and the words draw and queries take; what a color looks like is [Palette](#palette)'s. |
-| Draw | surface | The engine of `canvas draw`, `measure` and `kinds` ([draw](#draw)), and the seven points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`): a surface, so any plugin may run it, and it knows no concern. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
-| DrawScript | foundation | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
-| FuzzyMatching | foundation | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
-| JumpTo | feature | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
-| Moving | feature | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Draw's placement for plugins (DrawScript's solver, over `ObstacleGrid`) as `draw` places a shape; no kind opts into it, and nothing imports it. |
-| Neighbors | surface | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)), and select one and its panel's Connections tab lists them by the same ways, then what it's inside and what it holds (`NeighborDetailsPlugin`, on DetailPanel, its search ranked by FuzzyMatching, a shape with no title called as TableOfContents calls it): its lights are titles, colors and the queries that find their shapes, each contributed by the plugin that owns the edges (Connections' `ArrowLightsPlugin`, Mentions' `MentionLightsPlugin`), asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`). |
-| Palette | foundation | The color math ([Palette](#palette)): a color as sRGB and OKLCH (`RGB`, `OKLCH`), the seven roles one color is drawn in on the light canvas and the dark (`Swatch`, each a `Tone`), contrast, and the one test for a dark appearance: pure, it knows no canvas, registry, plugin or named color. |
-| QueryCommands | language | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
-| QueryLanguage | foundation | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
-| Queries | surface | The engine that answers a query about a file ([Queries](#queries)), and its points: a surface, so any plugin may run a query; it gives the selection's word itself (`SelectionQueriesPlugin`, `:selected`), as Selection is below it. |
-| QueryTranslation | surface | English into a query: `AskStyle`, `AskRequest`, `AskAnswer`, and the translator (`editor.queryTranslator`, `QueryTranslationPlugin(prompt:referenceRule:style:)`) that `--ask` and the app both ask, `ask` (run what it wrote) and `translate` (only check it, for a query stored to be run later); it declares no point (on Canvas, LanguageModels, Queries and QueryLanguage). |
+| CanvasRPC | core (the wire) | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener, which answers each request as a main-actor task of its own (one that waits holds up neither the main actor nor another connection), each connection's answers in the order its requests came, and cancels the requests still running (not notifications) once its client hangs up. Knows no canvas, plugin or AppKit. |
+| CanvasCLI | app | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
+| CanvasUI's `CommandServer` | app | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
+| Automation | platform | The commands plugins give the command line (`AutomationCommands`), its own four, `draw`, `kinds` and `measure` (each resolving its board, calling the draw engine (Draw) and saying its `DrawError` as the wire's `AutomationError`) and `show`, which borrows Draw's naming. The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
+| Colors | platform | The color a shape of a kind that opted in holds ([Colors](#colors)): the property, the built-in names and a file's own, the book that says what every color looks like, the panel's row, `/color`, Color ▸, and the words draw and queries take; what a color looks like is [Palette](#palette)'s. |
+| Draw | platform | The engine of `canvas draw`, `measure` and `kinds` ([draw](#draw)), and the seven points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
+| DrawScript | core | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
+| FuzzyMatching | core | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
+| JumpTo | platform | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
+| Moving | platform | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Draw's placement for plugins (DrawScript's solver, over `ObstacleGrid`) as `draw` places a shape; no kind opts into it, and nothing imports it. |
+| Neighbors | platform | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)), and select one and its panel's Connections tab lists them by the same ways, then what it's inside and what it holds (`NeighborDetailsPlugin`, on DetailPanel, its search ranked by FuzzyMatching, a shape with no title called as TableOfContents calls it): its lights are titles, colors and the queries that find their shapes, each contributed by the plugin that owns the edges (Arrows' `ArrowLightsPlugin`, Mentions' `MentionLightsPlugin`), asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`). |
+| Palette | core | The color math ([Palette](#palette)): a color as sRGB and OKLCH (`RGB`, `OKLCH`), the seven roles one color is drawn in on the light canvas and the dark (`Swatch`, each a `Tone`), contrast, and the one test for a dark appearance: pure, it knows no canvas, registry, plugin or named color. |
+| QueryCommands | platform | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
+| QueryLanguage | core | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
+| Queries | platform | The engine that answers a query about a file ([Queries](#queries)), and its points: an engine, so any plugin may run a query; it gives the selection's word itself (`SelectionQueriesPlugin`, `:selected`), as Selection is below it. |
+| QueryTranslation | platform | English into a query: `AskStyle`, `AskRequest`, `AskAnswer`, and the translator (`editor.queryTranslator`, `QueryTranslationPlugin(prompt:referenceRule:style:)`) that `--ask` and the app both ask, `ask` (run what it wrote) and `translate` (only check it, for a query stored to be run later); it declares no point (on Canvas, LanguageModels, Queries and QueryLanguage). |
 
 **The commands are the app's, so `canvas` never changes for one.** It knows no command but `help`:
 each run asks the app to describe itself, and makes its commands, their arguments and their help
@@ -10285,7 +10285,7 @@ script does not restate keeps its size from before the run. A draw makes its edg
 before it settles what it put down, so the settle judges by a transaction that holds them, and reads its
 reports from one context taken after the last write.
 
-`above` is `editor.adornmentExtent(of:)` (Adornments, a surface Draw uses): how far the adornments
+`above` is `editor.adornmentExtent(of:)` (Adornments, a horizontal Draw uses): how far the adornments
 the shape would show reach above its top edge at 100% zoom, where they keep their size in view
 points (`AdornmentLayout.extent(of:in:)`, pure over the layout, so text left out for want of room
 reaches nowhere); asked of a record that is not on any board, nothing is kept for it. A reference
@@ -10301,7 +10301,7 @@ the default gap, the list step, the clearances, and each kind's least size
 
 Draw knows no title, port, validity or mention. `draw` takes each from a point Draw declares
 ([DrawPoints.swift](../Sources/Draw/DrawPoints.swift)), keyed so it takes at most one contribution
-(one for each media type, for text), which the concerns give, a plugin value of its own in each
+(one for each media type, for text), which the horizontals give, a plugin value of its own in each
 (AutomationTests make their own, over fixtures). Without one, `draw` does without:
 
 | Point | Sugar | What `draw` gets | Without it | Shipped |
@@ -10400,7 +10400,7 @@ registrar.drawTextFormat(mediaType: MentionTextFormat.mediaType, describes: "@[T
   identity key that is empty, written twice, one of `attributes`, or one the language keeps. A key
   the edge kind has no property for tells nothing apart. Which board a pair is on never depends on
   its identity.
-- **A connection by id, from a plugin that isn't a language.** `registry.drawsConnections` (something
+- **A connection by id, from any plugin.** `registry.drawsConnections` (something
   makes edges) and `registry.drawConnection(from:to:in:standingFor:beside:)` make a connection
   between two shapes of a board by their ids, with the maker `canvas draw` makes `edge "A" -> "B"`
   with and the channel policy that statement would get (a bare edge's), so a later run restates what
@@ -10411,7 +10411,7 @@ registrar.drawTextFormat(mediaType: MentionTextFormat.mediaType, describes: "@[T
   (`EdgeRequest.fromStandsFor` and `toStandsFor`: the ends are connected as what they stand for
   is); `beside` names the connections already joining the pair, carried on the request
   (`EdgeRequest.beside`; nil, the default: the maker reads them) to a maker that draws a second apart
-  from the first (Connections' bends a new arrow aimed at both centers). A run sets it for each
+  from the first (Arrows' connector bends a new arrow aimed at both centers). A run sets it for each
   edge it draws, listing the board's connections of the pair (those it does not delete) and its own so far, in
   statement order: the arrows it lays out before the layout are made beside the same list, over a document that
   holds them, so the arrow laid out is the arrow drawn.
@@ -10516,7 +10516,7 @@ EOF
 The language is taught by the canvas skill: SKILL.md's "Reading the board" tours it, and
 `reference/query.md` is the whole of it, where every block is a query run on the story file
 ([Testing queries](#testing-queries)). The commands are QueryCommands'
-([QueryCommands.swift](../Sources/QueryCommands/QueryCommands.swift)), a language on Automation,
+([QueryCommands.swift](../Sources/QueryCommands/QueryCommands.swift)), for agents, on Automation,
 Queries, QueryTranslation and the wire (the answer is the wire's JSON), which declares no point and
 knows no shipped kind: its help writes `<kind>` and `<title>`, and `--ask`'s prompt is
 `QueryTranslationPlugin`'s, which reads it from the product's files (`Shipped/ask-prompt.txt`).
@@ -10573,7 +10573,7 @@ knows no shipped kind: its help writes `<kind>` and `<title>`, and `--ask`'s pro
 query, runs it, and answers as a query does: `asked`, the question, and `query`, what the model
 wrote, for the agent to check it asks what the person meant. The translator (`QueryTranslator`,
 `editor.queryTranslator`, [QueryTranslator.swift](../Sources/QueryTranslation/QueryTranslator.swift);
-QueryTranslation is a surface, so the app may ask it too) runs `ask` on the main actor, awaiting,
+QueryTranslation is an engine, so the app may ask it too) runs `ask` on the main actor, awaiting,
 never holding it, and says why it can't as a `QueryTranslationError` (a `reason` and a `message`),
 which QueryCommands says as the wire's `AutomationError`, hints included. It holds the editor weakly, and
 takes what a question needs of it (its queries, model and scheduler) at once, so a call out never keeps a
@@ -10768,7 +10768,7 @@ one the script deletes), or on a board the app can't show.
 
 ## Types: shapes that hold a schema
 
-Types ([`Sources/Types`](../Sources/Types)) is a concern: a shape that holds a JSON Schema is a
+Types ([`Sources/Types`](../Sources/Types)) is a horizontal: a shape that holds a JSON Schema is a
 **type**, named by its title, and what it holds is said twice, in words (the shape's own text) and
 as the schema, which the editor's language model keeps saying the same thing (`TypeSync`, below).
 It is one module in nine parts, a folder each (`JSON`, `Type`, `Fields`, `Checks`, `Sync`, `IsA`,
@@ -11085,7 +11085,7 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   both boards byte for byte. ← → move a focus between pills, Backspace twice removes a relationship (`editor.unrelate`: the
   arrow, its values and the pill it empties, on whichever board, "Remove Relationship"). `FieldValues.name(of:)` is the
   record-only name by values a kind gives its `untitled:`.
-- **The release of a port's drag.** Connections tells Types the arrow it drew is finished
+- **The release of a port's drag.** Arrows tells Types the arrow it drew is finished
   (`ArrowConnecting.finished`, in the press): `editor.connectionDrawn(arrow)` gives an arrow between two notes
   the one relationship type that fits it, in the press's step (`Add Arrow`); opens a list of the types that
   fit at the arrow (`Add Type`, a step of its own) when several do, and selects the arrow while it is open;
@@ -11310,7 +11310,7 @@ and the prompts it sends (`SyncedSchema`: a type's is `TypeSchemaProperty`, with
 
 ## Colors
 
-Colors ([`Sources/Colors`](../Sources/Colors)) is a concern: a shape of a kind that opted in has a
+Colors ([`Sources/Colors`](../Sources/Colors)) is a horizontal: a shape of a kind that opted in has a
 color, and its kind draws it. It is loosely tldraw's color system: a set of named colors, each drawn
 in roles that suit a line, a surface, text and a sheet of paper on the light canvas and the dark, and
 colors of a document's own. What a color looks like is [Palette](#palette)'s `Swatch`; which names
@@ -11446,7 +11446,7 @@ do throws(LanguageModelError) {
 
 ## Prose maps
 
-ProseMaps ([`Sources/ProseMaps`](../Sources/ProseMaps)) is a surface that declares no extension
+ProseMaps ([`Sources/ProseMaps`](../Sources/ProseMaps)) is an engine that declares no extension
 point: for any plugin that keeps a text in plain words beside a text in a lower language (a JSON
 Schema, code, a query, data), it says which words say which part, as a source map says which part
 of what a compiler wrote came from which part of the source. A type's highlights are one:
@@ -11550,7 +11550,7 @@ if let map = context.proseMaps?.map(Snippet.self, of: shape.id, prose: words, ta
 
 What a drag moves snaps to the shapes around it, as it does in Keynote and Freeform: its edges and
 its middle line up with theirs, and it keeps the spaces between them even, centered between two or
-as far from one as the space beside it, while guides show what lines up. It's a feature
+as far from one as the space beside it, while guides show what lines up. It's a thing you do
 ([`Sources/Snapping`](../Sources/Snapping)) with no extension point of its own: every kind with a
 frame takes part, and the core lends one hook, the [translation
 adjuster](#the-cores-part-the-translation-adjuster), which Snapping claims
@@ -13143,7 +13143,7 @@ about mentions that can't work, and `title-validation`'s, over the file's titles
 whose kind's title shows one (`adornment TitlePill → every shape`), and Locking its lock;
 `adornments` lends them their layout and drawing, a canvas button (`CanvasButtons`) and their hits
 (`DecorationHits`), and places none of its own. `draw-engine` is the draw engine's mark
-(`draw engine`), whose seven points the concerns' plugins fill. The automation line is its commands
+(`draw engine`), whose seven points the horizontals' plugins fill. The automation line is its commands
 (`command line draw`, `command line show`, `command line kinds`, `command line measure`), and the
 six after it are Titles', Connections', Validation's and Mentions' plugins and Types' two, which fill Draw's
 points (`draw text` is one a media type, `draw value` one a property). `queries` is the query engine's service
@@ -13213,8 +13213,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   PublishingTests, PortsTests, AutomationTests, TitleNamesTests, PortEdgesTests,
   ValidationChecksTests, MentionTextsTests, QueriesTests, QueryCommandsTests and the five owners'
   query tests import no real vertical (only these fixtures, and local test kinds), which proves
-  those plugins are shape-agnostic. ArrowPortsTests join fixtures with the arrows that come with
-  Connections, so they import no real vertical either.
+  those plugins are shape-agnostic. ArrowPortsTests join fixtures with Arrows' arrows and
+  Connections' ports, so they import no other vertical.
 - **Names of shapes** without a real kind that holds them: `NamingPlugin()` (CanvasTesting) registers
   `Memo`, whose props name shapes in a struct in a list (`MemoNote`), an optional and a dictionary,
   and which opts into `CitationsProperty`, an added set of names; and `CitingTag`, bound to its
@@ -13492,7 +13492,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   `CommandServer` on boards configured as the app configures them (and a `Lingering` board command
   on a server of its own: a closed board answered `board_closed`, and `canvas --timeout` cancelling
   the command).
-- **`canvas draw`.** AutomationTests hold `draw` over fixtures, with test plugins in the concerns'
+- **`canvas draw`.** AutomationTests hold `draw` over fixtures, with test plugins in the horizontals'
   place (DrawSupport.swift): `namesPlugin` names a tile by its label and a card by its nickname
   (an unnamed one "Card, 100 × 60", worked out from its size), `edgesPlugin` makes links, with a
   tone and heads as added properties, and logs each request (`EdgeLog`), and `checksPlugin` warns
@@ -13605,8 +13605,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   `Suite` must be listed there (`test.sh` checks). Each test runs in an autorelease pool of its
   own (`runAsTest`), as the app handles each event in one, so a window a test lets go goes with
   it, and nothing it scheduled acts in the next test. `<M>Tests` may depend only on M, what M
-  depends on, and the test-support and ui modules, and so may a target named for a plugin of M
-  that says so in its line, `// layer: test of M`: ArrowsTests, PortsTests, ArrowPortsTests and
+  depends on, and the test-support modules and the window, and so may a target named for a plugin of M
+  that says so in its line, `// layer: test of M`: ArrowPortsTests, of Arrows; PortsTests and
   PortEdgesTests, of Connections; TitleQueriesTests and TitleNamesTests, of Titles;
   MentionQueriesTests and MentionTextsTests, of Mentions; ValidationQueriesTests and
   ValidationChecksTests, of Validation; TypeQueriesTests and TypeNamesTests, of Types;

@@ -1,10 +1,10 @@
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import Clipboard
-import Connections
 import Foundation
 import LanguageModels
 import Locking

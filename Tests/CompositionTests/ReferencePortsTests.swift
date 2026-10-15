@@ -1,43 +1,83 @@
+import Adornments
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import Colors
 import Connections
+import ContextMenus
 import DetailPanel
 import Geometry
+import Keyboard
+import Mentions
+import Publishing
+import Queries
 import References
 import Selection
+import SlashCommands
+import TableOfContents
 import TestKit
+import Titles
 import Topology
 import Types
+import Validation
 
 // Ports at a pill: its dots and what may end on it are those of what it stands for (boxes take beams,
 // tiles take rails), on its own left and right; an arrow attached to it that what it stands for no
 // longer takes stays as drawn, with a warning where a count would be and a line in the panel. Fixtures
-// only: the shipped reference over CanvasTesting's boxes and tiles, and Connections' arrows.
+// only: the shipped reference over CanvasTesting's boxes and tiles, Connections' ports and Arrows'
+// arrows. Here and not in ReferencesTests, since a test of References may not import Arrows.
 
-enum Beam {}
+private enum Beam {}
 extension Beam: Channel {
     static let id: ChannelID = "beam"
 }
 
-enum Rail {}
+private enum Rail {}
 extension Rail: Channel {
     static let id: ChannelID = "rail"
 }
 
 /// Boxes take beams and tiles rails.
-let channelsPlugin = Contributor(id: "pill-channels") { registrar in
+private let channelsPlugin = Contributor(id: "pill-channels") { registrar in
     registrar.channel(Beam.self)
     registrar.channel(Rail.self)
     registrar.ports(Box.self, on: Beam.self)
     registrar.ports(Tile.self, on: Rail.self)
 }
 
-@MainActor private func portHarness() throws -> EditorHarness {
-    try referenceHarness([TypesPlugin(), ColorsPlugin(), ArrowsPlugin(), ArrowPortsPlugin(), channelsPlugin])
+/// What a reference stands for here: boxes and tiles, named by their titles and mentionable (a box "A box"
+/// while untitled), as ReferencesTests' `TargetsPlugin` has them.
+private let targetsPlugin = Contributor(id: "targets") { registrar in
+    registrar.title(Box.self)
+    registrar.mentionable(Box.self, untitled: { _ in "A box" }, symbol: { _ in "shippingbox" }, tint: { _ in .systemOrange })
+    registrar.title(Tile.self)
+    registrar.mentionable(Tile.self, symbol: { _ in "square.on.square" }, tint: { _ in .systemPurple })
 }
 
+/// Queries name shapes by their titles, as Titles' `TitleQueriesPlugin` names them.
+private let targetNames = Contributor(id: "target-names") { registrar in
+    registrar.queryNames(attribute: TitleProperty.key.rawValue,
+                         source: { kind, registry in registry.properties(for: kind).contains(TitleProperty.key) ? .named : .none },
+                         named: { TitleProperty.folded($0[TitleProperty.self]) },
+                         derived: { _, _ in nil },
+                         fold: { TitleProperty.folded($0) })
+}
+
+/// An empty board of what a reference builds on and shows itself on, as ReferencesTests' `referencePlugins`,
+/// with types, colors, arrows and the channels; its view 1000 × 800 at 100%, where view points are world units.
+@MainActor private func portHarness() throws -> EditorHarness {
+    let h = try EditorHarness(plugins: [
+        KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), TilesPlugin(), LinksPlugin(), ContextMenusPlugin(),
+        DetailPanelPlugin(), AdornmentsPlugin(), PortsPlugin(), SlashCommandsPlugin(), ValidationPlugin(), TitlesPlugin(), MentionsPlugin(),
+        PublishingPlugin(), targetsPlugin, QueriesPlugin(), targetNames, ReferencesPlugin(), TableOfContentsPlugin(),
+        TypesPlugin(), ColorsPlugin(), ArrowsPlugin(), ArrowPortsPlugin(), channelsPlugin,
+    ])
+    h.editor.viewportDidResize(to: CGSize(width: 1000, height: 800))
+    return h
+}
+
+private let boxFrame = CGRect(x: 100, y: 100, width: 150, height: 100)
 private let aMiddle = CGPoint(x: 175, y: 150)
 private let aRight = CGPoint(x: boxFrame.maxX + 12, y: boxFrame.midY)
 
@@ -46,8 +86,39 @@ private let aRight = CGPoint(x: boxFrame.maxX + 12, y: boxFrame.midY)
 }
 
 extension EditorHarness {
+    /// A box titled `title`, public if `isPublic`: a transaction of its own.
+    @discardableResult
+    fileprivate func addBox(_ title: String, public isPublic: Bool = true, at frame: CGRect = boxFrame) -> ShapeID {
+        var box = ShapeRecord(Box(frame))
+        box[TitleProperty.self] = title
+        if isPublic { box[PublicProperty.self] = true }
+        editor.transact { $0.insert(box) }
+        return box.id
+    }
+
+    /// A public tile titled `title`.
+    fileprivate func addTile(_ title: String, at frame: CGRect) -> ShapeID {
+        var tile = ShapeRecord(Tile(frame))
+        tile[TitleProperty.self] = title
+        tile[PublicProperty.self] = true
+        editor.transact { $0.insert(tile) }
+        return tile.id
+    }
+
+    /// A reference standing for `target`, called `label`, fitted to it, its top left at `origin`.
+    fileprivate func addReference(to target: ShapeID, label: String, at origin: CGPoint) -> ShapeID {
+        var props = Reference(frame: CGRect(origin: origin, size: Reference.defaultSize))
+        ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label))
+        return add(props)
+    }
+
+    /// An empty reference, as placed.
+    fileprivate func addEmptyReference(at origin: CGPoint) -> ShapeID {
+        add(Reference(frame: CGRect(origin: origin, size: Reference.defaultSize)))
+    }
+
     /// Drags from the box at `boxFrame`'s right dot to `point`, as a person does, and releases.
-    func drawArrow(to point: CGPoint) {
+    fileprivate func drawArrow(to point: CGPoint) {
         move(to: aMiddle)
         move(to: aRight)
         press()
@@ -55,10 +126,10 @@ extension EditorHarness {
         release()
     }
 
-    var arrows: [ShapeRecord<Arrow>] { editor.document.shapes.compactMap { $0.typed(as: Arrow.self) } }
+    fileprivate var arrows: [ShapeRecord<Arrow>] { editor.document.shapes.compactMap { $0.typed(as: Arrow.self) } }
 
     /// Re-points the pill at `target`, as picking does.
-    func repoint(_ pill: ShapeID, to target: ShapeID, label: String) {
+    fileprivate func repoint(_ pill: ShapeID, to target: ShapeID, label: String) {
         editor.transact { $0.update(pill, as: Reference.self) { ReferenceEdits.pick(&$0.props, ReferenceTarget(id: target, label: label)) } }
     }
 }
@@ -79,7 +150,7 @@ extension EditorHarness {
     CGRect(x: pill.maxX - 25, y: pill.midY - 6, width: 11, height: 12)
 }
 
-@MainActor let portTests = Suite("Ports at a pill", [
+@MainActor let referencePortTests = Suite("Ports at a pill", [
     test("an arrow drawn from a box's port ends on a pill standing for a box, and not on one standing for a tile") {
         let h = try portHarness()
         let a = h.addBox("A")
@@ -208,7 +279,7 @@ extension EditorHarness {
         let tile = h.addTile("Order", at: CGRect(x: 700, y: 500, width: 120, height: 80))
         let pill = h.addReference(to: order, label: "Order", at: CGPoint(x: 400, y: 300))
         let rect = try frame(of: pill, in: h)
-        let before = render(h.editor, size: CGSize(width: 1000, height: 800))
+        let before = renderBitmap(h.editor, size: CGSize(width: 1000, height: 800))
         expectEqual(orange(before, in: glyphRect(rect)), 0)
         h.drawArrow(to: rect.center)
         let arrow = try require(h.arrows.first?.id)
@@ -220,7 +291,7 @@ extension EditorHarness {
         h.repoint(pill, to: tile, label: "Order")
         expectEqual(state.channelMismatch(of: pill), ChannelMismatch(channel: Beam.id, target: tile))
         expectEqual(state.mismatchLine(of: pill), "“Order” doesn’t take beams.")
-        let after = render(h.editor, size: CGSize(width: 1000, height: 800))
+        let after = renderBitmap(h.editor, size: CGSize(width: 1000, height: 800))
         expect(orange(after, in: glyphRect(try frame(of: pill, in: h))) > 8, "the warning triangle trails the pill")
         expectEqual(try require(h.editor.detailPanel).statuses(for: try require(h.editor.document[pill])),
                     [DetailStatus("“Order” doesn’t take beams.", tone: .warning)])
@@ -229,7 +300,7 @@ extension EditorHarness {
         // And back.
         h.repoint(pill, to: order, label: "Order")
         expectEqual(state.channelMismatch(of: pill), nil)
-        expectEqual(orange(render(h.editor, size: CGSize(width: 1000, height: 800)), in: glyphRect(try frame(of: pill, in: h))), 0)
+        expectEqual(orange(renderBitmap(h.editor, size: CGSize(width: 1000, height: 800)), in: glyphRect(try frame(of: pill, in: h))), 0)
         h.editor.undo()
         expect(state.channelMismatch(of: pill) != nil, "undo brings it back")
         // The arrow deleted: nothing is attached.

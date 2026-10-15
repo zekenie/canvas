@@ -8,7 +8,7 @@ import Keyboard
 /// detail panel's place (`FindPanelPlugin` gives `FindPanel` as the panel's takeover). ⌘G and ⇧⌘G
 /// step through the hits, showing each one's board. It knows no kind and no concern: what a shape
 /// shows as text, and where, comes from the plugins that draw it (`FindableTexts`: Mentions' text,
-/// Titles' titles, Connections' arrow labels). It never transacts.
+/// Titles' titles, Arrows' arrow labels). It never transacts.
 extension PluginID {
     /// Never "find": that's the command's name (`CanvasCommand.find`).
     public static let findInBoards: PluginID = "find-in-boards"
@@ -143,7 +143,7 @@ extension PluginRegistrar {
                    to: FindableTexts.self, for: .any)
     }
 
-    /// Texts the shapes of a kind another plugin registers show, for Find (Connections' arrow
+    /// Texts the shapes of a kind another plugin registers show, for Find (Arrows' arrow
     /// labels), as above.
     public mutating func findableTexts<P: ShapeProps>(
         _ name: String,

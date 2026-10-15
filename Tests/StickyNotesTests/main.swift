@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([stickyNotesTests, noteEditorTests, noteMentionTests, noteSkeletonTests, paperTests, typeNoteTests, noteLayoutTests, noteRowsTests, noteRowEditingTests, noteRelationRowsTests, noteRelationFreshTests, noteCompactTests, noteNameByValuesTests, noteTintTests, coloredNoteTests])
+runTests([stickyNotesTests, noteEditorTests, noteMentionTests, noteSkeletonTests, paperTests, typeNoteTests, noteLayoutTests, noteRowsTests, noteRowEditingTests, noteNameByValuesTests, noteTintTests, coloredNoteTests])

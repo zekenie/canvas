@@ -1,4 +1,5 @@
 import Canvas
+import Connections
 import CoreGraphics
 import Geometry
 
@@ -52,19 +53,18 @@ final class ArrowTargeting {
     }
 
     /// What an end of an arrow may bind to, by the plugins' rules (`ArrowBindingRules`), `also`, and,
-    /// for a shape that stands for others (a reference), what it stands for now (`PortState.allows`),
+    /// for a shape that stands for others (a reference), what it stands for now (`editor.portsAllow`),
     /// the same judgement a port's drag ends by (`editor.channel(of:endingAt:)`): the static rule
     /// lets an arrow on any channel end at one, since its kind has ports on every channel, so an end
     /// re-aimed onto one that stands for nothing, or for what doesn't take the arrow's channel,
-    /// would bind. Nil, anything, when there is no rule, `also` or stand-in.
+    /// would bind. Its start is the connection's source, its end the target.
     func filter(for arrowID: ShapeID, _ end: ArrowEnd, also: ((AnyShapeRecord) -> Bool)? = nil) -> ((AnyShapeRecord) -> Bool)? {
         guard let arrow = editor.document[arrowID] else { return also }
-        let standIns = editor.service(PortState.self)
-        guard !rules.isEmpty || standIns != nil else { return also }
-        let rules = rules, registry = editor.registry
+        let rules = rules, registry = editor.registry, editor = editor
+        let role: PortRole = end == .start ? .source : .target
         return { shape in
             ArrowBindingQuery(arrow: arrow, end: end, shape: shape, registry: registry).isAllowed(by: rules) && (also?(shape) ?? true)
-                && (standIns?.allows(end, of: arrow, at: shape) ?? true)
+                && editor.portsAllow(arrow, as: role, at: shape)
         }
     }
 

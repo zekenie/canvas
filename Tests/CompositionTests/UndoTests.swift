@@ -1,4 +1,5 @@
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI

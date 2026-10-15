@@ -1,9 +1,9 @@
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasRPC
 import CanvasUI
-import Connections
 import Draw
 import Foundation
 import LanguageModels

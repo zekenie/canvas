@@ -1,11 +1,11 @@
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
 import SwiftUI
 import TableOfContents
 import TestKit
-import Connections
 
 // An arrow's row in the table of contents has no color unless the arrow has one of its own.
 

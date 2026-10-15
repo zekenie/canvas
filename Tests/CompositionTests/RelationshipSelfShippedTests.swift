@@ -1,10 +1,10 @@
 import Adornments
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
-import Connections
 import Foundation
 import Geometry
 import LanguageModels

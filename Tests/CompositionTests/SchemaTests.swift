@@ -15,9 +15,9 @@ import TestKit
     test("an arrow's ends are one of two objects, and both are required") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let json = try require(registry.schema(for: "arrow")).json
-        expectEqual(json["properties"]?["start"], ["$ref": "#/$defs/connections.terminal"])
+        expectEqual(json["properties"]?["start"], ["$ref": "#/$defs/arrows.terminal"])
         expectEqual(json["required"], ["start", "end"])
-        let terminal = try require(json["$defs"]?["connections.terminal"]?["oneOf"]?.arrayValue)
+        let terminal = try require(json["$defs"]?["arrows.terminal"]?["oneOf"]?.arrayValue)
         expectEqual(terminal.map { $0["required"] }, [["free"], ["bound"]])
         expectEqual(terminal[1]["properties"]?["bound"]?["properties"]?["shapeID"], ["$ref": "#/$defs/core.shape-id"])
     },

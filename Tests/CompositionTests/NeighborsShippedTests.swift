@@ -1,4 +1,5 @@
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import Connections
@@ -107,7 +108,7 @@ private extension EditorHarness {
 }
 
 /// The shipped lights' colors, as the registry has them, in the order the plugins give them: arrows'
-/// two (Connections': what a shape points to, what points to it), then mentions' two (Mentions': what
+/// two (Arrows': what a shape points to, what points to it), then mentions' two (Mentions': what
 /// it mentions, what mentions it).
 private struct Lights {
     let pointsTo, pointedToBy, mentions, mentionedBy: NSColor

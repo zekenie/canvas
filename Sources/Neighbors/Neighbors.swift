@@ -14,7 +14,7 @@ extension PluginID {
 /// are queries, asked of the query engine for the shape hovered, so what counts as a neighbor is the
 /// graph's and the lights' to say, never this module's: it knows no kind, edge type or concern, and
 /// the plugins that own the edges contribute the lights (`registrar.neighborLight`: arrows' are
-/// Connections', mentions' are Mentions'). A shape in two lights has a ring for each; a shape on another
+/// Arrows', mentions' are Mentions'). A shape in two lights has a ring for each; a shape on another
 /// board lights the card that holds it on the board shown. The core strokes the outlines
 /// (`Outlines.tinted`) and the minimap fills the same shapes, so connected shapes off screen show
 /// there too. A surface: what an edge's owner shows its edges on.

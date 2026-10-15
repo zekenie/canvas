@@ -7,7 +7,7 @@ paths:
   - "Tests/CanvasTesting/EditableCard.swift"
   - "Sources/TextEditing/EditingTextView.swift"
   - "Sources/Mentions/MentionTextView.swift"
-  - "Sources/Connections/ArrowLabelEditing.swift"
+  - "Sources/Arrows/ArrowLabelEditing.swift"
 ---
 
 # Editing in place

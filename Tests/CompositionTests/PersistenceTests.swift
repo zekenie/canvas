@@ -1,6 +1,6 @@
+import Arrows
 import Canvas
 import CanvasTesting
-import Connections
 import CoreGraphics
 import Foundation
 import Frames
