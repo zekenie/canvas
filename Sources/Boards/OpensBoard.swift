@@ -1,15 +1,14 @@
 import Canvas
 import ContextMenus
-import DetailPanel
 import Selection
 import SwiftUI
 
 // Sugar, so opting in is one line and never names the extension points.
 extension ShapeRegistrar where Definition: BoardOwning {
     /// Opening this kind's shapes shows their boards: a double-click, Return, ⌘↓ and Return on their
-    /// picked row (Selection's `opens`), Open first in their context menu, and an Open
-    /// button in their panel's Board tab. `placeholder` is what a board is called while its owner
-    /// has no title (on the path, in the table of contents' heading), and `systemImage` its symbol.
+    /// picked row (Selection's `opens`), and Open first in their context menu. `placeholder` is what
+    /// a board is called while its owner has no title (on the path, in the table of contents'
+    /// heading), and `systemImage` its symbol.
     ///
     ///     sub.opensBoard(placeholder: "Untitled Subboard", systemImage: "rectangle.stack")
     public mutating func opensBoard(placeholder: String, systemImage: String) {
@@ -19,13 +18,6 @@ extension ShapeRegistrar where Definition: BoardOwning {
             MenuItem("Open", in: BoardsMenuGroup.self) { ids, editor in
                 if let first = ids.first { editor.open(first) }
             }
-        }
-        details {
-            DetailSection(in: BoardTab.self) { _ in
-                DetailCommandButton("Open", systemImage: "arrow.down.right.square", command: .openSelection)
-            }
-            // A locked shape is opened all the same.
-            .enabledWhileReadOnly()
         }
     }
 }
@@ -40,13 +32,6 @@ extension PluginRegistrar {
             MenuItem("Open", in: BoardsMenuGroup.self) { ids, editor in
                 if let first = ids.first { editor.open(first) }
             }
-        }
-        details(P.self) {
-            DetailSection(in: BoardTab.self) { _ in
-                DetailCommandButton("Open", systemImage: "arrow.down.right.square", command: .openSelection)
-            }
-            // A locked shape is opened all the same.
-            .enabledWhileReadOnly()
         }
     }
 }

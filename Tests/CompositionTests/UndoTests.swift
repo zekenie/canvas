@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
+import Connections
 import DetailPanel
 import Foundation
 import Geometry
@@ -355,15 +356,25 @@ let sampleNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x: 
         let w = try InspectorWindow()
         var shape = ShapeRecord(Subboard(frame: CGRect(x: 100, y: 100, width: 240, height: 160)))
         shape[TitleProperty.self] = "eggs"
-        w.editor.transact("Add Subboard") { $0.insert(shape) }
+        // A note pointing at it, so its Connections tab has a row, a button.
+        let note = ShapeRecord(StickyNote(frame: CGRect(x: 500, y: 100, width: 200, height: 200), text: "Eggs"))
+        func bound(_ id: ShapeID) -> ArrowTerminal {
+            .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
+        }
+        let arrow = ShapeRecord(Arrow(start: bound(note.id), end: bound(shape.id)))
+        w.editor.transact("Add Subboard") { transaction in
+            transaction.insert(shape)
+            transaction.insert(note)
+            transaction.insert(arrow)
+        }
         w.window.settle()
         let contents = try require(w.host.descendants(NSTableView.self).first { $0.isTableOfContents }, "the panel shows the table of contents")
         w.window.makeFirstResponder(contents)
         expect(target(of: "undo:", from: w.window.firstResponder) === w.window)
         w.click(CGPoint(x: 200, y: 180))
         w.window.spin { w.titleField != nil && !w.buttons.isEmpty }
-        let open = try require(w.buttons.first, "the Board tab's Open")
-        expect(target(of: "undo:", from: open) === w.window)
+        let button = try require(w.buttons.first, "the Connections tab's row")
+        expect(target(of: "undo:", from: button) === w.window)
         let field = try require(w.titleField)
         w.window.focus(field)
         field.currentEditor()?.selectAll(nil)

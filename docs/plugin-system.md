@@ -277,7 +277,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
 | Warn about something on a shape, without running again on every drag event | A validation rule, `x.validate(ignoringMoves: true) { … }` (or `validateEveryShape`), for one that reads what shapes are, never where | [Validation](#a-horizontal-plugin), [Mentions' warnings](#warnings-mentions-that-cant-work) |
 | Give the shapes of the kinds that opt in something to hold (a title) | A `ShapeProperty`, `registrar.declare`, and `optIn(to:)` from the concern's sugar | [Titles](#added-properties) |
-| Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, contributed from the same sugar | [Boards](#a-horizontals-feature-tab-boards) |
+| Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, with `details(of: P.self)` over the concern's added property | [Types](#types-shapes-that-hold-a-schema) |
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Boards](#a-feature-that-comes-with-menu-items-boards) |
 | Edit an added property in the panel, or from the menu | `details(of: P.self) { DetailSection ... }`, `contextMenu(of: P.self) { MenuItem ... }` | [Added properties](#added-properties), [a flag](#something-the-user-turns-on) |
 | Show a section in the panel only while a service says so (what mentions the shape) | `DetailSection(…).shownWhile { shape, context in … }`, at order 300 for a tab that comes and goes | [Contributing](#contributing-two-points-and-their-sugar), [Mentions](#what-mentions-a-shape) |
@@ -379,10 +379,10 @@ A concern can also come with a tab in the [detail panel](#the-detail-panel) and 
 [context menu](#context-menus) for the kinds that opt in.
 Getting around a file's [boards](#boards) is the example: one line,
 `sub.opensBoard(placeholder:systemImage:)`, makes every subboard open onto the board it owns, with
-a Board tab in the panel and Open first in the context menu. Boards owns opening them, going back
+Open first in the context menu. Boards owns opening them, going back
 up, what a board is called and the path that shows where you are; the kind declares nothing, and
 the core only holds the boards and shows one. One horizontal may build on another: Boards imports
-ContextMenus, DetailPanel, Find, Keyboard, Queries, Selection, TableOfContents and Titles.
+ContextMenus, Find, Keyboard, Queries, Selection, TableOfContents and Titles.
 
 Selecting is a horizontal too, one that every kind is in unless it opts out
 (`backdrop.unselectable()`). [Selection](#selection) owns what's selected and the way back
@@ -3182,7 +3182,7 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   of shapes) goes in a box as a text area's, over a text view of the plugin's own
   ([`DetailTextBox`](#text-of-a-plugins-own-detailtextbox)): Mentions' `MentionTextArea` is one.
   `DetailNumberText` formats and parses numbers with units ("240 pt"), in the user's locale ("2,5 h" in German), as the number field does. A
-  `DetailCommandButton("Open", systemImage: "arrow.down.right.square", command: .openSelection)`
+  `DetailCommandButton("Go to Original", systemImage: "arrow.up.forward.square", command: .goToOriginal)`
   runs a command a plugin registered (`editor.perform`), dimmed while it can't run
   (`editor.canPerform`): the panel's counterpart of a menu item, borderless like the panel's other
   buttons. It finds the editor in the environment the panel sets, so a section still never sees it.
@@ -3231,9 +3231,9 @@ A tab is a type conforming to `DetailTab`. Any module may declare one, and there
 call: a tab shows for a shape when a shown section that applies to the shape names it.
 
 ```swift
-public enum BoardTab {}
-extension BoardTab: DetailTab {
-    public static var title: String { "Board" }
+public enum TypesTab {}
+extension TypesTab: DetailTab {
+    public static var title: String { "Types" }
     public static var order: Int { 50 }
 }
 ```
@@ -3244,7 +3244,7 @@ it. Tabs sort by `order`, then by first appearance, in these bands:
 | Order | Tabs |
 |---|---|
 | 0 (the default) | A kind's own tabs (Schema) |
-| 50 | Feature tabs a horizontal brings to the kinds that opt into it (Boards' Board) |
+| 50 | Feature tabs a horizontal brings to the kinds that opt into it (Types' Types) |
 | 60 | Neighbors' Connections (`NeighborsTab`), on every shape and always: after the feature tabs, before Style |
 | 100 | `StyleTab`: appearance, shared by every kind |
 | 300 | A tab of the shape's state that comes and goes with it (Validation's `IssuesTab`): last, so the others keep their order |
@@ -3394,17 +3394,17 @@ nothing names) isn't; a kind with one keeps a `DetailHeader`, if it has a header
 Opting into titles doesn't place it: the header is the kind's, which may want its own subtitle,
 placeholder or symbol, or no rename in the panel at all.
 
-### A horizontal's feature tab: Boards
+### A horizontal's opt-in: Boards
 
-The pattern the panel is built for: a horizontal exposes a way for individual shapes to opt into a
-feature, and the feature shows up as a tab in the panel. Opting in is one line on the kind, and the
-tab comes with it, on exactly the kinds that opt in.
+The pattern the registrar is built for: a horizontal exposes a way for individual shapes to opt into
+a feature, and what the feature brings comes with it, on exactly the kinds that opt in. Opting in
+is one line on the kind.
 
 [Boards](#boards) makes the shapes of any kind that owns boards open onto them. It owns its point
 (`BoardKinds`: what a kind's boards are called while their owners have no title, and their
-symbol), the tab (`BoardTab`), the menu group (`BoardsMenuGroup`), and going in and out of boards;
-its sugar contributes to its own point, to Selection's opening, and to the panel's and the menu's,
-from the same `ShapeRegistrar`, fully typed ([OpensBoard.swift](../Sources/Boards/OpensBoard.swift)):
+symbol), the menu group (`BoardsMenuGroup`), and going in and out of boards; its sugar contributes
+to its own point, to Selection's opening and to the menu's, from the same `ShapeRegistrar`, fully
+typed ([OpensBoard.swift](../Sources/Boards/OpensBoard.swift)):
 
 ```swift
 /// The extension point: which kinds' shapes open onto their boards, and what a board is called
@@ -3417,8 +3417,8 @@ extension BoardKinds: KeyedExtensionPoint {
 }
 
 extension ShapeRegistrar where Definition: BoardOwning {
-    /// Opening this kind's shapes shows their boards: a double-click, Return, ⌘↓, Open first in
-    /// their context menu, and an Open button in their panel's Board tab.
+    /// Opening this kind's shapes shows their boards: a double-click, Return, ⌘↓, and Open first in
+    /// their context menu.
     public mutating func opensBoard(placeholder: String, systemImage: String) {
         contribute(BoardKind(placeholder: placeholder, systemImage: systemImage), to: BoardKinds.self)
         opens("Open") { shape, editor in editor.showBoard(BoardID(owner: shape.id)) }
@@ -3426,12 +3426,6 @@ extension ShapeRegistrar where Definition: BoardOwning {
             MenuItem("Open", in: BoardsMenuGroup.self) { ids, editor in
                 if let first = ids.first { editor.open(first) }
             }
-        }
-        details {
-            DetailSection(in: BoardTab.self) { _ in
-                DetailCommandButton("Open", systemImage: "arrow.down.right.square", command: .openSelection)
-            }
-            .enabledWhileReadOnly()                                // a locked shape is opened all the same
         }
     }
 }
@@ -3443,16 +3437,17 @@ extension ShapeRegistrar where Definition: BoardOwning {
   to, and `BoardKinds.check` holds the form for another plugin's kind to, since that form can't say so in its types.
 - **The graph.** Subboards imports Boards and never ContextMenus or Selection, yet its shapes open
   and have Open in their menu. The requirement shows up at startup instead: a list with Subboards
-  but without `BoardsPlugin`, `SelectionPlugin`, `ContextMenusPlugin` or `DetailPanelPlugin` is
+  but without `BoardsPlugin`, `SelectionPlugin` or `ContextMenusPlugin` is
   `ownerNotInstalled`, naming the missing one.
-- **The tab runs a command.** Its one section is a `DetailCommandButton` for `.openSelection`, what
-  ⌘↓ and Go › Open Selection run, so the panel, the menu and the keys open alike, and it dims when they
-  can't. Opening changes nothing of the shape, so the section is `enabledWhileReadOnly()`.
+- **No tab.** Opening changes nothing of the shape and has nothing to show or hold, and the canvas,
+  the menu and ⌘↓ (Go › Open Selection) open it alike, so the panel has nothing of it: a subboard's is
+  its header, then the tabs every shape has.
 
 Another feature in this pattern has the same parts: a keyed point for whatever it needs per kind
-(Boards' placeholder and symbol); a tab type at order 50 (and a menu group, if it has actions);
-when its shapes hold something, an added property declared by the horizontal, with sections and
-items over its value (`details(of:)`, `contextMenu(of:)`; [added properties](#added-properties));
+(Boards' placeholder and symbol); a menu group, if it has actions; when its shapes hold something,
+an added property declared by the horizontal, with sections and items over its value
+(`details(of:)`, `contextMenu(of:)`; [added properties](#added-properties)), in a tab at order 50
+if there is something to show there (Types' Types tab: [what a shape is](#types-shapes-that-hold-a-schema));
 sugar that contributes them all from the kind's registrar; and whatever consumes it (a lookup on
 `Registry`, an adornment).
 
@@ -3492,7 +3487,7 @@ extension IssuesTab: DetailTab {
 Issues come worst first (errors, then warnings, each in the rules' order), each line its
 severity's symbol, red or orange, then its message. The tab is at order 300, after every
 other, so the other tabs keep their order as it comes and goes, though not their width: the
-strip shares its width among its tabs, and a kind with one tab (a subboard's Board) gains a
+strip shares its width among its tabs, and a kind with one tab (a reference's Connections) gains a
 strip with it. Any tab whose lines warn or err draws its worst tone's symbol before its title in
 the strip (`layout.alert(in:)`: the triangle or the octagon, in its color; no count), so from
 another tab it reads as a tab of problems, as the canvas's outline does. The tab is remembered per kind, as any is: once someone chooses Issues, the next
@@ -3887,9 +3882,9 @@ contextMenu {
 
 ### A feature that comes with menu items: Boards
 
-The pattern of the detail panel's feature tabs, again. Boards' opt-in sugar contributes to its own
-point, the panel's, and this one, so `sub.opensBoard(…)` brings the Board tab and Open, the item
-above ([A horizontal's feature tab](#a-horizontals-feature-tab-boards)). Its group,
+The pattern of a horizontal's opt-in, again. Boards' opt-in sugar contributes to its own
+point, Selection's, and this one, so `sub.opensBoard(…)` brings opening and Open, the item
+above ([A horizontal's opt-in](#a-horizontals-opt-in-boards)). Its group,
 `BoardsMenuGroup`, is at order 0, so Open comes first, as Finder's does; a feature's group is
 usually at 50. Items over an added property's value go in `contextMenu(of: P.self) { … }`, as its
 sections go in `details(of:)`: a flag's Flagged is over the flag
@@ -8325,7 +8320,7 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
 A file holds a tree of boards: the root, and one for each shape of a kind that owns one (the core's
 `BoardOwning`; [Boards in a file](#boards-in-a-file)). Boards
 ([`Sources/Boards`](../Sources/Boards)) is the horizontal that gets you around them, whatever kind
-owns them. It builds on Selection (opening), ContextMenus (Open), DetailPanel (the Open button),
+owns them. It builds on Selection (opening), ContextMenus (Open),
 Keyboard (⌘↑), Titles (what a board is called), TableOfContents (the rows a crumb's menu lists),
 and Find and Queries (the board names over Find's hits and in a query's rows), and none of them
 learns what a board is.
@@ -8352,13 +8347,10 @@ contributes to Boards' `BoardKinds` point (at most one per kind; its report line
   put, not in the app's panel ([opening a row](#the-table-of-contents)).
 - **Open** first in its context menu (`BoardsMenuGroup`, order 0, as Finder's Open is). With several
   selected it opens the first, in selection order.
-- **A Board tab** in its panel (`BoardTab`, order 50, a horizontal's feature tab) with an Open button,
-  `DetailCommandButton("Open", …, command: .openSelection)`, in a section `enabledWhileReadOnly()`,
-  so a locked shape's is enabled too.
 
 `BoardKinds.check` refuses a kind whose definition isn't `BoardOwning` (the form for another plugin's kind can't say so
 in its types), and a contribution for every kind: only a kind that owns boards has one to open. So
-a plugin list with `opensBoard` in it needs Selection, ContextMenus and DetailPanel installed.
+a plugin list with `opensBoard` in it needs Selection and ContextMenus installed.
 
 `BoardsPlugin` itself ([Boards.swift](../Sources/Boards/Boards.swift)) is small:
 
@@ -8595,7 +8587,7 @@ as SwiftUI sugar is, and the channel and the ports in `SubboardLinks.swift`.)
   no more than a tenth of its board, drawn once it's built and big enough on screen, else nothing.
   Two fills and the preview; its title is Titles' [cover](#a-cover-zoomed-out), over it, as there's no pill zoomed out.
 - **Opening it** is Boards': a double-click, Return, Enter or ⌘↓ with it the only one selected, Open
-  first in its menu, the Open button in its panel's Board tab, and Return once its row is picked (a
+  first in its menu, and Return once its row is picked (a
   double-click on the row only where the list stays put, not in the app's panel). ⌘↑ comes back with it selected, and ⌘[ retraces. Its panel's header renames it, a run of
   typing one undo step; its row is its symbol and its title, or "Untitled Subboard".
 - **Mentioning it** is Mentions': a note's `@` picker offers it by its title, or "Untitled
@@ -13025,11 +13017,11 @@ does (`shortcut V → tool select`).
 
 It runs once per point that has contributions, in the order of each point's first contribution,
 and may read any point's contributions. `ShapeDetails` uses it to refuse two tab types with one
-title, which would show as two identical tabs. Had Types declared a Board tab of its own
-beside the one Boards brings subboards:
+title, which would show as two identical tabs. Had Types declared a Connections tab of its own
+beside the one Neighbors brings every shape:
 
 ```
-ShapeDetails: Boards.BoardTab (from subboards) and Types.BoardTab (from types) are both tabs titled "Board"; share one, or retitle one
+ShapeDetails: Neighbors.NeighborsTab (from neighbor-details) and Types.ConnectionsTab (from types) are both tabs titled "Connections"; share one, or retitle one
 ```
 
 The hook is generic: the core runs it without knowing what any point checks.
@@ -13046,7 +13038,7 @@ selection            service SelectionState · service RefusalShake · tool sele
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property endRule → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · property relationship → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
-subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · ShapeDetails → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
+subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
 framing              shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title cover surface → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
@@ -13117,8 +13109,7 @@ A horizontal's opt-in shows as what it contributes: `note.title()` is the opt-in
 titles declares (`property title → sticky-note`), a `ShapeTitles` entry and a `ContentsTitles`
 entry (the title naming the row); the `ShapeDetails` entry after them is the note's header, where
 it's renamed. `sub.opensBoard(…)` is Boards' entry (`board → subboard "Untitled Subboard"`), then
-the `ShapeOpening`, `ShapeContextMenus` and `ShapeDetails` entries it brings: opening, Open, and
-the Board tab. `v3` on sticky-note is the version of its props: its steps drop a `checklist`
+the `ShapeOpening` and `ShapeContextMenus` entries it brings: opening and Open. `v3` on sticky-note is the version of its props: its steps drop a `checklist`
 member it kept, hand its title over, and make its text mention text ("text may mention shapes",
 which escapes what would now read as a mention). Validation's `ValidationRules`, for every kind,
 is its schema rule ([Checking shapes](#checking-shapes-against-their-schemas)). Locking opts every
@@ -14024,7 +14015,7 @@ Each of these adds to the design without changing what plugins are written again
   file (one editor holds the file and shows one board, so a window is a file's: a store of boards,
   each window's editor showing one, would keep every host's `let editor`); Open in a menu for
   several shapes opening each, or only showing for one (a per-shape `when` can't see the
-  selection's size, so it opens the first); a line in the Board tab saying what the board holds; a
+  selection's size, so it opens the first); a line in the panel saying what the board holds; a
   preview in another color, or sharp when a card shows more than 1,000 of its board's shapes large; and a board
   addressed from outside the app (the command line's, above).
 - **More of topology**: `canvas draw` matching an edge it restates by its type as well as its ends;

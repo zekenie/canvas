@@ -8,24 +8,6 @@ import Selection
 import SwiftUI
 import TestKit
 
-/// The panel alone in an unshown window, for its Open button.
-@MainActor
-final class BoardPanelWindow {
-    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: DetailStyle.idealWidth, height: 600), styleMask: [.titled],
-                          backing: .buffered, defer: false)
-    let hosting: NSHostingView<DetailPanelView>
-
-    init(_ editor: CanvasEditor) {
-        hosting = NSHostingView(rootView: DetailPanelView(editor: editor))
-        window.contentView = hosting
-    }
-
-    /// Buttons below the header's 44 points (its back button is up there).
-    var buttons: [NSButton] {
-        hosting.descendants(NSButton.self).filter { !($0 is NSPopUpButton) && $0.convert($0.bounds, to: hosting).minY >= 44 }
-    }
-}
-
 @MainActor let openingTests = Suite("Opening a board", [
     test("a drawer opens onto its board with a double-click, Return and ⌘↓, from its kind's one line") {
         let nest = Nest()
@@ -81,22 +63,12 @@ final class BoardPanelWindow {
         try menu.choose("Open")
         expectEqual(h.editor.board, BoardID(owner: other))
     },
-    test("the panel has a Board tab for it, whose Open button opens the board") {
+    test("its panel has no tab for it: opening a board is the canvas's, the menu's and the keys'") {
         let nest = Nest()
         let editor = try CanvasEditor(registry: Registry(plugins: boardsPlugins()), file: nest.file, scheduler: TaskScheduler())
         let drawer = try require(editor.document[nest.d])
         let layout = try require(editor.detailPanel?.layout(for: drawer))
-        expectEqual(layout.tabs.map(\.title), ["Board"])
-        expectEqual(layout.sections(in: .of(BoardTab.self)).map(\.section), ["main"])
-
-        editor.selection = nest.d
-        let panel = BoardPanelWindow(editor)
-        try require(editor.detailPanel).choose(.of(BoardTab.self), for: Drawer.kind)
-        panel.window.spin { !panel.buttons.isEmpty }
-        let open = try require(panel.buttons.first)
-        expect(open.isEnabled)
-        open.performClick(nil)
-        expectEqual(editor.board, nest.dBoard)
+        expectEqual(layout.tabs.map(\.title), [])
     },
     test("only a kind that owns boards may open one: a plugin naming another refuses the plugin list") {
         expectThrows(RegistryError.invalid(point: "BoardKinds", reason: "box-boards opens the boards of box, whose definition isn't BoardOwning")) {

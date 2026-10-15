@@ -295,7 +295,7 @@ let package = Package(
         .target(name: "Connections", dependencies: ["Canvas", "Colors", "Draw", "Geometry", "Mentions", "Neighbors", "Palette", "Publishing", "Selection", "TableOfContents", "TextEditing", "Topology", "Types"]), // layer: concern
         .target(name: "Mentions", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Draw", "Find", "FuzzyMatching", "Neighbors", "Queries", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: concern
         .target(name: "Publishing", dependencies: ["Adornments", "Canvas", "ContextMenus", "DetailPanel", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "Titles", "Topology"]), // layer: concern
-        .target(name: "Boards", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Find", "Keyboard", "Queries", "Selection", "TableOfContents", "Titles"]), // layer: concern
+        .target(name: "Boards", dependencies: ["Canvas", "ContextMenus", "Find", "Keyboard", "Queries", "Selection", "TableOfContents", "Titles"]), // layer: concern
         .target(name: "Snapping", dependencies: ["Canvas", "Geometry"]),                      // layer: feature
         .target(name: "Transform", dependencies: ["Canvas", "ContextMenus", "SlashCommands"]), // layer: concern
         .target(name: "Colors", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Draw", "Palette", "Queries", "SlashCommands", "Validation"]), // layer: concern

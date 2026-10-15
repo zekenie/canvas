@@ -140,7 +140,7 @@ import Validation
         expectEqual(h.editor.tableOfContents?.entries.first { $0.id == g.frame }?.label?.systemImage, "rectangle.stack")
         expectEqual(h.editor.adornmentFrames(of: g.frame).map(\.label), [AdornmentLabel("Groceries", systemImage: "rectangle.stack")], "its pill has the subboard's symbol")
         let layout = panel.layout(for: try require(h.editor.document[g.frame]))
-        expectEqual(layout.tabs.map(\.title), ["Board", "Connections", "Style"], "the panel's tabs are a subboard's")
+        expectEqual(layout.tabs.map(\.title), ["Connections", "Style"], "the panel's tabs are a subboard's")
         expectEqual(layout.header(as: TitleHeader.self)?.placeholder, "Untitled Subboard")
         expectEqual(topology.children(of: g.frame), children + [g.between], "containment is the tree it was, a subboard's shapes inside it as a frame's were, and now the arrow too")
         expectEqual(topology.children(of: g.dairy), dairysChildren)

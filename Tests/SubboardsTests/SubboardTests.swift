@@ -113,7 +113,7 @@ import Titles
         expectEqual(h.editor.board, .root)
         expectEqual(h.editor.selectedShapeIDs, [nest.a])
     },
-    test("its panel's header is a TitleHeader with its placeholder and symbol, and it has a Board tab") {
+    test("its panel's header is a TitleHeader with its placeholder and symbol, and it has no tab of its own") {
         let nest = Nest()
         let h = try nestHarness(nest, title: "Kitchen")
         let layout = try require(h.editor.detailPanel?.layout(for: try require(h.editor.document[nest.s])))
@@ -121,7 +121,7 @@ import Titles
         expectEqual(header.title, "Kitchen")
         expectEqual(header.placeholder, "Untitled Subboard")
         expectEqual(header.systemImage, "rectangle.stack")
-        expectEqual(layout.tabs.map(\.title), ["Board"])
+        expectEqual(layout.tabs.map(\.title), [])
     },
     test("a double-click, Return and ⌘↓ enter it; ⌘↑ comes back with it selected") {
         let nest = Nest()
