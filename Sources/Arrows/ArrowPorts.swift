@@ -1,4 +1,5 @@
 import Canvas
+import Connections
 import CoreGraphics
 import Topology
 import Types

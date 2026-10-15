@@ -6,7 +6,7 @@ paths:
 
 # Palette
 
-Palette, the foundation's color math: a color as sRGB (`RGB`) and as lightness, chroma and hue (`OKLCH`), the seven roles one color is drawn in on the light canvas and the dark (`Swatch`, each a `Tone`), contrast, and the one test for a dark appearance and the one maker of a color that follows it.
+Palette, the core's color math: a color as sRGB (`RGB`) and as lightness, chroma and hue (`OKLCH`), the seven roles one color is drawn in on the light canvas and the dark (`Swatch`, each a `Tone`), contrast, and the one test for a dark appearance and the one maker of a color that follows it.
 
 Related: [build](build.md), [drawing](drawing.md), [neighbors](neighbors.md), [types](types.md), [adornments](adornments.md) ([every topic](../../CLAUDE.md#map)).
 
@@ -14,7 +14,7 @@ In the guide, `docs/plugin-system.md`: [Palette](../../docs/plugin-system.md#pal
 
 ## Architecture
 
-- Palette (a foundation module that depends on no other of the project's, so it knows no canvas, registry, plugin, kind or named color; `docs/plugin-system.md`, "Palette") is what any module makes colors with: pure, nonisolated and `Sendable` but for its AppKit file. No public type may be named `Palette` (the audit). It is the first landing of the color module (the working doc "Color"): the names, the property a shape holds and where a color is picked are a concern's, `Colors`, built on it and not here.
+- Palette (a core module that depends on no other of the project's, so it knows no canvas, registry, plugin, kind or named color; `docs/plugin-system.md`, "Palette") is what any module makes colors with: pure, nonisolated and `Sendable` but for its AppKit file. No public type may be named `Palette` (the audit). It is the first landing of the color module (the working doc "Color"): the names, the property a shape holds and where a color is picked are a horizontal's, `Colors`, built on it and not here.
 - `RGB` is a color as its sRGB components, 0 to 1, with no alpha (a faint one is mixed, `over(_:alpha:)`, or faded as it's drawn): `init(hex: 0x4465E9)`, `init?(hexString:)` (`#4465E9` or `#46E`, either case; nil for a name, a value with an alpha, any other length, a non-ASCII digit), `hexString` (six digits, capitals, each component rounded to its nearest step and held to 0 to 1), `luminance` (WCAG's relative luminance, sRGB's curve undone at 0.04045) and `contrast(with:)` (WCAG's ratio, 1 to 21, the same either way round), which every floor here is in.
 - `OKLCH` (Oklab in polar form: `lightness` 0 to 1, `chroma`, `hue` in radians) is the space a color's variations are made in, since moving its lightness alone keeps its hue, where moving sRGB's components or HSL's lightness turns it. `OKLCH(rgb)` and `.rgb` are Ottosson's matrices; `.rgb` of a color sRGB can't show (`isDisplayable`) is the most colorful color of the same lightness and hue (the chroma halved toward it 32 times), never the components clipped, which would turn the hue; a lightness outside 0 to 1 is black or white.
 - A `Tone` is a color in the light appearance and in the dark (`light`, `dark`, `Tone(color)` for the same in both, `tone[dark: isDark]`).

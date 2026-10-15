@@ -20,33 +20,38 @@ cd "${SELF:h}"
 
 die() { print -u2 "build.sh: $*"; exit 1 }
 
-# Which layers each layer may depend on (Package.swift's header says the same in prose). The plugins
-# that cut across kinds (horizontals) are four layers, so the direction of an edge between two of them
-# follows from their layers: a concern imports the surfaces it shows itself on, a feature (a behavior
-# nothing builds on) uses surfaces and concerns and no layer but test may import it, and a language
-# knows no concern: a concern fills its engine's points instead.
+# Which layers each layer may depend on (Package.swift's header says the same in prose). Four rungs,
+# each importing its own and those below it: core, platform (what every shape gets, whatever its
+# kind), product (the verticals, which nothing imports: no layer but test lists it) and app; the
+# no-cycle check holds which way an edge between two modules of one rung goes. Tests and their
+# support say what kind of target a line is, not where it sits.
 typeset -A MAY_USE=(
-    wire        "wire"
-    foundation  "foundation wire"
-    ui          "foundation wire"
-    surface     "foundation surface"
-    concern     "foundation surface concern"
-    feature     "foundation surface concern"
-    language    "foundation surface language wire"
-    vertical    "foundation surface concern"
-    app         "foundation ui wire"
-    cli         "wire"
-    testsupport "foundation testsupport"
-    test        "wire foundation ui surface concern feature language vertical testsupport"
+    core        "core"
+    platform    "core platform"
+    product     "core platform"
+    app         "core app"
+    testsupport "core testsupport"
+    test        "core platform product app testsupport"
 )
-typeset -A EXECUTABLE_LAYER=(app 1 test 1 cli 1)
+# The layers whose targets are executables; the app layer holds both (the window, CanvasUI, is a
+# library), and every other is libraries.
+typeset -A EXECUTABLE_LAYER=(test 1)
+typeset -A MIXED_LAYER=(app 1)
 # The layers whose targets may be the product, or the tests of it: a line that ends `+ shipped`,
 # which links every module the list of what ships names (Package.swift's table, read below).
 typeset -A SHIPPING_LAYER=(app 1 test 1 testsupport 1)
 # The layers a listed plugin's module is in.
-typeset -A PLUGIN_LAYER=(surface 1 concern 1 feature 1 language 1 vertical 1)
-# What the command line's executable (the cli layer's) is called once it's built: in the app's
-# bundle, at Contents/Helpers/canvas, and build/canvas, a link to it.
+typeset -A PLUGIN_LAYER=(platform 1 product 1)
+# Four modules named, for rules that hold of them alone: the app (what `./build.sh` builds); the
+# wire, what the app and its command line say to each other, which imports nothing; the command
+# line, which imports only the wire, so `canvas` builds without the app; and the window, the one
+# module but the core, test support and tests that may import the editor's host API (@_spi(Host)).
+APP_MODULE=InfiniteCanvas
+WIRE_MODULE=CanvasRPC
+CLI_MODULE=CanvasCLI
+WINDOW_MODULE=CanvasUI
+# What the command line's executable is called once it's built: in the app's bundle, at
+# Contents/Helpers/canvas, and build/canvas, a link to it.
 CLI_NAME=canvas
 # Public types that would shadow a module (`Observation` breaks @Observable's expansion), or
 # Swift's `Task` or `Span`: a public `Task` would shadow it in every module that imports the
@@ -159,7 +164,7 @@ typeset -aU SHIPPED_MODULES=()
 for plugin in $SHIPPED_PLUGINS; do
     module=${plugin%%.*}
     (( ${+DEPS[$module]} )) || die "Package.swift:$SHIPPED_AT[$plugin]: $plugin ships, but there's no module $module"
-    (( ${+PLUGIN_LAYER[$LAYER[$module]]} )) || die "Package.swift:$SHIPPED_AT[$plugin]: $plugin ships, but $module is a $LAYER[$module] module: a plugin's is a surface, concern, feature, language or vertical"
+    (( ${+PLUGIN_LAYER[$LAYER[$module]]} )) || die "Package.swift:$SHIPPED_AT[$plugin]: $plugin ships, but $module is a $LAYER[$module] module: a plugin's is platform or product"
     SHIPPED_MODULES+=$module
 done
 for name in $NAMES; do
@@ -197,7 +202,7 @@ for name in $NAMES; do
     (( ${#srcs} )) || die "$name has no Swift sources in $DIR[$name]"
     if (( ${+EXECUTABLE_LAYER[$layer]} )); then
         [[ $KIND[$name] == executableTarget ]] || die "$name: layer $layer must be an .executableTarget"
-    else
+    elif (( ! ${+MIXED_LAYER[$layer]} )); then
         [[ $KIND[$name] == target ]] || die "$name: layer $layer must be a .target"
     fi
     # What its line writes: the modules + shipped adds are the list's, checked where it's read.
@@ -216,6 +221,17 @@ for dir in {Sources,Examples,Tests}/*(/N); do
     [[ ${DIR[${dir:t}]:-} == $dir ]] || die "$dir isn't a target in Package.swift"
 done
 for file in {Sources,Examples,Tests}/*.swift(N); do die "$file isn't in any target's directory"; done
+# The modules the rules below name, each where it must be: the app and the command line executables
+# of the app layer, the window a library of it, the wire a library of the core.
+for name layer kind in $APP_MODULE app executableTarget $CLI_MODULE app executableTarget $WINDOW_MODULE app target $WIRE_MODULE core target; do
+    (( ${+DEPS[$name]} )) || die "Package.swift has no $name, which build.sh names (APP_MODULE, CLI_MODULE, WINDOW_MODULE, WIRE_MODULE)"
+    [[ $LAYER[$name] == $layer && $KIND[$name] == $kind ]] || die "$name is a $LAYER[$name] $KIND[$name]; build.sh takes it for a $layer $kind"
+done
+# The wire imports nothing and the command line only the wire, so `canvas` builds without the app.
+[[ -z $LITERAL[$WIRE_MODULE] ]] || die "$WIRE_MODULE depends on ${LITERAL[$WIRE_MODULE]// /, }: the wire imports nothing, so the command line builds without the app"
+for dep in ${=LITERAL[$CLI_MODULE]}; do
+    [[ $dep == $WIRE_MODULE ]] || die "$CLI_MODULE depends on $dep: the command line imports only the wire ($WIRE_MODULE), so it builds without the app"
+done
 
 # The parts of a module that has them (Package.swift's table): folders of its directory, in an order
 # they could be built in. A part uses only parts written above it, so there is no cycle, and names
@@ -312,7 +328,7 @@ is_product() { [[ $KIND[$1] != target ]] && (( ${+SHIPS[$1]} )) }
 carried() { [[ $LAYER[$1] == app ]] && (( ${+SUBJECT[$1]} )) }
 
 # A test target named after a module (<M>Tests) tests M on its own: it may use M, what M uses,
-# and testsupport and ui modules, so that (say) SelectionTests can't lean on a shape kind. One named
+# and testsupport modules and the window, so that (say) SelectionTests can't lean on a shape kind. One named
 # after a plugin of M rather than M (TitleQueriesTests, of Titles) says so, `// layer: test
 # of M`, and is held the same way. An app that says `// layer: app of A` is an extension that A
 # carries (A is an app with no `of` of its own, as only the app carries one). It need not depend on
@@ -336,9 +352,9 @@ for name in $NAMES; do
         [[ $LAYER[$name] == test && $subject != $name && -n ${DEPS[$subject]+1} ]] || continue
     fi
     for dep in ${=DEPS[$name]}; do
-        [[ $dep == $subject || $LAYER[$dep] == (testsupport|ui) ]] && continue
+        [[ $dep == $subject || $LAYER[$dep] == testsupport || $dep == $WINDOW_MODULE ]] && continue
         (( ${${(A)=CLOSURE[$subject]}[(Ie)$dep]} )) ||
-            die "$name tests $subject, so it may use only $subject, $subject's dependencies, and testsupport and ui modules; not $dep"
+            die "$name tests $subject, so it may use only $subject, $subject's dependencies, testsupport modules and the window ($WINDOW_MODULE); not $dep"
     done
 done
 
@@ -591,19 +607,14 @@ audit_sources() {
     # called color, the text "color" searched for).
     #
     # The forms a module declares an id in are written once, here: the regex below takes the id's types
-    # (`id_declaration`), and the layer checks, after, read the same forms for ShapeKind and PropertyKey,
-    # and the forms of an extension point (POINT_DECL), through `declarations`.
+    # (`id_declaration`), and the product check, after, reads the same form for ShapeKind, through
+    # `declarations`.
     ORDINARY_IDS=(color frame is schema)
     id_declaration() {  # a regex for a declaration of an id of one of the types $1 (alternatives, in a group)
         print -r -- '((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*('$1')[[:space:]]*(=|\{)|=[[:space:]]*('$1')\((rawValue:)?)[[:space:]]*"[^"\\]+"'
     }
     ID_DECL=$(id_declaration 'ShapeKind|PluginID|ToolID|PropertyKey|ChannelID|EdgeTypeID')
     KIND_DECL=$(id_declaration ShapeKind)
-    KEY_DECL=$(id_declaration PropertyKey)
-    # A type that conforms to ExtensionPoint or KeyedExtensionPoint in the inheritance clause of its own
-    # declaration or of an extension of it (on one line: the form every point is written in). The
-    # protocols themselves, Canvas's, are not a declaration of a point.
-    POINT_DECL='(^|[^A-Za-z0-9_])(enum|struct|class|actor|extension)[[:space:]]+[A-Za-z_][A-Za-z0-9_.]*(<[^>{]*>)?[[:space:]]*:([^{]*[^A-Za-z0-9_])?(Keyed)?ExtensionPoint([^A-Za-z0-9_]|$)'
     declarations() {  # a line `module<TAB>file:line<TAB>text` for each declaration of regex $1 in a non-test module
         local hit rest owner
         for hit in ${(f)"$(matching $1)"}; do
@@ -635,51 +646,19 @@ audit_sources() {
             done
         done
     fi
-    # What a layer is for. Each plugin layer but a language says what its modules declare,
-    # so the layer a module is in can be told from its code (Package.swift's header gives each layer's
-    # question). A vertical is a kind: it declares a ShapeKind. A concern gives shapes a meaning: it
-    # declares an extension point or a property (a PropertyKey). A surface is something others build
-    # on: it declares an extension point, or another plugin module imports it. A feature is none of
-    # those: it declares no kind, no point and no property (and no layer but test may import a feature,
-    # so no plugin does). The scan reads the forms above, so a declaration in another form
-    # (a typealias, a macro) would be missed: that fails safe for the three layers that need a
-    # declaration, and lets a feature pass, so a new form is added to the declarations above.
-    typeset -A KIND_AT KEY_AT POINT_AT BUILT_ON
+    # What a product is: a vertical, a shape that holds something of its own, so it declares a
+    # ShapeKind (and nothing imports it: no layer but test may). The scan reads the form above, so a
+    # declaration in another form (a typealias, a macro) would be missed, which fails safe.
+    typeset -A KIND_AT
     for decl in ${(f)"$(declarations $KIND_DECL)"}; do
         fields=("${(@ps:\t:)decl}"); : ${KIND_AT[$fields[1]]:=$fields[2]: ${${fields[3]%\"}##*\"}}
     done
-    for decl in ${(f)"$(declarations $KEY_DECL)"}; do
-        fields=("${(@ps:\t:)decl}"); : ${KEY_AT[$fields[1]]:=$fields[2]: ${${fields[3]%\"}##*\"}}
-    done
-    for decl in ${(f)"$(declarations $POINT_DECL)"}; do
-        fields=("${(@ps:\t:)decl}"); : ${POINT_AT[$fields[1]]:=$fields[2]}
-    done
     for name in $NAMES; do
-        (( ${+PLUGIN_LAYER[$LAYER[$name]]} )) || continue
-        for dep in ${=LITERAL[$name]}; do BUILT_ON[$dep]=$name; done
-    done
-    for name in $NAMES; do
-        case $LAYER[$name] in
-        vertical)
-            (( ${+KIND_AT[$name]} )) ||
-                problems+="$name is a vertical, and a vertical is a kind: $name declares no ShapeKind; a cross-cutting behavior is a feature" ;;
-        feature)
-            (( ${+KIND_AT[$name]} )) &&
-                problems+="$KIND_AT[$name]  <- $name is a feature but declares a ShapeKind; a shape kind is a vertical"
-            (( ${+POINT_AT[$name]} )) &&
-                problems+="$POINT_AT[$name]  <- $name is a feature but declares an extension point; what others fill or build on is a surface, or a concern if it gives shapes a meaning"
-            (( ${+KEY_AT[$name]} )) &&
-                problems+="$KEY_AT[$name]  <- $name is a feature but declares a PropertyKey; a property shapes carry is a concern's" ;;
-        concern)
-            (( ${+POINT_AT[$name]} || ${+KEY_AT[$name]} )) ||
-                problems+="$name is a concern, and a concern gives shapes a meaning: $name declares neither an extension point nor a PropertyKey; is it a feature?" ;;
-        surface)
-            (( ${+POINT_AT[$name]} || ${+BUILT_ON[$name]} )) ||
-                problems+="$name is a surface, but nothing builds on it: $name declares no extension point and no plugin module imports it; is it a feature?" ;;
-        esac
+        [[ $LAYER[$name] != product ]] || (( ${+KIND_AT[$name]} )) ||
+            problems+="$name is a product, and a product is a vertical, a kind: $name declares no ShapeKind; what every shape gets, whatever its kind, is platform"
     done
     # The core's host API (what CanvasView calls: input, cursor, drawing) is `@_spi(Host)`. Only the
-    # hosting view and tests may `@_spi(Host) import` it; foundation modules declare it. No plugin may
+    # hosting view (the window) and tests may `@_spi(Host) import` it; the core declares it. No plugin may
     # use @_spi at all, so the host API stays out of every plugin's reach. Loading the list of what
     # ships whole, its plugins that reach outside the process (the network, the user's pasteboard) as
     # the product has them, is `@_spi(Product)`: the app's and its extension's alone, so a test can't
@@ -687,14 +666,14 @@ audit_sources() {
     for hit in ${(f)"$(matching '@_spi[[:space:]]*\(')"}; do
         user=${${hit#*/}%%/*}
         if [[ $hit =~ '@_spi[[:space:]]*\([[:space:]]*Product[[:space:]]*\)' ]]; then
-            [[ $LAYER[$user] == (foundation|app) ]] ||
+            [[ $LAYER[$user] == core || $user == $APP_MODULE ]] || carried $user ||
                 problems+="$hit  <- only the app and its extension load what ships whole (@_spi(Product)); hand over your own plugins for the ones that reach outside the process: ShippedList.plugins(supplying:)"
             # What loads the list is made of it: without + shipped it would link no plugin and carry no list.
-            [[ $LAYER[$user] != app ]] || (( ${+SHIPS[$user]} )) ||
+            [[ $user != $APP_MODULE ]] && ! carried $user || (( ${+SHIPS[$user]} )) ||
                 problems+="$hit  <- $user loads what ships, so its line in Package.swift ends + shipped"
         else
-            [[ $LAYER[$user] == (foundation|ui|testsupport|test) ]] ||
-                problems+="$hit  <- only the ui, testsupport and test layers may import SPI (the core's host API)"
+            [[ $LAYER[$user] == (core|testsupport|test) || $user == $WINDOW_MODULE ]] ||
+                problems+="$hit  <- only the window ($WINDOW_MODULE), testsupport and test modules may import SPI (the core's host API)"
         fi
     done
     (( ${#problems} )) && { print -u2 -l -- $problems; die "audit failed (${#problems} problems)" }
@@ -756,11 +735,11 @@ export ZERO_AR_DATE=1
 
 typeset -aU WANTED=()
 case $MODE in
-app)   WANTED=(InfiniteCanvas ${=CLOSURE[InfiniteCanvas]})
+app)   WANTED=($APP_MODULE ${=CLOSURE[$APP_MODULE]})
        for name in $NAMES; do
-           if [[ $LAYER[$name] == cli && $KIND[$name] == executableTarget ]] || carried $name; then WANTED+=($name ${=CLOSURE[$name]}); fi
+           if [[ $name == $CLI_MODULE ]] || carried $name; then WANTED+=($name ${=CLOSURE[$name]}); fi
        done ;;
-tests) for name in $NAMES; do [[ $LAYER[$name] == app ]] && ! carried $name || WANTED+=$name; done ;;
+tests) for name in $NAMES; do [[ $name == $APP_MODULE ]] || WANTED+=$name; done ;;
 bench) WANTED=(BenchmarkTests ${=CLOSURE[BenchmarkTests]}) ;;
 api)   target=${2:?usage: build.sh api MODULE}; (( ${+DEPS[$target]} )) || die "no module $target"
        WANTED=($target ${=CLOSURE[$target]}) ;;
@@ -1061,12 +1040,7 @@ app)
     mkdir -p $APP/Contents/MacOS $APP/Contents/Helpers
     install_changed $OUT/InfiniteCanvas/InfiniteCanvas $APP/Contents/MacOS/InfiniteCanvas
     # The command line goes with the app, so the two always speak the same protocol.
-    typeset -a clis=()
-    for name in $NAMES; do
-        if [[ $LAYER[$name] == cli && $KIND[$name] == executableTarget ]]; then clis+=$name; fi
-    done
-    (( ${#clis} == 1 )) || die "the cli layer should have one executable, the command line; it has ${#clis}"
-    install_changed $OUT/$clis[1]/$clis[1] $APP/Contents/Helpers/$CLI_NAME
+    install_changed $OUT/$CLI_MODULE/$CLI_MODULE $APP/Contents/Helpers/$CLI_NAME
     ln -sf InfiniteCanvas.app/Contents/Helpers/$CLI_NAME build/$CLI_NAME
     cat > $AUDIT/Info.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

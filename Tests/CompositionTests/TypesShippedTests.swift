@@ -1,11 +1,11 @@
 import Adornments
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import Clipboard
-import Connections
 import CoreGraphics
 import DetailPanel
 import Find

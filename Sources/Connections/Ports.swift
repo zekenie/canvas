@@ -348,6 +348,17 @@ extension CanvasEditor {
         return connection.channels.first { ports.roles[$0]?.allows(.target) == true }
     }
 
+    /// Whether `connection`, already drawn, may have its end in `role` (where it starts, `.source`;
+    /// where it ends, `.target`) at `shape`, as far as what a stand-in stands for goes: for a
+    /// stand-in (a reference), the connection's channel must be one it takes now in that role, the
+    /// judgement a drag's end gets from `channel(of:endingAt:)`. True for any other shape, for a
+    /// connection on no channel or one no plugin declares, and without ports (`PortsPlugin`). What
+    /// the connector adds to its own rules when it re-aims an end, since the static rule lets any
+    /// channel end at a stand-in.
+    public func portsAllow(_ connection: AnyShapeRecord, as role: PortRole, at shape: AnyShapeRecord) -> Bool {
+        service(PortState.self)?.allows(connection, as: role, at: shape) ?? true
+    }
+
     #if DEBUG
     /// How many stand-ins' ports are kept (debug builds): one for each it was asked about, until it
     /// or its file goes (and, as what it stands for changes, they're worked out again).

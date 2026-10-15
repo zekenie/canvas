@@ -111,8 +111,8 @@ or another subboard, and the link is an arrow (`ArrowPortsPlugin`) that keeps to
 ## Layout
 
 ```
-Package.swift           the module graph: one line per module, with its layer (a horizontal's is surface,
-                        concern, feature or language)
+Package.swift           the module graph: one line per module, with its rung (core, platform, product or
+                        app)
 Sources/
   Geometry/             vector math, arcs, Camera
   Canvas/               the core: model, plugin registry, editor, the hand tool, drawing
@@ -129,7 +129,7 @@ Sources/
   Frames/               frames: a region of a board that holds shapes, which move and lock with it
   References/           references: a pill that stands for a public shape, so an arrow into it counts as an arrow
                         into the shape (the Reference tool, R)
-  Moving/               a feature, /move-to and /move-near: the shape typed in moved into a frame, onto a subboard's board or
+  Moving/               a thing you do, /move-to and /move-near: the shape typed in moved into a frame, onto a subboard's board or
                         beside a shape, on any board, placed as canvas draw places a shape; and the table of
                         contents' rows dropped into a frame, onto a subboard's board or out of frames
   Validation/           the validation horizontal: rules, engine, outline, the Issues tab and the rows' dots, and
@@ -149,8 +149,9 @@ Sources/
   Publishing/           a horizontal: which shapes are public (another shape may stand for one), its chip and
                         count, /public and /private, and the Referenced In tab
   Connections/          a horizontal: ports (dots beside a shape's sides that a drag connects from), channels that
-                        say what may connect to what, and the arrow (a port of tldraw's arrow geometry and
-                        binding) a drag from a dot draws, bound only where its channel goes
+                        say what may connect to what, and the connector that draws a connection
+  Arrows/               arrows (a port of tldraw's arrow geometry and binding), the connector: what a drag from
+                        a dot draws, bound only where its channel goes
   Mentions/             a horizontal: text that mentions shapes, each mention a live pill, with the @ picker and
                         a Mentioned In tab, and queries' :mentions and :mentioned-by
   Boards/               a horizontal: getting around a file's boards (opening one, ⌘↑, the path over the canvas),
@@ -163,16 +164,16 @@ Sources/
   QueryTranslation/     a horizontal: English into a query (Claude writes it), for the command line and the app
   QueryCommands/        canvas query, query-vocabulary, and --ask (a call to the translator)
   LanguageModels/       a horizontal that lends every editor a language model (Claude Haiku), its key in Settings
-  Snapping/             a feature: what a drag moves snaps to the shapes in view (edges, middles, even
+  Snapping/             a thing you do: what a drag moves snaps to the shapes in view (edges, middles, even
                         spaces), with guides
   Transform/            a horizontal: turning a shape into another kind through channels (a frame into a
                         subboard: one kind offers a channel, another takes it), from its menu or /turn-into-…
-  Types/                a concern: a note that holds a JSON Schema is a type, named by its title (/type), its words
+  Types/                a horizontal: a note that holds a JSON Schema is a type, named by its title (/type), its words
                         and its schema kept in step by Claude, its words highlighted where they say a part of it;
                         in nine parts, a folder each, which the build holds apart (Package.swift's table of parts)
   InfiniteCanvas/       the SwiftUI app
 Examples/               the smallest plugin for each pattern
-  Reordering/           a feature, menu items for every kind with a capability: the Arrange submenu
+  Reordering/           a thing you do, menu items for every kind with a capability: the Arrange submenu
 Tests/                  test executables (the core, each plugin with logic of its own, the examples,
                         the shipped app) and their support libraries, on a small macro-free kit
 scripts/                re-records the proof of concept's behavior, which the tests hold the app to; schema-prompts/

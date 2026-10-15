@@ -74,7 +74,7 @@ private let viewport = CGSize(width: 1200, height: 800)
 }
 
 /// The shipped lights, in the order the plugins that own the edges give them: arrows' two
-/// (Connections'), then mentions' two (Mentions').
+/// (Arrows'), then mentions' two (Mentions').
 private enum Light: Int {
     case pointsTo, pointedToBy, mentions, mentionedBy
 }

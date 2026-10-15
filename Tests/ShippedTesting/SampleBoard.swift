@@ -1,5 +1,5 @@
+import Arrows
 import Canvas
-import Connections
 import CoreGraphics
 import Mentions
 import StickyNotes

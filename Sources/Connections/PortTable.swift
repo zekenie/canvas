@@ -1,4 +1,5 @@
 import Canvas
+import Topology
 
 // The port table: each kind's ports, gathered from the `ShapePorts` contributions. Everything that
 // asks about ports reads it (the dots and a drag from one, where a connection may end,
@@ -113,6 +114,10 @@ struct KindPorts {
 extension Registry {
     /// The kind connections are: the connector's (`registrar.connects`); nil without a connector.
     public var connectorKind: ShapeKind? { connector?.kind }
+
+    /// The family of edges connections are, the connector's (`registrar.connects(_:edgeType:…)`):
+    /// every channel's edge type is under it. Nil without a connector.
+    public var connectorEdgeType: EdgeTypeID? { connector?.edgeType }
 
     /// Whether the connector makes connections without a drag (it was given `make` and `ends`):
     /// what a caller that connects shapes by name asks before it tries.

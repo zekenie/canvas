@@ -1,9 +1,9 @@
 import Adornments
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
-import Connections
 import CoreGraphics
 import Geometry
 import LanguageModels

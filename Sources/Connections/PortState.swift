@@ -72,15 +72,15 @@ final class PortState {
         return ports
     }
 
-    /// Whether `end` of `arrow` may bind to `shape`, as far as what a stand-in stands for goes (the
-    /// static rule, `ArrowPortsPlugin`'s, lets every channel end at one, since its kind has ports on
-    /// all): for a stand-in, the arrow's channel must be one it takes now in that end's role. True
-    /// for any other shape, and for an arrow on no channel, or one no plugin declares, which binds
-    /// wherever an arrow can.
-    func allows(_ end: ArrowEnd, of arrow: AnyShapeRecord, at shape: AnyShapeRecord) -> Bool {
+    /// Whether `connection`'s end in `role` may be at `shape`, as far as what a stand-in stands for
+    /// goes (the static rule, the connector's, lets every channel end at one, since its kind has
+    /// ports on all): for a stand-in, the connection's channel must be one it takes now in that
+    /// role. True for any other shape, and for a connection on no channel, or one no plugin
+    /// declares, which binds wherever the connector's rules let it.
+    func allows(_ connection: AnyShapeRecord, as role: PortRole, at shape: AnyShapeRecord) -> Bool {
         guard standIns?.kinds.contains(shape.kind) == true,
-              let channel = arrow[ChannelProperty.self], editor.registry.declares(channel) else { return true }
-        return ports(of: shape)?.roles[channel]?.allows(end == .start ? .source : .target) == true
+              let channel = connection[ChannelProperty.self], editor.registry.declares(channel) else { return true }
+        return ports(of: shape)?.roles[channel]?.allows(role) == true
     }
 
     /// Whether ports show at all: there's a connector, the select tool is current, the board takes

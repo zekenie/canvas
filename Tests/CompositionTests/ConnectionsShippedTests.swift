@@ -1,8 +1,8 @@
 import AppKit
+import Arrows
 import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
-import Connections
 import DetailPanel
 import Frames
 import LanguageModels

@@ -1,8 +1,8 @@
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasUI
-import Connections
 import Foundation
 import Publishing
 import References

@@ -1,9 +1,9 @@
 import AppKit
+import Arrows
 import Canvas
 import CanvasTesting
 import CanvasUI
 import Clipboard
-import Connections
 import CoreGraphics
 import LanguageModels
 import Mentions

@@ -11,68 +11,47 @@ import PackageDescription
 //     .executableTarget(name: "X", dependencies: ["A"] + shipped),          // layer: <layer>
 // Modules live in Sources/X or Examples/X; test and testsupport modules in Tests/X.
 //
-// Layers: each answers one question, may depend on the layers it lists, and says how to tell a module
-// belongs (the audit holds the tests marked *):
-//     wire         -> wire                               what the app and its command line say to
-//                                                        each other, so `canvas` builds without the
-//                                                        app; * imports nothing but the wire
-//     foundation   -> foundation, wire                   what every plugin stands on and no plugin
-//                                                        shapes: the core (Canvas, which holds the
-//                                                        host slots, what the host takes from the
-//                                                        plugins, and so names SwiftUI's views and
-//                                                        the wire's types for the commands the app's
-//                                                        server runs), and pure libraries beneath
-//                                                        it (DrawScript); * knows no plugin
-//     ui           -> foundation, wire                   the window around the canvas, so no plugin
-//                                                        reaches the window and the window reaches
-//                                                        no plugin; also the app's end of the
-//                                                        command line
-//   the plugins that cut across kinds (horizontals) are four layers, and the verticals are the kinds:
-//     surface      -> foundation, surface                something other plugins build on or show
-//                                                        themselves on, so anything can appear on it
-//                                                        without it knowing (the draw engine, the
-//                                                        query engine and English-to-query
-//                                                        translation are surfaces every plugin may
-//                                                        run); * declares an extension point or
-//                                                        another plugin imports it; knows no concern
-//     concern      -> foundation, surface, concern       a meaning shapes carry or kinds opt into,
-//                                                        shown on the surfaces it imports; * declares
-//                                                        an extension point or a property
-//                                                        (PropertyKey); may own the one kind it's
-//                                                        drawn as (Connections' arrow); knows no
-//                                                        language
-//     feature      -> foundation, surface, concern       a cross-cutting behavior the person uses (a
-//                                                        palette, a command, a gesture) that nothing
-//                                                        builds on: horizontal in reach, a leaf in
-//                                                        the graph; * declares no ShapeKind, no
-//                                                        extension point and no PropertyKey, and no
-//                                                        plugin imports it
-//     language     -> foundation, surface, language,     where an agent's request arrives over the
-//                     wire                               wire and is answered (the command line, and
-//                                                        `canvas draw` and `canvas query` over their
-//                                                        engines): the only plugin layer that speaks
-//                                                        the wire; what it says of a concern comes
-//                                                        through its engine's points; * knows no
-//                                                        concern
-//     vertical     -> foundation, surface, concern       a shape kind: its props, definition, tool
-//                                                        and opt-ins to concerns; * declares a
-//                                                        ShapeKind and no plugin imports it; knows no
-//                                                        other vertical, and no language
-//     app          -> foundation, ui, wire               the product's executables, the one place the
-//                                                        shipped list is composed: the app, and what
-//                                                        it carries (`of` the app: an extension macOS
-//                                                        runs on its own, packaged into the app's
-//                                                        bundle, as Quick Look's preview and
-//                                                        thumbnail of a board file are); * names no
-//                                                        plugin: its plugins are the list's, made by
-//                                                        name (`+ shipped`)
-//     cli          -> wire                               the command line (`canvas`), an executable:
-//                                                        * knows only the wire, never the app
-//     testsupport  -> foundation, testsupport            and, for the one that is the tests' way to the
+// Layers: four rungs, each importing only from its own rung and those below it, and two kinds of test
+// target, which say what a line is, not where it sits (the audit holds the tests marked *):
+//     core         -> core                               the canvas and plain libraries: the core
+//                                                        (Canvas, which holds the host slots, what the
+//                                                        host takes from the plugins, and so names
+//                                                        SwiftUI's views and the wire's types for the
+//                                                        commands the app's server runs), the wire
+//                                                        (CanvasRPC, what the app and its command line
+//                                                        say to each other), and pure libraries
+//                                                        beneath them (DrawScript); * knows no plugin
+//     platform     -> core, platform                     what every shape gets, whatever its kind:
+//                                                        horizontals (the interfaces verticals plug
+//                                                        into, something a shape shows up on in the
+//                                                        window or has as a trait), things you do,
+//                                                        engines, and what agents speak; a heading
+//                                                        over each group below, which nothing checks
+//     product      -> core, platform                     the verticals, shapes that hold something of
+//                                                        their own (a note's text, an arrow's ends
+//                                                        and label, a frame's region, a subboard's
+//                                                        board); * declares a ShapeKind, and nothing
+//                                                        imports it: products never know each other
+//     app          -> core, app                          the window around the canvas (CanvasUI), so
+//                                                        no plugin reaches the window and the window
+//                                                        reaches no plugin; the command line
+//                                                        (`canvas`); and the product's executables,
+//                                                        the one place the shipped list is composed:
+//                                                        the app, and what it carries (`of` the app:
+//                                                        an extension macOS runs on its own, packaged
+//                                                        into the app's bundle, as Quick Look's
+//                                                        preview and thumbnail of a board file are);
+//                                                        * names no plugin: its plugins are the
+//                                                        list's, made by name (`+ shipped`)
+//     testsupport  -> core, testsupport                  and, for the one that is the tests' way to the
 //                                                        product's plugins (`+ shipped`), what ships
-//     test         -> anything but app, cli and test; a test named <M>Tests may use only M, M's
-//                     dependencies, and testsupport and ui modules, and so may one named after a
+//     test         -> anything but an executable or a test; a test named <M>Tests may use only M, M's
+//                     dependencies, testsupport modules and the window, and so may one named after a
 //                     plugin of M that says so: `// layer: test of M` (TitleQueriesTests)
+// Four rules hold of modules named, from layers there were before the rungs: the wire (CanvasRPC)
+// imports nothing, and the command line (CanvasCLI) only the wire, so `canvas` builds without the app;
+// the editor's host API is the window's and the tests' alone, and loading the list whole the app's and
+// its extension's (below); and a plugin that ships is in a platform or a product module.
 //
 // `+ shipped` after a line's dependencies makes it the product, or the tests of it: every module the
 // list names links into it, whether or not it imports them. Only the app, its extension, and the
@@ -80,17 +59,19 @@ import PackageDescription
 // modules (and compile against none); the tests and their support import the ones they call. What
 // depends on a library that says it says it too.
 //
-// So an edge between two horizontals goes the way their layers say, and within a layer from the module
-// that owns a meaning to the one it builds on (Mentions imports Titles, whose names its pills show). A
+// So an edge between two platform modules goes from the module that owns a meaning to the one it
+// builds on or shows itself on (Mentions imports Titles, whose names its pills show), and the graph
+// having no cycle holds it that way: Titles imports Queries, so Queries can never import Titles. A
 // face a plugin list should be able to leave out (Validation's Issues tab) is a plugin value of its own
-// in its owner's module, and no module joins two others. A language imports no concern, and a concern
-// fills the engine's points: a word in a language is given by the module that owns its meaning, as a
-// plugin value of its own, through the engine's points (Titles gives queries its names and `canvas
-// draw` its titles, Boards queries its boards' names); when the owner sits below the engine, the
-// engine's module gives it (Queries gives `:selected`, Selection being below it).
+// in its owner's module, and no module joins two others. An engine knows no meaning a horizontal
+// owns: a word in a language is given by the module that owns its meaning, as a plugin value of its
+// own, through the engine's points (Titles gives queries its names and `canvas draw` its titles,
+// Boards queries its boards' names); when the owner sits below the engine, the engine's module gives
+// it (Queries gives `:selected`, Selection being below it).
 //
 // build.sh refuses to build when:
-//   - the graph has a cycle, or an edge the layers above forbid;
+//   - the graph has a cycle, or an edge the layers above forbid, or the wire or the command line
+//     imports more than the four rules above let it;
 //   - the list names something that isn't a public struct of that module that can be made with no
 //     arguments (a ListedPlugin), names a plugin twice, or isn't in the form its comment says;
 //   - the app or its extension imports a module the list names;
@@ -104,10 +85,7 @@ import PackageDescription
 //     asks canImport(<a module here>);
 //   - a public type is named like a module, or Task or Span (either would shadow Swift's in every
 //     importer);
-//   - a surface, concern, feature or vertical lacks what its layer is for (the tests marked * above):
-//     a vertical declares no ShapeKind, a feature declares a ShapeKind, an extension point or a
-//     PropertyKey, a concern declares neither a point nor a PropertyKey, a surface declares no point
-//     and no plugin imports it;
+//   - a product declares no ShapeKind;
 //   - a module writes another module's ShapeKind, PluginID, ToolID, PropertyKey, ChannelID (a
 //     Connections channel's) or EdgeTypeID (a Topology edge type's) as a string literal without
 //     depending on that module;
@@ -116,9 +94,10 @@ import PackageDescription
 // The graph keeps the core from naming a plugin's types (a module compiles against only its
 // dependency closure, with MemberImportVisibility, and the import check rejects undeclared
 // imports); the id check keeps any module from writing another module's kind, tool, plugin, property,
-// channel or edge type id as a literal. The editor's host API is @_spi(Host), which only ui, testsupport and test modules
-// may import; loading the list whole, with the plugins that reach outside the process as the product
-// has them, is @_spi(Product), which only the app and its extension may.
+// channel or edge type id as a literal. The editor's host API is @_spi(Host), which only the window
+// (CanvasUI), testsupport and test modules may import; loading the list whole, with the plugins that
+// reach outside the process as the product has them, is @_spi(Product), which only the app and its
+// extension may.
 // Audit it:  ./build.sh graph | dot | audit | api <Module>
 
 // WHAT SHIPS. The plugins the product is made of, each as `Module.Type`, in order: the toolbar's
@@ -143,7 +122,7 @@ let ships = [
     "Topology.TopologyPlugin",
     // The kinds. Frames beside subboards, the two ways of grouping shapes (a region of this
     // board, a board of its own), after notes: the toolbar's Note, Subboard, Frame, Reference.
-    "Connections.ArrowsPlugin", "StickyNotes.StickyNotesPlugin", "Subboards.SubboardsPlugin", "Frames.FramesPlugin", "References.ReferencesPlugin",
+    "Arrows.ArrowsPlugin", "StickyNotes.StickyNotesPlugin", "Subboards.SubboardsPlugin", "Frames.FramesPlugin", "References.ReferencesPlugin",
     // After Validation: what's shown on shapes draws over its outline.
     "Validation.ValidationPlugin", "Adornments.AdornmentsPlugin", "DetailPanel.DetailPanelPlugin", "ContextMenus.ContextMenusPlugin",
     // Slash commands: the list at a `/` in the text views Mentions hosts it in. Titles offers `/title`, Locking `/lock`.
@@ -188,7 +167,7 @@ let ships = [
     "Snapping.SnappingPlugin",
     // Ports, whose arrows `ArrowPortsPlugin` draws. After Adornments: a shape's dots draw
     // above its adornments (the lock chip among them), and are found before them.
-    "Connections.PortsPlugin", "Connections.ArrowPortsPlugin",
+    "Connections.PortsPlugin", "Arrows.ArrowPortsPlugin",
     "LanguageModels.LanguageModelsPlugin",
     // What words say of what's lower level, asked of the model: a type's highlights.
     "ProseMaps.ProseMapsPlugin",
@@ -210,7 +189,7 @@ let ships = [
     // from the plugins that own the edges, in the order a shape's rings go: arrows' (points to, pointed to by), then
     // mentions' (mentions, mentioned by). Then the same ways as lists in a shape's panel, its Connections tab, with what the shape is
     // inside and what it holds: after the detail panel, whose tab it is.
-    "Neighbors.NeighborsPlugin", "Connections.ArrowLightsPlugin", "Mentions.MentionLightsPlugin", "Neighbors.NeighborDetailsPlugin",
+    "Neighbors.NeighborsPlugin", "Arrows.ArrowLightsPlugin", "Mentions.MentionLightsPlugin", "Neighbors.NeighborDetailsPlugin",
     // `/move-to` and `/move-near`: a shape moved into a frame, onto a subboard's board or beside a shape, on any board,
     // placed as `canvas draw` places one. After every plugin whose every-shape commands a note lists before them.
     "Moving.MovingPlugin",
@@ -258,75 +237,84 @@ let package = Package(
     name: "InfiniteCanvas",
     platforms: [.macOS(.v14)],
     targets: [
-        .target(name: "Geometry", dependencies: []),                                          // layer: foundation
-        .target(name: "DrawScript", dependencies: ["Geometry"]),                              // layer: foundation
-        .target(name: "QueryLanguage", dependencies: []),                                     // layer: foundation
-        .target(name: "TextEditing", dependencies: []),                                       // layer: foundation
-        .target(name: "FuzzyMatching", dependencies: []),                                     // layer: foundation
-        .target(name: "Palette", dependencies: []),                                           // layer: foundation
-        .target(name: "Canvas", dependencies: ["CanvasRPC", "Geometry", "Palette"]),          // layer: foundation
-        .target(name: "CanvasRPC", dependencies: []),                                         // layer: wire
-        .target(name: "CanvasUI", dependencies: ["Canvas", "CanvasRPC", "Geometry", "Palette"]), // layer: ui
+        // CORE: the canvas and plain libraries.
+        .target(name: "Geometry", dependencies: []),                                          // layer: core
+        .target(name: "DrawScript", dependencies: ["Geometry"]),                              // layer: core
+        .target(name: "QueryLanguage", dependencies: []),                                     // layer: core
+        .target(name: "TextEditing", dependencies: []),                                       // layer: core
+        .target(name: "FuzzyMatching", dependencies: []),                                     // layer: core
+        .target(name: "Palette", dependencies: []),                                           // layer: core
+        .target(name: "Canvas", dependencies: ["CanvasRPC", "Geometry", "Palette"]),          // layer: core
+        .target(name: "CanvasRPC", dependencies: []),                                         // layer: core
 
-        .target(name: "Keyboard", dependencies: ["Canvas"]),                                  // layer: surface
-        .target(name: "Selection", dependencies: ["Canvas", "Geometry", "Keyboard", "Palette"]), // layer: surface
-        .target(name: "DetailPanel", dependencies: ["Canvas", "FuzzyMatching", "Selection", "TextEditing"]), // layer: surface
-        .target(name: "ContextMenus", dependencies: ["Canvas", "Selection"]),                 // layer: surface
-        .target(name: "SlashCommands", dependencies: ["Canvas", "FuzzyMatching", "TextEditing"]), // layer: surface
-        .target(name: "TableOfContents", dependencies: ["Canvas", "DetailPanel", "Selection"]), // layer: surface
-        .target(name: "Adornments", dependencies: ["Canvas", "Geometry", "Palette", "Selection"]),       // layer: surface
-        .target(name: "LanguageModels", dependencies: ["Canvas"]),                            // layer: surface
-        .target(name: "ProseMaps", dependencies: ["Canvas", "LanguageModels"]),               // layer: surface
-        .target(name: "Topology", dependencies: ["Canvas"]),                                  // layer: surface
-        .target(name: "Find", dependencies: ["Canvas", "DetailPanel", "FuzzyMatching", "Geometry", "Keyboard", "Selection", "Topology"]), // layer: surface
-        // Neighbors: a surface an edge's owner shows its edges on. Hovering a shape, on the canvas or by its row in the table of contents
+        // PLATFORM: what every shape gets, whatever its kind.
+        // Horizontals, in the window: the interfaces verticals plug into that a shape shows up on.
+        .target(name: "Keyboard", dependencies: ["Canvas"]),                                  // layer: platform
+        .target(name: "Selection", dependencies: ["Canvas", "Geometry", "Keyboard", "Palette"]), // layer: platform
+        .target(name: "DetailPanel", dependencies: ["Canvas", "FuzzyMatching", "Selection", "TextEditing"]), // layer: platform
+        .target(name: "ContextMenus", dependencies: ["Canvas", "Selection"]),                 // layer: platform
+        .target(name: "SlashCommands", dependencies: ["Canvas", "FuzzyMatching", "TextEditing"]), // layer: platform
+        .target(name: "TableOfContents", dependencies: ["Canvas", "DetailPanel", "Selection"]), // layer: platform
+        .target(name: "Adornments", dependencies: ["Canvas", "Geometry", "Palette", "Selection"]),       // layer: platform
+        .target(name: "Find", dependencies: ["Canvas", "DetailPanel", "FuzzyMatching", "Geometry", "Keyboard", "Selection", "Topology"]), // layer: platform
+        // Horizontals, shape traits: the interfaces verticals plug into that a shape has.
+        .target(name: "Topology", dependencies: ["Canvas"]),                                  // layer: platform
+        .target(name: "Validation", dependencies: ["Canvas", "DetailPanel", "Draw", "Queries", "TableOfContents"]), // layer: platform
+        .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Queries", "SlashCommands", "TableOfContents", "Validation"]),  // layer: platform
+        .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "SlashCommands", "TableOfContents"]), // layer: platform
+        .target(name: "Connections", dependencies: ["Canvas", "Draw", "Geometry", "Selection", "Topology", "Types"]), // layer: platform
+        .target(name: "Mentions", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Draw", "Find", "FuzzyMatching", "Neighbors", "Queries", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
+        .target(name: "Publishing", dependencies: ["Adornments", "Canvas", "ContextMenus", "DetailPanel", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "Titles", "Topology"]), // layer: platform
+        .target(name: "Boards", dependencies: ["Canvas", "ContextMenus", "Find", "Keyboard", "Queries", "Selection", "TableOfContents", "Titles"]), // layer: platform
+        .target(name: "Transform", dependencies: ["Canvas", "ContextMenus", "SlashCommands"]), // layer: platform
+        .target(name: "Colors", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Draw", "Palette", "Queries", "SlashCommands", "Validation"]), // layer: platform
+        .target(name: "Types", dependencies: ["Adornments", "Canvas", "Colors", "ContextMenus", "DetailPanel", "Draw", "Find", "LanguageModels", "Mentions", "Palette", "ProseMaps", "Queries", "Selection", "SlashCommands", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
+        // References: a pill that stands for any public shape, of a kind written after it too: what every shape gets, though it is a kind.
+        .target(name: "References", dependencies: ["Boards", "Canvas", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Mentions", "Palette", "Publishing", "Queries", "QueryLanguage", "QueryTranslation", "Selection", "TableOfContents", "TextEditing", "Topology", "Validation"]), // layer: platform
+        // Things you do: a palette, a command, a gesture, that no kind opts into and nothing builds on.
+        .target(name: "Clipboard", dependencies: ["Canvas", "ContextMenus", "Geometry", "Keyboard", "Selection"]), // layer: platform
+        .target(name: "Snapping", dependencies: ["Canvas", "Geometry"]),                      // layer: platform
+        // Jump To (⌘K): it lists
+        // the titled shapes Titles names (each tinted as its kind is, the core's `registry.label(of:)`), goes to one as Boards' crumbs do (Boards'
+        // `follow`), and shows its list in TextEditing's caret list, its palette over the canvas in one of the host's slots.
+        .target(name: "JumpTo", dependencies: ["Boards", "Canvas", "FuzzyMatching", "Geometry", "Keyboard", "TextEditing", "Titles", "Topology"]), // layer: platform
+        // Moving (`/move-to`, `/move-near`): two slash
+        // commands that move a shape into a frame, onto a subboard's board or beside a shape, placed as `canvas draw` places one (Draw's
+        // placement for plugins, `Surroundings`),
+        // and the table of contents' drops that move shapes into a frame, onto a subboard's board or out of frames (`ContentsMoves`).
+        .target(name: "Moving", dependencies: ["Canvas", "Draw", "SlashCommands", "TableOfContents"]), // layer: platform
+        // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
+        .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus"], path: "Examples/Reordering"),             // layer: platform
+        // Engines: what any plugin may run or ask.
+        .target(name: "LanguageModels", dependencies: ["Canvas"]),                            // layer: platform
+        .target(name: "ProseMaps", dependencies: ["Canvas", "LanguageModels"]),               // layer: platform
+        .target(name: "Queries", dependencies: ["Canvas", "DrawScript", "QueryLanguage", "Selection", "Topology"]), // layer: platform
+        .target(name: "Draw", dependencies: ["Adornments", "Canvas", "DrawScript", "Geometry", "Queries", "QueryLanguage", "Topology"]), // layer: platform
+        .target(name: "QueryTranslation", dependencies: ["Canvas", "LanguageModels", "Queries", "QueryLanguage"]), // layer: platform
+        // Neighbors: an engine an edge's owner shows its edges on. Hovering a shape, on the canvas or by its row in the table of contents
         // (Selection's `hovered`, and `hoveredElsewhere` for a row of another board), outlines every shape connected to it in a color for each
         // way, through the core's tinted outlines, and a shape's panel lists them by the same ways, then what it's inside and what it holds
         // (a tab of the detail panel's, its lists searched with FuzzyMatching's matcher, a shape with no title called what the table of
         // contents calls it). What counts as connected is a light, a title, a color
-        // and a query, which the plugin that owns the edges contributes (Connections' arrows, Mentions' mentions) and Queries answers; the file
+        // and a query, which the plugin that owns the edges contributes (Arrows' arrows, Mentions' mentions) and Queries answers; the file
         // says where a shape on another board is drawn, and Topology when the edges change.
-        .target(name: "Neighbors", dependencies: ["Canvas", "DetailPanel", "FuzzyMatching", "Palette", "Queries", "Selection", "TableOfContents", "Topology"]), // layer: surface
+        .target(name: "Neighbors", dependencies: ["Canvas", "DetailPanel", "FuzzyMatching", "Palette", "Queries", "Selection", "TableOfContents", "Topology"]), // layer: platform
+        // For agents: where an agent's request arrives over the wire and is answered.
+        .target(name: "Automation", dependencies: ["Canvas", "CanvasRPC", "Draw", "DrawScript"]), // layer: platform
+        .target(name: "QueryCommands", dependencies: ["Automation", "Canvas", "CanvasRPC", "LanguageModels", "Queries", "QueryLanguage", "QueryTranslation"]), // layer: platform
 
-        .target(name: "Validation", dependencies: ["Canvas", "DetailPanel", "Draw", "Queries", "TableOfContents"]), // layer: concern
-        .target(name: "Clipboard", dependencies: ["Canvas", "ContextMenus", "Geometry", "Keyboard", "Selection"]), // layer: concern
-        .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Queries", "SlashCommands", "TableOfContents", "Validation"]),  // layer: concern
-        .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "SlashCommands", "TableOfContents"]), // layer: concern
-        .target(name: "Connections", dependencies: ["Canvas", "Colors", "Draw", "Geometry", "Mentions", "Neighbors", "Palette", "Publishing", "Selection", "TableOfContents", "TextEditing", "Topology", "Types"]), // layer: concern
-        .target(name: "Mentions", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Draw", "Find", "FuzzyMatching", "Neighbors", "Queries", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: concern
-        .target(name: "Publishing", dependencies: ["Adornments", "Canvas", "ContextMenus", "DetailPanel", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "Titles", "Topology"]), // layer: concern
-        .target(name: "Boards", dependencies: ["Canvas", "ContextMenus", "Find", "Keyboard", "Queries", "Selection", "TableOfContents", "Titles"]), // layer: concern
-        .target(name: "Snapping", dependencies: ["Canvas", "Geometry"]),                      // layer: feature
-        .target(name: "Transform", dependencies: ["Canvas", "ContextMenus", "SlashCommands"]), // layer: concern
-        .target(name: "Colors", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Draw", "Palette", "Queries", "SlashCommands", "Validation"]), // layer: concern
-        .target(name: "Types", dependencies: ["Adornments", "Canvas", "Colors", "ContextMenus", "DetailPanel", "Draw", "Find", "LanguageModels", "Mentions", "Palette", "ProseMaps", "Queries", "Selection", "SlashCommands", "TextEditing", "Titles", "Topology", "Validation"]), // layer: concern
+        // PRODUCT: the verticals, shapes that hold something of their own.
+        // Arrows: tldraw's arc arrows, a kind like any other, and the connector that makes them what ports draw.
+        .target(name: "Arrows", dependencies: ["Canvas", "Colors", "Connections", "Geometry", "Mentions", "Neighbors", "Palette", "Publishing", "Selection", "TableOfContents", "TextEditing", "Topology", "Types"]), // layer: product
+        .target(name: "StickyNotes", dependencies: ["Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: product
+        .target(name: "Subboards", dependencies: ["Boards", "Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "TableOfContents", "Titles", "Transform"]), // layer: product
+        .target(name: "Frames", dependencies: ["Canvas", "Colors", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "Titles", "Transform"]), // layer: product
 
-        .target(name: "Draw", dependencies: ["Adornments", "Canvas", "DrawScript", "Geometry", "Queries", "QueryLanguage", "Topology"]), // layer: surface
-        .target(name: "Automation", dependencies: ["Canvas", "CanvasRPC", "Draw", "DrawScript"]), // layer: language
-        .target(name: "Queries", dependencies: ["Canvas", "DrawScript", "QueryLanguage", "Selection", "Topology"]), // layer: surface
-        .target(name: "QueryTranslation", dependencies: ["Canvas", "LanguageModels", "Queries", "QueryLanguage"]), // layer: surface
-        .target(name: "QueryCommands", dependencies: ["Automation", "Canvas", "CanvasRPC", "LanguageModels", "Queries", "QueryLanguage", "QueryTranslation"]), // layer: language
-
-        .target(name: "StickyNotes", dependencies: ["Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: vertical
-        .target(name: "Subboards", dependencies: ["Boards", "Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "TableOfContents", "Titles", "Transform"]), // layer: vertical
-        .target(name: "Frames", dependencies: ["Canvas", "Colors", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "Titles", "Transform"]), // layer: vertical
-        // Jump To (⌘K): a feature no kind opts into and nothing imports: it lists
-        // the titled shapes Titles names (each tinted as its kind is, the core's `registry.label(of:)`), goes to one as Boards' crumbs do (Boards'
-        // `follow`), and shows its list in TextEditing's caret list, its palette over the canvas in one of the host's slots.
-        .target(name: "JumpTo", dependencies: ["Boards", "Canvas", "FuzzyMatching", "Geometry", "Keyboard", "TextEditing", "Titles", "Topology"]), // layer: feature
-        .target(name: "References", dependencies: ["Boards", "Canvas", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Mentions", "Palette", "Publishing", "Queries", "QueryLanguage", "QueryTranslation", "Selection", "TableOfContents", "TextEditing", "Topology", "Validation"]), // layer: vertical
-        // Moving (`/move-to`, `/move-near`): a feature no kind opts into and nothing imports: two slash
-        // commands that move a shape into a frame, onto a subboard's board or beside a shape, placed as `canvas draw` places one (Draw's
-        // placement for plugins, `Surroundings`),
-        // and the table of contents' drops that move shapes into a frame, onto a subboard's board or out of frames (`ContentsMoves`).
-        .target(name: "Moving", dependencies: ["Canvas", "Draw", "SlashCommands", "TableOfContents"]), // layer: feature
-
-        // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
-        .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus"], path: "Examples/Reordering"),             // layer: feature
-
+        // APP: the window, the executables and the command line.
+        .target(name: "CanvasUI", dependencies: ["Canvas", "CanvasRPC", "Geometry", "Palette"]), // layer: app
         .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI"] + shipped),               // layer: app
         .executableTarget(name: "CanvasQuickLook", dependencies: ["Canvas", "CanvasUI"] + shipped),              // layer: app of InfiniteCanvas
-        .executableTarget(name: "CanvasCLI", dependencies: ["CanvasRPC"]),                                        // layer: cli
+        .executableTarget(name: "CanvasCLI", dependencies: ["CanvasRPC"]),                                        // layer: app
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport
         .target(name: "CanvasTesting", dependencies: ["Canvas", "Geometry", "TestKit"], path: "Tests/CanvasTesting"), // layer: testsupport
@@ -340,7 +328,7 @@ let package = Package(
         .executableTarget(name: "KeyboardTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "TestKit"], path: "Tests/KeyboardTests"), // layer: test
         .executableTarget(name: "CanvasUITests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "Geometry", "TestKit"], path: "Tests/CanvasUITests"), // layer: test
         .executableTarget(name: "SelectionTests", dependencies: ["Canvas", "CanvasTesting", "Geometry", "Keyboard", "Selection", "TestKit"], path: "Tests/SelectionTests"), // layer: test
-        .executableTarget(name: "ArrowsTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Colors", "Connections", "ContextMenus", "DetailPanel", "Find", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Types"], path: "Tests/ArrowsTests"), // layer: test of Connections
+        .executableTarget(name: "ArrowsTests", dependencies: ["Adornments", "Arrows", "Canvas", "CanvasTesting", "Colors", "Connections", "ContextMenus", "DetailPanel", "Find", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Types"], path: "Tests/ArrowsTests"), // layer: test
         .executableTarget(name: "ValidationTests", dependencies: ["Canvas", "CanvasTesting", "DetailPanel", "Geometry", "TableOfContents", "TestKit", "Validation"], path: "Tests/ValidationTests"), // layer: test
         .executableTarget(name: "DetailPanelTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Keyboard", "Selection", "TestKit", "TextEditing"], path: "Tests/DetailPanelTests"), // layer: test
         .executableTarget(name: "TextEditingTests", dependencies: ["CanvasTesting", "TestKit", "TextEditing"], path: "Tests/TextEditingTests"), // layer: test
@@ -360,13 +348,13 @@ let package = Package(
         .executableTarget(name: "ProseMapsTests", dependencies: ["Canvas", "CanvasTesting", "LanguageModels", "ProseMaps", "TestKit"], path: "Tests/ProseMapsTests"), // layer: test
         .executableTarget(name: "TitlesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Find", "Geometry", "Keyboard", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Validation"], path: "Tests/TitlesTests"), // layer: test
         .executableTarget(name: "PortsTests", dependencies: ["Canvas", "CanvasTesting", "Connections", "Geometry", "Keyboard", "Selection", "TestKit", "Topology"], path: "Tests/PortsTests"), // layer: test of Connections
-        .executableTarget(name: "ArrowPortsTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Colors", "Connections", "ContextMenus", "DetailPanel", "Draw", "Geometry", "Keyboard", "Mentions", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Types"], path: "Tests/ArrowPortsTests"), // layer: test of Connections
+        .executableTarget(name: "ArrowPortsTests", dependencies: ["Adornments", "Arrows", "Canvas", "CanvasTesting", "Colors", "Connections", "ContextMenus", "DetailPanel", "Draw", "Geometry", "Keyboard", "Mentions", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Types"], path: "Tests/ArrowPortsTests"), // layer: test of Arrows
         .executableTarget(name: "MentionsTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "CanvasUI", "ContextMenus", "DetailPanel", "Find", "Geometry", "Keyboard", "Mentions", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Validation"], path: "Tests/MentionsTests"), // layer: test
         .executableTarget(name: "BoardsTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasTesting", "ContextMenus", "DetailPanel", "Find", "Keyboard", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles"], path: "Tests/BoardsTests"), // layer: test
         .executableTarget(name: "SubboardsTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasTesting", "CanvasUI", "Colors", "Connections", "ContextMenus", "DetailPanel", "Keyboard", "Mentions", "Palette", "Selection", "SlashCommands", "Subboards", "TableOfContents", "TestKit", "Titles", "Topology", "Transform"], path: "Tests/SubboardsTests"), // layer: test
         .executableTarget(name: "FramesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Colors", "ContextMenus", "DetailPanel", "Frames", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Transform"], path: "Tests/FramesTests"), // layer: test
         .executableTarget(name: "JumpToTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasTesting", "CanvasUI", "ContextMenus", "DetailPanel", "Geometry", "JumpTo", "Keyboard", "Selection", "SlashCommands", "TestKit", "TextEditing", "Titles", "Topology"], path: "Tests/JumpToTests"), // layer: test
-        .executableTarget(name: "ReferencesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Colors", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Mentions", "Publishing", "Queries", "QueryTranslation", "References", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Types", "Validation"], path: "Tests/ReferencesTests"), // layer: test
+        .executableTarget(name: "ReferencesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Mentions", "Publishing", "Queries", "QueryTranslation", "References", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Validation"], path: "Tests/ReferencesTests"), // layer: test
         .executableTarget(name: "PlacingTests", dependencies: ["Canvas", "CanvasTesting", "Draw", "TestKit"], path: "Tests/PlacingTests"), // layer: test of Draw
         .executableTarget(name: "MovingTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Moving", "Selection", "SlashCommands", "TableOfContents", "TestKit"], path: "Tests/MovingTests"), // layer: test
         .executableTarget(name: "NeighborsTests", dependencies: ["Canvas", "CanvasTesting", "DetailPanel", "Keyboard", "Neighbors", "Queries", "Selection", "TableOfContents", "TestKit", "Topology"], path: "Tests/NeighborsTests"), // layer: test
@@ -389,7 +377,7 @@ let package = Package(
         .executableTarget(name: "PortEdgesTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Connections", "Draw", "Keyboard", "Selection", "TestKit", "Topology"], path: "Tests/PortEdgesTests"), // layer: test of Connections
         .executableTarget(name: "MentionTextsTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "ContextMenus", "DetailPanel", "Draw", "Keyboard", "Mentions", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Validation"], path: "Tests/MentionTextsTests"), // layer: test of Mentions
         .executableTarget(name: "ValidationChecksTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Draw", "TestKit", "Validation"], path: "Tests/ValidationChecksTests"), // layer: test of Validation
-        .executableTarget(name: "ExamplesTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Colors", "Connections", "ContextMenus", "Keyboard", "Mentions", "Reordering", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Types"], path: "Tests/ExamplesTests"), // layer: test
+        .executableTarget(name: "ExamplesTests", dependencies: ["Adornments", "Arrows", "Canvas", "CanvasTesting", "Colors", "ContextMenus", "Keyboard", "Mentions", "Reordering", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Types"], path: "Tests/ExamplesTests"), // layer: test
         .executableTarget(name: "CompositionTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "DrawScript", "Geometry", "Palette", "QueryLanguage", "ShippedTesting", "TestKit", "TextEditing"] + shipped, path: "Tests/CompositionTests"), // layer: test
         .executableTarget(name: "BenchmarkTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Geometry", "QueryLanguage", "ShippedTesting", "TestKit"] + shipped, path: "Tests/BenchmarkTests"), // layer: test
     ],

@@ -1,8 +1,8 @@
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import Colors
-import Connections
 import CoreGraphics
 import Geometry
 import Mentions

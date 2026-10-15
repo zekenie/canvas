@@ -1,7 +1,7 @@
 import AppKit
+import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
-import Connections
 import Foundation
 import Geometry
 import LanguageModels

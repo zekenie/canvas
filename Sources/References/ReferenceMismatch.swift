@@ -45,10 +45,10 @@ extension ReferenceState {
 
     private func findMismatch(of id: ShapeID, in topology: TopologyIndex) -> ChannelMismatch? {
         let targets = topology.forwards(of: id).compactMap { editor.shape(inFile: $0) }
-        guard !targets.isEmpty else { return nil }
         let registry = editor.registry
+        guard !targets.isEmpty, let connections = registry.connectorEdgeType else { return nil }
         for (direction, role) in [(EdgeDirection.incoming, PortRole.target), (.outgoing, .source)] {
-            for edge in topology.edges(of: id, direction, types: .within(ArrowEdge.id), view: .literal) {
+            for edge in topology.edges(of: id, direction, types: .within(connections), view: .literal) {
                 guard let channel = editor.shape(inFile: edge.carrier)?[ChannelProperty.self], registry.declares(channel) else { continue }
                 if let culprit = targets.first(where: { !registry.accepts($0, on: channel, as: role) }) {
                     return ChannelMismatch(channel: channel, target: culprit.id)
