@@ -14,6 +14,7 @@ import Subboards
 import SwiftUI
 import TestKit
 import Titles
+import Types
 
 // The Connections tab of a shape's panel (Neighbors' lists): the states of one track, added to
 // `galleryStates` (GalleryTypesLook.swift) as `connectionStates`. One small file of boards, the same in
@@ -128,6 +129,9 @@ extension GalleryStage {
             list.setFolded(3, true)
         })
     },
+    GalleryState("connections-type", "a type's: Pointed To By (the relationship type at it), Instances (what is of it: one on the board shown, two on a subboard's board with its name) and Inside, its frame") { stage in
+        .image(try stage.connectionsPicture(of: try tableType(stage), size: CGSize(width: 300, height: 320)))
+    },
     GalleryState("connections-untitled", "notes with no titles, as most are: each row is the note's text on one line, cut to the row; an empty one is Empty Note") { stage in
         .image(try stage.connectionsPicture(of: untitledNotes(stage), size: CGSize(width: 300, height: 260)))
     },
@@ -145,6 +149,38 @@ extension GalleryStage {
         .image(try stage.connectionsPicture(of: try hub(stage), size: CGSize(width: 300, height: 200)) { $0.setSearch("zzz") })
     },
 ]
+
+/// The type Table in the frame Types, with the relationship type owns pointing at it, and what is of Table:
+/// orders on the root, and users and carts on the Commerce modules subboard's board. The root is shown.
+@MainActor private func tableType(_ stage: GalleryStage) throws -> ShapeID {
+    let editor = stage.editor
+    func bound(_ id: ShapeID) -> ArrowTerminal {
+        .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
+    }
+    func instance(_ title: String, _ x: CGFloat, of type: ShapeID) {
+        var record = ShapeRecord(StickyNote(frame: CGRect(x: x, y: 400, width: 160, height: 120)))
+        record[TitleProperty.self] = title
+        record[IsAProperty.self] = [TypeLink(type)]
+        editor.transact { $0.insert(AnyShapeRecord(record)) }
+    }
+    let types = editor.add(Frame(frame: CGRect(x: 0, y: 0, width: 640, height: 300)), title: "Types")
+    // A type's id is its color: fixed, as every state's are.
+    let table = editor.addTypeNote(TypeSchemaProperty.starter, title: "Table", frame: CGRect(x: 40, y: 60, width: 200, height: 160),
+                                   id: ShapeID(UUID(uuidString: "0E5B1A61-0000-4000-8000-0000000000C1")!))
+    let owns = editor.addTypeNote(TypeSchemaProperty.starter, title: "owns", frame: CGRect(x: 400, y: 60, width: 200, height: 160),
+                                  id: ShapeID(UUID(uuidString: "0E5B1A62-0000-4000-8000-0000000000C2")!))
+    editor.transact { $0.update(owns) { $0[RelationshipProperty.self] = true } }
+    editor.put([table, owns], in: types)
+    editor.add(Arrow(start: bound(owns), end: bound(table)))
+    instance("orders", 40, of: table)
+    let modules = editor.add(Subboard(frame: CGRect(x: 400, y: 400, width: 240, height: 160)), title: "Commerce modules")
+    guard editor.showBoard(BoardID(owner: modules)) else { throw GalleryFailure("the Commerce modules board can't be shown") }
+    instance("users", 40, of: table)
+    instance("carts", 240, of: table)
+    guard editor.showBoard(.root) else { throw GalleryFailure("the root can't be shown") }
+    stage.spin()
+    return table
+}
 
 /// A note thirty named notes mention.
 @MainActor private func hub(_ stage: GalleryStage) throws -> ShapeID {

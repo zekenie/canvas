@@ -87,12 +87,27 @@ private func card(_ id: ShapeID, _ title: String?, _ column: Int, _ row: Int, te
     titled(id, StickyNote(frame: CGRect(x: column * 400, y: row * 400, width: 200, height: 200), text: text), title, in: container)
 }
 
-/// An arrow bound at the middle of both ends, on no channel.
-private func link(_ id: ShapeID = ShapeID(), from start: ShapeID, to end: ShapeID) -> AnyShapeRecord {
+/// An arrow bound at the middle of both ends, on no channel, of the types `types` names.
+private func link(_ id: ShapeID = ShapeID(), from start: ShapeID, to end: ShapeID, is types: [ShapeID] = []) -> AnyShapeRecord {
     func bound(_ id: ShapeID) -> ArrowTerminal {
         .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
     }
-    return AnyShapeRecord(ShapeRecord(id: id, Arrow(start: bound(start), end: bound(end))))
+    var shape = ShapeRecord(id: id, Arrow(start: bound(start), end: bound(end)))
+    if !types.isEmpty { shape[IsAProperty.self] = types.map(TypeLink.init) }
+    return AnyShapeRecord(shape)
+}
+
+/// A note titled `title` in the grid cell (`column`, `row`): a type (the starter schema) if `type`, a
+/// relationship type if `relationship` too, and of the types `types` names.
+private func typed(_ id: ShapeID, _ title: String, _ column: Int, _ row: Int, type: Bool = false, relationship: Bool = false,
+                   is types: [ShapeID] = [], in container: ShapeID? = nil) -> AnyShapeRecord {
+    var shape = ShapeRecord(id: id, StickyNote(frame: CGRect(x: column * 400, y: row * 400, width: 200, height: 200)))
+    shape[TitleProperty.self] = title
+    if type { shape[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter) }
+    if relationship { shape[RelationshipProperty.self] = true }
+    if !types.isEmpty { shape[IsAProperty.self] = types.map(TypeLink.init) }
+    let record = AnyShapeRecord(shape)
+    return container.map { record.copy(as: id, container: $0) } ?? record
 }
 
 /// The shipped editor over a file of `root`'s shapes, and boards of `children`'s, on a private pasteboard.
@@ -240,8 +255,8 @@ extension ConnectionGroup {
             link(from: x, to: b), link(from: c, to: x),
         ], pasteboard)
         let list = try require(h.editor.neighborList)
-        expectEqual(list.groups.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Inside", "Contains"])
-        expectEqual(list.groups.map { $0.color != nil }, [true, true, true, true, false, false], "a light's list has its color; the two besides have none")
+        expectEqual(list.groups.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Inside", "Contains"])
+        expectEqual(list.groups.map { $0.color != nil }, [true, true, true, true, true, false, false], "a light's list has its color; the two besides have none")
         let hub = try h.editor.connections(of: x)
         expectEqual(hub.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Inside"])
         expectEqual(hub.map(\.ids), [[b], [c], [d], [e], [o]])
@@ -250,6 +265,37 @@ extension ConnectionGroup {
         expectEqual(zed, [])
         expect(list.hasLanded, "the answer is in: nothing to list")
         expectEqual(list.total, 0)
+    },
+    test("a type lists what is of it under Instances, after the arrows' lists and before Inside: a note on a subboard's board with that board's name, and a type built on it but not what is of that one; a relationship type lists its arrows") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let (o, table, owns, staging, orders, items, stage, users, s, end, owning) = (ShapeID(), ShapeID(), ShapeID(), ShapeID(), ShapeID(), ShapeID(),
+                                                                                       ShapeID(), ShapeID(), ShapeID(), ShapeID(), ShapeID())
+        let h = try connected([
+            titled(o, Frame(frame: CGRect(x: -100, y: -100, width: 1000, height: 1000)), "Types"),
+            typed(table, "Table", 0, 0, type: true, in: o), typed(owns, "owns", 1, 0, type: true, relationship: true, in: o),
+            typed(staging, "Staging Table", 0, 1, type: true, is: [table], in: o),
+            typed(orders, "orders", 3, 0, is: [table]), typed(items, "items", 4, 0), typed(stage, "stage_orders", 3, 1, is: [staging]),
+            titled(s, Subboard(frame: CGRect(x: 1600, y: 1200, width: 240, height: 160)), "Commerce"),
+            link(end, from: owns, to: table), link(owning, from: orders, to: items, is: [owns]),
+        ], children: [s: [typed(users, "users", 0, 0, is: [table])]], pasteboard)
+        let tableLists = try h.editor.connections(of: table)
+        expectEqual(tableLists.map(\.title), ["Pointed To By", "Instances", "Inside"])
+        expectEqual(tableLists[0].ids, [owns])
+        let instances = tableLists[1]
+        expectEqual(Set(instances.ids), [staging, orders, users], "what lists it, never what is of a type built on it")
+        expectEqual(instances.rows.first { $0.id == users }?.detail, "Commerce", "the board it's on")
+        expectEqual(instances.rows.filter { $0.id != users }.map(\.detail), [nil, nil], "the board shown needs no saying")
+        let ownsLists = try h.editor.connections(of: owns)
+        expectEqual(ownsLists.map(\.title), ["Points To", "Instances", "Inside"])
+        expectEqual(ownsLists[1].ids, [owning], "a relationship type's instances are its arrows")
+        // An instance lists no Instances: its types are its chips' and its Types tab's.
+        expectEqual(try h.editor.connections(of: orders).map(\.title), ["Points To"])
+        // Nor does a shape no longer a type, though shapes still name it (their chips dashed); its undo lists them again.
+        h.editor.removeType(table)
+        expectEqual(try h.editor.connections(of: table).map(\.title), ["Pointed To By", "Inside"])
+        h.editor.undo()
+        expectEqual(try h.editor.connections(of: table).map(\.title), ["Pointed To By", "Instances", "Inside"])
     },
     test("a note connected two ways is listed under both; one that points or mentions itself doesn't list itself; a mentioner on another board has that board's name and its text") {
         let pasteboard = NSPasteboard.withUniqueName()
