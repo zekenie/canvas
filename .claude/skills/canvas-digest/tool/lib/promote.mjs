@@ -21,12 +21,30 @@ import { evaluate, ranksOf } from './cost.mjs';
 import { segLength } from './geom.mjs';
 import { measureNoise } from './noise.mjs';
 import { REF_MU } from './dial.mjs';
+import { CROWD } from './layout.mjs';
 import { ext, withMove, withoutMove, moveGroups, fanTargets, fansOut, mayBeApart } from './moves.mjs';
 
 const SEP = '\u0000';
 const r4 = (x) => Math.round(x * 1e4) / 1e4;   // the engines' last digits differ; a plan should not
 export const PREFER = 2;
 export const TOP = 6;
+// A board is searched only while its containers are a size the search can lay out again and again: it lays every container out again
+// from where it was hundreds of times, at O(n²) a pass in a container's children (stress.mjs's warmStress, elk.mjs's pushApart), and a
+// frame of 532 notes took a minute and a half a layout, and its board hours. A board with a container of more children than CROWD
+// (layout.mjs, which packs such a container as boxes), or more shapes than CROWDED_BOARD in all, is laid out once, afresh, every arrow on
+// it drawn (but those to other boards, which are pills), and the report says to split it: a board that crowded reads as a crowd whatever
+// the search does.
+export { CROWD };
+export const CROWDED_BOARD = 1000;
+
+/** The container of the board with the most children (its frames and leaves), the first by id on a tie: {container, children}. */
+export function crowdOf(model, board) {
+  const count = new Map();
+  for (const n of model.nodes.values()) if (n.board === board) count.set(n.container, (count.get(n.container) || 0) + 1);
+  let most = { container: 'b:' + board, children: 0 };
+  for (const [c, k] of [...count].sort((a, b) => byTitle(a[0], b[0]))) if (k > most.children) most = { container: c, children: k };
+  return most;
+}
 
 /** The sources of arrows into v that promotion would turn into pills: every user, those in v's own container too (D17). */
 function usersOf(model, layouter, v) {
@@ -111,6 +129,43 @@ export async function runBoard(model, layouter, opts) {
   let cur = await layouter.layout(state);
   let ev = evaluate(model, cur, mu);
   report.start = { cost: r4(cm(ev)), X: ev.X, NE: ev.NE, Fx: ev.Fx, aspect: r4(ev.aspect), arrows: ev.arrows, pills: ev.pills, sharedArrows: ev.sharedArrows };
+  // what the report says of the layout the board ends with, and the board's result: a crowded board's is its first layout
+  const done = () => {
+    report.end = { cost: r4(cm(ev)), costSearch: r4(ev.cost), X: ev.X, NE: ev.NE, NEnote: ev.NEnote, NEpill: ev.NEpill, Fx: ev.Fx, aspect: r4(ev.aspect), size: ev.size, arrows: ev.arrows, sharedArrows: ev.sharedArrows, pills: ev.pills, orphans: ev.orphans, len: r4(ev.len), good: ev.good };
+    const nArr = Math.max(1, ev.arrows + ev.sharedArrows);
+    const gd = model.dial.good;
+    report.goodTerms = {   // what "good enough" asks at this mess (per arrow, and the aspect), and where the board is
+      n: nArr, NE: { value: ev.NE, perArrow: r4(ev.NE / nArr), need: gd.nePerArrow }, X: { value: ev.X, perArrow: r4(ev.X / nArr), need: gd.xPerArrow }, Fx: { value: ev.Fx, perArrow: r4(ev.Fx / nArr), need: gd.fxPerArrow }, aspect: { value: r4(ev.aspect), need: gd.aspect }, good: ev.good,
+    };
+    report.promoted = state.order.slice();
+    report.fanned = state.fans.slice();
+    report.algorithms = cur.containers.map((c) => ({ container: c.container, algorithm: c.algorithm, how: c.how || null, warm: !!c.warm, children: c.children, arrows: c.arrows, costs: c.costs, w: c.w, h: c.h })).sort((a, b) => byTitle(a.container || '', b.container || ''));
+    report.fill = cur.fills;
+    report.shared = cur.plan.groups.filter((g) => g.shared).map((g) => ({ target: g.target, container: g.container === 'b:' + board ? null : g.container.slice(2), host: g.host, users: g.edges.length, split: g.key !== g.base })).sort((a, b) => byTitle(a.target, b.target) || byTitle(a.container || '', b.container || ''));
+    {   // per (frame, hub): the pills and the users of each (a shared group is one pill; a group not shared, a pill a user)
+      const m = new Map();
+      for (const g of cur.plan.groups) {
+        let r = m.get(g.base); if (!r) m.set(g.base, r = { target: g.target, container: g.container === 'b:' + board ? null : g.container.slice(2), users: 0, perPill: [] });
+        r.users += g.edges.length;
+        if (g.shared) r.perPill.push(g.edges.length); else for (let i = 0; i < g.edges.length; i++) r.perPill.push(1);
+      }
+      report.pillsPerHub = [...m.values()].map((r) => ({ target: r.target, container: r.container, users: r.users, pills: r.perPill.length, perPill: r.perPill.sort((a, b) => b - a) })).sort((a, b) => byTitle(a.target, b.target) || byTitle(a.container || '', b.container || ''));
+      const hist = {}; for (const r of report.pillsPerHub) hist[r.pills] = (hist[r.pills] || 0) + 1;
+      report.pillsHistogram = hist;
+    }
+    report.mode = cur.mode;
+    report.layout = Object.assign({ layouts: layouter.stats.layouts, elkCalls: layouter.stats.elkCalls, cacheHits: layouter.stats.hits }, layouter.stats);
+    report.ms = now() - t0;
+    return { state, layout: cur, ev, report };
+  };
+  const crowd = crowdOf(model, board);
+  if (crowd.children > CROWD || leaves.length > CROWDED_BOARD) {
+    report.stop = 'crowded';
+    report.crowded = { container: crowd.container === 'b:' + board ? null : crowd.container.slice(2), children: crowd.children, most: CROWD, shapes: leaves.length, mostShapes: CROWDED_BOARD };
+    report.long = [];
+    lap('final');
+    return done();
+  }
   layouter.warm = true;
   ({ st: state, cur, ev } = await settled(state, cur, ev));   // the board as the search will see it: ELK's first draw laid out again until it stops moving
   report.startSettled = { cost: r4(ev.cost), X: ev.X, NE: ev.NE, Fx: ev.Fx, aspect: r4(ev.aspect) };
@@ -298,32 +353,7 @@ export async function runBoard(model, layouter, opts) {
   }
   layouter.hold = false;
   lap('final');
-  report.end = { cost: r4(cm(ev)), costSearch: r4(ev.cost), X: ev.X, NE: ev.NE, NEnote: ev.NEnote, NEpill: ev.NEpill, Fx: ev.Fx, aspect: r4(ev.aspect), size: ev.size, arrows: ev.arrows, sharedArrows: ev.sharedArrows, pills: ev.pills, orphans: ev.orphans, len: r4(ev.len), good: ev.good };
-  const nArr = Math.max(1, ev.arrows + ev.sharedArrows);
-  const gd = model.dial.good;
-  report.goodTerms = {   // what "good enough" asks at this mess (per arrow, and the aspect), and where the board is
-    n: nArr, NE: { value: ev.NE, perArrow: r4(ev.NE / nArr), need: gd.nePerArrow }, X: { value: ev.X, perArrow: r4(ev.X / nArr), need: gd.xPerArrow }, Fx: { value: ev.Fx, perArrow: r4(ev.Fx / nArr), need: gd.fxPerArrow }, aspect: { value: r4(ev.aspect), need: gd.aspect }, good: ev.good,
-  };
-  report.promoted = state.order.slice();
-  report.fanned = state.fans.slice();
-  report.algorithms = cur.containers.map((c) => ({ container: c.container, algorithm: c.algorithm, how: c.how || null, warm: !!c.warm, children: c.children, arrows: c.arrows, costs: c.costs, w: c.w, h: c.h })).sort((a, b) => byTitle(a.container || '', b.container || ''));
-  report.fill = cur.fills;
-  report.shared = cur.plan.groups.filter((g) => g.shared).map((g) => ({ target: g.target, container: g.container === 'b:' + board ? null : g.container.slice(2), host: g.host, users: g.edges.length, split: g.key !== g.base })).sort((a, b) => byTitle(a.target, b.target) || byTitle(a.container || '', b.container || ''));
-  {   // per (frame, hub): the pills and the users of each (a shared group is one pill; a group not shared, a pill a user)
-    const m = new Map();
-    for (const g of cur.plan.groups) {
-      let r = m.get(g.base); if (!r) m.set(g.base, r = { target: g.target, container: g.container === 'b:' + board ? null : g.container.slice(2), users: 0, perPill: [] });
-      r.users += g.edges.length;
-      if (g.shared) r.perPill.push(g.edges.length); else for (let i = 0; i < g.edges.length; i++) r.perPill.push(1);
-    }
-    report.pillsPerHub = [...m.values()].map((r) => ({ target: r.target, container: r.container, users: r.users, pills: r.perPill.length, perPill: r.perPill.sort((a, b) => b - a) })).sort((a, b) => byTitle(a.target, b.target) || byTitle(a.container || '', b.container || ''));
-    const hist = {}; for (const r of report.pillsPerHub) hist[r.pills] = (hist[r.pills] || 0) + 1;
-    report.pillsHistogram = hist;
-  }
-  report.mode = cur.mode;
-  report.layout = Object.assign({ layouts: layouter.stats.layouts, elkCalls: layouter.stats.elkCalls, cacheHits: layouter.stats.hits }, layouter.stats);
-  report.ms = now() - t0;
-  return { state, layout: cur, ev, report };
+  return done();
 }
 
 /** The arrows of a layout longer than `max` that may be set apart: plain ones, and those into a pill others share. [{key, from, to, length, shared}] */

@@ -1,0 +1,22 @@
+# The billing service: Lambdas the card provider and the calendar call.
+service: billing
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  environment:
+    DATABASE_URL: ${ssm:/shop/database-url}
+
+functions:
+  paymentWebhook:
+    handler: src/handlers/paymentWebhook.handler
+    description: The card provider says a payment settled
+    events:
+      - http:
+          method: post
+          path: webhooks/payment
+  monthlyStatements:
+    handler: src/handlers/monthlyStatements.handler
+    description: Each customer's orders and refunds for the month before
+    events:
+      - schedule: cron(0 6 1 * ? *)

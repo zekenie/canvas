@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([cliTests])
+runTests([cliTests, installTests, agentsTests])

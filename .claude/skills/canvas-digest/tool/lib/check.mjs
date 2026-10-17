@@ -1,5 +1,6 @@
 // The checks on a digest before anything is measured or drawn. Pure: what the file and the app know comes in as options.
 import { buildModel } from './model.mjs';
+import { typeProblems } from './types.mjs';
 import { fold } from './util.mjs';
 
 export const KINDS = ['sticky-note', 'frame', 'subboard', 'auto'];
@@ -8,7 +9,9 @@ export const MAX_TITLE = 80, MAX_IN_FRAME = 15, MAX_ON_BOARD = 150;
 /**
  * digest, and options {existing: titles already in the file, kinds: the kinds `canvas kinds` lists}. Returns {errors, warnings}: errors stop the run.
  * Refuses duplicate titles (folded, case aside), titles over 80 characters, titles already in the file, kinds the app does not list or the tool
- * cannot lay out, and everything the model refuses (an unknown `in`, an edge to nothing). Warns past 15 children in a frame or 150 shapes on a board.
+ * cannot lay out, and everything the model refuses (an unknown `in`, an edge to nothing), and what is wrong with how shapes and edges are typed
+ * (`typeProblems`: an `is` that names no type, `endRule` on an edge that is no end, values that don't fit their schema...). Warns past 15 children
+ * in a frame or 150 shapes on a board.
  */
 export function checkDigest(digest, opts = {}) {
   const errors = [], warnings = [];
@@ -37,6 +40,9 @@ export function checkDigest(digest, opts = {}) {
   let model;
   try { model = buildModel(digest); } catch (e) { return { errors: [e.message], warnings }; }
   for (const w of model.warnings) warnings.push(w);
+  const typed = typeProblems(model);
+  for (const m of typed.errors) errors.push(m);
+  for (const m of typed.warnings) warnings.push(m);
   for (const h of model.headers.values()) if (existing.has(h.toLowerCase())) errors.push(`the board's header "${h}" is already in the file`);
   for (const [cid, kids] of model.kids) {
     if (cid[0] === 'f' && kids.length > MAX_IN_FRAME) warnings.push(`frame "${cid.slice(2)}" holds ${kids.length} shapes; past ${MAX_IN_FRAME} it reads as a crowd (split it, or make it a subboard)`);

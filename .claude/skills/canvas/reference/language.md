@@ -1,8 +1,8 @@
 # The canvas draw language
 
-The whole language `build/canvas draw` reads: every statement, word and rule, how a script's placements become positions, what comes back, and every way a script can fail. [../SKILL.md](../SKILL.md) is the tour; this page is where to look when you need a construct the tour doesn't cover, or when an error points at behavior you didn't expect.
+The whole language `canvas draw` reads: every statement, word and rule, how a script's placements become positions, what comes back, and every way a script can fail. [../SKILL.md](../SKILL.md) is the tour; this page is where to look when you need a construct the tour doesn't cover, or when an error points at behavior you didn't expect.
 
-The examples on this page are one story. They run in order on one empty board: each block tagged `draw` succeeds there, and later blocks name shapes that earlier blocks drew. Each block tagged `draw-error` fails with the reason on its first line, and changes nothing. The shapes are the kinds that shipped when this was written. `build/canvas kinds` says what your app has.
+The examples on this page are one story. They run in order on one empty board: each block tagged `draw` succeeds there, and later blocks name shapes that earlier blocks drew. Each block tagged `draw-error` fails with the reason on its first line, and changes nothing. The shapes are the kinds that shipped when this was written. `canvas kinds` says what your app has.
 
 ## Contents
 
@@ -35,18 +35,18 @@ The examples on this page are one story. They run in order on one empty board: e
 ## Running a script
 
 ```bash
-build/canvas draw --board 2 --dry-run - <<'EOF'
+canvas draw --board 2 --dry-run - <<'EOF'
 sticky-note "Inbox" text: "Everything new lands here"
 EOF
 ```
 
-`build/canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]`
+`canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]`
 
 - **The script**: `-` reads it from standard input. Use a heredoc with a quoted delimiter (`<<'EOF'`), which passes every character through untouched. With an unquoted delimiter the shell expands `$` and backticks and turns `\\` into `\`. The script can also be the one argument, but quoting it for the shell is error-prone, and an apostrophe in a title breaks it.
 - **`--dry-run`** does everything a run does (reading, placing, checking and building the result) and then throws the change away. On the same board, a dry run and a real run say the same, unless the user is typing in a shape the script changes: a real run ends their typing first, so what they typed is part of the shape it changes.
 - **`--reveal`** eases the camera to fit everything the script made or changed. Without it the camera stays where the user left it.
-- **`--board <board>`** names the board by the id `build/canvas boards` gives it (which lasts while that board is open), by its file, or by its name. Without it the script goes to the board in front, which changes whenever the user clicks another window, so pass it on every `draw`. `kinds`, `status`, `boards` and `new` are about the app, and take none.
-- **A file's boards.** `--board` names a file, and a file can hold boards inside shapes (a subboard's). A script draws on one of them, and never says which: it's the board the shapes it names are on ([Which board](#which-board)), else the one the file's window shows. The window doesn't move. `build/canvas boards` says what the window shows, as `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (from the root down), and every result's `on` says where the script drew. To move the window, `build/canvas show "<subboard title>"`, or `build/canvas show --root`.
+- **`--board <board>`** names the board by the id `canvas boards` gives it (which lasts while that board is open), by its file, or by its name. Without it the script goes to the board in front, which changes whenever the user clicks another window, so pass it on every `draw`. `kinds`, `status`, `boards` and `new` are about the app, and take none.
+- **A file's boards.** `--board` names a file, and a file can hold boards inside shapes (a subboard's). A script draws on one of them, and never says which: it's the board the shapes it names are on ([Which board](#which-board)), else the one the file's window shows. The window doesn't move. `canvas boards` says what the window shows, as `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (from the root down), and every result's `on` says where the script drew. To move the window, `canvas show "<subboard title>"`, or `canvas show --root`.
 - Options can come before or after `draw`. `canvas`'s own options work too: `--format json|text`, and `--timeout <seconds>` (default 10).
 
 The result goes to standard output: JSON when standard output isn't a terminal (so always, from an agent's shell), and text for a person at a terminal. An error goes to standard error. The exit status is 0 when the script was drawn, 1 when the app refused it (read the error), 2 when the command line itself is wrong (standard input that can't be read, or isn't UTF-8, included), and 3 when the app couldn't be reached (`not_running`, `unreachable`, `protocol_mismatch`) or didn't answer in time (`timed_out`).
@@ -58,7 +58,7 @@ After a timeout the app may still draw the script: it doesn't drop what it was s
 - a rename that already ran finds no shape with the old title, so the statement makes a new shape and fails (`unsupported`: `"Old" is new, and title: renames a shape`), while the new title is on the board;
 - an untitled shape always comes back `created`, landed or not. Title every shape in a script you might have to check.
 
-`build/canvas help draw` prints the command's own help.
+`canvas help draw` prints the command's own help.
 
 ## Lines and words
 
@@ -167,7 +167,7 @@ An attribute is `key: value`. Each key appears once in a statement; the second i
 
 ### A kind's attributes
 
-Every other key is one of the kind's properties, named as its schema names it; `build/canvas kinds` lists them. The value is read by the property's type:
+Every other key is one of the kind's properties, named as its schema names it; `canvas kinds` lists them. The value is read by the property's type:
 
 | the property is | write | for example |
 |---|---|---|
@@ -208,7 +208,7 @@ sticky-note "Vendor contacts" left of "Row" size: 360x text: "Files: data-ops at
 
 ### A text that mentions shapes
 
-A note's `text` and an arrow's `text` (an edge's) are mention text, and `build/canvas kinds` says so after their type (`text (@[Title] mentions)`). In one, `@[Title]` mentions the shape called Title: the app shows a pill with that shape's name, live (renamed, it follows), and keeps the shape's id, which a script never writes or sees. Nightly schedule's text above mentions Load, which an earlier script drew. A mention is found by its title, exactly as every title in a script is (folded; case matters), with these rules:
+A note's `text` and an arrow's `text` (an edge's) are mention text, and `canvas kinds` says so after their type (`text (@[Title] mentions)`). In one, `@[Title]` mentions the shape called Title: the app shows a pill with that shape's name, live (renamed, it follows), and keeps the shape's id, which a script never writes or sees. Nightly schedule's text above mentions Load, which an earlier script drew. A mention is found by its title, exactly as every title in a script is (folded; case matters), with these rules:
 
 - **Which shape.** Among the shapes the text may mention (below), the first of these that has one called that decides: a shape the script itself draws or restates with that title, or renames to it with `title:` (one drawn further down the script counts, so two notes can mention each other); the board the script draws on ([Which board](#which-board)); the board the window shows; any other board of the file the app can show. Two or more in that place are `ambiguous_title`, each listed with its kind and where it is (or, on several boards, the boards); none anywhere is `unknown_title`, with the titles it's like. A shape the script deletes, or the board it takes, counts for nothing: a title only such a shape has is `unknown_title` too (`names "Old", which this script deletes`).
 - **Which shapes a text may mention.** A note's text, or an arrow's, any shape that can be mentioned: notes (types among them), subboards and frames (not an arrow, nor a reference). A text that mentions only some kinds passes over shapes of the others, as if they weren't called that: if they're all that is, the text is refused (`invalid_value`) saying what the shape is and why.
@@ -537,7 +537,7 @@ Both ends are titles: shapes on the board, or shapes the same script draws; one 
 | `color:` | the arrow's color, its line, heads and label: a named color or a quoted hex, as a shape's `color` is; `null` takes it away |
 | `locked:` | `true` or `false` |
 
-Beside `from:`, `to:`, `via:`, `share:` and `channel:`, an edge's attributes are the arrow's, as `build/canvas kinds arrow` lists them, written as a shape's are. Its heads aren't among them: the arrow you write (`->`, `<->`) says them, and `startArrowhead:` or `endArrowhead:` saying otherwise is `invalid_value`. Text goes after `text:`; a quoted string right after the edge is `syntax`. An arrow's text is mention text, as a note's is ([A text that mentions shapes](#a-text-that-mentions-shapes)): the label shows each `@[Title]` as a live pill. An edge takes no placement (it goes where its ends are) and no style. Chains (`edge "A" -> "B" -> "C"`) are refused: write each edge on a line of its own.
+Beside `from:`, `to:`, `via:`, `share:` and `channel:`, an edge's attributes are the arrow's, as `canvas kinds arrow` lists them, written as a shape's are. Its heads aren't among them: the arrow you write (`->`, `<->`) says them, and `startArrowhead:` or `endArrowhead:` saying otherwise is `invalid_value`. Text goes after `text:`; a quoted string right after the edge is `syntax`. An arrow's text is mention text, as a note's is ([A text that mentions shapes](#a-text-that-mentions-shapes)): the label shows each `@[Title]` as a live pill. An edge takes no placement (it goes where its ends are) and no style. Chains (`edge "A" -> "B" -> "C"`) are refused: write each edge on a line of its own.
 
 ### Sides
 
@@ -558,7 +558,7 @@ A channel is what kind of connection an edge is. Each kind has ports on some cha
 
 A subboard has ports on every channel, its own first: a note connects to one on its own channel, a subboard to a note on the note's, and two subboards on `subboard-link`.
 
-`build/canvas kinds` lists each kind's channels by side, under `edges`. How an edge's channel is chosen:
+`canvas kinds` lists each kind's channels by side, under `edges`. How an edge's channel is chosen:
 
 - **`channel: <id>`**: that channel. The start's kind must have ports on it, and the end's kind must accept it. Otherwise it's `no_channel`, and the message says what each end takes, side by side. A word that isn't a channel is `invalid_value`, and the hint lists the channels.
 - **`channel: none`**: a plain arrow, on no channel, between any two shapes, from and to any sides.
@@ -859,7 +859,7 @@ An illustration (not the board on this page):
  "dryRun": true}
 ```
 
-- **`board`**: the file it ran on, as `build/canvas boards` lists it: its `id` and `name`, and the board inside it the window shows, `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (from the root down).
+- **`board`**: the file it ran on, as `canvas boards` lists it: its `id` and `name`, and the board inside it the window shows, `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (from the root down).
 - **`on`**: the board the script drew on ([Which board](#which-board)): `board` (`"root"`, or the id of the shape that holds it), that shape's `title`, and whether the window `shown` it.
 - **`changes`**: a row for each thing done, with its `line`. `did` is `created`, `updated`, `moved`, `renamed`, `unchanged`, `deleted`, `connected` or `reconnected`. A shape's row has its `kind` and `title`, its `id`, and `at`, its bounds as `[[x, y], [width, height]]` in world units (top-left first, y down). A connection's row has `from`, `to` (a title, or for an end with none the id as written, plus `fromId` or `toId` for each end the statement named by id; on a `deleted` row, an end the statement named by something else than an id and that has no title is `<kind> at x,y`) and `channel` (if it's on one) instead, and `via: "reference"` when it goes through one, with `shared: true` when its reference was one that was there already and `sharedWith` the title of the shape it was beside when the edge named one (`share:`) ([Through a reference](#through-a-reference)). A reference an edge made has a row of its own on the edge's line, before the edge's: `created`, with `kind: "reference"` and `at`, and no title. One a delete took (`delete edge`, or `delete` of a shape whose arrows ran into it) is a `deleted` row with its kind alone, after the arrows'. **`id`** is on the row of every shape the file has after the run, the one a query's row gives: a `created` row says it after a real run, and a dry run's has none (the shape isn't made, so it has no id yet); a `deleted` row says it only when the statement named the shape by its id. It is how a shape with no title is named by a later script ([Titles are the names](#titles-are-the-names)).
 - **`inView`**: whether the shape landed in the window (on a board the window doesn't show, in the part of it the window shows when it's opened).
@@ -890,7 +890,7 @@ As text, for a person at a terminal, each row leads with its line and what it di
 
 ## Measuring a script
 
-`build/canvas measure <script>|-` takes a script as `draw` does and says how big its shapes would be, without drawing anything. It is for a tool that lays shapes out before it draws them, and has nothing to do with writing a script by hand. It changes nothing and opens no undo step. Every shape is new, whatever the board holds. With a board (the one in front, or `--board`), an `is:` finds a type of that board's file as `draw` does; with none open, only one the script draws. A name it can't find (an `is:`, a mention) is a warning, and the shape is measured without it, or with the text as written. Where shapes go is ignored: placements, `in` and `delete` do nothing, and a placement against a shape that isn't there isn't an error. Its edges are read, so the notes of a type are measured with the rows the script's own ends give them (a type, a relationship type, its ends and the notes in one script measure as a run of it draws them, with a board too: the ends the board has count; but a relationship type the script restates is a new shape there, with none of the ends the board has, so restate its ends with it or leave it out), and an edge whose end it can't find is a warning, left out. An edge that says `via:` is only a reference's size. A script `draw` can't read is refused with `draw`'s own messages. The answer is one JSON object:
+`canvas measure <script>|-` takes a script as `draw` does and says how big its shapes would be, without drawing anything. It is for a tool that lays shapes out before it draws them, and has nothing to do with writing a script by hand. It changes nothing and opens no undo step. Every shape is new, whatever the board holds. With a board (the one in front, or `--board`), an `is:` finds a type of that board's file as `draw` does; with none open, only one the script draws. A name it can't find (an `is:`, a mention) is a warning, and the shape is measured without it, or with the text as written. Where shapes go is ignored: placements, `in` and `delete` do nothing, and a placement against a shape that isn't there isn't an error. Its edges are read, so the notes of a type are measured with the rows the script's own ends give them (a type, a relationship type, its ends and the notes in one script measure as a run of it draws them, with a board too: the ends the board has count; but a relationship type the script restates is a new shape there, with none of the ends the board has, so restate its ends with it or leave it out), and an edge whose end it can't find is a warning, left out. An edge that says `via:` is only a reference's size. A script `draw` can't read is refused with `draw`'s own messages. The answer is one JSON object:
 
 ```json
 {"shapes": [{"line": 1, "title": "Checkout v2", "kind": "sticky-note", "size": [300, 200], "above": 27}],
@@ -925,7 +925,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | reason | what it means, with an example message | the fix |
 |---|---|---|
 | `syntax` | The line can't be read. `sticky-note: Web isn't quoted, and titles are in double quotes` · `edge: --> isn't an arrow` · `--> joins shapes only in an edge statement` · `edge "A" -> "B": "calls" is a title where none goes` (an edge's text is `text: "calls"`) · `titles and text are in straight double quotes: "Web"` · `sticky-note "A": rigth isn't a placement` · `# doesn't start a comment here` · `attributes are written key: value, without braces` · `an attribute is written key: value, not key = value` | Follow the hint, which names what to write. |
-| `unknown_kind` | The first word isn't a kind the app has. `node "Web"`, with the drawable kinds listed, and the one like it named (`note`: `did you mean sticky-note?`) | Use a kind from `build/canvas kinds`. |
+| `unknown_kind` | The first word isn't a kind the app has. `node "Web"`, with the drawable kinds listed, and the one like it named (`note`: `did you mean sticky-note?`) | Use a kind from `canvas kinds`. |
 | `not_placeable` | The kind exists but no tool places it, like an arrow. | Draw an arrow as `edge "A" -> "B"`. |
 | `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, locked:, public:, text:` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
 | `invalid_value` | The value doesn't fit the key. An id of a shape a title couldn't name (`#7C1E… is an arrow, which a script can't name`: an arrow, a reference) · `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on subboard-link`) · a head its arrow doesn't say (`edge "A" -> "B": startArrowhead: true isn't what the edge as written says`) · a mention in a text of a shape it can't mention, or `@[]` with no title (its hint, like `unknown_title`'s, says how to write the characters `@[`; the others' say how to mend the mention) · `via:` with a kind that stands for nothing (`edge "A" -> "B": via: tile isn't a kind of shape that stands for others`, the hint listing the kinds that do) or for a shape that can't be stood for (`edge "Ingest" -> "Clean": via: reference can't stand for "Clean": only a public shape can be stood for`) · `via:` over an edge drawn straight (`the edge "A" -> "B" is drawn straight to "B"`) or through a reference to the other end · a side named for a reference that has no port on it (`to: top: a reference has no ports on its top`) · `share:` with a value that isn't `true` or a title (`share: false`), on an edge drawn straight (`edge "A" -> "B": share: is for an edge that goes through a reference, and this one is drawn straight`), naming the edge's own start, or a shape that has no reference for the end (`edge "Draft" -> "Cutoff": share: "Retry" has no reference to "Cutoff" beside it`) or isn't in the start's container | Write a value of the kind the hint names. For `share:`, draw the host's edge above the line, or write `share: true`, or leave `share:` out. |
@@ -936,7 +936,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `ambiguous_title` | Two or more shapes have the title, each listed with its kind and where it is · the title is on two boards, neither the one the window shows: `"Retry" is on 2 boards: "Payments"'s board and "Billing"'s board` · a mention in a text of a title two shapes have where it's first found (`the board has 2 shapes called "Address": …`) | Ask the user to rename one. Titles only work as names while each is used once. For two boards, say which with `in "Payments"`. |
 | `several_boards` | The script lands on two boards, and a run draws on one. `this script draws on "Payments"'s board ("Retry", line 1) and on the root board ("Ingest")` · a placement between shapes on two boards · an edge between shapes on two boards that a reference can't join, because neither end is public (`this script draws on the root board ("Load", line 2) and on "Monday"'s board ("Scratch")`, whose hint says only a public shape can be reached and to ask the user to make one public) · `via:` with a start on a board the run doesn't draw on | Split it into a run for each board. An edge joins shapes on one board, or goes into a reference for a public shape on another: if the user wants the edge, ask them to make that shape public. |
 | `cannot_contain` | `in` names a shape that holds no shapes: no subboard, and no frame. `"Notes" is a sticky-note, which holds no shapes` | Name a subboard or a frame. To put a shape over another, use `inside` or `on`. |
-| `board_shown` | A delete would take the board the window shows, or one above it: `"Payments" holds the board the window shows, so it can't be deleted` | `build/canvas show --root` (or a board above it) first, if the user wants it gone. |
+| `board_shown` | A delete would take the board the window shows, or one above it: `"Payments" holds the board the window shows, so it can't be deleted` | `canvas show --root` (or a board above it) first, if the user wants it gone. |
 | `ambiguous_edge` | `"A" -> "B" is drawn 2 times` (straight, or through references) | Write `is:` to say which, or `delete edge "A" -> "B"` above the line, then draw it once. |
 | `untitlable` | The kind can't be given a title: `a <kind>'s title is worked out from what it is`, or `a <kind> has no title` | Leave the title out, and don't plan to name it later. |
 | `renames` | The change would take away the name of a shape whose name comes from what it is (`this would leave "Row" without a title`); no shipped kind's name is | Keep what names it. |
@@ -957,16 +957,16 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `busy` | Someone is dragging on this board. | Try again in a moment. |
 | `empty_script` | The script has no statements (comments and styles don't count). | Write at least one shape, edge or delete. |
 | `internal` | A bug in the app. | Report it, with the script. |
-| `no_board` | No board is open. | Make one, `build/canvas new <file>`, or ask the user to open one. |
-| `ambiguous_board` | Several boards are open and none is in front, or two open boards have the name `--board` gives. | Name one by its id, from `build/canvas boards`. |
-| `unknown_board` | No open board has that id, file or name (an id goes when its board closes). | Run `build/canvas boards` and use an id it lists. |
+| `no_board` | No board is open. | Make one, `canvas new <file>`, or ask the user to open one. |
+| `ambiguous_board` | Several boards are open and none is in front, or two open boards have the name `--board` gives. | Name one by its id, from `canvas boards`. |
+| `unknown_board` | No open board has that id, file or name (an id goes when its board closes). | Run `canvas boards` and use an id it lists. |
 | `file_exists` | `new` was given a file that's there already, or that a board open is. | Use that board (`--board`, with the id the message names, if it's open), or name another file. |
 | `no_folder` | `new` was given a file in a folder that isn't there. | Make the folder, or name a file in another. |
 | `cannot_save` | `new` couldn't save the file there (no permission, say). | Name a file somewhere else. |
-| `usage` | The command line is wrong (exit 2): no such command or option, a value that isn't one, `--board` on a command about the app, or standard input that can't be read or isn't UTF-8. | Follow the hint; `build/canvas help draw` says what `draw` takes. |
-| `not_running` | The app isn't running (exit 3). | Start it: `./build.sh && open build/InfiniteCanvas.app`. |
+| `usage` | The command line is wrong (exit 2): no such command or option, a value that isn't one, `--board` on a command about the app, or standard input that can't be read or isn't UTF-8. | Follow the hint; `canvas help draw` says what `draw` takes. |
+| `not_running` | The app isn't running (exit 3). | Start Infinite Canvas (in its repository: `./build.sh && open build/InfiniteCanvas.app`). |
 | `unreachable` | The socket can't be reached (exit 3), usually a sandbox. | Ask the user. |
-| `protocol_mismatch` | The app and this `canvas` were built apart, and speak different protocols (exit 3). | Ask the user to quit the app and open this checkout's build. |
+| `protocol_mismatch` | The app and this `canvas` were built apart, and speak different protocols (exit 3). | Ask the user to quit the app and open the one this `canvas` came with. |
 | `timed_out` | The app didn't answer in time (exit 3); it may still do it. | Don't run it again: dry-run it to see what landed ([Running a script](#running-a-script)). |
 
 These fail on the board as the examples above left it:
@@ -1068,7 +1068,7 @@ delete edge "Ingest" -> "Load"
 
 ## What canvas kinds says
 
-`build/canvas kinds` is the vocabulary, and `build/canvas kinds <kind>` narrows it to one kind. For each kind it gives:
+`canvas kinds` is the vocabulary, and `canvas kinds <kind>` narrows it to one kind. For each kind it gives:
 
 - `kind`, `title` (what the app calls it) and `tool` (the tool named for it: the one that places it).
 - `drawable`: whether a script can draw it, with the reason if not (`why`).

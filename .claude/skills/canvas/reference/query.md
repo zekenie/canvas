@@ -1,11 +1,11 @@
 <!-- board: query-story -->
 # The canvas query language
 
-The whole language `build/canvas query` reads: every form, word and rule, what a query sees of a file, what comes back, and every way a query can be refused. [../SKILL.md](../SKILL.md) is the tour; this page is where to look when you need a form the tour doesn't show, or when a refusal points at something you didn't expect.
+The whole language `canvas query` reads: every form, word and rule, what a query sees of a file, what comes back, and every way a query can be refused. [../SKILL.md](../SKILL.md) is the tour; this page is where to look when you need a form the tour doesn't show, or when a refusal points at something you didn't expect.
 
 A query selects shapes as a CSS selector selects elements, and where CSS has a meaning, the query has CSS's meaning. The answer is every shape of the file that matches, on every board, in file order, with how many there are. A query never changes anything.
 
-The examples on this page are all about one file, the story below. Each block tagged `query` is a query as you'd send it, and its first line, a comment, says what it answers: `/* matches: … */` lists the shapes, in the order they come back (a title in double quotes, an untitled shape as its kind in brackets, nothing after the colon for none), and `/* count: N */` how many. Each block tagged `query-error` is refused, with the reason its first line names. The kinds, edge types and words are the ones that shipped when this was written. `build/canvas query-vocabulary` says what your app has.
+The examples on this page are all about one file, the story below. Each block tagged `query` is a query as you'd send it, and its first line, a comment, says what it answers: `/* matches: … */` lists the shapes, in the order they come back (a title in double quotes, an untitled shape as its kind in brackets, nothing after the colon for none), and `/* count: N */` how many. Each block tagged `query-error` is refused, with the reason its first line names. The kinds, edge types and words are the ones that shipped when this was written. `canvas query-vocabulary` says what your app has.
 
 ## Contents
 
@@ -62,17 +62,17 @@ Its file order, the order of every answer: Payments, Checkout, Refunds, Refund p
 ## Running a query
 
 ```bash
-build/canvas query --board 2 - <<'EOF'
+canvas query --board 2 - <<'EOF'
 sticky-note:mentions("API gateway")
 EOF
 ```
 
-`build/canvas query <query>|- [--limit <n>] [--count] [--brief] [--fields <attribute>]… [--board <board>]`
-`build/canvas query --ask <question>|- [the same options]`
-`build/canvas query-vocabulary`
+`canvas query <query>|- [--limit <n>] [--count] [--brief] [--fields <attribute>]… [--board <board>]`
+`canvas query --ask <question>|- [the same options]`
+`canvas query-vocabulary`
 
 - **The query**: `-` reads it from standard input. Queries are full of `"`, `*`, `>`, `[`, `!` and `#`, which shells mangle, so always pass one through a heredoc with a quoted delimiter (`<<'EOF'`). A query may run over several lines (a new line is a space) and hold comments, `/* … */`.
-- **`--board <board>`** names the file by the id `build/canvas boards` gives it, by its path, or by its name. Without it the query goes to the file in front. A query reads the whole file, every board of it, wherever its window is.
+- **`--board <board>`** names the file by the id `canvas boards` gives it, by its path, or by its name. Without it the query goes to the file in front. A query reads the whole file, every board of it, wherever its window is.
 - **`--limit <n>`** lists at most so many rows, 100 unless it says, up to 10000. `count` is always of every shape that matches.
 - **`--count`** lists no rows: only how many match.
 - **`--brief`** lists each row without its attributes.
@@ -80,9 +80,9 @@ EOF
 - **`--ask <question>`** has the app write the query from a question in English ([From English](#from-english)).
 - `canvas`'s own options work too: `--format json|text`, and `--timeout <seconds>` (10 for a query, 60 for `--ask`).
 
-The result goes to standard output: JSON when standard output isn't a terminal (so always, from an agent's shell), and a table for a person at a terminal. A refusal goes to standard error. The exit status is 0 when the query was answered, whatever it counts (a count of 0 is an answer), 1 when the app refused it (read the error), 2 when the command line itself is wrong (an option that isn't one, `--limit many`), and 3 when the app couldn't be reached or didn't answer in time. `build/canvas help query` is the command's own help.
+The result goes to standard output: JSON when standard output isn't a terminal (so always, from an agent's shell), and a table for a person at a terminal. A refusal goes to standard error. The exit status is 0 when the query was answered, whatever it counts (a count of 0 is an answer), 1 when the app refused it (read the error), 2 when the command line itself is wrong (an option that isn't one, `--limit many`), and 3 when the app couldn't be reached or didn't answer in time. `canvas help query` is the command's own help.
 
-`build/canvas query-vocabulary` is what this app's queries can name: every kind, with what the app calls it, whether its shapes are titled (`named`, `derived` from what they hold, or `none`), whether it holds a board (`holdsBoard`: a subboard) and whether it holds shapes (`holdsShapes`: a subboard or a frame, what may stand where a container goes), and each attribute with what it takes; the edge types, each `under` the one it's a kind of; and every pseudo-class, with what it takes, what it means, an example, and the plugin it's `from` (the language's own are `queries`'). `vocabulary` is all of it as one block of text, the one `--ask` sends Claude. It's about the app, so it takes no `--board`.
+`canvas query-vocabulary` is what this app's queries can name: every kind, with what the app calls it, whether its shapes are titled (`named`, `derived` from what they hold, or `none`), whether it holds a board (`holdsBoard`: a subboard) and whether it holds shapes (`holdsShapes`: a subboard or a frame, what may stand where a container goes), and each attribute with what it takes; the edge types, each `under` the one it's a kind of; and every pseudo-class, with what it takes, what it means, an example, and the plugin it's `from` (the language's own are `queries`'). `vocabulary` is all of it as one block of text, the one `--ask` sends Claude. It's about the app, so it takes no `--board`.
 
 ## The result
 
@@ -95,7 +95,7 @@ The result goes to standard output: JSON when standard output isn't a terminal (
            "properties": {"text": "Calls @API gateway for tokens"}}]}
 ```
 
-- **`board`**: the file it ran on, as `build/canvas boards` lists it, with the board inside it the window showed as the query ran (`shows`, `showsPath`), which is what `:current-board` means. A query reads every board of the file, not only that one.
+- **`board`**: the file it ran on, as `canvas boards` lists it, with the board inside it the window showed as the query ran (`shows`, `showsPath`), which is what `:current-board` means. A query reads every board of the file, not only that one.
 - **`query`**: the query that ran, as the language writes it: comments and extra spaces left out, its own words in lowercase, titles in double quotes. With `--ask`, it's the query Claude wrote, and **`asked`** is the question.
 - **`count`**: how many shapes match, listed or not.
 - **`rows`**: the first `--limit` of them, in file order. Each has:
@@ -148,7 +148,7 @@ A part of a query (a compound) starts with at most one of these, then any number
 | `sticky-note"Checkout"` | every shape of that kind titled exactly that: the kind, then the title with no space between | as a kind is, and as a title is; `unknown_attribute` for a kind whose shapes have no titles (`arrow"Auth"`) |
 | `#00000000-0000-4000-8000-000000000011` | the shape with that id, in any case | no shape the app can show has it (`unknown_id`), or it isn't an id (`not_an_id`) |
 
-A kind is its id, as `build/canvas query-vocabulary` writes it: `sticky-note`, never its label, "Note". Titles are in double quotes (single quotes work too), and match as `draw` matches them: the whole title, folded (runs of spaces and new lines as one space), case and all. A title can name several shapes across a file, and names them all. A kind and a title together, with no space between, is the shapes of that kind with that title: `sticky-note"Checkout"` finds what `sticky-note[title="Checkout"]` finds, but a title no shape has is refused, as `"Checkout"` alone is. A title some shape has, but none of that kind, matches nothing. With a space between, it's a title inside the kind's shapes ([Inside](#inside)), which a note can't have.
+A kind is its id, as `canvas query-vocabulary` writes it: `sticky-note`, never its label, "Note". Titles are in double quotes (single quotes work too), and match as `draw` matches them: the whole title, folded (runs of spaces and new lines as one space), case and all. A title can name several shapes across a file, and names them all. A kind and a title together, with no space between, is the shapes of that kind with that title: `sticky-note"Checkout"` finds what `sticky-note[title="Checkout"]` finds, but a title no shape has is refused, as `"Checkout"` alone is. A title some shape has, but none of that kind, matches nothing. With a space between, it's a title inside the kind's shapes ([Inside](#inside)), which a note can't have.
 
 ```query
 /* matches: "Checkout", "Refund policy", (sticky-note), "API gateway", "Auth", (sticky-note), "Warehouse", "Order", (sticky-note), "Ledger", "Person", "Employee card", "Ann" */
@@ -229,7 +229,7 @@ subboard, sticky-note[schema]
 
 ## Attributes
 
-An attribute is a property of the kind, as its schema says (`build/canvas query-vocabulary` lists each kind's, and what each takes), and `title`, for the kinds whose shapes have titles. `[…]` right after a part of a query tests one:
+An attribute is a property of the kind, as its schema says (`canvas query-vocabulary` lists each kind's, and what each takes), and `title`, for the kinds whose shapes have titles. `[…]` right after a part of a query tests one:
 
 | test | means |
 |---|---|
@@ -753,7 +753,7 @@ A title or an id that no shape has is refused, never answered 0, so a no always 
 
 ## From English
 
-`build/canvas query --board 2 --ask "which notes mention the gateway?"` has the app ask Claude (Claude Haiku 5.5, the model the app's evaluation of this prompt picked: it answered 1,907 of its 1,920 runs right, 1,904 of them the first time; with the key the person saved in Infinite Canvas › Settings…) to write the query, runs it, and answers as a query does, with `asked`, the question, and `query`, what Claude wrote: read it, to check it asks what the person meant. A query Claude writes that's refused, or an answer that isn't one, is sent back once, with what was wrong, if that happens within 40 seconds; the answer warns `repaired` when it's the second. It waits up to 60 seconds.
+`canvas query --board 2 --ask "which notes mention the gateway?"` has the app ask Claude (Claude Haiku 5.5, the model the app's evaluation of this prompt picked: it answered 1,907 of its 1,920 runs right, 1,904 of them the first time; with the key the person saved in Infinite Canvas › Settings…) to write the query, runs it, and answers as a query does, with `asked`, the question, and `query`, what Claude wrote: read it, to check it asks what the person meant. A query Claude writes that's refused, or an answer that isn't one, is sent back once, with what was wrong, if that happens within 40 seconds; the answer warns `repaired` when it's the second. It waits up to 60 seconds.
 
 What leaves the machine: the question, what the app's queries can name (`query-vocabulary`'s `vocabulary`), the names of the boards on the way to the one shown, what's selected (by title and kind, or kind and id), and up to 200 titles with their kinds and boards, and the types of the file with their fields' keys and kinds (at most 8,000 characters), and, for each relationship type, the types it relates and the names typed on its ends and whether they are needed or only one. Never a shape's text or values.
 
@@ -799,9 +799,9 @@ The messages are examples. The wording can differ, but the reason doesn't.
 | `no_queries` | Nothing in this app answers queries. | Nothing: `canvas query` can't work here. |
 | `too_slow` | The query took more than 8 seconds (`--ask`: 55). | Start from a kind, a title or an id, or give the transitive words a type. |
 | `board_closed` | The file was closed while the query ran. | Open it, and ask again. |
-| `invalid_params` | The options don't go together (`--brief` with `--fields`), no query and no `--ask`, or `--limit` out of 1 to 10000. | `build/canvas help query`. |
-| `no_board`, `ambiguous_board`, `unknown_board` | No file is open, several are and none is in front, or `--board` names none. | `build/canvas boards`, and `--board <id>`. |
-| `usage` | The command line is wrong (exit 2). | `build/canvas help query`. |
+| `invalid_params` | The options don't go together (`--brief` with `--fields`), no query and no `--ask`, or `--limit` out of 1 to 10000. | `canvas help query`. |
+| `no_board`, `ambiguous_board`, `unknown_board` | No file is open, several are and none is in front, or `--board` names none. | `canvas boards`, and `--board <id>`. |
+| `usage` | The command line is wrong (exit 2). | `canvas help query`. |
 | `not_running`, `unreachable`, `protocol_mismatch`, `timed_out` | The app wasn't reached, or didn't answer in time (exit 3). When `canvas` stops waiting, the app stops the query too. | As for `draw` ([language.md](language.md#errors)). A query changes nothing, so after `timed_out` ask again, with a longer `--timeout`. |
 
 These are refused on the story file:

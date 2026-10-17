@@ -24,7 +24,7 @@ enum OutputFormat: String {
 /// One run of `canvas`: it asks the app what commands it has (`describe`), reads the arguments as
 /// one of them, runs it on the app, and prints what the app says. Every command, its arguments and
 /// its help come from the app, which the plugins it's built from contribute to; `canvas` itself
-/// knows only `help` and its own options.
+/// knows only `help`, `install` (which asks no app: Install.swift) and its own options.
 struct Invocation {
     let arguments: [String]
     let environment: [String: String]
@@ -44,6 +44,14 @@ struct Invocation {
         if options.version {
             print("\(RPC.commandName) (protocol \(RPC.protocolVersion))", format: format, json: ["protocol": .number(Double(RPC.protocolVersion))])
             return .done
+        }
+        // The one command that asks no app: it puts the skills the app carries where agents read them.
+        if options.words.first == RPC.installCommand {
+            if options.help {
+                write(installHelp(), false)
+                return .done
+            }
+            return runInstall(Array(options.words.dropFirst()), format: format)
         }
         let path = options.socket ?? SocketPath.resolve(environment: environment)
         // A closed standard input's descriptor would be the socket's once it's opened, and a script
@@ -156,7 +164,7 @@ struct Invocation {
     /// `details` beside its own) or as text, with the hint. A script's error says its line (and
     /// column) and the statement written there, marked under what's wrong when it says where on
     /// the line that is, and then each of the other problems found in it, a line each.
-    private func fail(_ status: ExitStatus, reason: String, _ message: String, hint: String?, details: [String: JSON] = [:],
+    func fail(_ status: ExitStatus, reason: String, _ message: String, hint: String?, details: [String: JSON] = [:],
                       format: OutputFormat) -> ExitStatus {
         switch format {
         case .json:

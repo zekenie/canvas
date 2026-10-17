@@ -1,0 +1,413 @@
+#!/bin/sh
+# ingest: a commit of a repository drawn as boards, in one command. Its code is scanned into a scan, the repository's lens (its
+# .canvas/lens.py, else the default lens in lenskit/) turns the scan into a digest, and the canvas-digest skill (`digest all`, the
+# driver beside this skill) measures it in the app, lays it out, draws it script by script and verifies it. Nothing is written by
+# hand for a codebase: the board is what its code says, and it is made again from a commit, never kept up to date: the same commit,
+# lens, app and macOS draw the same boards.
+#
+#   ingest [REPO] [--commit REF] [--new-file PATH | --board ID] [--scip INDEX] [--mess 0..1] [--ranks rows|columns] [--window WxH]
+#                 [--scan FILE | --rescan]
+#   ingest [REPO] --where
+#
+#   REPO          the git repository (default: the one you are in). Its settings are REPO/.canvas/ingest.json, and what ingest keeps
+#                 is outside it, in a cache of its own that the repository's worktrees share (--where says where)
+#   --commit REF  the commit to draw (default HEAD), resolved once to a sha. The code drawn is that commit's, never the working tree's:
+#                 it is checked out in the cache (one checkout, moved to each commit; submodules are not checked out) and scanned
+#                 there. The settings and the lens are read from the folder you run in, as they are, committed or not. A scan is kept by
+#                 the commit's code (its top-level tree, .canvas left out), so commits that differ only in .canvas/ share one and
+#                 a run that finds it scans nothing
+#   the board     the board in front (default): drawn as that board when it's empty, or in place of the last ingestion when it holds
+#                 that and nothing else (taken back first, one undo step); --board ID names another open board; --new-file PATH
+#                 makes a new board file and draws it there
+#   --scip INDEX  scan a SCIP index made by hand instead of running the repository's scanner
+#   --mess N      the digest's dial, 0 tidy to 1 loose (default 0.1)
+#   --ranks WAY   the root's bands as rows (the top layer on top) or as columns (it at the left); left out, whichever the window
+#                 shows larger: every board is laid out for the window it is drawn in, as large as that is when the run starts
+#   --window WxH  the room every board is laid out for, in place of the window's size
+#   --scan FILE   draw from a scan given by hand (reference/scan.md has its format), scanning nothing
+#   --rescan      scan the commit again, though the cache holds a scan of its code made by the same scanner
+#   --where       print the cache's folder and stop
+#
+# The settings: scanner ("swift" or "scip"; a repository with a Package.swift is swift's without them), scip (the command that writes
+# the index, run at the checkout's root, {index} standing for the path to write, written bare: it is replaced by a shell-quoted
+# path), prepare (a command run in the checkout when a lockfile, or the command, has changed), window ([width, height]), mess,
+# ranks. An option given here wins over the settings (reference/scan.md).
+#
+# The lens is REPO/.canvas/lens.py in the folder you run in (never the commit's): a function digest(scan, repo) that returns the
+# digest as a dict, run twice in isolation (runner/run.py), and refused if the two digests differ. Without one, the default lens.
+# The root board's header ends with one line of what drew it: the commit, the lens, the app's build and macOS (runner/stamp.py).
+#
+# One ingest runs per repository at a time. canvas is found by the driver: $CANVAS_CLI, else the one beside the skills (the app's, or
+# this repository's own build in its checkout), else the PATH.
+set -eu
+
+# The skill's own folder, with links followed; the driver is beside it.
+HERE=$(cd "$(dirname "$0")" && pwd -P)
+DIGEST=$HERE/../canvas-digest/digest
+if [ ! -x "$DIGEST" ]; then
+  _logical=$(cd "$(dirname "$0")" && pwd)
+  [ ! -x "$_logical/../canvas-digest/digest" ] || DIGEST=$_logical/../canvas-digest/digest
+fi
+PY=/usr/bin/python3
+# Python writes no caches beside its scripts: the skills may be in the app, read in place, and a file written there would break its seal.
+export PYTHONDONTWRITEBYTECODE=1
+
+die() { echo "ingest: $*" >&2; exit 1; }
+usage() { sed -n '2,/^set -eu/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//' >&2; exit 2; }
+now() { date +%s; }
+T0=$(now)
+step() { echo "ingest: $1 ($(($(now) - T0)) s)"; }
+
+REPO=; SCIP=; COMMIT=; SCANFILE=; RESCAN=0; NEWFILE=; BOARD=; MESS=; RANKS=; WINDOW=; WHERE=0
+while [ $# -gt 0 ]; do
+  case $1 in
+    --rescan) RESCAN=1; shift; continue ;;
+    --where) WHERE=1; shift; continue ;;
+    --new-file|--board|--scip|--mess|--ranks|--window|--commit|--scan) [ $# -ge 2 ] || usage ;;
+    -h|--help) usage ;;
+    -*) echo "ingest: unknown option $1" >&2; usage ;;
+    *) [ -z "$REPO" ] || usage; REPO=$1; shift; continue ;;
+  esac
+  case $1 in
+    --new-file) NEWFILE=$2 ;;
+    --board) BOARD=$2 ;;
+    --scip) SCIP=$2 ;;
+    --mess) MESS=$2 ;;
+    --ranks) RANKS=$2 ;;
+    --window) WINDOW=$2 ;;
+    --commit) COMMIT=$2 ;;
+    --scan) SCANFILE=$2 ;;
+  esac
+  shift 2
+done
+case $RANKS in ''|rows|columns) ;; *) die "--ranks is rows or columns, not $RANKS" ;; esac
+case $WINDOW in ''|[0-9]*x[0-9]*) ;; *) die "--window is WIDTHxHEIGHT, as 1440x900, not $WINDOW" ;; esac
+[ -z "$NEWFILE" ] || [ -z "$BOARD" ] || die "name a board (--board) or a new file (--new-file), not both"
+if [ -n "$SCANFILE" ]; then
+  [ -z "$SCIP" ] && [ "$RESCAN" = 0 ] || die "--scan draws from a scan given by hand and scans nothing, so --scip and --rescan have nothing to do with it"
+  [ -s "$SCANFILE" ] || die "--scan: there is no scan at $SCANFILE"
+  SCANFILE=$(cd "$(dirname "$SCANFILE")" && pwd -P)/$(basename "$SCANFILE")
+fi
+[ -x "$DIGEST" ] || die "can't find the canvas-digest skill's driver beside this skill ($HERE/../canvas-digest/digest)"
+
+# ---- the repository, and the cache that goes with it -------------------------------------------------------------
+
+GIVEN=$REPO
+REPO=$(cd "${REPO:-.}" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || die "${GIVEN:-the current folder} is not in a git repository: run ingest in one, or name one"
+# One cache a repository, whatever worktree it is run from: named for the folder that holds the repository's git directory and a hash
+# of that directory's whole path.
+COMMON=$(cd "$REPO" && cd "$(git rev-parse --git-common-dir)" && pwd -P) || die "can't find $REPO's git directory"
+NAME=$(basename "$(dirname "$COMMON")")
+HASH=$(printf '%s' "$COMMON" | shasum -a 256 | cut -c1-12)
+CACHE=${CANVAS_INGEST_CACHE:-$HOME/Library/Caches/InfiniteCanvas/ingest}/$NAME-$HASH
+if [ "$WHERE" = 1 ]; then echo "$CACHE"; exit 0; fi
+# a spec.py is the lens of the past: its names are arguments of lenskit.default.digest now
+[ ! -e "$REPO/.canvas/spec.py" ] || die "$REPO/.canvas/spec.py is no longer read. Move its names into $REPO/.canvas/lens.py as arguments of lenskit.default.digest (BANDS as bands=, GROUPS as groups=, PURPOSES as purposes=, and so on, each name in lower case), as in def digest(scan, repo): return default.digest(scan, repo, bands=BANDS); reference/lens.md and lenskit/default.py have the arguments"
+LENS=$REPO/.canvas/lens.py
+[ -f "$LENS" ] || LENS=
+
+# ---- the settings ----------------------------------------------------------------------------------------------
+
+mkdir -p "$CACHE"
+CACHE=$(cd "$CACHE" && pwd)
+_settings=$("$PY" "$HERE/settings.py" "$REPO" "$CACHE/index/index.scip") || exit 1
+eval "$_settings"
+# an option given here wins over the settings
+[ -n "$MESS" ] || MESS=$S_MESS
+[ -n "$RANKS" ] || RANKS=$S_RANKS
+[ -n "$WINDOW" ] || WINDOW=$S_WINDOW
+SCANNER=$S_SCANNER
+if [ -z "$SCANNER" ] && [ -f "$REPO/Package.swift" ]; then SCANNER=swift; fi
+
+# ---- the commit ------------------------------------------------------------------------------------------------
+
+# resolved once: everything below is of this sha, whatever HEAD or the working tree become while it runs
+if ! SHA=$(git -C "$REPO" rev-parse --verify "${COMMIT:-HEAD}^{commit}" 2>/dev/null); then
+  # a shallow clone (git clone --depth N) has only its latest commits: an older one isn't missing, it was never fetched
+  if [ "$(git -C "$REPO" rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+    die "can't find the commit ${COMMIT:-HEAD} in $REPO, a shallow clone, which has only the latest commits of its history: git fetch --unshallow, run in it, fetches the rest"
+  fi
+  die "can't find the commit ${COMMIT:-HEAD} in $REPO"
+fi
+SHORT=$(printf '%s' "$SHA" | cut -c1-12)
+
+# ---- one ingest a repository at a time ---------------------------------------------------------------------------
+
+LOCKED=0
+CHILD=
+# A long command (the repository's prepare and scip, the scanners, the lens, the driver) runs in the background and is waited for, so
+# that a signal to ingest is acted on at once (the shell would hold it until a foreground command had ended), and what is running
+# is stopped with it. Its status is the command's. A background command ignores ^C in a shell with no job control, so ingest
+# stops it itself, with its children, rather than counting on the signal reaching them.
+run() {
+  "$@" &
+  CHILD=$!
+  _status=0
+  wait "$CHILD" || _status=$?
+  CHILD=
+  return "$_status"
+}
+kill_tree() {   # kill_tree PID SIGNAL: a process and everything under it
+  for _kid in $(pgrep -P "$1" 2>/dev/null || true); do kill_tree "$_kid" "$2"; done
+  kill "-$2" "$1" 2>/dev/null || true
+}
+alive() {       # not gone, and not a child nobody has waited for yet
+  _state=$(ps -o stat= -p "$1" 2>/dev/null || true)
+  case $_state in ''|Z*) return 1 ;; esac
+}
+stop_child() {
+  [ -n "$CHILD" ] || return 0
+  _pid=$CHILD; CHILD=
+  kill_tree "$_pid" TERM
+  _n=0
+  while alive "$_pid" && [ "$_n" -lt 30 ]; do sleep 0.1; _n=$((_n + 1)); done
+  if alive "$_pid"; then kill_tree "$_pid" KILL; fi
+  wait "$_pid" 2>/dev/null || true
+}
+release() {
+  trap '' INT TERM HUP   # a second signal doesn't stop the lock being freed
+  stop_child
+  if [ "$LOCKED" = 1 ] && [ "$(cat "$CACHE/lock/pid" 2>/dev/null)" = "$$" ]; then rm -rf "$CACHE/lock"; fi
+  LOCKED=0
+}
+trap release EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+take_lock() {
+  _waited=0; _tries=0
+  while ! mkdir "$CACHE/lock" 2>/dev/null; do
+    _holder=$(cat "$CACHE/lock/pid" 2>/dev/null || true)
+    # the holder is writing its pid: give it a moment before calling the lock stale
+    if [ -z "$_holder" ] && [ "$_waited" = 0 ]; then _waited=1; sleep 1; continue; fi
+    # (a pid that another process has since been given reads as a live holder: the lock is refused until that one ends, or the lock
+    # folder is removed by hand)
+    if [ -n "$_holder" ] && ps -p "$_holder" > /dev/null 2>&1; then
+      die "another ingest of this repository is running (pid $_holder, holding $CACHE/lock): wait for it, or stop it"
+    fi
+    # its holder is gone: take the lock over. The move is whole or fails, so of two runs that find it stale, one moves it. But the
+    # other may have moved it and taken a new one before this move: so what was moved is looked at, and if it isn't the stale one's
+    # (its pid isn't the holder we saw) it is put back, and the lock is looked at again
+    if mv "$CACHE/lock" "$CACHE/lock.dead.$$" 2>/dev/null; then
+      if [ "$(cat "$CACHE/lock.dead.$$/pid" 2>/dev/null || true)" = "$_holder" ]; then
+        rm -rf "$CACHE/lock.dead.$$"
+      else
+        if [ ! -e "$CACHE/lock" ] && mv "$CACHE/lock.dead.$$" "$CACHE/lock" 2>/dev/null; then :
+        else rm -rf "$CACHE/lock.dead.$$"; die "another ingest of this repository took $CACHE/lock at the same moment: run this again"; fi
+      fi
+    fi
+    _tries=$((_tries + 1))
+    [ "$_tries" -lt 10 ] || die "can't take $CACHE/lock"
+  done
+  echo $$ > "$CACHE/lock/pid"
+  LOCKED=1
+}
+take_lock
+
+# what to scan with, said before anything is drawn or slow
+if [ -z "$SCANFILE" ]; then
+  if [ -z "$SCIP" ]; then
+    [ -n "$SCANNER" ] || die "no scanner for $REPO: write $REPO/.canvas/ingest.json, as {\"scanner\": \"swift\"} for a Swift package, or {\"scanner\": \"scip\", \"scip\": \"<the command that writes the index to {index}>\"} for another language (reference/scan.md says how), or pass an index made by hand with --scip"
+    if [ "$SCANNER" = swift ] && [ ! -f "$REPO/Package.swift" ]; then die "the scanner is swift, and $REPO has no Package.swift"; fi
+    if [ "$SCANNER" = scip ] && [ -z "$S_SCIP" ]; then die "$REPO/.canvas/ingest.json has the scanner scip and no \"scip\", the command that writes the index to {index}"; fi
+  fi
+fi
+
+# ---- the run -----------------------------------------------------------------------------------------------------
+
+RUN=$CACHE/runs/$(date +%Y%m%d-%H%M%S)-$$
+mkdir -p "$RUN" "$CACHE/drawn"
+
+# where it draws: the board in front (or the one named), in place of the last ingestion if that's what it holds; or a new file.
+# Asked of the app before anything slow: that it is running, and that the board can take the drawing
+if [ -n "$NEWFILE" ]; then set -- --new-file "$NEWFILE"; else set -- --board "${BOARD:-front}" --replace; fi
+set -- "$@" --records "$CACHE/drawn"
+if ! run "$DIGEST" ready "$RUN/digest.json" "$@" --out "$RUN/out"; then
+  rm -rf "$RUN"
+  # the driver's words are for its own options: what they come to here
+  echo "ingest: nothing was read or drawn. If it is the board that can't take the drawing: bring an empty board to the front (File > New) and run this again, or name a new board's file (ingest --new-file PATH). ingest draws in place of its own last drawing without being asked, and has no --into or --replace." >&2
+  exit 1
+fi
+# the last five runs are kept
+_runs=$(ls -1 "$CACHE/runs" | sort | wc -l | tr -d ' ')
+if [ "$_runs" -gt 5 ]; then
+  for _old in $(ls -1 "$CACHE/runs" | sort | sed -n "1,$((_runs - 5))p"); do rm -rf "$CACHE/runs/$_old"; done
+fi
+if [ -n "$MESS" ]; then set -- "$@" --mess "$MESS"; fi
+if [ -n "$RANKS" ]; then set -- "$@" --ranks "$RANKS"; fi
+if [ -n "$WINDOW" ]; then set -- "$@" --view "$WINDOW"; fi
+
+# ---- what a partial clone hasn't fetched -------------------------------------------------------------------------
+
+# A partial clone (git clone --filter=blob:none, or tree:0) has only some of its commits' files and folders, and git fetches the
+# rest from its promisor remote when they're wanted. The checkout borrows the repository's objects but not its remotes, and a lens
+# reads the commit with nothing of the user's environment (no credentials), so what the commit lacks is fetched first, before the
+# checkout moves to scan it and before a lens of the repository's own runs (the default lens reads only the scan), as git fetches
+# it to check a commit out: into the repository, from the remote it was cloned from, with the user's environment, what is missing
+# at a level in one request (a treeless clone's folders, then their files). A commit the clone has whole fetches nothing.
+fetch_missing() {
+  _promisor=$(git -C "$REPO" config --get extensions.partialClone 2>/dev/null || true)
+  [ -n "$_promisor" ] || _promisor=$(git -C "$REPO" config --get-regexp '^remote\..*\.promisor$' 2>/dev/null |
+    awk '$2 == "true" { sub(/^remote\./, "", $1); sub(/\.promisor$/, "", $1); print $1; exit }')
+  [ -n "$_promisor" ] || return 0
+  _rounds=0
+  while :; do
+    git -C "$REPO" rev-list --objects --missing=print --no-walk "$SHA" > "$RUN/objects" ||
+      die "can't list what $REPO, a partial clone, lacks of $SHORT"
+    sed -n 's/^?//p' "$RUN/objects" > "$RUN/missing"; rm -f "$RUN/objects"
+    if [ ! -s "$RUN/missing" ]; then rm -f "$RUN/missing"; return 0; fi
+    _count=$(wc -l < "$RUN/missing" | tr -d ' ')
+    [ "$_rounds" -lt 3 ] || die "$REPO, a partial clone, still lacks $_count of the files and folders of $SHORT after fetching them from $_promisor"
+    _rounds=$((_rounds + 1))
+    step "fetching the $_count files and folders of $SHORT that this partial clone hasn't fetched, from its remote $_promisor"
+    run sh -c 'exec git -C "$1" -c fetch.negotiationAlgorithm=noop fetch "$2" --no-tags --no-write-fetch-head --recurse-submodules=no --filter=blob:none --stdin < "$3"' \
+      sh "$REPO" "$_promisor" "$RUN/missing" ||
+      die "can't fetch the files of $SHORT that $REPO, a partial clone, hasn't fetched, from its remote $_promisor (git's words are above)"
+  done
+}
+
+# ---- the commit's scan -------------------------------------------------------------------------------------------
+
+# One checkout of the repository for all its commits, in the cache, moved to each commit asked for: a fresh copy each time would
+# have the compiler type-check every module again (the index's marks hold the sources' paths) and reinstall the packages every time.
+# It borrows the repository's objects (a shared clone: every commit is there, with no fetch). Never a `git worktree add`, which
+# would show in the user's `git worktree list`. Its git is run with the checkout's own git directory named, so a cache inside some
+# other repository is never taken for the checkout, and with no hooks of the user's.
+CHECKOUT=$CACHE/checkout
+checkout_git() {
+  git -C "$CHECKOUT" --git-dir=.git -c core.hooksPath=/dev/null -c advice.detachedHead=false \
+    -c filter.lfs.smudge= -c filter.lfs.process= -c filter.lfs.required=false "$@"
+}
+# Moved to $SHA, with what git doesn't know of removed (not what it ignores: node_modules stays)
+move_checkout() {
+  [ -d "$CHECKOUT/.git" ] || return 1
+  checkout_git checkout -q --force --detach "$SHA" && checkout_git clean -q -ffd
+}
+# What git said, as its first line and how many more there were: a checkout that fails can say a line for each file
+first_line() {
+  _lines=$(printf '%s\n' "$1" | sed -n '$=')
+  printf '%s' "$(printf '%s\n' "$1" | sed -n 1p)"
+  if [ "${_lines:-0}" -gt 1 ]; then printf ' (and %s more lines)' "$((_lines - 1))"; fi
+}
+make_checkout() {
+  step "checking out $SHORT"
+  if [ -e "$CHECKOUT" ]; then
+    _why=$(move_checkout 2>&1 >/dev/null) && return 0
+    if [ -n "$_why" ]; then _why=$(first_line "$_why"); else _why="it has no git directory"; fi
+    echo "ingest: the checkout in the cache is broken ($_why); making it again" >&2
+  fi
+  rm -rf "$CHECKOUT" "$CACHE/checkout.prepared"
+  git clone -q --shared --no-checkout --no-tags "$COMMON" "$CHECKOUT" || die "can't make a checkout of $REPO in $CHECKOUT"
+  _why=$(move_checkout 2>&1 >/dev/null) || die "can't check out $SHORT in $CHECKOUT: $(first_line "$_why")"
+}
+
+# prepare runs in the checkout when what it reads has changed since it last ran there: the lockfiles and manifests of this commit
+# (at any depth; their paths and contents: runner/lockfiles.py has the names) and the command. A move to a commit that changes none of them leaves what it installed as it was
+# (what it makes should be ignored by git, as node_modules is: moving the checkout removes what git doesn't know)
+prepare_checkout() {
+  [ -n "$S_PREPARE" ] || return 0
+  _stamp=$({ git -C "$REPO" ls-tree -r -z "$SHA" | "$PY" "$HERE/runner/lockfiles.py"
+    printf 'prepare: %s\n' "$S_PREPARE"; } | shasum -a 256 | cut -c1-16)
+  if [ "$(cat "$CACHE/checkout.prepared" 2>/dev/null || true)" = "$_stamp" ]; then
+    step "not preparing: no lockfile has changed since it last ran"
+    return 0
+  fi
+  rm -f "$CACHE/checkout.prepared"
+  step "preparing: $S_PREPARE (what it says goes to $RUN/prepare.log)"
+  quietly "$RUN/prepare.log" sh -c 'cd "$1" && exec sh -c "$2"' sh "$CHECKOUT" "$S_PREPARE" || die "the repository's prepare command failed (the end of what it said is above; all of it: $RUN/prepare.log)"
+  printf '%s\n' "$_stamp" > "$CACHE/checkout.prepared"
+}
+
+# A command of the repository's run with what it says kept in a file, said only when it fails (its last 40 lines): an install
+# prints a line a package (a yarn install, ten thousand), which would bury ingest's own lines and fill an agent's reading of the run
+quietly() {
+  _log=$1; shift
+  if run "$@" > "$_log" 2>&1; then return 0; else _status=$?; fi
+  tail -40 "$_log" >&2
+  return "$_status"
+}
+
+# What made a scan, as 12 hex digits: the scanner's own files, and for SCIP the command (or the index given by hand)
+made_by() {
+  { case $1 in
+      swift) _files="swift_analyze.py swift_index_build.py swift_index_read.py reading.py" ;;
+      *) _files="scip_read.py scip.py reading.py" ;;
+    esac
+    for _f in $_files; do cat "$HERE/scanners/$_f"; printf '\n--\n'; done
+    if [ "$1" = scip ]; then
+      if [ -n "$SCIP" ]; then cat "$SCIP"; else printf '%s' "$S_SCIP"; fi
+    fi; } | shasum -a 256 | cut -c1-12
+}
+
+# The commit's code as 40 hex digits: a hash of the lines of `git ls-tree` for its top-level tree but the .canvas entry (the settings
+# and the lens, which a scanner never reads and which the lens is read from the folder you run in anyway). Commits that differ only
+# in .canvas/ have the same code, and so share a scan.
+code_key() {
+  git -C "$REPO" ls-tree "$SHA" | awk -F'\t' '$2 != ".canvas"' | shasum -a 256 | cut -c1-40
+}
+
+# The scan written beside where it is kept and moved into place when whole, so a scan that stops part way (the index build failing,
+# say) leaves none, never one with its files and none of their uses.
+scan_commit() {
+  fetch_missing
+  make_checkout
+  prepare_checkout
+  rm -f "$NEW"
+  if [ -n "$SCIP" ]; then
+    step "scanning the SCIP index $SCIP"
+    run "$PY" "$HERE/scanners/scip_read.py" "$SCIP" "$CHECKOUT" "$NEW" --name "$NAME"
+  elif [ "$SCANNER" = scip ]; then
+    mkdir -p "$CACHE/index"
+    # the last commit's index is never this one's: a command that writes none is refused, not read as the commit's
+    rm -f "$CACHE/index/index.scip"
+    step "making the SCIP index (what the indexer says goes to $RUN/scip.log)"
+    # as prepare runs: in a shell of its own at the checkout's root, with the user's environment and none of ingest's variables
+    quietly "$RUN/scip.log" sh -c 'cd "$1" && exec sh -c "$2"' sh "$CHECKOUT" "$S_SCIP" || die "the scip command failed (the end of what it said is above; all of it: $RUN/scip.log)"
+    [ -f "$CACHE/index/index.scip" ] || die "the scip command ran and wrote no index to $CACHE/index/index.scip (the {index} of the command): nothing is read"
+    step "scanning the SCIP index"
+    run "$PY" "$HERE/scanners/scip_read.py" "$CACHE/index/index.scip" "$CHECKOUT" "$NEW" --name "$NAME"
+  else
+    step "scanning the Swift package's files and declarations"
+    run "$PY" "$HERE/scanners/swift_analyze.py" "$CHECKOUT" "$NEW" --name "$NAME"
+    step "type-checking the modules that changed, for their index"
+    run "$PY" "$HERE/scanners/swift_index_build.py" "$CHECKOUT" "$CACHE/index" > "$RUN/index.log" 2>&1 || { tail -30 "$RUN/index.log" >&2; die "the index build failed (all of it: $RUN/index.log)"; }
+    echo "ingest: $(tail -1 "$RUN/index.log")"
+    step "scanning which file uses which from the index"
+    run "$PY" "$HERE/scanners/swift_index_read.py" "$CACHE/index/store" "$NEW"
+  fi
+  mv "$NEW" "$SCAN"
+}
+
+if [ -n "$SCANFILE" ]; then
+  SCAN=$SCANFILE
+  step "drawing from the scan given by hand, $SCAN"
+else
+  # Kept by the commit's code, the scanner, and what made it: a run on code scanned before goes straight to the lens, whatever
+  # commit it is (one that changes only .canvas/ is the same code, and moves no checkout and runs no prepare)
+  if [ -n "$SCIP" ]; then KIND=scip; else KIND=$SCANNER; fi
+  mkdir -p "$CACHE/scans"
+  SCAN=$CACHE/scans/$(code_key)-$KIND-$(made_by "$KIND").json
+  NEW=$SCAN.reading
+  if [ -s "$SCAN" ] && [ "$RESCAN" != 1 ]; then
+    touch "$SCAN"
+    step "the scan of $SHORT is kept, so nothing is scanned (its code, .canvas aside, was scanned before; --rescan scans it again)"
+  else
+    scan_commit
+  fi
+  # the last 20 scans are kept, the most recently made or used
+  _kept=0
+  for _old in $(ls -1t "$CACHE/scans" | grep '\.json$' || true); do
+    _kept=$((_kept + 1))
+    if [ "$_kept" -gt 20 ]; then rm -f "$CACHE/scans/$_old"; fi
+  done
+fi
+
+# a lens of the repository's own reads the commit's files through repo
+if [ -n "$LENS" ]; then fetch_missing; fi
+step "making the digest"
+run "$PY" "$HERE/runner/run.py" "$REPO" "$SCAN" "$RUN/digest.json" --commit "$SHA" ${LENS:+--lens "$LENS"} || die "no digest was made, so nothing was drawn (the run's folder: $RUN)"
+# what drew it, added after the lens has run: the lens can't leave it out or vary it. The app's build was written by `digest ready`.
+"$PY" "$HERE/runner/stamp.py" "$RUN/digest.json" "$REPO" "$SHA" "${LENS:--}" "$(cat "$RUN/out/app-build" 2>/dev/null || echo unknown)" || die "no digest was made, so nothing was drawn (the run's folder: $RUN)"
+
+step "measuring, laying out and drawing it (canvas-digest)"
+run "$DIGEST" all "$RUN/digest.json" "$@" --out "$RUN/out"
+step "done"

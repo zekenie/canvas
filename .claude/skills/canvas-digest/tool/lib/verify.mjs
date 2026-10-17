@@ -1,4 +1,5 @@
-// A plan against what landed on the boards: rows {board, title, kind, x, y, w, h, in, for, from, to}, one per shape, pill (kind reference, `for` the end it stands for) and arrow.
+// A plan against what landed on the boards: rows {board, title, kind, x, y, w, h, in, for, from, to, is}, one per shape, pill (kind reference, `for` the end it
+// stands for) and arrow (`is`: the titles of the relationship types it is of, when it is of any; two arrows of a pair are told apart by it).
 import { byTitle } from './util.mjs';
 
 export function verify(plan, rows) {
@@ -44,8 +45,9 @@ export function verify(plan, rows) {
     // arrows
     for (const e of b.edges) {
       summary.edgesPlanned++;
-      const ok = here.some((r) => r.kind === 'arrow' && r.from === e.from && r.to === (e.via ? 'pill:' + e.to : e.to));
-      if (!ok) summary.edgesMissing.push(`${b.board}: ${e.from} -> ${e.to}${e.via ? ' (pill)' : ''}`);
+      const is = [...(e.is || [])].sort().join('\u0001');   // a list of types is a set
+      const ok = here.some((r) => r.kind === 'arrow' && r.from === e.from && r.to === (e.via ? 'pill:' + e.to : e.to) && [...(r.is || [])].sort().join('\u0001') === is);
+      if (!ok) summary.edgesMissing.push(`${b.board}: ${e.from} -> ${e.to}${e.via ? ' (pill)' : ''}${is ? ` is ${e.is.join(', ')}` : ''}`);
     }
   }
   summary.pillWidthError.mean = summary.pills ? Math.round((widthSum / summary.pills) * 10) / 10 : 0;

@@ -1,6 +1,7 @@
 // What the tool needs measured: the draw script `canvas measure` reads, and the sizes read back from its JSON.
 import { q, lit, byTitle } from './util.mjs';
 import { LEAF_KINDS } from './model.mjs';
+import { noteTyping, arrowTyping } from './types.mjs';
 
 export const NOTE_W = 300, HEADER_W = 360;
 export const HEADER_GAP = 80;   // between a board's header note and what is laid out under it
@@ -23,33 +24,43 @@ export function headerText(model, board) {
   return `${where}. Drawn by canvas-digest.`;
 }
 
-/** The shapes to measure: [{title, kind, w, text}] in a fixed order. */
+/** The shapes to measure: [{title, kind, w, text}] in a fixed order; a note that is a type or is one also says what it is (`typing`, as draw is told it). */
 export function toMeasure(model) {
   const items = [];
   for (const b of model.boards) items.push({ title: model.headers.get(b), kind: 'sticky-note', w: HEADER_W, text: headerText(model, b) });
   for (const n of model.nodes.values()) {
     if (!LEAF_KINDS.has(n.kind)) continue;
-    items.push(n.kind === 'subboard' ? { title: n.title, kind: 'subboard' } : { title: n.title, kind: 'sticky-note', w: noteWidth(n.title), text: n.text });
+    items.push(n.kind === 'subboard' ? { title: n.title, kind: 'subboard' } : { title: n.title, kind: 'sticky-note', w: noteWidth(n.title), text: n.text, typing: noteTyping(n), node: n });
   }
   return items.sort((a, b) => byTitle(a.title, b.title));
 }
 
-/** The ends a pill may be drawn for: every shape something points at. */
+/** The ends a pill may be drawn for: every shape something points at (an end of a relationship type is never a pill: it is drawn between its two types). */
 export function pillTargets(model) {
-  return [...model.nodes.values()].filter((n) => LEAF_KINDS.has(n.kind) && !n.never && (model.inn.get(n.title) || []).length).map((n) => n.title).sort(byTitle);
+  return [...model.nodes.values()].filter((n) => LEAF_KINDS.has(n.kind) && !n.never && (model.inn.get(n.title) || []).some((e) => !e.end)).map((n) => n.title).sort(byTitle);
 }
 
-/** A draw script for `canvas measure -`: every note, card and header, then one edge through a reference to each end a pill may be drawn for. Placements are ignored by measure. */
+/**
+ * A draw script for `canvas measure -`: every note, card and header (a type with its schema, a note with the types it is and its values), then the
+ * ends of the relationship types and every typed arrow between notes (a type's note grows a row for each end it has, and so does a note of it, and
+ * `measure` lays the script's notes out against the script's own ends, whatever board each is on), then one edge through a reference to each end a
+ * pill may be drawn for. Placements are ignored by measure.
+ */
 export function measureScript(model) {
   const items = toMeasure(model);
   const first = items[0];
   const lines = [];
   const stmt = (it, place) => it.kind === 'subboard'
     ? `subboard ${q(it.title)}${place}`
-    : `sticky-note ${q(it.title)}${place} size: ${it.w}x` + (it.text ? ` text: ${lit(it.text)}` : '');
+    : `sticky-note ${q(it.title)}${place} size: ${it.w}x` + (it.text ? ` text: ${lit(it.text)}` : '') + (it.typing || '');
   lines.push(stmt(first, ''));
   for (const it of items.slice(1)) lines.push(stmt(it, ` below ${q(first.title)}`));
   const leaves = items.map((it) => it.title);
+  const note = (t) => { const n = model.node(t); return n && n.kind === 'sticky-note'; };
+  for (const e of model.edges) {
+    if (!note(e.from) || !note(e.to)) continue;
+    for (const a of e.arrows) if (e.end || a.is.length) lines.push(`edge ${q(e.from)} -> ${q(e.to)}` + (a.text ? ` text: ${lit(a.text)}` : '') + arrowTyping(a));
+  }
   for (const t of pillTargets(model)) {
     const from = leaves.find((x) => x !== t);
     if (from) lines.push(`edge ${q(from)} -> ${q(t)} via: reference`);

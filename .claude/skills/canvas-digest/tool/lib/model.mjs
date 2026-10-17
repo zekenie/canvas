@@ -1,8 +1,18 @@
 // The digest, read into a model: nodes, the board and frames each is on, edges, boards.
 import { byTitle, fold } from './util.mjs';
 import { dial } from './dial.mjs';
+import { isEndOf, isKey, canon } from './types.mjs';
 
 export const LEAF_KINDS = new Set(['sticky-note', 'subboard']);
+const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/** `is` as the digest writes it (a title, or a list of them) as a list of folded titles, without repeats; bad: it is neither. */
+function isList(v) {
+  if (v == null) return { list: [], bad: false };
+  const raw = typeof v === 'string' ? [v] : v;
+  if (!Array.isArray(raw) || raw.some((t) => typeof t !== 'string' || !fold(t))) return { list: [], bad: true };
+  return { list: [...new Set(raw.map(fold))], bad: false };
+}
 
 export function buildModel(digest, mess) {
   const warnings = [];
@@ -16,10 +26,15 @@ export function buildModel(digest, mess) {
     if (!t) throw new Error('a node has no title');
     if (nodes.has(t)) throw new Error(`duplicate title "${t}"`);
     if (t.length > 80) throw new Error(`"${t}" is over 80 characters`);
+    const is = isList(n.is);
     nodes.set(t, {
       title: t, kind: n.kind || 'sticky-note', parent: n.in ? fold(n.in) : null, text: n.text || '',
       pin: n.public === true, never: n.public === false, children: [],
       rank: typeof n.rank === 'number' && isFinite(n.rank) ? n.rank : null,
+      // what a note is: a type (it holds a schema), a relationship type, an instance (`is` the types, `fieldValues` its values); check says what is wrong with them
+      schemaGiven: n.schema != null, schema: n.schema != null ? n.schema : null,
+      relationshipGiven: n.relationship != null && n.relationship !== false, relationshipRaw: n.relationship, relationship: n.relationship === true,
+      is: is.list, isBad: is.bad, fieldValuesGiven: n.fieldValues != null, fieldValues: n.fieldValues != null ? n.fieldValues : null,
     });
   }
   for (const n of nodes.values()) {
@@ -80,19 +95,63 @@ export function buildModel(digest, mess) {
     while (nodes.has(t) || taken.has(t)) t += ' (digest)';
     headers.set(b, t); taken.add(t);
   }
-  // edges
-  const edgeMap = new Map();
-  for (const e of digest.edges || []) {
+  // edges: the ones between a pair are one edge to the layout (their weights added), and each typed one is an arrow of its own when it is drawn
+  const pairs = new Map();
+  (digest.edges || []).forEach((e, index) => {
     const from = fold(e.from), to = fold(e.to);
     const a = nodes.get(from), b = nodes.get(to);
     if (!a || !b) throw new Error(`edge ${from} -> ${to}: unknown title`);
-    if (from === to) continue;
-    if (a.kind === 'frame' || b.kind === 'frame') { warnings.push(`edge "${from}" -> "${to}" dropped: a frame has no ports`); continue; }
+    if (from === to) return;
+    if (a.kind === 'frame' || b.kind === 'frame') { warnings.push(`edge "${from}" -> "${to}" dropped: a frame has no ports`); return; }
     const key = from + '\u0000' + to;
-    const w = e.weight == null ? 1 : +e.weight;
-    const old = edgeMap.get(key);
-    if (old) { old.weight += w; old.direct = old.direct || !!e.direct; old.via = old.via || (e.via === 'reference' ? 'reference' : null); continue; }
-    edgeMap.set(key, { from, to, weight: w, text: e.text || '', via: e.via === 'reference' ? 'reference' : null, direct: !!e.direct, cross: a.board !== b.board });
+    let g = pairs.get(key);
+    if (!g) pairs.set(key, g = { from, to, a, b, items: [] });
+    const is = isList(e.is);
+    g.items.push({ e, index, is: is.list, isBad: is.bad, w: e.weight == null ? 1 : +e.weight });
+  });
+  const edgeMap = new Map();
+  for (const [key, g] of pairs) {
+    // two arrows between one pair with no `is` to tell them apart are one, and draw answers `ambiguous_edge` for an arrow written without one beside typed ones
+    const typed = g.items.some((i) => i.is.length || i.isBad);
+    const items = typed ? g.items.filter((i) => i.is.length || i.isBad) : g.items;
+    if (typed) for (const i of g.items) if (!i.is.length && !i.isBad) warnings.push(`edge "${g.from}" -> "${g.to}" without is dropped: the pair has typed arrows, and draw answers ambiguous_edge for an edge written without one`);
+    // arrows of a pair that say what they hold are merged in a canonical order (by what they say), never the order the digest lists them in
+    if (typed || items.some((i) => i.e.fieldValues != null || i.e.endRule != null)) {
+      const said = (i) => canon({ d: !!i.e.direct, er: i.e.endRule == null ? null : i.e.endRule, fv: i.e.fieldValues == null ? null : i.e.fieldValues, text: i.e.text || '', via: i.e.via || null, w: i.w });
+      const keyed = new Map(items.map((i) => [i, said(i)]));
+      items.sort((x, y) => (keyed.get(x) < keyed.get(y) ? -1 : keyed.get(x) > keyed.get(y) ? 1 : 0));
+    }
+    const edge = { from: g.from, to: g.to, weight: 0, text: '', via: null, direct: false, cross: g.a.board !== g.b.board, arrows: [], end: isEndOf(g.a, g.b) };
+    const arrows = new Map(), src = new Map();   // src: the edge each member of an arrow's values came from
+    items.forEach((i, n) => {
+      const e = i.e;
+      edge.weight += i.w;
+      edge.direct = edge.direct || !!e.direct;
+      edge.via = edge.via || (e.via === 'reference' ? 'reference' : null);
+      if (n === 0) edge.text = e.text || '';
+      const k = i.isBad ? '\u0001bad' : isKey(i.is);
+      let ar = arrows.get(k);
+      if (!ar) arrows.set(k, ar = { is: i.is, isBad: i.isBad, text: e.text || '', fieldValuesGiven: false, fieldValues: null, endRuleGiven: false, endRule: null, conflicts: [], orders: [] });
+      if (!src.has(ar)) src.set(ar, { fieldValues: {}, endRule: {} });
+      if (!ar.orders.some((o) => o.join('\u0000') === i.is.join('\u0000'))) ar.orders.push(i.is);
+      for (const which of ['fieldValues', 'endRule']) {
+        const v = e[which];
+        if (v == null) continue;
+        ar[which + 'Given'] = true;
+        if (!isPlain(v) || (ar[which] !== null && !isPlain(ar[which]))) { ar[which] = v; continue; }
+        const next = Object.assign({}, ar[which]);
+        for (const m of Object.keys(v)) {
+          if (Object.prototype.hasOwnProperty.call(next, m) && canon(next[m]) !== canon(v[m])) ar.conflicts.push({ which, member: m, a: { index: src.get(ar)[which][m], value: next[m] }, b: { index: i.index, value: v[m] } });
+          next[m] = v[m]; src.get(ar)[which][m] = i.index;
+        }
+        ar[which] = next;
+      }
+    });
+    // a list of types is a set; the order it is drawn in means something to draw (a later type wins where two say the same), so the one written that sorts first
+    for (const ar of arrows.values()) { ar.orders.sort((x, y) => (x.join('\u0000') < y.join('\u0000') ? -1 : x.join('\u0000') > y.join('\u0000') ? 1 : 0)); ar.is = ar.orders[0]; }
+    edge.arrows = [...arrows.entries()].sort((x, y) => byTitle(x[0], y[0])).map((x) => x[1]);
+    if (edge.end) edge.direct = true;   // an end is an arrow between two types: never a pill, which would be an arrow into a reference
+    edgeMap.set(key, edge);
   }
   const edges = [...edgeMap.values()].sort((x, y) => byTitle(x.from, y.from) || byTitle(x.to, y.to));
   const out = new Map(), inn = new Map(), has = new Set();

@@ -1,0 +1,1192 @@
+{
+ "language": "typescript",
+ "name": "shop",
+ "modules": [
+  {
+   "name": "@shop/shared",
+   "path": "packages/shared/src",
+   "deps": [],
+   "test": false,
+   "layer": null,
+   "files": [
+    "ids.ts",
+    "index.ts",
+    "money.ts"
+   ],
+   "lines": 33,
+   "doc": null,
+   "folders": {}
+  },
+  {
+   "name": "@shop/db",
+   "path": "packages/db/src",
+   "deps": [
+    "@shop/shared"
+   ],
+   "test": false,
+   "layer": null,
+   "files": [
+    "client.ts",
+    "customers.ts",
+    "index.ts",
+    "orders.ts",
+    "payments.ts",
+    "refunds.ts"
+   ],
+   "lines": 134,
+   "doc": null,
+   "folders": {}
+  },
+  {
+   "name": "@shop/orders",
+   "path": "services/orders/src",
+   "deps": [
+    "@shop/db",
+    "@shop/shared"
+   ],
+   "test": false,
+   "layer": null,
+   "files": [
+    "activities/index.ts",
+    "activities/orders.ts",
+    "activities/payments.ts",
+    "activities/receipts.ts",
+    "activities/refunds.ts",
+    "worker.ts",
+    "workflows/checkout.ts",
+    "workflows/index.ts",
+    "workflows/refund.ts"
+   ],
+   "lines": 143,
+   "doc": null,
+   "folders": {
+    "activities": null,
+    "workflows": null
+   }
+  },
+  {
+   "name": "@shop/billing",
+   "path": "services/billing/src/handlers",
+   "deps": [
+    "@shop/db"
+   ],
+   "test": false,
+   "layer": null,
+   "files": [
+    "monthlyStatements.ts",
+    "paymentWebhook.ts"
+   ],
+   "lines": 31,
+   "doc": null,
+   "folders": {}
+  }
+ ],
+ "files": [
+  {
+   "module": "@shop/db",
+   "rel": "client.ts",
+   "path": "packages/db/src/client.ts",
+   "lines": 11,
+   "doc": "The one Postgres pool every service shares, and `query`, which every repository function goes through.",
+   "api": true,
+   "decls": [
+    {
+     "name": "pool",
+     "kind": "value",
+     "visibility": "public",
+     "line": 5
+    },
+    {
+     "name": "query",
+     "kind": "function",
+     "visibility": "public",
+     "line": 8
+    }
+   ]
+  },
+  {
+   "module": "@shop/db",
+   "rel": "customers.ts",
+   "path": "packages/db/src/customers.ts",
+   "lines": 26,
+   "doc": "Customers: who places orders, and where their receipts go.",
+   "api": true,
+   "decls": [
+    {
+     "name": "CustomerRow",
+     "kind": "type",
+     "visibility": "public",
+     "line": 6
+    },
+    {
+     "name": "findCustomer",
+     "kind": "function",
+     "visibility": "public",
+     "line": 13
+    },
+    {
+     "name": "customersWithOrdersBetween",
+     "kind": "function",
+     "visibility": "public",
+     "line": 19
+    }
+   ]
+  },
+  {
+   "module": "@shop/db",
+   "rel": "index.ts",
+   "path": "packages/db/src/index.ts",
+   "lines": 5,
+   "doc": null,
+   "api": false,
+   "decls": []
+  },
+  {
+   "module": "@shop/db",
+   "rel": "orders.ts",
+   "path": "packages/db/src/orders.ts",
+   "lines": 36,
+   "doc": "Orders: placed at checkout, then paid or refunded.",
+   "api": true,
+   "decls": [
+    {
+     "name": "OrderRow",
+     "kind": "type",
+     "visibility": "public",
+     "line": 6
+    },
+    {
+     "name": "insertOrder",
+     "kind": "function",
+     "visibility": "public",
+     "line": 15
+    },
+    {
+     "name": "markOrderPaid",
+     "kind": "function",
+     "visibility": "public",
+     "line": 23
+    },
+    {
+     "name": "markOrderRefunded",
+     "kind": "function",
+     "visibility": "public",
+     "line": 28
+    },
+    {
+     "name": "findOrder",
+     "kind": "function",
+     "visibility": "public",
+     "line": 33
+    }
+   ]
+  },
+  {
+   "module": "@shop/db",
+   "rel": "payments.ts",
+   "path": "packages/db/src/payments.ts",
+   "lines": 30,
+   "doc": "Payments: a charge taken for an order, settled when the provider says the money arrived.",
+   "api": true,
+   "decls": [
+    {
+     "name": "PaymentRow",
+     "kind": "type",
+     "visibility": "public",
+     "line": 6
+    },
+    {
+     "name": "insertPayment",
+     "kind": "function",
+     "visibility": "public",
+     "line": 14
+    },
+    {
+     "name": "settlePayment",
+     "kind": "function",
+     "visibility": "public",
+     "line": 22
+    },
+    {
+     "name": "findPaymentForOrder",
+     "kind": "function",
+     "visibility": "public",
+     "line": 27
+    }
+   ]
+  },
+  {
+   "module": "@shop/db",
+   "rel": "refunds.ts",
+   "path": "packages/db/src/refunds.ts",
+   "lines": 26,
+   "doc": "Refunds: money given back on an order, and why.",
+   "api": true,
+   "decls": [
+    {
+     "name": "RefundRow",
+     "kind": "type",
+     "visibility": "public",
+     "line": 6
+    },
+    {
+     "name": "insertRefund",
+     "kind": "function",
+     "visibility": "public",
+     "line": 14
+    },
+    {
+     "name": "refundsBetween",
+     "kind": "function",
+     "visibility": "public",
+     "line": 19
+    }
+   ]
+  },
+  {
+   "module": "@shop/shared",
+   "rel": "ids.ts",
+   "path": "packages/shared/src/ids.ts",
+   "lines": 13,
+   "doc": "Ids with a prefix that says what they name: ord_..., pay_..., ref_...",
+   "api": true,
+   "decls": [
+    {
+     "name": "OrderId",
+     "kind": "type",
+     "visibility": "public",
+     "line": 5
+    },
+    {
+     "name": "PaymentId",
+     "kind": "type",
+     "visibility": "public",
+     "line": 6
+    },
+    {
+     "name": "RefundId",
+     "kind": "type",
+     "visibility": "public",
+     "line": 7
+    },
+    {
+     "name": "CustomerId",
+     "kind": "type",
+     "visibility": "public",
+     "line": 8
+    },
+    {
+     "name": "newId",
+     "kind": "function",
+     "visibility": "public",
+     "line": 11
+    }
+   ]
+  },
+  {
+   "module": "@shop/shared",
+   "rel": "index.ts",
+   "path": "packages/shared/src/index.ts",
+   "lines": 2,
+   "doc": null,
+   "api": false,
+   "decls": []
+  },
+  {
+   "module": "@shop/shared",
+   "rel": "money.ts",
+   "path": "packages/shared/src/money.ts",
+   "lines": 18,
+   "doc": "Money as whole cents and a currency, so a total never picks up a float's error.",
+   "api": true,
+   "decls": [
+    {
+     "name": "Money",
+     "kind": "type",
+     "visibility": "public",
+     "line": 3
+    },
+    {
+     "name": "money",
+     "kind": "function",
+     "visibility": "public",
+     "line": 9
+    },
+    {
+     "name": "add",
+     "kind": "function",
+     "visibility": "public",
+     "line": 15
+    }
+   ]
+  },
+  {
+   "module": "@shop/billing",
+   "rel": "monthlyStatements.ts",
+   "path": "services/billing/src/handlers/monthlyStatements.ts",
+   "lines": 19,
+   "doc": "The monthly statements: what each customer ordered, and got back, in the month before.",
+   "api": true,
+   "decls": [
+    {
+     "name": "handler",
+     "kind": "function",
+     "visibility": "public",
+     "line": 6
+    }
+   ]
+  },
+  {
+   "module": "@shop/billing",
+   "rel": "paymentWebhook.ts",
+   "path": "services/billing/src/handlers/paymentWebhook.ts",
+   "lines": 12,
+   "doc": "The card provider's webhook: a payment settled.",
+   "api": true,
+   "decls": [
+    {
+     "name": "handler",
+     "kind": "function",
+     "visibility": "public",
+     "line": 7
+    }
+   ]
+  },
+  {
+   "module": "@shop/orders",
+   "rel": "activities/index.ts",
+   "path": "services/orders/src/activities/index.ts",
+   "lines": 4,
+   "doc": null,
+   "api": false,
+   "decls": []
+  },
+  {
+   "module": "@shop/orders",
+   "rel": "activities/orders.ts",
+   "path": "services/orders/src/activities/orders.ts",
+   "lines": 29,
+   "doc": "Activities on the order itself: making it, and moving its status along.",
+   "api": true,
+   "decls": [
+    {
+     "name": "createOrder",
+     "kind": "function",
+     "visibility": "public",
+     "line": 7
+    },
+    {
+     "name": "markPaid",
+     "kind": "function",
+     "visibility": "public",
+     "line": 15
+    },
+    {
+     "name": "markRefunded",
+     "kind": "function",
+     "visibility": "public",
+     "line": 20
+    },
+    {
+     "name": "loadOrder",
+     "kind": "function",
+     "visibility": "public",
+     "line": 25
+    }
+   ]
+  },
+  {
+   "module": "@shop/orders",
+   "rel": "activities/payments.ts",
+   "path": "services/orders/src/activities/payments.ts",
+   "lines": 24,
+   "doc": "Activities that move money through the card provider.",
+   "api": true,
+   "decls": [
+    {
+     "name": "PROVIDER",
+     "kind": "value",
+     "visibility": "private",
+     "line": 6
+    },
+    {
+     "name": "chargeCard",
+     "kind": "function",
+     "visibility": "public",
+     "line": 9
+    },
+    {
+     "name": "refundCard",
+     "kind": "function",
+     "visibility": "public",
+     "line": 19
+    }
+   ]
+  },
+  {
+   "module": "@shop/orders",
+   "rel": "activities/receipts.ts",
+   "path": "services/orders/src/activities/receipts.ts",
+   "lines": 12,
+   "doc": "Activities that tell the customer what happened.",
+   "api": true,
+   "decls": [
+    {
+     "name": "sendReceipt",
+     "kind": "function",
+     "visibility": "public",
+     "line": 7
+    }
+   ]
+  },
+  {
+   "module": "@shop/orders",
+   "rel": "activities/refunds.ts",
+   "path": "services/orders/src/activities/refunds.ts",
+   "lines": 11,
+   "doc": "Activities that keep the books on refunds.",
+   "api": true,
+   "decls": [
+    {
+     "name": "recordRefund",
+     "kind": "function",
+     "visibility": "public",
+     "line": 7
+    }
+   ]
+  },
+  {
+   "module": "@shop/orders",
+   "rel": "worker.ts",
+   "path": "services/orders/src/worker.ts",
+   "lines": 19,
+   "doc": "The orders worker: runs the checkout and refund workflows, and their activities, on the task queue \"orders\".",
+   "api": true,
+   "decls": [
+    {
+     "name": "run",
+     "kind": "function",
+     "visibility": "public",
+     "line": 7
+    }
+   ]
+  },
+  {
+   "module": "@shop/orders",
+   "rel": "workflows/checkout.ts",
+   "path": "services/orders/src/workflows/checkout.ts",
+   "lines": 23,
+   "doc": "Checkout: the order is made, the card charged, and the order marked paid.",
+   "api": true,
+   "decls": [
+    {
+     "name": "createOrder",
+     "kind": "value",
+     "visibility": "private",
+     "line": 7
+    },
+    {
+     "name": "chargeCard",
+     "kind": "value",
+     "visibility": "private",
+     "line": 7
+    },
+    {
+     "name": "markPaid",
+     "kind": "value",
+     "visibility": "private",
+     "line": 7
+    },
+    {
+     "name": "CheckoutInput",
+     "kind": "type",
+     "visibility": "public",
+     "line": 12
+    },
+    {
+     "name": "checkoutWorkflow",
+     "kind": "function",
+     "visibility": "public",
+     "line": 18
+    }
+   ]
+  },
+  {
+   "module": "@shop/orders",
+   "rel": "workflows/index.ts",
+   "path": "services/orders/src/workflows/index.ts",
+   "lines": 2,
+   "doc": null,
+   "api": false,
+   "decls": []
+  },
+  {
+   "module": "@shop/orders",
+   "rel": "workflows/refund.ts",
+   "path": "services/orders/src/workflows/refund.ts",
+   "lines": 19,
+   "doc": "Refund: the money goes back through the provider, the refund is recorded, and the order marked refunded.",
+   "api": true,
+   "decls": [
+    {
+     "name": "loadOrder",
+     "kind": "value",
+     "visibility": "private",
+     "line": 7
+    },
+    {
+     "name": "refundCard",
+     "kind": "value",
+     "visibility": "private",
+     "line": 7
+    },
+    {
+     "name": "recordRefund",
+     "kind": "value",
+     "visibility": "private",
+     "line": 7
+    },
+    {
+     "name": "markRefunded",
+     "kind": "value",
+     "visibility": "private",
+     "line": 7
+    },
+    {
+     "name": "refundWorkflow",
+     "kind": "function",
+     "visibility": "public",
+     "line": 12
+    }
+   ]
+  }
+ ],
+ "uses": [
+  {
+   "from": [
+    "@shop/db",
+    "customers.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "client.ts"
+   ],
+   "names": [
+    "query"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "customers.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "ids.ts"
+   ],
+   "names": [
+    "CustomerId"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "index.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "client.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "index.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "customers.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "index.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "orders.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "index.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "payments.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "index.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "refunds.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "orders.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "client.ts"
+   ],
+   "names": [
+    "query"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "orders.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "ids.ts"
+   ],
+   "names": [
+    "CustomerId",
+    "OrderId"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "orders.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "money.ts"
+   ],
+   "names": [
+    "Money"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "payments.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "client.ts"
+   ],
+   "names": [
+    "query"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "payments.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "ids.ts"
+   ],
+   "names": [
+    "OrderId",
+    "PaymentId"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "payments.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "money.ts"
+   ],
+   "names": [
+    "Money"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "refunds.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "client.ts"
+   ],
+   "names": [
+    "query"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "refunds.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "ids.ts"
+   ],
+   "names": [
+    "OrderId",
+    "RefundId"
+   ]
+  },
+  {
+   "from": [
+    "@shop/db",
+    "refunds.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "money.ts"
+   ],
+   "names": [
+    "Money"
+   ]
+  },
+  {
+   "from": [
+    "@shop/shared",
+    "index.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "ids.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/shared",
+    "index.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "money.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/billing",
+    "monthlyStatements.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "customers.ts"
+   ],
+   "names": [
+    "customersWithOrdersBetween"
+   ]
+  },
+  {
+   "from": [
+    "@shop/billing",
+    "monthlyStatements.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "refunds.ts"
+   ],
+   "names": [
+    "refundsBetween"
+   ]
+  },
+  {
+   "from": [
+    "@shop/billing",
+    "paymentWebhook.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "payments.ts"
+   ],
+   "names": [
+    "settlePayment"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/index.ts"
+   ],
+   "to": [
+    "@shop/orders",
+    "activities/orders.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/index.ts"
+   ],
+   "to": [
+    "@shop/orders",
+    "activities/payments.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/index.ts"
+   ],
+   "to": [
+    "@shop/orders",
+    "activities/receipts.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/index.ts"
+   ],
+   "to": [
+    "@shop/orders",
+    "activities/refunds.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/orders.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "customers.ts"
+   ],
+   "names": [
+    "findCustomer"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/orders.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "orders.ts"
+   ],
+   "names": [
+    "OrderRow",
+    "findOrder",
+    "insertOrder",
+    "markOrderPaid",
+    "markOrderRefunded"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/orders.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "ids.ts"
+   ],
+   "names": [
+    "CustomerId",
+    "OrderId",
+    "newId"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/orders.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "money.ts"
+   ],
+   "names": [
+    "Money"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/payments.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "payments.ts"
+   ],
+   "names": [
+    "findPaymentForOrder",
+    "insertPayment"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/payments.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "ids.ts"
+   ],
+   "names": [
+    "OrderId",
+    "PaymentId",
+    "newId"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/payments.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "money.ts"
+   ],
+   "names": [
+    "Money"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/receipts.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "customers.ts"
+   ],
+   "names": [
+    "findCustomer"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/receipts.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "orders.ts"
+   ],
+   "names": [
+    "findOrder"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/receipts.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "ids.ts"
+   ],
+   "names": [
+    "OrderId"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/refunds.ts"
+   ],
+   "to": [
+    "@shop/db",
+    "refunds.ts"
+   ],
+   "names": [
+    "insertRefund"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/refunds.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "ids.ts"
+   ],
+   "names": [
+    "OrderId",
+    "RefundId",
+    "newId"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "activities/refunds.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "money.ts"
+   ],
+   "names": [
+    "Money"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "worker.ts"
+   ],
+   "to": [
+    "@shop/orders",
+    "activities/index.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "workflows/checkout.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "ids.ts"
+   ],
+   "names": [
+    "CustomerId",
+    "OrderId"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "workflows/checkout.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "money.ts"
+   ],
+   "names": [
+    "Money"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "workflows/checkout.ts"
+   ],
+   "to": [
+    "@shop/orders",
+    "activities/index.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "workflows/index.ts"
+   ],
+   "to": [
+    "@shop/orders",
+    "workflows/checkout.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "workflows/index.ts"
+   ],
+   "to": [
+    "@shop/orders",
+    "workflows/refund.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "workflows/refund.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "ids.ts"
+   ],
+   "names": [
+    "OrderId"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "workflows/refund.ts"
+   ],
+   "to": [
+    "@shop/shared",
+    "money.ts"
+   ],
+   "names": [
+    "money"
+   ]
+  },
+  {
+   "from": [
+    "@shop/orders",
+    "workflows/refund.ts"
+   ],
+   "to": [
+    "@shop/orders",
+    "activities/index.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  }
+ ]
+}

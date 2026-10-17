@@ -1,0 +1,12 @@
+{
+  "name": "@shop/billing",
+  "version": "1.0.0",
+  "dependencies": {
+    "@shop/db": "1.0.0",
+    "@shop/shared": "1.0.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.138",
+    "serverless": "3.38.0"
+  }
+}

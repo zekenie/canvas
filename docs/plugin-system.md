@@ -9714,7 +9714,7 @@ The modules, one job each:
 each run asks the app to describe itself, and makes its commands, their arguments and their help
 from what comes back. A plugin that adds a command adds it to `canvas`, help and all, and the two
 can't disagree about what a command takes. The app carries the `canvas` it was built with
-(`Contents/Helpers/canvas`; `build/canvas` links to it), and `canvas` refuses an app that speaks
+(`Contents/Helpers/canvas`; `build/canvas` links to it), along with the skills that teach agents to use it (`Contents/Resources/agents`, a Claude Code plugin marketplace; `canvas install` puts them in `~/.agents/skills`, for the agents that follow the Agent Skills standard, and links `canvas` onto the PATH), and `canvas` refuses an app that speaks
 another version of the protocol (`RPC.protocolVersion`: 2, in which text may be read from standard
 input, and an error may say where in a script it is).
 

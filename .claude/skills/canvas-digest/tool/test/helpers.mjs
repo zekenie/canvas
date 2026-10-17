@@ -10,7 +10,20 @@ export function estimateMeasure(model) {
     if (it.kind === 'subboard') { shapes.push({ line, title: it.title, kind: 'subboard', size: [240, 160], above: 30 }); continue; }
     const perLine = Math.max(10, Math.floor((it.w - 40) / 7.4));
     const lines = (it.text || '').split('\n').reduce((s, l) => s + Math.max(1, Math.ceil(l.length / perLine)), 0);
-    shapes.push({ line, title: it.title, kind: 'sticky-note', size: [it.w, Math.max(200, 40 + lines * 22)], above: 30 });
+    let h = Math.max(200, 40 + lines * 22), w = it.w;
+    const n = it.node;
+    if (n && (n.schema || n.is.length)) {
+      // a type, or a note of one: 320 wide at least, a row for each field, and one for each end its types have (the app's rows, roughly)
+      w = Math.max(w, 320);
+      const types = n.schema ? (n.relationship ? [] : [n]) : n.is.map((t) => model.node(t)).filter(Boolean);
+      const fields = new Set(), ends = new Set();
+      for (const t of types) {
+        Object.keys((t.schema && t.schema.properties) || {}).forEach((k) => fields.add(k));
+        model.edges.forEach((e) => { if (e.end && (e.from === t.title || e.to === t.title)) ends.add(e.from + '>' + e.to); });
+      }
+      h = Math.max(h, 56 + 22 * (fields.size + ends.size) + (ends.size ? 8 : 0));
+    }
+    shapes.push({ line, title: it.title, kind: 'sticky-note', size: [w, h], above: 30 });
   }
   for (const t of pillTargets(model)) { line++; references.push({ line, for: t, size: [Math.min(280, Math.max(64, Math.ceil(10 + 16 + 6 + 7.3 * t.length + 17 + 14))), DEFAULT_CONSTANTS.pillHeight] }); }
   return {

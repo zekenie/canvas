@@ -1,0 +1,89 @@
+{
+ "title": "Spec title",
+ "text": "Spec title: 2 modules in 2 layers, 4 files, 150 lines.\nA card is a module: open it for its files. An arrow, or a pill, is an import.",
+ "nodes": [
+  {
+   "title": "Apps",
+   "kind": "frame",
+   "rank": 0
+  },
+  {
+   "title": "App",
+   "kind": "subboard",
+   "in": "Apps",
+   "text": "App: apps\nDraws the screens \\@[x]\n\nImports @[Core]\n2 files, 60 lines"
+  },
+  {
+   "title": "Foundations",
+   "kind": "frame",
+   "rank": 1
+  },
+  {
+   "title": "Core",
+   "kind": "subboard",
+   "in": "Foundations",
+   "text": "Core: foundations\nKeeps the models\n\nImports no module of its own\nImported by @[App]\n2 files, 90 lines\nIts folders are subboards here."
+  },
+  {
+   "title": "Core/Hidden",
+   "kind": "subboard",
+   "in": "Core",
+   "text": "Core/Hidden: a folder of @[Core]\n\n\nUses nothing else of its module\n0 files, 0 lines"
+  },
+  {
+   "title": "Screens",
+   "kind": "frame",
+   "in": "App"
+  },
+  {
+   "title": "App/",
+   "kind": "frame",
+   "in": "App"
+  },
+  {
+   "title": "Main.swift",
+   "kind": "sticky-note",
+   "in": "App/",
+   "text": "Starts the app.\n\n20 lines"
+  },
+  {
+   "title": "Screen.swift",
+   "kind": "sticky-note",
+   "in": "Screens",
+   "text": "Shows the store.\n\ninternal Screen\n40 lines"
+  },
+  {
+   "title": "Model.swift",
+   "kind": "sticky-note",
+   "in": "Core",
+   "text": "One model.\n\npublic Model\n40 lines"
+  },
+  {
+   "title": "Store.swift",
+   "kind": "sticky-note",
+   "in": "Core",
+   "text": "Holds the models.\n\npublic Store\n50 lines"
+  }
+ ],
+ "edges": [
+  {
+   "from": "App",
+   "to": "Core"
+  },
+  {
+   "from": "Main.swift",
+   "to": "Screen.swift",
+   "weight": 1
+  },
+  {
+   "from": "Main.swift",
+   "to": "Store.swift",
+   "weight": 1
+  },
+  {
+   "from": "Screen.swift",
+   "to": "Store.swift",
+   "weight": 1
+  }
+ ]
+}

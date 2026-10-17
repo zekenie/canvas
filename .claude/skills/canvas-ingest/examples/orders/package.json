@@ -1,0 +1,11 @@
+{
+  "name": "shop",
+  "private": true,
+  "workspaces": ["packages/*", "services/*"],
+  "scripts": {
+    "build": "tsc --build packages/shared packages/db services/orders services/billing"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5"
+  }
+}

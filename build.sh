@@ -2,12 +2,14 @@
 # Builds the module graph declared in Package.swift with swiftc directly (SwiftPM is broken on
 # this machine). Every module becomes a static library plus a .swiftmodule, compiled with only its
 # own dependency closure on the include path, as many at once as there are cores (BUILD_JOBS), and
-# only as far as a change reaches. Every mode first audits Package.swift and the sources, and stops
-# if the real graph differs from the declared one.
+# only as far as a change reaches. Every mode but `agents` first audits Package.swift and the sources, and
+# stops if the real graph differs from the declared one.
 #
 #   ./build.sh              build build/InfiniteCanvas.app (release), with the command line in it
 #                           (build/canvas links to it) and its Quick Look extensions
 #   ./build.sh tests        build every module but the app, test executables included (debug)
+#   ./build.sh agents DIR   put the skills the app carries for agents in DIR (the app's Contents/Resources/agents):
+#                           a Claude Code plugin marketplace holding them; compiles and audits nothing
 #   ./build.sh bench        build BenchmarkTests (release) and run it: the performance budgets
 #   ./build.sh audit        check the graph and every import, compile nothing
 #   ./build.sh graph        print each module's layer, dependencies and dependents
@@ -19,6 +21,111 @@ SELF=${0:A}
 cd "${SELF:h}"
 
 die() { print -u2 "build.sh: $*"; exit 1 }
+
+# --- The skills the app carries for agents ---------------------------------------------------------
+# The skills (folders of .claude/skills, each an Agent Skills skill) that go into the app, in
+# Contents/Resources/agents, and from there to an agent: `canvas install` copies each into the folder
+# agents read skills from, and Claude Code gets them as a plugin of the marketplace that folder is
+# (it may keep a versioned copy: the build id is the plugin's version). Adding a skill to this list is shipping it. A skill
+# listed that isn't there stops the build.
+AGENT_SKILLS=(canvas canvas-digest canvas-ingest)
+# What stays out of the copy, as paths in .claude/skills: tests. (Dotfiles and Python's caches always do, but for
+# canvas-ingest/examples/*/.canvas: an example repository keeps its settings and lens there, as every repository does.)
+AGENT_SKILL_LEFT_OUT=(canvas-digest/tool/test)
+# The marketplace's name and its one plugin's (Claude Code names a skill of the plugin canvas:<skill>,
+# so none hides a project's own skill of the same name).
+AGENTS_MARKETPLACE=infinite-canvas
+AGENTS_PLUGIN=canvas
+
+# Which build this is: the git commit, and, when the tree has changes, a short hash of them: what git
+# status says, the diff against the commit, and the contents of the files git doesn't track (and
+# doesn't ignore). The app says it (`canvas status`) and the skills carry it, as the plugin's version,
+# so a copy of the skills left behind by an update can be told from the app's. git runs without
+# optional locks, so a build doesn't make another git command wait (or fail) for the index.
+build_id() {
+    local commit changes file
+    commit=$(git --no-optional-locks rev-parse --short=12 HEAD 2> /dev/null) || { print unknown; return }
+    changes=$(git --no-optional-locks status --porcelain 2> /dev/null)
+    if [[ -z $changes ]]; then
+        print -r -- $commit
+    else
+        print -r -- "$commit-dirty-$({
+            print -r -- $changes
+            git --no-optional-locks diff HEAD 2> /dev/null
+            git --no-optional-locks ls-files -o --exclude-standard -z 2> /dev/null | while IFS= read -r -d '' file; do
+                print -r -- "untracked $file"
+                if [[ -L $file ]]; then readlink -- $file; elif [[ -f $file ]]; then shasum -- $file | cut -d' ' -f1; fi
+            done
+        } | shasum | cut -c1-8)"
+    fi
+}
+
+# Puts the folder the app carries for agents in $1 (made, or emptied if it is an agents folder this
+# build made: the infinite-canvas marketplace, and a build-id at its root; any other folder with
+# anything in it is refused, a marketplace of someone's own among them), for build $2.
+assemble_agents() {
+    local dest=$1 id=$2 skill left
+    for skill in $AGENT_SKILLS; do
+        [[ -f .claude/skills/$skill/SKILL.md ]] ||
+            die "agents: $skill is listed in AGENT_SKILLS (build.sh), and .claude/skills/$skill/SKILL.md isn't there"
+    done
+    if [[ -e $dest ]]; then
+        [[ -d $dest ]] || die "agents: $dest is not a folder"
+        [[ -z "$(ls -A -- $dest)" || ( -f $dest/build-id && -f $dest/.claude-plugin/marketplace.json &&
+            -n "$(grep -E "\"name\": *\"$AGENTS_MARKETPLACE\"" $dest/.claude-plugin/marketplace.json)" ) ]] ||
+            die "agents: $dest has files in it and is not an agents folder (the $AGENTS_MARKETPLACE marketplace with a build-id) that this build made, so it is not emptied"
+        rm -rf -- "${dest:?}"/*(DN)
+    fi
+    mkdir -p $dest/$AGENTS_PLUGIN/skills $dest/.claude-plugin $dest/$AGENTS_PLUGIN/.claude-plugin
+    for skill in $AGENT_SKILLS; do
+        cp -R .claude/skills/$skill $dest/$AGENTS_PLUGIN/skills/$skill
+        for left in $AGENT_SKILL_LEFT_OUT; do
+            [[ $left == $skill/* ]] && rm -rf -- "${dest:?}/$AGENTS_PLUGIN/skills/$left"
+        done
+    done
+    local examples="$dest/$AGENTS_PLUGIN/skills/canvas-ingest/examples"   # find's -path: * crosses folders, so the deeper one is named too
+    find $dest/$AGENTS_PLUGIN/skills -mindepth 1 \( -name '.*' ! \( -path "$examples/*/.canvas" ! -path "$examples/*/*/.canvas" \) -o -name __pycache__ -o -name '*.pyc' \) -prune -exec rm -rf {} +
+    for skill in $AGENT_SKILLS; do print -r -- $id > $dest/$AGENTS_PLUGIN/skills/$skill/build-id; done
+    print -r -- $id > $dest/build-id
+    cat > $dest/.claude-plugin/marketplace.json <<JSON
+{
+  "name": "$AGENTS_MARKETPLACE",
+  "owner": {
+    "name": "Infinite Canvas"
+  },
+  "metadata": {
+    "description": "The skills that come with Infinite Canvas, for agents that work with it through its command line"
+  },
+  "plugins": [
+    {
+      "name": "$AGENTS_PLUGIN",
+      "source": "./$AGENTS_PLUGIN",
+      "version": "$id",
+      "description": "Skills for working with Infinite Canvas through its command line: ${(j:, :)AGENT_SKILLS}"
+    }
+  ]
+}
+JSON
+    cat > $dest/$AGENTS_PLUGIN/.claude-plugin/plugin.json <<JSON
+{
+  "name": "$AGENTS_PLUGIN",
+  "version": "$id",
+  "description": "Skills for working with Infinite Canvas through its command line, canvas.",
+  "author": {
+    "name": "Infinite Canvas"
+  }
+}
+JSON
+}
+
+if [[ ${1:-} == agents ]]; then
+    (( $# == 2 )) || die "usage: build.sh agents DIR"
+    [[ -n $2 ]] || die "agents: DIR is empty, which names no folder"
+    [[ ${2:A} != / ]] || die "agents: DIR is /, which is not a folder to put the skills in"
+    assemble_agents "${2:A}" "$(build_id)"
+    print "agents: ${(j:, :)AGENT_SKILLS} in $2 (build $(<$2/build-id))"
+    exit 0
+fi
 
 # Which layers each layer may depend on (Package.swift's header says the same in prose). Four rungs,
 # each importing its own and those below it: core, platform (what every shape gets, whatever its
@@ -1042,6 +1149,7 @@ app)
     # The command line goes with the app, so the two always speak the same protocol.
     install_changed $OUT/$CLI_MODULE/$CLI_MODULE $APP/Contents/Helpers/$CLI_NAME
     ln -sf InfiniteCanvas.app/Contents/Helpers/$CLI_NAME build/$CLI_NAME
+    BUILD_ID=$(build_id)
     cat > $AUDIT/Info.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1057,6 +1165,8 @@ app)
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>0.1</string>
+    <key>InfiniteCanvasBuild</key>
+    <string>$BUILD_ID</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
@@ -1114,6 +1224,14 @@ app)
 </plist>
 PLIST
     install_changed $AUDIT/Info.plist $APP/Contents/Info.plist
+    # The skills for agents (Contents/Resources/agents), put together as `./build.sh agents` does and
+    # installed file by file, so what didn't change isn't replaced.
+    assemble_agents $AUDIT/agents $BUILD_ID
+    for file in $AUDIT/agents/**/*(.DN); do
+        installed=$APP/Contents/Resources/agents/${file#$AUDIT/agents/}
+        mkdir -p ${installed:h}
+        install_changed $file $installed
+    done
     # Quick Look's preview of a board file (space in the Finder) and its thumbnail (its icon), an
     # extension each (Contents/PlugIns), each the one executable the app carries with its extension
     # point, its principal class and what it says to that point. Quick Look runs an extension only
@@ -1192,6 +1310,7 @@ PLIST
         done
     done
     for file in $APP/**/*(.DN); do (( ${bundled[(Ie)$file]} )) || { rm -f -- $file; replaced+=1 }; done
+    find $APP/Contents/Resources -type d -empty -delete 2> /dev/null || true
     # Copies of the app that are gone. Every checkout's build is a copy of the app, and macOS
     # registers one, with its Quick Look extensions, when it's opened; removing a worktree
     # unregisters nothing. LaunchServices hands Quick Look one copy's extension, whichever it picks,
@@ -1273,6 +1392,6 @@ PLIST
         print "One had Quick Look extensions: the copies still here registered theirs again, and Quick Look's thumbnail agent was restarted"
     }
     if (( replaced )) || [[ ! -e build/.copies ]]; then forget_copies_gone; fi
-    print "Built $APP${COPY:+ ($APP_NAME, this worktree's copy of the app)}, with its Quick Look extensions, and build/$CLI_NAME (its command line)"
+    print "Built $APP${COPY:+ ($APP_NAME, this worktree's copy of the app)}, with its Quick Look extensions, ${#AGENT_SKILLS} skills for agents (${(j:, :)AGENT_SKILLS}), and build/$CLI_NAME (its command line); build $BUILD_ID"
     ;;
 esac

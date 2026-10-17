@@ -1,0 +1,590 @@
+{
+ "title": "Awkward @[names]",
+ "text": "Awkward \\@[names]: 8 modules in 2 layers, 73 files, 730 lines.\nA card is a module: open it for its files. An arrow, or a pill, is an import.",
+ "nodes": [
+  {
+   "title": "Level 2",
+   "kind": "frame",
+   "rank": 0
+  },
+  {
+   "title": "app",
+   "kind": "subboard",
+   "in": "Level 2",
+   "text": "app: level 2\nAbout \\@[nothing] here.\n\nImports @[[locale\\]] @[Level 1] @[\u2026me-very-long-package-name-very-long-package-name-very-long-package-name-x] @[C] @[back\\\\slash]\n1 files, 10 lines"
+  },
+  {
+   "title": "Big",
+   "kind": "subboard",
+   "in": "Level 2",
+   "text": "Big: level 2\nAbout \\@[nothing] here.\n\nImports @[Big/x]\n63 files, 630 lines\nIts folders are subboards here."
+  },
+  {
+   "title": "Level 1 (layer)",
+   "kind": "frame",
+   "rank": 1
+  },
+  {
+   "title": "[locale]",
+   "kind": "subboard",
+   "in": "Level 1 (layer)",
+   "text": "[locale]: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
+  },
+  {
+   "title": "Level 1",
+   "kind": "subboard",
+   "in": "Level 1 (layer)",
+   "text": "Level 1: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
+  },
+  {
+   "title": "\u2026me-very-long-package-name-very-long-package-name-very-long-package-name-x",
+   "kind": "subboard",
+   "in": "Level 1 (layer)",
+   "text": "@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
+  },
+  {
+   "title": "C",
+   "kind": "subboard",
+   "in": "Level 1 (layer)",
+   "text": "C: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n4 files, 40 lines"
+  },
+  {
+   "title": "back\\slash",
+   "kind": "subboard",
+   "in": "Level 1 (layer)",
+   "text": "back\\slash: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
+  },
+  {
+   "title": "Big/x",
+   "kind": "subboard",
+   "in": "Level 1 (layer)",
+   "text": "Big/x: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[Big]\n1 files, 10 lines"
+  },
+  {
+   "title": "Big/Utils",
+   "kind": "subboard",
+   "in": "Big",
+   "text": "Big/Utils: a folder of @[Big]\n\n\nUses nothing else of its module\n30 files, 300 lines"
+  },
+  {
+   "title": "Big/utils (2)",
+   "kind": "subboard",
+   "in": "Big",
+   "text": "Big/utils: a folder of @[Big]\n\n\nUses nothing else of its module\n30 files, 300 lines"
+  },
+  {
+   "title": "src",
+   "kind": "frame",
+   "in": "\u2026me-very-long-package-name-very-long-package-name-very-long-package-name-x"
+  },
+  {
+   "title": "components",
+   "kind": "frame",
+   "in": "src"
+  },
+  {
+   "title": "C/",
+   "kind": "frame",
+   "in": "C"
+  },
+  {
+   "title": "a",
+   "kind": "frame",
+   "in": "C"
+  },
+  {
+   "title": "c (C)",
+   "kind": "frame",
+   "in": "a"
+  },
+  {
+   "title": "b",
+   "kind": "frame",
+   "in": "C"
+  },
+  {
+   "title": "Big/",
+   "kind": "frame",
+   "in": "Big"
+  },
+  {
+   "title": "x",
+   "kind": "frame",
+   "in": "Big"
+  },
+  {
+   "title": "\u2026very-long-package-name-very-long-package-name-very-long-package-name-x/index.ts",
+   "kind": "sticky-note",
+   "in": "components",
+   "text": "10 lines"
+  },
+  {
+   "title": "u0.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u1.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u10.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u11.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u12.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u13.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u14.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u15.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u16.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u17.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u18.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u19.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u2.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u20.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u21.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u22.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u23.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u24.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u25.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u26.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u27.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u28.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u29.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u3.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u4.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u5.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u6.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u7.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u8.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "u9.ts",
+   "kind": "sticky-note",
+   "in": "Big/Utils",
+   "text": "10 lines"
+  },
+  {
+   "title": "top.ts",
+   "kind": "sticky-note",
+   "in": "Big/",
+   "text": "10 lines"
+  },
+  {
+   "title": "v0.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v1.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v10.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v11.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v12.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v13.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v14.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v15.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v16.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v17.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v18.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v19.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v2.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v20.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v21.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v22.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v23.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v24.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v25.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v26.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v27.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v28.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v29.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v3.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v4.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v5.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v6.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v7.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v8.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "v9.ts",
+   "kind": "sticky-note",
+   "in": "Big/utils (2)",
+   "text": "10 lines"
+  },
+  {
+   "title": "Big/one.ts",
+   "kind": "sticky-note",
+   "in": "x",
+   "text": "10 lines"
+  },
+  {
+   "title": "two.ts",
+   "kind": "sticky-note",
+   "in": "x",
+   "text": "10 lines"
+  },
+  {
+   "title": "its.ts",
+   "kind": "sticky-note",
+   "in": "Big/x",
+   "text": "10 lines"
+  },
+  {
+   "title": "c/main.swift",
+   "kind": "sticky-note",
+   "in": "c (C)",
+   "text": "10 lines"
+  },
+  {
+   "title": "b/main.swift",
+   "kind": "sticky-note",
+   "in": "b",
+   "text": "10 lines"
+  },
+  {
+   "title": "half\ufffd.swift",
+   "kind": "sticky-note",
+   "in": "C/",
+   "text": "10 lines"
+  },
+  {
+   "title": "C/main.swift (2)",
+   "kind": "sticky-note",
+   "in": "C/",
+   "text": "10 lines"
+  },
+  {
+   "title": "Level 1/one.ts",
+   "kind": "sticky-note",
+   "in": "Level 1",
+   "text": "10 lines"
+  },
+  {
+   "title": "page.ts",
+   "kind": "sticky-note",
+   "in": "[locale]",
+   "text": "10 lines"
+  },
+  {
+   "title": "app/index.ts",
+   "kind": "sticky-note",
+   "in": "app",
+   "text": "10 lines"
+  },
+  {
+   "title": "b.ts",
+   "kind": "sticky-note",
+   "in": "back\\slash",
+   "text": "10 lines"
+  }
+ ],
+ "edges": [
+  {
+   "from": "app",
+   "to": "[locale]"
+  },
+  {
+   "from": "app",
+   "to": "Level 1"
+  },
+  {
+   "from": "app",
+   "to": "\u2026me-very-long-package-name-very-long-package-name-very-long-package-name-x"
+  },
+  {
+   "from": "app",
+   "to": "C"
+  },
+  {
+   "from": "app",
+   "to": "back\\slash"
+  },
+  {
+   "from": "Big",
+   "to": "Big/x"
+  },
+  {
+   "from": "app/index.ts",
+   "to": "page.ts",
+   "weight": 1
+  },
+  {
+   "from": "app/index.ts",
+   "to": "c/main.swift",
+   "weight": 2
+  }
+ ]
+}

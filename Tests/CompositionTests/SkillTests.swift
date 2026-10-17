@@ -302,6 +302,37 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         expect(description.count <= 1_024, "\(description.count) characters")
         expect(description.contains("`canvas draw`") && description.contains("`canvas query`"), String(description))
     },
+    test("every skill the app carries for agents keeps to the Agent Skills spec (agentskills.io): the name is the folder's, lowercase letters, digits and hyphens, at most 64; the description at most 1,024 characters; SKILL.md under 500 lines; and no page of one says build/canvas but the one sentence that says where canvas is") {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("SkillSpec-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let made = try run(URL(fileURLWithPath: "/bin/zsh"), ["-c", #"./build.sh agents "$0""#, folder.path], timeout: 120)
+        expectEqual(made.status, 0, made.output + made.error)
+        let skills = folder.appendingPathComponent("canvas/skills")
+        let names = try FileManager.default.contentsOfDirectory(atPath: skills.path).sorted()
+        expect(names.contains("canvas") && names.contains("canvas-digest") && names.contains("canvas-ingest"), "\(names)")
+        for name in names {
+            let page = try String(contentsOf: skills.appendingPathComponent("\(name)/SKILL.md"), encoding: .utf8)
+            let lines = page.components(separatedBy: "\n")
+            expect(lines.count < 500, "\(name): SKILL.md has \(lines.count) lines")
+            expectEqual(lines.first, "---", "\(name): frontmatter starts the file")
+            let end = try require(lines.dropFirst().firstIndex(of: "---"), "\(name): the frontmatter ends")
+            let front = lines[1..<end]
+            let fields = Dictionary(uniqueKeysWithValues: front.compactMap { line -> (String, String)? in
+                guard let colon = line.firstIndex(of: ":"), !line.hasPrefix(" ") else { return nil }
+                return (String(line[..<colon]), line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces))
+            })
+            expectEqual(fields["name"], name, "the frontmatter's name is the folder's")
+            expect(name.count <= 64 && name.range(of: "^[a-z0-9]+(-[a-z0-9]+)*$", options: .regularExpression) != nil, "\(name) is a name the standard allows")
+            let description = fields["description"] ?? ""
+            expect(!description.isEmpty && description.count <= 1_024, "\(name): the description has \(description.count) characters")
+        }
+        let walker = try require(FileManager.default.enumerator(atPath: skills.path))
+        for case let path as String in walker where path.hasSuffix(".md") {
+            let text = try String(contentsOf: skills.appendingPathComponent(path), encoding: .utf8)
+            let mentions = text.components(separatedBy: "build/canvas").count - 1
+            expectEqual(mentions, path == "canvas/SKILL.md" ? 1 : 0, "\(path) says build/canvas")
+        }
+    },
     test("every endRule the skill writes in its prose is a JSON object, as canvas draw reads it") {
         for file in try skillFiles() {
             let text = try String(contentsOfFile: file, encoding: .utf8)
@@ -320,7 +351,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         let written = Set(edgeKeys.dropFirst().compactMap { backticked($0[0]).first })
         for key in EdgeKey.allCases { expect(written.contains("\(key.rawValue):"), "the reference's table of an edge's keys has \(key.rawValue):") }
         expect(skill.contains("share: true") && skill.contains(#"share: "Checkout""#), "SKILL.md teaches share:")
-        expect(skill.contains("build/canvas measure -"), "SKILL.md points to measure")
+        expect(skill.contains("canvas measure -"), "SKILL.md points to measure")
 
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let commands = registry.hostCommands
@@ -486,7 +517,63 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
             expect(reference.contains("\(kind) is at least \(size)"), "the reference: a \(kind) is at least \(size)")
         }
     },
+    test("canvas-ingest's pages name only options `ingest --help` lists, wherever they run ingest, and name every option it lists") {
+        let listed = try ingestHelpOptions()
+        expect(listed.isSuperset(of: ["--commit", "--new-file", "--board", "--scan", "--where"]), "ingest --help lists its options: \(listed.sorted())")
+        let pages = try ingestSkillPages()
+        expect(pages.count >= 4, "SKILL.md, the references and the example's README: \(pages)")
+        var named = Set<String>()
+        for page in pages {
+            let text = try String(contentsOfFile: page, encoding: .utf8)
+            for option in ingestOptionsRun(in: text) {
+                expect(listed.contains(option) || option == "--help", "\(page) runs ingest with \(option), which ingest --help doesn't list")
+            }
+            if !page.hasSuffix("README.md") { named.formUnion(dashedWords(in: text)) }
+        }
+        for option in listed.sorted() { expect(named.contains(option), "SKILL.md or a reference names \(option), which ingest --help lists") }
+    },
 ])
+
+/// Where canvas-ingest is, from the repository's root.
+let ingestSkillFolder = ".claude/skills/canvas-ingest"
+
+/// The options `ingest --help` lists (it prints its help on standard error and exits 2).
+@MainActor func ingestHelpOptions() throws -> Set<String> {
+    let help = try run(URL(fileURLWithPath: "\(ingestSkillFolder)/ingest"), ["--help"])
+    expectEqual(help.status, 2, help.output + help.error)
+    return dashedWords(in: help.error)
+}
+
+/// canvas-ingest's pages: SKILL.md, its references, and the example's README.
+func ingestSkillPages() throws -> [String] {
+    let references = try FileManager.default.contentsOfDirectory(atPath: "\(ingestSkillFolder)/reference").filter { $0.hasSuffix(".md") }.sorted()
+    return ["\(ingestSkillFolder)/SKILL.md"] + references.map { "\(ingestSkillFolder)/reference/\($0)" } + ["\(ingestSkillFolder)/examples/orders/README.md"]
+}
+
+/// Every `--word` in a text.
+func dashedWords(in text: String) -> Set<String> {
+    let pattern = try! NSRegularExpression(pattern: #"(?<![\w-])--[a-z][a-z0-9-]*"#)
+    return Set(pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)).map { (text as NSString).substring(with: $0.range) })
+}
+
+/// The options a page gives `ingest` where it runs it: in a line of a fenced block, or a code span, the `--words` after the word
+/// `ingest` (as a command: after a space, a slash or a quote, or at the start).
+func ingestOptionsRun(in text: String) -> [String] {
+    var segments: [String] = []
+    var fenced = false
+    let span = try! NSRegularExpression(pattern: "`[^`\n]+`")
+    for line in text.components(separatedBy: "\n") {
+        if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") { fenced.toggle(); continue }
+        if fenced { segments.append(line); continue }
+        segments += span.matches(in: line, range: NSRange(line.startIndex..., in: line)).map { (line as NSString).substring(with: $0.range) }
+    }
+    let command = try! NSRegularExpression(pattern: #"(?:^|[\s/"'`])ingest(?=[\s"'`]|$)"#)
+    return segments.flatMap { segment -> [String] in
+        guard let found = command.firstMatch(in: segment, range: NSRange(segment.startIndex..., in: segment)) else { return [] }
+        let after = (segment as NSString).substring(from: found.range.upperBound)
+        return dashedWords(in: after).sorted()
+    }
+}
 
 /// A Markdown file's tables, each its rows (the header first), each row its cells, trimmed; the
 /// line under the header left out. A `|` escaped (`\|`, in a cell's code) is the cell's.
