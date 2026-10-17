@@ -9216,9 +9216,9 @@ the tab, [the detail panel](#the-detail-panel), [FuzzyMatching](#fuzzymatching) 
 [table of contents](#the-table-of-contents) (what a listed shape with no title is called), and
 it knows no kind, edge type or concern: what counts as connected is a **light**, a title, a color
 and a query, which the plugin that owns the edges contributes to its point
-(`registrar.neighborLight`). Arrows' two are Arrows' own (`ArrowLightsPlugin`) and mentions' two are
-Mentions' (`MentionLightsPlugin`), each a plugin value of its own, so a list without Neighbors leaves
-them out.
+(`registrar.neighborLight`). Arrows' two are Arrows' own (`ArrowLightsPlugin`), mentions' two are
+Mentions' (`MentionLightsPlugin`) and the one for what is of a type is Types' (`TypeLightsPlugin`),
+each a plugin value of its own, so a list without Neighbors leaves them out.
 
 | Light | Color | What's outlined, for the shape hovered, and listed, for the shape selected |
 |---|---|---|
@@ -9226,6 +9226,7 @@ them out.
 | Pointed To By | purple | the shapes that have an arrow into it and the references that stand for it; for an arrow, the shape it starts at |
 | Mentions | teal | the shapes its text mentions |
 | Mentioned By | lavender | the shapes whose text mentions it |
+| Instances | pink | the shapes whose `is` list names it: a type built on it, but not what is of that one; a relationship type's arrows |
 
 The arrows themselves, between a shape and those, are outlined with them and never listed (a light's
 `between`).
@@ -9238,7 +9239,9 @@ the selection's blue, and the light-mode green and teal fell under 3:1). In the 
 green #07933B and #2FD359, purple #8C21A4 and #B851FD, teal #0E97B0 and #329AB4, lavender #A76FE2
 and #D0B0FE. Each is clear of Validation's red and orange and of Find's orange, at least 3:1 against
 the canvas it's drawn over in both appearances, and not the accent; the two purples are close for
-some color-vision deficiencies.
+some color-vision deficiencies. Types' pink (`TypesStyle.instancesLight`), #C2307A and #F07AB5, came
+after, by the same rules; gold, the other hue the four leave, read as a yellow note's own edge on the dark
+canvas.
 
 ```swift
 // A light is a title, a color and a query, given `#id`, the shape hovered or listed, and the edge
@@ -9264,6 +9267,10 @@ let mention = MentionEdge.id.rawValue
 registrar.neighborLight(MentionStyle.mentions, color: MentionStyle.mentionsLight, query: { ":edge-from(\($0), \(mention))" })
 registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, query: { ":edge-to(\($0), \(mention))" },
                         caption: { editor, subject, mentioner in editor.mentions?.quote(of: mentioner, around: subject) })
+
+// Types (TypeLightsPlugin, id `type-lights`):
+let isA = IsAEdge.id.rawValue, schema = TypeSchemaProperty.key.rawValue
+registrar.neighborLight(TypesStyle.instances, color: TypesStyle.instancesLight, query: { ":edge-to(\($0)[\(schema)], \(isA))" })
 ```
 
 - **`NeighborsPlugin()`** (id `neighbors`, `PluginID.neighbors`; with `NeighborLight`, the titled,
@@ -9272,8 +9279,8 @@ registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedB
   `registry.neighborLights`; and `NeighborState`, the service; the lists have their own, below)
   registers the service (`editor.neighbors`), which takes the lights from the registry,
   and `registrar.outlines { $0.neighbors?.outlines ?? Outlines() }`; the report's
-  line is `neighbors service NeighborState · outlines`, and each face's is
-  `neighbor light · neighbor light`. It's after the query plugins in the shipped
+  line is `neighbors service NeighborState · outlines`, arrows' and mentions' faces'
+  `neighbor light · neighbor light`, and types' `neighbor light`. It's after the query plugins in the shipped
   list, and the lights' plugins are after it, and the tab's after theirs. It lights nothing without `QueriesPlugin()` and
   `TopologyPlugin()` (a hover asks nothing then), has nothing to hover without `SelectionPlugin()`,
   and nothing to light without a light; none of them is refused, since it
@@ -9290,7 +9297,7 @@ registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedB
   drawn, so it reads what's kept, never a board (Mentions': a mentioner's text around its mention).
   Lights are in plugin order, and a plugin's in the
   order it gives them: a shape's first light is its first ring, so the shipped list has arrows' before
-  mentions'. They are the query language's
+  mentions', and types' last. They are the query language's
   ([Queries](#queries)): `:edge-from(X, arrow|stands-for)` is the shapes X has an arrow to, or
   stands for; `:starts-at(X, arrow)` the arrows (connections) that start at X; `:end-of(X, arrow)`
   the shape X ends at, where X is an arrow (and nothing for any other shape), so hovering an arrow
@@ -9703,7 +9710,7 @@ The modules, one job each:
 | FuzzyMatching | core | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | platform | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
 | Moving | platform | `/move-to` and `/move-near` ([Moving](#moving)): the shape typed in moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Draw's placement for plugins (DrawScript's solver, over `ObstacleGrid`) as `draw` places a shape; no kind opts into it, and nothing imports it. |
-| Neighbors | platform | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)), and select one and its panel's Connections tab lists them by the same ways, then what it's inside and what it holds (`NeighborDetailsPlugin`, on DetailPanel, its search ranked by FuzzyMatching, a shape with no title called as TableOfContents calls it): its lights are titles, colors and the queries that find their shapes, each contributed by the plugin that owns the edges (Arrows' `ArrowLightsPlugin`, Mentions' `MentionLightsPlugin`), asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`). |
+| Neighbors | platform | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)), and select one and its panel's Connections tab lists them by the same ways, then what it's inside and what it holds (`NeighborDetailsPlugin`, on DetailPanel, its search ranked by FuzzyMatching, a shape with no title called as TableOfContents calls it): its lights are titles, colors and the queries that find their shapes, each contributed by the plugin that owns the edges (Arrows' `ArrowLightsPlugin`, Mentions' `MentionLightsPlugin`, Types' `TypeLightsPlugin`), asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`). |
 | Palette | core | The color math ([Palette](#palette)): a color as sRGB and OKLCH (`RGB`, `OKLCH`), the seven roles one color is drawn in on the light canvas and the dark (`Swatch`, each a `Tone`), contrast, and the one test for a dark appearance: pure, it knows no canvas, registry, plugin or named color. |
 | QueryCommands | platform | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
 | QueryLanguage | core | The language `query` reads (`SelectorList(parsing:)`) and its canonical form: pure, it knows no canvas, registry or plugin. |
@@ -11156,6 +11163,10 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   (a match inside a row with more in it marks the row, a folded one the fold). Its `affected` is
   `RowBook.reached(by:)`, which has the type index hear the commit before Find reads the instances of a type
   that changed.
+- **For [Neighbors](#neighbors)**, `TypeLightsPlugin` (a plugin value of Types' own, after Neighbors, and after
+  mentions' lights in the shipped list) gives one light, Instances (`TypesStyle.instances`): what is of the
+  hovered type, in pink (`TypesStyle.instancesLight`), `:edge-to(#id[schema], is-a)` (only while it is a type), so a type's Connections tab lists
+  its instances. Direct, as the chips are: a type built on it is listed, what is of that one isn't.
 - **Zoomed out** a kind's skeleton asks `context.showsTypeRowBars` (14% and up) and calls
   `context.fillTypeRowBars(of:in:)`: a bar for each row's name (as wide as its columns, never laid out), three
   dots for a fold, three bars while the model reads, one for `No fields` and a reason (also under a type's rows,
@@ -13100,6 +13111,7 @@ query-commands       command line query · command line query-vocabulary
 neighbors            service NeighborState · outlines
 arrow-lights         neighbor light · neighbor light
 mention-lights       neighbor light · neighbor light
+type-lights          neighbor light
 neighbor-details     service NeighborList · ShapeDetails
 moving               /move-to /move-near → every shape · ContentsMoves
 reordering           ShapeContextMenus
