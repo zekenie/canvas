@@ -58,8 +58,11 @@ not at all. A title on the board means that shape, so a script can change or mov
 Output is JSON when it's piped (as agents run it) and text in a terminal (`--format` picks), errors
 come with a hint, and the exit status says what happened: 0 done, 1 the app couldn't do it, 2 the
 command line is wrong, 3 the app isn't running or didn't answer in time (it may still do it, so
-check before running it again). To run it as just `canvas`, put the link on your PATH:
-`ln -s "$PWD/build/canvas" ~/.local/bin/canvas`.
+check before running it again). To run it as just `canvas`, and to give coding agents the skills that teach them to use it, run
+`build/canvas install`: it copies the skills into `~/.agents/skills` (where agents that follow the
+Agent Skills standard look), installs them as a plugin for Claude Code if `claude` is there, and links
+`canvas` into a folder on your PATH. It doesn't need the app to be running, and running it again after
+an update brings the copies up to date (`canvas help install`).
 
 ## Controls
 

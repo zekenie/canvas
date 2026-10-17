@@ -15,6 +15,8 @@ extension Invocation {
             sections.append(Help.wrap("Its commands can't be listed: \(problem ?? "the app can't be reached"). Open the app, and run `\(name) help` again.",
                                       width: Help.width))
         }
+        sections.append(Help.wrap("`\(name) install` puts the skills that came with the app where agents read them, and \(name) on your PATH. "
+            + "It needs no app running: `\(name) help install`.", width: Help.width))
         sections.append("Options for every command:\n" + Help.table([
             ("--format <json|text>", "How results are printed: JSON (the default when the output isn't a terminal) or text. CANVAS_FORMAT sets it too. "
                 + "Help is text, unless --format json asks for what the app says about its commands, their params' JSON Schema too."),

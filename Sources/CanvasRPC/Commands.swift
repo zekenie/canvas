@@ -8,7 +8,7 @@ public enum RPC {
     /// `errors`). What an older reader passes over keeps the version: a param's `x-timeout` (an
     /// older `canvas` waits its usual time, and says `timed_out`), a param's `x-path` (an older
     /// `canvas` sends a file as typed, which the app refuses unless it's whole), an error's `column`
-    /// and `length`, a command's `boardOptional`.
+    /// and `length`, a command's `boardOptional`, the app's `build` (`AppInfo.build`).
     public static let protocolVersion = 2
     /// What the command line is called: in help, and in the examples commands give.
     public static let commandName = "canvas"
@@ -20,9 +20,12 @@ public enum RPC {
     public static let statusCommand = "status"
     public static let boardsCommand = "boards"
     public static let newCommand = "new"
+    /// The command line's own, which never asks the app: it puts the skills the app carries where agents
+    /// read them (`canvas install`).
+    public static let installCommand = "install"
     /// Names no plugin's command may take: the protocol's own, the app's own, and the command line's
     /// `help`.
-    public static let reservedCommandNames: Set<String> = [describeMethod, statusCommand, boardsCommand, newCommand, "help"]
+    public static let reservedCommandNames: Set<String> = [describeMethod, statusCommand, boardsCommand, newCommand, installCommand, "help"]
     /// The param a board command's board is named by (`--board`); the app takes it out before the
     /// command sees its params. No command may declare a param of this name.
     public static let boardParam = "board"
@@ -139,11 +142,16 @@ public struct AppInfo: Codable, Equatable, Sendable {
     public var pid: Int
     /// The app's bundle, whose `canvas` speaks its protocol.
     public var path: String?
+    /// Which build the app is (the commit it was built from, and whether the tree had changes): the
+    /// skills the app carries for agents say the same, so a copy of them left behind by an update is told
+    /// from the app's. Nil for an app that doesn't say (an older one, or one that isn't built as an app).
+    public var build: String?
 
-    public init(name: String, version: String, pid: Int, path: String? = nil) {
+    public init(name: String, version: String, pid: Int, path: String? = nil, build: String? = nil) {
         self.name = name
         self.version = version
         self.pid = pid
         self.path = path
+        self.build = build
     }
 }

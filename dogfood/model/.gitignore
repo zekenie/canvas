@@ -1,8 +1,0 @@
-# made by ingest (README.md)
-model.json
-digest.json
-digest.out/
-.index/
-.index.log
-__pycache__/
-model.json.reading

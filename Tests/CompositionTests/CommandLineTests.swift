@@ -20,11 +20,11 @@ import Types
 // command server, started as the app starts it (the shipped plugins' commands), on boards
 // configured as the app configures them.
 
-/// The app's command server on a socket of the test's own, for these boards.
-@MainActor func startCommandServer(boards: [BoardDocument], frontmost: BoardDocument?) throws -> CommandServer {
+/// The app's command server on a socket of the test's own, for these boards; `build` is the build it says it is (a test process is none).
+@MainActor func startCommandServer(boards: [BoardDocument], frontmost: BoardDocument?, build: String? = nil) throws -> CommandServer {
     // As the app makes it: the commands the plugins gave the host's slot for them.
     let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(registry: try require(BoardDocument.configuration).registry),
-                               boards: { boards }, frontmost: { frontmost })
+                               build: build, boards: { boards }, frontmost: { frontmost })
     try server.start()
     return server
 }
@@ -431,6 +431,14 @@ edge "API" -> "Cache" channel: none
         expectEqual(status["protocol"], .number(Double(RPC.protocolVersion)))
         expectEqual(status["boards"], 1)
         expectEqual(status["frontmost"], .number(Double(board.number)))
+        expectEqual(status["build"], nil, "a process that is not a built app says no build")
+        let built = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(registry: try require(BoardDocument.configuration).registry),
+                                  build: "abc123-dirty-0f0f0f0f", boards: { [board] }, frontmost: { board })
+        try built.start()
+        defer { built.stop() }
+        expectEqual(try JSON(text: canvas(built, ["status"]).output)["build"], "abc123-dirty-0f0f0f0f", "status says the build")
+        let described = try JSON(text: canvas(built, ["help", "--format", "json"]).output).decode(AppDescription.self)
+        expectEqual(described.app.build, "abc123-dirty-0f0f0f0f", "and so does describe")
         let kinds = try JSON(text: canvas(server, ["kinds"]).output).arrayValue?.compactMap { $0["kind"]?.stringValue } ?? []
         expectEqual(kinds, try ShippedPlugins.registry(model: ScriptedLanguageModel()).kinds.map(\.rawValue).sorted())
         let note = try JSON(text: canvas(server, ["kinds", "sticky-note", "--schema"]).output).arrayValue?.first

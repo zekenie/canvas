@@ -531,8 +531,14 @@ export function fillsOf(layout, model) {
 }
 
 /** Which algorithm a container's children ask for: by the shape of the arrows among them. Layered and stress are both tried. */
+// A container of more children than this is packed as boxes, its arrows drawn over them, whatever they are: laid out by its arrows, a
+// star of hundreds (an index file that imports every icon) is a tree a row or a column long (465 notes, 122,512 units, past what draw
+// takes), and a crowd of them is a layout that takes minutes. Only a board promote.mjs doesn't search has one (its CROWD).
+export const CROWD = 150;
+
 export function chooseAlgorithm(kids, edges) {
   if (kids.length <= 1) return 'trivial';
+  if (kids.length > CROWD) return 'rectpacking';
   if (!edges.length) return 'rectpacking';
   if (isForest(kids, edges)) return 'mrtree';
   return 'layered';   // `separate` lays it out both ways and keeps the one that costs less

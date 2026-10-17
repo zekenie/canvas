@@ -7,7 +7,7 @@ Only a **public** shape can be stood for. `public` is an attribute, `public: tru
 
 A reference is **direct** (the person picked one shape) or **dynamic** (a query finds what it stands for). A script makes a dynamic one with `query:`, and a direct one only as the stand-in of an edge, to a public shape on another board or with `via: reference` ([language.md](language.md#through-a-reference)): what a reference names, and the words typed into it, are otherwise the person's to pick and type. A dynamic one stands for what its query finds among the public shapes, the first in file order or, with `all: true`, every one up to fifty; the app finds it a moment after it's drawn and again as the file changes, and `canvas query` waits for that (up to two seconds, for a query that reads edges) before it answers. Its query reads what's drawn and what direct references stand for, never what another dynamic one found, nor what the person has selected or the board they're on (`:selected`, `:current-board`): a query with those finds nothing, and the pill says why. The examples below are about a direct one, which is what a person makes first, and which reads the same way for you.
 
-The examples on this page are all about one file, the story below. Each block tagged `query` is a query as you'd send it, and its first line, a comment, says what it answers, as in [query.md](query.md). Each block tagged `draw-error` is a script run as a dry run, refused with the reason its first line names, changing nothing. The kinds and words are the ones that shipped when this was written. `build/canvas kinds` and `build/canvas query-vocabulary` say what your app has.
+The examples on this page are all about one file, the story below. Each block tagged `query` is a query as you'd send it, and its first line, a comment, says what it answers, as in [query.md](query.md). Each block tagged `draw-error` is a script run as a dry run, refused with the reason its first line names, changing nothing. The kinds and words are the ones that shipped when this was written. `canvas kinds` and `canvas query-vocabulary` say what your app has.
 
 ## Contents
 
@@ -35,7 +35,7 @@ Checkout and Billing both point at the pill, not at Auth: Auth sits far from the
 
 ## Reading through a reference
 
-Every word that follows an edge reads an arrow into a reference as an arrow into what it stands for. The arrow is still drawn into the pill, and `build/canvas query` says so, but it's an arrow to Auth for everything that asks about Auth.
+Every word that follows an edge reads an arrow into a reference as an arrow into what it stands for. The arrow is still drawn into the pill, and `canvas query` says so, but it's an arrow to Auth for everything that asks about Auth.
 
 The arrows that end at Auth:
 

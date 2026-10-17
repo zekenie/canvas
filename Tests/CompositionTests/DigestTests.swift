@@ -10,6 +10,7 @@ import ShippedTesting
 import Subboards
 import TestKit
 import Titles
+import Types
 
 // The canvas-digest skill (.claude/skills/canvas-digest), end to end. The tool's own unit tests run
 // under the system jsc (the runtime the skill is built for). Then `digest all` runs as an agent runs
@@ -122,7 +123,7 @@ private func scratchFolder(_ name: String) throws -> URL {
 /// Every shape, pill and arrow of the file as the tool's `verify` reads them, one JSON object a line:
 /// `{board, title, kind, x, y, w, h, in, for, from, to}`. A board is `root` (the digest's own: the
 /// file's root, or the board of the subboard called `digestRoot`) or the title of the subboard that
-/// holds it; an arrow's `to` is `pill:<label>` for a reference.
+/// holds it; an arrow's `to` is `pill:<label>` for a reference, and its `is` the titles of the relationship types it is of (when it is of any).
 @MainActor private func landedRows(in editor: CanvasEditor, digestRoot: String?) throws -> String {
     let containing = editor.registry.containingKinds
     func titled(_ id: ShapeID?) -> String {
@@ -156,6 +157,7 @@ private func scratchFolder(_ name: String) throws -> URL {
                 } else {
                     row["to"] = titled(arrow.end.binding?.shapeID)
                 }
+                if let types = record[IsAProperty.self]?.map(\.shape), !types.isEmpty { row["is"] = types.map(titled) }
             }
             rows.append(row)
         }
@@ -218,6 +220,35 @@ private func scratchFolder(_ name: String) throws -> URL {
 /// The titles a digest says point at `hub`, from the digest itself.
 private func sources(of hub: String, in digest: JSON) -> [String] {
     (digest["edges"]?.arrayValue ?? []).filter { $0["to"]?.stringValue == hub }.compactMap { $0["from"]?.stringValue }
+}
+
+/// What a typed drawing says by design: a Needed row still empty, a relationship that doesn't fit its ends, a row past Only one. Not that a run is off its plan.
+private func isByDesign(_ message: String) -> Bool {
+    message.hasSuffix(" is needed") || message.contains("should have at most") || message.contains(" runs from ") || message.contains(" runs to ")
+}
+
+/// Every warning of the real runs, but the out-of-view one: each must be one a typed drawing gives by design, and no run pushed a shape past another.
+/// Returns them (the runs' warnings of the typed shapes, in order).
+@MainActor private func expectOnlyTypedWarnings(_ run: DigestRun, _ label: String) throws -> [String] {
+    var said: [String] = []
+    for (name, result) in try run.results() {
+        let messages = (result["warnings"]?.arrayValue ?? []).compactMap { $0["message"]?.stringValue }.filter { !$0.contains("landed outside the view") }
+        for message in messages { expect(isByDesign(message), "\(label): \(name) warned of more than a typed drawing does: \(message)") }
+        expect(!(result["changes"]?.arrayValue ?? []).contains { $0["pushedPast"] != nil }, "\(label): \(name) pushed a shape past another")
+        said += messages
+        // and what a row says of its own shape (a Needed row left empty is `problems` on the note, not a warning of the run)
+        for change in result["changes"]?.arrayValue ?? [] {
+            for problem in change["problems"]?.arrayValue ?? [] { said.append("\(change["title"]?.stringValue ?? "?"): \(problem["message"]?.stringValue ?? "")") }
+        }
+    }
+    return said
+}
+
+/// How many rows `canvas query` answers for a query on a board.
+@MainActor private func queriedCount(_ server: CommandServer, _ board: BoardDocument, _ query: String) throws -> Int {
+    let answer = try canvas(server, ["query", "--board", "\(board.number)", "--brief", "--limit", "10000", query])
+    expectEqual(answer.status, 0, answer.error)
+    return Int(try require(JSON(text: answer.output)["count"]?.numberValue))
 }
 
 @MainActor let digestTests = Suite("canvas-digest: the skill's tool under jsc, and `digest all` against the app's command server", [
@@ -360,6 +391,201 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
             let hub = try require(promotion["node"]?.stringValue)
             expectEqual(try queried(server, board, #":edge-to("\#(hub)")"#).sorted(), Set(sources(of: hub, in: digest)).sorted(), "what points at \(hub)")
         }
+    },
+
+    test("digest all on a typed digest: types and their ends in one script, the notes of a type after it, every arrow the relationship it is; warnings a typed drawing gives are reported and fail nothing") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("typed")
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let run = try runDigest("all", "typed", server: server, target: ["--board", "\(board.number)", "--into", "Platform"], out: folder)
+        expectEqual(run.process.status, 0, run.process.output + run.process.error)
+        expect(run.process.output.contains("verify ok"), run.process.output)
+        expect(run.process.output.contains("types: 2 type(s), 2 relationship type(s), 7 note(s) of a type, 8 arrow(s) of a relationship type"), run.process.output)
+        expect(run.process.output.contains("by design"), "the warnings of a typed drawing are said, as expected: \(run.process.output)")
+        let plan = try run.plan
+        try expectOnPlan(run, board: board, digestRoot: "Platform", "typed")
+
+        // The order of the runs: the types, the relationship types and their ends in one script of the board that holds them (here the run of the
+        // frame "Model", the deepest of them), every note of a type after every such script, the arrows of the relationships last.
+        let runs = try require(plan["runs"]?.arrayValue?.compactMap(\.stringValue))
+        let results = try run.results()
+        func script(_ name: String) throws -> String { try String(contentsOf: run.out.appendingPathComponent("runs/\(name)"), encoding: .utf8) }
+        let typesRun = try require(runs.first { $0.contains("-root-in-1") })
+        let typesScript = try script(typesRun)
+        for title in ["Workflow", "Table", "writes", "reads"] { expect(typesScript.contains("sticky-note \"\(title)\""), "\(title) is drawn in the types' script") }
+        expect(typesScript.contains(#"edge "Workflow" -> "writes" text: "tables" endRule: {"needed":true}"#), "an end is in the script of its types: \(typesScript)")
+        expect(typesScript.contains(#"edge "writes" -> "Table""#))
+        expect(!typesScript.contains("is: "), "no note of a type in it")
+        let notesRuns = runs.filter { $0.contains("-notes.") }
+        expectEqual(notesRuns.count, 2, "a script of notes for each service's board")
+        for name in notesRuns { expect(runs.firstIndex(of: name)! > runs.firstIndex(of: typesRun)!, "\(name) comes after the types") }
+        for name in runs.filter({ $0.contains("-edges.") }) { expect(runs.firstIndex(of: name)! > runs.lastIndex(of: notesRuns.last!)!, "\(name) comes after every note") }
+        // a note is drawn at the size it has with the ends there already, in the run that made it
+        for (name, result) in results where notesRuns.contains(name) || name == typesRun {
+            for change in result["changes"]?.arrayValue ?? [] where change["kind"]?.stringValue == "sticky-note" {
+                expectEqual(change["did"], "created", "\(name): \(change["title"] ?? .null)")
+            }
+        }
+        // the sizes the plan stated are the sizes the app made them: a typed note is at least 320 wide
+        let shapes = (try require(plan["boards"]?.arrayValue)).flatMap { $0["shapes"]?.arrayValue ?? [] }
+        for title in ["Workflow", "Table", "OrderWorkflow", "orders"] {
+            let shape = try require(shapes.first { $0["title"]?.stringValue == title })
+            expect((shape["w"]?.numberValue ?? 0) >= 320, "\(title) is 320 wide at least: \(shape)")
+        }
+        let tall = { (t: String) -> Double in shapes.first { $0["title"]?.stringValue == t }?["h"]?.numberValue ?? 0 }
+        expect(tall("Workflow") > tall("OrderWorkflow") - 100 && tall("Workflow") >= 200, "the type's note has its fields' rows and its ends'")
+
+        // The warnings are by design, said, and fail nothing: AuditSweep writes no table, and its `tables` row is Needed
+        let said = try expectOnlyTypedWarnings(run, "typed")
+        expect(said.contains { $0.contains("AuditSweep") && $0.hasSuffix("tables is needed") }, "the Needed row left empty is said: \(said)")
+        expect(said.contains { $0.contains("reads runs to a Table") }, "so is the relationship that doesn't fit its ends (AuditSweep reads a Workflow): \(said)")
+        expectEqual(try queriedCount(server, board, "arrow:misfit"), 1)
+
+        // What the app answers of what was drawn: the notes of a type, and the arrows of a relationship type, with the one through a pill
+        expectEqual(try queried(server, board, #":is-a("Table")"#).sorted(), ["orders", "refunds", "rollup"])
+        expectEqual(try queried(server, board, #":is-a("Workflow")"#).sorted(), ["AuditSweep", "NightlyRollup", "OrderWorkflow", "RefundWorkflow"])
+        expectEqual(try queriedCount(server, board, #"arrow:is-a("writes")"#), 5, "the writes of the digest, the one through a pill too")
+        expectEqual(try queriedCount(server, board, #"arrow:is-a("reads")"#), 3, "NightlyRollup reads orders and refunds, and AuditSweep (wrongly) a workflow")
+        expectEqual(try queried(server, board, #":incomplete"#), ["AuditSweep"])
+        expectEqual(try queried(server, board, #"sticky-note[relationship]"#).sorted(), ["reads", "writes"])
+        expectEqual(try queriedCount(server, board, #"arrow:between("Workflow", "writes")"#), 1, "the end")
+        // the two arrows NightlyRollup has to orders are a pill's worth: one reference, two relationships
+        expectEqual(try queriedCount(server, board, #"reference"#), 2, "a pill for orders and one for refunds, though NightlyRollup has two arrows at orders")
+        // which workflows write the orders table?
+        let writers = try queried(server, board, #":start-of(arrow:is-a("writes"):ends-at("orders"))"#)
+        expectEqual(writers.sorted(), ["NightlyRollup", "OrderWorkflow", "RefundWorkflow"], "who writes orders, the one through a pill read through it")
+
+        // drawn again in place: a typed digest is replaced like any other, types, ends and arrows with the rest
+        let again = try runDigest("all", "typed", server: server, target: ["--board", "\(board.number)", "--into", "Platform"], extra: ["--replace"], out: folder)
+        expectEqual(again.process.status, 0, again.process.output + again.process.error)
+        expect(again.process.output.contains("replace: took back"), again.process.output)
+        expect(again.process.output.contains("verify ok"), again.process.output)
+        try expectOnPlan(again, board: board, digestRoot: "Platform", "typed again")
+        expectEqual(try queriedCount(server, board, #"arrow:is-a("writes")"#), 5)
+    },
+
+    test("a typed digest whose types are on a board of their own: the card first, then the types and their ends in the board's script, then the notes of the first board, which relate to a note on another through a pill") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("typed-board")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        // the fixture with Model a subboard, and a workflow on the first board that writes a table on another
+        var text = try String(contentsOf: fixture("typed"), encoding: .utf8)
+        text = text.replacingOccurrences(of: #""kind": "frame""#, with: #""kind": "subboard""#)
+        text = text.replacingOccurrences(of: #""nodes": ["#, with: #""nodes": [{"title": "Loose", "is": "Workflow", "fieldValues": {"name": "Loose"}}, "#)
+        text = text.replacingOccurrences(of: #""edges": ["#, with: #""edges": [{"from": "Loose", "to": "orders", "is": "writes", "fieldValues": {"mode": "insert"}}, "#)
+        let file = try digestFile("typed-board", text, in: folder)
+        let run = try runDigest("all", file: file, server: server, target: ["--board", "\(board.number)", "--into", "Platform"], out: folder.appendingPathComponent("out"))
+        expectEqual(run.process.status, 0, run.process.output + run.process.error)
+        expect(run.process.output.contains("verify ok"), run.process.output)
+        try expectOnPlan(run, board: board, digestRoot: "Platform", "typed on a board")
+        _ = try expectOnlyTypedWarnings(run, "typed on a board")
+        let runs = try require(run.plan["runs"]?.arrayValue?.compactMap(\.stringValue))
+        let index = { (part: String) -> Int in runs.firstIndex { $0.contains(part) } ?? -1 }
+        expect(index("-root-top") < index("-model-top"), "the card of Model is drawn before its board's shapes: \(runs)")
+        expect(index("-model-top") < index("-root-notes"), "the types before the first board's notes: \(runs)")
+        expect(index("-root-notes") < index("-checkout-notes") && index("-checkout-notes") < index("-root-edges"), "the notes, then the arrows: \(runs)")
+        let typesScript = try String(contentsOf: run.out.appendingPathComponent("runs/\(runs[index("-model-top")])"), encoding: .utf8)
+        expect(typesScript.contains(#"edge "Workflow" -> "writes""#) && typesScript.contains(#"sticky-note "Table""#), typesScript)
+        expectEqual(try queriedCount(server, board, #"arrow:is-a("writes")"#), 6)
+        expectEqual(try queried(server, board, #":start-of(arrow:is-a("writes"):ends-at("orders"))"#).sorted(), ["Loose", "NightlyRollup", "OrderWorkflow", "RefundWorkflow"])
+    },
+
+    test("digest check refuses what a typed digest cannot be drawn with, naming the shape: an is with no type, is on a frame, a relationship without a schema, an endRule that is no end, a $ref to an id, values that don't fit, ends on another board") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("typed-refusals")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let digest = """
+            {"title": "Bad", "nodes": [
+              {"title": "Thing", "schema": {"type": "object", "properties": {"n": {"type": "integer"}}, "required": ["n"]}, "text": "A thing"},
+              {"title": "Links", "relationship": true, "schema": {"type": "object"}, "text": "Links"},
+              {"title": "Orphan", "relationship": true, "text": "no schema"},
+              {"title": "Region", "kind": "frame", "is": "Thing"},
+              {"title": "Ghost", "is": "Nobody"},
+              {"title": "Odd", "is": "Thing", "fieldValues": {"n": "three"}},
+              {"title": "Refd", "schema": {"type": "object", "properties": {"x": {"$ref": "urn:uuid:7c1e2a04-4b9e-4e0c-9d8c-5b0e7f3a2c11"}}}, "text": "Refs an id"},
+              {"title": "Far", "kind": "subboard"},
+              {"title": "Remote", "in": "Far", "schema": {"type": "object"}, "text": "On another board"}
+            ], "edges": [
+              {"from": "Ghost", "to": "Odd", "endRule": {"needed": true}},
+              {"from": "Thing", "to": "Links"},
+              {"from": "Links", "to": "Remote"}
+            ]}
+            """
+        let file = try digestFile("bad", digest, in: folder)
+        let checked = try runDigest("check", file: file, server: server, target: ["--board", "\(board.number)", "--into", "Bad map"], out: folder.appendingPathComponent("out"))
+        expect(checked.process.status != 0, "check refuses")
+        let said = checked.process.output
+        for expected in [
+            #""Orphan": relationship: true needs a schema"#,
+            #""Region": a frame can't be a type's instance"#,
+            #""Ghost": is "Nobody", which names no type in the digest"#,
+            #""Odd": fieldValues.n is "three", and the schema wants integer"#,
+            #""Refd": the schema has a $ref to urn:uuid:"#,
+            #"edge "Ghost" -> "Odd": endRule is only for an end of a relationship type"#,
+            #"edge "Links" -> "Remote": an end of the relationship type "Links""#,
+        ] { expect(said.contains(expected), "check says \(expected):\n\(said)") }
+        // and plan, which is not check, will not measure what it refuses
+        let planned = try runDigest("plan", file: file, server: server, target: [], extra: ["--into", "Bad map"], out: folder.appendingPathComponent("out2"))
+        expect(planned.process.status != 0 && planned.process.error.contains("names no type in the digest"), planned.process.output + planned.process.error)
+    },
+
+    test("measuring a typed digest is the same whatever board is in front: a front board that holds types of the same titles, with other fields and ends, changes no size") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let clean = windowedBoard(), polluted = windowedBoard(), spare = windowedBoard()
+        defer { clean.close(); polluted.close(); spare.close() }
+        let folder = try scratchFolder("typed-measure")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        // a board in front that holds a Workflow, a Table and a writes with other fields and ends, and notes of them
+        let fields = (0..<9).map { "\"f\($0)\": {\"type\": \"string\"}" }.joined(separator: ", ")
+        let schema = scripted("{\"type\": \"object\", \"properties\": {\(fields)}}")
+        let others = try startCommandServer(boards: [polluted, clean], frontmost: polluted)
+        defer { others.stop() }
+        let drawn = try canvas(others, ["draw", """
+            sticky-note "Workflow" text: "Another" schema: "\(schema)"
+            sticky-note "Table" text: "Another" schema: "\(schema)" right of "Workflow"
+            sticky-note "writes" text: "Another" relationship: true schema: "{}" right of "Table"
+            edge "Workflow" -> "writes" text: "x" endRule: {"needed": true}
+            edge "writes" -> "Table" text: "y"
+            sticky-note "OrderWorkflow" is: "Workflow" below "Workflow"
+            """])
+        expectEqual(drawn.status, 0, drawn.output + drawn.error)
+        let alone = try startCommandServer(boards: [clean, spare], frontmost: nil)
+        defer { alone.stop() }
+        let withFront = try runDigest("measure", "typed", server: others, target: [], out: folder.appendingPathComponent("front"))
+        let without = try runDigest("measure", "typed", server: alone, target: [], out: folder.appendingPathComponent("none"))
+        expectEqual(withFront.process.status, 0, withFront.process.output + withFront.process.error)
+        expectEqual(without.process.status, 0, without.process.output + without.process.error)
+        let a = try json(withFront.out.appendingPathComponent("measure.json")), b = try json(without.out.appendingPathComponent("measure.json"))
+        expect(a["board"] != nil && b["board"] == nil, "the first was measured on the board in front, the second on none")
+        for key in ["shapes", "references", "constants"] { expectEqual(a[key], b[key], "\(key) measured the same") }
+        expectEqual(a["warnings"], nil, "and said nothing of the front board's titles")
+        // the types' sizes carry their ends: the rows an end gives a note of its type are in the measure
+        let sizes = Dictionary(uniqueKeysWithValues: (a["shapes"]?.arrayValue ?? []).compactMap { shape in
+            shape["title"]?.stringValue.map { ($0, shape["size"]?.arrayValue?.compactMap(\.numberValue) ?? []) }
+        })
+        expect((sizes["Workflow"]?.first ?? 0) >= 320 && (sizes["OrderWorkflow"]?.first ?? 0) >= 320, "a typed note is 320 wide at least: \(sizes)")
+        expect((sizes["Workflow"]?.last ?? 0) > 200, "a type with fields and ends grows past the least: \(sizes)")
     },
 
     test("a script that is not the plan stops the run before it draws, naming the shape; what was drawn before it stays") {
@@ -657,6 +883,7 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
         expectEqual(ready.process.status, 0, ready.process.output + ready.process.error)
         expect(ready.process.output.contains("shows the board's root now") && ready.process.output.contains("which the new one replaces"), ready.process.output)
         expectEqual(board.editor.file.shapeCount, drawn, "ready takes nothing back")
+        expectEqual(try String(contentsOf: out.appendingPathComponent("app-build"), encoding: .utf8), "unknown\n", "ready keeps the build the app says (none, here) for a caller that says what drew its boards")
         try drawnAgain("from a board inside the drawing")
         // a canvas, or an app, from before the skill's newest command is said by ready, not at the measuring step: here a canvas
         // that answers everything but measure
@@ -719,8 +946,60 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
         expect(bare.process.error.contains("isn't empty") && bare.process.error.contains("--into TITLE"), bare.process.error)
         expectEqual(board.editor.file.shapeCount, withMine, "nothing drawn")
     },
+    test("drawing records (--records): a file in the folder that is no record is said once and skipped, and the file's titles are asked for only when the path does not tell the record") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let first = newBoard()
+        defer { first.close() }
+        let opened = Opened()
+        defer { for board in opened.boards { board.close() } }
+        let commands = try require(BoardDocument.configuration).registry.hostCommands
+        let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
+                                   boards: { [first] + opened.boards }, frontmost: { opened.boards.last ?? first }, show: { opened.boards.append($0) })
+        try server.start()
+        defer { server.stop() }
+        let folder = try scratchFolder("records")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let records = folder.appendingPathComponent("records")
+        try FileManager.default.createDirectory(at: records, withIntermediateDirectories: true)
+        // a canvas that counts what it is asked to do, to hold what the driver asks of the app
+        let counting = folder.appendingPathComponent("canvas-counting")
+        try "#!/bin/sh\necho \"$1\" >> \"$CANVAS_COUNT_LOG\"\nexec \"\(builtExecutable("CanvasCLI").path)\" \"$@\"\n".write(to: counting, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: counting.path)
+        func asked(_ log: URL, _ command: String) -> Int {
+            ((try? String(contentsOf: log, encoding: .utf8)) ?? "").split(separator: "\n").filter { $0 == command }.count
+        }
+        @MainActor func ready(out: URL, records: URL?, log: URL, board: BoardDocument) throws -> ProcessOutput {
+            let tiny = try digestFile("tiny", #"{"title": "Tiny", "nodes": [{"title": "Tiny A", "text": "a"}, {"title": "Tiny B", "text": "b"}], "edges": [{"from": "Tiny A", "to": "Tiny B"}]}"#, in: folder)
+            var arguments = ["ready", tiny.path, "--board", "\(board.number)", "--replace", "--out", out.path]
+            if let records { arguments += ["--records", records.path] }
+            return try run(skillURL("digest"), arguments, environment: ["CANVAS_CLI": counting.path, "CANVAS_SOCKET": server.path, "CANVAS_COUNT_LOG": log.path])
+        }
 
-    test("ingest draws a codebase from its model in one command, spec.py as overrides, and a rerun draws it again in place") {
+        // drawn into a new file, with a record of its path; then strays in the folder: a file that is not JSON, and JSON that is no record
+        let tiny = try digestFile("tiny", #"{"title": "Tiny", "nodes": [{"title": "Tiny A", "text": "a"}, {"title": "Tiny B", "text": "b"}], "edges": [{"from": "Tiny A", "to": "Tiny B"}]}"#, in: folder)
+        let made = try runDigest("all", file: tiny, server: server, target: ["--new-file", folder.appendingPathComponent("Tiny").path], extra: ["--records", records.path], out: folder.appendingPathComponent("made"))
+        expectEqual(made.process.status, 0, made.process.output + made.process.error)
+        try "{\"titles\": [".write(to: records.appendingPathComponent("stray.json"), atomically: true, encoding: .utf8)
+        try #"{"hello": "world"}"#.write(to: records.appendingPathComponent("other.json"), atomically: true, encoding: .utf8)
+        let board = try require(opened.boards.first)
+
+        // ready with the records, and with the record of the same out alone: the same questions of the app, but for the strays' one warning
+        let plainLog = folder.appendingPathComponent("plain.log"), recordsLog = folder.appendingPathComponent("records.log")
+        let plain = try ready(out: folder.appendingPathComponent("made"), records: nil, log: plainLog, board: board)
+        expectEqual(plain.status, 0, plain.output + plain.error)
+        expect(plain.output.contains("which the new one replaces"), plain.output)
+        let kept = try ready(out: folder.appendingPathComponent("elsewhere"), records: records, log: recordsLog, board: board)
+        expectEqual(kept.status, 0, kept.output + kept.error)
+        expect(kept.output.contains("which the new one replaces"), "the record of the file's path is found: \(kept.output)\(kept.error)")
+        expectEqual(kept.error.components(separatedBy: "ignored").count - 1, 1, "one warning: \(kept.error)")
+        expect(kept.error.contains("stray.json") && kept.error.contains("other.json") && !kept.error.contains("file-"), kept.error)
+        expectEqual(asked(recordsLog, "query"), asked(plainLog, "query"), "the titles are not asked for to find a record the path tells")
+        expect(asked(plainLog, "query") > 0, "the file's titles are asked for to tell what the drawing made")
+    },
+
+    test("two digests drawn into one unsaved board have a record each, and drawing one again in its place takes back that one") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -728,358 +1007,30 @@ private func sources(of hub: String, in digest: JSON) -> [String] {
         defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
-        let folder = try scratchFolder("ingest")
+        let folder = try scratchFolder("unsaved")
         defer { try? FileManager.default.removeItem(at: folder) }
-        let project = folder.appendingPathComponent("project")
-        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-        try tinyModel.write(to: project.appendingPathComponent("model.json"), atomically: true, encoding: .utf8)
-        // a spec is optional overrides: this one puts App's files in a frame but leaves out Main.swift, and names a module the code lacks
-        try tinySpec.write(to: project.appendingPathComponent("spec.py"), atomically: true, encoding: .utf8)
-        let ingest = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("dogfood/model/ingest")
-        @MainActor func runIngest() throws -> ProcessOutput {
-            try run(ingest, ["--skip-read"], environment: ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path, "PROJECT": project.path],
-                    timeout: 280)
+        let records = folder.appendingPathComponent("records")
+        func digest(_ name: String) throws -> URL {
+            try digestFile(name, #"{"title": "\#(name)", "nodes": [{"title": "\#(name) A", "text": "a"}, {"title": "\#(name) B", "text": "b"}], "edges": [{"from": "\#(name) A", "to": "\#(name) B"}]}"#, in: folder)
         }
-
-        let first = try runIngest()
-        expectEqual(first.status, 0, first.output + first.error)
-        expect(first.output.contains("verify ok"), first.output)
-        expect(first.error.contains("leave out Main.swift") && first.error.contains("Ghost"), "what the spec leaves out or lacks is said: \(first.error)")
-        let editor = board.editor
-        let titles = Set(editor.document.shapes.compactMap { editor.registry.title(of: $0) })
-        expect(titles.isSuperset(of: ["About TinyPackage", "Apps", "Foundations", "App", "Core"]), "the root: its header (the name the reader found), the bands, the modules: \(titles.sorted())")
-        let apps = try json(project.appendingPathComponent("digest.json"))
-        expectEqual(apps["title"], "TinyPackage")
-        let nodes = apps["nodes"]?.arrayValue ?? []
-        expectEqual(nodes.first { $0["title"] == "Main.swift" }?["in"], "App/", "a file the spec leaves out is in a frame of its own, never dropped")
-        expectEqual(nodes.first { $0["title"] == "Apps" }?["rank"], 0)
-        expectEqual(nodes.first { $0["title"] == "Foundations" }?["rank"], 1)
-        let drawn = editor.file.shapeCount
-
-        let second = try runIngest()
-        expectEqual(second.status, 0, second.output + second.error)
-        expect(second.output.contains("ready: board") && second.output.contains("replaces"), "it says up front that it replaces: \(second.output)")
-        expect(second.output.contains("replace: took back the last drawing") && second.output.contains("verify ok"), second.output)
-        expectEqual(editor.file.shapeCount, drawn, "drawn again in its place, once")
-
-        // --ranks says which way the root's bands run, through the driver to the plan: rows, then columns, each drawn in the last one's place
-        for way in ["rows", "columns"] {
-            let ranked = try run(ingest, ["--skip-read", "--ranks", way], environment: ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path, "PROJECT": project.path], timeout: 280)
-            expectEqual(ranked.status, 0, ranked.output + ranked.error)
-            let report = try json(project.appendingPathComponent("digest.out/report.json"))
-            let root = report["boards"]?["root"]?["algorithms"]?.arrayValue?.first { $0["container"] == "root" }
-            expectEqual(root?["how"], .string(way), "the root's bands as \(way)")
-            @MainActor func box(_ title: String) -> CGRect? { editor.document.shapes.first { editor.registry.title(of: $0) == title }?.box }
-            let apps = try require(box("Apps")), foundations = try require(box("Foundations"))
-            expect(way == "rows" ? apps.maxY < foundations.minY : apps.maxX < foundations.minX, "\(way): Apps \(apps), Foundations \(foundations)")
+        let alpha = try digest("Alpha"), beta = try digest("Beta")
+        let target = ["--board", "\(board.number)"]
+        let one = try runDigest("all", file: alpha, server: server, target: target + ["--into", "Alpha map"], extra: ["--records", records.path], out: folder.appendingPathComponent("alpha"))
+        expectEqual(one.process.status, 0, one.process.output + one.process.error)
+        let two = try runDigest("all", file: beta, server: server, target: target + ["--into", "Beta map"], extra: ["--records", records.path], out: folder.appendingPathComponent("beta"))
+        expectEqual(two.process.status, 0, two.process.output + two.process.error)
+        let names = ((try? FileManager.default.contentsOfDirectory(atPath: records.path)) ?? []).filter { $0.hasSuffix(".json") }
+        expectEqual(names.count, 2, "a record each: \(names)")
+        let held = board.editor.file.shapeCount
+        // Beta again, in its place, from an out of its own: its record is the one whose header is this run's, not the first by name
+        for _ in 0..<2 {
+            let again = try runDigest("all", file: beta, server: server, target: target + ["--into", "Beta map", "--replace"], extra: ["--records", records.path], out: folder.appendingPathComponent("beta-again"))
+            expectEqual(again.process.status, 0, again.process.output + again.process.error)
+            expect(again.process.output.contains("replace: took back the last drawing") && again.process.output.contains("verify ok"), again.process.output)
+            expectEqual(board.editor.file.shapeCount, held, "Beta drawn in its own place")
+            let titles = try queried(server, board, "[title]")
+            expectEqual(titles.filter { $0 == "Alpha A" }.count, 1, "Alpha's drawing is as it was")
+            expectEqual(titles.filter { $0 == "Beta A" }.count, 1, "and Beta's is there once")
         }
-        let sideways = try run(ingest, ["--skip-read", "--ranks", "sideways"], environment: ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path, "PROJECT": project.path])
-        expectEqual(sideways.status, 1, sideways.output)
-        expect(sideways.error.contains("--ranks is rows or columns"), sideways.error)
-
-        // what would stop a draw is said before anything slow, and before a digest is made: a board that holds another drawing
-        // (another project's ingestion has no record of this one), and a file that is there already
-        let other = folder.appendingPathComponent("other")
-        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
-        try tinyModel.write(to: other.appendingPathComponent("model.json"), atomically: true, encoding: .utf8)
-        let refused = try run(ingest, ["--skip-read"], environment: ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path, "PROJECT": other.path], timeout: 280)
-        expectEqual(refused.status, 1, refused.output)
-        expect(refused.error.contains("isn't empty"), refused.error)
-        expect(refused.error.contains("ingest --new-file PATH"), "and what to do about it, in ingest's own options: \(refused.error)")
-        expect(!FileManager.default.fileExists(atPath: other.appendingPathComponent("digest.json").path), "refused before the digest was made")
-        expectEqual(editor.file.shapeCount, drawn, "nothing drawn or taken back")
-        let there = folder.appendingPathComponent("there.canvasboard")
-        try "x".write(to: there, atomically: true, encoding: .utf8)
-        let taken = try run(ingest, ["--skip-read", "--new-file", there.path], environment: ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path, "PROJECT": other.path], timeout: 280)
-        expectEqual(taken.status, 1, taken.output)
-        expect(taken.error.contains("there is a file at"), taken.error)
-        let down = try run(ingest, ["--skip-read"], environment: ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": temporarySocketPath(), "PROJECT": other.path], timeout: 280)
-        expectEqual(down.status, 1, down.output)
-        expect(down.error.contains("isn't running"), "an app that isn't running is said, with how to start it: \(down.error)")
-    },
-
-    test("ingest draws a codebase whose names clash, run long or hold brackets: each title is given out once, said, and nothing stops the run") {
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        try configureBoards(pasteboard: pasteboard)
-        let board = windowedBoard()
-        defer { board.close() }
-        let server = try startCommandServer(boards: [board], frontmost: board)
-        defer { server.stop() }
-        let folder = try scratchFolder("names")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let project = folder.appendingPathComponent("project")
-        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-        let long = "@my-company/" + String(repeating: "very-long-package-name-", count: 4) + "x"
-        try awkwardModel(long: long, big: false).write(to: project.appendingPathComponent("model.json"), atomically: true, encoding: .utf8)
-        let ingest = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("dogfood/model/ingest")
-        let drawn = try run(ingest, ["--skip-read"], environment: ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path, "PROJECT": project.path], timeout: 280)
-        expectEqual(drawn.status, 0, drawn.output + drawn.error)
-        expect(drawn.output.contains("verify ok"), drawn.output)
-        let editor = board.editor
-        let titles = Set(editor.document.shapes.compactMap { editor.registry.title(of: $0) })
-        // a module called what a band is keeps its name and the band gives way; a name over a card's longest keeps its end
-        expect(titles.isSuperset(of: ["[locale]", "Level 1", "Level 1 (layer)", #"back\slash"#]), "\(titles.sorted())")
-        expect(titles.contains { $0.hasPrefix("…") && $0.hasSuffix("very-long-package-name-x") && $0.count <= 74 }, "\(titles.sorted())")
-        expect(!titles.contains(long), "the long name itself is nobody's title")
-        for said in ["the band Level 1 is titled \"Level 1 (layer)\"", "is over 74 characters", "C/main.swift is titled \"C/main.swift (2)\""] {
-            expect(drawn.error.contains(said), "said: \(said) in \(drawn.error)")
-        }
-        // app's header mentions what it imports, each by its card's title: a ] and a \\ in one are written so the mention names its shape
-        let digest = try json(project.appendingPathComponent("digest.json"))
-        let mains = (digest["nodes"]?.arrayValue ?? []).filter { $0["in"] == "C" || $0["in"] == "a" || $0["in"] == "b" || $0["in"] == "c (C)" || $0["in"] == "C/" }.compactMap { $0["title"]?.stringValue }
-        expect(Set(mains).isSuperset(of: ["c/main.swift", "b/main.swift", "C/main.swift (2)"]), "paths that differ only by case are two titles: \(mains)")
-        expect(mains.contains("half\u{FFFD}.swift"), "a name that isn't whole text is drawn with U+FFFD where it breaks: \(mains)")
-        let app = digest["nodes"]?.arrayValue?.first { $0["title"] == "app" }?["text"]?.stringValue ?? ""
-        expect(app.contains(#"@[[locale\]]"#) && app.contains(#"@[back\\slash]"#), app)
-        expect(digest["text"]?.stringValue?.hasPrefix(#"Awkward \@[names]"#) == true, "the repository's own name is text, never a mention: \(digest["text"] ?? .null)")
-
-        // a module big enough for its folders to have boards, two of them the same but for their case: the digest passes check
-        let big = folder.appendingPathComponent("big")
-        try FileManager.default.createDirectory(at: big, withIntermediateDirectories: true)
-        try awkwardModel(long: long, big: true).write(to: big.appendingPathComponent("model.json"), atomically: true, encoding: .utf8)
-        let made = try run(URL(fileURLWithPath: "/usr/bin/env"), ["python3", ingest.deletingLastPathComponent().appendingPathComponent("to_digest.py").path, big.appendingPathComponent("digest.json").path],
-                           environment: ["PROJECT": big.path], timeout: 120)
-        expectEqual(made.status, 0, made.output + made.error)
-        expect(made.error.contains("the folder Big/utils is titled \"Big/utils (2)\""), made.error)
-        expect(made.error.contains("Big/x: a module has that name, so the folder gets no board of its own"), made.error)
-        let bigNodes = try json(big.appendingPathComponent("digest.json"))["nodes"]?.arrayValue ?? []
-        expectEqual(bigNodes.filter { $0["title"] == "Big/x" }.count, 1, "the module Big/x is one card, and Big's folder x is not another")
-        expectEqual(bigNodes.first { $0["title"] == "its.ts" }?["in"], "Big/x", "the module's file is on its board")
-        expect(bigNodes.first { $0["title"] == "one.ts" }?["in"] != "Big/x", "and the folder's files stay on Big's: \(String(describing: bigNodes.first { $0["title"] == "one.ts" }?["in"]))")
-        let checked = try tool(["check", big.appendingPathComponent("digest.json").path])
-        expectEqual(checked.status, 0, checked.output + checked.error)
-        expectEqual(try JSON(text: checked.output)["errors"], .array([]), "check finds nothing wrong: \(checked.output)")
-    },
-
-    test("Swift's index is kept from run to run: a module is type-checked again only when its sources or the interfaces it reads changed, and its uses are read from a store a module") {
-        let folder = try scratchFolder("index")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        // the index where ingest keeps a project's: <PROJECT>/.index
-        let repo = folder.appendingPathComponent("repo"), project = folder.appendingPathComponent("project")
-        let scratch = project.appendingPathComponent(".index"), model = folder.appendingPathComponent("model.json")
-        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-        func write(_ path: String, _ text: String) throws {
-            let file = repo.appendingPathComponent(path)
-            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try text.write(to: file, atomically: true, encoding: .utf8)
-        }
-        // Kit uses Core, KitTests uses Kit, and Loose uses nothing and nothing uses it
-        let core = "public func core() -> Int {\n    let one = 1\n    return one\n}\n", kit = "import Core\n\npublic func kit() -> Int { core() + 1 }\n"
-        try write("Package.swift", tinyPackage(loose: true))
-        try write("Sources/Core/Core.swift", core)
-        try write("Sources/Kit/Kit.swift", kit)
-        try write("Sources/Loose/Loose.swift", "public func loose() {}\n")
-        try write("Tests/KitTests/KitTests.swift", "import Kit\n\nfunc twice() -> Int { kit() * 2 }\n")
-        let scripts = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("dogfood/model")
-        // the SDK build.sh chose for this build, so the index build needn't ask the compiler about one it rejects (ten seconds)
-        let sdk = (try? String(contentsOfFile: "build/.sdk", encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
-        @MainActor func python(_ script: String, _ arguments: [String]) throws -> ProcessOutput {
-            try run(URL(fileURLWithPath: "/usr/bin/env"), ["python3", scripts.appendingPathComponent(script).path] + arguments,
-                    environment: sdk.map { ["SDKROOT": $0] } ?? [:], timeout: 280)
-        }
-        /// What a build of the index says it made.
-        @MainActor func build() throws -> String {
-            let built = try python("swift_index_build.py", [repo.path, scratch.path])
-            expectEqual(built.status, 0, built.output + built.error)
-            return built.output
-        }
-        /// Which file uses which, as the readers write the model from the stores there are.
-        @MainActor func uses(store: String = "store") throws -> Set<String> {
-            let analyzed = try python("swift_analyze.py", [repo.path, model.path])
-            expectEqual(analyzed.status, 0, analyzed.output + analyzed.error)
-            let read = try python("swift_index_read.py", [scratch.appendingPathComponent(store).path, model.path])
-            expectEqual(read.status, 0, read.output + read.error)
-            func file(_ end: JSON?) -> String { (end?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: "/") }
-            return Set((try json(model)["uses"]?.arrayValue ?? []).map { "\(file($0["from"])) > \(file($0["to"]))" })
-        }
-        let both: Set = ["Kit/Kit.swift > Core/Core.swift", "KitTests/KitTests.swift > Kit/Kit.swift"]
-
-        var made = try build()
-        expect(made.contains("interfaces: made 2 of 2 (Core, Kit)\n") && made.contains("indexes: made 4 of 4 (Core, Kit, KitTests, Loose)\n"), made)
-        expectEqual(try uses(), both)
-        expectEqual(try uses(store: "store/Kit"), [], "one store is read as one (Xcode's, or swift build's): Kit's alone has no file that defines what Kit uses")
-        made = try build()
-        expect(made.contains("interfaces: made 0 of 2\n") && made.contains("indexes: made 0 of 4\n") && made.contains("no module changed"), "nothing changed, nothing compiled: \(made)")
-
-        // an edit inside a function: its module again and no other, since its interface comes out the same bytes
-        try write("Sources/Core/Core.swift", core.replacingOccurrences(of: "one = 1", with: "one = 2 - 1"))
-        made = try build()
-        expect(made.contains("interfaces: made 1 of 2 (Core)\n") && made.contains("indexes: made 1 of 4 (Core)\n"), made)
-
-        // an edit to what it declares: the modules that depend on it too, directly or through another, and none that doesn't
-        try write("Sources/Core/Core.swift", core + "\npublic func more() {}\n")
-        made = try build()
-        expect(made.contains("interfaces: made 2 of 2 (Core, Kit)\n") && made.contains("indexes: made 3 of 4 (Core, Kit, KitTests)\n"), made)
-
-        // a compile that fails is said and changes nothing: the index kept is still whole, and still what its sources make once
-        // they are back as they last compiled (the interface, which skips the body that was wrong, was made from each edit)
-        try write("Sources/Kit/Kit.swift", kit.replacingOccurrences(of: "+ 1", with: "+ \"one\""))
-        let failed = try python("swift_index_build.py", [repo.path, scratch.path])
-        expect(failed.status != 0 && failed.output.contains("index Kit: failed") && failed.error.contains("indexes failed: Kit"), failed.output + failed.error)
-        expectEqual(try uses(), both, "the last index that worked is what is read")
-        try write("Sources/Kit/Kit.swift", kit)
-        made = try build()
-        expect(made.contains("interfaces: made 1 of 2 (Kit)\n") && made.contains("indexes: made 0 of 4\n"), made)
-        expectEqual(try uses(), both)
-
-        // an import Package.swift doesn't declare fails, as it does in a build: a compile reads only the interfaces its mark
-        // covers, so no index is kept that an edit to an undeclared module would leave stale
-        try write("Sources/Loose/Loose.swift", "import Core\n\npublic func loose() -> Int { core() }\n")
-        let undeclared = try python("swift_index_build.py", [repo.path, scratch.path])
-        expect(undeclared.status != 0 && undeclared.output.contains("index Loose: failed") && undeclared.output.contains("no such module 'Core'"), undeclared.output + undeclared.error)
-
-        // a module that is gone leaves nothing behind: its store would be read as code that is there
-        try write("Package.swift", tinyPackage(loose: false))
-        try FileManager.default.removeItem(at: repo.appendingPathComponent("Sources/Loose"))
-        made = try build()
-        expect(made.contains("interfaces: made 0 of 2\n") && made.contains("indexes: made 0 of 3\n"), made)
-        let stores = try FileManager.default.contentsOfDirectory(atPath: scratch.appendingPathComponent("store").path).sorted()
-        expectEqual(stores, ["Core", "Kit", "KitTests"])
-        expectEqual(try uses(), both)
-
-        // and ingest, reading the package for itself: it type-checks nothing, the index being as the code is, and draws what it read
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        try configureBoards(pasteboard: pasteboard)
-        let board = windowedBoard()
-        defer { board.close() }
-        let server = try startCommandServer(boards: [board], frontmost: board)
-        defer { server.stop() }
-        var environment = ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path, "PROJECT": project.path]
-        if let sdk { environment["SDKROOT"] = sdk }
-        let drawn = try run(scripts.appendingPathComponent("ingest"), [repo.path], environment: environment, timeout: 280)
-        expectEqual(drawn.status, 0, drawn.output + drawn.error)
-        expect(drawn.output.contains("ingest: no module changed: none of the 3 type-checked") && drawn.output.contains("verify ok"), drawn.output)
-        let titles = Set(board.editor.document.shapes.compactMap { board.editor.registry.title(of: $0) })
-        expect(titles.isSuperset(of: ["About Tiny", "Core", "Kit"]), "the package as the board in front: \(titles.sorted())")
-        let edges = try json(project.appendingPathComponent("digest.json"))["edges"]?.arrayValue ?? []
-        expect(edges.contains { $0["from"] == "Kit.swift" && $0["to"] == "Core.swift" }, "Kit.swift's use of Core.swift is an edge of the digest: \(edges)")
-    },
-
-    test("a package whose product is a list of plugins, as this one is: a line that ends + shipped type-checks against the plugins' modules, and the model keeps the line's own dependencies") {
-        let folder = try scratchFolder("shipped")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let repo = folder.appendingPathComponent("repo"), scratch = folder.appendingPathComponent("index"), model = folder.appendingPathComponent("model.json")
-        func write(_ path: String, _ text: String) throws {
-            let file = repo.appendingPathComponent(path)
-            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try text.write(to: file, atomically: true, encoding: .utf8)
-        }
-        // App names no plugin and is made of the list; its tests call Kit, which their line doesn't write
-        try write("Package.swift", listedPackage(testsShip: true))
-        try write("Sources/Core/Core.swift", "public func core() -> Int { 1 }\n")
-        try write("Sources/Kit/Kit.swift", "import Core\n\npublic struct KitPlugin {\n    public init() {}\n    public var count: Int { core() + 1 }\n}\n")
-        try write("Sources/App/main.swift", "import Core\n\nprint(core())\n")
-        try write("Tests/AppTests/AppTests.swift", "import Core\nimport Kit\n\nfunc both() -> Int { core() + KitPlugin().count }\n")
-        let scripts = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("dogfood/model")
-        let sdk = (try? String(contentsOfFile: "build/.sdk", encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
-        @MainActor func python(_ script: String, _ arguments: [String]) throws -> ProcessOutput {
-            try run(URL(fileURLWithPath: "/usr/bin/env"), ["python3", scripts.appendingPathComponent(script).path] + arguments,
-                    environment: sdk.map { ["SDKROOT": $0] } ?? [:], timeout: 280)
-        }
-        let built = try python("swift_index_build.py", [repo.path, scratch.path])
-        expectEqual(built.status, 0, built.output + built.error)
-        expect(built.output.contains("interfaces: made 2 of 2 (Core, Kit)\n") && built.output.contains("indexes: made 4 of 4 (App, AppTests, Core, Kit)\n"), built.output)
-
-        // what the board draws its arrows from is what each line writes: the app's card points at Core, never at every plugin
-        let analyzed = try python("swift_analyze.py", [repo.path, model.path])
-        expectEqual(analyzed.status, 0, analyzed.output + analyzed.error)
-        let modules = try json(model)["modules"]?.arrayValue ?? []
-        func deps(_ name: String) -> [String] { (modules.first { $0["name"] == .string(name) }?["deps"]?.arrayValue ?? []).compactMap(\.stringValue) }
-        expectEqual(deps("App"), ["Core"])
-        expectEqual(deps("AppTests"), ["Core"])
-        expectEqual(deps("Kit"), ["Core"])
-
-        // without + shipped, a line's own dependencies are all a compile of it reads
-        try write("Package.swift", listedPackage(testsShip: false))
-        let undeclared = try python("swift_index_build.py", [repo.path, scratch.path])
-        expect(undeclared.status != 0 && undeclared.output.contains("index AppTests: failed") && undeclared.output.contains("no such module 'Kit'"), undeclared.output + undeclared.error)
     },
 ])
-
-/// A package whose product is a list of plugins, written as this repository's is: the table of what ships, a module a plugin is in
-/// (Kit, on Core), an app made of the list that names no plugin, and its tests, made of the list too unless `testsShip` is false.
-private func listedPackage(testsShip: Bool) -> String {
-    """
-    // swift-tools-version: 5.9
-    import PackageDescription
-
-    let ships = [
-        // the one plugin
-        "Kit.KitPlugin",
-    ]
-    let shipped = ships.map { Target.Dependency(stringLiteral: String($0.prefix { $0 != "." })) }
-
-    let package = Package(name: "Listed", targets: [
-        .target(name: "Core"),
-        .target(name: "Kit", dependencies: ["Core"]),
-        .executableTarget(name: "App", dependencies: ["Core"] + shipped),
-        .testTarget(name: "AppTests", dependencies: ["Core"]\(testsShip ? " + shipped" : "")),
-    ])
-
-    """
-}
-
-/// A package of three modules and a test target, as `Package.swift` declares them: Kit depends on Core, KitTests on Kit, and Loose
-/// (when asked for) on nothing.
-private func tinyPackage(loose: Bool) -> String {
-    let targets = [#".target(name: "Core")"#, #".target(name: "Kit", dependencies: ["Core"])"#] + (loose ? [#".target(name: "Loose")"#] : [])
-        + [#".testTarget(name: "KitTests", dependencies: ["Kit"])"#]
-    return "// swift-tools-version: 5.9\nimport PackageDescription\n\nlet package = Package(name: \"Tiny\", targets: [\n"
-        + targets.map { "    \($0),\n" }.joined() + "])\n"
-}
-
-/// A codebase whose names are awkward, as a reader writes model.json: a module called what a band is ("Level 1"), ones with a
-/// bracket and a backslash in their names, one whose name is over 80 characters, files whose paths differ only by case, a file whose
-/// name isn't whole text, a doc with an `@[` in it, and, with `big`, a module of 63 files in two folders that differ only by case and
-/// a third named as another module is.
-private func awkwardModel(long: String, big: Bool) -> String {
-    var modules: [String] = [], files: [String] = []
-    func q(_ s: String) -> String { "\"" + s.replacingOccurrences(of: "\\", with: "\\\\") + "\"" }
-    func module(_ name: String, _ deps: [String], _ rels: [String]) {
-        modules.append(#"{"name": \#(q(name)), "path": \#(q("src/" + name)), "deps": [\#(deps.map(q).joined(separator: ", "))], "test": false, "layer": null, "files": [\#(rels.map(q).joined(separator: ", "))], "lines": \#(10 * rels.count), "doc": "About @[nothing] here.", "folders": {}}"#)
-        for rel in rels {
-            files.append(#"{"module": \#(q(name)), "rel": \#(q(rel)), "path": \#(q("src/\(name)/\(rel)")), "lines": 10, "doc": "", "api": false, "decls": []}"#)
-        }
-    }
-    module("app", ["[locale]", "Level 1", long, "C", #"back\slash"#], ["index.ts"])
-    module("[locale]", [], ["page.ts"])
-    module("Level 1", [], ["one.ts"])
-    module(long, [], ["src/components/Select/index.ts"])
-    module("C", [], ["main.swift", "a/c/main.swift", "b/main.swift", "halfSURROGATE.swift"])
-    module(#"back\slash"#, [], ["b.ts"])
-    if big {
-        module("Big", ["Big/x"], (0..<30).map { "Utils/u\($0).ts" } + (0..<30).map { "utils/v\($0).ts" } + ["x/one.ts", "x/two.ts", "top.ts"])
-        module("Big/x", [], ["its.ts"])
-    }
-    let uses = [#"{"from": ["app", "index.ts"], "to": ["[locale]", "page.ts"], "names": ["Page"]}"#,
-                #"{"from": ["app", "index.ts"], "to": ["C", "a/c/main.swift"], "names": ["x", "y"]}"#]
-    // a file's name that isn't UTF-8 reaches the model as half a character, which JSON writes as an escape
-    return #"{"language": "typescript", "name": "Awkward @[names]", "modules": [\#(modules.joined(separator: ",\n"))], "files": [\#(files.joined(separator: ",\n"))], "uses": [\#(uses.joined(separator: ", "))]}"#
-        .replacingOccurrences(of: "SURROGATE", with: #"\udcff"#)
-}
-
-/// Two modules, App over Core, as a reader writes model.json: App's Main.swift and Screen.swift use Core's Store.swift.
-private let tinyModel = #"""
-{"language": "swift", "name": "TinyPackage",
- "modules": [
-  {"name": "App", "path": "Sources/App", "deps": ["Core"], "test": false, "layer": null, "files": ["Main.swift", "Screen.swift"], "lines": 60, "doc": "The app.", "folders": {}},
-  {"name": "Core", "path": "Sources/Core", "deps": [], "test": false, "layer": null, "files": ["Store.swift", "Model.swift"], "lines": 90, "doc": "What the app keeps.", "folders": {}}],
- "files": [
-  {"module": "App", "rel": "Main.swift", "path": "Sources/App/Main.swift", "lines": 20, "doc": "Starts the app.", "api": false, "decls": []},
-  {"module": "App", "rel": "Screen.swift", "path": "Sources/App/Screen.swift", "lines": 40, "doc": "Shows the store.", "api": false, "decls": [{"name": "Screen", "kind": "type", "visibility": "internal", "line": 3}]},
-  {"module": "Core", "rel": "Store.swift", "path": "Sources/Core/Store.swift", "lines": 50, "doc": "Holds the models.", "api": true, "decls": [{"name": "Store", "kind": "type", "visibility": "public", "line": 2}]},
-  {"module": "Core", "rel": "Model.swift", "path": "Sources/Core/Model.swift", "lines": 40, "doc": "One model.", "api": true, "decls": [{"name": "Model", "kind": "type", "visibility": "public", "line": 2}]}],
- "uses": [
-  {"from": ["App", "Main.swift"], "to": ["App", "Screen.swift"], "names": ["Screen"]},
-  {"from": ["App", "Main.swift"], "to": ["Core", "Store.swift"], "names": ["Store"]},
-  {"from": ["App", "Screen.swift"], "to": ["Core", "Store.swift"], "names": ["Store"]},
-  {"from": ["Core", "Store.swift"], "to": ["Core", "Model.swift"], "names": ["Model"]}]}
-"""#
-
-private let tinySpec = """
-BANDS = [("Apps", ["App", "Ghost"]), ("Foundations", ["Core"])]
-GROUPS = {"App": [("Screens", ["Screen.swift"], [])]}
-"""
-

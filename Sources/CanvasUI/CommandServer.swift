@@ -53,13 +53,17 @@ public final class CommandServer {
     private let boards: @MainActor () -> [BoardDocument]
     private let frontmost: @MainActor () -> BoardDocument?
     private let show: @MainActor (BoardDocument) -> Void
+    /// Which build the app is (`AppInfo.build`): nil for a process that isn't a built app.
+    private let build: String?
     /// The files `new` is saving, so a second `new` for one is refused while the first saves.
     private var making: Set<URL> = []
     private var listener: RPCListener?
 
     /// `boards` and `frontmost` are the app's open boards, and the one whose window is in front;
-    /// `show` shows a board `new` made, as the app opens one. Tests give their own.
+    /// `show` shows a board `new` made, as the app opens one. `build` is the app's (`AppInfo.build`; the bundle's
+    /// `InfiniteCanvasBuild`, which build.sh writes). Tests give their own.
     public init(path: String = SocketPath.resolve(), commands: Commands,
+                build: String? = Bundle.main.object(forInfoDictionaryKey: "InfiniteCanvasBuild") as? String,
                 boards: @escaping @MainActor () -> [BoardDocument] = { NSDocumentController.shared.documents.compactMap { $0 as? BoardDocument } },
                 frontmost: @escaping @MainActor () -> BoardDocument? = { NSApp.orderedDocuments.lazy.compactMap { $0 as? BoardDocument }.first },
                 show: @escaping @MainActor (BoardDocument) -> Void = { $0.openWindow() }) {
@@ -70,6 +74,7 @@ public final class CommandServer {
         self.boards = boards
         self.frontmost = frontmost
         self.show = show
+        self.build = build
     }
 
     /// Starts listening. Throws if it can't: another copy of the app is listening there, say.
@@ -103,6 +108,7 @@ public final class CommandServer {
             var status: [String: JSON] = ["app": .string(info.name), "version": .string(info.version), "pid": .number(Double(info.pid)),
                                           "protocol": .number(Double(RPC.protocolVersion)), "socket": .string(path),
                                           "boards": .number(Double(open.count))]
+            if let build { status["build"] = .string(build) }
             if let front = frontmost() {
                 status["frontmost"] = .number(Double(front.number))
                 status["frontmostShows"] = .string(front.editor.board.description)
@@ -228,7 +234,7 @@ public final class CommandServer {
         return AppInfo(name: bundle.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Infinite Canvas",
                        version: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
                        pid: Int(ProcessInfo.processInfo.processIdentifier),
-                       path: bundle.bundleURL.pathExtension == "app" ? bundle.bundlePath : nil)
+                       path: bundle.bundleURL.pathExtension == "app" ? bundle.bundlePath : nil, build: build)
     }
 
     private var description: AppDescription {
@@ -238,7 +244,7 @@ public final class CommandServer {
     /// The server's own commands: about the app, and its boards.
     static let ownSpecs = [
         CommandSpec(name: RPC.statusCommand, summary: "Say whether the app is running, how many boards it has open, and which is in front.",
-                    discussion: "frontmostShows is the board inside the file in front that its window shows (\"root\", or the id of the shape that owns it): where a board command works.",
+                    discussion: "frontmostShows is the board inside the file in front that its window shows (\"root\", or the id of the shape that owns it): where a board command works.\n\nbuild is which build the app is (the commit it was built from, and a hash of the changes if the tree had any): the skills that came with it say the same, and `canvas install` copies the app's again when they don't.",
                     scope: .app,
                     params: ["type": "object", "properties": [:], "additionalProperties": false],
                     examples: [CommandExample("\(RPC.commandName) status", "The app's version, its process, and its boards.")]),

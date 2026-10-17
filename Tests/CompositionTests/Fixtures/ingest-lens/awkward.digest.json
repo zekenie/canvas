@@ -1,0 +1,168 @@
+{
+ "title": "Awkward @[names]",
+ "text": "Awkward \\@[names]: 6 modules in 2 layers, 9 files, 90 lines.\nA card is a module: open it for its files. An arrow, or a pill, is an import.",
+ "nodes": [
+  {
+   "title": "Level 2",
+   "kind": "frame",
+   "rank": 0
+  },
+  {
+   "title": "app",
+   "kind": "subboard",
+   "in": "Level 2",
+   "text": "app: level 2\nAbout \\@[nothing] here.\n\nImports @[[locale\\]] @[Level 1] @[\u2026me-very-long-package-name-very-long-package-name-very-long-package-name-x] @[C] @[back\\\\slash]\n1 files, 10 lines"
+  },
+  {
+   "title": "Level 1 (layer)",
+   "kind": "frame",
+   "rank": 1
+  },
+  {
+   "title": "[locale]",
+   "kind": "subboard",
+   "in": "Level 1 (layer)",
+   "text": "[locale]: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
+  },
+  {
+   "title": "Level 1",
+   "kind": "subboard",
+   "in": "Level 1 (layer)",
+   "text": "Level 1: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
+  },
+  {
+   "title": "\u2026me-very-long-package-name-very-long-package-name-very-long-package-name-x",
+   "kind": "subboard",
+   "in": "Level 1 (layer)",
+   "text": "@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
+  },
+  {
+   "title": "C",
+   "kind": "subboard",
+   "in": "Level 1 (layer)",
+   "text": "C: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n4 files, 40 lines"
+  },
+  {
+   "title": "back\\slash",
+   "kind": "subboard",
+   "in": "Level 1 (layer)",
+   "text": "back\\slash: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
+  },
+  {
+   "title": "src",
+   "kind": "frame",
+   "in": "\u2026me-very-long-package-name-very-long-package-name-very-long-package-name-x"
+  },
+  {
+   "title": "components",
+   "kind": "frame",
+   "in": "src"
+  },
+  {
+   "title": "C/",
+   "kind": "frame",
+   "in": "C"
+  },
+  {
+   "title": "a",
+   "kind": "frame",
+   "in": "C"
+  },
+  {
+   "title": "c (C)",
+   "kind": "frame",
+   "in": "a"
+  },
+  {
+   "title": "b",
+   "kind": "frame",
+   "in": "C"
+  },
+  {
+   "title": "\u2026very-long-package-name-very-long-package-name-very-long-package-name-x/index.ts",
+   "kind": "sticky-note",
+   "in": "components",
+   "text": "10 lines"
+  },
+  {
+   "title": "c/main.swift",
+   "kind": "sticky-note",
+   "in": "c (C)",
+   "text": "10 lines"
+  },
+  {
+   "title": "b/main.swift",
+   "kind": "sticky-note",
+   "in": "b",
+   "text": "10 lines"
+  },
+  {
+   "title": "half\ufffd.swift",
+   "kind": "sticky-note",
+   "in": "C/",
+   "text": "10 lines"
+  },
+  {
+   "title": "C/main.swift (2)",
+   "kind": "sticky-note",
+   "in": "C/",
+   "text": "10 lines"
+  },
+  {
+   "title": "one.ts",
+   "kind": "sticky-note",
+   "in": "Level 1",
+   "text": "10 lines"
+  },
+  {
+   "title": "page.ts",
+   "kind": "sticky-note",
+   "in": "[locale]",
+   "text": "10 lines"
+  },
+  {
+   "title": "app/index.ts",
+   "kind": "sticky-note",
+   "in": "app",
+   "text": "10 lines"
+  },
+  {
+   "title": "b.ts",
+   "kind": "sticky-note",
+   "in": "back\\slash",
+   "text": "10 lines"
+  }
+ ],
+ "edges": [
+  {
+   "from": "app",
+   "to": "[locale]"
+  },
+  {
+   "from": "app",
+   "to": "Level 1"
+  },
+  {
+   "from": "app",
+   "to": "\u2026me-very-long-package-name-very-long-package-name-very-long-package-name-x"
+  },
+  {
+   "from": "app",
+   "to": "C"
+  },
+  {
+   "from": "app",
+   "to": "back\\slash"
+  },
+  {
+   "from": "app/index.ts",
+   "to": "page.ts",
+   "weight": 1
+  },
+  {
+   "from": "app/index.ts",
+   "to": "c/main.swift",
+   "weight": 2
+  }
+ ]
+}

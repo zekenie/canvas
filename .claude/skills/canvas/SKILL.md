@@ -11,23 +11,23 @@ You can't see the board, and `canvas query` reads it back: which shapes match, w
 
 ## Check the app
 
-Run everything from the repository root. `canvas` isn't on your PATH; `build/canvas` is the one this checkout built.
+`canvas` is on your PATH once `canvas install` has run: it puts these skills, and a link to the app's own `canvas` (in its bundle, `Contents/Helpers/canvas`), where agents look. It needs no app running, and running it again after an app update brings them up to date. In the Infinite Canvas repository's own checkout `canvas` is `build/canvas` (what `./build.sh` makes), and you run that wherever this skill says `canvas`.
 
 ```bash
-build/canvas status
-build/canvas boards
+canvas status
+canvas boards
 ```
 
-Exit 3 means the app isn't reachable: for `not_running`, start it with `./build.sh && open build/InfiniteCanvas.app`; `unreachable` usually means a sandbox is blocking the socket, so ask the user. If `canvas` says the app speaks another protocol (`protocol_mismatch`), the app running and this checkout were built apart. A second copy of the app doesn't take over from the one running, so don't just open another: ask the user to quit the app, then open this checkout's (`./build.sh && open build/InfiniteCanvas.app`). `boards` lists the open boards. Pick one and pass `--board <id>` on every `draw` and `query` after that, because without it a command goes to whichever board is in front, which changes whenever the user clicks another window. With none open (`no_board`), or when the user wants a new one, `build/canvas new ~/Boards/Plans.canvasboard` makes a new board's file there and opens it, and answers as `boards` lists it, `id` and all; it never touches a file that's there already. `kinds`, `query-vocabulary`, `status`, `boards` and `new` are about the app, and take no `--board`. An id lasts while its board is open.
+Exit 3 means the app isn't reachable: for `not_running`, start Infinite Canvas (in the repository, `./build.sh && open build/InfiniteCanvas.app`); `unreachable` usually means a sandbox is blocking the socket, so ask the user. If `canvas` says the app speaks another protocol (`protocol_mismatch`), the app running and this `canvas` were built apart. A second copy of the app doesn't take over from the one running, so don't just open another: ask the user to quit the app, then open the one this `canvas` came with (in the repository, `./build.sh && open build/InfiniteCanvas.app`). `boards` lists the open boards. Pick one and pass `--board <id>` on every `draw` and `query` after that, because without it a command goes to whichever board is in front, which changes whenever the user clicks another window. With none open (`no_board`), or when the user wants a new one, `canvas new ~/Boards/Plans.canvasboard` makes a new board's file there and opens it, and answers as `boards` lists it, `id` and all; it never touches a file that's there already. `kinds`, `query-vocabulary`, `status`, `boards` and `new` are about the app, and take no `--board`. An id lasts while its board is open.
 
-`--board` picks a file, not a board inside it. A file can hold boards inside shapes (a subboard's), and you never say which one a script draws on: a title names a shape on whatever board it's on (the board the window shows first), a new shape goes on the board of what it's placed against, `in "Payments"` puts it on the board of the subboard called Payments (and `in "Sprint 3"` in the frame called Sprint 3, on the board that frame is on), and a shape with neither goes on the board the rest of the script draws on, else the one the window shows. A run draws on one board and never moves the window; its result's `on` says which board (`"root"`, or the id of the shape that holds it, and that shape's `title`). `boards` says what the window shows, as `shows` and `showsPath` (the boards from the root down to it). To move the window, `build/canvas show "Payments"`, or `build/canvas show --root`.
+`--board` picks a file, not a board inside it. A file can hold boards inside shapes (a subboard's), and you never say which one a script draws on: a title names a shape on whatever board it's on (the board the window shows first), a new shape goes on the board of what it's placed against, `in "Payments"` puts it on the board of the subboard called Payments (and `in "Sprint 3"` in the frame called Sprint 3, on the board that frame is on), and a shape with neither goes on the board the rest of the script draws on, else the one the window shows. A run draws on one board and never moves the window; its result's `on` says which board (`"root"`, or the id of the shape that holds it, and that shape's `title`). `boards` says what the window shows, as `shows` and `showsPath` (the boards from the root down to it). To move the window, `canvas show "Payments"`, or `canvas show --root`.
 
 ## The loop
 
-`build/canvas kinds` gives you the vocabulary: every kind you can draw, how it can be named, its size, the attributes it takes with their values, and the channels its edges use. Kinds come from plugins, so this list is the truth; the tables below are what shipped when this was written. On a board you didn't just draw, look at what's there first ([Reading the board](#reading-the-board)): the titles in the file (`[title]`, every board's) are the names your script can use, or would change by accident. Then write the script and dry-run it, which does everything but commit:
+`canvas kinds` gives you the vocabulary: every kind you can draw, how it can be named, its size, the attributes it takes with their values, and the channels its edges use. Kinds come from plugins, so this list is the truth; the tables below are what shipped when this was written. On a board you didn't just draw, look at what's there first ([Reading the board](#reading-the-board)): the titles in the file (`[title]`, every board's) are the names your script can use, or would change by accident. Then write the script and dry-run it, which does everything but commit:
 
 ```bash
-build/canvas draw --board 2 --dry-run - <<'EOF'
+canvas draw --board 2 --dry-run - <<'EOF'
 sticky-note "Inbox" text: "Everything new lands here"
 EOF
 ```
@@ -234,7 +234,7 @@ delete "Risks"
 
 ## A complete example
 
-These are real shipped kinds; `build/canvas kinds` says what your app has. Only "Sign-up form" is unplaced, so the whole drawing goes as near the middle of the window as it can while keeping clear of what's there. On a full board that can be outside the window: the rows say `inView: false`, and `--reveal` brings the drawing into view.
+These are real shipped kinds; `canvas kinds` says what your app has. Only "Sign-up form" is unplaced, so the whole drawing goes as near the middle of the window as it can while keeping clear of what's there. On a full board that can be outside the window: the rows say `inView: false`, and `--reveal` brings the drawing into view.
 
 ```draw
 // A sign-up flow, left to right, and the work it needs underneath.
@@ -258,7 +258,7 @@ edge "Rate-limit sign-ups" -> "Verify emails"
 You can't see the board, so this is how you look at it: before drawing on a board you didn't just draw, to learn the titles already there, and after, to check what's connected to what. `canvas query` takes a query, a selector as CSS writes one, and lists every shape of the file that matches, on every board, in file order. It changes nothing. Pass the query through a heredoc with a quoted delimiter, as you pass a script: queries are full of `"`, `*`, `>`, `[` and `#`, which the shell mangles.
 
 ```bash
-build/canvas query --board 2 - <<'EOF'
+canvas query --board 2 - <<'EOF'
 sticky-note:edge-to("Auth service")
 EOF
 ```
@@ -336,7 +336,7 @@ edge "Web" --> "API"
 # Services
 ```
 
-**Inventing attributes** (`color: red`, `label:`, `owner:`). Every key is checked against the kind, so look in `build/canvas kinds` first.
+**Inventing attributes** (`color: red`, `label:`, `owner:`). Every key is checked against the kind, so look in `canvas kinds` first.
 
 ```draw-error
 // reason: unknown_attribute
@@ -354,7 +354,7 @@ sticky-note "Ship 1.0" text: "Blocked on @[Auth servce]"
 - **Two unplaced shapes.** Only one per script may say nothing about where it goes; place the rest against it. And there are no coordinates in any form: if a shape is in the wrong place, give it another placement. A layout worked out elsewhere goes in as offsets from one shape's top-left ([An exact offset](reference/language.md#an-exact-offset)).
 - **Re-running a whole layout script to add one line.** Its placements run again and snap back anything the user has moved since, and its untitled shapes are drawn a second time. Write only the new statements. To change attributes without moving a shape, restate it without placements.
 - **An edge to a shape on another board** goes through a reference only if that shape is public. If it isn't, the script is refused (`several_boards`, and its hint says why): don't make the shape public to get past it, ask the user, or split the script into a run for each board. The one exception is [canvas-digest](../canvas-digest/SKILL.md), which makes public only the shapes it creates itself, in the run that creates them, and says which; it never touches a shape that was already on a board.
-- **A relationship that doesn't fit is drawn, and said.** `edge "Ann" -> "Bo" is: "Employment"` with Bo not a Company draws the arrow and answers `problems` on its row and an error warning; nothing is refused. `build/canvas query 'arrow:misfit'` lists those on the board, and `arrow:misfit:invalid` says why. A plain arrow between two notes names, in `fits`, the relationship types that would take it; the type is yours to write (`is:`), `canvas draw` never picks one ([reference/relationships.md](reference/relationships.md)).
+- **A relationship that doesn't fit is drawn, and said.** `edge "Ann" -> "Bo" is: "Employment"` with Bo not a Company draws the arrow and answers `problems` on its row and an error warning; nothing is refused. `canvas query 'arrow:misfit'` lists those on the board, and `arrow:misfit:invalid` says why. A plain arrow between two notes names, in `fits`, the relationship types that would take it; the type is yours to write (`is:`), `canvas draw` never picks one ([reference/relationships.md](reference/relationships.md)).
 - **Edges across channels**, and **shapes the user locked**, which refuse changes (`read_only`), as does everything in a locked frame or on a locked subboard's board. Connect like to like (or to a subboard) or say `channel: none`; tell the user about a locked shape rather than unlocking it.
 - **A frame and what goes in it in one script.** `in` a frame the same script draws is refused (`unsupported`): draw the frame, then what goes in it in a run of its own.
 
@@ -372,13 +372,13 @@ sticky-note "Ship 1.0" text: "Blocked on @[Auth servce]"
 
 ## Reference
 
-[reference/language.md](reference/language.md) is the full `draw` language: every construct, the gap and part tables, how lists, pushes and the unplaced drawing are worked out, edges and channels, every error reason with its fix (the command line's own and the boards' too), what the language refuses and why, and what isn't built yet. Read it when you need a construct this page doesn't cover, or when an error points at behavior you didn't expect. `build/canvas help draw` is the command's own help.
+[reference/language.md](reference/language.md) is the full `draw` language: every construct, the gap and part tables, how lists, pushes and the unplaced drawing are worked out, edges and channels, every error reason with its fix (the command line's own and the boards' too), what the language refuses and why, and what isn't built yet. Read it when you need a construct this page doesn't cover, or when an error points at behavior you didn't expect. `canvas help draw` is the command's own help.
 
-`build/canvas measure -` takes a script on standard input and says how big each of its shapes would be, how wide a reference to a shape is and what the placement constants are, without drawing or changing anything: on its own, or with the types of the board in front (or `--board`'s): for a tool that lays a script out before it writes it ([reference/language.md](reference/language.md#measuring-a-script)).
+`canvas measure -` takes a script on standard input and says how big each of its shapes would be, how wide a reference to a shape is and what the placement constants are, without drawing or changing anything: on its own, or with the types of the board in front (or `--board`'s): for a tool that lays a script out before it writes it ([reference/language.md](reference/language.md#measuring-a-script)).
 
 For a large body of connected information (a codebase, an org, research notes, a plan: dozens to hundreds of shapes and the links between them), don't write the script by hand: [canvas-digest](../canvas-digest/SKILL.md) takes the things, what holds what and what points at what, measures them with `canvas measure`, decides where everything goes and which hubs get reference pills, and draws it with this command.
 
-[reference/query.md](reference/query.md) is the whole query language, on a story file: naming shapes, attributes, inside, edges and their direction, the plugins' words, yes-or-no questions, `--ask`, and every refusal with its fix. [query-prompt.md](query-prompt.md) is what the app tells Claude for `--ask`, word for word, with how to give yourself what it's given. `build/canvas help query` is the command's own help, and `build/canvas query-vocabulary` what this app's queries can name: its kinds and their attributes, its edge types and its words.
+[reference/query.md](reference/query.md) is the whole query language, on a story file: naming shapes, attributes, inside, edges and their direction, the plugins' words, yes-or-no questions, `--ask`, and every refusal with its fix. [query-prompt.md](query-prompt.md) is what the app tells Claude for `--ask`, word for word, with how to give yourself what it's given. `canvas help query` is the command's own help, and `canvas query-vocabulary` what this app's queries can name: its kinds and their attributes, its edge types and its words.
 
 [reference/relationships.md](reference/relationships.md) is how a relationship is written and read: a relationship type and its ends, two notes related with values, what a row says of an arrow (`is`, `endOf`, `fits`, `relates`), a misfit, drawing one again and the queries that say what a note is related to. [reference/references.md](reference/references.md) is what a reference does to what you read: a pill that stands for a public shape, so an arrow into it is an arrow into the shape, and how a row says it (`via`, `more`), and what a script can make of one (an edge to a shape on another board).
 

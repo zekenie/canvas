@@ -12,6 +12,7 @@ var DIGEST_ARGS = typeof arguments !== 'undefined' ? Array.prototype.slice.call(
       writeText: function (p, s) { fs.writeFileSync(p, s); },
       mkdirp: function (p) { fs.mkdirSync(p, { recursive: true }); },
       print: function (s) { process.stdout.write(s + '\n'); },
+      warn: function (s) { process.stderr.write(s + '\n'); },
       now: function () { return Date.now(); },
       engine: 'node ' + process.version,
     };
@@ -22,6 +23,7 @@ var DIGEST_ARGS = typeof arguments !== 'undefined' ? Array.prototype.slice.call(
       writeText: function (p, s) { writeFile(p, s); },
       mkdirp: function () {},   // jsc cannot make a folder: the driver makes <outdir>/runs
       print: function (s) { print(s); },
+      warn: function (s) { if (typeof printErr === 'function') printErr(s); },
       now: function () { return Date.now(); },
       engine: 'jsc',
     };

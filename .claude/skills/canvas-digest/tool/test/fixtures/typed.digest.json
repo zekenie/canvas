@@ -1,0 +1,284 @@
+{
+ "title": "Platform map",
+ "text": "The platform's workflows and tables, as types on this board and notes of them in each service's board.",
+ "nodes": [
+  {
+   "title": "Model",
+   "kind": "frame"
+  },
+  {
+   "title": "Workflow",
+   "in": "Model",
+   "text": "A Temporal workflow: what it is called, the queue it runs on and how often it retries.",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "queue": {
+      "type": "string"
+     },
+     "retries": {
+      "type": "integer"
+     },
+     "owner": {
+      "type": "string"
+     },
+     "schedule": {
+      "type": "string"
+     },
+     "url": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ]
+   }
+  },
+  {
+   "title": "Table",
+   "in": "Model",
+   "text": "A Postgres or Dynamo table: its name, engine and size.",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "engine": {
+      "type": "string",
+      "enum": [
+       "postgres",
+       "dynamo"
+      ]
+     },
+     "rows": {
+      "type": "integer"
+     },
+     "pii": {
+      "type": "boolean"
+     },
+     "tags": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "owner": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ]
+   }
+  },
+  {
+   "title": "writes",
+   "in": "Model",
+   "text": "A workflow writes a table, and how: insert or upsert.",
+   "relationship": true,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "mode": {
+      "type": "string",
+      "enum": [
+       "insert",
+       "upsert"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "title": "reads",
+   "in": "Model",
+   "text": "A workflow reads a table, and which columns.",
+   "relationship": true,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "columns": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  {
+   "title": "Checkout",
+   "kind": "subboard",
+   "text": "Checkout service: order and refund workflows and their tables."
+  },
+  {
+   "title": "Reporting",
+   "kind": "subboard",
+   "text": "Reporting service: nightly rollups."
+  },
+  {
+   "title": "OrderWorkflow",
+   "in": "Checkout",
+   "is": "Workflow",
+   "fieldValues": {
+    "name": "OrderWorkflow",
+    "queue": "checkout",
+    "retries": 3,
+    "url": "https://temporal.example/ns//order"
+   }
+  },
+  {
+   "title": "RefundWorkflow",
+   "in": "Checkout",
+   "is": "Workflow",
+   "fieldValues": {
+    "name": "RefundWorkflow",
+    "queue": "checkout",
+    "retries": 5,
+    "owner": "Team \"Refunds\"\nsecond line \\ backslash"
+   }
+  },
+  {
+   "title": "orders",
+   "in": "Checkout",
+   "is": "Table",
+   "fieldValues": {
+    "name": "orders",
+    "engine": "postgres",
+    "rows": 120000,
+    "pii": true,
+    "tags": [
+     "core",
+     "billing"
+    ]
+   }
+  },
+  {
+   "title": "refunds",
+   "in": "Checkout",
+   "is": "Table",
+   "fieldValues": {
+    "name": "refunds",
+    "engine": "postgres"
+   }
+  },
+  {
+   "title": "NightlyRollup",
+   "in": "Reporting",
+   "is": "Workflow",
+   "fieldValues": {
+    "name": "NightlyRollup",
+    "queue": "reporting",
+    "schedule": "0 3 * * *"
+   }
+  },
+  {
+   "title": "AuditSweep",
+   "in": "Reporting",
+   "is": "Workflow",
+   "fieldValues": {
+    "name": "AuditSweep",
+    "queue": "reporting"
+   }
+  },
+  {
+   "title": "rollup",
+   "in": "Reporting",
+   "is": "Table",
+   "fieldValues": {
+    "name": "rollup",
+    "engine": "dynamo"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "from": "Workflow",
+   "to": "writes",
+   "text": "tables",
+   "endRule": {
+    "needed": true
+   }
+  },
+  {
+   "from": "writes",
+   "to": "Table",
+   "text": "writers"
+  },
+  {
+   "from": "Workflow",
+   "to": "reads",
+   "text": "inputs"
+  },
+  {
+   "from": "reads",
+   "to": "Table",
+   "text": "readers"
+  },
+  {
+   "from": "OrderWorkflow",
+   "to": "orders",
+   "is": "writes",
+   "fieldValues": {
+    "mode": "insert"
+   }
+  },
+  {
+   "from": "RefundWorkflow",
+   "to": "refunds",
+   "is": "writes",
+   "fieldValues": {
+    "mode": "insert"
+   }
+  },
+  {
+   "from": "RefundWorkflow",
+   "to": "orders",
+   "is": "writes",
+   "fieldValues": {
+    "mode": "upsert"
+   }
+  },
+  {
+   "from": "NightlyRollup",
+   "to": "rollup",
+   "is": "writes",
+   "fieldValues": {
+    "mode": "upsert"
+   }
+  },
+  {
+   "from": "NightlyRollup",
+   "to": "orders",
+   "is": "reads",
+   "fieldValues": {
+    "columns": [
+     "id",
+     "total"
+    ]
+   }
+  },
+  {
+   "from": "NightlyRollup",
+   "to": "orders",
+   "is": "writes",
+   "fieldValues": {
+    "mode": "upsert"
+   }
+  },
+  {
+   "from": "NightlyRollup",
+   "to": "refunds",
+   "is": "reads"
+  },
+  {
+   "from": "AuditSweep",
+   "to": "NightlyRollup",
+   "is": "reads"
+  }
+ ]
+}

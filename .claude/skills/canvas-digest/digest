@@ -10,7 +10,7 @@
 #   digest verify  GRAPH TARGET                       what was drawn, against the plan and the file's titles
 #   digest all     GRAPH TARGET [PLAN FLAGS]          check, measure, plan, draw, verify; stops at the first that fails
 #   digest ready   GRAPH TARGET                       whether a draw could start: canvas found, the app answering (and both new enough
-#                                                     to measure), the target fit to draw
+#                                                     to measure; its build is written to OUT/app-build), the target fit to draw
 #                                                     on (and, with --replace, the last drawing one the app will take back: a window
 #                                                     inside a drawing that is the board is shown its root, as the draw would). GRAPH
 #                                                     needn't exist yet: for a caller with slow work to do before it has one
@@ -27,9 +27,14 @@
 #   --replace   draw in place of this digest's last drawing (OUT/drawn.json), when it is in the target board's file: it is
 #               taken back first (one undo step), and nothing else on the board is touched
 #   --out DIR   where the files go (default: GRAPH without .json, plus .out)
+#   --records DIR   where the drawing records live, one for each file drawn in (default: OUT/drawn.json, the one record of this out).
+#               A run with --replace reads the record of its target's file, found by the path or, for a board with no file yet, by its id and
+#               header (of two digests drawn into one such board, the one with this run's header), and writes to that one (a new file gets a
+#               new record), so runs that share DIR but not OUT each know their own boards. A file in DIR that is no record is said and skipped
 #   --timeout S seconds canvas may take to answer one script (default 120)
 #
-# canvas is $CANVAS_CLI, else build/canvas in the repository, else the one on PATH. Exit status: 0 done; 1 refused or failed;
+# canvas is $CANVAS_CLI, else the one beside this driver (the app's, when it is in the app's Contents/Resources/agents; build/canvas, when it is in a
+# checkout of the repository), else the one on PATH (`canvas install` puts it there). Exit status: 0 done; 1 refused or failed;
 # 2 the command line is wrong; 4 a dry run or the board is not the plan (nothing past that run is drawn). Every refusal and failure is
 # said on standard error, with the draws made so far and how to take them back.
 set -eu
@@ -39,7 +44,7 @@ exec 3>&2
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 TOOL=$HERE/tool
-REPO=$(cd "$HERE/../../.." && pwd)
+REPO=$(cd "$HERE/../../.." && pwd -P)
 JSC=${JSC:-/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc}
 
 die() { echo "digest: $*" >&3; exit 1; }
@@ -66,15 +71,45 @@ tool_to() {
   tool "$@" > "$_tf" || exit 1
 }
 
+# The canvas this driver is beside: the app's (Contents/Helpers/canvas) when the driver is in the app's Contents/Resources/agents, build/canvas when
+# it is in a checkout of this repository. Never one found from the current folder: a copy of the driver runs whatever folder it is run from.
+beside_canvas() {
+  _here=$(cd "$HERE" && pwd -P)
+  case $_here in
+    */Contents/Resources/agents/canvas/skills/*) _beside=${_here%/Resources/agents/canvas/skills/*}/Helpers/canvas ;;
+    *)
+      _beside=
+      if [ "$_here" = "$REPO/.claude/skills/canvas-digest" ] && [ -f "$REPO/build.sh" ] && [ -f "$REPO/Sources/CanvasCLI/main.swift" ]; then _beside=$REPO/build/canvas; fi ;;
+  esac
+  if [ -n "$_beside" ] && [ -x "$_beside" ]; then printf '%s\n' "$_beside"; fi
+}
+
+# The build of the app answering (`canvas status`'s `build:` line): nothing when it says none, or doesn't answer.
+app_build() {
+  "$CANVAS" status --format text --timeout 10 2>/dev/null | sed -n 's/^build: *//p' | head -n 1 || true
+}
+
+# A copy of the skills left behind by an update, said once: build-id, beside this driver, is the build of the app the skills came from, and
+# the app answering (`canvas status`) says its own. This repository's checkout has no build-id (its skills are not a copy), and says nothing.
+warn_if_stale() {
+  [ -f "$HERE/build-id" ] || return 0
+  _mine=$(cat "$HERE/build-id")
+  _app=$(app_build)
+  if [ -n "$_app" ] && [ "$_app" != "$_mine" ]; then
+    echo "digest: warning: these skills are from build $_mine, and the app answering is build $_app: run \`canvas install\` again to bring them up to date" >&3
+  fi
+}
+
 # canvas is looked up here, by a name nothing of ours answers to (the functions below are run_canvas, canvas_try and canvas_to).
 find_canvas() {
   if [ -n "${CANVAS_CLI:-}" ]; then CANVAS=$CANVAS_CLI
-  elif [ -x "$REPO/build/canvas" ]; then CANVAS=$REPO/build/canvas
-  elif [ -x "$PWD/build/canvas" ]; then CANVAS=$PWD/build/canvas
-  else CANVAS=$(command -v canvas || true)
+  else
+    CANVAS=$(beside_canvas)
+    [ -n "$CANVAS" ] || CANVAS=$(command -v canvas || true)
   fi
-  [ -n "$CANVAS" ] && [ -x "$CANVAS" ] || die "can't find canvas: set CANVAS_CLI, build it (./build.sh makes build/canvas), or put it on your PATH"
+  [ -n "$CANVAS" ] && [ -x "$CANVAS" ] || die "can't find canvas: set CANVAS_CLI, run canvas install (or put canvas on your PATH), or, in the Infinite Canvas repository, build it (./build.sh)"
   export CANVAS_FORMAT=json
+  warn_if_stale
 }
 
 # canvas, with the time one answer may take (a long script, or a measure of a big digest, is more than its 10 s).
@@ -107,7 +142,7 @@ CMD=$1; GRAPH=$2; shift 2
 case $CMD in check|measure|plan|draw|verify|all|ready) ;; *) usage ;; esac
 [ "$CMD" = ready ] || [ -f "$GRAPH" ] || die "no digest at $GRAPH"
 GRAPH=$(abspath "$GRAPH")
-BOARD=; NEWFILE=; INTO=; OUT=; MESS=; PROMOTE=; PREFER=; CAP=; MARGIN=; POPULAR=; VIEW=; RANKS=; TIMEOUT=120; REPLACE=0
+BOARD=; NEWFILE=; INTO=; OUT=; RECORDS=; RECNAME=; MESS=; PROMOTE=; PREFER=; CAP=; MARGIN=; POPULAR=; VIEW=; RANKS=; TIMEOUT=120; REPLACE=0
 while [ $# -gt 0 ]; do
   if [ "$1" = --replace ]; then REPLACE=1; shift; continue; fi
   [ $# -ge 2 ] || { echo "digest: $1 takes a value" >&2; usage; }
@@ -116,6 +151,7 @@ while [ $# -gt 0 ]; do
     --new-file) NEWFILE=$(abspath "$2") ;;
     --into) INTO=$2 ;;
     --out) OUT=$(abspath "$2") ;;
+    --records) RECORDS=$(abspath "$2") ;;
     --timeout) TIMEOUT=$2 ;;
     --mess) MESS=$2 ;;
     --promote) PROMOTE=$2 ;;
@@ -198,6 +234,54 @@ record_drawn() {
   if [ "${_over:-0}" = 1 ]; then set -- "${1:-}" --over "$OUT/drawn.prev.json" --was "$_was"; fi
   tool_to "$OUT/drawn.json.new" drawn "$OUT/plan.json" "$_path" "$id" "$@"
   mv "$OUT/drawn.json.new" "$OUT/drawn.json"
+  keep_record
+}
+
+# With --records, OUT/drawn.json is the working copy of the record of the target's file (select_record); this keeps it there, whole or
+# not at all. A file with no record yet is named for its path, else for its board's id and the drawing's header. The last drawing's
+# record (drawn.prev.json) only matters while a run is drawing over it, so it stays in OUT.
+keep_record() {
+  if [ -z "$RECORDS" ]; then return 0; fi
+  if [ -z "$RECNAME" ]; then RECNAME=$(tool record-name "${_path:-}" "$id" "$OUT/plan.json") || exit 1; fi
+  mkdir -p "$RECORDS"
+  cp "$OUT/drawn.json" "$RECORDS/.$RECNAME.new"
+  mv "$RECORDS/.$RECNAME.new" "$RECORDS/$RECNAME"
+}
+
+# The header note of the first board this run draws: the plan's, when it is drawing one, else the digest's. How the last drawings of one
+# unsaved board are told apart (the tool says nothing when it can't tell).
+record_header() {
+  if [ "$CMD" = draw ] && [ -s "$OUT/plan.json" ]; then tool header "$OUT/plan.json"
+  elif [ -f "$GRAPH" ]; then tool header "$GRAPH"
+  fi
+}
+
+# With --records and --replace: the record of the target board's file becomes OUT/drawn.json, or there is none (a new file has none yet, and a
+# run with a new out has no record but these). Without --replace nothing reads a record, and a drawing writes to the record its file or
+# board and header name (keep_record), so none is picked. Of the records there are, the tool picks the one that is this board's file's: by
+# its path, which needs no query; only when that fails, and a record could be told by the board's id and header, the file's titles are asked
+# for. Of several told that way (two digests drawn into one unsaved board) it takes the one with this run's header, then the newest. A file in
+# the folder that isn't a record is said once and skipped.
+select_record() {
+  mkdir -p "$RECORDS"
+  rm -f "$OUT/drawn.json"
+  if [ -z "$BOARD" ] || [ "$REPLACE" != 1 ] || [ "$CMD" = verify ]; then return 0; fi
+  set --
+  for _r in "$RECORDS"/*.json; do if [ -f "$_r" ]; then set -- "$@" "$_r"; fi; done
+  if [ $# -eq 0 ]; then return 0; fi
+  _bpath=$(board_field "$BOARD" path)
+  _header=$(record_header) || exit 1
+  _pick=$(tool record-pick "$_bpath" "$BOARD" "" --header "$_header" "$@") || exit 1
+  if [ -z "$_pick" ]; then
+    _need=$(tool record-needs-titles "$_bpath" "$BOARD" "$@" --quiet true) || exit 1
+    if [ -n "$_need" ]; then
+      all_titles "$BOARD"
+      _pick=$(tool record-pick "$_bpath" "$BOARD" "$OUT/titles.all.json" --header "$_header" --quiet true "$@") || exit 1
+    fi
+  fi
+  if [ -z "$_pick" ]; then return 0; fi
+  RECNAME=$(basename "$_pick")
+  cp "$_pick" "$OUT/drawn.json"
 }
 
 # The app deletes no shape that holds the board the window shows. A take-back ($OUT/replace.draw) whose shapes are all on the file's
@@ -308,7 +392,7 @@ undo_advice() {
 # Said when a draw stops: what is on the board, and how to take it back.
 leave_note() {
   # nothing new is on the board: the last drawing's record stands, whether or not it is undone back
-  if [ -z "$_drawn" ] && [ "${_over:-0}" = 1 ]; then cp "$OUT/drawn.prev.json" "$OUT/drawn.json"; fi
+  if [ -z "$_drawn" ] && [ "${_over:-0}" = 1 ]; then cp "$OUT/drawn.prev.json" "$OUT/drawn.json"; keep_record; fi
   if [ "${_replaced:-0}" = 1 ] && [ -z "$_drawn" ]; then
     echo "digest: the last drawing was taken back and nothing new was drawn: Edit > Undo Draw in the app brings the last drawing back." >&2
     return
@@ -449,9 +533,12 @@ step_ready() {
   canvas_to "$OUT/boards.json" boards   # the app answers (canvas says how to start it when it doesn't)
   # ... and it and canvas are new enough: measure is the newest thing the skill asks of them (one note, measured; nothing is drawn)
   if ! echo 'sticky-note "Ready"' | canvas_try "$OUT/ready.measure.json" measure -; then
-    echo "digest: canvas measure doesn't answer, so the canvas found ($CANVAS) or the app that is running is older than this skill needs. Build them (./build.sh) and open that build's app. What canvas said:" >&2
+    echo "digest: canvas measure doesn't answer, so the canvas found ($CANVAS) or the app that is running is older than this skill needs. Open the app this canvas came with, or run canvas install from the app you mean to use (in the Infinite Canvas repository: ./build.sh, then open its build). What canvas said:" >&2
     cat "$OUT/ready.measure.json.err" >&2; exit 1
   fi
+  # ... and which build it is, kept for a caller that says what drew its boards (OUT/app-build: the app's own words, else `unknown`)
+  _build=$(app_build)
+  printf '%s\n' "${_build:-unknown}" > "$OUT/app-build"
   if [ -n "$NEWFILE" ]; then
     new_file_free
     echo "ready: the app is running, and $NEWFILE is free for a new board"
@@ -486,6 +573,8 @@ new_file_free() {
     [ ! -e "$_f" ] || die "there is a file at $_f already: name another path, or open that board and draw in its place (--board front --replace)"
   done
 }
+
+if [ -n "$RECORDS" ] && [ "$CMD" != measure ]; then select_record; fi
 
 case $CMD in
   ready)   step_ready ;;

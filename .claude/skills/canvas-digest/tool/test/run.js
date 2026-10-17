@@ -6,8 +6,8 @@ var io = {
   readText: function (p) { return isNode ? fsr.readFileSync(p, 'utf8') : readFile(p); },
   print: function (s) { isNode ? console.log(s) : print(s); },
 };
-Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../lib/sizes.mjs'), import('../lib/elk.mjs'), import('../lib/plan.mjs'), import('../lib/cli.mjs'), import('../lib/util.mjs'), import('../lib/layout.mjs'), import('../lib/promote.mjs'), import('../lib/cost.mjs'), import('../lib/noise.mjs'), import('../lib/check.mjs'), import('./helpers.mjs'), import('../lib/compare.mjs')]).then(async function (mods) {
-  var dialm = mods[0], model = mods[1], sizes = mods[2], elkm = mods[3], planm = mods[4], clim = mods[5], util = mods[6], layoutm = mods[7], promm = mods[8], costm = mods[9], noisem = mods[10], checkm = mods[11], helpers = mods[12], compareRun0 = mods[13].compareRun;
+Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../lib/sizes.mjs'), import('../lib/elk.mjs'), import('../lib/plan.mjs'), import('../lib/cli.mjs'), import('../lib/util.mjs'), import('../lib/layout.mjs'), import('../lib/promote.mjs'), import('../lib/cost.mjs'), import('../lib/noise.mjs'), import('../lib/check.mjs'), import('./helpers.mjs'), import('../lib/compare.mjs'), import('../lib/types.mjs'), import('../lib/verify.mjs')]).then(async function (mods) {
+  var dialm = mods[0], model = mods[1], sizes = mods[2], elkm = mods[3], planm = mods[4], clim = mods[5], util = mods[6], layoutm = mods[7], promm = mods[8], costm = mods[9], noisem = mods[10], checkm = mods[11], helpers = mods[12], compareRun0 = mods[13].compareRun, typesm = mods[14], verifym = mods[15];
   var base = util.TOOL_DIR;
   var elk = await elkm.loadElk(io, base);
   var results = [], failed = 0;
@@ -565,6 +565,13 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(checkm.checkDigest(digest([note('A')], [{ from: 'A', to: 'B' }])).errors[0].indexOf('unknown title') > 0, 'an edge to nothing');
   });
 
+  await test('a node\'s source (what it was made from) is accepted, and changes nothing', async function () {
+    var plain = digest([note('A'), note('B', null, 'x')], [{ from: 'A', to: 'B' }]);
+    var sourced = digest([Object.assign(note('A'), { source: 'src/a.js' }), Object.assign(note('B', null, 'x'), { source: { path: 'src/b.js', line: 3 } })], [{ from: 'A', to: 'B' }]);
+    eq(checkm.checkDigest(sourced).errors, [], 'check accepts it');
+    eq((await planOf(sourced)).plan.boards, (await planOf(plain)).plan.boards, 'and the plan is the same');
+  });
+
   await test('check: warns past 15 shapes in a frame and 150 on a board, and for an edge into a frame', async function () {
     var nodes = [{ title: 'F', kind: 'frame' }];
     for (var i = 0; i < 16; i++) nodes.push(note('n' + i, 'F'));
@@ -1053,6 +1060,12 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(rd.minus(['Root  note', 'Mine', 'root note'], d), ['Mine', 'root note'], 'the file less the drawing (spaces folded, case kept: "root note" is another shape)');
     eq([rd.beyond(d, 12), rd.beyond(d, 13), rd.beyond(d, 9), rd.beyond(rd.drawnRecord(r.plan, '/f', 7), 40)], [0, 1, 0, 0], 'shapes beyond the drawing: one added; fewer is fine; unknown counts none');
     eq(rd.foreign(['About T', 'Part'], d), [], 'nothing foreign');
+    // a folder of records, one a target file: the one told by the file's path, else by the board's id and header; never another's
+    var recs = [{ name: 'b.json', record: unsaved }, { name: 'a.json', record: d }];
+    eq([rd.pickRecord(recs, '/f.canvasboard', 7, ['About T']), rd.pickRecord(recs, '/g.canvasboard', 7, ['About T']), rd.pickRecord(recs, '', 4, ['About T']), rd.pickRecord(recs, '', 4, ['Part']), rd.pickRecord([], '/f.canvasboard', 7, [])], ['a.json', '', 'b.json', '', ''], 'the record of a file');
+    var pn = rd.recordName('/tmp/f.canvasboard', 7, 'About T');
+    assert(pn === rd.recordName('/private/tmp/f.canvasboard', 9, 'x') && pn !== rd.recordName('/tmp/g.canvasboard', 7, 'About T') && /^file-[0-9a-f]{16}\.json$/.test(pn), 'a file has one record name; two files two');
+    assert(rd.recordName('', 4, 'About T') !== rd.recordName('', 4, 'About U') && /^board-4-[0-9a-f]{16}\.json$/.test(rd.recordName('', 4, 'About T')), 'a board with no file: its id and header');
     eq(rd.replaceScript(d, ['About T', 'Part', 'In part']), 'delete "About T"\ndelete "Part"', 'the root\'s shapes the file still holds; a subboard takes what is on its board');
     eq(rd.replaceScript(d, []), '', 'nothing left to take back');
     var into = await planOf(digest([note('A', null, 'x')], []), { promote: false, into: 'Map' });
@@ -1220,6 +1233,486 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var reach = pill.w + 80 + 64 + 32;
     held.boxes.forEach(function (b, t) { var was = x.layout.boxes.get(t); assert(Math.abs(b.x - was.x) <= reach && Math.abs(b.y - was.y) <= reach, t + ' moved ' + (b.x - was.x) + ', ' + (b.y - was.y)); });
     x.L.hold = false;
+  });
+
+
+  // ---- types ------------------------------------------------------------------------------------------------------------------------------
+  var WF = { type: 'object', properties: { name: { type: 'string' }, retries: { type: 'integer' }, mode: { enum: ['a', 'b'] }, tags: { type: 'array', items: { type: 'string' } }, owner: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } }, required: ['name'] };
+  var typed = function (nodes, edges) {
+    var base = [
+      { title: 'Workflow', schema: WF, text: 'A workflow' }, { title: 'Table', schema: { type: 'object', properties: { name: { type: 'string' } } }, text: 'A table' },
+      { title: 'writes', relationship: true, schema: { type: 'object', properties: { mode: { type: 'string', enum: ['insert', 'upsert'] } } }, text: 'writes' },
+      { title: 'reads', relationship: true, schema: { type: 'object' }, text: 'reads' }];
+    var ends = [{ from: 'Workflow', to: 'writes', text: 'tables', endRule: { needed: true } }, { from: 'writes', to: 'Table', text: 'writers' }, { from: 'Workflow', to: 'reads' }, { from: 'reads', to: 'Table' }];
+    return digest(base.concat(nodes || []), ends.concat(edges || []));
+  };
+  var errorsOf = function (d) { return checkm.checkDigest(d).errors; };
+  var said = function (list, re, m) { assert(list.some(function (e) { return re.test(e); }), (m || 'no error says ' + re) + ': ' + JSON.stringify(list)); };
+
+  await test('a typed digest checks: types, relationship types, their ends, notes of a type and arrows of a relationship type are fine', async function () {
+    var d = typed([note('w1'), note('t1')], [{ from: 'w1', to: 't1' }]);
+    d.nodes[4].is = 'Workflow'; d.nodes[4].fieldValues = { name: 'w1', retries: 3, tags: ['x'], owner: { id: 1 }, extra: 'a member no field names' };
+    d.nodes[5].is = ['Table']; d.edges[4].is = 'writes'; d.edges[4].fieldValues = { mode: 'insert' };
+    var r = checkm.checkDigest(d);
+    eq(r.errors, [], 'no error'); eq(r.warnings, [], 'no warning');
+    var m = model.buildModel(d);
+    eq(m.edges.filter(function (e) { return e.end; }).map(function (e) { return e.from + '>' + e.to; }), ['Workflow>reads', 'Workflow>writes', 'reads>Table', 'writes>Table'], 'the four ends');
+    assert(m.edges.filter(function (e) { return e.end; }).every(function (e) { return e.direct; }), 'an end is never a pill');
+    // a type with no words is a warning, never an error; a $ref inside the schema is fine
+    var plain = typed([]); delete plain.nodes[1].text; plain.nodes[1].schema = { type: 'object', properties: { a: { $ref: '#/$defs/x' } }, $defs: { x: { type: 'string' } } };
+    var rp = checkm.checkDigest(plain); eq(rp.errors, []); said(rp.warnings, /"Table": a type has words and a schema that agree; this one has no text/);
+  });
+
+  await test('check refuses, naming the shape: an is with no type, is on a frame or a subboard, relationship without a schema, endRule on an edge that is no end, a $ref to an id', async function () {
+    var d = typed([{ title: 'Ghost', is: 'Nobody' }, { title: 'Region', kind: 'frame', is: 'Workflow' }, { title: 'Card', kind: 'subboard', is: 'Workflow' }, { title: 'Orphan', relationship: true },
+      { title: 'Rel note', is: 'writes' }, { title: 'Typed type', schema: { type: 'object' }, is: 'Workflow' }, { title: 'Refd', schema: { type: 'object', properties: { x: { $ref: 'urn:uuid:7c1e2a04-4b9e-4e0c-9d8c-5b0e7f3a2c11' } } } },
+      { title: 'Frame type', kind: 'frame', schema: { type: 'object' } }, { title: 'No schema object', schema: 'text' }, { title: 'A' }, { title: 'B' }, { title: 'C' }, { title: 'D' }, { title: 'Bad rel', relationship: 'yes', schema: {} }],
+    [{ from: 'A', to: 'B', endRule: { needed: true } }, { from: 'C', to: 'D', is: 'Workflow' }, { from: 'C', to: 'D', is: 'Nobody' }, { from: 'Workflow', to: 'writes', is: 'writes' }, { from: 'Workflow', to: 'reads', endRule: { needed: 'yes' } }, { from: 'Workflow', to: 'reads', endRule: { many: true } }]);
+    var e = errorsOf(d);
+    said(e, /^"Ghost": is "Nobody", which names no type in the digest/, 'is naming no type');
+    said(e, /^"Region": a frame can't be a type's instance/, 'is on a frame');
+    said(e, /^"Card": a subboard can't be a type's instance/, 'is on a subboard');
+    said(e, /^"Orphan": relationship: true needs a schema/, 'relationship without schema');
+    said(e, /^"Rel note": is "writes", a relationship type: only an arrow is one/, 'a note of a relationship type');
+    said(e, /^"Typed type": a type can't say is/, 'a type that is of a type');
+    said(e, /^"Refd": the schema has a \$ref to urn:uuid:7c1e2a04-4b9e-4e0c-9d8c-5b0e7f3a2c11/, 'a $ref to an id');
+    said(e, /^"Frame type": a frame can't be a type/, 'a schema on a frame');
+    said(e, /^"No schema object": schema is a JSON object/, 'a schema that is text');
+    said(e, /^"Bad rel": relationship is true or false/, 'relationship that is not boolean');
+    said(e, /^edge "A" -> "B": endRule is only for an end of a relationship type/, 'endRule on an edge that is no end');
+    said(e, /^edge "C" -> "D": is "Workflow", a type that isn't a relationship type/, 'an arrow of a plain type');
+    said(e, /^edge "C" -> "D": is "Nobody", which names no type in the digest/, 'an arrow of no type');
+    said(e, /^edge "Workflow" -> "writes": an end of a relationship type joins a type and a relationship type; it is not itself a relationship/, 'an end that is a relationship');
+    said(e, /^edge "Workflow" -> "reads": endRule is \{"needed": true\|false, "onlyOne": true\|false\}/, 'an endRule that is not the rule');
+    // the digest's ids stay in the schema and nowhere else: a $ref inside it is fine (above), and an ordinary digest is never refused for any of this
+    eq(errorsOf(fixture('acme')), []);
+  });
+
+  await test('check refuses the ends of a relationship type that sit on another board than it', async function () {
+    var d = typed([{ title: 'Far', kind: 'subboard' }, { title: 'Remote', in: 'Far', schema: { type: 'object' }, text: 'Remote type' }], [{ from: 'Remote', to: 'writes' }]);
+    var e = errorsOf(d);
+    said(e, /^edge "Remote" -> "writes": an end of the relationship type "writes", but "Remote" is on the board of "Far" and "writes" on the first board/, 'an end across boards');
+    // types on a board of their own, the relationship type and its ends there too, are fine
+    var ok = digest([{ title: 'Model', kind: 'subboard' }, { title: 'T1', in: 'Model', schema: { type: 'object' }, text: 't' }, { title: 'R', in: 'Model', relationship: true, schema: { type: 'object' }, text: 'r' }, note('n1'), note('n2')].map(function (n, i) { if (i === 3) n.is = 'T1'; if (i === 4) n.is = 'T1'; return n; }),
+      [{ from: 'T1', to: 'R' }, { from: 'R', to: 'T1' }, { from: 'n1', to: 'n2', is: 'R' }]);
+    eq(errorsOf(ok), [], 'types on one board, notes of them on another');
+  });
+
+  await test('the validator: type, properties, required, enum and items, nested; a null is no value; what it does not check is not an error', async function () {
+    var v = typesm.validateValue;
+    eq(v({ name: 'a', retries: 2, mode: 'a', tags: ['x'], owner: { id: 1 } }, WF, 'fieldValues'), [], 'a value that fits');
+    eq(v({ name: 'a', retries: 2.5 }, WF, 'v'), ['v.retries is 2.5, and the schema wants integer']);
+    eq(v({ name: 7 }, WF, 'v'), ['v.name is 7, and the schema wants string']);
+    eq(v({ retries: 1 }, WF, 'v'), ['v.name is required, and has no value'], 'required');
+    eq(v({ name: null }, WF, 'v'), ['v.name is required, and has no value'], 'a null is no value');
+    eq(v({ name: 'a', retries: null }, WF, 'v'), [], 'an optional null is fine');
+    eq(v({ name: 'a', mode: 'c' }, WF, 'v'), ['v.mode is "c", and the schema allows only "a", "b"'], 'enum');
+    eq(v({ name: 'a', tags: ['x', 3] }, WF, 'v'), ['v.tags[1] is 3, and the schema wants string'], 'items');
+    eq(v({ name: 'a', tags: 'x' }, WF, 'v'), ['v.tags is "x", and the schema wants array']);
+    eq(v({ name: 'a', owner: {} }, WF, 'v'), ['v.owner.id is required, and has no value'], 'nested required');
+    eq(v({ name: 'a', owner: { id: 'x' } }, WF, 'v'), ['v.owner.id is "x", and the schema wants integer'], 'nested type');
+    eq(v({ name: 'a', other: 1 }, WF, 'v'), [], 'a member no field names is the app\'s to warn of');
+    eq(v(3, { type: ['string', 'integer'] }, 'v'), [], 'a list of types');
+    eq(v(true, { type: ['string', 'integer'] }, 'v'), ['v is true, and the schema wants string or integer']);
+    eq(v('abc', { type: 'string', minLength: 5, pattern: '^z', format: 'date', const: 'q', anyOf: [{ type: 'integer' }], $ref: '#/x' }, 'v'), [], 'not checked: bounds, pattern, format, const, anyOf, $ref');
+    eq(typesm.idRefs({ a: [{ $ref: 'urn:uuid:AB' }, { $ref: '#/$defs/x' }], b: { $ref: 'urn:UUID:cd' } }), ['urn:uuid:AB', 'urn:UUID:cd'], 'only the refs to ids');
+    // fieldValues are held to the types of the note, and the relationship type of an arrow
+    var d = typed([note('w1')], [{ from: 'w1', to: 'w1' }]);
+    d.nodes[4].is = 'Workflow'; d.nodes[4].fieldValues = { name: 'w1', retries: 'many' };
+    var e = errorsOf(d);
+    said(e, /^"w1": fieldValues\.retries is "many", and the schema wants integer \(the type "Workflow"\)/, 'a note\'s values against its type');
+    var a = typed([note('w2'), note('t2')], [{ from: 'w2', to: 't2', is: 'writes', fieldValues: { mode: 'delete' } }]);
+    a.nodes[4].is = 'Workflow'; a.nodes[4].fieldValues = { name: 'w2' }; a.nodes[5].is = 'Table';
+    said(errorsOf(a), /^edge "w2" -> "t2": fieldValues\.mode is "delete", and the schema allows only "insert", "upsert" \(the relationship type "writes"\)/, 'an arrow\'s values against its relationship type');
+    var n = typed([note('w3')]); n.nodes[4].fieldValues = { name: 'x' };
+    said(errorsOf(n), /^"w3": fieldValues needs an is/, 'values with no type');
+  });
+
+  await test('the measure script carries the types, the relationship types, the ends and every typed arrow, so canvas measure sizes a typed note as it will be drawn', async function () {
+    var d = typed([note('w1'), note('t1'), { title: 'Svc', kind: 'subboard' }], [{ from: 'w1', to: 't1', is: 'writes', fieldValues: { mode: 'insert' } }, { from: 'w1', to: 'Svc', is: 'reads' }]);
+    d.nodes[4].is = 'Workflow'; d.nodes[4].fieldValues = { name: 'w1', tags: ['a', 'b'] }; d.nodes[5].is = 'Table';
+    var lines = sizes.measureScript(model.buildModel(d)).split('\n').filter(Boolean);
+    var by = function (re) { return lines.filter(function (l) { return re.test(l); }); };
+    var wf = by(/^sticky-note "Workflow"/)[0];
+    assert(wf.indexOf('schema: "{\\"type\\":\\"object\\",\\"properties\\":{\\"name\\"') > 0 && / text: "A workflow"/.test(wf), 'a type with its schema, as the quoted string draw reads: ' + wf);
+    assert(/ schema: ".*" relationship: true$/.test(by(/^sticky-note "writes"/)[0]), 'a relationship type is marked');
+    assert(/ is: "Workflow" fieldValues: \{"name":"w1","tags":\["a","b"\]\}$/.test(by(/^sticky-note "w1"/)[0]), 'a note says what it is and holds: ' + by(/^sticky-note "w1"/)[0]);
+    eq(by(/^edge "(Workflow|writes|reads)" -> "(writes|reads|Table)"/).map(function (l) { return l.replace(/^edge /, ''); }),
+      ['"Workflow" -> "reads"', '"Workflow" -> "writes" text: "tables" endRule: {"needed":true}', '"reads" -> "Table"', '"writes" -> "Table" text: "writers"'], 'the ends, with the row names and the rules');
+    eq(by(/ is: "writes"/).filter(function (l) { return /^edge/.test(l); }), ['edge "w1" -> "t1" is: "writes" fieldValues: {"mode":"insert"}'], 'a typed arrow between notes');
+    assert(by(/^edge "w1" -> "Svc"/).length === 0, 'a typed arrow to a card is not measured: a note and a card share no channel');
+    eq(by(/ via: reference$/).filter(function (l) { return /-> "(writes|reads|Table)" via/.test(l); }), [], 'no pill is measured for an end');
+    // the stand-in the tests use grows a type by its ends: a note of the type has the rows too
+    var est = helpers.estimateMeasure(model.buildModel(d));
+    var h = function (t) { return est.shapes.filter(function (x) { return x.title === t; })[0]; };
+    assert(h('Workflow').size[0] >= 320 && h('w1').size[0] >= 320, 'a typed note is 320 wide at least');
+    assert(h('Workflow').size[1] > 200, 'a type with fields and ends grows');
+    // an untyped digest has the script it always had
+    var plain = sizes.measureScript(model.buildModel(fixture('tree')));
+    assert(!/schema|relationship|is: |fieldValues|endRule/.test(plain), 'nothing typed in an untyped digest');
+  });
+
+  await test('the order of runs: a board\'s types, relationship types and ends are one script; the notes of a type come after every such script, in a script of their board; the arrows of relationships last', async function () {
+    var d = typed([{ title: 'Svc', kind: 'subboard' }, { title: 'w1', in: 'Svc', is: 'Workflow' }, { title: 't1', in: 'Svc', is: 'Table' }, { title: 'Spare', kind: 'frame' }, { title: 'x', in: 'Spare', is: 'Table' }],
+      [{ from: 'w1', to: 't1', is: 'writes' }]);
+    var r = await planOf(d, { into: 'Map' });
+    var names = r.runs.map(function (x) { return x.name; });
+    var text = function (re) { return r.runs.filter(function (x) { return re.test(x.name); })[0].text; };
+    var typesRun = text(/-root-top/);
+    ['Workflow', 'Table', 'writes', 'reads'].forEach(function (t) { assert(typesRun.indexOf('sticky-note "' + t + '"') >= 0, t + ' is in the types script'); });
+    assert(/\nedge "Workflow" -> "writes" text: "tables" endRule: \{"needed":true\}\n/.test(typesRun) && /\nedge "writes" -> "Table" text: "writers"\n/.test(typesRun), 'and its ends');
+    assert(typesRun.indexOf(' is: ') < 0, 'no note of a type in it');
+    eq(r.runs.filter(function (x) { return /\.draw$/.test(x.name) && /sticky-note "(Workflow|Table|writes|reads)" /.test(x.text); }).length, 1, 'the types are in one script and no other');
+    var notes = names.filter(function (n) { return /-notes\.draw$/.test(n); });
+    eq(notes.length, 2, 'a script of notes for each board that has notes of a type (the first board and Svc)');
+    var typesAt = names.indexOf(r.runs.filter(function (x) { return /sticky-note "Workflow" /.test(x.text); })[0].name);
+    notes.forEach(function (n) { assert(names.indexOf(n) > typesAt, n + ' after the types'); });
+    assert(names.indexOf(notes[0]) > names.indexOf(names.filter(function (n) { return /-svc-top/.test(n); })[0]), 'and after every board\'s shapes');
+    assert(/sticky-note "x" in "Spare"/.test(text(/-root-notes/)) && /is: "Table"/.test(text(/-root-notes/)), 'a note of a type in a frame is drawn in the notes script, the frame already there');
+    var edgeRuns = names.filter(function (n) { return /-edges\.draw$/.test(n); });
+    edgeRuns.forEach(function (n) { assert(names.indexOf(n) > names.indexOf(notes[notes.length - 1]), n + ' after the notes'); });
+    assert(/edge "w1" -> "t1" is: "writes"/.test(text(/-svc-edges/)), 'the relationship is an arrow with its type');
+    assert(r.runs.every(function (x) { return !/^edge "(Workflow|writes|reads)"/m.test(x.text) || x.name === r.runs.filter(function (y) { return /sticky-note "Workflow" /.test(y.text); })[0].name; }), 'an end is drawn nowhere else');
+    // the types in a frame, deeper than a shape of the same board: the script of the deepest frame, whatever depth each is at
+    var f = typed([{ title: 'Models', kind: 'frame' }, { title: 'Nested', kind: 'frame', in: 'Models' }]);
+    f.nodes[0].in = 'Models'; f.nodes[1].in = 'Models'; f.nodes[2].in = 'Nested'; f.nodes[3].in = 'Models';
+    var rf = await planOf(f);
+    var inRuns = rf.runs.filter(function (x) { return /sticky-note "(Workflow|Table|writes|reads)" /.test(x.text); });
+    eq(inRuns.length, 1, 'one script for the four, though Models holds three and Nested one'); assert(/-in-2\.draw$/.test(inRuns[0].name), inRuns[0].name);
+    assert(/^edge "Workflow" -> "writes"/m.test(inRuns[0].text), 'the ends in it');
+    // a board with no type has no notes script, and an untyped digest has the runs it always had
+    assert(rf.runs.every(function (x) { return !/-notes\.draw$/.test(x.name); }), 'no notes of a type, no notes script');
+    var acme = await planOf(fixture('acme'));
+    assert(acme.runs.every(function (x) { return !/-notes\.draw$/.test(x.name); }), 'an untyped digest has none');
+    // the plan's sizes are the measure's, so a typed note is drawn at the size it has with its ends
+    var sh = function (t) { return r.plan.boards[0].shapes.concat(r.plan.boards[1].shapes).filter(function (x) { return x.title === t; })[0]; };
+    assert(sh('Workflow').w >= 320 && sh('Workflow').h > 200, 'the type is stated at its measured size');
+    assert(new RegExp('sticky-note "Workflow".* size: ' + sh('Workflow').w + 'x' + sh('Workflow').h + ' ').test(typesRun), 'and drawn at it');
+  });
+
+  await test('the types of a digest may be on a board of their own: its types script is drawn before the notes of the first board, the card first', async function () {
+    var d = digest([{ title: 'Model', kind: 'subboard' }, { title: 'T1', in: 'Model', schema: { type: 'object', properties: { a: { type: 'string' } } }, text: 't' },
+      { title: 'R', in: 'Model', relationship: true, schema: { type: 'object' }, text: 'r' }, { title: 'n1', is: 'T1', fieldValues: { a: 'x' } }, { title: 'n2', is: 'T1' }],
+      [{ from: 'T1', to: 'R' }, { from: 'R', to: 'T1' }, { from: 'n1', to: 'n2', is: 'R' }]);
+    eq(errorsOf(d), []);
+    var r = await planOf(d);
+    var names = r.runs.map(function (x) { return x.name; });
+    var at = function (re) { return names.indexOf(r.runs.filter(function (x) { return re.test(x.name); })[0].name); };
+    assert(at(/-root-top/) < at(/-model-top/), 'the card is drawn first');
+    assert(at(/-model-top/) < at(/-root-notes/), 'then the types, then the notes');
+    assert(at(/-root-notes/) < at(/-root-edges/), 'then the arrows');
+    assert(/edge "T1" -> "R"/.test(r.runs[at(/-model-top/)].text) && /edge "R" -> "T1"/.test(r.runs[at(/-model-top/)].text), 'the ends are in the types\' script');
+    assert(!/edge "T1" -> "R"/.test(r.runs[at(/-root-edges/)].text), 'and not in the arrows\'');
+  });
+
+  await test('typed arrows: two between one pair are one edge to the layout (weights added) and an arrow each when drawn; an untyped one beside them is dropped, warned of', async function () {
+    var d = typed([note('w1'), note('t1')], [{ from: 'w1', to: 't1', is: 'writes', fieldValues: { mode: 'insert' }, weight: 2 }, { from: 'w1', to: 't1', is: 'reads', weight: 3 }, { from: 'w1', to: 't1', weight: 10, text: 'plain' }]);
+    d.nodes[4].is = 'Workflow'; d.nodes[4].fieldValues = { name: 'w1' }; d.nodes[5].is = 'Table';
+    var m = model.buildModel(d);
+    var pair = m.edges.filter(function (e) { return e.from === 'w1' && e.to === 't1'; });
+    eq(pair.length, 1, 'one edge to the layout'); eq(pair[0].weight, 5, 'the weights of the typed ones, the untyped one dropped');
+    eq(pair[0].arrows.map(function (a) { return a.is.join(); }), ['reads', 'writes'], 'an arrow each, in order of their types');
+    assert(m.warnings.some(function (w) { return /^edge "w1" -> "t1" without is dropped: the pair has typed arrows, and draw answers ambiguous_edge/.test(w); }), 'warned: ' + JSON.stringify(m.warnings));
+    var r = await planOf(d);
+    var lines = r.runs.filter(function (x) { return /-edges\.draw$/.test(x.name); })[0].text.split('\n').filter(Boolean);
+    eq(lines, ['edge "w1" -> "t1" is: "reads"', 'edge "w1" -> "t1" is: "writes" fieldValues: {"mode":"insert"}'], 'each written with its is, none plain');
+    eq(r.plan.boards[0].edges.filter(function (e) { return e.from === 'w1'; }).map(function (e) { return e.is.join(); }), ['reads', 'writes'], 'and each planned with its is');
+    eq(r.report.totals.arrows, 5, 'the layout counts one arrow for the pair, and the four ends');
+    // the same pair twice with the same type is one arrow, its values joined and its weight added
+    var twice = typed([note('a1'), note('b1')], [{ from: 'a1', to: 'b1', is: 'writes', fieldValues: { mode: 'insert' } }, { from: 'a1', to: 'b1', is: ['writes'], fieldValues: { mode: 'upsert' }, weight: 4 }]);
+    twice.nodes[4].is = 'Workflow'; twice.nodes[4].fieldValues = { name: 'a1' }; twice.nodes[5].is = 'Table';
+    var e2 = model.buildModel(twice).edges.filter(function (e) { return e.from === 'a1'; })[0];
+    eq(e2.arrows.length, 1); eq(e2.weight, 5); eq(e2.arrows[0].fieldValues, { mode: 'upsert' }, 'the later in the canonical order, a clash check refuses');
+    // two typed arrows between boards share one pill: a line each, the second reusing the pill
+    var far = typed([{ title: 'Svc', kind: 'subboard' }, { title: 'Out', kind: 'subboard' }, { title: 'w1', in: 'Svc', is: 'Workflow', fieldValues: { name: 'w1' } }, { title: 't1', in: 'Out', is: 'Table' }],
+      [{ from: 'w1', to: 't1', is: 'writes' }, { from: 'w1', to: 't1', is: 'reads' }]);
+    eq(errorsOf(far), []);
+    var rf = await planOf(far);
+    var svc = rf.plan.boards.filter(function (b) { return b.board === 'Svc'; })[0];
+    eq(svc.pills.length, 1, 'one pill'); eq(svc.edges.map(function (e) { return e.via + ':' + e.is.join(); }), ['reference:reads', 'reference:writes'], 'two arrows into it');
+    eq(rf.runs.filter(function (x) { return /-svc-edges\.draw$/.test(x.name); })[0].text.trim().split('\n'), ['edge "w1" -> "t1" via: reference is: "reads"', 'edge "w1" -> "t1" via: reference is: "writes"']);
+    assert(rf.plan.public.indexOf('t1') >= 0, 'the note the pill stands for is public');
+  });
+
+  await test('verify and replay tell typed arrows apart by is, and a plan\'s arrows are the relationships it says', async function () {
+    var d = typed([note('w1'), note('t1')], [{ from: 'w1', to: 't1', is: 'writes' }, { from: 'w1', to: 't1', is: 'reads' }]);
+    d.nodes[4].is = 'Workflow'; d.nodes[4].fieldValues = { name: 'w1' }; d.nodes[5].is = 'Table';
+    var r = await planOf(d), b = r.plan.boards[0];
+    var rows = function (mutate) {
+      var out = [];
+      var origin = { x: 500, y: 600 };
+      b.shapes.forEach(function (s) { out.push({ board: 'root', title: s.title, kind: s.kind, x: origin.x + s.x, y: origin.y + s.y, w: s.w, h: s.h }); });
+      b.edges.forEach(function (e) { out.push({ board: 'root', kind: 'arrow', from: e.from, to: e.to, is: e.is }); });
+      if (mutate) mutate(out);
+      return out;
+    };
+    var ok = verifym.verify(r.plan, rows());
+    eq(ok.summary.edgesMissing, [], 'every arrow found: ' + JSON.stringify(ok.summary.edgesMissing));
+    var swapped = verifym.verify(r.plan, rows(function (out) { out.forEach(function (x) { if (x.kind === 'arrow' && x.from === 'w1') x.is = ['writes']; }); }));
+    eq(swapped.summary.edgesMissing, ['root: w1 -> t1 is reads'], 'two arrows of one type are not one of each');
+    var plainArrow = verifym.verify(r.plan, rows(function (out) { out.forEach(function (x) { if (x.kind === 'arrow' && x.from === 'w1' && x.is[0] === 'reads') delete x.is; }); }));
+    eq(plainArrow.summary.edgesMissing, ['root: w1 -> t1 is reads'], 'a plain arrow is not a relationship');
+    var replayRun = (await import('../lib/replay.mjs')).replay;
+    var res = {}; r.plan.runs.forEach(function (n) { res[n] = { changes: [], warnings: [], on: null }; });
+    var first = res[r.plan.runs[0]], last = res[r.plan.runs[r.plan.runs.length - 1]], ox = 300, oy = 400;
+    b.shapes.forEach(function (s) { first.changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[ox + s.x, oy + s.y], [s.w, s.h]] }); });
+    b.edges.forEach(function (e) { last.changes.push(Object.assign({ did: 'connected', kind: 'arrow', from: e.from, to: e.to }, e.is ? { is: e.is } : {})); });
+    var titles = b.shapes.map(function (s) { return s.title; });
+    var good = replayRun(r.plan, res, titles);
+    eq(good.ok, true, good.lines.join('\n'));
+    last.changes.forEach(function (c) { if (c.from === 'w1' && c.is && c.is[0] === 'reads') c.is = ['writes']; });
+    var bad = replayRun(r.plan, res, titles);
+    assert(!bad.ok && /not drawn as the relationship the plan says: w1 -> t1 is reads/.test(bad.lines.join('\n')), 'two arrows of the same type, the second type missing: ' + bad.lines.join('\n'));
+  });
+
+  await test('compare reports what a typed drawing says by design without failing the run, and still fails on a push, an order warning or a shape off its box', async function () {
+    var d = typed([note('w1'), note('t1')], []);
+    d.nodes[4].is = 'Workflow'; d.nodes[4].fieldValues = { name: 'w1' }; d.nodes[5].is = 'Table';
+    var r = await planOf(d), b = r.plan.boards[0];
+    var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, did: 'created', at: [[1000 + s.x, 2000 + s.y], [s.w, s.h]] }; });
+    var warnings = [
+      { line: 6, severity: 'incomplete', attribute: 'tables', message: '"w1": tables is needed' },
+      { line: 7, severity: 'error', attribute: 'to', message: 'edge "w1" -> "t1": reads runs to a Table. “w1” is a Workflow.' },
+      { line: 8, severity: 'error', attribute: 'jobs', message: '"Ann": jobs has 2 notes, and should have at most 1' },
+      { line: 9, message: '2 shapes landed outside the view' }];
+    var res = compareRun0(r.plan, { changes: rows, warnings: warnings }, {});
+    eq(res.ok, true, JSON.stringify(res)); eq(res.warnings.typed, 3, 'the three typed ones are counted'); eq(res.warnings.view, 1);
+    eq(res.warningMessages, [], 'and are no failure to name'); assert(res.typedMessages.length === 3 && /tables is needed/.test(res.typedMessages[0]), res.typedMessages.join());
+    var withProblems = rows.map(function (x, i) { return i === 2 ? Object.assign({ problems: [{ field: 'tables', class: 'needed', message: 'tables is needed' }] }, x) : x; });
+    var viaRows = compareRun0(r.plan, { changes: withProblems, warnings: [] }, {});
+    eq(viaRows.ok, true); eq(viaRows.warnings.typed, 1, 'a row\'s problems are counted too'); assert(/^[^:]+: tables is needed$/.test(viaRows.typedMessages[0]), viaRows.typedMessages[0]);
+    var pushed = compareRun0(r.plan, { changes: rows, warnings: warnings.concat([{ line: 3, message: 'B was pushed 40 right' }]) }, {});
+    eq(pushed.ok, false, 'a push still fails'); eq(pushed.warnings.push, 1);
+    var ordered = compareRun0(r.plan, { changes: rows, warnings: warnings.concat([{ line: 3, code: 'unordered', message: 'these two cannot be ordered' }]) }, {});
+    eq(ordered.ok, false, 'an order warning still fails');
+    var off = rows.map(function (x, i) { return i === 1 ? Object.assign({}, x, { at: [[x.at[0][0] + 9, x.at[0][1]], x.at[1]] }) : x; });
+    eq(compareRun0(r.plan, { changes: off, warnings: warnings }, {}).ok, false, 'a shape off its box still fails');
+    var text = clim.compareText(res);
+    assert(/^ok .*; 3 warning\(s\) a typed drawing gives by design: /.test(text), text);
+    // any other warning fails nothing and is said, never only counted: a title near one the board has, in the run's line and in verify's
+    var near = { line: 4, code: 'near_title', message: 'created "worker (x)"; the board has "Workers (x)": to change that one, write its title exactly' };
+    var withNear = compareRun0(r.plan, { changes: rows, warnings: warnings.concat([near]) }, {});
+    eq(withNear.ok, true, 'another warning fails nothing'); eq(withNear.warnings.other, 1); eq(withNear.warningMessages, [], 'and is no failure to name');
+    assert(/; 1 other warning\(s\): line 4: created "worker \(x\)"; the board has "Workers \(x\)"/.test(clim.compareText(withNear)), clim.compareText(withNear));
+    var said = (await import('../lib/replay.mjs')).replay(r.plan, { [r.plan.runs[0]]: { changes: rows, warnings: [near] } }, null);
+    assert(said.lines.some(function (l) { return /^  warning: .*line 4: created "worker \(x\)"/.test(l); }), said.lines.join('\n'));
+  });
+
+  await test('a typed digest\'s output is byte-identical for the same input, and in another order of nodes and edges; the commands refuse a digest whose types are wrong', async function () {
+    var d = fixture('typed'), s0 = sizesOf(d);
+    var a = await planm.planDigest(d, s0, {}, elk), b = await planm.planDigest(JSON.parse(JSON.stringify(d)), JSON.parse(JSON.stringify(s0)), {}, elk);
+    eq(JSON.stringify(a.plan), JSON.stringify(b.plan), 'plan.json');
+    eq(a.runs.map(function (r) { return r.name + '\n' + r.text; }).join('\n'), b.runs.map(function (r) { return r.name + '\n' + r.text; }).join('\n'), 'runs');
+    var d2 = JSON.parse(JSON.stringify(d)); d2.nodes.reverse(); d2.edges.reverse();
+    var c = await planm.planDigest(d2, s0, {}, elk);
+    eq(a.runs.map(function (r) { return r.name + '\n' + r.text; }).join('\n'), c.runs.map(function (r) { return r.name + '\n' + r.text; }).join('\n'), 'runs with the input reversed');
+    eq(JSON.stringify(a.plan), JSON.stringify(c.plan), 'plan.json with the input reversed');
+    eq(sizes.measureScript(model.buildModel(d)), sizes.measureScript(model.buildModel(d2)), 'the measure script');
+    // the fixture is clean, and drawn as the app takes it: the `//` in a value stays inside its quotes
+    eq(checkm.checkDigest(d), { errors: [], warnings: [] });
+    assert(a.runs.some(function (r) { return r.text.indexOf('"url":"https://temporal.example/ns//order"') > 0; }), 'a value with // is written inside the object');
+    var files = {}, mio = { readText: function (p) { return files[p] != null ? files[p] : io.readText(p); }, writeText: function (p, t) { files[p] = t; }, mkdirp: function () {}, print: function () {}, now: function () { return 0; }, engine: 'test' };
+    var bad = JSON.parse(JSON.stringify(d)); bad.nodes[7].is = 'Nobody';
+    files['/bad.json'] = JSON.stringify(bad); files['/m.json'] = JSON.stringify(helpers.estimateMeasure(model.buildModel(d)));
+    var threw = ''; try { await clim.run(['plan', '/bad.json', '/m.json', '/out'], mio); } catch (e) { threw = e.message; }
+    assert(/"OrderWorkflow": is "Nobody", which names no type in the digest/.test(threw), 'plan refuses: ' + threw);
+    threw = ''; try { await clim.run(['measure-script', '/bad.json'], mio); } catch (e) { threw = e.message; }
+    assert(/names no type in the digest/.test(threw), 'measure-script refuses: ' + threw);
+  });
+
+  // ---- review fixes: records, the validator, merging, a list of types --------------------------------------------------------------------
+
+  await test('two digests drawn into one unsaved board have two records, and the one replaced is this run\'s own: its header first, then the newest by the time written in it', async function () {
+    var rd = await import('../lib/redraw.mjs');
+    var one = await planOf(digest([note('A1')], [], { title: 'Alpha' }), { promote: false });
+    var two = await planOf(digest([note('B1')], [], { title: 'Beta' }), { promote: false });
+    var older = rd.drawnRecord(one.plan, '', 4, 3, null, null, 1000), newer = rd.drawnRecord(two.plan, '', 4, 6, null, null, 2000);
+    eq([older.at, newer.at, rd.drawnRecord(one.plan, '', 4, 3).at], [1000, 2000, null], 'a record says when it was written');
+    var titles = ['About Alpha', 'A1', 'About Beta', 'B1'];
+    var recs = [{ name: 'board-4-0001.json', record: older }, { name: 'board-4-0002.json', record: newer }];
+    eq(rd.pickRecord(recs, '', 4, titles, 'About Beta'), 'board-4-0002.json', 'this run draws Beta: its record, though Alpha\'s is first by name');
+    eq(rd.pickRecord(recs, '', 4, titles, 'About Alpha'), 'board-4-0001.json', 'this run draws Alpha: its own');
+    eq(rd.pickRecord(recs.slice().reverse(), '', 4, titles, 'About Alpha'), 'board-4-0001.json', 'whatever order the folder lists them');
+    eq(rd.pickRecord(recs, '', 4, titles), 'board-4-0002.json', 'no header known: the newest');
+    eq(rd.pickRecord(recs, '', 4, titles, 'About Gamma'), 'board-4-0002.json', 'a header of neither: the newest');
+    var tie = [{ name: 'b.json', record: Object.assign({}, newer, { at: 5 }) }, { name: 'a.json', record: Object.assign({}, older, { at: 5 }) }];
+    eq(rd.pickRecord(tie, '', 4, titles), 'a.json', 'the same time: by name, so the pick is the same every time');
+    eq(rd.pickRecord([{ name: 'x.json', record: older }, { name: 'p.json', record: rd.drawnRecord(one.plan, '/f.canvasboard', 4, 3, null, null, 1) }], '/f.canvasboard', 4, titles), 'p.json', 'a record with a path still comes before one told by the id');
+  });
+
+  await test('the validator follows local $refs (#/$defs and #/definitions), guards a cycle, and says what it did not check', async function () {
+    var v = typesm.validateValue, c = typesm.checkValue;
+    var defs = { type: 'object', properties: { n: { $ref: '#/$defs/count' }, m: { $ref: '#/definitions/count' }, deep: { $ref: '#/$defs/box' } }, $defs: { count: { type: 'integer' }, box: { type: 'object', properties: { n: { $ref: '#/$defs/count' } }, required: ['n'] } }, definitions: { count: { type: 'integer' } } };
+    eq(v({ n: 'abc' }, defs, 'v'), ['v.n is "abc", and the schema wants integer'], '#/$defs');
+    eq(v({ m: 'abc' }, defs, 'v'), ['v.m is "abc", and the schema wants integer'], '#/definitions');
+    eq(v({ deep: { n: 1.5 } }, defs, 'v'), ['v.deep.n is 1.5, and the schema wants integer'], 'a ref inside a ref');
+    eq(v({ deep: {} }, defs, 'v'), ['v.deep.n is required, and has no value']);
+    eq(v({ n: 3, m: 4, deep: { n: 5 } }, defs, 'v'), [], 'values that fit');
+    eq(v('x', { $ref: '#' , type: 'integer' }, 'v'), ['v is "x", and the schema wants integer'], 'the root as a ref');
+    var loop = { $ref: '#/$defs/a', $defs: { a: { $ref: '#/$defs/b' }, b: { $ref: '#/$defs/a' } } };
+    var r = c(5, loop, 'v');
+    eq(r.errors, [], 'a cycle ends'); eq(r.unchecked.map(function (u) { return u.keyword; }), ['$ref'], 'and is said to be unchecked');
+    eq(c(5, { $ref: '#/$defs/nowhere' }, 'v').unchecked, [{ path: 'v', keyword: '$ref' }], 'a ref to nothing');
+    eq(c(5, { $ref: 'http://example.com/x.json' }, 'v').unchecked, [{ path: 'v', keyword: '$ref' }], 'a ref outside the schema');
+    var u = c({ a: 'x', b: [1, 2], c: { d: 1 } }, { type: 'object', properties: { a: { type: 'string', pattern: '^z', minLength: 2 }, b: { type: 'array', items: { type: 'integer', maximum: 1 }, uniqueItems: true }, c: { anyOf: [{ type: 'object' }] }, e: { const: 1 } }, additionalProperties: false }, 'v');
+    eq(u.unchecked.map(function (x) { return x.path + ' ' + x.keyword; }).sort(), ['v additionalProperties', 'v.a minLength', 'v.a pattern', 'v.b uniqueItems', 'v.b[] maximum', 'v.c anyOf'], 'each keyword it passed over, at the member it is on (a member with no value is not asked)');
+    eq(c('x', { type: 'string', minimum: 3, maxItems: 1 }, 'v').unchecked, [], 'a keyword of another kind of value does not apply');
+    eq(c([1], { items: [{ type: 'string' }] }, 'v').unchecked, [{ path: 'v', keyword: 'items' }], 'tuple items');
+    // check: a value the ref says is wrong is refused, and a keyword that was not checked is a warning naming the member and the keyword
+    var d = typed([note('w1')]); d.nodes[1].schema = { type: 'object', properties: { retries: { $ref: '#/$defs/n' } }, $defs: { n: { type: 'integer' } } };
+    d.nodes[4].is = 'Table'; d.nodes[4].fieldValues = { retries: 'abc' };
+    said(errorsOf(d), /^"w1": fieldValues\.retries is "abc", and the schema wants integer \(the type "Table"\)/, 'a value against a $ref');
+    var p = typed([note('p1'), note('p2'), note('p3'), note('p4')]); p.nodes[1].schema = { type: 'object', properties: { code: { type: 'string', pattern: '^[a-z]+$' } } };
+    for (var i = 4; i < 8; i++) { p.nodes[i].is = 'Table'; p.nodes[i].fieldValues = { code: 'a' }; }
+    var rp = checkm.checkDigest(p);
+    eq(rp.errors, []);
+    var said1 = rp.warnings.filter(function (w) { return /pattern/.test(w); });
+    eq(said1.length, 1, 'once for the type and the member, not for every note: ' + JSON.stringify(rp.warnings));
+    assert(/fieldValues\.code/.test(said1[0]) && /"pattern"/.test(said1[0]) && /"p1"/.test(said1[0]) && /3 more/.test(said1[0]) && /"Table"/.test(said1[0]), said1[0]);
+    // a type with no unchecked keyword gives none, and the shipped fixtures' types are untouched
+    eq(checkm.checkDigest(typed([note('q1')])).warnings, []);
+  });
+
+  await test('the validator\'s edge cases: required is an own property, and an enum of objects does not care how its keys are ordered', async function () {
+    var v = typesm.validateValue;
+    eq(v({}, { required: ['constructor'] }, 'v'), ['v.constructor is required, and has no value'], 'constructor is not a value');
+    eq(v({}, { required: ['toString', '__proto__'] }, 'v').length, 2, 'nor are the rest of Object.prototype');
+    eq(v({ constructor: 1 }, { required: ['constructor'] }, 'v'), [], 'an own member of that name is');
+    var e = { enum: [{ a: 1, b: [1, { x: 1, y: 2 }] }, 'z'] };
+    eq(v({ b: [1, { y: 2, x: 1 }], a: 1 }, e, 'v'), [], 'the same object in another order of keys');
+    eq(v({ a: 1, b: [1, { x: 1, y: 3 }] }, e, 'v').length, 1, 'another value is still refused');
+    eq(v([2, 1], { enum: [[1, 2]] }, 'v').length, 1, 'a list keeps its order');
+  });
+
+  await test('compare fails on a row\'s problem that is a value breaking its schema (a class wrong at a path), and still not on what is by design', async function () {
+    var d = typed([note('w1'), note('t1')], []);
+    d.nodes[4].is = 'Workflow'; d.nodes[4].fieldValues = { name: 'w1' }; d.nodes[5].is = 'Table';
+    var r = await planOf(d), b = r.plan.boards[0];
+    var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, did: 'created', at: [[1000 + s.x, 2000 + s.y], [s.w, s.h]] }; });
+    var withProblem = function (p) { return rows.map(function (x, i) { return i === 2 ? Object.assign({ problems: [p] }, x) : x; }); };
+    var bad = compareRun0(r.plan, { changes: withProblem({ field: 'retries', path: '/retries', class: 'wrong', message: 'retries is "abc", and should be an integer' }), warnings: [] }, {});
+    eq(bad.ok, false, 'a value that breaks its schema fails the run'); assert(/retries is "abc"/.test(bad.mismatches.join('\n')), 'and says which: ' + JSON.stringify(bad.mismatches));
+    assert(/retries is "abc"/.test(clim.compareText(bad)), clim.compareText(bad));
+    [{ field: 'tables', class: 'needed', message: 'tables is needed' }, { field: 'to', class: 'wrong', message: 'writes runs to a Table. "w1" is a Workflow.' }, { field: 'jobs', class: 'wrong', message: 'jobs has 2 notes, and should have at most 1' }, { field: 'to', class: 'warning', message: 'an end that cannot be read' }].forEach(function (p) {
+      var ok = compareRun0(r.plan, { changes: withProblem(p), warnings: [] }, {});
+      eq(ok.ok, true, p.message + ' is by design'); eq(ok.warnings.typed, 1);
+    });
+  });
+
+  await test('arrows of one pair and one type are merged in a canonical order: the same however the digest lists them, and a member two of them give differently is refused, naming both', async function () {
+    var mk = function (edges) {
+      var d = typed([note('a1'), note('b1')], edges);
+      d.nodes[4].is = 'Workflow'; d.nodes[4].fieldValues = { name: 'a1' }; d.nodes[5].is = 'Table';
+      return d;
+    };
+    var arrowOf = function (d) { return model.buildModel(d).edges.filter(function (e) { return e.from === 'a1'; })[0]; };
+    var apart = [{ from: 'a1', to: 'b1', is: 'writes', fieldValues: { mode: 'insert' }, weight: 2, text: 'one' }, { from: 'a1', to: 'b1', is: 'writes', fieldValues: { colour: 'red' }, weight: 3, text: 'two' }];
+    var fwd = arrowOf(mk(apart)), rev = arrowOf(mk(apart.slice().reverse()));
+    eq(fwd.arrows[0].fieldValues, { colour: 'red', mode: 'insert' }, 'members of both');
+    eq(JSON.stringify(fwd), JSON.stringify(rev), 'the same model whichever is listed first');
+    eq(fwd.arrows[0].text, rev.arrows[0].text, 'and the same words');
+    eq(errorsOf(mk(apart)), [], 'members that agree on nothing in common are fine');
+    var clash = [{ from: 'a1', to: 'b1', is: 'writes', fieldValues: { mode: 'insert' } }, { from: 'a1', to: 'b1', is: ['writes'], fieldValues: { mode: 'upsert' }, weight: 4 }];
+    var e1 = errorsOf(mk(clash)), e2 = errorsOf(mk(clash.slice().reverse()));
+    said(e1, /^edge "a1" -> "b1" \(is writes\): fieldValues\.mode is "insert" in edges\[4\] and "upsert" in edges\[5\]/, 'both edges are named');
+    said(e2, /^edge "a1" -> "b1" \(is writes\): fieldValues\.mode is "insert" in edges\[5\] and "upsert" in edges\[4\]/, 'by where they are in this digest');
+    eq(e1.filter(function (x) { return /fieldValues\.mode/.test(x); }).length, 1, 'once');
+    var strip = function (d) { var a = arrowOf(d).arrows[0]; return JSON.stringify([a.is, a.fieldValues, a.text]); };
+    eq(strip(mk(clash)), strip(mk(clash.slice().reverse())), 'and the model is the same either way');
+    // the ends: endRule is merged the same way
+    var rule = function (rs) { var d = typed([]); d.edges = d.edges.concat(rs); return d; };
+    var one = [{ from: 'Workflow', to: 'writes', endRule: { onlyOne: true } }, { from: 'Workflow', to: 'writes', endRule: { needed: true } }];
+    var endOf = function (d) { return model.buildModel(d).edges.filter(function (e) { return e.from === 'Workflow' && e.to === 'writes'; })[0]; };
+    eq(endOf(rule(one)).arrows[0].endRule, { needed: true, onlyOne: true });
+    eq(JSON.stringify(endOf(rule(one))), JSON.stringify(endOf(rule(one.slice().reverse()))), 'the same either way');
+    said(errorsOf(rule([{ from: 'Workflow', to: 'writes', endRule: { needed: true } }, { from: 'Workflow', to: 'writes', endRule: { needed: false } }])), /^edge "Workflow" -> "writes": endRule\.needed is (true|false) in edges\[\d+\] and (true|false) in edges\[\d+\]/, 'an end that is both');
+  });
+
+  await test('a list of types is a set: two orders of one list are one arrow, and verify and replay do not mind the order they come back in', async function () {
+    eq(typesm.isKey(['writes', 'reads']), typesm.isKey(['reads', 'writes']), 'one key');
+    var d = typed([note('w1'), note('t1')], [{ from: 'w1', to: 't1', is: ['writes', 'reads'], weight: 2, fieldValues: { mode: 'insert' } }, { from: 'w1', to: 't1', is: ['reads', 'writes'], weight: 3, fieldValues: { mode: 'insert' } }]);
+    d.nodes[4].is = 'Workflow'; d.nodes[4].fieldValues = { name: 'w1' }; d.nodes[5].is = 'Table';
+    var m = model.buildModel(d), pair = m.edges.filter(function (e) { return e.from === 'w1' && e.to === 't1'; })[0];
+    eq(pair.arrows.length, 1, 'one arrow'); eq(pair.weight, 5);
+    var rev = model.buildModel(Object.assign({}, d, { edges: d.edges.slice().reverse() })).edges.filter(function (e) { return e.from === 'w1' && e.to === 't1'; })[0];
+    eq(JSON.stringify(pair), JSON.stringify(rev), 'whichever is listed first');
+    eq(pair.arrows[0].is, ['reads', 'writes'], 'drawn in the order that sorts first of those written, so the same each time');
+    said(checkm.checkDigest(d).warnings, /^edge "w1" -> "t1": is is written in two orders \(reads, writes and writes, reads\)/, 'warned: a later type wins where two say the same, so the order means something');
+    eq(checkm.checkDigest(typed([note('o1'), note('o2')], [{ from: 'o1', to: 'o2', is: ['writes', 'reads'] }])).warnings.filter(function (w) { return /two orders/.test(w); }), [], 'one order, no warning');
+    // the same arrow, listed in another order of types by the app
+    var r = await planOf(d), b = r.plan.boards[0];
+    var rows = [];
+    b.shapes.forEach(function (s) { rows.push({ board: 'root', title: s.title, kind: s.kind, x: 500 + s.x, y: 600 + s.y, w: s.w, h: s.h }); });
+    b.edges.forEach(function (e) { rows.push({ board: 'root', kind: 'arrow', from: e.from, to: e.to, is: (e.is || []).slice().reverse() }); });
+    eq(verifym.verify(r.plan, rows).summary.edgesMissing, [], 'verify: the same set is the same arrow');
+    var replayRun = (await import('../lib/replay.mjs')).replay;
+    var res = {}; r.plan.runs.forEach(function (n) { res[n] = { changes: [], warnings: [], on: null }; });
+    var first = res[r.plan.runs[0]], last = res[r.plan.runs[r.plan.runs.length - 1]];
+    b.shapes.forEach(function (s) { first.changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[300 + s.x, 400 + s.y], [s.w, s.h]] }); });
+    b.edges.forEach(function (e) { last.changes.push(Object.assign({ did: 'connected', kind: 'arrow', from: e.from, to: e.to }, e.is ? { is: e.is.slice().reverse() } : {})); });
+    var good = replayRun(r.plan, res, b.shapes.map(function (s) { return s.title; }));
+    eq(good.ok, true, 'replay: ' + good.lines.join('\n'));
+  });
+
+  await test('a folder of drawing records skips what is not a record, with one warning naming the files, and picks among the rest', async function () {
+    var rd = await import('../lib/redraw.mjs');
+    var one = await planOf(digest([note('A1')], [], { title: 'Alpha' }), { promote: false });
+    var rec = rd.drawnRecord(one.plan, '/f.canvasboard', 4, 3, null, null, 1000);
+    var files = { '/r/good.json': JSON.stringify(rec), '/r/corrupt.json': '{"titles": [', '/r/other.json': JSON.stringify({ name: 'something else' }), '/r/list.json': '[1,2]', '/r/null.json': 'null', '/p/f.json': JSON.stringify({ path: '/f.canvasboard' }) };
+    var out = [], warned = [], mio = { readText: function (p) { if (files[p] == null) throw new Error('no file ' + p); return files[p]; }, writeText: function () {}, mkdirp: function () {}, print: function (t) { out.push(t); }, warn: function (t) { warned.push(t); }, now: function () { return 7; }, engine: 'test' };
+    await clim.run(['record-pick', '/f.canvasboard', '4', '', '/r/corrupt.json', '/r/good.json', '/r/other.json', '/r/list.json', '/r/null.json'], mio);
+    eq(out, ['/r/good.json'], 'the record is picked');
+    eq(warned.length, 1, 'one warning: ' + JSON.stringify(warned));
+    assert(/corrupt\.json/.test(warned[0]) && /other\.json/.test(warned[0]) && /list\.json/.test(warned[0]) && /null\.json/.test(warned[0]) && !/good\.json/.test(warned[0]), warned[0]);
+    var split = rd.readRecords(['/r/corrupt.json', '/r/good.json'], function (f) { return JSON.parse(files[f]); });
+    eq(split.records.map(function (r) { return r.name; }), ['/r/good.json']); eq(split.skipped.map(function (s) { return s.name; }), ['/r/corrupt.json']);
+    out.length = 0; warned.length = 0;
+    await clim.run(['record-pick', '/f.canvasboard', '4', '', '/r/good.json'], mio);
+    eq([out, warned], [['/r/good.json'], []], 'a folder of records says nothing');
+    // the header and the time: drawn writes when, and record-pick takes the header of this run
+    out.length = 0;
+    files['/plan.json'] = JSON.stringify(one.plan);
+    await clim.run(['drawn', '/plan.json', '/f.canvasboard', '4', '3'], mio);
+    eq(JSON.parse(out[0]).at, 7, 'drawn writes the time (the engine\'s clock)');
+    out.length = 0;
+    await clim.run(['header', '/plan.json'], mio);
+    eq(out, ['About Alpha'], 'a plan\'s header');
+    out.length = 0; files['/d.json'] = JSON.stringify(digest([note('A1')], [], { title: 'Alpha' }));
+    await clim.run(['header', '/d.json'], mio);
+    eq(out, ['About Alpha'], 'and a digest\'s');
+    // titles are asked for only when the path does not say: a board with no file needs them, a file with a record does not
+    files['/r/unsaved.json'] = JSON.stringify(rd.drawnRecord(one.plan, '', 9, 3, null, null, 5));
+    out.length = 0;
+    await clim.run(['record-needs-titles', '/f.canvasboard', '4', '/r/good.json'], mio);
+    eq(out, [], 'a file with a record of its path');
+    await clim.run(['record-needs-titles', '/g.canvasboard', '9', '/r/good.json', '/r/unsaved.json'], mio);
+    eq(out, ['yes'], 'a board with an unsaved record of its id');
+    out.length = 0;
+    await clim.run(['record-needs-titles', '/g.canvasboard', '8', '/r/good.json', '/r/unsaved.json'], mio);
+    eq(out, [], 'another board\'s id');
+  });
+
+  await test('a board with a container past the crowd is laid out once and not searched: its crowd packed as boxes, the plan held, nothing promoted, and the summary says why and to split it', async function () {
+    var promote = await import('../lib/promote.mjs');
+    // a frame of an index and CROWD pages it points at: a star, which laid out as a tree runs a row (or a column) as long as the pages
+    var nodes = [{ title: 'Pages', kind: 'frame' }, note('Index', 'Pages')], edges = [];
+    for (var i = 0; i < promote.CROWD; i++) { nodes.push(note('Page ' + i, 'Pages')); edges.push({ from: 'Index', to: 'Page ' + i }); }
+    var r = await planOf(digest(nodes, edges));
+    var rep = r.report.boards.root;
+    eq(rep.stop, 'crowded'); eq(rep.crowded.container, 'Pages'); eq(rep.crowded.children, promote.CROWD + 1);
+    eq(r.report.promotions, [], 'nothing promoted'); eq(rep.layout.layouts, 1, 'laid out once');
+    eq(rep.algorithms.find(function (a) { return a.container === 'Pages'; }).algorithm, 'rectpacking', 'the crowd packed as boxes');
+    var pages = r.plan.boards[0].shapes.find(function (s) { return s.title === 'Pages'; });
+    assert(pages.w < 20000 && pages.h < 20000 && Math.max(pages.w / pages.h, pages.h / pages.w) < 4, 'a grid, not a row: ' + pages.w + ' x ' + pages.h);
+    eq(r.plan.boards[0].shapes.length, promote.CROWD + 3, 'every shape planned: the pages, the index, the frame and the header');
+    checkPlan(r.plan);
+    assert(r.report.warnings.some(function (w) { return /board "root" was laid out once and not searched: its frame "Pages" holds 151 shapes side by side, past 150.*split it into subboards/.test(w); }), r.report.warnings.join('\n'));
+    assert(/warning: board "root" was laid out once/.test(clim.summarize(r)), clim.summarize(r));
+    // one fewer is searched as ever: the index's arrows fanned out as pills
+    nodes.pop(); edges.pop();
+    var searched = await planOf(digest(nodes, edges));
+    assert(searched.report.boards.root.stop !== 'crowded' && !searched.report.warnings.length, searched.report.boards.root.stop);
+    assert(searched.report.promotions.some(function (p) { return p.node === 'Index'; }), 'the index is moved: ' + JSON.stringify(searched.report.promotions.map(function (p) { return p.node; })));
   });
 
   io.print(results.length + ' passed, ' + failed + ' failed');

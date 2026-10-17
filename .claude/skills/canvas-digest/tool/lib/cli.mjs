@@ -6,8 +6,9 @@ import { planDigest, DEFAULTS } from './plan.mjs';
 import { verify, formatVerify } from './verify.mjs';
 import { compareRun } from './compare.mjs';
 import { replay, extract } from './replay.mjs';
-import { boardField, boardView, drawnRecord, sameFile, beyond, minus, foreign, replaceScript, hasTitle } from './redraw.mjs';
+import { boardField, boardView, drawnRecord, sameFile, pickRecord, needsTitles, readRecords, recordName, beyond, minus, foreign, replaceScript, hasTitle } from './redraw.mjs';
 import { checkDigest } from './check.mjs';
+import { typeProblems } from './types.mjs';
 import { TOOL_DIR, fold } from './util.mjs';
 
 export const USAGE = `digest tool (the driver, ./digest, runs these; the tool never runs canvas)
@@ -34,6 +35,9 @@ export const USAGE = `digest tool (the driver, ./digest, runs these; the tool ne
                                                                        how many shapes the file held once drawn); --over: with the drawing it replaces, while it is drawn,
                                                                        and --was, how many shapes the file held before that one was taken back
   same-file <drawn.json> <path> <id> [titles.json]                     "yes" when the last drawing is in that board's file (by its path, else by its id and its header), else "no"
+  record-pick <path> <id> <titles.json> [record.json ...]              which record of a folder of them (--records) is the last drawing in that board's file (as same-file tells);
+                                                                       prints the record's argument as given, nothing when none is
+  record-name <path> <id> <plan.json>                                  the file name for a new record: from the path, else from the id and the plan's first header
   has-title <titles.json> <title>                                      "yes" when the file holds that title, else "no"
   beyond <drawn.json> <fileShapes>                                     how many shapes the file holds beyond the last drawing (drawn as the board)
   minus <titles.json> <drawn.json>                                     the file's titles less the last drawing's, as JSON
@@ -66,6 +70,14 @@ is laid out toward that shape, so that it fills the view when it is fit to it: i
 children run as rows or as columns, whichever the view shows larger (--ranks rows or columns says which outright, over the digest's policy.ranks). A board the view
 shows whole at its own size is left whatever shape it is. An arrow is too long as the view sees it: further across a wide view than down it. With no --view, a view
 of 1440 x 960 is assumed, and the summary says so.`;
+
+/** The model of a digest, refused when its types are wrong (what `check` says of them): a script made of a bad `is` would only fail later, in the app. */
+function typedModel(digest) {
+  const model = buildModel(digest);
+  const typed = typeProblems(model);
+  if (typed.errors.length) throw new Error(typed.errors.slice(0, 10).join('\n') + (typed.errors.length > 10 ? `\nand ${typed.errors.length - 10} more` : '') + '\n(digest check says all of them)');
+  return model;
+}
 
 function parseFlags(args) {
   const pos = [], flags = {};
@@ -103,14 +115,14 @@ export async function run(args, io) {
   if (cmd === 'clashes') { const lines = clashes(json(pos[1]), json(pos[2])); if (lines.length) io.print(lines.join('\n')); return; }
   if (cmd === 'into') { const p = json(pos[1]); if (p.into) io.print(p.into); return; }
   if (cmd === 'runs') { io.print(json(pos[1]).runs.join('\n')); return; }
-  if (cmd === 'measure-script') { io.print(measureScript(buildModel(json(pos[1]))).replace(/\n$/, '')); return; }
+  if (cmd === 'measure-script') { io.print(measureScript(typedModel(json(pos[1]))).replace(/\n$/, '')); return; }
   if (cmd === 'plan') {
     const [, digestPath, measurePath, outdir] = pos;
     if (!outdir) throw new Error(USAGE);
     for (const k of Object.keys(flags)) if (!['mess', 'promote', 'prefer', 'cap', 'margin', 'popular', 'into', 'view', 'ranks'].includes(k)) throw new Error(`unknown option --${k}\n${USAGE}`);
     const digest = json(digestPath);
-    const opts = { promote: onOff(flags.promote, DEFAULTS.promote), cap: num(flags.cap), marginPills: num(flags.margin), popular: num(flags.popular), prefer: num(flags.prefer), mess: num(flags.mess), into: flags.into || null, view: viewOf(flags.view), ranks: ranksOf(flags.ranks) };
-    const model = buildModel(digest);
+    const opts = { promote: onOff(flags.promote, DEFAULTS.promote), cap: num(flags.cap), marginPills: num(flags.margin), popular: num(flags.popular), prefer: num(flags.prefer), mess: num(flags.mess), into: flags.into || null, view: viewOf(flags.view), ranks: ranksOf(flags.ranks), progress: io.warn };
+    const model = typedModel(digest);
     const sizes = sizesFrom(model, json(measurePath));
     const elk = await loadElk(io, TOOL_DIR);
     const t0 = io.now();
@@ -145,7 +157,28 @@ export async function run(args, io) {
   if (cmd === 'extract') { io.print(JSON.stringify(extract(pos[1], json(pos[2])))); return; }
   if (cmd === 'board') { io.print(String(boardField(json(pos[1]), pos[2], pos[3], pos[4]))); return; }
   if (cmd === 'view') { const v = boardView(json(pos[1]), pos[2]); if (v) io.print(v); return; }
-  if (cmd === 'drawn') { io.print(JSON.stringify(drawnRecord(json(pos[1]), pos[2] || null, pos[3], pos[4], flags.over ? json(flags.over) : null, flags.was), null, 1)); return; }
+  if (cmd === 'drawn') { io.print(JSON.stringify(drawnRecord(json(pos[1]), pos[2] || null, pos[3], pos[4], flags.over ? json(flags.over) : null, flags.was, io.now()), null, 1)); return; }
+  if (cmd === 'record-pick' || cmd === 'record-needs-titles') {
+    // record-pick PATH ID TITLES|'' FILES... [--header H] [--quiet true];  record-needs-titles PATH ID FILES... [--quiet true]
+    const picking = cmd === 'record-pick', files = pos.slice(picking ? 4 : 3);
+    const { records, skipped } = readRecords(files, json);
+    if (skipped.length && flags.quiet !== 'true') (io.warn || (() => {}))(`digest: ignored ${skipped.length} file(s) in the records folder that aren't drawing records: ${skipped.map((s) => `${s.name.split('/').pop()} (${s.why})`).join(', ')}`);
+    if (picking) {
+      const name = pickRecord(records, pos[1] || null, pos[2], pos[3] ? json(pos[3]) : null, flags.header);
+      if (name) io.print(name);
+    } else if (needsTitles(records, pos[2]) && !pickRecord(records, pos[1] || null, pos[2], null)) io.print('yes');
+    return;
+  }
+  if (cmd === 'header') {
+    // the header note of a plan's first board, or of the first board a digest would have: how a drawing is told from another in one unsaved board
+    try {
+      const v = json(pos[1]);
+      const h = Array.isArray(v.boards) ? (v.boards.find((b) => b.board === 'root') || {}).origin : buildModel(v).headers.get('root');
+      if (h) io.print(h);
+    } catch (e) { /* none: the pick goes by the newest */ }
+    return;
+  }
+  if (cmd === 'record-name') { const plan = json(pos[3]); const root = plan.boards.find((b) => b.board === 'root'); io.print(recordName(pos[1] || null, pos[2], root ? root.origin : null)); return; }
   if (cmd === 'has-title') { io.print(hasTitle(json(pos[1]), pos[2]) ? 'yes' : 'no'); return; }
   if (cmd === 'same-file') { io.print(sameFile(json(pos[1]), pos[2] || null, pos[3], pos[4] ? json(pos[4]) : null) ? 'yes' : 'no'); return; }
   if (cmd === 'beyond') { io.print(String(beyond(json(pos[1]), pos[2]))); return; }
@@ -178,12 +211,14 @@ export function clashes(plan, titles) {
 
 /** compare's answer in words: `ok ...`, or `MISMATCH ...` and what is off, for the driver to print when it stops. */
 export function compareText(res) {
-  if (res.ok) return `ok ${res.run}: ${res.shapeRows} shapes within ${res.worstShape} units of the plan, ${res.pillRows} pills (worst ${res.worstPill})`;
+  const others = res.otherMessages && res.otherMessages.length ? `; ${res.otherMessages.length} other warning(s): ${res.otherMessages.slice(0, 3).join(' | ')}${res.otherMessages.length > 3 ? ' | ...' : ''}` : '';
+  if (res.ok) return `ok ${res.run}: ${res.shapeRows} shapes within ${res.worstShape} units of the plan, ${res.pillRows} pills (worst ${res.worstPill})` + (res.warnings.typed ? `; ${res.warnings.typed} warning(s) a typed drawing gives by design: ${res.typedMessages.slice(0, 3).join(' | ')}${res.typedMessages.length > 3 ? ' | ...' : ''}` : '') + others;
   const lines = [`MISMATCH ${res.run}: the run is not the plan`];
   for (const m of res.mismatches.slice(0, 10)) lines.push('  ' + m);
   if (res.mismatches.length > 10) lines.push(`  and ${res.mismatches.length - 10} more`);
   for (const m of res.warningMessages.slice(0, 10)) lines.push('  ' + m);
   if (res.pushedPast) lines.push(`  ${res.pushedPast} pill(s) pushed past a shape`);
+  if (others) lines.push('  and' + others.slice(1));
   return lines.join('\n');
 }
 
@@ -202,6 +237,10 @@ export function summarize(r) {
   lines.push('stop: ' + Object.entries(rep.boards).map(([b, x]) => `${b === 'root' ? 'root' : b} ${x.stop}`).join(', ') + (ins.length ? `; promoted ${ins.length}: ${ins.map((p) => p.node).join(', ')}` : '') + (outs.length ? `; fanned out ${outs.length}: ${outs.map((p) => p.node).join(', ')}` : ''));
   const long = Object.values(rep.boards).reduce((s, x) => s + (x.long || []).length, 0), left = Object.values(rep.boards).reduce((s, x) => s + (x.longLeft || 0), 0);
   if (long || left) lines.push(`long arrows: ${long} made pills of their own (over ${r.model.dial.longest} units, as the view sees them)` + (left ? `; ${left} still longer after the last pass` : ''));
+  const all = r.model.nodes ? [...r.model.nodes.values()] : [];
+  const types = all.filter((n) => n.schema && !n.relationship).length, rels = all.filter((n) => n.schema && n.relationship).length;
+  const notes = all.filter((n) => n.is.length).length, arrows = (r.model.edges || []).reduce((s, e) => s + e.arrows.filter((a) => a.is.length).length, 0);
+  if (types + rels + notes + arrows) lines.push(`types: ${types} type(s), ${rels} relationship type(s), ${notes} note(s) of a type, ${arrows} arrow(s) of a relationship type; a board's types, relationship types and their ends are one script, and the notes of a type are drawn after every such script`);
   for (const w of rep.warnings) lines.push('warning: ' + w);
   return lines.join('\n');
 }
