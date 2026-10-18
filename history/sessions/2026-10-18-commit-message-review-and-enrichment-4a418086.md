@@ -1,6 +1,6 @@
 # Commit message review and enrichment
 
-Claude Code session `4a418086-d1b8-46e0-adab-8fd6a92d6a29`, 2026-10-18 11:45 to 2026-10-18 13:03 UTC, on `claude/commit-message-review-bdc409`.
+Claude Code session `4a418086-d1b8-46e0-adab-8fd6a92d6a29`, 2026-10-18 11:45 to 2026-10-18 14:03 UTC, on `claude/commit-message-review-bdc409`, `main`, `claude/weekly-history-review`.
 
 Condensed: the owner's messages, questions and answers, the assistant's prose, plans, agent briefs and git commands. Tool output is left out.
 
@@ -490,3 +490,179 @@ Land it: backup, tag, move main, and force-push main and the tags to GitHub.
 
 [2026-10-18 13:03] GIT:
 test "$(git rev-parse main)" = 603059aae051236eb46e5beb5849f0e05fc7c3ed && echo "main unchanged" && python3 .claude/skills/history/condense.py --self && git add history/sessions && git commit -q --amend --no-edit && git log --oneline -1 | cut -c1-60 && git rev-parse HEAD
+
+[2026-10-18 13:03] ASSISTANT:
+The backup is good: 81 refs on each side and the same objects. The diff output is only my filter dropping remote refs from one side. Tagging the old tip and moving main.
+
+[2026-10-18 13:04] ASSISTANT:
+Main is at `6399a048` and the main checkout is clean; `dogfood/model/` was untracked before and is left alone. Tagging the review boundary, then pushing.
+
+[2026-10-18 13:04] ASSISTANT:
+GitHub's main is at `c3a18c89`, so the push leases against that: it refuses if GitHub has moved since the fetch.
+
+[2026-10-18 13:04] GIT:
+git push --force-with-lease=main:c3a18c89e07b48f9e27710170ffe11498f08521b origin main pre-history-review history-reviewed 2>&1 | tail -6 && git fetch -q origin && test "$(git rev-parse origin/main)" = "$(git rev-parse main)" && echo "origin/main = main = $(git rev-parse --short main)"
+
+[2026-10-18 13:04] ASSISTANT:
+Now memory: a note on this review, a line on the new landing step, and the index.
+
+[2026-10-18 13:04] WRITE /Users/zekenie/.claude/projects/-Users-zekenie-code-native-canvas/memory/history-review-2026-10-18.md:
+---
+name: history-review-2026-10-18
+description: Second commit-history review landed 2026-10-18 (main 6399a048, force-pushed): records in history/sessions, Session: trailers, tags, what's open
+metadata:
+  type: project
+---
+
+The second review of main's commit messages against their sessions landed on 2026-10-18 as main `6399a048`, force-pushed to GitHub. It covered the 107 commits from `canvas draw` (after the first review's 41) to `d951005d`: 76 messages kept, 31 rewritten (Sonnet review, Opus write, Sonnet verify, Opus revise), PR merges flattened along the first parent (PR #2's four commits and PR #3's two became one each), every tree, author and date kept. Cost about $105 at list prices, 17M sub-agent tokens; the owner ran it as a 5-group pilot, then batches, with cost reported after each.
+
+The owner decided (2026-10-18): condensed session records are checked in at `history/sessions/`, each commit names its record in a `Session:` trailer, the backfill went in as one commit at the tip, and every landing adds its own record (CLAUDE.md rule; the `history` skill, `.claude/skills/history/`). History is "optimized for agent readers later to understand the history". The owner is skeptical of squashing anything not consecutive.
+
+- Tags: `pre-history-review` (old tip 603059aa), `history-reviewed` (65eee30a, the last reviewed commit; the next review starts after it). Mirror backup: `~/code/native-canvas-backups/native-canvas-20261018-pre-history-review.git`. The review's scripts, wo […614 more chars]
+
+[2026-10-18 13:05] EDIT /Users/zekenie/.claude/projects/-Users-zekenie-code-native-canvas/memory/work-in-worktree.md:
+- The squashed commit carries the session's record: `python3 .claude/skills/history/condense.py --self`, add the file, `Session:` trailer above `Co-Authored-By` (CLAUDE.md, since 2026-10-18; [[history-review-2026-10-18]]).
+  - Always squash to one commit ([[commit-messages-carry-intent]]), however many commits the branch has; never ask
+
+[2026-10-18 13:05] ASSISTANT:
+**Weekly commit-history review as a skill:** a session that packages this run into the history skill, so you can run it every week from the `history-reviewed` tag.
+
+[2026-10-18 13:05] STARTED SESSION:
+{"initiation": "own_initiative"}
+
+[2026-10-18 13:05] WRAP-UP:
+The reviewed history is on main as 6399a048 and force-pushed to GitHub, with the pre-history-review and history-reviewed tags. Backup, scripts and memory are saved, and the worktree is removed. The weekly review isn't packaged yet.
+Ask:
+
+[2026-10-18 13:05] ASSISTANT:
+The reviewed history is on main as `6399a048` and pushed to GitHub. Every commit kept its tree, author and dates, and the two commits that landed during the review are on main with their own messages.
+
+- **Tags:** `pre-history-review` marks the old tip, `603059aa`. `history-reviewed` marks the last commit this review covered, and the next weekly run starts after it.
+- **Backup:** a mirror clone of the repo from before the rewrite is at `~/code/native-canvas-backups/native-canvas-20261018-pre-history-review.git`.
+- **Review materials:** the scripts, the workflow, every proposed message and the rebuild plan are in `~/code/native-canvas-backups/history-review-20261018/`.
+- **Records:** 91 session records are in `history/sessions/`, one per session, PR records for the cloud sessions, and this session's own. Every rewritten commit names its record in a `Session:` trailer, and `CLAUDE.md` now tells each landing to add its own.
+- **One branch to move:** `claude/subboard-description-field-382ed5` was built on the old main. Its session needs to run this before it lands:
+  ```bash
+  git rebase --onto main pre-history-review claude/subboard-description-field-382ed5
+  ```
+- **Still open:** packaging the weekly review into the history skill, and records for the first 41 commits. I can start the weekly packaging whenever you say.
+
+[2026-10-18 13:07] USER:
+/compact in advance of the weekly packaging
+
+[2026-10-18 13:08] COMPACTED:
+(the context was summarized here)
+
+[2026-10-18 13:09] USER:
+execute weekly packaging
+
+[2026-10-18 13:11] ASSISTANT:
+Packaging the weekly review now: I've read last week's scripts and am making a worktree to move them into the history skill.
+
+[2026-10-18 13:17] ASSISTANT:
+Writing the review driver into the skill now (a hook pins this session to its old worktree path, so I recreated the worktree there).
+
+[2026-10-18 13:20] ASSISTANT:
+The scripts and the skill's weekly section are written; now dry-running `prepare` on the three commits since `history-reviewed`, without launching any agents.
+
+[2026-10-18 13:21] GIT:
+S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas/4a418086-d1b8-46e0-adab-8fd6a92d6a29/scratchpad; W=/Users/zekenie/code/native-canvas/.claude/worktrees/commit-message-review-bdc409/.claude/skills/history; T=$S/land-test; rm -rf $T && mkdir -p $T && git clone -q --bare /Users/zekenie/code/native-canvas $T/origin.git && git clone -q $T/origin.git $T/work && cd $T/work && git tag | grep -c history && git branch side ffb86154 && python3 $W/review.py prepare --dir $T/run | tail -4 && echo 'later' > later.txt && git add later.txt && git commit -qm "A commit that lands after prepare" && python3 - $T <<'EOF'
+import json, subprocess, sys
+T = sys.argv[1]
+full = lambda s: subprocess.run(["git", "rev-parse", s], capture_output=True, text=True, cwd=f"{T}/work").stdout.strip()
+msg = "The six rules files lose what the code says, and canvas-digest's frontmatter parses (a test squash)\n\nTest body.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n"
+json.dump({"messages": [{"group": "1-x", "shas": [full("3817f7ff"), full("ffb86154")], "message": msg, "notes": "test"}], "reviews": {}}, open(f"{T}/run/proposals.json", "w"))
+EOF
+printf 'Records for the sessions of 3817f7ff and ffb86154, which landed without them (a test)\n\nTest body.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n' > $T/msg.txt && python3 $W/review.py rebuild $T/run --message $T/msg.txt && git log --format='%h %an %ad %s' --date=iso -5 $(python3 -c "import json;print(json.load(open('$T/run/rebuilt.json'))['final'])") | cut -c1-120
+
+[2026-10-18 13:22] GIT:
+git add .claude/skills/history CLAUDE.md && git commit -q -m "The weekly history review is the history skill's: review.py prepares, collects, rebuilds and lands it, review.js is its workflow" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" && git log --oneline -1 | cut -c1-90 && S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas/4a418086-d1b8-46e0-adab-8fd6a92d6a29/scratchpad && printf '%s\n' '{"review-weekly-history": "Code-review a new 600-line Python script and a 170-line workflow script that rewrite git history (rebuild commits with commit-tree, move main by compare-and-swap, force-push with a lease): find correctness bugs, data-loss risks and edge cases, verifying each by reading the code and running safe local checks in a scratch clone."}' > $S/jev-review.json && python3 .claude/skills/jev-route/route.py $S/jev-review.json | head -12
+
+[2026-10-18 13:22] ASSISTANT:
+Committed on the branch; launching a Sonnet code review (Jev's pick) of the new scripts.
+
+[2026-10-18 13:22] AGENT Review weekly history scripts:
+Code-review commit 71d8221d in the git worktree /Users/zekenie/code/native-canvas/.claude/worktrees/commit-message-review-bdc409 (branch claude/weekly-history-review). Read-only for the repository: do not edit, commit, move refs, tag or push there, and never touch the main checkout at /Users/zekenie/code/native-canvas or other worktrees.
+
+What it is: a weekly process that reviews main's new commit messages against the condensed transcripts of the Claude Code sessions that made them, then rewrites main's history keeping every tree. Files:
+- `.claude/skills/history/review.py` (new): subcommands prepare (find each commit's session record: its `Session:` trailer, or by grepping ~/.claude/projects transcripts for the message's words inside tool_use inputs; condense missing ones; group commits by record; write args for the workflow), args, cost, collect (gather workflow results into proposals.json and proposed-messages.md), rebuild (plan + `rebuild.py` + an optional commit at the tip adding records), land (mirror backup, tag, compare-and-swap main, move the history-reviewed tag, force-push with a lease).
+- `.claude/skills/history/review.js` (new): the Workflow script (review → write → verify → revise pipeline). It runs inside a workflow runtime that provides `args`, `agent`, `pipeline`, `log` globals and allows top-level return.
+- `.claude/skills/history/rebuild.py` and `condense.py` (existing, used by review.py), `SKILL.md` (the "Weekly review" section is new).
+
+Hard invariants: t […1352 more chars]
+
+[2026-10-18 13:44] ASSISTANT:
+The review found real problems (the push order in `land`, an off-chain base, the session-id fallback, slow grep, and more); fixing them now.
+
+[2026-10-18 13:47] ASSISTANT:
+Fixes are in; re-testing the whole flow in a scratch clone, including a merge that lands mid-review.
+
+[2026-10-18 13:48] GIT:
+S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas/4a418086-d1b8-46e0-adab-8fd6a92d6a29/scratchpad; W=/Users/zekenie/code/native-canvas/.claude/worktrees/commit-message-review-bdc409/.claude/skills/history; T=$S/t2; rm -rf $T $S/review-clone $S/rc2 $S/syn* && mkdir -p $T && git clone -q --bare /Users/zekenie/code/native-canvas $T/origin.git && git clone -q $T/origin.git $T/work && cd $T/work && git branch side ffb86154 && echo "-- unset session id:" && env -u CLAUDE_CODE_SESSION_ID python3 $W/review.py prepare --dir $T/noid | grep -E "found from|no record" ; echo "-- prepare (timed):" && time python3 $W/review.py prepare --dir $T/run | tail -5 && echo "-- off-chain base:" && (python3 $W/review.py prepare --base 3817f7ff^2 --dir $T/off 2>&1 | tail -1 || true) && git checkout -q -b pr && echo a > a.txt && git add a.txt && git commit -qm "PR commit one" && echo b > b.txt && git add b.txt && git commit -qm "PR commit two" && git checkout -q main && git merge -q --no-ff pr -m "Merge pull request #99 from x/pr" && echo "-- rebuild without reviews:" && (python3 $W/review.py rebuild $T/run 2>&1 | tail -1 || true)
+
+[2026-10-18 13:50] GIT:
+S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas/4a418086-d1b8-46e0-adab-8fd6a92d6a29/scratchpad; W=/Users/zekenie/code/native-canvas/.claude/worktrees/commit-message-review-bdc409/.claude/skills/history; T=$S/t3; rm -rf $S/t2 $T && mkdir -p $T && git clone -q --bare /Users/zekenie/code/native-canvas $T/origin.git && git clone -q $T/origin.git $T/work && cd $T/work && git branch side ffb86154 && python3 $W/review.py prepare --dir $T/run | tail -3 && git checkout -q -b pr && echo a > a.txt && git add a.txt && git commit -qm "PR commit one" && echo b > b.txt && git add b.txt && git commit -qm "PR commit two" && git checkout -q main && git merge -q --no-ff pr -m "Merge pull request #99 from x/pr" && git branch -D -q pr && python3 - $T <<'EOF'
+import json, subprocess, sys
+T = sys.argv[1]
+args = json.load(open(f"{T}/run/args.json"))
+full = lambda s: subprocess.run(["git", "rev-parse", s], capture_output=True, text=True, cwd=f"{T}/work").stdout.strip()
+reviews = {c["sha"]: dict(group=g["id"], verdict="keep", intent="x") for g in args["groups"] for c in g["commits"]}
+msg = "The six rules files lose what the code says (a test rewrite)\n\nTest body.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n"
+json.dump({"messages": [{"group": "1-x", "shas": [full("3817f7ff")], "message": msg, "notes": "test"}], "reviews": reviews,
+           "declined": [], "unverified": [], "failed": []}, open(f"{T}/run/proposals.json", "w"))
+EOF
+printf 'Records for two sessions that landed without them (a test)\n\nTest body.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n' > $T/msg.txt && python3 $W/review.py rebuild $T/run --message $T/msg.txt && F=$(python3 -c "import json;print(json.load(open('$T/run/rebuilt.json'))['final'])") && git log --graph --format='%h %s' -6 $F | cut -c1-80 && echo "old commits reachable from final: $(git rev-list $F | grep -c -E '^(3817f7ff|ffb86154|6399a048)')" && echo "trees equal: $(test $(git rev-parse $F~1^{tree}) = $(git rev-parse main^{tree}) && echo yes)" && printf '#!/bin/sh\necho refused by hook >&2\nexit 1\n' > $T/origin.git/hooks/pre-receive && chmod +x $T/origin.git/hooks/pre-receive && O=$(git rev-parse main) && echo "-- land, origin refusing:" && (python3 $W/review.py land $T/run 2>&1 | tail -1; true) && echo "main here unchanged: $(test $(git rev-parse main) = $O && echo yes); local tags: $(git tag -l 'pre-history-review-2*' | wc -l | tr -d ' '); history-reviewed: $(git rev-parse --short=8 history-reviewed); origin main: $(git -C $T/origin.git rev-parse --short=8 main); origin tags: $(git -C $T/origin.git tag -l 'pre-history-review-2*' | wc -l | tr -d ' ')" && rm $T/origin.git/hooks/pre-receive && echo "-- land:" && python3 $W/review.py land $T/run && echo "main = origin = final: $(test $(git rev-parse main) = $F && test $(git -C $T/origin.git rev-parse main) = $F && echo yes); clean: $(git status --short | wc -l | tr -d ' ') changes; records here: $(ls history/sessions | wc -l | tr -d ' ')"
+
+[2026-10-18 13:50] ASSISTANT:
+All the review's findings are fixed and pass a full scratch-clone run (a merge landing mid-review, a refusing origin, then a clean land). Checking the cost fix, then committing.
+
+[2026-10-18 13:51] GIT:
+S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas/4a418086-d1b8-46e0-adab-8fd6a92d6a29/scratchpad && rm -rf $S/c $S/dry && python3 .claude/skills/history/review.py prepare --dir $S/dry | tail -7 && python3 -m py_compile .claude/skills/history/*.py && git add -A .claude/skills/history CLAUDE.md && git commit -q --amend --no-edit && git log --stat --format='%h %s' -1 | cut -c1-100 && git rev-list --count main..HEAD
+
+[2026-10-18 13:51] EDIT /Users/zekenie/.claude/projects/-Users-zekenie-code-native-canvas/memory/history-review-2026-10-18.md:
+- The weekly review is packaged as `review.py` (prepare, args, cost, collect, rebuild, land) and `review.js` (the workflow) in the history skill, with a "Weekly review" section in its SKILL.md: on branch `claude/weekly-history-review` (worktree `commit-message-review-bdc409`), code-reviewed and fixed, not landed as of 2026-10-18 13:40. `land` pushes atomically before moving anything local; post-prepare merges are replayed with their branch rewritten.
+- Open: records for the first 41 commits;
+
+[2026-10-18 13:51] WRAP-UP:
+The weekly review is now part of the history skill (review.py and review.js), committed on claude/weekly-history-review. The review's findings are fixed and the whole flow passed in a scratch clone. Not landed yet.
+Ask: Land the weekly review packaging on main?
+
+[2026-10-18 14:02] USER:
+Land it.
+
+[2026-10-18 14:03] GIT:
+git rebase main 2>&1 | tail -1 && git log --oneline -3 | cut -c1-90 && git -C /Users/zekenie/code/native-canvas status --short | grep -v '^??' | head -3; git -C /Users/zekenie/code/native-canvas rev-parse --abbrev-ref HEAD
+
+[2026-10-18 14:03] COMMIT MESSAGE FILE weekly-msg.txt:
+The weekly history review is the history skill's: review.py prepares, collects, rebuilds and lands it, and review.js is its workflow
+
+After the review of 2026-10-18 rewrote main's messages against their sessions, the owner asked for it as "a reproducable process i can do every week". Its scripts had lived outside the repository, written for that one run (a fixed worktree path, the cloud PR clusters by hand, a mapping file condense.py's --commits needed and nothing in the repository made). They are now `.claude/skills/history/review.py`, one command a step, keeping each run's state in a folder beside the repository, and `review.js`, the workflow; SKILL.md's Weekly review says the order, and the two places the owner decides: reading proposed-messages.md before anything is rebuilt, and saying to land.
+
+- prepare takes main's first parent after the `history-reviewed` tag and groups its commits by the records their `Session:` trailers name. A commit without one gets its session from this machine's transcripts, every project's, as the first review found: the latest session to write the message in a tool call's input by five minutes after it was committed, the earliest-started winning a tie a fork copies, this session left out. That session is condensed into a record to add. A pull request's merge brings the PR's record from gh; a commit that only adds records isn't reviewed. The scan reads the transcripts in Python, as BSD grep -F slowed with every pattern (about 300 s for 200).
+- The models are the owner's ("for the transcript reviews sonnet is fine. in cases where the commit message needs work i want it written w/ opus"): Sonnet reviews and verifies, Opus writes and revises, and Jev picks each stage's effort. A writer that died keeps its review and marks the group to run again; a verifier or reviser that died, or a reviser that returned fewer messages, leaves the writer's drafts, marked as not checked. collect also names commits judged wanting that got no message.
+- rebuild refuses while any group lacks a finished review, unless `--leave-unreviewed`, since history-reviewed then passes them for good. It refuses a base off the tip's first parent, where rebuild.py would chain commits the base already has onto it again with every check passing (rebuild.py checks that too now). Only whole consecutive commits are squashed, as the owner is skeptical of anything else. Commits that landed since prepare are replayed as they are; a merge among them keeps its branch, made again onto the new history where it forked from the old, so no old commit comes back through it. Records found from transcripts go in one commit at the tip with this session's record, each session condensed again then, as it may have gone on or landed under a name of its own.
+- land backs up, then pushes the new main and the tags in one atomic push with a lease on what origin had, and only then moves main here by compare-and-swap, the checkout that has main out fast-forwarding to the records commit. Moving main first had left a refused push half-landed, with history-reviewed on origin off main. It tags the old tip `pre-history-review-<date>`, moves history-reviewed to the last commit reviewed, and prints the `git rebase --onto` each branch built on the old history needs, for that branch's session to run.
+- cost reads each workflow agent's transcript. Most streamed messages there lack the line with the real output count, so output is estimated from what was written, thinking from its signature.
+
+Each step was run on main since history-reviewed, and the whole of it, land included, in a scratch clone with a bare origin: a squash, a merge landing mid-review, a refused push that moved nothing, and a landing.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+[2026-10-18 14:03] GIT:
+S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas/4a418086-d1b8-46e0-adab-8fd6a92d6a29/scratchpad && python3 - $S/weekly-msg.txt <<'EOF'
+import sys
+p = sys.argv[1]; s = open(p).read()
+s = s.replace("Moving main first had left a refused push half-landed, with history-reviewed on origin off main.",
+              "Moving main first would leave a refused push half-landed, with history-reviewed on origin off main.")
+cut = s.index("Each step was run on main")
+s = s[:cut] + s[s.index("Co-Authored-By"):]
+open(p, "w").write(s)
+EOF
+cd /Users/zekenie/code/native-canvas/.claude/worktrees/commit-message-review-bdc409 && R=$(python3 .claude/skills/history/condense.py --self) && echo "$R" && python3 - $S/weekly-msg.txt "$R" <<'EOF'
+import sys
+p, rec = sys.argv[1], sys.argv[2]
+s = open(p).read()
+s = s.replace("Co-Authored-By:", f"Session: {rec}\nCo-Authored-By:", 1)
+open(p, "w").write(s)
+EOF
+git add "$R" && git commit -q --amend -F $S/weekly-msg.txt && git log -1 --stat --format=%B | tail -14 | cut -c1-110 && grep -c "sk-ant-\|TYPESAFE_API_KEY=" "$R"

@@ -38,3 +38,50 @@ commits before them name no record. A commit from a cloud session, whose transcr
 cloud, names its pull request's record instead: the description, comments and commits.
 
 `history/` is in `.ignore`, so a search of the code skips it; search it by path.
+
+## Weekly review
+
+Each week the owner has main's new commits reviewed against their sessions, as the commits before
+the `history-reviewed` tag were on 2026-10-18: a Sonnet reviewer for each session, an Opus writer
+for each message the session says more than, a Sonnet verifier that tries to refute every new
+sentence, and an Opus revision. The models are the owner's; Jev picks each stage's effort (the
+defaults when it can't be reached). `review.py` does every step, keeping the run in a folder beside
+the repository (`../native-canvas-backups/history-review-<date>/`), and only the last moves a ref.
+Work in a worktree off main.
+
+1. `python3 .claude/skills/history/review.py prepare` takes main's first parent after
+   `history-reviewed` and groups its commits by the records their `Session:` trailers name. For a
+   commit without one, the session that wrote its message is found in this machine's transcripts
+   (the latest to write it by the time it was committed) and condensed into a record to add; a
+   pull request's merge brings the PR's record. A commit that only adds records isn't reviewed, and
+   neither is one with no record found. It prints the run's folder, the groups with their records'
+   sizes, and the routes.
+2. Run the workflow: `scriptPath` `.claude/skills/history/review.js`, and as `args` the object
+   that `review.py args <run>` prints. Over about 25 groups, run batches oldest first
+   (`--only <id>,...`) and report the cost after each; the first review cost about $1 a commit at
+   list prices, mostly in proportion to the records' size.
+3. `review.py cost <run> <workflow run id>` prints each stage's tokens and price: report it.
+   `review.py collect <run> <workflow output file>` gathers the messages and writes
+   `<run>/proposed-messages.md`: each new message under the old, what changed, and what the
+   writers turned down. A group with no result (an agent that died on an API error) is named
+   there: run it again by itself with `--only` rather than resuming, which re-runs every group after
+   the first that failed; a later run of a group replaces the earlier one's messages.
+4. Send the owner proposed-messages.md, and wait: they read it before anything is rebuilt.
+5. `review.py rebuild <run> [--message FILE]` builds the new history from the proposals. Every
+   commit keeps its tree, author, committer and dates and gets its records as `Session:`
+   trailers; a PR's merge becomes one commit with the merge's tree, and a squash run one with its
+   last commit's, each with that last commit's identity (the merger's, for a merge). Only
+   consecutive commits are squashed (the owner is skeptical of anything else), and it refuses a
+   message for any other run. It refuses while a group has no finished review, unless
+   `--leave-unreviewed` (those commits then never come up again). Commits that landed on main
+   since prepare are replayed as they are, merges included, to be reviewed next week.
+   When records were found from transcripts, they go in one commit at the tip, with this
+   session's record, condensed then: write that commit's message to FILE first (the range
+   reviewed, what changed, and the records added). It moves no ref: it prints the new tip and
+   checks every tree against the old.
+6. When the owner says to land it, `review.py land <run>` makes a mirror backup beside the
+   repository, tags the old tip `pre-history-review-<date>`, moves main by compare-and-swap
+   (refused if main moved since the rebuild: rebuild again), moves `history-reviewed` to the last
+   commit reviewed, and force-pushes main and the tags with a lease on what origin had (refused
+   if origin has commits main lacks). It prints the branches built on the old history and the
+   `git rebase --onto` each needs: tell the owner, as they are other sessions' to run.

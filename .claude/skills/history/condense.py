@@ -6,8 +6,10 @@ anything shaped like a key is redacted.
     python3 condense.py --self [--out DIR]           # this session (CLAUDE_CODE_SESSION_ID)
     python3 condense.py <session id> [--out DIR] [--commits FILE]
 
---commits names a JSON map of main's commits to the sessions that wrote them (the history
-review's), so the file marks where each commit's message was written. Prints the file written.
+--commits names a JSON map of main's commits to the sessions that wrote them (the
+commit_sessions.json `review.py prepare` writes: {sha: {subject, candidates: [{sid, wrote_at},
+...]}}, the author first), so the file marks where each commit's message was written. Prints
+the file written.
 """
 import argparse, glob, json, os, re, sys
 

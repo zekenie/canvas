@@ -50,7 +50,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [build](.claude/rules/build.md): how `build.sh` builds, and which app a build is (a worktree's is a copy, an app of its own); `Package.swift`, the layers and what each may import; what ships (the list, plugins made by name, `+ shipped`, the product's text files); the parts of a module (the table, the check that type-checks each alone); what the audit refuses.
 - [benchmarks](.claude/rules/benchmarks.md): what `./build.sh bench` measures, and every budget.
 - [testing](.claude/rules/testing.md): the headless harness, views in unshown windows, the board documents a test closes, and which topic files have test guidance.
-- [history](.claude/skills/history/SKILL.md): each landed session's condensed record in `history/sessions/`, the `Session:` trailer that names it, making one at landing, and rebuilding main's history with every tree kept.
+- [history](.claude/skills/history/SKILL.md): each landed session's condensed record in `history/sessions/`, the `Session:` trailer that names it, making one at landing, and the weekly review of main's new commit messages against their sessions, which rebuilds main's history with every tree kept.
 
 **The core** (Canvas and Geometry, and the window, CanvasUI)
 - [plugins and kinds](.claude/rules/plugins-and-kinds.md): plugin values and the frozen registry; kinds, their definitions and capabilities; translating and placing sessions.
