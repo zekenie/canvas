@@ -438,6 +438,12 @@ import TestKit
         expectEqual(parseError(#"edge "A" -> "B" {"via": "relay", "from": "right"}"#)?.hint, "write via: relay from: right",
                     "braces are refused, and the language's keys written without quotes, as from: and to: are")
         expectEqual(parseError(#"delete edge "A" -> "B" via: relay"#)?.message, #"edge "A" -> "B": deleting takes no from:, to:, via: or share:"#)
+        for placed in [#"right of "C""#, #"in "F""#] {
+            let error = parseError(#"delete edge "A" -> "B" \#(placed)"#)
+            expectEqual(error?.reason, .syntax, placed)
+            expectEqual(error?.message, #"edge "A" -> "B": deleting takes no placement (\#(placed))"#)
+            expectEqual(error?.hint, #"write delete edge "A" -> "B""#)
+        }
     },
     test("via: refuses what isn't a kind, and says it twice") {
         expectEqual(parseError(#"edge "A" -> "B" via: relay via: card"#)?.reason, .duplicate)
@@ -473,9 +479,49 @@ import TestKit
         }
         expectEqual(parseError(#"edge "A" -> "B" share:"#)?.message, #"edge "A" -> "B": share: has no value"#)
     },
-    test("an edge takes no style, placement or third shape, and what it says is an attribute") {
+    test("an edge's placements and in say where the reference it goes through goes: read as a shape's, among its attributes in any order") {
+        guard case .edge(let edge) = try parse(#"edge "A" -> "B" via: relay in "F" right of "F" left (gap: 40) tone: wire below "F" top (gap: 20)"#)
+        else { throw RequireFailed() }
+        expectEqual(edge.clauses.map(\.written), [#"right of "F" left (gap: 40)"#, #"below "F" top (gap: 20)"#])
+        expectEqual(edge.clauses.first?.targets, [Target(.title("F"), part: .left)])
+        expectEqual(edge.container, "F")
+        expectEqual(edge.via, "relay")
+        expectEqual(edge.attributes, [Attribute(key: "tone", value: .word("wire"))], "a placement isn't one of the caller's attributes")
+        expectEqual(edge.placementWritten, #"right of "F" left (gap: 40)"#, "what a message quotes: the first placement")
+        guard case .edge(let held) = try parse(#"edge "A" -> "B" from: left in "F""#) else { throw RequireFailed() }
+        expectEqual(held.fromSide, .left, "a side's word is its value, not a placement")
+        expectEqual(held.clauses, [])
+        expectEqual(held.placementWritten, #"in "F""#)
+        guard case .edge(let plain) = try parse(#"edge "A" -> "B" via: relay"#) else { throw RequireFailed() }
+        expectEqual(plain.clauses, [])
+        expectEqual(plain.container, nil)
+        expectEqual(plain.placementWritten, nil)
+        // What a shape's placements and in refuse, an edge's do.
+        expectEqual(parseError(#"edge "A" -> "B" in "F" in "G""#)?.message, #"edge "A" -> "B": in is written twice, in "F" and in "G""#)
+        let joined = parseError(#"edge "A" -> "B" right of "C" and below "D""#)
+        expectEqual(joined?.message, #"edge "A" -> "B": placements follow one another without and"#)
+        expectEqual(joined?.hint, #"write right of "C" below "D""#)
+        expectEqual(parseError(#"edge "A" -> "B" right of "C" (gap: wide), below "D""#)?.hint, #"write right of "C" (gap: wide) below "D""#)
+        let typo = parseError(#"edge "A" -> "B" rigth of "C""#)
+        expectEqual(typo?.message, #"edge "A" -> "B": rigth isn't a placement"#)
+        expectEqual(typo?.hint, "did you mean right?")
+        expectEqual(parseError(#"edge "A" -> "B" text: hello world"#)?.hint, #"a value with spaces is quoted: text: "hello world""#)
+        expectEqual(parseError(#"edge "A" -> "B" ("#)?.message, #"edge "A" -> "B": ( isn't one of an edge's attributes"#)
+        expectEqual(parseError(#"edge "A" -> "B" in "F" top-left"#)?.hint, #"say where with a placement too: in "F" inside view top-left"#)
+    },
+    test("share: \"A\" goes into A's reference and makes none, so an edge that says it places none") {
+        let error = parseError(#"edge "A" -> "B" share: "C" right of "D""#)
+        expectEqual(error?.reason, .invalidValue)
+        expectEqual(error?.message, #"edge "A" -> "B": share: "C" goes into the reference beside "C", so it makes none for right of "D" to place"#)
+        expectEqual(error?.hint, #"leave right of "D" out, or write share: true, which makes one there when there's none to share"#)
+        expectEqual(parseError(#"edge "A" -> "B" in "F" share: "C""#)?.message,
+                    #"edge "A" -> "B": share: "C" goes into the reference beside "C", so it makes none for in "F" to place"#)
+        guard case .edge(let any) = try parse(#"edge "A" -> "B" share: true right of "D""#) else { throw RequireFailed() }
+        expectEqual(any.share, .any, "share: true makes one where there's none to share, and that one is placed")
+        expectEqual(any.clauses.map(\.written), [#"right of "D""#])
+    },
+    test("an edge takes no style or third shape, and what it says is an attribute") {
         expectEqual(parseError(#"edge "A" -> "B" style: s"#)?.message, #"edge "A" -> "B": an edge can't take a style"#)
-        expectEqual(parseError(#"edge "A" -> "B" right of "C""#)?.message, #"edge "A" -> "B": an edge goes where its ends are, so it takes no placement (right)"#)
         let chain = parseError(#"edge "A" -> "B" -> "C""#)
         expectEqual(chain?.reason, .unsupported)
         expectEqual(chain?.message, #"edge "A" -> "B": an edge joins two shapes, and this one goes on to a third"#)

@@ -113,7 +113,8 @@ public enum ShapeName: Sendable, Hashable, ExpressibleByStringLiteral {
     }
 }
 
-/// `edge "<a>" -> "<b>" { attribute }`: a connection from one shape to another.
+/// `edge "<a>" -> "<b>" { attribute | placement }`: a connection from one shape to another. Its placements, if any, are
+/// where the reference it goes through is put: the edge itself goes where its ends are.
 public struct EdgeStatement: Sendable, Equatable {
     /// The name of the shape it starts from (for `"B" <- "A"`, "A").
     public var from: ShapeName
@@ -134,9 +135,15 @@ public struct EdgeStatement: Sendable, Equatable {
     /// Every other attribute, for the caller to check (the channel it's on, from Connections'
     /// `PortEdgesPlugin`).
     public var attributes: [Attribute]
+    /// Where the reference it goes through goes, in the order written, read as a shape statement's
+    /// placements are (`right of "F" left (gap: 40) below "F" top (gap: 20)`): for the caller, which
+    /// places the reference it makes by them.
+    public var clauses: [Clause]
+    /// `in "X"`: the shape the reference it goes through goes in, as written.
+    public var container: ShapeName?
 
     public init(from: ShapeName, to: ShapeName, arrow: EdgeArrow = .forward, fromSide: EdgeSide? = nil, toSide: EdgeSide? = nil,
-                via: String? = nil, share: EdgeShare? = nil, attributes: [Attribute] = []) {
+                via: String? = nil, share: EdgeShare? = nil, attributes: [Attribute] = [], clauses: [Clause] = [], container: ShapeName? = nil) {
         self.from = from
         self.to = to
         self.arrow = arrow
@@ -145,10 +152,18 @@ public struct EdgeStatement: Sendable, Equatable {
         self.via = via
         self.share = share
         self.attributes = attributes
+        self.clauses = clauses
+        self.container = container
     }
 
     /// Whether it has heads at both ends (`<->`).
     public var bothHeads: Bool { arrow == .both }
+
+    /// Its first placement as written, or `in "X"` when it has only that: what a message about where its reference goes
+    /// quotes. Nil when it says nothing of where.
+    public var placementWritten: String? {
+        clauses.first?.written ?? container.map { "\(Word.in.rawValue) \($0.written)" }
+    }
 
     /// Its ends as written: `"A" -> "B"`, `"B" <- "A"`.
     public var written: String {

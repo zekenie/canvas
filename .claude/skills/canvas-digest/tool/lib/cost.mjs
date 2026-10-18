@@ -23,7 +23,8 @@ export function arrowsOf(layout) {
   const out = [];
   for (const e of plan.direct) out.push({ a: e.from, b: e.to, A: boxes.get(e.from), B: boxes.get(e.to), fromNode: e.from, toNode: e.to, kind: 'plain', n: 1 });
   for (const m of plan.members) out.push({ a: m.e.from, b: pillId(m.pill), A: boxes.get(m.e.from), B: pills[m.pill], fromNode: m.e.from, toNode: m.host, kind: 'shared', n: 1 });
-  pills.forEach((p, i) => out.push({ a: p.start, b: pillId(i), A: boxes.get(p.start), B: p, fromNode: p.start, toNode: p.start, kind: 'link', n: 1 }));
+  // a pill in a column is joined to its start by a short link; a shared pill stands apart, and its host's arrow to it is an arrow like any
+  pills.forEach((p, i) => out.push({ a: p.start, b: pillId(i), A: boxes.get(p.start), B: p, fromNode: p.start, toNode: p.start, kind: p.free ? 'shared' : 'link', n: 1 }));
   return out;
 }
 
@@ -129,8 +130,9 @@ export const shapeCost = (off, arrows) => (1 + 0.25 * arrows) * SHAPE_WEIGHT * M
 export function ownCostParts(items, pos, edges, fillWeight = FILL_WEIGHT, shape = null) {
   const boxes = items.map((it, i) => ({ x: pos[i].x, y: pos[i].y, w: it.w, h: it.h }));
   const split = items.map((it) => it.nw != null && it.nw < it.w);
-  const bodies = items.map((it, i) => (split[i] ? { x: pos[i].x, y: pos[i].y + it.ny, w: it.nw, h: it.nh } : boxes[i]));
-  const tails = items.map((it, i) => (split[i] ? { x: pos[i].x + it.nw, y: pos[i].y, w: it.w - it.nw, h: it.h } : null));
+  // the note is at its box's left, its column on its right; or, for a spine's left leaf (`nx`, the column's width), the other way round
+  const bodies = items.map((it, i) => (split[i] ? { x: pos[i].x + (it.nx || 0), y: pos[i].y + it.ny, w: it.nw, h: it.nh } : boxes[i]));
+  const tails = items.map((it, i) => (split[i] ? { x: it.nx ? pos[i].x : pos[i].x + it.nw, y: pos[i].y, w: it.w - it.nw, h: it.h } : null));
   let x1 = 0, y1 = 0, area = 0;
   boxes.forEach((b) => { x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h); area += b.w * b.h; });
   // an arrow a pair: two when some of the pair's arrows run to the note and some to a pill beside it

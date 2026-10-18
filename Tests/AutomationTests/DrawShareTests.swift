@@ -361,3 +361,112 @@ extension CanvasEditor {
         expectEqual(editor.relays().count, 3)
     },
 ])
+
+/// The Harbor with a pen "Fold" on the root (1400, 0, 600 × 400) holding tile "E" (1700, 200), its top-left clear.
+@MainActor private func folded() throws -> (editor: CanvasEditor, fold: ShapeID) {
+    let editor = try Harbor().editor([pens])
+    let fold = AnyShapeRecord(ShapeRecord(Pen(CGRect(x: 1400, y: 0, width: 600, height: 400), label: "Fold")))
+    editor.transact { $0.insert(fold) }
+    let e = tile("E", CGRect(x: 1700, y: 200, width: 120, height: 80), in: editor)
+    editor.transact { $0.setContainer(e.id, to: fold.id) }
+    return (editor, fold.id)
+}
+
+// An edge through a stand-in may say where the stand-in it makes goes, in a shape's placements and `in`: there,
+// placed as a shape statement is, instead of beside its end. What a tool that lays a board out writes for a
+// stand-in several shapes share, which it puts between them: the first edge places it, the others share it.
+@MainActor let drawStandInPlacedTests = Suite("draw: an edge's placements put the stand-in it makes", [
+    test("an exact offset in a frame: the relay lands there and in it, and the frame's others share it") {
+        let (editor, pen) = try penned()
+        let script = """
+            edge "A" -> "Deep" in "Pen" right of "Pen" left (gap: 400) below "Pen" top (gap: 130)
+            edge "B" -> "Deep" share: "A"
+            edge "C" -> "Deep" share: "A"
+            """
+        let before = editor.file
+        let dry = try drawn(script, on: editor, ["--dry-run"])
+        expectEqual(editor.file, before, "a dry run changes nothing")
+        let result = try drawn(script, on: editor)
+        expectEqual(withoutIDs(rows(dry)), withoutIDs(rows(result)), "and says what the real run does")
+        expectEqual(editor.relays().count, 1)
+        let relay = try require(editor.relays().first)
+        expectEqual(relay.frame.origin, CGPoint(x: 400, y: 730), "its top-left that far from the pen's")
+        expectEqual(editor.document.container(of: relay.id, containingKinds: editor.registry.containingKinds), pen, "in the pen")
+        expectEqual(editor.linkNames(), ["A -> relay Deep", "B -> relay Deep", "C -> relay Deep"])
+        let changes = rows(result)
+        expectEqual(changes.map { $0["did"] }, ["created", "connected", "connected", "connected"])
+        expectEqual(changes[0]["kind"], "relay")
+        expectEqual(changes[0]["pushedPast"], nil)
+        expectEqual(changes[3], ["line": 3, "did": "connected", "kind": "link", "from": "C", "to": "Deep", "via": "relay", "shared": true, "sharedWith": "A"])
+        expectEqual(messages(result).filter { !$0.contains("outside the view") }, [], "nothing pushed, nothing over an edge (the pen is below the view)")
+        // A run again is the same edges: unchanged, the relay where it is, whatever the placement says now.
+        let made = editor.file
+        let again = try drawn(script.replacingOccurrences(of: "(gap: 400)", with: "(gap: 600)"), on: editor)
+        expectEqual(rows(again).map { $0["did"] }, ["unchanged", "unchanged", "unchanged"])
+        expectEqual(editor.file, made)
+    },
+    test("in alone puts the relay against the frame's top-left, 40 in, as a shape in one goes") {
+        let (editor, fold) = try folded()
+        _ = try drawn(#"edge "E" -> "Deep" in "Fold""#, on: editor)
+        let relay = try require(editor.relays().first)
+        expectEqual(relay.frame.origin, CGPoint(x: 1440, y: 40))
+        expectEqual(editor.document.container(of: relay.id, containingKinds: editor.registry.containingKinds), fold)
+    },
+    test("a relay an edge places is held to its placements as a shape is: pushed past what it lands on, said, with what to change") {
+        let (editor, _) = try penned()
+        // Over B's right end: less of it across than down, so it goes right, past B.
+        let result = try drawn(#"edge "A" -> "Deep" right of "B" left (gap: 100) below "B" top (gap: 10)"#, on: editor)
+        let relay = try require(editor.relays().first), b = try require(shape("B", in: editor)?.box)
+        expectEqual(relay.frame.origin, CGPoint(x: b.maxX + 40, y: b.minY + 10), "pushed right, clear of B by the clearance, and still 10 below its top")
+        expectEqual(rows(result).first?["pushedPast"], ["B"])
+        expectEqual(messages(result).filter { !$0.contains("outside the view") },
+                    [#"the relay to "Deep" was pushed right past "B" to keep clear of it, so it no longer sits against "B" left — place it on another side"#])
+    },
+    test("share: true with placements makes the relay there when there's none to share, and takes the one there is when there is") {
+        let (editor, _) = try penned()
+        let result = try drawn("""
+            edge "A" -> "Deep" share: true in "Pen" right of "Pen" left (gap: 400) below "Pen" top (gap: 130)
+            edge "B" -> "Deep" share: true in "Pen" right of "Pen" left (gap: 600) below "Pen" top (gap: 130)
+            """, on: editor)
+        expectEqual(editor.relays().count, 1, "B shares the relay A's edge made in the pen, so it places none")
+        expectEqual(editor.relays().first?.frame.origin, CGPoint(x: 400, y: 730))
+        expectEqual(rows(result).compactMap { $0["shared"] }, [true])
+    },
+    test("an edge drawn straight places nothing: a placement on one is refused, and on one drawn through a relay already it changes nothing") {
+        let editor = try Harbor().editor()
+        let straight = try refused(#"edge "Hub" -> "Dock" right of "Gate""#, on: editor)
+        expectEqual(straight.reason, "invalid_value")
+        expectEqual(straight.message, #"edge "Hub" -> "Dock": right of "Gate" places the relay an edge goes through, and this one is drawn straight"#)
+        expectEqual(straight.hint, #"write via: relay to put one there, or leave right of "Gate" out"#)
+        expectEqual(editor.relays().count, 0)
+        expect(!editor.canUndo)
+        // With via: it places one; written again, through the relay it is, the edge is unchanged and the relay stays.
+        _ = try drawn(#"edge "Hub" -> "Dock" via: relay below "Gate""#, on: editor)
+        let relay = try require(editor.relays().first), gate = try require(shape("Gate", in: editor)?.box)
+        expectEqual(relay.frame.minY, gate.maxY + 80, "below Gate")
+        expectEqual(relay.frame.midX, gate.midX)
+        let made = editor.file
+        for script in [#"edge "Hub" -> "Dock" via: relay right of "Gate""#, #"edge "Hub" -> "Dock" right of "Gate""#] {
+            let again = try drawn(script, on: editor)
+            expectEqual(rows(again).map { $0["did"] }, ["unchanged"], script)
+            expectEqual(editor.file, made, script)
+        }
+    },
+    test("what its placements and in name is on the board the run draws on, or the run is refused for drawing on two") {
+        let (editor, _) = try penned()
+        let before = editor.file
+        // Shut is on P's board and can't be stood for, so the run is there; the pen is on the root.
+        let held = try refused(#"edge "Shut" -> "Dock" in "Pen""#, on: editor)
+        expectEqual(held.reason, "several_boards")
+        // A placement against a shape on another board, the same.
+        let far = try refused(#"edge "A" -> "Deep" right of "Pier""#, on: editor)
+        expectEqual(far.reason, "several_boards")
+        // A frame this script draws holds nothing yet.
+        let drawnHere = try refused("""
+            pen "Later" right of "Gate"
+            edge "A" -> "Deep" in "Later"
+            """, on: editor)
+        expectEqual(drawnHere.reason, "unsupported")
+        expectEqual(editor.file, before)
+    },
+])

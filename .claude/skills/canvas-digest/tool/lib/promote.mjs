@@ -382,7 +382,7 @@ function splitCandidates(layouter, st, layout, ev) {
     r.n++; r.farthest = Math.max(r.farthest, segLength(seg)); if (ev.per[idx] && ev.per[idx].ne > 0) r.crossing++;
   });
   for (const g of plan.groups) {
-    if (!g.shared || g.edges.length < 4) continue;
+    if (!g.shared || g.free || g.edges.length < 4) continue;   // a spine's pills are split by its rows already (layout.mjs's pillPlan)
     const r = byKey.get(g.key) || { farthest: 0, crossing: 0 };
     out.push({ group: g, farthest: r.farthest, crossing: r.crossing });
   }

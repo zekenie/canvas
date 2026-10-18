@@ -12,9 +12,10 @@ import Topology
 //
 // An edge goes through a stand-in when its statement says so (`via: <kind>`, the kind to put beside
 // the start, standing for the end) or when `goesThroughStandIn` says so, for the end that's off the
-// board the run draws on. The stand-in is a new shape of the run, placed as any new shape is (beside
-// the shape on the board, right of it when that's the start, left of it when it's the end, or on the
-// side the edge names for it), drawn before the arrow. An arrow already on the board between the
+// board the run draws on. The stand-in is a new shape of the run, placed as any new shape is (where
+// the edge's own placements and `in` say, as a shape statement's would place it; else beside the shape
+// on the board, right of it when that's the start, left of it when it's the end, or on the side the
+// edge names for it), drawn before the arrow. An arrow already on the board between the
 // near end and a stand-in whose record stands for exactly the far end is that edge, so a run again
 // draws neither a second arrow nor a second stand-in, and `delete edge` takes the arrow, and the
 // stand-in if that leaves it with none, as `delete "X"` takes one X's arrows leave with none. It's
@@ -53,7 +54,8 @@ struct NewStandIn {
 }
 
 /// A stand-in the run made for an edge, for `share:` to find: the shape it stands for, the container
-/// the edge's other end was in when it was made, and its kind.
+/// it goes in (the one its edge names, `in "F"`, else the one the edge's other end was in when it was
+/// made), and its kind.
 struct MadeStandIn {
     let id: ShapeID
     let stoodFor: ShapeID
@@ -324,16 +326,23 @@ extension Drawing {
             stoodFor = .to
         case (.here, .here):
             guard via != nil else {
-                // Nothing here sends it through a stand-in, so there is none to share: but an edge drawn
+                // Nothing here sends it through a stand-in, so there is none to share or to place: but an edge drawn
                 // through one already is the edge, and a run again says so (`connect`).
-                if edge.share != nil {
+                let placed = edge.placementWritten
+                if edge.share != nil || placed != nil {
                     let drawn = boardConnections().filter { !deleted.contains($0.record.id) }
                     guard addressedMatches(from: from.id, to: to.id, bothHeads: edge.bothHeads, among: drawn, in: target.document,
                                            identity: identity).contains(where: { $0.standIn != nil }) else {
-                        let key = EdgeKey.share.rawValue, kind = standInKinds.first
+                        let kind = standInKinds.first
+                        if edge.share == nil, let placed {
+                            throw DrawError(statement, .invalidValue,
+                                            "\(written): \(placed) places the \(kind ?? "stand-in") an edge goes through, and this one is drawn straight",
+                                            hint: (kind.map { "write \(key): \($0) to put one there, or " } ?? "") + "leave \(placed) out")
+                        }
+                        let share = EdgeKey.share.rawValue
                         throw DrawError(statement, .invalidValue,
-                                        "\(written): \(key): is for an edge that goes through \(kind.map(indefinite) ?? "a stand-in"), and this one is drawn straight",
-                                        hint: (kind.map { "write \(EdgeKey.via.rawValue): \($0) to put one beside its start, or " } ?? "") + "leave \(key): out")
+                                        "\(written): \(share): is for an edge that goes through \(kind.map(indefinite) ?? "a stand-in"), and this one is drawn straight",
+                                        hint: (kind.map { "write \(key): \($0) to put one beside its start, or " } ?? "") + "leave \(share): out")
                     }
                 }
                 return nil
@@ -417,10 +426,11 @@ extension Drawing {
         // The pill is called what the shape is: its title, else what Mentions calls it (a note with none is called by its words
         // or its values), else its kind's name.
         let label = standName.title ?? farLabel(of: standEnd.record)
-        let id = try addStandIn(kind, for: standEnd.record, called: label, said: standName.said, beside: nearID, item: nearItem, title: nearName.plain,
-                                nearIs: nearPlace, side: nearPlace == .from ? edge.fromSide : edge.toSide, statement)
-        madeStandIns.append(MadeStandIn(id: id, stoodFor: standEnd.record.id, container: container, kind: kind))
-        return NewStandIn(id: id, place: stoodFor, kind: kind)
+        let made = try addStandIn(kind, for: standEnd.record, called: label, said: standName.said, beside: nearID, item: nearItem, title: nearName.plain,
+                                  nearIs: nearPlace, side: nearPlace == .from ? edge.fromSide : edge.toSide,
+                                  placed: (edge.clauses, edge.container), statement)
+        madeStandIns.append(MadeStandIn(id: made.id, stoodFor: standEnd.record.id, container: made.holder ?? container, kind: kind))
+        return NewStandIn(id: made.id, place: stoodFor, kind: kind)
     }
 
     // MARK: Sharing a stand-in
@@ -536,17 +546,31 @@ extension Drawing {
         }
     }
 
-    /// Adds a stand-in for `target`, called `label`, as a new shape of the run beside the shape `near`
-    /// (on the board, or the item of one the script draws): where `StandInRoute.spot` says, right of it
-    /// where it's the start of the edge, left of it where it's the end, or on the side the edge names
-    /// for it, at the end of the column of stand-ins a run before left there. It's placed as any new
-    /// shape is, kept clear of what's there, and put down in or out of the containers it lands on;
-    /// those beside one shape on one side are a list, `LayoutProblem.impliedListStep` apart.
+    /// Adds a stand-in for `target`, called `label`, as a new shape of the run. Where its edge says
+    /// where it goes (`placed`: the edge's placements and `in`), there, read and placed as a shape
+    /// statement's are: kept to them, within what it's in, and pushed past what it lands on, the push
+    /// said. Else beside the shape `near` (on the board, or the item of one the script draws): where
+    /// `StandInRoute.spot` says, right of it where it's the start of the edge, left of it where it's
+    /// the end, or on the side the edge names for it, at the end of the column of stand-ins a run
+    /// before left there, kept clear of what's there, and giving way to what the script places; those
+    /// beside one shape on one side are a list, `LayoutProblem.impliedListStep` apart. Either way it's
+    /// put down in or out of the containers it lands on. Its id, and what holds it (`in "F"`, a frame).
     private mutating func addStandIn(_ kind: ShapeKind, for target: AnyShapeRecord, called label: String, said: String, beside near: ShapeID, item: Int?,
                                      title nearTitle: String, nearIs place: EdgePlace, side: EdgeSide?,
-                                     _ statement: Statement) throws(DrawError) -> ShapeID {
+                                     placed: (clauses: [Clause], container: ShapeName?),
+                                     _ statement: Statement) throws(DrawError) -> (id: ShapeID, holder: ShapeID?) {
         guard let route, let record = route.standIns.make(kind, standingFor: target.id, label: label), let size = record.box?.size else {
             throw DrawError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(said)")
+        }
+        if !placed.clauses.isEmpty || placed.container != nil {
+            var standIn = ShapeItem(statement: statement, shape: ShapeStatement(word: kind.rawValue, clauses: placed.clauses, container: placed.container),
+                                    kind: kind, title: nil, existing: nil, record: record, size: size, room: size)
+            standIn.standsFor = said
+            items.append(standIn)
+            let index = items.count - 1
+            try contain(index)
+            try resolveTargets(index)
+            return (record.id, items[index].holder?.id)
         }
         let found: ShapeItem.Found
         if let item {
@@ -569,8 +593,9 @@ extension Drawing {
                                 existing: nil, record: record, size: size, room: size)
         standIn.targets = targets
         standIn.standsFor = said
+        standIn.implied = true
         items.append(standIn)
-        return record.id
+        return (record.id, nil)
     }
 
     /// A stand-in on the board, as a message names it: `the reference to "Auth"`, by the title of what it

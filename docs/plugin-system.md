@@ -9962,7 +9962,8 @@ against the board as the run starts:
 1. **Read.** DrawScript's `Script(parsing:)` cuts the script into statements, one a line: shapes
    (any first word but `edge`, `delete` and `style` is a kind word, left for Draw to resolve),
    edges (`from:`, `to:`, `via:` and `share:` are the language's own keys, `EdgeKey`; `via:`'s
-   value is a kind word, found by Draw, and `share:`'s is `true` or a name, `EdgeShare`),
+   value is a kind word, found by Draw, and `share:`'s is `true` or a name, `EdgeShare`; placements
+   and `in` on an edge, read as a shape's, are where the stand-in it goes through goes),
    deletes, and styles, which it merges into the statements that name them. Where a statement
    names a shape the file has (an edge's ends, a delete, a placement's target, `in`, a shape's own
    name, `share:`'s host) the name is a `ShapeName`: a quoted title, or a word that starts with `#`,
@@ -10193,6 +10194,16 @@ and `needs`](#stand-ins-forwarding)), and References' `reference` is what answer
   `existing(for:kind:sharing:near:in:)`, `spot(beside:edgeIs:side:in:excluding:staying:)` and
   `landing(of:at:in:avoiding:)`) is that making, for a writer that is not a script: it lands a pill
   of its size at a spot against `Surroundings`, in the rect a run gives the same pill.
+- **An edge may place it** (`EdgeStatement.clauses` and `container`: placements and `in`, written on
+  the edge as on a shape). Then the stand-in it makes is placed by them, as a shape statement's
+  placements place a shape (`addStandIn` asks `contain` and `resolveTargets`, as `complete` does, and
+  what they name claims its board as a shape's does), and it's a box the script wrote, not an implied
+  one (`ShapeItem.implied` false): it doesn't yield, it lists with no stand-in beside a shape, and its
+  push says to place it elsewhere. `in "F"` is the container `share: true` finds it in. An edge that
+  makes no stand-in (it shares one, or is drawn already) places nothing; `share: "A"`, which never
+  makes one, refuses a placement as it's read, and an edge drawn straight refuses one as it does
+  `share:`. It's how a tool that lays a board out (canvas-digest) puts a stand-in several shapes share
+  between them, at an exact offset in their frame, the others `share:`-ing it.
 - **Its channel and sides** are the edge maker's: `EdgeRequest.fromStandsFor` and `toStandsFor` say
   the kinds of what an end stands for (none for a shape itself), and `PortEdgesPlugin` judges the end
   as those kinds would be, on the stand-in's own sides

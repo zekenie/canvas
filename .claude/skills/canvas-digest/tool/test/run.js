@@ -371,6 +371,120 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(JSON.stringify(a.plan), JSON.stringify(c.plan), 'plan.json with the input reversed');
   });
 
+  // ---- spines ----
+  // the spine fixture: Band's cards A, B, C and D point at Base's notes and not at each other: X every card, Y A and B, Z C and D, V A and
+  // C, W A alone. A pairs with B (two in common), C with D: rows [A, B] and [C, D], A and C on the left. (DigestTests draws it too.)
+  function spineFixture(more) { var d = fixture('spine'); d.edges = d.edges.concat(more || []); return d; }
+  var algorithmOf = function (r, container) { var a = r.report.boards.root.algorithms.find(function (x) { return x.container === container; }); return a && a.algorithm; };
+  // the offset a maker's line places its pill at, from the shape it names: [x, y]
+  var offsetIn = function (l, anchor) {
+    var m = new RegExp('right of "' + anchor + '" left \\(gap: (\\d+)\\) below "' + anchor + '" top \\(gap: (\\d+)\\)').exec(l);
+    return m ? [Number(m[1]), Number(m[2])] : null;
+  };
+
+  await test('a frame of cards that point at many of the same shapes, and not at each other, is a spine: its shared pills between its two columns', async function () {
+    var r = await planOf(spineFixture());
+    eq(algorithmOf(r, 'Band'), 'spine', 'Band is a spine');
+    assert(algorithmOf(r, 'Base') !== 'spine', 'Base, which points at nothing, is not');
+    var root = rootOf(r.plan), by = {};
+    root.shapes.forEach(function (s) { by[s.title] = s; });
+    var pillsFor = function (t) { return root.pills.filter(function (p) { return p.for === t; }); };
+    // the columns: A and C on the left, B and D on the right, each row's two level
+    assert(by.A.x + by.A.w < by.B.x && by.C.x + by.C.w < by.D.x, 'A and C left of B and D');
+    assert(by.A.y + by.A.h <= by.C.y, 'row [A, B] above row [C, D]');
+    // a pill every card uses is one, between the columns, between the rows
+    eq(pillsFor('X').map(function (p) { return p.users; }), [4], 'one pill for X, its four users');
+    var x = pillsFor('X')[0];
+    assert(by.A.x + by.A.w < x.x && x.x + x.w < by.B.x, 'X between the columns');
+    assert(Math.max(by.A.y + by.A.h, by.B.y + by.B.h) <= x.y && x.y + x.h <= Math.min(by.C.y, by.D.y), 'and between the rows');
+    // one a row's cards share is beside that row
+    eq(pillsFor('Y').map(function (p) { return p.users; }), [2]); eq(pillsFor('Z').map(function (p) { return p.users; }), [2]);
+    var y = pillsFor('Y')[0], z = pillsFor('Z')[0];
+    assert(y.x > by.A.x + by.A.w && y.y < by.A.y + by.A.h && y.y + y.h > by.A.y, 'Y beside row [A, B]');
+    assert(z.x > by.C.x + by.C.w && z.y < by.C.y + by.C.h && z.y + z.h > by.C.y, 'Z beside row [C, D]');
+    // users in two rows: each alone in its row has a copy of its own, a left card's on its left, as is a pill one card uses
+    eq(pillsFor('V').map(function (p) { return p.start; }).sort(), ['A', 'C'], 'V twice, a copy each for A and C');
+    pillsFor('V').concat(pillsFor('W')).forEach(function (p) { assert(p.x + p.w < by[p.start].x, 'the pill of ' + p.start + ' for ' + p.for + ' is on its left'); });
+    // the script: each shared pill made by its first card's edge, where the plan has it, in Band; the others share it
+    var lines = edgeLines(r, 'root');
+    var band = by.Band;
+    [['A', 'X', x], ['A', 'Y', y], ['C', 'Z', z]].forEach(function (k) {
+      var l = lines.find(function (l) { return l.indexOf('edge "' + k[0] + '" -> "' + k[1] + '" via: reference in "Band" ') === 0; });
+      assert(l, 'the maker of ' + k[1] + "'s pill: " + lines.join('\n'));
+      eq(offsetIn(l, 'Band'), [k[2].x - band.x, k[2].y - band.y], 'its place in Band');
+    });
+    ['edge "B" -> "X" via: reference share: "A"', 'edge "C" -> "X" via: reference share: "A"', 'edge "D" -> "X" via: reference share: "A"',
+      'edge "B" -> "Y" via: reference share: "A"', 'edge "D" -> "Z" via: reference share: "C"',
+      'edge "A" -> "V" via: reference from: left', 'edge "A" -> "W" via: reference from: left', 'edge "C" -> "V" via: reference from: left'].forEach(function (l) {
+      assert(lines.indexOf(l) >= 0, l + ' in ' + lines.join('\n'));
+    });
+    var maker = lines.findIndex(function (l) { return /^edge "A" -> "X"/.test(l); });
+    assert(maker < lines.indexOf('edge "B" -> "X" via: reference share: "A"'), 'the maker before the edges that share its pill');
+    eq(r.report.public.filter(function (t) { return 'VWXYZ'.indexOf(t) >= 0; }), ['V', 'W', 'X', 'Y', 'Z'], 'what a spine points at is public');
+    checkPlan(r.plan);
+    // byte for byte the same, and the same in another order
+    var again = await planOf(spineFixture());
+    eq(JSON.stringify(again.plan), JSON.stringify(r.plan), 'plan.json');
+    eq(edgeLines(again, 'root'), lines, 'the edge run');
+    var d2 = spineFixture(); d2.nodes.reverse(); d2.edges.reverse();
+    var reversed = await planOf(d2);
+    eq(JSON.stringify(reversed.plan), JSON.stringify(r.plan), 'plan.json with the input reversed');
+  });
+
+  await test('a frame whose cards point at each other is no spine, and its shared pills are in a host\'s column as ever; nor is any with promote off or at mess 1', async function () {
+    var r = await planOf(spineFixture([{ from: 'A', to: 'B' }]));
+    assert(algorithmOf(r, 'Band') !== 'spine', 'Band is laid out as any frame is: ' + algorithmOf(r, 'Band'));
+    var lines = edgeLines(r, 'root');
+    assert(lines.every(function (l) { return l.indexOf(' in "Band"') < 0 && l.indexOf('from: left') < 0; }), 'no pill placed by its edge, none on a left: ' + lines.join('\n'));
+    assert(rootOf(r.plan).pills.every(function (p) { return !p.free; }), 'none free');
+    checkPlan(r.plan);
+    // nor is one where no arrow on a board is to be a pill: --promote off, and the dial at 1
+    var off = await planOf(spineFixture(), { promote: false }), loose = await planOf(spineFixture(), { mess: 1 });
+    [off, loose].forEach(function (x) {
+      assert(algorithmOf(x, 'Band') !== 'spine', 'no spine: ' + algorithmOf(x, 'Band'));
+      eq(rootOf(x.plan).pills.length, 0, 'every arrow plain');
+    });
+  });
+
+  await test('a spine is three rows at most, and a shape that points at nothing pairs last, so the pill every other uses is still one', async function () {
+    // n cards in a frame, each pointing at X and Y in another
+    var cards = function (n) {
+      var nodes = [{ title: 'Band', kind: 'frame' }, { title: 'Base', kind: 'frame' }, note('X', 'Base'), note('Y', 'Base')], edges = [];
+      for (var i = 1; i <= n; i++) { var t = 'Card ' + i; nodes.push(note(t, 'Band')); edges.push({ from: t, to: 'X' }, { from: t, to: 'Y' }); }
+      return digest(nodes, edges);
+    };
+    var six = await planOf(cards(6)), seven = await planOf(cards(7));
+    eq(algorithmOf(six, 'Band'), 'spine', 'six cards, three rows: a spine');
+    eq(rootOf(six.plan).pills.filter(function (p) { return p.for === 'X'; }).map(function (p) { return p.users; }), [6], "one pill for X, in the middle");
+    assert(algorithmOf(seven, 'Band') !== 'spine', 'seven would be four rows: laid out as any frame is (' + algorithmOf(seven, 'Band') + ')');
+    checkPlan(six.plan); checkPlan(seven.plan);
+    // the spine fixture with a card in Band that points at nothing: it pairs after the others, and X, which every other card uses, is one pill
+    var d = spineFixture(); d.nodes.push(note('Idle', 'Band'));
+    var idle = await planOf(d);
+    eq(algorithmOf(idle, 'Band'), 'spine');
+    var root = rootOf(idle.plan), by = {};
+    root.shapes.forEach(function (sh) { by[sh.title] = sh; });
+    eq(root.pills.filter(function (p) { return p.for === 'X'; }).map(function (p) { return p.users; }), [4], 'one pill for X, its four users');
+    assert(by.Idle.y > Math.max(by.C.y, by.D.y), 'Idle in a row of its own, under the others: ' + JSON.stringify([by.Idle, by.C, by.D]));
+    checkPlan(idle.plan);
+  });
+
+  await test('a spine that is the board itself places its shared pills from the board\'s header note', async function () {
+    // Lib's board holds A, B and C, which point at X and Y on the root
+    var nodes = [{ title: 'Lib', kind: 'subboard' }];
+    ['A', 'B', 'C'].forEach(function (t) { nodes.push(note(t, 'Lib')); });
+    ['X', 'Y'].forEach(function (t) { nodes.push(note(t)); });
+    var edges = [{ from: 'A', to: 'X' }, { from: 'B', to: 'X' }, { from: 'C', to: 'X' }, { from: 'A', to: 'Y' }, { from: 'B', to: 'Y' }];
+    var r = await planOf(digest(nodes, edges));
+    eq(r.report.boards.Lib.algorithms.find(function (a) { return a.container === 'Lib'; }).algorithm, 'spine', "Lib's board is a spine");
+    var lib = r.plan.boards.find(function (b) { return b.board === 'Lib'; }), x = lib.pills.find(function (p) { return p.for === 'X'; });
+    eq(lib.pills.filter(function (p) { return p.for === 'X'; }).map(function (p) { return p.users; }), [3], 'one pill for X, its three users');
+    var l = edgeLines(r, 'lib').find(function (l) { return l.indexOf('edge "A" -> "X" via: reference ') === 0; });
+    assert(l && l.indexOf(' in "') < 0, 'in nothing: ' + l);
+    eq(offsetIn(l, lib.origin), [x.x, x.y], 'its offset from the header note, as the shapes have theirs');
+    checkPlan(r.plan);
+  });
+
   await test('promote off: every arrow plain, only the pills between boards; edges between boards are pills, public first', async function () {
     var nodes = [{ title: 'Sub', kind: 'subboard' }, note('Inner A', 'Sub'), note('Inner B', 'Sub'), note('Top A'), note('Top B')];
     var edges = [{ from: 'Top A', to: 'Top B' }, { from: 'Top A', to: 'Inner B' }, { from: 'Inner A', to: 'Top B' }, { from: 'Inner A', to: 'Inner B' }];

@@ -1,0 +1,23 @@
+{
+  "title": "Spine",
+  "text": "A band of four cards that point at the same notes, and the notes they point at.",
+  "nodes": [
+    { "title": "Band", "kind": "frame" },
+    { "title": "Base", "kind": "frame" },
+    { "title": "A", "kind": "sticky-note", "in": "Band", "text": "Points at X, Y, V and W" },
+    { "title": "B", "kind": "sticky-note", "in": "Band", "text": "Points at X and Y" },
+    { "title": "C", "kind": "sticky-note", "in": "Band", "text": "Points at X, Z and V" },
+    { "title": "D", "kind": "sticky-note", "in": "Band", "text": "Points at X and Z" },
+    { "title": "V", "kind": "sticky-note", "in": "Base", "text": "A and C, in two rows" },
+    { "title": "W", "kind": "sticky-note", "in": "Base", "text": "A alone" },
+    { "title": "X", "kind": "sticky-note", "in": "Base", "text": "Every card" },
+    { "title": "Y", "kind": "sticky-note", "in": "Base", "text": "A and B, a row" },
+    { "title": "Z", "kind": "sticky-note", "in": "Base", "text": "C and D, a row" }
+  ],
+  "edges": [
+    { "from": "A", "to": "X" }, { "from": "A", "to": "Y" }, { "from": "A", "to": "V" }, { "from": "A", "to": "W" },
+    { "from": "B", "to": "X" }, { "from": "B", "to": "Y" },
+    { "from": "C", "to": "X" }, { "from": "C", "to": "Z" }, { "from": "C", "to": "V" },
+    { "from": "D", "to": "X" }, { "from": "D", "to": "Z" }
+  ]
+}

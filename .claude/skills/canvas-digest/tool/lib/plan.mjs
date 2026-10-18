@@ -25,7 +25,9 @@ export async function planDigest(digest, sizes, options, elk, now) {
   const order = model.boards.slice().sort((a, b) => model.boardDepth.get(b) - model.boardDepth.get(a) || byTitle(a, b));
   let done = 0;
   for (const board of order) {
-    const layouter = new Layouter(model, board, sizes, { pack: opts.pack, view, ranks }, elk);
+    // a spine turns every arrow of its shapes into a pill: none where no arrow on a board is to be one (`--promote off`, the dial at 1)
+    const spines = opts.promote && model.promote && model.dial.mess < 1;
+    const layouter = new Layouter(model, board, sizes, { pack: opts.pack, view, ranks, spines }, elk);
     const r = await runBoard(model, layouter, { promote: opts.promote && model.promote, now, split: opts.split, cap: opts.cap, popular: opts.popular, prefer: opts.prefer, debug: opts.debug, margin: opts.marginPills == null ? null : opts.marginPills * model.mu });
     results.set(board, r);
     done++;

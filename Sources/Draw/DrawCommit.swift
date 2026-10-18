@@ -288,8 +288,9 @@ extension Drawing {
         switch transaction.settle([id]) {
         case .refused(let container):
             let named = transaction.document[container].map { self.named($0) } ?? "a container"
-            // A stand-in has no placement of its own to change: where it goes is the side of what it's beside.
-            let clear = item.standsFor == nil ? "place it clear of \(named)"
+            // A stand-in put beside an end has no placement of its own to change: where it goes is the side of what it's
+            // beside. One its edge places is placed clear as a shape is.
+            let clear = !item.implied ? "place it clear of \(named)"
                 : "name another side for it with \(EdgeKey.from.rawValue): or \(EdgeKey.to.rawValue): to put it clear of \(named)"
             throw DrawError(item.statement, .readOnly, "\(subject(of: item)) would go in \(named), which is read-only (locked, say)",
                             hint: "\(clear), or ask the user to unlock it")

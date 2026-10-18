@@ -408,31 +408,37 @@ extension Drawing {
 
         var book = BoardClaims(editor: editor, names: names, naming: naming, drawn: drawn, joinsShapes: script.statements.contains(where: \.joinsShapes))
         var errors: [DrawError] = []
+        /// Where a shape goes, or the reference an edge goes through, claims the board it's on: `in`'s, else that of each
+        /// shape its placements name (whose titles are then the board `in` names).
+        func claimPlace(_ container: ShapeName?, _ clauses: [Clause], _ statement: Statement) {
+            if let name = container {
+                do throws(DrawError) {
+                    let board = try self.container(name, statement, names: names, drawn: drawn, naming: naming, editor: editor)
+                    book.claim(board, statement, why: "in \(name.title.map { quoted(naming.fold($0) ?? $0) } ?? name.written)")
+                } catch {
+                    errors.append(error)
+                }
+                return
+            }
+            for clause in clauses {
+                for target in clause.targets {
+                    switch target.box {
+                    case .title(let title): book.claim(title, statement)
+                    case .id(let text): book.claim(ShapeName.id(text), statement)
+                    case .board, .view: break
+                    }
+                }
+            }
+        }
         for statement in script.statements {
             switch statement.body {
             case .shape(let shape):
-                if let name = shape.container {
-                    do throws(DrawError) {
-                        let board = try container(name, statement, names: names, drawn: drawn, naming: naming, editor: editor)
-                        book.claim(board, statement, why: "in \(name.title.map { quoted(naming.fold($0) ?? $0) } ?? name.written)")
-                    } catch {
-                        errors.append(error)
-                    }
-                    // Its titles are that board's.
-                    continue
-                }
-                if let name = shape.name { book.claim(name, statement) }
-                for clause in shape.clauses {
-                    for target in clause.targets {
-                        switch target.box {
-                        case .title(let title): book.claim(title, statement)
-                        case .id(let text): book.claim(ShapeName.id(text), statement)
-                        case .board, .view: break
-                        }
-                    }
-                }
+                // Its own name is the board `in` names, if it says one.
+                if shape.container == nil, let name = shape.name { book.claim(name, statement) }
+                claimPlace(shape.container, shape.clauses, statement)
             case .edge(let edge):
                 book.claimEdge(edge.from, edge.to, via: edge.via != nil, bothHeads: edge.bothHeads, statement)
+                claimPlace(edge.container, edge.clauses, statement)
             case .delete(.shape(let name)):
                 book.claim(name, statement)
             case .delete(.edges(let from, let to, let eitherWay, _)):
@@ -512,9 +518,13 @@ extension Drawing {
 }
 
 extension Statement {
-    /// Whether it says what holds its shape (`in "X"`).
+    /// Whether it says what holds its shape, or the reference its edge goes through (`in "X"`).
     var isContained: Bool {
-        if case .shape(let shape) = body { shape.container != nil } else { false }
+        switch body {
+        case .shape(let shape): shape.container != nil
+        case .edge(let edge): edge.container != nil
+        case .delete: false
+        }
     }
 
     /// Whether it's a delete (`delete "X"` or `delete edge`).

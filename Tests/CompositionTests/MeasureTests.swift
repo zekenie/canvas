@@ -215,12 +215,19 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
             delete "Gone"
             style loud size: 400x
             sticky-note "Four" style: loud
+            sticky-note "Five" public: true
+            edge "One" -> "Five" via: reference in "Nowhere" right of "Nobody" left (gap: 20)
+            edge "One" -> "Two" below "Nobody"
             """)
         expectEqual(ignored.status, 0, ignored.error)
-        let rows = try require(try JSON(text: ignored.output)["shapes"]?.arrayValue)
-        expectEqual(rows.map { $0["title"] }, ["One", "Two", "Three", "Four"])
-        expectEqual(rows.map { $0["line"] }, [1, 2, 3, 6])
+        let answer = try JSON(text: ignored.output)
+        let rows = try require(answer["shapes"]?.arrayValue)
+        expectEqual(rows.map { $0["title"] }, ["One", "Two", "Three", "Four", "Five"])
+        expectEqual(rows.map { $0["line"] }, [1, 2, 3, 6, 7])
         expectEqual(size(rows[3]["size"])?.first, 400, "a style's size still applies")
+        // And so are an edge's, where its reference goes: the reference is sized all the same.
+        expectEqual(answer["references"]?.arrayValue?.map { $0["line"] }, [8])
+        expectEqual(answer["warnings"], nil)
         // No board named, none in front: it still runs, on none, and names no board.
         let apart = try run(builtExecutable("CanvasCLI"), ["--socket", server.path, "help", "measure"])
         expectEqual(apart.status, 0, apart.error)

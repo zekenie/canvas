@@ -13,6 +13,7 @@ export function madePublic(model, results) {
     for (const t of r.report.promoted) if (!made.has(t)) made.set(t, 'promoted: its users reach it through pills');
     for (const v of r.report.fanned || []) for (const t of fanTargets(model, v)) if (!made.has(t)) made.set(t, `${v} uses it, and points at so many shapes that its uses are pills beside it (fanned out)`);
     for (const x of r.report.long || []) if (!made.has(x.to)) made.set(x.to, `an arrow to it would run ${x.length} units, longer than the dial allows, so it is a pill`);
+    for (const t of (r.layout && r.layout.plan.spined) || []) if (!made.has(t)) made.set(t, 'cards that point at many of the same shapes reach it through a pill (a spine)');
   }
   return made;
 }
@@ -49,12 +50,14 @@ export function buildPlan(model, sizes, results, opts) {
     // (a pair with typed arrows is an entry for each, saying `is`; an end of a relationship type says `end`)
     const edges = [];
     const entry = (e, a, rest) => Object.assign({ from: e.from, to: e.to }, rest, a.is.length ? { is: a.is } : {}, e.end ? { end: true } : {});
-    for (const l of layout.plan.byStart.values()) for (const en of l) for (const a of en.e.arrows) edges.push(entry(en.e, a, Object.assign({ via: 'reference' }, en.shared ? { share: true, host: en.e.from } : {})));
+    const leftOf = new Set(layout.pills.filter((p) => p.left).map((p) => p.start + '\u0000' + p.target));   // pills in a column on their start's left
+    for (const l of layout.plan.byStart.values()) for (const en of l) for (const a of en.e.arrows) edges.push(entry(en.e, a, Object.assign({ via: 'reference' }, en.shared ? { share: true, host: en.e.from } : {}, leftOf.has(en.e.from + '\u0000' + en.e.to) ? { side: 'left' } : {})));
+    for (const f of layout.plan.free) for (const a of f.e.arrows) edges.push(entry(f.e, a, { via: 'reference', share: true, host: f.e.from }));
     for (const m of layout.plan.members) for (const a of m.e.arrows) edges.push(entry(m.e, a, { via: 'reference', share: true, sharedWith: m.host, host: m.host }));
     for (const e of layout.plan.direct) for (const a of e.arrows) edges.push(entry(e, a, { via: null }));
     edges.sort((a, b) => byTitle(a.from, b.from) || byTitle(a.to, b.to));
     plan.boards.push({ board, origin: hdrTitle, shapes, pills, edges });
-    drawn.set(board, { boxOf, hdrTitle });
+    drawn.set(board, { boxOf, hdrTitle, dy });
     const r = results.get(board).report;
     for (const p of r.promotions) plan.promotions.push(p);
     plan.stop[board] = r.stop;
@@ -116,14 +119,25 @@ export function buildPlan(model, sizes, results, opts) {
   // edge of a shared group is among them, so the pill exists), then the edges of the users of a shared pill, then the plain arrows.
   for (const board of model.boards) {
     const { layout } = results.get(board);
+    const { boxOf, hdrTitle, dy } = drawn.get(board);
+    // a spine's shared pill is where its maker's edge says: at its offset from the top-left of the spine's frame, and in it, or, for a spine
+    // that is the board itself, from the board's header note, as the shapes are placed
+    const placed = (f) => {
+      const p = layout.pills[f.at], cid = model.node(f.e.from).container;
+      const frame = cid[0] === 'f' ? cid.slice(2) : null, fb = frame ? boxOf.get(frame) : { x: 0, y: 0 };
+      return (frame ? ` in ${q(frame)}` : '') + ' ' + at(frame || hdrTitle, p.x - fb.x, p.y + dy - fb.y);
+    };
     const lines = [];
     // an edge of a pair with typed arrows is a line for each arrow, saying what it is (draw reuses the pill the first made for the pair)
     const line = (e, head) => e.arrows.map((a) => `edge ${q(e.from)} -> ${q(e.to)}${head}` + (a.text ? ` text: ${lit(a.text)}` : '') + arrowTyping(a));
     const starts = [...layout.plan.byStart.keys()].sort(byTitle);
-    // the pills others share first (draw reuses the first pill made for an end in a container, so that has to be the host's), then the other
-    // pills (a column's pills keep their order: the shared ones are first in it), then the users of a shared pill, each saying `share: "<host>"`
+    // the pills others share first (draw reuses the first pill made for an end in a container, so that has to be the host's), and a spine's,
+    // then the other pills (a column's pills keep their order: the shared ones are first in it; a spine's left leaf's column is on its left,
+    // `from: left`), then the users of a shared pill, each saying `share: "<host>"`
     for (const s of starts) for (const en of layout.plan.byStart.get(s)) if (en.shared) lines.push(...line(en.e, ' via: reference'));   // the host's own: a pill beside it (no share, so it is never another cluster's)
-    for (const s of starts) for (const en of layout.plan.byStart.get(s)) if (!en.shared) lines.push(...line(en.e, ' via: reference'));
+    for (const f of layout.plan.free.slice().sort((a, b) => byTitle(a.e.from, b.e.from) || byTitle(a.e.to, b.e.to))) lines.push(...line(f.e, ' via: reference' + placed(f)));   // a spine's shared pill, made where it goes
+    const leftOf = new Set(layout.pills.filter((p) => p.left).map((p) => p.start + '\u0000' + p.target));
+    for (const s of starts) for (const en of layout.plan.byStart.get(s)) if (!en.shared) lines.push(...line(en.e, ' via: reference' + (leftOf.has(en.e.from + '\u0000' + en.e.to) ? ' from: left' : '')));
     for (const m of layout.plan.members.slice().sort((a, b) => byTitle(a.e.from, b.e.from) || byTitle(a.e.to, b.e.to))) lines.push(...line(m.e, ` via: reference share: ${q(m.host)}`));
     for (const e of layout.plan.direct.slice().sort((a, b) => byTitle(a.from, b.from) || byTitle(a.to, b.to))) if (!e.end) lines.push(...line(e, ''));
     if (lines.length) addRun(board, 'edges', lines);

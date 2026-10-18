@@ -224,7 +224,7 @@ struct LineParser {
                     throw error("\(token.raw) isn't a placement", hint: "a value with spaces is quoted: \(key.raw) \(quote(value.text + " " + token.text))")
                 }
                 if token.isWord(Word.in.rawValue) {
-                    try container(of: &statement)
+                    try container(&statement.container)
                     continue
                 }
                 statement.clauses.append(try clause())
@@ -264,12 +264,28 @@ struct LineParser {
         }
         var seen: [(key: String, written: String)] = []
         while let token = peek() {
+            // An `and` or comma before a placement, after one that ended in brackets or a value.
+            if let last = statement.clauses.last, token.kind == .comma || token.isWord(Word.and.rawValue) {
+                let mark = at
+                if joinsAnother(), let next = peek(), startsPlacement(next) { throw joined(after: last.written) }
+                at = mark
+            }
             if Self.isBraced(token) { throw braced(from: at, edge: true) }
             if let written = equalsAttribute(at: at) { throw equals(written) }
-            guard token.kind == .key else {
-                if token.kind == .word, startsPlacement(token) {
-                    throw error("an edge goes where its ends are, so it takes no placement (\(token.raw))")
+            // The edge goes where its ends are; a placement, and `in`, say where the reference it goes through goes.
+            if token.kind == .word {
+                if !startsPlacement(token), at >= 2, tokens[at - 2].kind == .key, tokens[at - 1].kind != .json {
+                    let key = tokens[at - 2], value = tokens[at - 1]
+                    throw error("\(token.raw) isn't a placement", hint: "a value with spaces is quoted: \(key.raw) \(quote(value.text + " " + token.text))")
                 }
+                if token.isWord(Word.in.rawValue) {
+                    try container(&statement.container)
+                } else {
+                    statement.clauses.append(try clause())
+                }
+                continue
+            }
+            guard token.kind == .key else {
                 throw error("\(token.raw) isn't one of an edge's attributes", hint: "an attribute is written key: value, as from: right")
             }
             at += 1
@@ -316,6 +332,12 @@ struct LineParser {
                 statement.attributes.append(Attribute(key: token.text, value: value))
             }
         }
+        // `share: "A"` goes into A's reference and never makes one, so it has none to put anywhere.
+        if case .beside(let host)? = statement.share, let placed = statement.placementWritten {
+            let key = EdgeKey.share.rawValue
+            throw error(.invalidValue, "\(key): \(host.written) goes into the reference beside \(host.written), so it makes none for \(placed) to place",
+                        hint: "leave \(placed) out, or write \(key): true, which makes one there when there's none to share")
+        }
         return statement
     }
 
@@ -356,6 +378,9 @@ struct LineParser {
             let edge = try edge()
             guard edge.fromSide == nil, edge.toSide == nil, edge.via == nil, edge.share == nil else {
                 throw error("deleting takes no from:, to:, via: or share:", hint: "write delete edge \(edge.written)")
+            }
+            if let placed = edge.placementWritten {
+                throw error("deleting takes no placement (\(placed))", hint: "write delete edge \(edge.written)")
             }
             subject = "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(edge.written)"
             statement = .edges(from: edge.from, to: edge.to, eitherWay: edge.arrow == .both, attributes: edge.attributes)
@@ -581,8 +606,8 @@ struct LineParser {
             || [Word.level, .inside, .outside, .on, .in].contains { $0.rawValue == token.text }
     }
 
-    /// `in "X"`: the shape that holds it, once.
-    mutating func container(of statement: inout ShapeStatement) throws(ScriptError) {
+    /// `in "X"`: the shape that holds it (a shape statement's shape, or an edge's reference), once.
+    mutating func container(_ held: inout ShapeName?) throws(ScriptError) {
         at += 1
         let opening = Word.in.rawValue
         guard let token = peek(), token.kind == .quoted || Self.isIDWord(token) else {
@@ -593,7 +618,7 @@ struct LineParser {
         }
         at += 1
         let name: ShapeName = token.kind == .quoted ? .title(try title(token)) : .id(try id(token))
-        if let earlier = statement.container {
+        if let earlier = held {
             throw error("\(opening) is written twice, \(opening) \(earlier.written) and \(opening) \(token.raw)",
                         hint: "a shape is in one shape: keep one")
         }
@@ -607,7 +632,7 @@ struct LineParser {
         if let next = peek(), next.kind == .comma || next.isWord(Word.and.rawValue) {
             throw error("\(opening) \(token.raw) names one shape, and a shape is in one", hint: "name the one that holds it")
         }
-        statement.container = name
+        held = name
     }
 
     mutating func clause() throws(ScriptError) -> Clause {

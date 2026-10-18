@@ -354,6 +354,42 @@ private func isByDesign(_ message: String) -> Bool {
         }
     },
 
+    test("digest all on a spine: a band of cards that point at the same notes, the pills they share between its columns, each placed by its edge, every shape and pill on its plan") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("spine")
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let run = try runDigest("all", "spine", server: server, target: ["--board", "\(board.number)", "--into", "Spine map"], out: folder)
+        expectEqual(run.process.status, 0, run.process.output + run.process.error)
+        expect(run.process.output.contains("verify ok"), run.process.output)
+        try expectOnPlan(run, board: board, digestRoot: "Spine map", "spine")
+        try expectNoWarnings(run, "spine")
+        let plan = try run.plan, report = try run.report
+        let algorithms = report["boards"]?["root"]?["algorithms"]?.arrayValue ?? []
+        expectEqual(algorithms.first { $0["container"] == "Band" }?["algorithm"], "spine", "the band is a spine")
+        // a pill the band's cards share is made by its first card's edge, which says where it goes; the others share it, and a left card's own are on its left
+        let runs = plan["runs"]?.arrayValue?.compactMap(\.stringValue) ?? []
+        let edgeRun = try require(runs.first { $0.hasSuffix("-root-edges.draw") }, "the root's edge run: \(runs)")
+        let script = try String(contentsOf: run.out.appendingPathComponent("runs/\(edgeRun)"), encoding: .utf8)
+        for line in [#"edge "A" -> "X" via: reference in "Band" right of "Band" left (gap: "#, #"edge "B" -> "X" via: reference share: "A""#,
+                     #"edge "D" -> "Z" via: reference share: "C""#, #"edge "A" -> "W" via: reference from: left"#] {
+            expect(script.contains(line), "\(line) in \(script)")
+        }
+        // one pill for X, in the band, read as each card's arrow into X
+        let rows = try landedRows(in: board.editor, digestRoot: "Spine map").split(separator: "\n").map { try JSON(text: String($0)) }
+        let forX = rows.filter { $0["kind"] == "reference" && $0["for"] == "X" }
+        expectEqual(forX.count, 1, "one pill for X")
+        expectEqual(forX.first?["in"], "Band", "in the band")
+        expectEqual(try queried(server, board, #":edge-to("X")"#).sorted(), ["A", "B", "C", "D"])
+        expectEqual(publicTitles(in: board.editor, digestRoot: "Spine map"), Set(report["public"]?.arrayValue?.compactMap(\.stringValue) ?? []))
+    },
+
     test("digest all on a flat graph of 60 notes, into a new file: packed, hubs promoted, every shape and pill on its plan") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

@@ -56,6 +56,10 @@ struct ShapeItem {
     /// makes for an edge's end that's on another board (`Drawing.addStandIn`): the shape has no title or statement of its own,
     /// so its messages say what it's for.
     var standsFor: String?
+    /// Whether its placements are the run's own and not written: a stand-in put beside the end of its edge (where
+    /// `StandInRoute.spot` says), which gives way to what the script places and lists with the stand-ins beside the same
+    /// shape. One its edge places (`EdgeStatement.clauses`, `in`) is placed as a shape statement is.
+    var implied = false
     /// The id its statement wrote (`#7C1E…`, as written), when it names the shape by one: what a message calls a shape
     /// that has no title.
     var idWritten: String?
@@ -935,8 +939,17 @@ struct Drawing {
         }
 
         // Where it goes: what each placement names.
+        try resolveTargets(index)
+    }
+
+    /// What each of an item's placements names, placement by placement (`ShapeItem.targets`): a shape the script draws or
+    /// restates, one on the board the run draws on, `board` or `view`. A shape statement's, and the placements an edge writes
+    /// for the stand-in it makes (`addStandIn`).
+    mutating func resolveTargets(_ index: Int) throws(DrawError) {
+        let item = items[index], statement = item.statement
+        let subject = subject(of: item)
         var targets: [[ShapeItem.Found]] = []
-        for clause in shape.clauses {
+        for clause in item.shape.clauses {
             var found: [ShapeItem.Found] = []
             for target in clause.targets {
                 switch target.box {
@@ -976,8 +989,9 @@ struct Drawing {
     /// in F already (where it stays), against F's top-left, 40 in, as `inside "F" top-left` places
     /// it. F must be one the script neither deletes nor is (or holds), and writable: a read-only
     /// container (a locked frame) takes nothing, nor does a subboard `in` names whose board is
-    /// read-only (it, or a subboard above it, locked).
-    private mutating func contain(_ index: Int) throws(DrawError) {
+    /// read-only (it, or a subboard above it, locked). The stand-in an edge puts `in "F"` is held so too
+    /// (`addStandIn`).
+    mutating func contain(_ index: Int) throws(DrawError) {
         let item = items[index]
         guard let name = item.shape.container, let fileNames else { return }
         // What the shape is called in a message, the box a placement names it by, and what it is.

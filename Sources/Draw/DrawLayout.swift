@@ -51,7 +51,7 @@ extension Drawing {
             carried.formUnion(carries)
             free.append(LayoutProblem.Free(line: item.statement.line, name: subject(of: item), size: item.room, gap: item.shape.gap,
                                            overlapAllowed: item.shape.overlapAllowed, current: item.existing.flatMap { context.frame(of: $0.id) }, carries: carries,
-                                           implied: item.standsFor != nil))
+                                           implied: item.implied))
         }
 
         // What their placements name.
@@ -343,16 +343,19 @@ extension Drawing {
         if !holds, let loosened = loosened(item, way) {
             so = ", so \(leader == nil ? "it" : subject(of: item)) no longer sits against \(listed(loosened))"
         }
-        // A stand-in the run made for an edge has no placement of its own to change: the edge says
-        // which side of the end it's beside.
+        // A stand-in the run put beside an end has no placement of its own to change: the edge says
+        // which side of the end it's beside. One its edge places is moved by those placements, and an
+        // edge says no overlap:.
         let sides = "\(EdgeKey.from.rawValue): or \(EdgeKey.to.rawValue):"
         guard let leader else {
-            let advice = item.standsFor == nil ? "place it on another side, or say overlap: allow" : "name another side for it with \(sides)"
+            let advice = item.implied ? "name another side for it with \(sides)"
+                : item.standsFor == nil ? "place it on another side, or say overlap: allow" : "place it on another side"
             return "\(subject(of: item)) was pushed \(how) past \(listed(past)) to keep clear of it\(so) — \(advice)"
         }
         let them = past.count == 1 ? "it" : "them"
-        let advice = leader.standsFor == nil ? "place \(subject(of: leader)) on another side, or give \(subject(of: leader)) overlap: allow"
-            : "name another side for \(subject(of: leader)) with \(sides)"
+        let advice = leader.implied ? "name another side for \(subject(of: leader)) with \(sides)"
+            : leader.standsFor == nil ? "place \(subject(of: leader)) on another side, or give \(subject(of: leader)) overlap: allow"
+            : "place \(subject(of: leader)) on another side"
         return "\(subject(of: item)) moved \(how) along with \(subject(of: leader)), which was pushed past \(listed(past)) to keep clear of \(them)\(so) — \(advice)"
     }
 
@@ -364,9 +367,9 @@ extension Drawing {
             return way.horizontal != 0 ? direction.horizontal == way.horizontal : direction.vertical == way.vertical
         }
         guard let index = found else { return nil }
-        // A stand-in's placements are the run's, against shapes it names by what they are (the end of a
-        // column of stand-ins has no title).
-        guard item.standsFor != nil, item.targets.indices.contains(index) else { return item.shape.clauses[index].targets.map(\.written) }
+        // A stand-in's placements beside its end are the run's, against shapes it names by what they are
+        // (the end of a column of stand-ins has no title).
+        guard item.implied, item.targets.indices.contains(index) else { return item.shape.clauses[index].targets.map(\.written) }
         return item.targets[index].map { target in
             switch target {
             case .item(let other): subject(of: items[other])

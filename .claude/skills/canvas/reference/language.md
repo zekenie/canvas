@@ -537,7 +537,7 @@ Both ends are titles: shapes on the board, or shapes the same script draws; one 
 | `color:` | the arrow's color, its line, heads and label: a named color or a quoted hex, as a shape's `color` is; `null` takes it away |
 | `locked:` | `true` or `false` |
 
-Beside `from:`, `to:`, `via:`, `share:` and `channel:`, an edge's attributes are the arrow's, as `canvas kinds arrow` lists them, written as a shape's are. Its heads aren't among them: the arrow you write (`->`, `<->`) says them, and `startArrowhead:` or `endArrowhead:` saying otherwise is `invalid_value`. Text goes after `text:`; a quoted string right after the edge is `syntax`. An arrow's text is mention text, as a note's is ([A text that mentions shapes](#a-text-that-mentions-shapes)): the label shows each `@[Title]` as a live pill. An edge takes no placement (it goes where its ends are) and no style. Chains (`edge "A" -> "B" -> "C"`) are refused: write each edge on a line of its own.
+Beside `from:`, `to:`, `via:`, `share:` and `channel:`, an edge's attributes are the arrow's, as `canvas kinds arrow` lists them, written as a shape's are. Its heads aren't among them: the arrow you write (`->`, `<->`) says them, and `startArrowhead:` or `endArrowhead:` saying otherwise is `invalid_value`. Text goes after `text:`; a quoted string right after the edge is `syntax`. An arrow's text is mention text, as a note's is ([A text that mentions shapes](#a-text-that-mentions-shapes)): the label shows each `@[Title]` as a live pill. An edge goes where its ends are and takes no style; one that goes through a reference may say where the reference goes, in a shape's placements and `in` ([Through a reference](#through-a-reference)). Chains (`edge "A" -> "B" -> "C"`) are refused: write each edge on a line of its own.
 
 ### Sides
 
@@ -724,6 +724,18 @@ edge "Draft" -> "Cutoff" share: "Retry"
 edge "Draft" -> "Review" share: true
 ```
 
+**Placing the reference.** An edge that goes through a reference may say where the reference goes, in the words a shape takes: placements, and `in` a frame. They place the reference the edge makes, as a shape statement's place a shape, instead of beside the end: at [an exact offset](#an-exact-offset) from a frame it is `in`, say, for a layout worked out elsewhere, where several shapes' arrows meet at one reference between them. The reference is then placed as a shape you wrote: kept to its placements and within what it's in, pushed past what it lands on (said, with `pushedPast`, as for any shape), and never in a list with the references beside a shape. `in` alone puts it against the frame's top-left, 40 in, as it puts a shape. What the placements name is on the board the run draws on, as a shape's is. They place only a reference the edge makes: an edge that reuses one (`share:`, an `is:` beside its pair's) or is drawn already, as in a run again, leaves it where it is; `share: "A"` never makes one, so a placement beside it is `invalid_value`, and so is one on an edge drawn straight. Billing's arrow puts its reference for Runbook in the top-right of Sprint, and Search, in Sprint too, shares it:
+
+```draw
+edge "Billing" -> "Runbook" via: reference in "Sprint" right of "Sprint" left (gap: 660) below "Sprint" top (gap: 40)
+edge "Search" -> "Runbook" via: reference share: "Billing"
+```
+
+```draw-error
+// reason: invalid_value
+edge "Draft" -> "Review" in "Sprint"
+```
+
 **Deleting.** `delete edge "A" -> "B"` takes such an arrow, and `delete "A"` takes all of A's; either takes a reference like this one (standing for one shape) that it leaves with no arrow at all too, since a reference has no title for a script to delete it by ([Deleting](#deleting)). A reference several arrows share stays until the last of them goes. The reference and the arrow are one run and one step of undo, and a dry run says the same as the real one.
 
 ## Styles
@@ -823,7 +835,7 @@ reference above "Owner" query: "sticky-note[public"
 ## How a run is applied
 
 1. **Read.** Every line is read. Lines that can't be read are reported together, up to 20.
-2. **Resolve.** Kinds, titles, attributes (JSON member by member), styles, placements' targets, each edge's ends and attribute keys, and each delete's shape and connections are checked against the board as it is. An edge that goes through a reference ([Through a reference](#through-a-reference)) adds the reference to the run as a shape of its own here. Mistakes that don't depend on each other are reported together here too.
+2. **Resolve.** Kinds, titles, attributes (JSON member by member), styles, placements' targets, each edge's ends and attribute keys, and each delete's shape and connections are checked against the board as it is. An edge that goes through a reference ([Through a reference](#through-a-reference)) adds the reference to the run as a shape of its own here, with the placements the edge writes for it, or beside its end. Mistakes that don't depend on each other are reported together here too.
 3. **Place.** Positions are worked out against the board as it is, the references an edge goes through placed as any new shape is. Only the first placing error is reported, since one mistake there makes others.
 4. **Apply**, in one change or not at all. Deletes come first (a reference that a delete leaves with no arrow among them), then new and restated shapes (each after any shape the script draws or restates that it's placed `inside` or `on`, a reference an edge goes through among them), then edges. Each edge's channel and sides are checked as it's drawn, one at a time: the first that's wrong (`no_channel`, `cannot_connect`, a channel or side that's `invalid_value`, `ambiguous_edge`, `read_only`) is the error, and nothing is drawn. The result and its warnings are read from the changed board.
 
@@ -890,7 +902,7 @@ As text, for a person at a terminal, each row leads with its line and what it di
 
 ## Measuring a script
 
-`canvas measure <script>|-` takes a script as `draw` does and says how big its shapes would be, without drawing anything. It is for a tool that lays shapes out before it draws them, and has nothing to do with writing a script by hand. It changes nothing and opens no undo step. Every shape is new, whatever the board holds. With a board (the one in front, or `--board`), an `is:` finds a type of that board's file as `draw` does; with none open, only one the script draws. A name it can't find (an `is:`, a mention) is a warning, and the shape is measured without it, or with the text as written. Where shapes go is ignored: placements, `in` and `delete` do nothing, and a placement against a shape that isn't there isn't an error. Its edges are read, so the notes of a type are measured with the rows the script's own ends give them (a type, a relationship type, its ends and the notes in one script measure as a run of it draws them, with a board too: the ends the board has count; but a relationship type the script restates is a new shape there, with none of the ends the board has, so restate its ends with it or leave it out), and an edge whose end it can't find is a warning, left out. An edge that says `via:` is only a reference's size. A script `draw` can't read is refused with `draw`'s own messages. The answer is one JSON object:
+`canvas measure <script>|-` takes a script as `draw` does and says how big its shapes would be, without drawing anything. It is for a tool that lays shapes out before it draws them, and has nothing to do with writing a script by hand. It changes nothing and opens no undo step. Every shape is new, whatever the board holds. With a board (the one in front, or `--board`), an `is:` finds a type of that board's file as `draw` does; with none open, only one the script draws. A name it can't find (an `is:`, a mention) is a warning, and the shape is measured without it, or with the text as written. Where shapes go is ignored: placements, `in` (a shape's, or an edge's for its reference) and `delete` do nothing, and a placement against a shape that isn't there isn't an error. Its edges are read, so the notes of a type are measured with the rows the script's own ends give them (a type, a relationship type, its ends and the notes in one script measure as a run of it draws them, with a board too: the ends the board has count; but a relationship type the script restates is a new shape there, with none of the ends the board has, so restate its ends with it or leave it out), and an edge whose end it can't find is a warning, left out. An edge that says `via:` is only a reference's size. A script `draw` can't read is refused with `draw`'s own messages. The answer is one JSON object:
 
 ```json
 {"shapes": [{"line": 1, "title": "Checkout v2", "kind": "sticky-note", "size": [300, 200], "above": 27}],
@@ -1098,7 +1110,6 @@ These are left out on purpose. What they protect is that the app never chooses a
 
 - **Reading positions back.** `canvas query` ([query.md](query.md)) lists a file's shapes, their titles and attributes, what's inside what and what's connected to what, but not where a shape is: only a script's result says where what it drew landed.
 - **Drawing on two boards in one run**, a subboard and what goes in it among them: draw the subboard, then its contents with `in` in a run of their own. The same for a frame and what goes in it, though they're on one board. An edge to a public shape on another board is the one thing that reaches across, and it draws only the reference it goes into ([Through a reference](#through-a-reference)).
-- **A placement for the reference an edge goes through.** It goes beside the end that stays, and `from:` or `to:` pick the side. An edge takes no placement, so nothing says more, and a reference that's in the way is pushed past it.
 - **Moving a shape to another board.** `in` a subboard places a new shape; a shape restated stays on its board. (`in` a frame moves a restated shape into it.)
 - **Frames that grow** to fit what's drawn in them, and **groups**. Zones are plain shapes, and their contents are placed once; a frame holds what's in it.
 - **Routing.** A line may cross shapes it has nothing to do with. There's no `between` or `below "X"` for edges yet.

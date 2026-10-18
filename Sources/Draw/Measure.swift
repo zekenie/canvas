@@ -98,13 +98,16 @@ public func measure(script text: String, program: String, in registry: Registry,
             // a new shape of its kind with no title.
             if shape.name?.id != nil { shape.name = nil }
             statements.append(Statement(line: statement.line, text: statement.text, body: .shape(shape)))
-        case .edge(let edge):
+        case .edge(var edge):
             // Through a reference, an edge is only the reference's size (a pill is sized, never drawn here: it may stand for a
-            // note that isn't public). Any other is laid out with the shapes (an end gives its type's notes a row), as draw does.
+            // note that isn't public), wherever it says the reference goes. Any other is laid out with the shapes (an end gives its
+            // type's notes a row), as draw does.
+            edge.clauses = []
+            edge.container = nil
             if edge.via != nil {
                 through.append((statement, edge))
             } else if registry.drawEdging != nil {
-                statements.append(statement)
+                statements.append(Statement(line: statement.line, text: statement.text, body: .edge(edge)))
             }
         case .delete:
             break
