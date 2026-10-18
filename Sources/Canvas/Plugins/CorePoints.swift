@@ -52,6 +52,12 @@ enum CorePoints {
         static var owner: PluginID { .core }
     }
 
+    /// What a kind keeps in step as its shapes are written (`ShapeRegistrar.keepsInStep`).
+    enum KeepsInStep: ExtensionPoint {
+        typealias Contribution = StepRule
+        static var owner: PluginID { .core }
+    }
+
     enum OutlineSources: ExtensionPoint {
         typealias Contribution = @MainActor (CanvasEditor) -> Outlines
         static var owner: PluginID { .core }

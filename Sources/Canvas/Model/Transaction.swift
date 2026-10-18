@@ -277,7 +277,7 @@ public struct Transaction {
                 precondition(registry.definition(for: shape.kind)?.erasedAccepts(shape) == true,
                              "no installed plugin defines \(shape.kind) shapes with these props")
                 guard shape.box?.isFinite ?? true else { continue }
-                var record = registry.propertyTable.normalized(shape)
+                var record = keptInStep(registry.propertyTable.normalized(shape), before: nil)
                 // In a container on its own board below it, as the board it came from had it.
                 if let container = record.container, record.box == nil || !(below[container].map(registry.isContainer) ?? false) {
                     record.container = nil
@@ -322,7 +322,7 @@ public struct Transaction {
             if let owner = board.owner { refused.insert(owner) }
             return false
         }
-        var record = registry.propertyTable.normalized(record)
+        var record = keptInStep(registry.propertyTable.normalized(record), before: nil)
         record.stackingKey = keys.key(between: document.shapes.last?.stackingKey, and: nil)
         // A container it comes with (a paste's copy, `copy(as:container:)`) it's in if that's a
         // container on the board by now that takes it; else it's on the board directly.
@@ -367,8 +367,8 @@ public struct Transaction {
         precondition(record.id == id, "a shape's id can't change")
         record.stackingKey = old.stackingKey
         record.containerBits = old.containerBits
-        // Values only for what its kind opts into.
-        if record.added != old.added { record = registry.propertyTable.normalized(record) }
+        // Values only for what its kind opts into, and what its kind keeps in step with them.
+        if record.added != old.added { record = keptInStep(registry.propertyTable.normalized(record), before: old) }
         guard record != old, record.box?.isFinite ?? true, !refuses(old, becoming: record) else { return }
         document.replace(at: index, with: record)
         noteChanged(id)
@@ -376,6 +376,21 @@ public struct Transaction {
 
     public mutating func update<P: ShapeProps>(_ id: ShapeID, as _: P.Type, _ body: (inout ShapeRecord<P>) -> Void) {
         update(id) { $0.modify(as: P.self, body) }
+    }
+
+    /// `record` with what its kind keeps in step (`keepsInStep`) as it's written: `before` is the shape
+    /// as it was, nil for one going in. Its values as its kind has them after, and its id, place in the
+    /// stack and container as they were.
+    private func keptInStep(_ record: AnyShapeRecord, before: AnyShapeRecord?) -> AnyShapeRecord {
+        guard !record.isOpaque else { return record }
+        let rules = registry.stepRules(for: record.kind)
+        guard !rules.isEmpty else { return record }
+        var kept = record
+        for rule in rules { rule(before, &kept) }
+        precondition(kept.id == record.id, "a shape's id can't change")
+        kept.stackingKey = record.stackingKey
+        kept.containerBits = record.containerBits
+        return kept.added == record.added ? kept : registry.propertyTable.normalized(kept)
     }
 
     /// Whether this transaction keeps `old` as it is, and notes that it did: the shape was in the
@@ -1058,6 +1073,7 @@ public struct Transaction {
         new.added.overlay(old.added)
         if new.box != nil { new.containerBits = old.containerBits }
         new = registry.propertyTable.normalized(new)
+        if new.added != old.added || new.kind != old.kind { new = keptInStep(new, before: old) }
         guard new.box?.isFinite ?? true else { return false }
         precondition(!registry.ownsShowableBoard(old) || registry.boardOwningKinds.contains(new.kind) || contents(of: BoardID(owner: id)).shapes.isEmpty,
                      "a shape that owns a board with shapes can only be turned into a kind that owns boards: move its shapes out first")

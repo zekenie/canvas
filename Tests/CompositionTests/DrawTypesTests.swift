@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasUI
+import Colors
 import Foundation
 import Publishing
 import TestKit
@@ -55,6 +56,39 @@ import Types
         expect(refused.error.contains("isn't a type or a shape"), refused.error)
     },
 
+    test("a type drawn with a color has it in its JSON; drawn again it is unchanged; a schema: that says none keeps the color given since, one that says one gives it") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let schema = #"{"type": "object", "properties": {"name": {"type": "string"}}}"#
+        let script = #"sticky-note "Person" schema: "\#(scripted(schema))" color: blue"#
+        let made = try canvas(server, ["draw", script])
+        expectEqual(made.status, 0, made.error)
+        let type = try require(board.editor.document.shapes.first).id
+        @MainActor func held() -> (color: ShapeColor?, said: TypeColorDirective.Reading?) {
+            let record = board.editor.document[type]
+            return (record?.ownColor, record?[TypeSchemaProperty.self].flatMap { TypeColorDirective.reading(of: $0.text) })
+        }
+        expectEqual(held().color, .blue)
+        expectEqual(held().said, .color(.blue), "its JSON says it")
+        let revision = board.editor.revision
+        let again = try canvas(server, ["draw", script])
+        expectEqual(again.status, 0, again.error)
+        expectEqual(board.editor.revision, revision, "drawn again, unchanged")
+        board.editor.setColor(.teal, of: [type])
+        let restated = try canvas(server, ["draw", #"sticky-note "Person" schema: "\#(scripted(schema))""#])
+        expectEqual(restated.status, 0, restated.error)
+        expectEqual(held().color, .teal, "a schema that says no color keeps the one given since")
+        expectEqual(held().said, .color(.teal))
+        let red = try require(TypeColorDirective.text(schema, saying: .red))
+        let said = try canvas(server, ["draw", #"sticky-note "Person" schema: "\#(scripted(red))""#])
+        expectEqual(said.status, 0, said.error)
+        expectEqual(held().color, .red, "one that says one gives it")
+    },
     test("a type drawn with public: true is public, and a type; the queries find it as either") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

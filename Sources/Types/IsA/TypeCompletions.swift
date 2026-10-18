@@ -1,4 +1,5 @@
 import Canvas
+import Colors
 import Foundation
 
 // A type's JSON completes as VS Code completes a JSON Schema: the generic engine (`JSONCompleter`)
@@ -7,7 +8,8 @@ import Foundation
 // schema can't say of where in the text it is: which names a `required` list can hold (the same
 // object's `properties`), where a `$ref` can point (the root's definitions, and the other types of
 // the file), that `$schema` and `$vocabulary` belong at the top (the spec's rule of where, which no
-// meta-schema checks), and that a type's root takes no `title` (its name is its shape's title).
+// meta-schema checks), that a type's root takes no `title` (its name is its shape's title), and the
+// directives in the root's `properties`: `$title` and the field it names, `$color` and the colors.
 // Whoever completes a schema of its own may offer more values at a place (`extra`). Offsets are UTF-16, as
 // the code editor's text view counts them.
 
@@ -23,8 +25,10 @@ public enum TypeCompletions {
     /// Nil where nothing can (`JSONCaret.at`), nothing is offered, or the text is too long to color
     /// (`SchemaCodeColors.maxLength`), as it would be to read at every keystroke. `types` lists the
     /// other types a `$ref` can point to (`type(_:named:detail:)`), asked only where a `$ref`'s value
-    /// goes. `extra` adds values where a value goes (`JSONCompletionPlace`), after the rest.
+    /// goes, and `colors` the colors a `$color` can be (`color(_:)`), asked only in one. `extra` adds
+    /// values where a value goes (`JSONCompletionPlace`), after the rest.
     @MainActor public static func completions(in text: String, at utf16Caret: Int, types: @MainActor () -> [JSONCompletionOffer] = { [] },
+                                   colors: @MainActor () -> [JSONCompletionOffer] = { BuiltInColors.all.map(color) },
                                    extra: @escaping @Sendable (JSONCompletionPlace) -> [JSONCompletionOffer] = { _ in [] }) -> JSONCompletions? {
         let count = text.utf8.count
         guard count <= SchemaCodeColors.maxLength, utf16Caret >= 0 else { return nil }
@@ -32,9 +36,11 @@ public enum TypeCompletions {
         let isASCII = text.utf16.count == count
         guard let offset = isASCII ? utf16Caret : TextOffsets.utf8(ofUTF16: utf16Caret, in: Array(text.utf8)),
               let caret = JSONCaret.at(offset, in: text) else { return nil }
-        var others: [JSONCompletionOffer] = []
+        var others: [JSONCompletionOffer] = [], named: [JSONCompletionOffer] = []
         if case .value(of: "$ref") = caret.position { others = types() }
-        guard var completions = $asking.withValue(Asking(otherTypes: others, extra: extra), operation: { engine.completions(at: caret, in: text) })
+        if caret.path == colorDirective { named = colors() }
+        guard var completions = $asking.withValue(Asking(otherTypes: others, colors: named, extra: extra),
+                                                  operation: { engine.completions(at: caret, in: text) })
         else { return nil }
         completions.items.removeAll { !belongs($0, at: caret) }
         guard !completions.items.isEmpty else { return nil }
@@ -64,13 +70,20 @@ public enum TypeCompletions {
     /// as a task-local's value itself, which a release build's task-local push crashed on.
     final class Asking: Sendable {
         let otherTypes: [JSONCompletionOffer]
+        let colors: [JSONCompletionOffer]
         let extra: @Sendable (JSONCompletionPlace) -> [JSONCompletionOffer]
-        init(otherTypes: [JSONCompletionOffer], extra: @escaping @Sendable (JSONCompletionPlace) -> [JSONCompletionOffer]) {
+        init(otherTypes: [JSONCompletionOffer], colors: [JSONCompletionOffer], extra: @escaping @Sendable (JSONCompletionPlace) -> [JSONCompletionOffer]) {
             self.otherTypes = otherTypes
+            self.colors = colors
             self.extra = extra
         }
     }
     @TaskLocal static var asking: Asking?
+
+    /// A color, as a `$color` holds it: its name, with its value beside it.
+    public static func color(_ color: NamedColor) -> JSONCompletionOffer {
+        JSONCompletionOffer(string: color.name, detail: ShapeColor.value(color.value).text)
+    }
 
     /// Another type, as a `$ref` points to it: its URI (`SchemaReferences.uri`), offered by its name.
     public static func type(_ type: ShapeID, named name: String, detail: String) -> JSONCompletionOffer {
@@ -89,23 +102,29 @@ public enum TypeCompletions {
             own = targets(in: caret.root) + (asking?.otherTypes ?? [])
         case .value(of: TitleSource.from) where caret.path == titleDirective:
             own = titling(caret)
+        case .value(of: TypeColorDirective.keyword) where caret.path == colorDirective:
+            own = asking?.colors ?? []
         default:
             own = []
         }
         return own + (asking?.extra(place) ?? [])
     }
 
-    /// Where the root's `$title` directive is written, and its `properties`.
+    /// Where the root's `$title` and `$color` directives are written, and its `properties`.
     private static let titleDirective: [JSONPathComponent] = [.member("properties"), .member("$" + TitleSource.directive)]
+    private static let colorDirective: [JSONPathComponent] = [.member("properties"), .member(TypeColorDirective.key)]
     private static let rootProperties: [JSONPathComponent] = [.member("properties")]
 
     /// The keys code adds to the meta-schema's: in the root's `properties`, `$title` (written with its one
-    /// member and the field to pick); in `$title`, `x-canvas-from`. Asked only where a key goes.
+    /// member and the field to pick) and `$color` (written with its one member and the color to pick); in
+    /// `$title`, `x-canvas-from`. Asked only where a key goes.
     static func keys(at caret: JSONCaret) -> [JSONCompletionKeyOffer] {
         if caret.path == rootProperties {
-            let value = "{\"\(TitleSource.from)\": \"\"}"
+            let value = "{\"\(TitleSource.from)\": \"\"}", color = "{\"\(TypeColorDirective.keyword)\": \"\"}"
             return [JSONCompletionKeyOffer(key: "$" + TitleSource.directive, detail: "Titles a note from a field", value: value,
-                                           selection: (value.utf8.count - 2)..<(value.utf8.count - 2), reopens: true)]
+                                           selection: (value.utf8.count - 2)..<(value.utf8.count - 2), reopens: true),
+                    JSONCompletionKeyOffer(key: TypeColorDirective.key, detail: "The type's color", value: color,
+                                           selection: (color.utf8.count - 2)..<(color.utf8.count - 2), reopens: true)]
         }
         if caret.path == titleDirective {
             return [JSONCompletionKeyOffer(key: TitleSource.from, detail: "The field", value: "\"\"", selection: 1..<1, reopens: true)]
@@ -141,6 +160,7 @@ public enum TypeCompletions {
         guard !caret.path.isEmpty else { return item.label != "title" }
         // A directive's one member: the meta-schema would offer every keyword of a property's schema there.
         if caret.path == titleDirective { return item.label == TitleSource.from }
+        if caret.path == colorDirective { return item.label == TypeColorDirective.keyword }
         switch item.label {
         case "$vocabulary": return false
         case "$schema": return caret.siblings.contains { $0.key == "$id" }

@@ -298,8 +298,8 @@ public final class TypeIndex {
     /// revision moved. `heard` gets the shape in what changed: `types` when it came, went or its schema or
     /// name did, `marks` when it came or went as a relationship type (a flip of the mark alone moves its
     /// revision and nothing else), `membership` when it came or went as a type, `renamed` when its name, its
-    /// color, or whether it's a type, is what changed. A color alone is kept with no revision moved, and is heard
-    /// in `renamed` alone.
+    /// color, or whether it's a type, is what changed. A color alone (with its schema's `$color`, which says it
+    /// too) is kept with no revision moved, and is heard in `renamed` alone.
     private func read(_ record: AnyShapeRecord, registry: Registry, heard: inout Heard) {
         #if DEBUG
         recordsRead += 1
@@ -311,18 +311,23 @@ public final class TypeIndex {
         let name = registry.title(of: record), color = record.ownColor
         let mark = record[RelationshipProperty.self] == true
         let kept = entries[record.id]
-        let same = kept?.schema == schema.text && kept?.name == name
+        // A type given another color has it written in its schema too (its `$color`): that alone is a color
+        // change, which moves no revision (`TypeColorDirective`).
+        let sameSchema = kept.map { TypeColorDirective.sameButColor($0.schema, schema.text) } ?? false
+        let same = sameSchema && kept?.name == name
         if var kept, same, kept.isRelationship == mark {
-            guard kept.color != color else { return }
+            guard kept.color != color || kept.schema != schema.text else { return }
+            let recolored = kept.color != color
             kept.color = color
+            kept.schema = schema.text
             entries[record.id] = kept
-            heard.renamed.insert(record.id)
+            if recolored { heard.renamed.insert(record.id) }
             return
         }
         if kept == nil { heard.membership.insert(record.id) }
         if kept == nil || kept?.name != name || kept?.color != color { heard.renamed.insert(record.id) }
         if let name { lastNames[record.id] = name }
-        if kept == nil || kept?.schema != schema.text { chainRevision &+= 1 }
+        if !sameSchema { chainRevision &+= 1 }
         if (kept?.isRelationship ?? false) != mark { heard.marks.insert(record.id) }
         if !same { heard.types.insert(record.id) }
         revisions += 1

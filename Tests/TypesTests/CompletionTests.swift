@@ -1,5 +1,7 @@
 import Canvas
+import Colors
 import Foundation
+import Palette
 import TestKit
 import Types
 
@@ -353,14 +355,38 @@ private let shapeKeys = ["name", "kind", "size", "radius", "side", "visible", "o
     test("a type: the root's properties offer `$title`, written with its one member and asking for the field; once, and not in a group") {
         let marked = #"{"type": "object", "properties": {"name": {"type": "string"}, |}}"#
         let c = try require(complete(marked))
-        expectEqual(labels(c), ["$title"])
+        expectEqual(labels(c), ["$title", "$color"])
         expectEqual(try item("$title", in: c).detail, "Titles a note from a field")
         expect(try item("$title", in: c).reopens)
         expectEqual(try picking("$title", at: marked), #"{"type": "object", "properties": {"name": {"type": "string"}, "$title": {"x-canvas-from": "|"}}}"#)
         expectEqual(try picking("$title", at: #"{"properties": {"$ti|": 1}}"#), #"{"properties": {"$title"|: 1}}"#, "the colon is there")
-        expectEqual(complete(#"{"properties": {"$title": {}, |}}"#), nil, "once")
+        expectEqual(labels(complete(#"{"properties": {"$title": {}, |}}"#)), ["$color"], "once")
         expectEqual(complete(#"{"properties": {"g": {"properties": {|}}}}"#), nil, "not in a group's properties")
-        expectEqual(labels(complete(#"{"properties": {"$ti|"}}"#)), ["$title"], "typed as far as it goes")
+        expect(labels(complete(#"{"properties": {"$ti|"}}"#)).contains("$title"), "typed as far as it goes")
+    },
+    test("a type: the root's properties offer `$color`, written with its `const` and asking for the color; once, and not in a group") {
+        let marked = #"{"type": "object", "properties": {"name": {"type": "string"}, |}}"#
+        let c = try require(complete(marked))
+        expectEqual(try item("$color", in: c).detail, "The type's color")
+        expect(try item("$color", in: c).reopens)
+        expectEqual(try picking("$color", at: marked), #"{"type": "object", "properties": {"name": {"type": "string"}, "$color": {"const": "|"}}}"#)
+        expectEqual(labels(complete(#"{"properties": {"$color": {}, |}}"#)), ["$title"], "once")
+        expect(!labels(complete(#"{"properties": {"g": {"properties": {|}}}}"#)).contains("$color"), "not in a group's properties")
+        expect(labels(complete(#"{"properties": {"$co|"}}"#)).contains("$color"), "typed as far as it goes")
+    },
+    test("a type: in `$color`, `const` alone; its value is the colors, each with its value, the file's as a caller gives them") {
+        let marked = #"{"properties": {"$color": {|}}}"#
+        expectEqual(labels(complete(marked)), ["const"], "no other keyword of a property's schema")
+        let names = BuiltInColors.all.map(\.name)
+        expectEqual(labels(complete(#"{"properties": {"$color": {"const": "|"}}}"#)), names, "the built-in colors, in their order")
+        expectEqual(complete(#"{"properties": {"$color": {"const": "|"}}}"#)?.items.first?.detail, "#707070", "gray's value beside it")
+        expect(try picking("blue", at: #"{"properties": {"$color": {"const": "|"}}}"#).contains(#""const": "blue""#))
+        let (text, offset) = unmarked(#"{"properties": {"$color": {"const": "|"}}}"#)
+        let brand = NamedColor(name: "Brand", value: RGB(hex: 0x4465E9))
+        let given = TypeCompletions.completions(in: text, at: offset, colors: { (BuiltInColors.all + [brand]).map(TypeCompletions.color) })
+        expectEqual(labels(given).last, "Brand", "a file's own, after")
+        expectEqual(given?.items.last?.detail, "#4465E9")
+        expect(!labels(complete(#"{"properties": {"g": {"properties": {"$color": {"const": "|"}}}}}"#)).contains("blue"), "not in a group's $color")
     },
     test("a type: in `$title`, `x-canvas-from` alone, written with its value in quotes and asking for the field") {
         let marked = #"{"properties": {"name": {"type": "string"}, "$title": {|}}}"#

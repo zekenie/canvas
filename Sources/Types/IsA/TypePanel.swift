@@ -1,4 +1,5 @@
 import Canvas
+import Colors
 import DetailPanel
 import Foundation
 import LanguageModels
@@ -71,9 +72,11 @@ struct TypeSchemaCode: View {
 
     var body: some View {
         let sync = $schema.service(TypeSync<TypeSchemaProperty>.self), types = $schema.service(TypeIndex.self), id = $schema.shapeID
+        let book = $schema.service(ColorBook.self)
         let status = sync?.status(of: id) ?? .idle
         SchemaCodeEditor(text: $schema.text, for: id, isUpdating: status == .updating(.schema),
                          types: { [weak types] in types?.referenceTargets(from: id) ?? [] },
+                         colors: { [weak book] in (book?.names ?? BuiltInColors.all).map(TypeCompletions.color) },
                          onCompleting: { [weak sync] isCompleting in sync?.completing(id, isCompleting) },
                          onCommit: { [weak sync] in sync?.commit(id) })
         let issues = SchemaReadings.reading(of: schema.text, for: id).issues
@@ -86,36 +89,39 @@ struct TypeSchemaCode: View {
 
 /// A JSON Schema's code editor, as a type's Schema tab has it: colored by `JSONReader.tokens` (the
 /// token where it stops being JSON marked, from the shape's reading), completed by ⌃Space
-/// (`TypeCompletions`, `types` the other types a `$ref` can point to, `extra` what else a place
-/// takes), and dimmed and read-only while the model writes it (`isUpdating`). For any schema kept as
-/// a shape's text.
+/// (`TypeCompletions`, `types` the other types a `$ref` can point to, `colors` the colors a `$color`
+/// can be, `extra` what else a place takes), and dimmed and read-only while the model writes it
+/// (`isUpdating`). For any schema kept as a shape's text.
 public struct SchemaCodeEditor: View {
     @Binding var text: String
     let id: ShapeID
     let isUpdating: Bool
     let types: @MainActor () -> [JSONCompletionOffer]
+    let colors: @MainActor () -> [JSONCompletionOffer]
     let extra: @Sendable (JSONCompletionPlace) -> [JSONCompletionOffer]
     let onCompleting: (@MainActor (Bool) -> Void)?
     let onCommit: (@MainActor () -> Void)?
 
     public init(text: Binding<String>, for id: ShapeID, isUpdating: Bool = false, types: @escaping @MainActor () -> [JSONCompletionOffer] = { [] },
+                colors: @escaping @MainActor () -> [JSONCompletionOffer] = { BuiltInColors.all.map(TypeCompletions.color) },
                 extra: @escaping @Sendable (JSONCompletionPlace) -> [JSONCompletionOffer] = { _ in [] },
                 onCompleting: (@MainActor (Bool) -> Void)? = nil, onCommit: (@MainActor () -> Void)? = nil) {
         _text = text
         self.id = id
         self.isUpdating = isUpdating
         self.types = types
+        self.colors = colors
         self.extra = extra
         self.onCompleting = onCompleting
         self.onCommit = onCommit
     }
 
     public var body: some View {
-        let id = id, types = types, extra = extra
+        let id = id, types = types, colors = colors, extra = extra
         DetailCodeEditor($text,
                          coloring: { text in SchemaCodeColors.spans(in: text, for: id) },
                          completions: { text, caret in
-                             TypeCompletions.completions(in: text, at: caret, types: types, extra: extra).map(DetailCodeCompletions.init)
+                             TypeCompletions.completions(in: text, at: caret, types: types, colors: colors, extra: extra).map(DetailCodeCompletions.init)
                          },
                          onCompleting: onCompleting, onCommit: onCommit)
             .detailUpdating(isUpdating)

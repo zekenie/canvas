@@ -117,6 +117,11 @@ public struct PluginRegistrar {
         contribute(handler, to: CorePoints.WillDelete.self)
     }
 
+    /// `ShapeRegistrar.keepsInStep` for another plugin's kind.
+    public mutating func keepsInStep<P: ShapeProps>(_: P.Type, _ rule: @escaping StepRule) {
+        contribute(rule, to: CorePoints.KeepsInStep.self, for: .kind(P.kind))
+    }
+
     /// Provides a layout input: what `context.layoutInput(key, of:)` reads for a shape nothing set
     /// one for. Asked when the core lays a shape out, of the editor's file and, mid-transaction, of
     /// the file as the transaction leaves it, so a shape that isn't committed yet is laid out as
@@ -208,7 +213,25 @@ public struct ShapeRegistrar<Definition: ShapeDefinition> {
     public mutating func tint(_ color: NSColor) {
         contribute(KindTint(color: color), to: CorePoints.KindTints.self)
     }
+
+    /// Keeps what the kind's shapes hold in step as they're written: two values that say one thing
+    /// (a type's color, held as its color and written in its schema). Every transaction asks `rule`
+    /// of a shape it puts in (`before` nil: an insert, a paste, a draw; a shape moved onto another
+    /// board is not put in, and is asked nothing) and of one whose added values a change changes (`before` the shape as it was), with the
+    /// record as it's being written, before the read-only rules judge it, so the rule's writes are in
+    /// the same commit and the same step, whoever wrote the shape. A change that only moves a shape,
+    /// or changes only its props, asks nothing, and undo and redo put a step back whole. The rule may
+    /// change what the shape holds, never its id, place in the stack or container, and its values are
+    /// taken as its kind has them after (`normalized`). Keep it cheap: it's asked of every write of
+    /// the kind's added values (a title typed, a value set).
+    public mutating func keepsInStep(_ rule: @escaping StepRule) {
+        contribute(rule, to: CorePoints.KeepsInStep.self)
+    }
 }
+
+/// A kind's rule for what its shapes hold, kept in step as they're written (`keepsInStep`): handed
+/// the shape as it was (nil for one going in) and as it's being written, which it may change.
+public typealias StepRule = @MainActor (_ before: AnyShapeRecord?, _ record: inout AnyShapeRecord) -> Void
 
 // Placements, gated by the type system: only box shapes can be placed, and only editable ones can
 // be placed straight into editing.

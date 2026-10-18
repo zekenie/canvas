@@ -43,6 +43,11 @@ final class SchemaReadings {
     /// text, which their parts are cut from.
     var shownRoot: JSONNode? { shown.isObject ? shown.root : nil }
     var shownText: String { showing?.text ?? text }
+    /// `shownText` as the model is sent it: without its `$color` (`TypeColorDirective.stripped`), which
+    /// is no business of the model's, so a type given another color asks it nothing again.
+    var shownModelText: String { showing?.modelText ?? modelText }
+    private lazy var modelText: String = document.root.map(TypeColorDirective.reading) == TypeColorDirective.Reading.none
+        ? text : TypeColorDirective.stripped(text)
 
     /// Shows what `previous`, the shape's reading before this one, showed: its text, if that was a
     /// JSON object, else what it showed.
@@ -144,6 +149,9 @@ final class SchemaReadings {
                 let place = path.isEmpty ? "" : " of \(path)"
                 issues.append(.warning("“\(name)” is required, but isn’t a property\(place).", field: "schema"))
             }
+        }
+        if TypeColorDirective.reading(of: root) == .notAColor, issues.count < maxWarnings {
+            issues.append(.warning("“\(TypeColorDirective.key)” isn’t a color.", field: "schema"))
         }
         for violation in metaValidator.violations(of: SchemaValue(root).json) where issues.count < maxWarnings {
             // A type's name is the rule above's, said once.

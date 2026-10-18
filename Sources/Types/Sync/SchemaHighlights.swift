@@ -137,8 +137,10 @@ public enum ProseHighlights {
     private static var read: [ShapeID: [ObjectIdentifier: Read]] = [:]
     private static var shown: [ShapeID: [ObjectIdentifier: Shown]] = [:]
 
-    /// The shape's highlights, in its words' order: `words` mapped into `json` (whose reading is
-    /// `root`, a JSON object), its map read from `maps` (nil: none) and asked for once `ready` says.
+    /// The shape's highlights, in its words' order: `words` mapped into `json` (the model's text of the
+    /// schema whose reading is `root`, a JSON object, where each part is found: the same but for what
+    /// the model isn't sent, a type's `$color`), its map read from `maps` (nil: none) and asked for
+    /// once `ready` says.
     /// `isType` says which mentions are of types (the rest read as their labels), and `references`
     /// is the request's context when the words name some.
     public static func placed<T: ProseTarget>(_ target: T.Type, of id: ShapeID, words: MentionText, json: String, root: JSONNode,

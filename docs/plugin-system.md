@@ -292,6 +292,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Draw above every shape something that isn't one shape's adornment (a status outline, hints) | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Validation](../Sources/Validation/Validation.swift), [Arrows](../Sources/Arrows/ArrowDefinition.swift)' binding hints |
 | Outline shapes in a color of your own (a highlight), a ring for each group a shape is in, filled in the minimap too | `registrar.outlines { … Outlines(tinted: [TintedOutlines(color:shapes:ring:)]) }`: stroked under every other outline | [Outlines](#outlines), [Neighbors](#neighbors) |
 | Act on shapes about to be deleted (delete what depends on them) | `registrar.willDelete` | [The document](#the-editor-the-document-and-drawing) |
+| Keep two values a shape holds saying one thing, whoever writes either (a type's color and its schema's `$color`) | `x.keepsInStep { before, record in … }`, or `registrar.keepsInStep(Kind.self)` | [Added properties](#added-properties) |
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Give each shape of a kind a board of its own, saved, deleted and copied with it | `BoardOwning` on its definition, nothing to implement; `editor.showBoard(BoardID(owner:))` shows one | [Boards in a file](#boards-in-a-file) |
 | Make a double-click, Return or ⌘↓ on a kind's shape do something other than edit it (show its board) | `x.opens("Open") { shape, editor in ... }` (Selection's `ShapeOpening`) | [Selection](#selection) |
@@ -1781,6 +1782,17 @@ the record: a note is mentioned by its title, else its text's first line, else i
 - **Writes that can't hold are dropped**, as a frame that isn't finite is: a value set on a kind
   that doesn't opt in, nil for a property with a default, and anything set on a value or a shape
   kept aside ([Boards on disk](#boards-on-disk)). Setting the value a shape has commits nothing.
+- **Two values that say one thing are kept in step as they're written**, whoever writes either:
+  `x.keepsInStep { before, record in … }` (`registrar.keepsInStep(Kind.self) { … }` for another
+  plugin's kind; the core's `KeepsInStep` point, a `StepRule`) is asked of every shape a transaction
+  puts in (`before` nil: an insert, a paste, a draw; a move onto another board asks nothing) and of every
+  write that changes a shape's added values (`before` the shape as it was), with the record as it's
+  being written, before the read-only rules judge it: what it writes is in the same commit and step,
+  and a refused write refuses it too. A move or a change of props alone asks nothing, and undo and
+  redo put a step back whole. It may change what the shape holds, never its id, place in the stack or
+  container, and its values are held to the kind after. Types' is the one shipped: a type's color and
+  the `$color` in its schema ([Types](#types-shapes-that-hold-a-schema)). The report says
+  `keeps in step → sticky-note`.
 - **Defaults are filled in where shapes enter an editor**: an insert (placing, pasting, with the
   boards `insert(_:contents:)` brings), `CanvasEditor.init` and `replaceFile` (on every board of the
   file), `replaceDocument`, and reading a board. Filling them adds no commit of its
@@ -11076,8 +11088,21 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   color once for the appearance drawn), and gives its cover's ink the paper to read on
   (`titlePillLook` with `coverSurface`); the plain note stays yellow in both appearances. It is
   yellow again once the schema goes.
-- **A type's color and pill**: a type's color (`TypeColors`) is one of eight by its id, never
-  stored (two types can share one); the table is `TypesStyle.colorTable`. A type's note shows a
+- **A type's color and pill**: a type's color (`TypeColors`) is the color its note holds (Colors'
+  `color`), else one of eight by its id (two types can share one); the table is `TypesStyle.colorTable`.
+- **A type's color in its schema**: `"$color": {"const": "blue"}`, a directive in the root's
+  `properties` beside `$title`, its `const` a literal (a color's name or a hex value), says the same
+  as the note's `color`, and every write keeps the two saying it (`TypeColorDirective.keep`, the
+  `keepsInStep` rule `canBeType()` gives the kind): a color picked for a type (the panel's row, `/color`,
+  Color ▸, draw's `color:`, a file's color renamed or removed) is written into its JSON in the same step,
+  first in the root's `properties` and the rest of the text as typed; one typed in the JSON (or drawn in
+  `schema:`, or in words that are JSON) is its color, and taking it out takes the color away. One that
+  isn't a color changes nothing and warns (`“$color” isn’t a color.`); a name the file lacks is held,
+  and Colors warns of it. A schema written whole (draw's `schema:`, the model's) keeps the `$color` of
+  the one it replaces unless it says one (`TypeColorDirective.carried`), so a script run again changes
+  nothing. The model is never sent it (`stripped`), and a color change alone asks it nothing. It is the
+  type's own: a type built on it keeps its own color, and no note of the type holds anything for it.
+- **A type's pill**: a type's note shows a
   pill, Titles' own (`registrar.titlePillLook(forShapesHolding: TypeSchemaProperty.self)`): its
   title after `curlybraces` (`arrow.right` for a relationship type), solid in the type's color; untitled, a dimmed gray `Untitled`.
 - **A title from a field**: a type's `"$title": {"x-canvas-from": "name"}` titles a note that is one,
@@ -11178,7 +11203,9 @@ its URI (`types`, asked only at a `$ref`'s value: `TypeIndex.referenceTargets(fr
 `$vocabulary` goes only in the root and `$schema` only in the root or a subschema with an `$id`; no
 `title` at the root; the root's `$title` directive (in the root's `properties` a `$title` key written with
 its `x-canvas-from` member, in it that key alone, and as its value the root's fields that can title, each with
-its type); and what a caller adds where a value goes (`extra`). The engine's own seam for a key a schema
+its type); the root's `$color` (a `$color` key written with its `const`, in it that key alone, and as its
+value the colors, each with its value: `colors`, the book's names from the Schema tab, the built-in ones
+otherwise); and what a caller adds where a value goes (`extra`). The engine's own seam for a key a schema
 doesn't list is `JSONCompleter(schema:offers:keys:)`: `keys` answers a `JSONCompletionKeyOffer` (the key, its
 detail, the JSON its value starts as and where the caret lands in it, whether the list opens again there) for
 a caret, appended after the schema's keys, those the object holds left out.
@@ -11444,6 +11471,9 @@ and the prompts it sends (`SyncedSchema`: a type's is `TypeSchemaProperty`, with
 - **The name.** The type's title goes in as the root `"title"` of each schema sent (unless the person
   typed one there), so the prompts, and the evals that read them, are unchanged; the model's root
   `"title"` comes out of what it writes back, and names an untitled shape in the same step.
+- **The color.** A type's `$color` is never sent (the highlights' request leaves it out too), a change
+  to it alone is no change of meaning (the pair in step takes the new text, and nothing waits), and a
+  schema the model writes, or words that are JSON taken as the schema, keep it.
 - **Never** while the schema isn't a JSON object, for a read-only shape (on whichever board it is,
   asked as the sync starts and as an answer lands), or for a shape with no fields and no words; with
   no model at all, a side to write fails saying "No language model". A shape seen for the first time is in step, but words over a schema with no fields,
@@ -11525,7 +11555,8 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
 What the shipped kinds do: a note's paper is its color's `paper` (yellow without one; a type's note
 stays white), a frame's surface and border are `surface` and `solid` (none without one), a
 subboard's card and border likewise (indigo without one), an arrow's line is `solid` and its label
-`ink`, and a type's color is the color its note holds, else one of eight names by its id. A listed
+`ink`, and a type's color is the color its note holds, written in its schema as `$color`, else one of
+eight names by its id. A listed
 shape's symbol (Find, Jump To, a mention's pill, the table of contents, the Connections tab) is in
 its own color where it has one, through the core's `registrar.shapeTints`.
 
@@ -13198,7 +13229,7 @@ keyboard             service KeyboardState · tool tips · key strokes · key re
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property endRule → arrow · ShapeOpening → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · property relationship → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
+sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
 framing              shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title cover surface → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
@@ -13246,7 +13277,7 @@ title-names          draw names
 port-edges           draw edges
 validation-checks    draw checks
 mention-texts        draw labels · draw text text/x-canvas-mentions
-type-names           draw text text/x-canvas-type
+type-names           draw text text/x-canvas-type · draw value schema
 draw-field-values    draw value fieldValues · draw value endRule · draw reports members is, endOf, fits, relates
 color-names          draw text text/x-canvas-color
 group-draw           draw groups

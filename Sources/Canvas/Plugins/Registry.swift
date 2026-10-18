@@ -379,6 +379,11 @@ public struct Registry {
     var willDeleteHandlers: [@MainActor (Set<ShapeID>, inout Transaction) -> Void] {
         contributions(to: CorePoints.WillDelete.self).map(\.value)
     }
+    /// A kind's rules for what its shapes hold (`keepsInStep`), found once a kind: every write of an
+    /// added value asks.
+    func stepRules(for kind: ShapeKind) -> [StepRule] {
+        memo(StepRulesMemo(kind: kind)) { contributions(to: CorePoints.KeepsInStep.self, for: kind) }
+    }
     var outlineSources: [@MainActor (CanvasEditor) -> Outlines] { contributions(to: CorePoints.OutlineSources.self).map(\.value) }
     func command(_ command: CanvasCommand) -> CommandRegistration? {
         contributions(to: CorePoints.Commands.self).first { $0.value.command == command }?.value
@@ -473,6 +478,7 @@ struct RawContribution {
         default:
             switch P.self {
             case is CorePoints.WillDelete.Type: "willDelete"
+            case is CorePoints.KeepsInStep.Type: "keeps in step → \(target)"
             case is CorePoints.ReadOnlyRules.Type: "read-only shapes"
             case is CorePoints.ShapeTints.Type: "shape tints"
             case is CorePoints.OutlineSources.Type: "outlines"
@@ -492,6 +498,7 @@ struct RawContribution {
 }
 
 private struct KindTintMemo: Hashable { let kind: ShapeKind }
+private struct StepRulesMemo: Hashable { let kind: ShapeKind }
 
 /// The values `Registry.memo(_:_:)` keeps: a class, so the registry's copies share them.
 @MainActor

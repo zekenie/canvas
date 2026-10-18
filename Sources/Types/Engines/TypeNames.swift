@@ -9,7 +9,8 @@ import Draw
 /// there is `TypeIndex.canBeNamed`, the one function over a record and the registry that says which
 /// shapes are types (and, later, custom shapes); any other shape named is refused: `"Ann" is a
 /// sticky-note, which isn't a type or a shape`. A quoted title for a list is a one-item list
-/// (Draw's), several are JSON: `is: ["Person", "Employee card"]`.
+/// (Draw's), several are JSON: `is: ["Person", "Employee card"]`. And `schema:` keeps the type's
+/// `$color` when it says none.
 public struct TypeNamesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "type-names" }
@@ -32,5 +33,12 @@ public struct TypeNamesPlugin: ListedPlugin {
             }
             return found.id.description
         }
+        // A schema written whole keeps the type's `$color` unless it says one, as the model's does
+        // (`TypeColorDirective.carried`): a script run again says `unchanged`, and a color given to the
+        // type since stays; `color: null` takes it away.
+        registrar.drawValueWriter(for: TypeSchemaProperty.key, merge: { written, held in
+            guard case .string(let text) = written else { return written }
+            return .string(TypeColorDirective.carried(from: held?.stringValue, into: text))
+        })
     }
 }
