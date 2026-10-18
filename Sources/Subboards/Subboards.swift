@@ -14,18 +14,32 @@ extension PluginID {
 }
 
 /// A board inside the board: a card on the canvas that holds a board of its own, which opening it
-/// shows. Its props are only its frame. What it's called is the title Titles adds to it, and its
-/// board is the core's, kept under its id (`BoardID(owner:)`), so nothing about either is here.
+/// shows. Its props are its frame and its description. What it's called is the title Titles adds
+/// to it, and its board is the core's, kept under its id (`BoardID(owner:)`), so nothing about
+/// either is here.
 public struct Subboard: BoxShapeProps {
     public static let kind: ShapeKind = "subboard"
+    /// Append only. The count is the version boards record.
+    public static let migrations = [
+        // It may say what it's for, with mentions of other shapes: a member that's new, so nothing
+        // a board wrote before it reads as a mention.
+        PropsMigration("description"),
+    ]
     public static let properties = Properties<Subboard>(title: "Subboard") {
         Property("frame", \.frame).required()
+        Property("description", \.description).description("What the subboard is for, with mentions of other shapes.")
     }
     public static let defaultSize = CGSize(width: 240, height: 160)
 
     public var frame: CGRect
+    /// What it's for, edited in its panel and drawn nowhere on the canvas, with mentions of other
+    /// shapes, as a note's text has.
+    public var description: MentionText
 
-    public init(frame: CGRect) { self.frame = frame }
+    public init(frame: CGRect, description: MentionText = "") {
+        self.frame = frame
+        self.description = description
+    }
     public init() { self.init(frame: .zero) }
 }
 
@@ -38,14 +52,15 @@ extension Subboard {
 }
 
 /// Subboards: the Subboard tool (B), which places a card that opens onto a board of its own. It
-/// opts into Boards (opening it: a double-click, Return, ⌘↓, Open in its menu and panel), Titles
-/// (its name, in a pill above the card after the kind's symbol), Mentions (by
-/// its name; following a mention enters it), the table of contents
-/// (a row Titles names), the detail panel (a header that renames it) and ports (a link on a channel
-/// of its own, `SubboardLink`, and on every other: anything with ports connects to a subboard, and
-/// a subboard to anything). Going back up, and the path, are Boards'. It takes Transform's container
-/// channel: a shape that holds shapes (a frame) can be turned into a subboard, a subboard's size at
-/// its top-left corner, holding on its board what the shape held.
+/// opts into Boards (opening it: a double-click, Return, ⌘↓, Open in its menu), Titles (its name,
+/// in a pill above the card after the kind's symbol), Mentions (by its name; following a mention
+/// enters it; its description is mention text, so it mentions shapes as a note's text does), the
+/// table of contents (a row Titles names), the detail panel (a header that renames it, and its
+/// description in a tab of its own) and ports (a link on a channel of its own, `SubboardLink`, and
+/// on every other: anything with ports connects to a subboard, and a subboard to anything). Going
+/// back up, and the path, are Boards'. It takes Transform's container channel: a shape that holds
+/// shapes (a frame) can be turned into a subboard, a subboard's size at its top-left corner,
+/// holding on its board what the shape held.
 public struct SubboardsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .subboards }
@@ -63,7 +78,7 @@ public struct SubboardsPlugin: ListedPlugin {
             sub.colorable(default: .indigo)                // the card's border, symbol and fill, indigo until it has a color
             sub.mentionable(following: .opens)             // by its name, else "Untitled Subboard"; followed, it's entered
             sub.subboardRow()                              // the table of contents, named by Titles
-            sub.subboardHeader()                           // renamed in the panel's header
+            sub.subboardPanel()                            // renamed in the panel's header; its description in a tab
             sub.subboardLinks()                            // and ports: arrows to and from a subboard, on its channel and every other
         }
         registrar.channel(SubboardLink.self)               // which this plugin declares

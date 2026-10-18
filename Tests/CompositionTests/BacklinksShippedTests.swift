@@ -64,7 +64,7 @@ extension InspectorWindow {
         expect(!unmentioned.contains("Show What Mentions"), "\(unmentioned)")
     },
 
-    test("a note a titled note mentions has Connections and Style tabs, as a subboard it mentions has, listing the mentioner under Mentioned By: its line goes to it, and Back returns") {
+    test("a note a titled note mentions has Connections and Style tabs, as a subboard it mentions has after its Description, listing the mentioner under Mentioned By: its line goes to it, and Back returns") {
         let w = try InspectorWindow()
         let groceries = ShapeRecord(StickyNote(frame: CGRect(x: 100, y: 400, width: 200, height: 200), text: "Groceries"))
         var plans = ShapeRecord(Subboard(frame: CGRect(x: 700, y: 100, width: 240, height: 160)))
@@ -80,7 +80,7 @@ extension InspectorWindow {
         }
         let panel = try require(w.editor.detailPanel)
         expectEqual(panel.layout(for: try require(w.editor.document[groceries.id])).tabs.map(\.title), ["Connections", "Style"], "a note's tabs")
-        expectEqual(panel.layout(for: try require(w.editor.document[plans.id])).tabs.map(\.title), ["Connections", "Style"])
+        expectEqual(panel.layout(for: try require(w.editor.document[plans.id])).tabs.map(\.title), ["Description", "Connections", "Style"])
         expectEqual(panel.layout(for: try require(w.editor.document[ship.id])).tabs.map(\.title), ["Connections", "Style"], "it mentions, and nothing mentions it")
 
         w.editor.selection = groceries.id

@@ -117,6 +117,6 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 
 **Product** (the verticals, the kinds)
 - [arrows](.claude/rules/arrows.md): tldraw's arc arrows, their labels and binding rules, and the proof-of-concept parity tests.
-- [subboards](.claude/rules/subboards.md): a card that owns a board.
+- [subboards](.claude/rules/subboards.md): a card that owns a board, and its description (mention text, in its panel's Description tab).
 - [frames](.claude/rules/frames.md): a region that holds shapes, the Frame tool, and Create Frame.
 - Sticky notes have no file of their own: [editing](.claude/rules/editing.md) holds a note's editor against its render, and the files of what notes opt into hold the rest.

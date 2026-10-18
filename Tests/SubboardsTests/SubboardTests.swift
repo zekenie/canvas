@@ -36,22 +36,23 @@ import Titles
         expect(h.editor.document.shapes.isEmpty)
         expect(!h.editor.canUndo, "placing and following the pointer were one step")
     },
-    test("its schema is its frame, the title Titles adds and the color Colors adds, and says its shapes own boards") {
+    test("its schema is its frame and its description, the title Titles adds and the color Colors adds, and says its shapes own boards") {
         let registry = try Registry(plugins: subboardPlugins())
         let schema = try require(registry.schema(for: Subboard.kind)).json
         expectEqual(schema["x-canvas-board"], true)
         expectEqual(schema["title"]?.stringValue, "Subboard")
-        expectEqual(Set(schema["properties"]?.objectValue?.keys.map { $0 } ?? []), ["frame", "title", "color"])
+        expectEqual(Set(schema["properties"]?.objectValue?.keys.map { $0 } ?? []), ["frame", "description", "title", "color"])
         expectEqual(schema["required"], ["frame"])
         expectEqual(schema["properties"]?["title"]?["x-canvas-owner"]?.stringValue, "titles")
         expectEqual(Set(registry.properties(for: Subboard.kind).map(\.rawValue)), ["title", "color"])
     },
-    // What Fixtures/kinds/subboard.v0.json will hold once the app ships subboards (CompositionTests
-    // holds only shipped kinds to their fixtures).
-    test("its props write only its frame") {
+    // What a board writes of one at its version (CompositionTests hold the shipped kinds to their
+    // fixtures, Fixtures/kinds/subboard.v1.json among them).
+    test("its props write its frame and its description, empty until written") {
         let codec = BoardCodec(registry: try Registry(plugins: subboardPlugins()))
         let json = String(decoding: try codec.encodeProps(Subboard(frame: CGRect(origin: .zero, size: Subboard.defaultSize))), as: UTF8.self)
-        expectEqual(json.filter { !$0.isWhitespace }, #"{"frame":[[0,0],[240,160]]}"#)
+        expectEqual(json.filter { !$0.isWhitespace }, #"{"description":"","frame":[[0,0],[240,160]]}"#)
+        expectEqual(codec.version(of: Subboard.kind), 1, "the description is its one migration")
     },
     test("its ports are on all four sides, on its own channel first and then on every channel another plugin declares, whichever is declared first") {
         let wires = Contributor(id: "wires") { $0.channel(Wire.self) }
@@ -113,7 +114,7 @@ import Titles
         expectEqual(h.editor.board, .root)
         expectEqual(h.editor.selectedShapeIDs, [nest.a])
     },
-    test("its panel's header is a TitleHeader with its placeholder and symbol, and it has no tab of its own") {
+    test("its panel's header is a TitleHeader with its placeholder and symbol, over its own tab, Description") {
         let nest = Nest()
         let h = try nestHarness(nest, title: "Kitchen")
         let layout = try require(h.editor.detailPanel?.layout(for: try require(h.editor.document[nest.s])))
@@ -121,7 +122,7 @@ import Titles
         expectEqual(header.title, "Kitchen")
         expectEqual(header.placeholder, "Untitled Subboard")
         expectEqual(header.systemImage, "rectangle.stack")
-        expectEqual(layout.tabs.map(\.title), [])
+        expectEqual(layout.tabs.map(\.title), ["Description"])
     },
     test("a double-click, Return and ⌘↓ enter it; ⌘↑ comes back with it selected") {
         let nest = Nest()

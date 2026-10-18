@@ -369,7 +369,7 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         h.wait(0)
         expectEqual(h.editor.selectedShapeIDs, [note])
     },
-    test("the frames file reads as it was written, every shape in its frame, the locked frame's note read-only, its schema card (a kind that's gone) kept aside, and writes back as it was read") {
+    test("the frames file reads as it was written, every shape in its frame, the locked frame's note read-only, its schema card (a kind that's gone) kept aside, and writes back as it was read, its subboard brought up to date") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         let data = try FrameFile.fixture
@@ -382,12 +382,16 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         expect(loaded.file.record(frames.order)?.isOpaque == true, "Order, as the file wrote it")
         // Written back as read, but for the card's version: a board lists only the kinds the app
         // writes, so a shape kept aside carries its own (`v`), as the codec keeps every shape it
-        // can't use. Read again, it's the same file.
+        // can't use. And the subboard, written before subboards had a description, is brought up
+        // to date: an empty one, at its kind's version now. Read again, it's the same file.
         let written = try codec.encode(loaded.file)
         let card = #""schema" : "{\"title\": \"Order\", \"type\": \"object\", \"properties\": {\"id\": {\"type\": \"string\"}}}"\#n      }"#
+        let subboard = "\"kind\" : \"subboard\",\n      \"props\" : {\n"
         let rewritten = String(decoding: data, as: UTF8.self)
             .replacingOccurrences(of: card, with: card + ",\n      \"v\" : 1")
             .replacingOccurrences(of: "      \"schema-card\" : 1,\n", with: "")
+            .replacingOccurrences(of: subboard, with: subboard + "        \"description\" : \"\",\n")
+            .replacingOccurrences(of: "\"subboard\" : 0", with: "\"subboard\" : 1")
         expectEqual(String(decoding: written, as: UTF8.self), rewritten)
         let again = try codec.decode(written)
         expectEqual(again.file, loaded.file)

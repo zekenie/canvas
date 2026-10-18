@@ -9,6 +9,7 @@ import Foundation
 import Geometry
 import LanguageModels
 import Mentions
+import Neighbors
 import Selection
 import ShippedTesting
 import StickyNotes
@@ -357,8 +358,10 @@ let sampleNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x: 
         let w = try InspectorWindow()
         var shape = ShapeRecord(Subboard(frame: CGRect(x: 100, y: 100, width: 240, height: 160)))
         shape[TitleProperty.self] = "eggs"
-        // A note pointing at it, so its Connections tab has a row, a button.
+        // A note pointing at it, so its Connections tab has a row, a button; the tab chosen, since a
+        // subboard's panel opens on its description.
         let note = ShapeRecord(StickyNote(frame: CGRect(x: 500, y: 100, width: 200, height: 200), text: "Eggs"))
+        try require(w.editor.detailPanel).choose(.of(NeighborsTab.self), for: Subboard.kind)
         func bound(_ id: ShapeID) -> ArrowTerminal {
             .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
         }

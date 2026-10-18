@@ -98,6 +98,31 @@ extension CanvasEditor {
         expectEqual(board.editor.mentionPills(of: plan.id).map(\.isLive), [true, true, true])
     },
 
+    test("a subboard's description mentions a note two boards down by its title, as a note's text does: its mentioner the subboard; drawn again, unchanged") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let f = DeepFile()
+        let board = f.board()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let script = #"subboard "Plans" description: "Where @[Deep note] lives, beside @[Overview]""#
+        let result = try canvas(server, ["draw", script])
+        expectEqual(result.status, 0, result.error)
+        expectEqual(try JSON(text: result.output)["warnings"], [])
+        let plans = try require(board.editor.document[f.plans]?.typed(as: Subboard.self))
+        expectEqual(plans.props.description.stored, "Where @[Deep note](shape:\(f.deep)) lives, beside @[Overview](shape:\(f.overview))")
+        expectEqual(board.editor.mentions?.mentioners(of: f.deep), [f.plans])
+        expectEqual(board.editor.mentions?.quote(of: f.plans, around: f.deep), "Where @Deep note lives, beside @Overview")
+        expectEqual(board.editor.undoHistory.undoName, "Draw")
+        let again = try canvas(server, ["draw", script])
+        expectEqual(try JSON(text: again.output)["changes"]?.arrayValue?.map { $0["did"] }, ["unchanged"])
+        board.editor.undo()
+        expectEqual(board.editor.document[f.plans]?.typed(as: Subboard.self)?.props.description, "")
+        expectEqual(board.editor.mentions?.mentioners(of: f.deep), [])
+    },
+
     test("a note mentions a note the same script draws, further down; a title nobody has is refused with the one like it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

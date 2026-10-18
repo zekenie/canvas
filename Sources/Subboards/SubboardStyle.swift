@@ -1,7 +1,7 @@
 import AppKit
 import Palette
 
-/// The card's look. World units. Its colors follow the appearance it's drawn in, resolved as it's
+/// The card's look. World units, but for the panel's sizes (SubboardPanel.swift), in view points. Its colors follow the appearance it's drawn in, resolved as it's
 /// drawn (each `NSColor` is dynamic, its `cgColor` read in the render), since a subboard is a
 /// place on the canvas, not a sheet of paper as a note is: light on the light canvas, dark on the
 /// dark one.

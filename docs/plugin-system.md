@@ -6393,8 +6393,9 @@ canvas's (StickyNotesTests' `noteEditorTests`), so nothing moves when editing st
 
 Mention text edits in the detail panel as it does on its shape: `MentionTextArea`, a
 [`DetailTextBox`](#text-of-a-plugins-own-detailtextbox) over a `MentionTextView`, in a section of
-the kind's. No shipped kind puts one in its panel yet (a note's text is edited on the note);
-MentionsTests' fixtures hold it, a jot's text and a brief's Blocked By:
+the kind's. A subboard's description is the shipped one, in its own tab, Description
+([Subboards](#subboards)); a note's text is edited on the note. MentionsTests' fixtures hold it,
+a jot's text and a brief's Blocked By:
 
 ```swift
 DetailSection("Text", in: FieldsTab.self) { $jot in
@@ -8530,20 +8531,43 @@ registrar.shape(SubboardDefinition()) { sub in                     // SubboardDe
     sub.contentsRow { _ in                                          // in the card's indigo, as its mentions are
         ContentsLabel("", placeholder: "Untitled Subboard", systemImage: "rectangle.stack", color: Color(nsColor: SubboardStyle.border))
     }
-    sub.details(header: { $sub in TitleHeader($sub, placeholder: "Untitled Subboard", systemImage: "rectangle.stack") }) {}
+    sub.details(header: { $sub in TitleHeader($sub, placeholder: "Untitled Subboard", systemImage: "rectangle.stack") }) {
+        DetailSection(in: DescriptionTab.self) { $sub in            // its own tab: what it's for, with mentions
+            MentionTextArea($sub, \.description, placeholder: "Add a description")
+        }
+        .named("Description")
+    }
     sub.subboardLinks()                                             // Connections: ports on its own channel, then on every other
 }
 registrar.channel(SubboardLink.self)                                // which this plugin declares
 ```
 
-(The row and the header are in files of their own, `SubboardRow.swift` and `SubboardHeader.swift`,
+(The row and the panel are in files of their own, `SubboardRow.swift` and `SubboardPanel.swift`,
 as SwiftUI sugar is, and the channel and the ports in `SubboardLinks.swift`.)
 
-- **Its props are its frame**, 240 × 160 placed: `Properties<Subboard>(title: "Subboard") {
-  Property("frame", \.frame).required() }`. What it's called is the title Titles adds (`title`,
-  marked `x-canvas-owner` in its schema), and its board is the core's, kept under its id, so its
-  props hold neither; its schema is marked `x-canvas-board`. Placing one keeps no board: a board
-  with no shapes isn't kept.
+- **Its props are its frame and its description**, 240 × 160 placed: `Properties<Subboard>(title:
+  "Subboard") { Property("frame", \.frame).required(); Property("description", \.description) }`,
+  the description a `MentionText`, empty until it's written, added by the kind's one migration
+  (`PropsMigration("description")`, which rewrites nothing, so a board from before reads each
+  subboard with an empty one and records the kind at version 1). What it's called is the title
+  Titles adds (`title`, marked `x-canvas-owner` in its schema), and its board is the core's, kept
+  under its id, so its props hold neither; its schema is marked `x-canvas-board`. Placing one keeps
+  no board: a board with no shapes isn't kept.
+- **Its description** says what it's for, and is edited in its panel's own tab, Description
+  (`DescriptionTab`, a kind's own, order 0, so first, before the Connections and Style tabs every
+  shape has, and the tab a subboard's panel opens on): one headerless section,
+  `.named("Description")`, holding `MentionTextArea($sub, \.description)`, the panel's box of
+  mention text, two text areas tall, "Add a description" while it's empty. It is mention text as a
+  note's text is ([Mentions](#mentions)), so the box has pills, the `@` picker and, on an empty
+  line, the subboard's slash commands, each run of typing one undo step, "Change Description", and
+  Return is a new line; a locked subboard's reads, dimmed, and takes nothing. The canvas draws it
+  nowhere (the card shows its board), so Find, which marks a hit where text is drawn, doesn't search
+  it. Everything else is Mentions' and Topology's, with no code here: each mention is a `mention`
+  edge from the subboard (slot `description`), so its Connections tab lists what it mentions, what
+  it mentions lists it under Mentioned By with the description around the mention, a hover lights
+  them, a mention of what can't be mentioned is warned of, a copy that takes a target along renames
+  its mention, queries read it (`:mentions`, `[description*="…"]`), and `canvas draw` writes it
+  (`subboard "Payments" description: "Owned by @[Billing]"`).
 - **B places one** where the canvas is pressed, following the pointer until release, as every box
   tool does: one undo step, "Add Subboard".
 - **The card** (`SubboardDefinition.render`, `SubboardStyle`, world units) is the whole frame, and
@@ -8620,15 +8644,17 @@ as SwiftUI sugar is, and the channel and the ports in `SubboardLinks.swift`.)
   frame held.
 
 It ships after the sticky note (the toolbar's Subboard, B), with Boards after Titles, and its props
-have a fixture (`Fixtures/kinds/subboard.v0.json`) as every shipped kind's do; a whole file of
-boards nested two deep, with notes and a bound arrow on each, is
-`Fixtures/files/nested-arrows-mention.v4.json`, read and written back byte for byte (written once
-notes' and arrows' text could hold mentions, though none says anything that mentions);
-`nested-mentions.v4.json` is the same file from before arrows' text could, and `nested.v4.json` from
-before sticky notes' could, each read with each board's notes and arrows brought up to date; and
-`nested-arrows-mention-across.v4.json` is the same file with a note on the root and one two boards
-down mentioning each other (`nested-mentions-across.v4.json` from before arrows', brought up to date),
-read, shown live opened on either board, and written back byte for byte
+have a fixture for each version (`Fixtures/kinds/subboard.v0.json`, `subboard.v1.json`) as every
+shipped kind's do; a whole file of boards nested two deep, with notes and a bound arrow on each, is
+`Fixtures/files/nested-described.v4.json`, read and written back byte for byte (written once
+subboards had a description, each empty, and once notes' and arrows' text could hold mentions,
+though none says anything that mentions); `nested-arrows-mention.v4.json` is the same file from
+before subboards had a description, `nested-mentions.v4.json` from before arrows' text could hold
+mentions, and `nested.v4.json` from before sticky notes' could, each read with each board's
+subboards, notes and arrows brought up to date; and `nested-described-across.v4.json` is the same
+file with a note on the root and one two boards down mentioning each other
+(`nested-arrows-mention-across.v4.json` and `nested-mentions-across.v4.json` from before, brought up
+to date), read, shown live opened on either board, and written back byte for byte
 ([Mentions across boards](#mentions-across-boards)).
 
 ### The core's part: board previews
@@ -13049,7 +13075,7 @@ selection            service SelectionState · service RefusalShake · tool sele
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property endRule → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · property relationship → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
-subboards            shape subboard · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
+subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
 framing              shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title cover surface → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
@@ -13253,9 +13279,9 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   clicks "…" runs with `TEST_UI_MENUS=1` (it reads the menu as it begins tracking and closes it).
   SubboardsTests hold the real kind to it
   all, with Boards, Titles, the panel and the table of contents installed: the card's pixels (the
-  title or its placeholder, the count, no pill), and its header typed into beside a `CanvasView`
-  in an unshown window. In the app's window, CompositionTests' `NestedWindow` opens a file of
-  subboards (`NestedFile`, `Fixtures/files/nested-arrows-mention.v4.json`) in a `BoardDocument`'s own
+  title or its placeholder, the count, no pill), and its header and its description typed into
+  beside a `CanvasView` in an unshown window. In the app's window, CompositionTests' `NestedWindow` opens a file of
+  subboards (`NestedFile`, `Fixtures/files/nested-described.v4.json`) in a `BoardDocument`'s own
   window, as the app wires it: `crumbs` are the path's buttons over the canvas, `hit(_:)` what a
   click would land on, and `goItems()` the app's menus with Go's items sent to its controller (an
   unshown window isn't the key window); `SubboardFileTests` hold saving, reopening on the board

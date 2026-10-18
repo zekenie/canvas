@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([subboardTests, subboardTintTests, cardTests, previewCardTests, cardSkeletonTests, panelWindowTests, subboardTurnTests, subboardColorTests])
+runTests([subboardTests, subboardTintTests, cardTests, previewCardTests, cardSkeletonTests, panelWindowTests, descriptionTests, subboardTurnTests, subboardColorTests])
