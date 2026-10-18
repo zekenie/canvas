@@ -1,6 +1,7 @@
 // One run's result (a dry run's or a real one's) against the plan: every shape row's box and every pill row's spot, relative to its board's
-// header note, must be the planned one (within a unit), and a shape the plan creates must have been `created`, never found `unchanged`.
-// state = { origins: { <board>: {x, y} } } carries each board's header note from the run that drew it.
+// origin, must be the planned one (within a unit), and a shape the plan creates must have been `created`, never found `unchanged`. A board's
+// origin is where the plan's (0, 0) landed: read off the board's two anchor shapes (the header note, for the first board), one for each axis.
+// state = { origins: { <board>: {x, y} } } carries each board's origin from the run that drew its anchors.
 export function classifyWarning(w) {
   const m = String(w.message || w.reason || '');
   if (/landed outside the view/.test(m)) return 'view';   // the window is the user's: a big board is bigger than it
@@ -17,13 +18,23 @@ export function compareRun(plan, result, state, runName) {
   const changes = result.changes || [];
   const boardOf = {};
   for (const b of plan.boards) for (const s of b.shapes) boardOf[s.title] = b;
-  const origins = Object.assign({}, state.origins || {});
+  // the subboards this run writes a description of: restated, not created (a run is named as the driver names it, `NN-board-describe (dry run)`, or as the plan does)
+  const runKey = (n) => String(n).replace(/ \(dry run\)$/, '').replace(/\.draw$/, '');
+  const describing = new Set();
+  for (const [run, titles] of Object.entries(plan.described || {})) if (runKey(run) === runKey(runName)) for (const t of titles) describing.add(t);
+  const origins = {};
+  for (const [k, v] of Object.entries(state.origins || {})) origins[k] = Object.assign({}, v);
   const newOrigins = {};
   for (const c of changes) {
-    const b = boardOf[c.title];
-    if (b && c.title === b.origin && c.at) { origins[b.board] = { x: c.at[0][0], y: c.at[0][1] }; newOrigins[b.board] = origins[b.board]; }
+    const b = boardOf[c.title], a = b && b.anchors;
+    if (!a || !c.at || describing.has(c.title) || (c.title !== a.x && c.title !== a.y)) continue;
+    const s = b.shapes.find((x) => x.title === c.title);
+    const o = origins[b.board] = Object.assign({}, origins[b.board]);
+    if (c.title === a.x) o.x = c.at[0][0] - s.x;
+    if (c.title === a.y) o.y = c.at[0][1] - s.y;
+    newOrigins[b.board] = o;
   }
-  const out = { run: runName, ok: true, shapeRows: 0, shapesWithin1: 0, worstShape: 0, mismatches: [], pillRows: 0, pillsWithin1: 0, worstPill: 0, pillDeltas: [], pushedPast: 0, warnings: { push: 0, order: 0, other: 0, view: 0, typed: 0, invalid: 0 }, warningMessages: [], typedMessages: [], otherMessages: [] };
+  const out = { run: runName, ok: true, shapeRows: 0, shapesWithin1: 0, worstShape: 0, described: 0, mismatches: [], pillRows: 0, pillsWithin1: 0, worstPill: 0, pillDeltas: [], pushedPast: 0, warnings: { push: 0, order: 0, other: 0, view: 0, typed: 0, invalid: 0 }, warningMessages: [], typedMessages: [], otherMessages: [] };
   const used = new Set();
   for (const c of changes) {
     // what the app says of a shape or an arrow it drew (a row's `problems`: a Needed row still empty, a value that breaks its field, an end that doesn't fit): the data, not the run
@@ -39,6 +50,12 @@ export function compareRun(plan, result, state, runName) {
       out.warnings.typed++;
       out.typedMessages.push(`${name}: ${p.message}`);
     }
+    if (describing.has(c.title)) {
+      // a description is written on a card that is drawn already: it must be changed by it, and it is where it was
+      if (c.did === 'unchanged') { out.ok = false; out.mismatches.push(`"${c.title}" was unchanged: its description was not written`); }
+      else out.described++;
+      continue;
+    }
     if (c.kind !== 'reference' && c.kind !== 'arrow' && boardOf[c.title] && c.did && c.did !== 'created') {
       // a digest never restates a shape: one the plan creates and the board has already is a plan drawn before, or a title taken
       out.ok = false; out.mismatches.push(`"${c.title}" was ${c.did}, not created: it is on the board already, so this plan was drawn before`);
@@ -52,7 +69,7 @@ export function compareRun(plan, result, state, runName) {
       if (plan.into && bn === plan.into) bn = 'root';   // the digest's own board is the subboard it was drawn into
       const b = plan.boards.find((x) => x.board === bn);
       const o = origins[bn];
-      if (!b || !o) continue;
+      if (!b || !o || o.x == null || o.y == null) continue;
       let best = null;
       b.pills.forEach((p, i) => {
         if (used.has(bn + '#' + i)) return;
@@ -73,7 +90,7 @@ export function compareRun(plan, result, state, runName) {
     const b = boardOf[c.title];
     if (!b) continue;
     const o = origins[b.board];
-    if (!o) { out.ok = false; out.mismatches.push(`${c.title}: board ${b.board} has no header yet`); continue; }
+    if (!o || o.x == null || o.y == null) { out.ok = false; out.mismatches.push(`${c.title}: board ${b.board} has no anchors yet`); continue; }
     const s = b.shapes.find((x) => x.title === c.title);
     const d = { x: c.at[0][0] - o.x - s.x, y: c.at[0][1] - o.y - s.y, w: c.at[1][0] - s.w, h: c.at[1][1] - s.h };
     const worst = Math.max(Math.abs(d.x), Math.abs(d.y), Math.abs(d.w), Math.abs(d.h));

@@ -87,14 +87,12 @@ export function buildModel(digest, mess) {
   for (const n of nodes.values()) if (n.kind === 'frame') kids.set('f:' + n.title, []);
   for (const n of nodes.values()) kids.get(n.container).push(n.title);
   for (const v of kids.values()) v.sort(byTitle);
-  // header notes, one a board
-  // (a title no node and no other board's header has: the digest's own gives way when a subboard is called what the digest is)
-  const headers = new Map(), taken = new Set();
-  for (const b of boards.filter((x) => x !== 'root').concat(['root'])) {
-    let t = 'About ' + (b === 'root' ? title : b);
-    while (nodes.has(t) || taken.has(t)) t += ' (digest)';
-    headers.set(b, t); taken.add(t);
-  }
+  // the header note of the first board, the only one: a subboard's `text` is its description, which its board has no note for
+  // (a title no node has: the digest's own gives way when a shape is called what the header would be)
+  const headers = new Map();
+  let header = 'About ' + title;
+  while (nodes.has(header)) header += ' (digest)';
+  headers.set('root', header);
   // edges: the ones between a pair are one edge to the layout (their weights added), and each typed one is an arrow of its own when it is drawn
   const pairs = new Map();
   (digest.edges || []).forEach((e, index) => {

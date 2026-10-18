@@ -381,6 +381,15 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var m = new RegExp('right of "' + anchor + '" left \\(gap: (\\d+)\\) below "' + anchor + '" top \\(gap: (\\d+)\\)').exec(l);
     return m ? [Number(m[1]), Number(m[2])] : null;
   };
+  // where the exact placement a line gives (`right of "A" left (gap: x) below "B" top (gap: y)`, or `left of "A" right (gap: x)` and `above "B" bottom (gap: y)`,
+  // each axis against its own shape) puts a box of w x h, given the boxes of the shapes it names by title: [x, y], or null when the line says none
+  var placedAt = function (l, boxes, w, h) {
+    var m = /(right of|left of) "([^"]+)" (left|right) \(gap: ([\d.]+)\) (below|above) "([^"]+)" (top|bottom) \(gap: ([\d.]+)\)/.exec(l);
+    if (!m) return null;
+    var P = boxes[m[2]], Q = boxes[m[6]], gx = Number(m[4]), gy = Number(m[8]);
+    var px = m[3] === 'left' ? P.x : P.x + P.w, qy = m[7] === 'top' ? Q.y : Q.y + Q.h;
+    return [m[1] === 'right of' ? px + gx : px - gx - w, m[5] === 'below' ? qy + gy : qy - gy - h];
+  };
 
   await test('a frame of cards that point at many of the same shapes, and not at each other, is a spine: its shared pills between its two columns', async function () {
     var r = await planOf(spineFixture());
@@ -469,7 +478,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     checkPlan(idle.plan);
   });
 
-  await test('a spine that is the board itself places its shared pills from the board\'s header note', async function () {
+  await test('a spine that is the board itself places its shared pills against the shapes drawn on the board', async function () {
     // Lib's board holds A, B and C, which point at X and Y on the root
     var nodes = [{ title: 'Lib', kind: 'subboard' }];
     ['A', 'B', 'C'].forEach(function (t) { nodes.push(note(t, 'Lib')); });
@@ -481,7 +490,9 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(lib.pills.filter(function (p) { return p.for === 'X'; }).map(function (p) { return p.users; }), [3], 'one pill for X, its three users');
     var l = edgeLines(r, 'lib').find(function (l) { return l.indexOf('edge "A" -> "X" via: reference ') === 0; });
     assert(l && l.indexOf(' in "') < 0, 'in nothing: ' + l);
-    eq(offsetIn(l, lib.origin), [x.x, x.y], 'its offset from the header note, as the shapes have theirs');
+    var libBoxes = {}; lib.shapes.forEach(function (s) { libBoxes[s.title] = s; });
+    eq(placedAt(l, libBoxes, x.w, x.h), [x.x, x.y], 'its place against the shapes, as the shapes have theirs');
+    assert(lib.origin === undefined && !/About/.test(JSON.stringify(lib.shapes)), 'the board has no header note');
     checkPlan(r.plan);
   });
 
@@ -698,12 +709,12 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(/frame has no ports/.test(re.warnings.join()), JSON.stringify(re));
   });
 
-  await test('the measure script: every note, card and header once, then one edge through a reference to each end that is pointed at', async function () {
+  await test('the measure script: every note, card and the first board\'s header once, then one edge through a reference to each end that is pointed at', async function () {
     var d = fixture('tree'), m = model.buildModel(d);
     var lines = sizes.measureScript(m).split('\n').filter(Boolean);
     var shapes = lines.filter(function (l) { return !/^edge /.test(l); }), edges = lines.filter(function (l) { return /^edge /.test(l); });
     var leaves = d.nodes.filter(function (n) { return n.kind !== 'frame'; }).length;
-    eq(shapes.length, leaves + 2, 'every note and subboard, and a header a board (two boards)');
+    eq(shapes.length, leaves + 1, 'every note and subboard, and the header of the first board: a subboard\'s board has none');
     assert(shapes.every(function (l) { return /^(sticky-note|subboard) "/.test(l); }), 'no frame is measured');
     assert(edges.every(function (l) { return / via: reference$/.test(l); }), 'every edge asks for a reference');
     eq(edges.length, sizes.pillTargets(m).length, 'one a target');
@@ -1084,13 +1095,15 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert((apart.byStart.get('u1-2') || []).some(function (en) { return en.e.to === 'Hub' && !en.shared; }), 'its pill is in its own column');
   });
 
-  await test('a board\'s header is never another\'s: a subboard called what the digest is keeps its own, and the digest\'s gives way', async function () {
-    var d = digest([{ title: 'T', kind: 'subboard' }, note('In T', 'T', 'x'), note('About T (digest)', null, 'taken too')], []);
+  await test('only the first board has a header note, and a shape called what it would be makes it give way; a subboard\'s board has none', async function () {
+    var d = digest([{ title: 'T', kind: 'subboard' }, note('In T', 'T', 'x'), note('About T', null, 'taken')], []);
     var m = model.buildModel(d);
-    eq(m.headers.get('T'), 'About T'); eq(m.headers.get('root'), 'About T (digest) (digest)', 'past the subboard\'s header and the note');
+    eq([m.headers.get('root'), m.headers.has('T'), m.headers.size], ['About T (digest)', false, 1], 'one header, past the note called what it would be; none for the subboard');
     var r = await planOf(d, { promote: false });
     var all = r.plan.boards.reduce(function (a, b) { return a.concat(b.shapes.map(function (x) { return x.title; })); }, []);
     eq(all.length, new Set(all).size, 'no title twice in the plan');
+    eq(r.plan.boards.map(function (b) { return b.origin || null; }), ['About T (digest)', null], 'the header is the first board\'s origin, and only it has one');
+    eq(r.plan.boards.map(function (b) { return b.anchors && b.anchors.x === b.anchors.y; }), [true, true], 'a board with one shape (or the header) is placed from it');
   });
 
   // ---- ranks, headers, and drawing again in place ----
@@ -1142,19 +1155,130 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     checkPlan(wide.plan); checkPlan(tall.plan);
   });
 
-  await test('a board\'s header says the digest\'s text (the first board) or its subboard\'s; without one it says what it is of', async function () {
-    var d = digest([{ title: 'Part', kind: 'subboard', text: 'What the part is.' }, note('In part', 'Part', 'x'), { title: 'Bare', kind: 'subboard' }, note('In bare', 'Bare', 'y')], [], { text: 'The whole, said once.' });
+  await test('the first board\'s header says the digest\'s text; a subboard\'s text is its description, written once what it may mention is drawn', async function () {
+    var d = digest([{ title: 'Part', kind: 'subboard', text: 'What the part is, with @[Root note].' }, note('In part', 'Part', 'x'), note('Root note', null, 'y'), { title: 'Bare', kind: 'subboard' }, note('In bare', 'Bare', 'y')], [], { text: 'The whole, said once.' });
     var m = model.buildModel(d);
-    eq(sizes.headerText(m, 'root'), 'The whole, said once.');
-    eq(sizes.headerText(m, 'Part'), 'What the part is.');
-    eq(sizes.headerText(m, 'Bare'), 'Bare. Drawn by canvas-digest.');
+    eq(sizes.headerText(m), 'The whole, said once.');
+    eq(sizes.headerText(model.buildModel(digest([note('A')], []))), 'T. Drawn by canvas-digest.', 'without one it says what it is of');
     var r = await planOf(d, { promote: false });
     var all = r.runs.map(function (x) { return x.text; }).join('\n');
     assert(all.indexOf('sticky-note "About T"') >= 0 && all.indexOf('text: "The whole, said once."') >= 0, 'the root header');
-    assert(/sticky-note "About Part" in "Part" .*text: "What the part is\."/.test(all), 'the part\'s header');
-    assert(!/subboard "Part"[^\n]*text:/.test(all), 'a subboard\'s card has no text');
+    assert(all.indexOf('About Part') < 0 && all.indexOf('About Bare') < 0, 'no subboard\'s board has a header note');
+    assert(!all.split('\n').some(function (l) { return /^subboard /.test(l) && /size:/.test(l) && /description:/.test(l); }), 'a subboard\'s card is drawn with no description: it is written after');
+    var names = r.runs.map(function (x) { return x.name; });
+    var describe = r.runs.filter(function (x) { return /-describe\.draw$/.test(x.name); });
+    eq(describe.map(function (x) { return x.text; }), ['subboard "Part" description: "What the part is, with @[Root note]."\n'], 'one statement a card with a description, restating nothing else; Bare has none');
+    eq(r.plan.described, (function () { var o = {}; o[describe[0].name] = ['Part']; return o; })(), 'the plan says which run describes which card');
+    var lastShape = Math.max.apply(null, names.map(function (n, i) { return /-(top|in-\d+|notes)\.draw$/.test(n) ? i : -1; }));
+    assert(names.indexOf(describe[0].name) > lastShape, 'after every run that draws a shape: ' + names.join(' '));
     var mm = sizes.measureScript(m);
-    assert(mm.indexOf('"About Part"') >= 0 && mm.indexOf('What the part is.') >= 0, 'the header is measured with its text');
+    assert(mm.indexOf('"About Part"') < 0 && mm.indexOf('What the part is') < 0, 'only the first board\'s header is measured, and a description is not');
+    assert(mm.indexOf('"About T"') >= 0, 'that one is');
+    var none = await planOf(digest([note('A', null, 'x')], []), { promote: false });
+    eq(none.plan.described, undefined, 'a digest with no description has none in its plan');
+  });
+
+  await test('a shape is placed against the drawn shapes it does not span, with no negative gap: right of and below, else left of and above; none to place against is none said', async function () {
+    var emitm = await import('../lib/emit.mjs');
+    var A = { x: 100, y: 0, w: 300, h: 200 }, boxes = { A: A, B: { x: 100, y: 300, w: 400, h: 40 } };
+    var boxMap = new Map(Object.keys(boxes).map(function (t) { return [t, boxes[t]]; }));
+    var at = function (s, refs) { var l = emitm.against('b', s, 'S', refs, boxMap); return [l, placedAt(l, boxes, s.w, s.h)]; };
+    eq(at({ x: 150, y: 20, w: 60, h: 60 }, ['A'])[1], [150, 20], 'right of its left edge, below its top');
+    var left = at({ x: 0, y: 50, w: 100, h: 50 }, ['A']);
+    assert(/^left of "A" right \(gap: 300\) below "A" top \(gap: 50\)$/.test(left[0]) && left[1][0] === 0, 'left of A: its right edge a gap left of A\'s right edge: ' + left[0]);
+    var above = at({ x: 150, y: -60, w: 50, h: 40 }, ['A']);
+    assert(/^right of "A" left \(gap: 50\) above "A" bottom \(gap: 220\)$/.test(above[0]) && above[1][1] === -60, 'above A: ' + above[0]);
+    eq(at({ x: 20, y: -10, w: 30, h: 30 }, ['A'])[1], [20, -10], 'left of and above at once');
+    // a shape that spans the first on an axis is placed against the next it does not span
+    eq(at({ x: 90, y: 10, w: 330, h: 20 }, ['A', 'B'])[1], [90, 10], 'wider than A, and left of it: against B');
+    assert(/"B" right/.test(emitm.against('b', { x: 90, y: 10, w: 330, h: 20 }, 'S', ['A', 'B'], boxMap)), 'by its right edge, since it is left of B and does not span it');
+    var threw = ''; try { emitm.against('b', { x: 0, y: 0, w: 1000, h: 20 }, 'S', ['A'], boxMap); } catch (e) { threw = e.message; }
+    assert(/"S" is wider than every shape drawn before it/.test(threw), 'a shape spanning every one it could be placed against is said: ' + threw);
+    eq(emitm.against('b', A, 'A', [], boxMap), '', 'nothing drawn: no placement');
+  });
+
+  // draws the plan's shape runs as an app would, exactly: a shape with no placement where the app puts a drawing with nothing to hang on, every other where its
+  // placement puts it, and the result is every title's box
+  function simulate(r) {
+    var boxesOf = {};
+    r.runs.filter(function (x) { return /-(top|in-\d+|notes)\.draw$/.test(x.name); }).forEach(function (run) {
+      run.text.split('\n').filter(Boolean).forEach(function (l) {
+        var m = /^(sticky-note|frame|subboard) "([^"]+)".* size: (\d+)x(\d+)/.exec(l);
+        if (!m) return;
+        var w = Number(m[3]), h = Number(m[4]), at = placedAt(l, boxesOf, w, h);
+        assert(!/gap: -/.test(l), 'no negative gap: ' + l);
+        boxesOf[m[2]] = { x: (at || [640, 480])[0], y: (at || [640, 480])[1], w: w, h: h };
+      });
+    });
+    return boxesOf;
+  }
+  // every shape lands where the plan has it, relative to the board's origin, read off the board's two anchors
+  function landsAsPlanned(r, boxesOf) {
+    r.plan.boards.forEach(function (b) {
+      if (!b.shapes.length) return;
+      var by = {}; b.shapes.forEach(function (s) { by[s.title] = s; });
+      var ox = boxesOf[b.anchors.x].x - by[b.anchors.x].x, oy = boxesOf[b.anchors.y].y - by[b.anchors.y].y;
+      b.shapes.forEach(function (s) {
+        var g = boxesOf[s.title];
+        assert(g, b.board + ': ' + s.title + ' was not drawn');
+        assert(Math.abs(g.x - ox - s.x) < 1e-6 && Math.abs(g.y - oy - s.y) < 1e-6 && g.w === s.w && g.h === s.h, b.board + ': ' + s.title + ' planned ' + JSON.stringify([s.x, s.y, s.w, s.h]) + ', placed ' + JSON.stringify([g.x - ox, g.y - oy, g.w, g.h]));
+      });
+    });
+  }
+
+  await test('every board\'s shapes land where the plan has them when placed as their runs say: from the header note, or from two of the board\'s own shapes', async function () {
+    var names = ['acme', 'tree', 'flat60', 'spine', 'typed'];
+    for (var i = 0; i < names.length; i++) {
+      var r = await planOf(fixture(names[i]), { into: i % 2 ? 'Map' : null });
+      landsAsPlanned(r, simulate(r));
+      checkPlan(r.plan);
+    }
+    // a subboard's board of notes with no arrows: packed, so the widest and the tallest are anywhere, and some shapes are left of and above them
+    var nodes = [{ title: 'Part', kind: 'subboard', text: 'Part.' }, { title: 'Other', kind: 'subboard', text: 'Other.' }, { title: 'Frame', kind: 'frame' }];
+    var words = ['Short', 'A rather longer note title here', 'Mid title', 'Tiny', 'The longest title of all, which makes its note the widest of them', 'Another one', 'And one more', 'Last'];
+    words.forEach(function (w) { nodes.push(note(w, 'Part', 'x'), note(w + ' two', 'Other', 'y')); });
+    nodes.push(note('In frame A', 'Frame', 'z'), note('In frame B', 'Frame', 'z'), note('Loose'));
+    var many = await planOf(digest(nodes, []), { promote: false });
+    landsAsPlanned(many, simulate(many));
+    var part = many.plan.boards.find(function (b) { return b.board === 'Part'; });
+    var forms = many.runs.filter(function (x) { return /-part-/.test(x.name); }).map(function (x) { return x.text; }).join('');
+    assert(/left of "/.test(forms) || /above "/.test(forms), 'a board where some shape is left of or above the one it is placed against, so those forms are drawn: ' + part.anchors.x + ' ' + part.anchors.y);
+  });
+
+  await test('what the runs do on the app is compared to the plan from the anchors, and a description is checked as written, not as created', async function () {
+    var rpl = await import('../lib/replay.mjs');
+    var d = digest([{ title: 'Part', kind: 'subboard', text: 'The part, with @[Loose].' }, note('One', 'Part', 'x'), note('A longer second note', 'Part', 'y'), note('Third', 'Part', 'z'), note('Loose', null, 'w')], []);
+    var r = await planOf(d, { promote: false });
+    var boxesOf = {};
+    var results = {}, line = 0;
+    r.runs.forEach(function (run) {
+      var changes = [];
+      run.text.split('\n').filter(Boolean).forEach(function (l) {
+        var m = /^(sticky-note|frame|subboard) "([^"]+)"/.exec(l), sz = /size: (\d+)x(\d+)/.exec(l);
+        line++;
+        if (/-describe\.draw$/.test(run.name)) { var b = boxesOf[m[2]]; changes.push({ line: line, did: 'updated', kind: m[1], title: m[2], at: [[b.x, b.y], [b.w, b.h]] }); return; }
+        var w = Number(sz[1]), h = Number(sz[2]), at = placedAt(l, boxesOf, w, h) || [200, 300];
+        boxesOf[m[2]] = { x: at[0] + 1000, y: at[1] + 500, w: w, h: h };   // the first of a board lands anywhere
+        changes.push({ line: line, did: 'created', kind: m[1], title: m[2], at: [[boxesOf[m[2]].x, boxesOf[m[2]].y], [w, h]] });
+      });
+      results[run.name] = { changes: changes, warnings: [] };
+    });
+    // placements are against where the shapes landed, not the plan: put it right, the board's own offset being the first shape's (1000, 500 more than planned)
+    Object.keys(boxesOf).forEach(function (t) { var b = boxesOf[t]; b.x -= 1000; b.y -= 500; });
+    var ok = rpl.replay(r.plan, results, Object.keys(boxesOf));
+    eq([ok.described, ok.describedPlanned, ok.restated], [1, 1, 0], 'one description, written once, and no shape restated: ' + ok.lines.join(' | '));
+    assert(/descriptions 1\/1/.test(ok.lines[1]), 'the summary says it: ' + ok.lines[1]);
+    // a description that changed nothing was not written
+    var bad = JSON.parse(JSON.stringify(results)), name = r.runs.find(function (x) { return /-describe\.draw$/.test(x.name); }).name;
+    bad[name].changes[0].did = 'unchanged';
+    var fail = rpl.replay(r.plan, bad, null);
+    assert(!fail.ok && /was unchanged: its description was not written/.test(fail.problems.join()), 'said: ' + fail.problems.join(' | '));
+    // the driver names a run as the plan does less `.draw`, and a dry run too: the same run, the same description
+    var cmpm = await import('../lib/compare.mjs');
+    eq([cmpm.compareRun(r.plan, results[name], {}, name.replace(/\.draw$/, '') + ' (dry run)').described, cmpm.compareRun(r.plan, results[name], {}, name.replace(/\.draw$/, '')).described], [1, 1], 'a description is a description under either name');
+    // and a run that never happened is said
+    var gone = JSON.parse(JSON.stringify(results)); delete gone[name];
+    assert(/was planned/.test(rpl.replay(r.plan, gone, null).problems.join()) || /no result was saved/.test(rpl.replay(r.plan, gone, null).problems.join()), 'a description run that did not happen is said');
   });
 
   await test('drawing again in place: what a drawing makes, whether it is in a board\'s file, what is clear of it, and the script that takes it back', async function () {
@@ -1164,7 +1288,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(d.into, null); eq(d.path, '/f.canvasboard'); eq(d.board, '7'); eq(d.header, 'About T'); eq(d.shapes, 12);
     eq(rd.drawnRecord(r.plan, '/f.canvasboard', 7).shapes, null, 'while it is drawn, the count is not known');
     eq(d.root.slice().sort(), ['About T', 'Part', 'Root note'], 'the root board\'s shapes');
-    assert(d.titles.indexOf('In part') >= 0 && d.titles.indexOf('About Part') >= 0, 'every title');
+    assert(d.titles.indexOf('In part') >= 0 && d.titles.indexOf('About Part') < 0, 'every title: a subboard\'s board has no header note');
     assert(rd.sameFile(d, '/f.canvasboard', 9) && !rd.sameFile(d, '/g.canvasboard', 7) && !rd.sameFile(d, '', 7), 'by path, when there is one');
     var unsaved = rd.drawnRecord(r.plan, '', 4);
     assert(rd.sameFile(unsaved, '', 4, ['About T', 'Part']) && !rd.sameFile(unsaved, '', 5, ['About T']), 'by id, for a board with no file');
@@ -1203,7 +1327,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     // would put the script on two boards, which draw refuses
     var movedIn = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('Root note', 'Part', 'y')], []), { promote: false });
     var mv = rd.drawnRecord(movedIn.plan, '/f.canvasboard', 7, 2, d, 12);
-    eq(rd.replaceScript(mv, ['About T', 'Part', 'Root note', 'About Part'], ['About T', 'Part']), 'delete "About T"\ndelete "Part"', 'only what is on the root board');
+    eq(rd.replaceScript(mv, ['About T', 'Part', 'Root note', 'In part'], ['About T', 'Part']), 'delete "About T"\ndelete "Part"', 'only what is on the root board');
     eq(rd.replaceScript(mv, ['About T', 'Part', 'Root note', 'In part'], ['About T', 'Part', 'Root note']), 'delete "About T"\ndelete "Part"\ndelete "Root note"', 'and the last drawing, undone back, by all three');
     // the last one drawn as the board, this one into a subboard of it (or the other way round): the subboard where the file holds it, the root's shapes where they are on the root
     var intoB = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('In part', 'Part', 'x'), note('Root note', null, 'y')], []), { promote: false, into: 'B' });

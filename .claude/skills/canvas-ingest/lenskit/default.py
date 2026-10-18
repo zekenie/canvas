@@ -8,8 +8,8 @@ The root holds the modules as cards in bands, a band a layer, the top layer firs
 the skill finds the view shows larger); a module's imports are edges between the cards. A module's board holds its files as
 notes in frames (`groups`, else by folder), and a module in `folder_boards` holds a card for each of those folders, whose
 board holds its files. Which file uses which is an edge, as heavy as the names it uses; one to a file on another board is a
-pill there, and that file is public. A board's header note says what the board is: its card's `text`, and the digest's own for
-the root. Every node says where it came from in `source`: a file note its path, a module's card (and a folder's) its folder.
+pill there, and that file is public. What a board is, is said in its card's `text` (the card's description in the app), and in
+the digest's own, on the first board's header note, for the root. Every node says where it came from in `source`: a file note its path, a module's card (and a folder's) its folder.
 
 The overrides are the arguments, each the value a repository's spec.py once gave its name:
 
@@ -33,7 +33,7 @@ from .text import as_text, declares, file_text, mention
 ARGUMENTS = ('title', 'bands', 'purposes', 'folder_purposes', 'folder_boards', 'groups', 'by_module', 'layer_names')
 
 MAX_WEIGHT = 4          # an edge's weight is the names its file uses of the other, up to this
-HEADED = LONGEST - len('About ')    # a card's: its board's header note is titled "About <card>"
+HEADED = LONGEST - len('About ')    # a card's longest title: the room its board's header note's title once needed, kept so the lens still makes what its fixtures hold
 NOTES_MOST = 4000       # file notes a digest may have: one title query lists at most 10,000 titles, and a monorepo has many thousands of files
 LISTED_MOST = 300       # files a collapsed folder's note lists
 
@@ -145,7 +145,7 @@ class _Build:
     # ---- what a note says ------------------------------------------------------------------------------------
 
     def about_text(self, board, title=lambda b: b):
-        """A board's header note: what it is, and the boards it uses, each mentioned by the title its card was given
+        """What a board is, for its card's description (the root's, a header note): what it is, and the boards it uses, each mentioned by the title its card was given
         (`title`: a board to its card's title, which is the board's name unless another shape had it)."""
         spec, FILES, MODS, PROD = self.spec, self.FILES, self.MODS, self.PROD
         m, folder = self.BOARDS[board]

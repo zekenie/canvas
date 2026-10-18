@@ -7,7 +7,7 @@
   {
    "title": "Backend",
    "kind": "subboard",
-   "text": "The services and the stores behind them."
+   "text": "The services and the stores behind them: @[Gateway] calls in, and @[Login] starts a session."
   },
   {
    "title": "Services",

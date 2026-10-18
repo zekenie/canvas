@@ -17,7 +17,7 @@
 
 These are overrides, never a list the code must match: a module `bands` leaves out goes in the band of its layer
 tag, else a band of its own at the bottom; one it names that the code lacks is passed over. Each is said through
-`warn`, and nothing stops the run. `layer_phrase`, the first line of a module's About note, follows from the bands."""
+`warn`, and nothing stops the run. `layer_phrase`, the first line of a module's description, follows from the bands."""
 import collections
 
 BIG = 50

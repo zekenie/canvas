@@ -217,6 +217,11 @@ private func scratchFolder(_ name: String) throws -> URL {
     return try require(JSON(text: answer.output)["rows"]?.arrayValue).compactMap { $0["title"]?.stringValue }
 }
 
+/// The subboards whose text (their description) mentions `title`.
+private func mentioners(of title: String, in digest: JSON) -> [String] {
+    (digest["nodes"]?.arrayValue ?? []).filter { $0["kind"]?.stringValue == "subboard" && ($0["text"]?.stringValue ?? "").contains("@[\(title)]") }.compactMap { $0["title"]?.stringValue }
+}
+
 /// The titles a digest says point at `hub`, from the digest itself.
 private func sources(of hub: String, in digest: JSON) -> [String] {
     (digest["edges"]?.arrayValue ?? []).filter { $0["to"]?.stringValue == hub }.compactMap { $0["from"]?.stringValue }
@@ -350,8 +355,17 @@ private func isByDesign(_ message: String) -> Bool {
         let hubs = Set(crossing.map(\.1)).intersection(Set(report["public"]?.arrayValue?.compactMap(\.stringValue) ?? []))
         expect(!hubs.isEmpty, "the tree has public ends")
         for hub in hubs.sorted() {
-            expectEqual(try queried(server, board, #":edge-to("\#(hub)")"#).sorted(), Set(sources(of: hub, in: digest)).sorted(), "what points at \(hub)")
+            // a card's description that mentions a shape is an edge to it too (a `mention` edge)
+            expectEqual(try queried(server, board, #":edge-to("\#(hub)")"#).sorted(), Set(sources(of: hub, in: digest) + mentioners(of: hub, in: digest)).sorted(), "what points at \(hub)")
         }
+        // a subboard's text is its description, written once every shape is drawn (it names one on the root board and one on its own board, which a
+        // later run draws), and its board has no About note: only the first board does
+        let titles = try queried(server, board, "[title]")
+        expectEqual(titles.filter { $0.hasPrefix("About ") }.count, 1, "the first board's header is the only one: \(titles.filter { $0.hasPrefix("About ") })")
+        expect(!titles.contains("About Backend"), "none on Backend's board")
+        expectEqual(try queried(server, board, #"[description*="Gateway"]"#), ["Backend"], "the card holds the text as its description")
+        expectEqual(try queried(server, board, #"[description*="Login"]"#), ["Backend"], "and a mention of a shape on its own board, drawn after the card")
+        expect(run.process.output.contains("descriptions 1/1"), "verify counts it: \(run.process.output)")
     },
 
     test("digest all on a spine: a band of cards that point at the same notes, the pills they share between its columns, each placed by its edge, every shape and pill on its plan") {

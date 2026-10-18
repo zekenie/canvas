@@ -9,10 +9,13 @@ const arrowKey = (from, to, is) => [from, to, [...(is || [])].sort().join('\u000
 export function replay(plan, results, titles) {
   const problems = [], others = [];
   const state = {};
-  const out = { runs: 0, shapes: 0, shapesWithin1: 0, pills: 0, pillsWithin1: 0, worstShape: 0, worstPill: 0, arrows: 0, arrowsPlanned: 0, warnings: 0, outOfView: 0, restated: 0, typed: 0 };
+  const out = { runs: 0, shapes: 0, shapesWithin1: 0, pills: 0, pillsWithin1: 0, worstShape: 0, worstPill: 0, arrows: 0, arrowsPlanned: 0, described: 0, warnings: 0, outOfView: 0, restated: 0, typed: 0 };
   const planned = new Set();
   const typedPlanned = new Map();   // the arrows of a relationship type the plan draws (an arrow of a pair is told from the others by its `is`)
   const typedLanded = new Set();
+  const described = plan.described || {};   // run -> the subboards it writes a description of
+  out.describedPlanned = 0;
+  for (const names of Object.values(described)) out.describedPlanned += names.length;
   for (const b of plan.boards) {
     out.shapes += b.shapes.length; out.pills += b.pills.length; out.arrowsPlanned += b.edges.length;
     for (const s of b.shapes) planned.add(s.title);
@@ -24,7 +27,7 @@ export function replay(plan, results, titles) {
     out.runs++;
     const cmp = compareRun(plan, result, state, name);
     Object.assign(state.origins = state.origins || {}, cmp.newOrigins);
-    out.shapesWithin1 += cmp.shapesWithin1; out.pillsWithin1 += cmp.pillsWithin1;
+    out.shapesWithin1 += cmp.shapesWithin1; out.pillsWithin1 += cmp.pillsWithin1; out.described += cmp.described;
     out.worstShape = Math.max(out.worstShape, cmp.worstShape); out.worstPill = Math.max(out.worstPill, cmp.worstPill);
     out.warnings += cmp.warnings.push + cmp.warnings.order + cmp.warnings.other; out.outOfView += cmp.warnings.view; out.typed += cmp.warnings.typed;
     for (const m of cmp.mismatches) problems.push(`${name}: ${m}`);
@@ -32,11 +35,12 @@ export function replay(plan, results, titles) {
     for (const m of cmp.otherMessages) others.push(`${name}: ${m}`);
     for (const c of result.changes || []) {
       if (c.kind === 'arrow' && ARROW_DID.has(c.did)) { out.arrows++; if (c.is && c.is.length) typedLanded.add(arrowKey(c.from, c.to, c.is)); }
-      if (planned.has(c.title) && c.did !== 'created') out.restated++;   // compare names each one (a digest never restates a shape)
+      if (planned.has(c.title) && c.did !== 'created' && !(described[name] || []).includes(c.title)) out.restated++;   // compare names each one (a digest never restates a shape, but to describe a subboard)
     }
   }
   if (out.shapesWithin1 !== out.shapes && !problems.length) problems.push(`${out.shapes - out.shapesWithin1} of ${out.shapes} shapes are not within 1 unit of the plan`);
   if (out.arrows !== out.arrowsPlanned) problems.push(`${out.arrows} arrows landed, ${out.arrowsPlanned} were planned`);
+  if (out.described !== out.describedPlanned) problems.push(`${out.described} descriptions landed, ${out.describedPlanned} were planned`);
   const typedMissing = [...typedPlanned].filter(([k]) => !typedLanded.has(k)).map(([, name]) => name);
   if (typedMissing.length) problems.push(`not drawn as the relationship the plan says: ${typedMissing.slice(0, 10).join('; ')}${typedMissing.length > 10 ? ` and ${typedMissing.length - 10} more` : ''}`);
   if (titles) {
@@ -46,7 +50,7 @@ export function replay(plan, results, titles) {
   }
   const ok = problems.length === 0;
   const lines = [ok ? 'verify ok' : 'verify FAILED'];
-  lines.push(`runs ${out.runs}/${plan.runs.length}; shapes ${out.shapesWithin1}/${out.shapes} within 1 unit of the plan (worst ${r1(out.worstShape)}); pills ${out.pillsWithin1}/${out.pills} within 1 unit (worst ${r1(out.worstPill)}); arrows ${out.arrows}/${out.arrowsPlanned}; warnings ${out.warnings}` + (out.outOfView ? `; ${out.outOfView} warning(s) that shapes landed outside the window's view (the camera is the user's)` : '') + (out.typed ? `; ${out.typed} warning(s) a typed drawing gives by design (a Needed row empty when its note is drawn, a relationship that doesn't fit its ends...; not failures: canvas query ":incomplete, :invalid" says what is still wrong)` : ''));
+  lines.push(`runs ${out.runs}/${plan.runs.length}; shapes ${out.shapesWithin1}/${out.shapes} within 1 unit of the plan (worst ${r1(out.worstShape)}); pills ${out.pillsWithin1}/${out.pills} within 1 unit (worst ${r1(out.worstPill)}); arrows ${out.arrows}/${out.arrowsPlanned}` + (out.describedPlanned ? `; descriptions ${out.described}/${out.describedPlanned}` : '') + `; warnings ${out.warnings}` + (out.outOfView ? `; ${out.outOfView} warning(s) that shapes landed outside the window's view (the camera is the user's)` : '') + (out.typed ? `; ${out.typed} warning(s) a typed drawing gives by design (a Needed row empty when its note is drawn, a relationship that doesn't fit its ends...; not failures: canvas query ":incomplete, :invalid" says what is still wrong)` : ''));
   for (const p of problems.slice(0, 20)) lines.push('  ' + p);
   if (problems.length > 20) lines.push(`  and ${problems.length - 20} more`);
   // the drawing's other warnings fail nothing, and are said, never only counted (a title near one the board has, say)

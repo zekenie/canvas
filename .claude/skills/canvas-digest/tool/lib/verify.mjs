@@ -8,8 +8,11 @@ export function verify(plan, rows) {
   let widthSum = 0;
   for (const b of plan.boards) {
     const here = rows.filter((r) => r.board === b.board);
-    const origin = here.find((r) => r.title === b.origin);
-    if (!origin) { summary.missing.push(`${b.board}: the header "${b.origin}"`); continue; }
+    if (!b.anchors) continue;   // a board with no shape
+    // the board's origin, where the plan's (0, 0) landed: read off its anchors, one for each axis
+    const ax = here.find((r) => r.title === b.anchors.x), ay = here.find((r) => r.title === b.anchors.y);
+    if (!ax || !ay) { summary.missing.push(`${b.board}: the anchor "${ax ? b.anchors.y : b.anchors.x}"`); continue; }
+    const origin = { x: ax.x - b.shapes.find((s) => s.title === b.anchors.x).x, y: ay.y - b.shapes.find((s) => s.title === b.anchors.y).y };
     const rel = (r) => ({ x: r.x - origin.x, y: r.y - origin.y, w: r.w, h: r.h });
     for (const s of b.shapes) {
       const r = here.find((x) => x.title === s.title);

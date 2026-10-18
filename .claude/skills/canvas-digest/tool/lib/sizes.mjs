@@ -4,7 +4,7 @@ import { LEAF_KINDS } from './model.mjs';
 import { noteTyping, arrowTyping } from './types.mjs';
 
 export const NOTE_W = 300, HEADER_W = 360;
-export const HEADER_GAP = 80;   // between a board's header note and what is laid out under it
+export const HEADER_GAP = 80;   // between the first board's header note and what is laid out under it
 export const TITLE_PILL = (title) => 27 + 10.2 * title.length;   // the title pill above a frame (an estimate; a frame is never narrower than its title)
 
 /** What the tool assumes until a measurement says otherwise: draw's own numbers, which `constants` of the measure JSON replace. */
@@ -16,18 +16,14 @@ export function noteWidth(title) {
   return Math.max(NOTE_W, Math.ceil(need / 20) * 20);
 }
 
-/** What a board's header note says: the digest's `text` for the first board, its subboard's for another; else what it is of. */
-export function headerText(model, board) {
-  const own = board === 'root' ? model.text : model.node(board).text;
-  if (own) return own;
-  const where = board === 'root' ? model.title : board;
-  return `${where}. Drawn by canvas-digest.`;
+/** What the first board's header note says: the digest's `text`, else what it is of. A subboard's `text` is its description, drawn in no note. */
+export function headerText(model) {
+  return model.text || `${model.title}. Drawn by canvas-digest.`;
 }
 
 /** The shapes to measure: [{title, kind, w, text}] in a fixed order; a note that is a type or is one also says what it is (`typing`, as draw is told it). */
 export function toMeasure(model) {
-  const items = [];
-  for (const b of model.boards) items.push({ title: model.headers.get(b), kind: 'sticky-note', w: HEADER_W, text: headerText(model, b) });
+  const items = [{ title: model.headers.get('root'), kind: 'sticky-note', w: HEADER_W, text: headerText(model) }];
   for (const n of model.nodes.values()) {
     if (!LEAF_KINDS.has(n.kind)) continue;
     items.push(n.kind === 'subboard' ? { title: n.title, kind: 'subboard' } : { title: n.title, kind: 'sticky-note', w: noteWidth(n.title), text: n.text, typing: noteTyping(n), node: n });
