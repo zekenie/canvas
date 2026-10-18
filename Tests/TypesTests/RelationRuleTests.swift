@@ -166,17 +166,20 @@ private let both = EndRule(needed: true, onlyOne: true)
         expectEqual(s.kept(s.signIn), ["layer has 2 notes, and should have at most 1"])
         expectEqual(s.said(empty), ["layer is needed"])
     },
-    test("a row with no name typed is called by the type at its other end, and a rename of that type changes the words") {
+    test("a row with no name typed is called by its relationship type, and a rename of that type changes the words") {
         let s = try Scene()
         s.editor.transact { $0.update(s.fromEnd, as: Bond.self) { $0.props.text = MentionText(plain: "") } }
         s.setRule(both)
-        expectEqual(s.said(s.signIn), ["layer is needed"])
-        s.editor.transact { $0.update(s.layer) { $0[TitleProperty.self] = "Stage" } }
+        expectEqual(s.said(s.signIn), ["in is needed"])
+        let noteBefore = s.editor.shape(inFile: s.signIn)
+        s.editor.transact { $0.update(s.rel) { $0[TitleProperty.self] = "Stage" } }
+        expectEqual(s.editor.shape(inFile: s.signIn), noteBefore, "no commit to the note")
+        expectEqual(s.editor.rowBook?.rows(of: s.signIn).map(\.name).last, "stage", "the row follows")
         expectEqual(s.said(s.signIn), ["stage is needed"])
         s.relate(s.signIn, s.foundation)
         s.relate(s.signIn, s.ground)
         expectEqual(s.kept(s.signIn), ["stage has 2 notes, and should have at most 1"])
-        s.editor.transact { $0.update(s.layer) { $0[TitleProperty.self] = "Tier" } }
+        s.editor.transact { $0.update(s.rel) { $0[TitleProperty.self] = "Tier" } }
         expectEqual(s.kept(s.signIn), ["tier has 2 notes, and should have at most 1"], "Validation's issue follows the rename")
         s.editor.undo()
         expectEqual(s.kept(s.signIn), ["stage has 2 notes, and should have at most 1"])

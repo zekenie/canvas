@@ -48,10 +48,13 @@ extension Budget {
 }
 
 extension Budget {
-    /// 10,000 relationship types that hold nothing, drawn small (`TypeRows.isCompact`): the first frame, over the same notes
-    /// as plain types, which are full size. Each is asked once for its rows' extent and once for whether it is drawn small,
-    /// and its size kept. `laidOutFirstFrame`'s figure (the thread's CPU, release); 10.6 to 12.4 ms measured, 28 before.
-    static let compactLayout = Budget.laidOutFirstFrame
+    /// 10,000 relationship types, each drawn as a pill (`TypeRows.pill`): the first frame, over the same notes
+    /// as plain types, which are full size. Each is asked once for its rows' extent and once for its pill (its title and its
+    /// fields' count, and its text measured once for each distinct name), and its size kept (the thread's CPU, release). 82 ms measured over
+    /// at 10,000 distinct names (5.5 at 1,000), 12 ms when it was a fixed small paper that measured nothing: the text is measured (Core Text, about
+    /// 8 us a name) and kept by what it says, so a board of relationship types named alike measures once. No board has ten thousand; the budget is
+    /// moved to 100 ms and it is the measuring that is paid for.
+    static let pillLayout = 100.0
 }
 
 extension Budget {
@@ -290,7 +293,7 @@ extension BenchDrag: Session {
         }
     },
 
-    test("10,000 relationship types that hold nothing are laid out small in the first frame for little more than the same notes as plain types") {
+    test("10,000 relationship types are laid out as pills in the first frame for little more than the same notes as plain types") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let registry = try Registry(plugins: shippedPlugins(pasteboard))
@@ -318,14 +321,14 @@ extension BenchDrag: Session {
                     let first = threadCPUTime { draw(editor, into: context, size: viewport) }.milliseconds
                     if marked { small.append(first) } else { full.append(first) }
                     if run == 0, let id = document.shapes.first?.id {
-                        expectEqual(editor.shapeContext.frame(of: id)?.size, marked ? CGSize(width: 160, height: 34) : CGSize(width: 200, height: 200))
+                        expectEqual(editor.shapeContext.frame(of: id)?.size, marked ? TypePills.pill(title: "Type 0", fields: 0).size : CGSize(width: 200, height: 200))
                     }
                 }
             }
             let added = small.sorted()[2] - full.sorted()[2]
-            report(String(format: "%6d relationship types drawn small: the first frame %6.1f ms, %6.1f more than the same notes as plain types (budget %.0f)",
-                          size, small.sorted()[2], added, Budget.compactLayout))
-            if holdsToBudgets, size >= 10_000 { expect(added < Budget.compactLayout, "laying out \(size) relationship types small added \(added) ms to the first frame") }
+            report(String(format: "%6d relationship types drawn as pills: the first frame %6.1f ms, %6.1f more than the same notes as plain types (budget %.0f)",
+                          size, small.sorted()[2], added, Budget.pillLayout))
+            if holdsToBudgets, size >= 10_000 { expect(added < Budget.pillLayout, "laying out \(size) relationship types as pills added \(added) ms to the first frame") }
         }
     },
 

@@ -1,3 +1,4 @@
+import Adornments
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
@@ -54,7 +55,16 @@ extension BondDefinition: ShapeDefinition {
         guard let from = center(shape.props.from), let to = center(shape.props.to) else {
             return ShapeGeometry(outline: [], bounds: .zero, isClosed: false)
         }
-        return ShapeGeometry(outline: [from, to], isClosed: false)
+        // As an arrow's is: where its pill goes (the lead of its label) is where Adornments' layout input says it is as wide, at the
+        // middle of the line, the first face of them, and the label is that and its padding.
+        guard let face = context.layoutInput(AdornmentLead.faces, of: shape)?.sizes.first else {
+            return ShapeGeometry(outline: [from, to], isClosed: false)
+        }
+        let middle = CGPoint(x: (from.x + to.x) / 2, y: (from.y + to.y) / 2)
+        let label = CGRect(x: (middle.x - (face.width + 8) / 2).rounded(), y: (middle.y - (face.height + 8) / 2).rounded(),
+                           width: face.width + 8, height: face.height + 8)
+        let lead = CGRect(x: label.minX + 4, y: label.minY + 4, width: face.width, height: face.height)
+        return ShapeGeometry(outline: [from, to], bounds: CGRect(x: min(from.x, to.x), y: min(from.y, to.y), width: abs(from.x - to.x), height: abs(from.y - to.y)).union(label), isClosed: false, label: label, labelLead: lead)
     }
 }
 

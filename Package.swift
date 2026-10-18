@@ -310,7 +310,7 @@ let package = Package(
 
         // PRODUCT: the verticals, shapes that hold something of their own.
         // Arrows: tldraw's arc arrows, a kind like any other, and the connector that makes them what ports draw.
-        .target(name: "Arrows", dependencies: ["Canvas", "Colors", "Connections", "Geometry", "Mentions", "Neighbors", "Palette", "Publishing", "Selection", "TableOfContents", "TextEditing", "Topology", "Types"]), // layer: product
+        .target(name: "Arrows", dependencies: ["Adornments", "Canvas", "Colors", "Connections", "Geometry", "Mentions", "Neighbors", "Palette", "Publishing", "Selection", "TableOfContents", "TextEditing", "Topology", "Types"]), // layer: product
         .target(name: "StickyNotes", dependencies: ["Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: product
         .target(name: "Subboards", dependencies: ["Boards", "Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "TableOfContents", "Titles", "Transform"]), // layer: product
         .target(name: "Frames", dependencies: ["Canvas", "Colors", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "Titles", "Transform"]), // layer: product

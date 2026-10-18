@@ -130,19 +130,17 @@ extension CanvasEditor {
         w.editor.makePlainTypes([w.person, w.note])
         expectEqual(w.editor.revision, revision, "unmarked already: no step")
     },
-    test("a relationship type's pill carries an arrow where a type's has braces, and a plain note's is as it was") {
+    test("a relationship type shows no title pill above it (it is a pill itself), a plain type's has braces, and a plain note's is as it was") {
         let w = try World()
-        expectEqual(w.editor.pill(w.employment)?.systemImage, "arrow.right")
-        expectEqual(w.editor.pill(w.employment)?.text, "Employment")
-        expectEqual(w.editor.pill(w.employment)?.tint, w.editor.types?.look(of: w.employment).solid)
+        expectEqual(w.editor.pill(w.employment), nil, "its name is on the pill it is drawn as")
         expectEqual(w.editor.pill(w.person)?.systemImage, "curlybraces")
         w.editor.makePlainTypes([w.employment])
         expectEqual(w.editor.pill(w.employment)?.systemImage, "curlybraces", "unmarked")
+        expectEqual(w.editor.pill(w.employment)?.text, "Employment")
         w.editor.undo()
-        expectEqual(w.editor.pill(w.employment)?.systemImage, "arrow.right")
+        expectEqual(w.editor.pill(w.employment), nil)
         let untitled = w.editor.addRelationshipType(nil, at: CGPoint(x: 1000, y: 40))
-        expectEqual(w.editor.pill(untitled)?.systemImage, "arrow.right")
-        expectEqual(w.editor.pill(untitled)?.isPlaceholder, true)
+        expectEqual(w.editor.pill(untitled), nil, "untitled too")
         w.editor.removeType(w.employment)
         expect(w.editor.pill(w.employment)?.systemImage == nil, "Remove Type: a plain note's pill")
     },

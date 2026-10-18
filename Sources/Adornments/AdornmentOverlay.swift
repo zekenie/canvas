@@ -63,6 +63,13 @@ enum AdornmentStyle {
     /// A chip's number (`AdornmentLabel.counted(_:)`): `countGap` after its text, in the text's ink this strong.
     static let countGap: CGFloat = 4
     static let countStrength: CGFloat = 0.6
+    /// A label's note (`AdornmentLabel.noted(_:)`) is set after its text as a number is, after this mark.
+    static let noteMark = "·"
+    /// The widest a pill at a label's lead is, whatever its name: past it the name ends in an ellipsis, its note kept.
+    static let leadMaxWidth: CGFloat = 240
+    /// A dot (`AdornmentLabel.Mark.dot`) is this across, and a ghost this wide, as tall as a row.
+    static let dotSize: CGFloat = 10
+    static let ghostWidth: CGFloat = 30
     /// Hovered and pressed, a faint fill of the same color, since it has none to lighten.
     static let missingHoverFill: CGFloat = 0.1
     static let missingPressedFill: CGFloat = 0.2
@@ -121,10 +128,10 @@ enum AdornmentStyle {
 
     /// A label's number, set in its place's text at `countStrength` of the text's ink; nil for none.
     private static func countText(of label: AdornmentLabel, in placement: AdornmentPlacement) -> NSAttributedString? {
-        guard let count = label.count, label.text != nil else { return nil }
+        guard label.text != nil, let figure = label.note.map({ noteMark + " " + $0 }) ?? label.count.map(String.init) else { return nil }
         var attributes = textAttributes(of: label, isCorner: placement == .onTopRightCorner)
         if let ink = attributes[.foregroundColor] as? NSColor { attributes[.foregroundColor] = ink.withAlphaComponent(ink.alphaComponent * countStrength) }
-        return NSAttributedString(string: String(count), attributes: attributes)
+        return NSAttributedString(string: figure, attributes: attributes)
     }
 
     /// How far a label's text starts past its padding: its symbol's place and the gap after it, for
@@ -182,6 +189,8 @@ enum AdornmentStyle {
     enum Face {
         case text(NSAttributedString, size: CGSize, symbol: (image: NSImage?, place: CGFloat)?, count: NSAttributedString?, width: CGFloat)
         case symbol(NSImage?, width: CGFloat)
+        /// A dot or a ghost: no text, no symbol.
+        case blank(width: CGFloat, height: CGFloat)
         /// Plain text, set once in each appearance (its ink follows it) as a Core Text line, with no capsule or
         /// padding: drawn from the line each frame, never typeset again. `size` is what the text measures as a string
         /// (the height of the line fragment a string drawn at a point sets it in), `ascent` the line's.
@@ -189,8 +198,14 @@ enum AdornmentStyle {
 
         var width: CGFloat {
             switch self {
-            case .text(_, _, _, _, let width), .symbol(_, let width), .line(_, _, _, _, let width): width
+            case .text(_, _, _, _, let width), .symbol(_, let width), .line(_, _, _, _, let width), .blank(let width, _): width
             }
+        }
+
+        /// How tall it is drawn in its place.
+        func height(in placement: AdornmentPlacement) -> CGFloat {
+            if case .blank(_, let height) = self { return height }
+            return AdornmentLayout.height(of: placement)
         }
     }
 
@@ -225,6 +240,11 @@ enum AdornmentStyle {
     /// it has one, else its symbol in a disc.
     static func face(of label: AdornmentLabel, in placement: AdornmentPlacement) -> Face {
         let height = AdornmentLayout.height(of: placement)
+        switch label.mark {
+        case .dot?: return .blank(width: dotSize, height: dotSize)
+        case .ghost?: return .blank(width: ghostWidth, height: height)
+        case nil: break
+        }
         if let ink = label.lineInk, let text = label.text { return lineFace(text, ink: ink) }
         guard let text = label.text else {
             return .symbol(label.isMissing ? nil : label.systemImage.flatMap { symbol($0, height: height, tint: label.tint) }, width: height)
@@ -233,9 +253,10 @@ enum AdornmentStyle {
         let string = NSAttributedString(string: text, attributes: textAttributes(of: label, isCorner: isCorner))
         let size = string.size()
         let mark = label.isMissing ? nil : label.systemImage.map { (image: leadingSymbol($0, in: placement, bright: label.hasBrightSymbol, tint: label.tint), place: isCorner ? cornerSymbolPlace : rowSymbolPlace) }
+        let width = (size.width + lead(of: label, in: placement) + countRoom(of: label, in: placement)
+                     + 2 * (isCorner ? cornerPadding : rowPadding)).rounded(.up)
         return .text(string, size: size, symbol: mark, count: countText(of: label, in: placement),
-                     width: (size.width + lead(of: label, in: placement) + countRoom(of: label, in: placement)
-                             + 2 * (isCorner ? cornerPadding : rowPadding)).rounded(.up))
+                     width: placement == .inLabelLead ? min(width, leadMaxWidth) : width)
     }
 
     private static func resolvedMissing(_ text: NSAttributedString) -> NSAttributedString {
@@ -282,9 +303,11 @@ enum AdornmentStyle {
     }
 
     /// How a clickable adornment is drawn: hovered or pressed while the pointer's on it.
-    enum Look {
+    enum Look: Int {
         case normal, hovered, pressed
     }
+    /// How strong a dot's color is, normal, hovered and pressed.
+    static let dotStrength: [CGFloat] = [0.7, 0.85, 1]
 
     /// A tint's capsule: solid is its color, lighter hovered and darker pressed; light is its color
     /// faint, a little less so hovered and pressed, with a thin line of it. Made for an appearance
@@ -414,6 +437,17 @@ enum AdornmentStyle {
                                       width: size.width * glyphScale, height: size.height * glyphScale),
                            from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }
+        case .blank:
+            let box = CGRect(x: corner.x + frame.minX * scale, y: corner.y + frame.minY * scale, width: frame.width * scale, height: frame.height * scale)
+            if label.mark == .ghost {
+                let radius = min(box.width, box.height) / 2
+                paintMissing(CGPath(roundedRect: box, cornerWidth: radius, cornerHeight: radius, transform: nil), unit: scale, look: look, in: cg)
+            } else {
+                // A dot has no letters to carry its tint: it is the color itself, strong, where a pill's capsule is faint.
+                if let tint = label.tint { cg.setFillColor(tint.color.withAlphaComponent(dotStrength[look.rawValue]).cgColor) }
+                cg.fillEllipse(in: box)
+                if let line { paintLine(line, around: box, radius: nil, unit: scale, in: cg) }
+            }
         case .line(let light, let dark, let size, let ascent, _):
             // No capsule: the text where its frame is, in the ink of the appearance drawn. Its baseline is where a
             // string drawn at the frame's top sets it: a whole ascent below it.
@@ -524,7 +558,10 @@ struct AdornmentOverlay: CanvasOverlay {
             for index in slots.indices {
                 guard let slot = slots[index] else { continue }
                 // A slot clear of the view draws nothing in it, and its text and symbol are what a frame spends here.
-                guard slot.worldRect(in: drawn, scale: scale).insetBy(dx: -AdornmentLayout.slotMargin * scale, dy: -AdornmentLayout.slotMargin * scale)
+                let unit = slot.unit(scale)
+                // A label's lead is where its shape's geometry put it (and is drawn, a shake included, where the shape is).
+                let placed = slot.lead == nil ? slot.worldRect(in: drawn, scale: scale) : slot.worldRect(in: anchor, scale: scale).offsetBy(dx: offset.x, dy: offset.y)
+                guard placed.insetBy(dx: -AdornmentLayout.slotMargin * unit, dy: -AdornmentLayout.slotMargin * unit)
                     .intersects(context.visibleRect) else { continue }
                 let adornment = laidOut.shown[index]
                 var look = AdornmentStyle.Look.normal
@@ -534,8 +571,8 @@ struct AdornmentOverlay: CanvasOverlay {
                     look = .hovered
                 }
                 let (label, face) = laidOut.look(of: index, in: slot)
-                AdornmentStyle.draw(label, in: adornment.id.placement, face: face, in: slot.frame, from: slot.corner(in: drawn), scale: scale,
-                                    look: look, isDark: isDark, in: cg)
+                AdornmentStyle.draw(label, in: adornment.id.placement, face: face, in: slot.frame,
+                                    from: slot.lead == nil ? slot.corner(in: drawn) : placed.origin, scale: unit, look: look, isDark: isDark, in: cg)
             }
         }
     }

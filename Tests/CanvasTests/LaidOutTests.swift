@@ -244,6 +244,26 @@ extension Transaction {
         let kept = keeping.add(Stretch(box, gauge: keepGauge))
         expectEqual(keeping.editor.shapeContext.frame(of: kept), box, "the larger of each side")
     },
+    test("a kind may be laid out about another point of its box: with an anchor the frame keeps that point of the stored box where it is, grows and shrinks both ways, follows a move of the box, and the stored box is what it was") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin(), StretchesPlugin(log: StretchLog(), shrinking: true, anchor: CGPoint(x: 0.5, y: 0.5))])
+        let box = CGRect(x: 10, y: 20, width: 200, height: 120)
+        let gauge = h.add(StretchGauge(.zero, width: 100, height: 40))
+        let stretch = h.add(Stretch(box, gauge: gauge))
+        @MainActor func frame() -> CGRect? { h.editor.shapeContext.frame(of: stretch) }
+        let centered = CGRect(x: box.midX - 50, y: box.midY - 20, width: 100, height: 40)
+        expectEqual(frame(), centered, "about the middle of the box")
+        expectEqual(h.editor.shapeContext.geometry(of: stretch)?.bounds, centered, "its geometry is it")
+        expectEqual(h.editor.frame(inFile: stretch), centered, "on any board")
+        expectEqual(h.editor.document[stretch]?.box, box, "the stored box is what it was")
+        expect(h.editor.shapeContext.hitTest(CGPoint(x: box.midX, y: box.midY), shape: stretch), "the middle is hit")
+        expect(!h.editor.shapeContext.hitTest(CGPoint(x: box.minX + 2, y: box.minY + 2), shape: stretch), "the stored corner is not")
+        h.editor.transact { $0.update(gauge, as: StretchGauge.self) { $0.props.width = 300; $0.props.height = 20 } }
+        expectEqual(frame(), CGRect(x: box.midX - 150, y: box.midY - 10, width: 300, height: 20), "wider and shorter: both ways, the middle where it was")
+        h.editor.transact { $0.update(stretch, as: Stretch.self) { $0.props.frame = box.offsetBy(dx: 50, dy: 7) } }
+        expectEqual(frame(), CGRect(x: box.midX + 50 - 150, y: box.midY + 7 - 10, width: 300, height: 20), "a move of the box moves the frame as far")
+        h.editor.transact { $0.update(gauge, as: StretchGauge.self) { $0.props.width = .infinity } }
+        expectEqual(frame(), box.offsetBy(dx: 50, dy: 7), "a size that isn't finite counts as the box, from its own origin")
+    },
     test("the kept extent follows the laid-out frame: a point or a view in the stored box and outside the frame hits nothing and draws nothing, and the board's bounds are the frame") {
         let h = try shrinkingEditor()
         let gauge = h.add(StretchGauge(CGRect(x: 1000, y: 1000, width: 60, height: 40), width: 100, height: 40))

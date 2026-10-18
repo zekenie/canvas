@@ -25,11 +25,15 @@ extension ArrowDefinition: ShapeDefinition {
     /// label, the body (heads and all) is cut where it is, and its text is drawn there; while it's
     /// edited, the editing view draws the text, over the cut, an empty label's too.
     func render(_ shape: ShapeRecord<Arrow>, in context: RenderContext) {
-        let geometry = arrowGeometry(shape.props, in: context.shapes)
-        let label = ArrowLabels.frame(of: shape.props, on: geometry, names: context.shapes.mentionNames(of: shape.id), editing: context.isEditing)
+        let kept = context.shapes.geometry(of: shape.id)
+        // As the kept geometry has it: an end of a relationship type is its part of the line through the pill (`EndLine`), worked out once.
+        let geometry = arrowGeometry(shape.props, line: kept?.detail as? EndLine, in: context.shapes)
+        // The label as the kept geometry has it (asked of Adornments' layout input once, not each frame); while it is edited, as it is edited.
+        let laid = context.isEditing ? ArrowLabels.laid(of: shape, on: geometry, in: context.shapes, editing: true)
+                                     : kept.flatMap(ArrowLabels.laid(from:))
         let cg = context.cg
         cg.saveGState()
-        if let label { clip(cg, around: label, beside: geometry) }
+        if let laid { clip(cg, around: laid.frame, beside: geometry) }
         cg.addPath(geometry.bodyPath)
         cg.addPath(geometry.arrowheadsPath(strokeWidth: ArrowStyle.strokeWidth))
         let colors = context.colors(of: shape)
@@ -39,7 +43,8 @@ extension ArrowDefinition: ShapeDefinition {
         cg.setLineJoin(.round)
         cg.strokePath()
         cg.restoreGState()
-        if let label, !context.isEditing { context.drawMentionText(ArrowLabels.placement(of: shape.props.text, in: label, ink: colors?.ink)) }
+        // The pill that leads the label is Adornments' (drawn over the canvas, where it is clicked): the body is cut around it.
+        if let laid, !context.isEditing, shape.props.hasText { context.drawMentionText(ArrowLabels.placement(of: shape.props.text, in: laid.text, ink: colors?.ink)) }
     }
 
     /// Clips to everything around the label's cut: what the body and its heads reach, less the cut.
@@ -53,23 +58,25 @@ extension ArrowDefinition: ShapeDefinition {
     /// Open: arrows never bind to arrows. Its label is part of it (`label`), and its bounds hold
     /// it, as tldraw's geometry does.
     func geometry(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> ShapeGeometry {
-        let geometry = arrowGeometry(shape.props, in: context)
+        // An end of a relationship type is half of a line through its pill, with no head at it and no words (`EndLine`).
+        let line = endLine(of: shape, in: context)
+        let geometry = arrowGeometry(shape.props, line: line, in: context)
         var bounds = geometry.bodyPath.boundingBoxOfPath
-        let label = ArrowLabels.frame(of: shape.props, on: geometry, names: context.mentionNames(of: shape.id))
-        if let label { bounds = bounds.union(label) }
-        return ShapeGeometry(outline: [geometry.start, geometry.middle, geometry.end], bounds: bounds, isClosed: false, label: label)
+        let laid = line == nil ? ArrowLabels.laid(of: shape, on: geometry, in: context) : nil
+        if let laid { bounds = bounds.union(laid.frame) }
+        return ShapeGeometry(outline: [geometry.start, geometry.middle, geometry.end], bounds: bounds, isClosed: false, label: laid?.frame,
+                             labelLead: laid?.lead, detail: line)
     }
 
-    /// Where its label is, as its geometry has it (kept, so measured once).
+    /// Where its label is, as its geometry has it (kept, so measured once): its text's, and the pill that leads it.
     func labelFrame(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGRect? {
-        guard shape.props.hasText else { return nil }
-        return context.geometry(of: shape.id)?.label
+        context.geometry(of: shape.id)?.label
     }
 
     /// On the body, or anywhere on its label (tldraw's filled label rectangle).
     func hitTest(_ point: CGPoint, on shape: ShapeRecord<Arrow>, in context: ShapeContext) -> Bool {
         let margin = ArrowStyle.hitMargin / context.zoom + ArrowStyle.strokeWidth / 2
-        if arrowGeometry(shape.props, in: context).distance(to: point) <= margin { return true }
+        if arrowGeometry(of: shape, in: context).distance(to: point) <= margin { return true }
         return labelFrame(of: shape, in: context)?.contains(point) ?? false
     }
 
@@ -79,7 +86,7 @@ extension ArrowDefinition: ShapeDefinition {
     /// The body and its heads; with a label, the body less the label's cut, and the cut's outline
     /// (tldraw's indicator).
     func indicatorPath(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGPath {
-        let geometry = arrowGeometry(shape.props, in: context)
+        let geometry = arrowGeometry(of: shape, in: context)
         let path = CGMutablePath()
         if let label = labelFrame(of: shape, in: context) {
             let cut = ArrowLabels.cut(label)
@@ -104,7 +111,7 @@ extension ArrowDefinition: BrushHitTesting {
     /// select it (arrows are open, as in tldraw), nor does one over only the hidden stub inside a
     /// bound shape. A brush that reaches its label selects it too, as tldraw's filled label does.
     func brushHitTest(_ brush: CGRect, on shape: ShapeRecord<Arrow>, in context: ShapeContext) -> Bool {
-        let geometry = arrowGeometry(shape.props, in: context)
+        let geometry = arrowGeometry(of: shape, in: context)
         if geometry.crosses(brush.polygon) { return true }
         return labelFrame(of: shape, in: context)?.intersects(brush) ?? false
     }
@@ -113,14 +120,27 @@ extension ArrowDefinition: BrushHitTesting {
 extension ArrowDefinition: HandleProviding {
     /// The bend handle hides when it would crowd an end.
     func handles(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> [HandleLocation<ArrowHandle>] {
-        let geometry = arrowGeometry(shape.props, in: context)
+        let geometry = arrowGeometry(of: shape, in: context)
         let camera = context.camera
         let middle = camera.toView(geometry.middle)
-        let isMiddleClear = [geometry.startHandle, geometry.endHandle].allSatisfy {
+        // Half of an arc through a relationship type's pill has no bend of its own: the pill is dragged to bend it.
+        var isMiddleClear = (context.geometry(of: shape.id)?.detail as? EndLine)?.bend == nil && [geometry.startHandle, geometry.endHandle].allSatisfy {
             camera.toView($0).distance(to: middle) >= ArrowStyle.middleHandleMinDistance
         }
+        // Not over the pill that leads its label, which is Adornments' and is pressed (a deviation from tldraw, only for an arrow
+        // with a pill): the handle would sit on its name.
+        if isMiddleClear, let lead = context.geometry(of: shape.id)?.labelLead,
+           lead.insetBy(dx: -ArrowStyle.leadHandleClearance / camera.zoom, dy: -ArrowStyle.leadHandleClearance / camera.zoom).contains(geometry.middle) {
+            isMiddleClear = false
+        }
         let visible: [ArrowHandle] = [.terminal(.start), .terminal(.end)] + (isMiddleClear ? [.middle] : [])
-        return visible.map { HandleLocation($0, at: geometry.point(for: $0)) }
+        // A half of the line through a relationship type's pill: its end at the pill is where the line meets the pill, not the pill's
+        // middle, where the handle would cover the type's name.
+        let hubEnd = (context.geometry(of: shape.id)?.detail as? EndLine)?.hubEnd
+        return visible.map { handle in
+            if case .terminal(let end) = handle, end == hubEnd { return HandleLocation(handle, at: geometry.visiblePoint(at: end)) }
+            return HandleLocation(handle, at: geometry.point(for: handle))
+        }
     }
 
     /// A double-click on an end toggles its head; on the bend handle, it edits the label, as a
@@ -131,7 +151,8 @@ extension ArrowDefinition: HandleProviding {
             return .consumed
         }
         if pointer.clickCount == 2, handle == .middle {
-            editor.beginEditing(shape.id, at: pointer.world, clickCount: pointer.clickCount)
+            // As a double-click on the arrow is (an end of a relationship type opens the card instead of editing words it has none of).
+            editor.open(shape.id, at: pointer.world, clickCount: pointer.clickCount)
             return .consumed
         }
         // Pressing a bound end outlines the shape it's bound to.
@@ -148,8 +169,13 @@ extension ArrowDefinition: HandleProviding {
         if case .terminal(let end) = handle, let binding = arrow[end].binding {
             isPrecise = binding.isPrecise
         }
+        // From where the handle is drawn: a half's end at a relationship type's pill is where its line meets the pill (`handles(of:)`).
+        var point = targeting.geometry(of: arrow).point(for: handle)
+        if case .terminal(let end) = handle, let line = editor.shapeContext.geometry(of: shape.id)?.detail as? EndLine, line.hubEnd == end {
+            point = arrowGeometry(of: shape, in: editor.shapeContext).visiblePoint(at: end)
+        }
         let drag = ArrowHandleDragSession(arrowID: shape.id, handle: handle,
-                                          handleOffset: targeting.geometry(of: arrow).point(for: handle) - origin,
+                                          handleOffset: point - origin,
                                           isPrecise: isPrecise, targeting: targeting)
         if case .terminal(let end) = handle, arrow[end].binding != nil, !isPrecise {
             drag.startDragPreciseTimer()
@@ -287,8 +313,7 @@ struct BindingHintsOverlay: CanvasOverlay {
         guard editor.currentToolID == .select || drag != nil,
               let id = drag?.arrowID ?? editor.selection,
               let arrow = editor.document[id]?.typed(as: Arrow.self)?.props else { return }
-        let connectables = Connectables(shapes: overlay.shapes)
-        let geometry = ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth) { connectables[$0] }
+        let geometry = ArrowDefinition().arrowGeometry(arrow, line: overlay.shapes.geometry(of: id)?.detail as? EndLine, in: overlay.shapes)
         let zoom = overlay.zoom
         let lineWidth = ArrowStyle.bindingHintWidth / zoom
         let context = overlay.cg
@@ -349,7 +374,7 @@ public struct ArrowsPlugin: ListedPlugin {
             // Its frame is measured by the names its mentions show now: a rename lays it out again.
             arrow.mentionLayout { $0.props.text }
             arrow.mentionText { arrow, shapes in
-                guard arrow.props.hasText, let label = shapes.geometry(of: arrow.id)?.label else { return [] }
+                guard arrow.props.hasText, let label = shapes.geometry(of: arrow.id).flatMap(ArrowLabels.textFrame(of:)) else { return [] }
                 return [ArrowLabels.placement(of: arrow.props.text, in: label)]
             }
             // It may have a color of its own (`ColorsPlugin`): its line, heads and label; with none it is
@@ -358,11 +383,17 @@ public struct ArrowsPlugin: ListedPlugin {
             // And types: its label says what it is (`/is-a`), where it's drawn, and fits to nothing but
             // itself.
             arrow.typeWords(\.text, drawnIn: { arrow, shapes in
-                guard arrow.props.hasText, let label = shapes.geometry(of: arrow.id)?.label else { return nil }
+                guard arrow.props.hasText, let label = shapes.geometry(of: arrow.id).flatMap(ArrowLabels.textFrame(of:)) else { return nil }
                 return ArrowLabels.placement(of: arrow.props.text, in: label)
             })
             arrow.typeable()
             arrow.relating()                                   // and may be the end of a relationship type
+            // An arrow that is an end of a relationship type has no words drawn (`EndLine`): a double-click or Return opens the type's card at
+            // the row name it gives, where any other arrow edits its label.
+            arrow.opens("Open", where: { shape, editor in editor.relationships?.end(shape.id) != nil }) { shape, editor in
+                guard let hub = editor.relationships?.end(shape.id)?.type else { return }
+                editor.definitionCards?.open(hub, focus: .endName(shape.id))
+            }
         }
         registrar.service { ArrowTargeting(editor: $0) }
         registrar.service { ArrowRowNesting(editor: $0) }
@@ -374,8 +405,8 @@ public struct ArrowsPlugin: ListedPlugin {
 extension CanvasEditor {
     /// An arrow's resolved geometry, for tests and tools.
     public func arrowGeometry(of id: ShapeID) -> ArrowGeometry? {
-        guard let arrow = document[id]?.typed(as: Arrow.self)?.props else { return nil }
-        return ArrowDefinition().arrowGeometry(arrow, in: shapeContext)
+        guard let arrow = document[id]?.typed(as: Arrow.self) else { return nil }
+        return ArrowDefinition().arrowGeometry(of: arrow, in: shapeContext)
     }
 
     /// Where an arrow's label is, in world units: nil while it says nothing.

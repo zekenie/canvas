@@ -109,24 +109,24 @@ private func farBoard(_ stage: GalleryStage) -> (ann: ShapeID, acme: ShapeID, bo
 
 @MainActor
 let pickStates: [GalleryState] = [
-    GalleryState("Rel1-p6-list", answers: "Board 1, step 6", "a click on the Feature note's `layer` value: the row is focused and a list opens under it with the Layer note, which has no title and no words, listed by its values, highlighted; never `No Layer notes`",
+    GalleryState("Rel1-p6-list", answers: "Board 1, step 6", "a click on the Feature note's `in` value: the row is focused and a list opens under it with the Layer note, which has no title and no words, listed by its values, highlighted; never `No Layer notes`",
                  size: pickStage, isText: true) { stage in
         let board = pickBoard(stage)
-        try beginRow(stage, board.featureNote, "layer")
+        try beginRow(stage, board.featureNote, "in")
         guard let list = openList(stage), list.rows.count == 1, list.rows.first?.item?.title == "1 · expose foobar · foundation", list.highlighted == 0 else {
             throw GalleryFailure("one line, the Layer note by its values, highlighted: \(linesOf(openList(stage)))")
         }
         return .text("focused row: layer\n" + linesOf(list))
     },
-    GalleryState("Rel1-p6-row", answers: "Board 1, step 6", "the Feature note while its `layer` row is being picked in: the row focused, the note edited, the dashed line over the row", size: pickStage) { stage in
+    GalleryState("Rel1-p6-row", answers: "Board 1, step 6", "the Feature note while its `in` row is being picked in: the row focused, the note edited, the dashed line over the row", size: pickStage) { stage in
         let board = pickBoard(stage)
-        try beginRow(stage, board.featureNote, "layer")
+        try beginRow(stage, board.featureNote, "in")
         return .image(stage.picture())
     },
-    GalleryState("Rel1-p7-picked", answers: "Board 1, step 7", "Return: one arrow from the Feature note to the Layer note, one head at the Layer, an `in` chip on it; the Feature note's `layer` row holds a pill of the Layer note's values and the Layer's `feature` row a pill of the Feature's",
+    GalleryState("Rel1-p7-picked", answers: "Board 1, step 7", "Return: one arrow from the Feature note to the Layer note, one head at the Layer, an `in` pill in the line; the Feature note's `in` row holds a pill of the Layer note's values and the Layer's `feature` row a pill of the Feature's",
                  size: pickStage) { stage in
         let board = pickBoard(stage)
-        try beginRow(stage, board.featureNote, "layer")
+        try beginRow(stage, board.featureNote, "in")
         stage.window.pressReturn()
         stage.editor.endEditing()
         stage.editor.selection = nil
@@ -138,12 +138,12 @@ let pickStates: [GalleryState] = [
     },
     GalleryState("Rel1-p8-undone", answers: "Board 1, step 8", "Undo: the arrow and both pills are gone, and both rows read `add …` again", size: pickStage) { stage in
         let board = pickBoard(stage)
-        try beginRow(stage, board.featureNote, "layer")
+        try beginRow(stage, board.featureNote, "in")
         stage.window.pressReturn()
         stage.editor.endEditing()
         stage.editor.undo()
         stage.editor.selection = nil
-        guard stage.editor.rowBook?.rows(of: board.featureNote).last?.content == .empty("add layer"),
+        guard stage.editor.rowBook?.rows(of: board.featureNote).last?.content == .empty("add in"),
               stage.editor.rowBook?.rows(of: board.layerNote).last?.content == .empty("add feature") else { throw GalleryFailure("both rows are empty again") }
         return .image(stage.render(at: .zero))
     },

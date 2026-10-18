@@ -200,7 +200,7 @@ extension HeldDragging: Session {
         }
         expectEqual(said(s.away), [])
         s.editor.transact { $0.update(end) { $0[RelationshipEndProperty.self] = EndRule(needed: true, onlyOne: true) } }
-        expectEqual(said(s.away), ["layer is needed"], "the far note")
+        expectEqual(said(s.away), ["in is needed"], "the far note")
         s.editor.undo()
         expectEqual(said(s.away), [])
         s.editor.redo()
@@ -215,11 +215,11 @@ extension HeldDragging: Session {
             }
         }
         expectEqual(said(s.away), try fresh(s.away), "two relationships drawn on the far board")
-        expectEqual(said(s.away), ["layer has 2 notes, and should have at most 1"])
+        expectEqual(said(s.away), ["in has 2 notes, and should have at most 1"])
         s.editor.transact { $0.update(end) { $0[RelationshipEndProperty.self] = EndRule(needed: true, onlyOne: false) } }
         expectEqual(said(s.away), [], "Only one taken off on the board shown")
         s.editor.undo()
-        expectEqual(said(s.away), ["layer has 2 notes, and should have at most 1"])
+        expectEqual(said(s.away), ["in has 2 notes, and should have at most 1"])
         // The end renamed so the words change, and the board then shown.
         s.editor.transact { $0.update(end, as: Bond.self) { $0.props.text = MentionText(plain: "stage") } }
         expectEqual(said(s.away), ["stage has 2 notes, and should have at most 1"])

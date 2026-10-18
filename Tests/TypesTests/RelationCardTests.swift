@@ -11,7 +11,7 @@ import Types
 
 // The card a relation row holding a relationship opens: a line for each relationship in the row (the note at the other end,
 // then the relationship type's fields, each cell the arrow's), a blank line that picks a note and draws the arrow, a line
-// taken out with Backspace. Everything done in it while it stays open is one step named for the row (`Change Layer`): cells
+// taken out with Backspace. Everything done in it while it stays open is one step named for the row (`Change In`): cells
 // on several arrows, a pick, a removal. A far arrow's values are edited there too. Over bonds, in `RelationScene.drawn()`'s
 // editor, with a canvas in an unshown window so the host's part (the place, the keyboard) is the real one.
 
@@ -128,7 +128,7 @@ final class RowCardRig {
         expectEqual(r.arrows.contains(a2), false, "the arrow and its values are gone")
         expectEqual(form.sheet.lines.compactMap(\.owner).count, 2)
         // One step, named for the row.
-        expectEqual(r.editor.undoHistory.undoName, "Change Layer")
+        expectEqual(r.editor.undoHistory.undoName, "Change In")
         expect(r.editor.undoHistory.undoName != undo)
         r.cards.close()
         r.editor.undo()

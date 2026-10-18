@@ -32,6 +32,11 @@ struct ShapeItem {
     /// How much room it takes once drawn: its laid-out size, which is `size` for a kind laid out as it
     /// stores. What the layout places and a row reports; `size` is what is written and compared.
     var room: CGSize
+    /// Where the frame it is laid out in starts, from the origin of the box it stores: zero for a kind laid out from its
+    /// top-left, else what the kind's anchor makes of its size (a relationship type's pill is laid out about the middle
+    /// of the box it stores, so its frame starts left of and above that box's origin). The layout places the frame, and
+    /// the box is written where that puts the frame.
+    var roomOffset: CGPoint = .zero
     /// What each placement's targets are, placement by placement.
     var targets: [[Found]] = []
     /// Its place among the layout's free boxes, if it moves.
@@ -339,7 +344,9 @@ struct Drawing {
         for index in items.indices {
             var sized = items[index].record
             sized.box = CGRect(origin: items[index].existing?.box?.origin ?? .zero, size: items[index].size)
-            items[index].room = context.frame(of: sized)?.size ?? items[index].size
+            let frame = context.frame(of: sized)
+            items[index].room = frame?.size ?? items[index].size
+            items[index].roomOffset = frame.map { CGPoint(x: $0.minX - sized.box!.minX, y: $0.minY - sized.box!.minY) } ?? .zero
         }
     }
 

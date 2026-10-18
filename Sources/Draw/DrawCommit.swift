@@ -162,7 +162,7 @@ extension Drawing {
             // Where it is and how much room it takes once the run has committed: its origin as the
             // transaction leaves it, at the size the layout gave it (`ShapeItem.room`), which is what
             // `canvas measure` says of the statement.
-            let at = now.box.map { CGRect(origin: $0.origin, size: item.room) }
+            let at = now.box.map { CGRect(origin: CGPoint(x: $0.minX + item.roomOffset.x, y: $0.minY + item.roomOffset.y), size: item.room) }
             var row = DrawChange(line: item.statement.line, did: .created, kind: item.kind.rawValue,
                                  title: naming?.name(now, registry), id: now.id.description, at: at)
             if let existing = item.existing {
@@ -288,7 +288,7 @@ extension Drawing {
                         warnings: inout [DrawWarning]) throws(DrawError) {
         guard !registry.containingKinds.isEmpty else { return }
         let id = item.record.id
-        let before = transaction.document[id]?.box.map { CGRect(origin: $0.origin, size: item.room) }
+        let before = transaction.document[id]?.box.map { CGRect(origin: CGPoint(x: $0.minX + item.roomOffset.x, y: $0.minY + item.roomOffset.y), size: item.room) }
         switch transaction.settle([id]) {
         case .refused(let container):
             let named = transaction.document[container].map { self.named($0) } ?? "a container"
@@ -308,7 +308,7 @@ extension Drawing {
                 warnings.append(DrawWarning(line: item.statement.line,
                                             "\(others == 1 ? "a shape" : "\(others) shapes") over the edge of \(subject(of: item)) \(others == 1 ? "was" : "were") nudged wholly in or out of it"))
             }
-            guard let before, own != .zero, let after = transaction.document[id]?.box.map({ CGRect(origin: $0.origin, size: item.room) }) else { return }
+            guard let before, own != .zero, let after = transaction.document[id]?.box.map({ CGRect(origin: CGPoint(x: $0.minX + item.roomOffset.x, y: $0.minY + item.roomOffset.y), size: item.room) }) else { return }
             // Said of each container whose edge it was over as it was put down.
             for container in transaction.document.shapes where container.id != id && registry.isContainer(container) {
                 guard let edge = container.box, Self.overlaps(before, edge), !before.contains(edge), !edge.contains(before) else { continue }

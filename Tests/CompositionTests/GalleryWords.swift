@@ -61,7 +61,7 @@ let wordsStates: [GalleryState] = [
         lines.append("selected: Feature")
         return .text(lines.joined(separator: "\n") + "\n")
     },
-    GalleryState("Rel6-p3-related", answers: "Board 6, \"They offer it\"", "after Relate to Layer: a relationship type drawn small between the two types with an arrow to it from each, its name card open; Feature's `layer` row under a dashed line, Layer's `feature`; the words still hold the pill",
+    GalleryState("Rel6-p3-related", answers: "Board 6, \"They offer it\"", "after Relate to Layer: a relationship type as a pill between the two types with an arrow to it from each, its name edited in place; Feature's `layer` row under a dashed line, Layer's `feature`; the words still hold the pill",
                  size: wordsStage) { stage in
         let board = wordsBoard(stage)
         let before = (stage.editor.document[board.feature], stage.editor.document[board.layer])
@@ -69,13 +69,13 @@ let wordsStates: [GalleryState] = [
         guard let (menu, _) = stage.editor.menuToPopUp else { throw GalleryFailure("a menu waits") }
         try menu.choose("Relate to Layer")
         stage.editor.menuDidPopUp()
-        guard let made = stage.editor.document.shapes.last(where: { $0[RelationshipProperty.self] == true })?.id, stage.editor.card != nil,
+        guard let made = stage.editor.document.shapes.last(where: { $0[RelationshipProperty.self] == true })?.id, stage.editor.editingShapeID != nil,
               stage.editor.document.shapes.filter({ $0.kind == Arrow.kind }).count == 2,
               stage.editor.document[board.feature] == before.0, stage.editor.document[board.layer] == before.1,
               stage.editor.rowBook?.rows(of: board.feature).last?.content == .relationType(direction: "→", chips: [board.layer], more: 0) else {
-            throw GalleryFailure("a relationship type and two arrows, the name card open, neither type's record changed")
+            throw GalleryFailure("a relationship type and two arrows, the name edited in its pill, neither type's record changed")
         }
-        stage.editor.closeCard()
+        stage.editor.endEditing()
         stage.editor.selection = made
         return .image(stage.render(at: .zero))
     },

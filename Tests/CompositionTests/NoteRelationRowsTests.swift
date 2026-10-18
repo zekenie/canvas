@@ -166,7 +166,7 @@ private final class Bench {
         let b = try Bench()
         b.drawEnds()
         let rows = b.book.rows(of: b.feature)
-        expectEqual(rows.map(\.name), ["purpose", "layer"])
+        expectEqual(rows.map(\.name), ["purpose", "in"])
         expectEqual(rows[1].content, .relationType(direction: "→", chips: [b.layer], more: 0))
         expectEqual(b.book.rows(of: b.layer).last?.content, .relationType(direction: "←", chips: [b.feature], more: 0))
         let block = try require(b.book.rowsRect(of: b.feature))
@@ -186,7 +186,7 @@ private final class Bench {
         let note = b.note(of: [b.feature], words: "Sign in", ["purpose": "sign in with no password"])
         for dark in [false, true] {
             let rows = b.book.rows(of: note)
-            expectEqual(rows.map(\.name), ["purpose", "layer"])
+            expectEqual(rows.map(\.name), ["purpose", "in"])
             let drawn: NSBitmapImageRep
             if dark {
                 let size = CGSize(width: 900, height: 1400)
@@ -219,7 +219,7 @@ private final class Bench {
         b.drawEnds()
         let note = b.note(of: [b.feature], words: lines(3), at: CGPoint(x: 40, y: 40), ["purpose": "sign in with no password"])
         let rows = b.book.rows(of: note)
-        expectEqual(rows.map(\.name), ["purpose", "layer"])
+        expectEqual(rows.map(\.name), ["purpose", "in"])
         let size = CGSize(width: 400, height: 300)
         let drawn = renderBitmap(b.editor, size: size)
         let camera = b.editor.camera
@@ -244,17 +244,17 @@ private final class Bench {
         b.drawEnds()
         let note = b.note(of: [b.feature], words: "Ann", ["purpose": "sign in"])
         let before = b.editor.document[note]
-        let related = try b.row(note, "layer")
+        let related = try b.row(note, "in")
         expect(b.editor.beginEditing(note, at: CGPoint(x: related.valueRect.minX + 8, y: related.rect.midY)))
         expect(b.editor.editingShapeID == note)
-        expectEqual(b.rowsView?.focusedRow, "layer", "the row is the focus")
+        expectEqual(b.rowsView?.focusedRow, "in", "the row is the focus")
         b.window.type("Foundation")
         expectEqual(b.editor.document[note], before, "typing in a row that sets nothing yet writes nothing")
         // Tab off the last row ends editing; ⇧Tab goes back to the field.
         b.window.press("\u{19}", code: 48, modifiers: .shift)
         expectEqual(b.rowsView?.focusedRow, "purpose")
         b.window.press("\t", code: 48)
-        expectEqual(b.rowsView?.focusedRow, "layer", "Tab walks onto a relation row")
+        expectEqual(b.rowsView?.focusedRow, "in", "Tab walks onto a relation row")
         b.window.press("\t", code: 48)
         expect(b.editor.editingShapeID == nil, "off the last row")
         expectEqual(b.editor.document[note], before)

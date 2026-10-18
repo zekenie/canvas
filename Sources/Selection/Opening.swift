@@ -17,9 +17,13 @@ public enum ShapeOpening: KeyedExtensionPoint {
 public struct ShapeOpener {
     public let title: String
     public let open: @MainActor (ShapeID, CanvasEditor) -> Void
+    /// Which shapes of the kind it opens, asked of a shape being opened; nil for every one. A shape it says no to is opened as
+    /// if the kind had no opener: edited in place, if the kind is `Editable`.
+    public let opens: (@MainActor (ShapeID, CanvasEditor) -> Bool)?
 
-    public init(title: String, open: @escaping @MainActor (ShapeID, CanvasEditor) -> Void) {
+    public init(title: String, opens: (@MainActor (ShapeID, CanvasEditor) -> Bool)? = nil, open: @escaping @MainActor (ShapeID, CanvasEditor) -> Void) {
         self.title = title
+        self.opens = opens
         self.open = open
     }
 }
@@ -28,22 +32,29 @@ public struct ShapeOpener {
 extension ShapeRegistrar {
     /// Opening one of this kind's shapes (a double-click, Return, ⌘↓) does `open` rather than edit
     /// it: `sub.opens("Open") { shape, editor in editor.showBoard(BoardID(owner: shape.id)) }`.
-    public mutating func opens(_ title: String, _ open: @escaping @MainActor (ShapeRecord<Definition.Props>, CanvasEditor) -> Void) {
-        contribute(ShapeOpener(Definition.Props.self, title: title, open), to: ShapeOpening.self)
+    /// With `where`, only the shapes it says yes to open so; the rest are edited in place as any shape of a kind with no opener is.
+    public mutating func opens(_ title: String, where applies: (@MainActor (ShapeRecord<Definition.Props>, CanvasEditor) -> Bool)? = nil,
+                               _ open: @escaping @MainActor (ShapeRecord<Definition.Props>, CanvasEditor) -> Void) {
+        contribute(ShapeOpener(Definition.Props.self, title: title, where: applies, open), to: ShapeOpening.self)
     }
 }
 
 extension PluginRegistrar {
     /// How a kind another plugin registers opens, as `opens` on a kind's own registrar.
-    public mutating func opens<P: ShapeProps>(_: P.Type, _ title: String, _ open: @escaping @MainActor (ShapeRecord<P>, CanvasEditor) -> Void) {
-        contribute(ShapeOpener(P.self, title: title, open), to: ShapeOpening.self, for: .kind(P.kind))
+    public mutating func opens<P: ShapeProps>(_: P.Type, _ title: String, where applies: (@MainActor (ShapeRecord<P>, CanvasEditor) -> Bool)? = nil,
+                                              _ open: @escaping @MainActor (ShapeRecord<P>, CanvasEditor) -> Void) {
+        contribute(ShapeOpener(P.self, title: title, where: applies, open), to: ShapeOpening.self, for: .kind(P.kind))
     }
 }
 
 extension ShapeOpener {
     /// Opens a shape of one kind, found on the board shown.
-    init<P: ShapeProps>(_: P.Type, title: String, _ open: @escaping @MainActor (ShapeRecord<P>, CanvasEditor) -> Void) {
-        self.init(title: title) { id, editor in
+    init<P: ShapeProps>(_: P.Type, title: String, where applies: (@MainActor (ShapeRecord<P>, CanvasEditor) -> Bool)? = nil,
+                        _ open: @escaping @MainActor (ShapeRecord<P>, CanvasEditor) -> Void) {
+        let claims = applies.map { applies -> @MainActor (ShapeID, CanvasEditor) -> Bool in
+            { id, editor in editor.document[id]?.typed(as: P.self).map { applies($0, editor) } ?? false }
+        }
+        self.init(title: title, opens: claims) { id, editor in
             if let shape = editor.document[id]?.typed(as: P.self) { open(shape, editor) }
         }
     }
@@ -51,12 +62,13 @@ extension ShapeOpener {
 
 extension CanvasEditor {
     /// Whether `open` would do something with a shape: it's on the board shown, not kept aside, and
-    /// its kind has an opener (`ShapeOpening`) or is `Editable`. A read-only shape of an `Editable`
+    /// its kind has an opener (`ShapeOpening`) that opens it, or is `Editable`. A read-only shape of an `Editable`
     /// kind (a locked note) counts: opening it is refused, and the refusal shows (Selection shakes it),
     /// as deleting it is.
     public func canOpen(_ id: ShapeID) -> Bool {
         guard let record = document[id], !record.isOpaque else { return false }
-        return selectionState?.openers[record.kind] != nil || registry.definition(for: record.kind) is any Editable
+        if let opener = selectionState?.openers[record.kind], opener.opens?(id, self) ?? true { return true }
+        return registry.definition(for: record.kind) is any Editable
     }
 
     /// Opens a shape on the board shown: its kind's opener, if it has one (true once it's run), else
@@ -66,7 +78,7 @@ extension CanvasEditor {
     @discardableResult
     public func open(_ id: ShapeID, at point: CGPoint? = nil, clickCount: Int = 1) -> Bool {
         guard let record = document[id], !record.isOpaque else { return false }
-        guard let opener = selectionState?.openers[record.kind] else { return beginEditing(id, at: point, clickCount: clickCount) }
+        guard let opener = selectionState?.openers[record.kind], opener.opens?(id, self) ?? true else { return beginEditing(id, at: point, clickCount: clickCount) }
         opener.open(id, self)
         return true
     }

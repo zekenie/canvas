@@ -14,6 +14,8 @@ enum ArrowStyle {
     static let hitMargin: CGFloat = 3
     /// The bend handle hides when it's this close to an end handle, in view points.
     static let middleHandleMinDistance: CGFloat = 24
+    /// The bend handle is left off when its point is within this many view points of the pill that leads the arrow's label.
+    static let leadHandleClearance: CGFloat = 4
 
     /// Holding still this long while dragging an arrow end over a shape binds precisely to the
     /// pointer instead of the shape's center.

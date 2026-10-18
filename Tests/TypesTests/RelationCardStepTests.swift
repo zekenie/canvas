@@ -41,7 +41,7 @@ private func cardSession(closing: String, _ close: (RowCardRig) -> Void) throws 
     }
     close(r)
     expect(r.cards.openTarget == nil, "\(closing): the card is closed")
-    expectEqual(r.editor.undoHistory.undoName, "Change Layer", closing)
+    expectEqual(r.editor.undoHistory.undoName, "Change In", closing)
     let after = r.editor.document
     let afterBytes = try r.s.bytes()
     r.editor.undo()
@@ -113,7 +113,7 @@ private func cardSession(closing: String, _ close: (RowCardRig) -> Void) throws 
         r.window.press("\u{7f}", code: 51)
         r.cards.close()
         let after = try s.bytes()
-        expectEqual(s.editor.undoHistory.undoName, "Change Layer")
+        expectEqual(s.editor.undoHistory.undoName, "Change In")
         s.editor.undo()
         expect(try s.bytes() == start, "undo")
         s.editor.redo()

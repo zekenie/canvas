@@ -130,14 +130,21 @@ public struct RelationshipRow: Sendable, Hashable {
     /// The side the row's note takes when the row draws an arrow.
     public var drawSide: RelationshipSide { sides.contains(.from) ? .from : .to }
 
-    /// What the row is called, in lower case: the typed name; else, with exactly one type at the other end
-    /// that has a title, that title; else the relationship type's title; else `untitled`. One function,
-    /// read at the draw: a rename of a type changes no row's identity.
+    /// What the row is called, in lower case: the typed name; else, by the side its end is on, a name read from a
+    /// title. A from end (`.unnamed(.from)`) and both sides merged (`.unnamed(nil)`): the relationship type's
+    /// title when it has one (car's row of `owner` is `owner`), else, with exactly one type at the other end that
+    /// has a title, that title. A to end: with exactly one type at the other end that has a title, that title
+    /// (person's row is `car`); else the relationship type's title. Last, `untitled`. One function, read at the
+    /// draw: a rename of a type changes no row's identity.
     @MainActor
     public func name(in types: TypeGraph) -> String {
         if case .typed(let name) = key.label { return name }
-        if others.count == 1, let title = types.names[others[0]] { return title.lowercased() }
-        return (types.names[key.type] ?? TypesStyle.untitledType).lowercased()
+        let own = types.names[key.type]
+        let other = others.count == 1 ? types.names[others[0]] : nil
+        switch key.label {
+        case .unnamed(.to): return (other ?? own ?? TypesStyle.untitledType).lowercased()
+        default: return (own ?? other ?? TypesStyle.untitledType).lowercased()
+        }
     }
 }
 

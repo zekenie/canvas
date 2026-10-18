@@ -13,10 +13,10 @@ import Types
 import Validation
 
 // The drag between two types: a relationship type put between them, with an arrow to it from the first and another
-// from it to the second, in place of the arrow the drag drew; selected and not edited; one step, "New Relationship
-// Type"; and the card that names it, shown by the writer itself inside that step, so one Undo, once the card is
-// dismissed, takes back the note, both arrows and the name. Over memos (a kind with a tool) and bonds, with the
-// engine of `canvas draw` making the arrows.
+// from it to the second, in place of the arrow the drag drew; selected; one step, "New Relationship Type", which stays
+// open while its name is edited in place (a kind that can be edited: the shipped note's tests hold that, over real
+// notes), so one Undo takes back the note, both arrows and the name. Over memos (a kind with a tool, and no editing
+// view) and bonds, with the engine of `canvas draw` making the arrows.
 
 /// Person at the left, Company far at the right, and the arrow a port's drag drew between them.
 @MainActor private struct Gesture {
@@ -87,15 +87,6 @@ struct RecordingBondEdgesPlugin: CanvasPlugin {
     return editor
 }
 
-/// The text field inside the card shown.
-@MainActor private func field(of card: CanvasCard) throws -> NSTextView {
-    try require(card.view.subviews.compactMap { $0 as? NSTextView }.first, "the card's field")
-}
-
-@MainActor private func type(_ text: String, into field: NSTextView) {
-    field.insertText(text, replacementRange: NSRange(location: (field.string as NSString).length, length: 0))
-}
-
 @MainActor let newRelationshipTypeTests = Suite("A relationship type between two types", [
     test("three shapes the board did not have and no arrow from one type to the other: a marked type with the starter schema, no words and no title, overlapping neither, and an arrow to it and one from it") {
         let g = try Gesture()
@@ -124,36 +115,27 @@ struct RecordingBondEdgesPlugin: CanvasPlugin {
         expectEqual(g.editor.relationships?.rows(for: [g.person], isType: false).count, 1, "a Person note has a row for it")
         expectEqual(g.editor.relationships?.rows(for: [g.company], isType: false).count, 1, "and a Company note")
     },
-    test("it is selected and not edited, the card that names it is shown at its pill inside the step, and the step is named New Relationship Type") {
+    test("it is selected, and the step is named New Relationship Type; a kind that has no editing view is left unedited, with no card") {
         let g = try Gesture()
         let made = try require(g.editor.newRelationshipType(from: g.person, to: g.company, replacing: g.bond))
         expectEqual(g.editor.selectedShapeIDs, [made])
-        expect(g.editor.editingShapeID == nil, "never edited")
-        let card = try require(g.editor.card, "the name card")
-        expectEqual(card.shape, made)
-        expectEqual(card.anchor, g.editor.titlePillRect(of: made))
-        expect(card.adoptsPress)
-        expectEqual(card.stepName, TypesStyle.nameRelationshipType)
+        expect(g.editor.editingShapeID == nil, "a memo has no editing view")
+        expect(g.editor.card == nil, "and no card shows: the name is typed in the pill")
         expectEqual(g.editor.undoHistory.undoName, TypesStyle.newRelationshipType)
-        g.editor.closeCard()
     },
-    test("one Undo, once the card is dismissed, takes back the note, both arrows and the name, and brings back the arrow and the selection; Redo brings all back") {
+    test("one Undo takes back the note and both arrows, and brings back the arrow and the selection; Redo brings all back") {
         let g = try Gesture()
         g.editor.selection = g.person
         let start = g.editor.document
         let made = try require(g.editor.newRelationshipType(from: g.person, to: g.company, replacing: g.bond))
         let drawn = g.editor.document
-        let card = try require(g.editor.card)
-        type("in", into: try field(of: card))
-        expectEqual(g.editor.document[made]?[TitleProperty.self], "in")
-        g.editor.closeCard()
         expectEqual(g.editor.undoHistory.undoName, TypesStyle.newRelationshipType)
         g.editor.undo()
         expectEqual(g.editor.document, start, "the board as it was, the arrow the drag drew back")
         expectEqual(g.editor.selectedShapeIDs, [g.person], "and the selection")
         expect(!g.editor.canUndo || g.editor.undoHistory.undoName != TypesStyle.newRelationshipType, "one step")
         g.editor.redo()
-        expect(g.editor.document[made]?[TitleProperty.self] == "in", "named again")
+        expect(g.editor.document[made] != nil, "made again")
         expectEqual(g.editor.document.shapes.count, drawn.shapes.count)
         expectEqual(g.editor.selectedShapeIDs, [made])
     },
@@ -162,12 +144,10 @@ struct RecordingBondEdgesPlugin: CanvasPlugin {
         let made = try require(roomy.editor.newRelationshipType(from: roomy.person, to: roomy.company, replacing: roomy.bond))
         let between = try roomy.frame(made), left = try roomy.frame(roomy.person), right = try roomy.frame(roomy.company)
         expect(between.midX > left.maxX && between.midX < right.minX, "between")
-        roomy.editor.closeCard()
         let tight = try Gesture(apart: 330)
         let beside = try require(tight.editor.newRelationshipType(from: tight.person, to: tight.company, replacing: tight.bond))
         let box = try tight.frame(beside), personBox = try tight.frame(tight.person), companyBox = try tight.frame(tight.company)
         expect(!box.intersects(personBox) && !box.intersects(companyBox), "clear of both: \(box)")
-        tight.editor.closeCard()
     },
     test("a drag with nothing that makes connections, or an end that is not on the board shown, makes nothing and leaves the arrow") {
         let plain = try bondEditor()
@@ -177,7 +157,7 @@ struct RecordingBondEdgesPlugin: CanvasPlugin {
         let before = plain.document
         expectEqual(plain.newRelationshipType(from: person, to: company, replacing: bond), nil, "no Draw, no connection")
         expectEqual(plain.document, before)
-        expect(plain.card == nil && !plain.canUndo || plain.undoHistory.undoName != TypesStyle.newRelationshipType)
+        expect(!plain.canUndo || plain.undoHistory.undoName != TypesStyle.newRelationshipType)
         let g = try Gesture()
         let kept = g.editor.document
         expectEqual(g.editor.newRelationshipType(from: g.person, to: ShapeID(), replacing: g.bond), nil, "an end that is nowhere")
@@ -196,7 +176,6 @@ struct RecordingBondEdgesPlugin: CanvasPlugin {
         let g = try Gesture()
         let made = try require(g.editor.newRelationshipType(from: g.person, to: g.company, replacing: g.bond))
         expectEqual(g.editor.document[made]?.kind, g.editor.document[g.person]?.kind)
-        g.editor.closeCard()
     },
     test("a type related to itself is two arrows, never a two-headed one: one into the new type and one out of it, the second asked of the maker beside the first, which is in the document by then, and the type lands clear of it with room for both") {
         let log = BesideLog()
@@ -230,9 +209,8 @@ struct RecordingBondEdgesPlugin: CanvasPlugin {
         expect(gap >= TypesStyle.endArrowRoom - 0.5, "room for each arrow's body: \(gap)")
         expectEqual(editor.selectedShapeIDs, [made])
         expectEqual(editor.undoHistory.undoName, TypesStyle.newRelationshipType)
-        editor.closeCard()
     },
-    test("one Undo takes a self-related type back, both arrows and the name: the board as it was") {
+    test("one Undo takes a self-related type back, both arrows: the board as it was") {
         let log = BesideLog()
         let editor = try selfEditor(log)
         let person = editor.addType(TypeSchemaProperty.starter, title: "Person", at: CGPoint(x: 400, y: 300))
@@ -240,133 +218,14 @@ struct RecordingBondEdgesPlugin: CanvasPlugin {
         editor.undoHistory.seal()
         let start = editor.document
         let made = try require(editor.newRelationshipType(from: person, to: person))
-        type("friends", into: try field(of: try require(editor.card)))
-        editor.closeCard()
-        expectEqual(editor.document[made]?[TitleProperty.self], "friends")
         editor.undo()
         expectEqual(editor.document, start)
         expectEqual(editor.selectedShapeIDs, [person])
         editor.redo()
-        expectEqual(editor.document[made]?[TitleProperty.self], "friends")
+        expect(editor.document[made] != nil)
         expectEqual(editor.document.shapes.filter { $0.typed(as: Bond.self) != nil }.count, 2)
     },
-    test("it is drawn small where a kind lays itself out so, and rows come at once to both end types: the height both are about to gain is a dashed line and a row") {
+    test("rows come at once to both end types: the height both are about to gain is a dashed line and a row") {
         expectEqual(TypesStyle.relationshipRowGrowth, TypesStyle.relationRuleHeight + TypesStyle.rowHeight)
-    },
-])
-
-@MainActor let nameCardTests = Suite("The card that names a relationship type", [
-    test("it opens inside the gesture, at the pill, with the caret in its one field; each keystroke writes the title as typed and the pill follows; a blank is none") {
-        let g = try Gesture()
-        let made = try require(g.editor.newRelationshipType(from: g.person, to: g.company, replacing: g.bond))
-        let card = try require(g.editor.card)
-        let text = try field(of: card)
-        expect(card.firstResponder === text, "the keyboard is in the field")
-        let bare = try require(g.editor.titlePillRect(of: made))
-        type("i", into: text)
-        expectEqual(g.editor.document[made]?[TitleProperty.self], "i")
-        type("n", into: text)
-        expectEqual(g.editor.document[made]?[TitleProperty.self], "in", "as typed, not capitalised")
-        let named = try require(g.editor.titlePillRect(of: made))
-        expect(named.width > bare.width || named != bare, "the pill follows the name")
-        expectEqual(g.editor.card?.anchor, named, "and the card stays under it")
-        text.deleteBackward(nil)
-        text.deleteBackward(nil)
-        expectEqual(g.editor.document[made]?[TitleProperty.self], nil, "a blank is none")
-        expectEqual(g.editor.titlePillRect(of: made).map { $0.width > 0 }, true, "and the placeholder returns")
-        type("  a   b ", into: text)
-        expectEqual(g.editor.document[made]?[TitleProperty.self], "a b", "folded as every title is")
-        g.editor.closeCard()
-    },
-    test("Return, Esc and Tab close it keeping what was typed; Esc with nothing typed keeps an untitled relationship type and both arrows") {
-        for (name, selector) in [("Return", #selector(NSResponder.insertNewline(_:))), ("Esc", #selector(NSResponder.cancelOperation(_:))),
-                                 ("Tab", #selector(NSResponder.insertTab(_:))), ("Shift-Tab", #selector(NSResponder.insertBacktab(_:)))] {
-            let g = try Gesture()
-            let made = try require(g.editor.newRelationshipType(from: g.person, to: g.company, replacing: g.bond))
-            type("in", into: try field(of: try require(g.editor.card)))
-            try field(of: try require(g.editor.card)).doCommand(by: selector)
-            expect(g.editor.card == nil, "\(name) closes it")
-            expectEqual(g.editor.document[made]?[TitleProperty.self], "in", "\(name) keeps the name")
-        }
-        let g = try Gesture()
-        let before = g.ids
-        let made = try require(g.editor.newRelationshipType(from: g.person, to: g.company, replacing: g.bond))
-        try field(of: try require(g.editor.card)).doCommand(by: #selector(NSResponder.cancelOperation(_:)))
-        expect(g.editor.card == nil)
-        expectEqual(g.editor.document[made]?[TitleProperty.self], nil, "untitled")
-        expectEqual(g.added(since: before).count, 3, "the type and both arrows stay")
-        expectEqual(g.editor.undoHistory.undoName, TypesStyle.newRelationshipType, "and the step holds them")
-    },
-    test("the step is kept after the press, so the name is part of it: shown in an action, the card's keystrokes join the action's step and its name; a commit from elsewhere ends it") {
-        let g = try Gesture()
-        g.editor.undoHistory.seal()
-        var made: ShapeID?
-        let start = g.editor.document
-        g.editor.undoHistory.group {
-            made = g.editor.newRelationshipType(from: g.person, to: g.company, replacing: g.bond)
-        }
-        let id = try require(made)
-        // The action is over; the card is still shown and the step still open: it takes the name.
-        expect(g.editor.card != nil)
-        type("in", into: try field(of: try require(g.editor.card)))
-        expectEqual(g.editor.undoHistory.undoName, TypesStyle.newRelationshipType, "the step keeps the gesture's name")
-        g.editor.closeCard()
-        g.editor.undo()
-        expectEqual(g.editor.document, start, "one Undo takes back the type, both arrows and the name")
-        g.editor.redo()
-        expectEqual(g.editor.document[id]?[TitleProperty.self], "in")
-        // A commit from elsewhere ends the step: what is typed after is a step of its own.
-        g.editor.undo()
-        g.editor.undoHistory.group { made = g.editor.newRelationshipType(from: g.person, to: g.company, replacing: g.bond) }
-        let again = try require(made)
-        let card = try require(g.editor.card)
-        type("i", into: try field(of: card))
-        g.editor.transact("Elsewhere") { $0.update(g.person) { $0[TitleProperty.self] = "People" } }
-        type("n", into: try field(of: card))
-        expectEqual(g.editor.document[again]?[TitleProperty.self], "in")
-        g.editor.closeCard()
-        g.editor.undo()
-        expectEqual(g.editor.document[again]?[TitleProperty.self], "i", "the keystroke after the other commit is a step of its own")
-    },
-    test("the host's save point splits the step, as it splits any kept one: what is typed after it is a step named for the card") {
-        let g = try Gesture()
-        g.editor.undoHistory.seal()
-        var made: ShapeID?
-        g.editor.undoHistory.group { made = g.editor.newRelationshipType(from: g.person, to: g.company, replacing: g.bond) }
-        let id = try require(made)
-        let card = try require(g.editor.card)
-        type("i", into: try field(of: card))
-        g.editor.undoHistory.breakStep()
-        type("n", into: try field(of: card))
-        expectEqual(g.editor.undoHistory.undoName, TypesStyle.nameRelationshipType)
-        g.editor.closeCard()
-        g.editor.undo()
-        expectEqual(g.editor.document[id]?[TitleProperty.self], "i", "the first Undo takes the name's second half")
-        expectEqual(g.editor.undoHistory.undoName, TypesStyle.newRelationshipType)
-        g.editor.undo()
-        expect(g.editor.document[id] == nil, "the next takes the gesture")
-    },
-    test("an Undo while the card shows closes it and takes back the step; a press elsewhere closes it keeping the name") {
-        let g = try Gesture()
-        let start = g.editor.document
-        g.editor.undoHistory.group { _ = g.editor.newRelationshipType(from: g.person, to: g.company, replacing: g.bond) }
-        type("in", into: try field(of: try require(g.editor.card)))
-        g.editor.undo()
-        expect(g.editor.card == nil, "undone")
-        expectEqual(g.editor.document, start)
-        let other = try Gesture()
-        let made = try require(other.editor.newRelationshipType(from: other.person, to: other.company, replacing: other.bond))
-        type("in", into: try field(of: try require(other.editor.card)))
-        other.editor.closeCard(.pressedElsewhere)
-        expectEqual(other.editor.document[made]?[TitleProperty.self], "in")
-    },
-    test("zoomed out, where no card shows, the type is made, selected and untitled; a read-only shape is not named") {
-        let g = try Gesture()
-        g.editor.camera.setZoom(0.2, around: .zero)
-        let made = try require(g.editor.newRelationshipType(from: g.person, to: g.company, replacing: g.bond))
-        expect(g.editor.card == nil, "no card at 20%")
-        expectEqual(g.editor.selectedShapeIDs, [made])
-        expectEqual(g.editor.document[made]?[TitleProperty.self], nil)
-        expect(!g.editor.nameRelationshipType(made), "nothing shows")
     },
 ])

@@ -15,7 +15,7 @@ import Topology
 import Types
 
 /// The plugins a note stands on, as StickyNotesTests have them, for the tests of a note's relation rows over real
-/// arrows (`noteRelationRowsTests`, `noteRelationFreshTests`, `noteCompactTests`), which add Arrows' plugins: they
+/// arrows (`noteRelationRowsTests`, `noteRelationFreshTests`, `notePillTests`), which add Arrows' plugins: they
 /// are here and not in StickyNotesTests, since a test of a note may not import Arrows.
 @MainActor var notePlugins: [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),

@@ -172,6 +172,9 @@ public final class RelationshipIndex {
     /// shape that is no relationship type. O(1) to ask.
     public func endArrows(of type: ShapeID) -> Set<ShapeID> { carriersOf[type] ?? [] }
 
+    /// Every arrow that is an end of a relationship type, as the last commit left them.
+    var endCarriers: Set<ShapeID> { Set(endOf.keys) }
+
     /// The end arrows of a relationship type as a transaction leaves them, for the delete that takes them
     /// (`RelationshipDeletes`): the arrows the index knows (`endArrows(of:)`) and every relating shape on the type's own
     /// board bound to it, one end free or not, each read again from the transaction's own record (`boundShapes(in:)`), so an

@@ -606,10 +606,13 @@ public final class TypeSync<Schema: SyncedSchema> {
     // MARK: Reading shapes
 
     /// A shape's two sides: its words (`TypeWords`) and its schema; nil for a shape that doesn't
-    /// hold `Schema`, or whose kind has no words.
+    /// hold `Schema`, or whose kind has no words, or that is a relationship type with no words: its fields
+    /// are written to its schema straight (the card's list) and its words are not drawn, so it is never
+    /// synced, either way, until it has words.
     private func sides(of record: AnyShapeRecord) -> TypeSyncSides? {
         guard kinds.contains(record.kind), let schema = record[Schema.self],
               let words = editor?.registry.typeWords(of: record.kind)?.words(record) else { return nil }
+        if record[RelationshipProperty.self] == true, Self.trimmed(words).isEmpty { return nil }
         return TypeSyncSides(words: words, schema: schema.text)
     }
 
@@ -715,7 +718,16 @@ extension TypeSync: EditorService {
                 // Unless the words are the schema (JSON words taken whole): then the schema is ahead,
                 // and the sync takes the words from it. The last sync is said to have had the words
                 // and an empty schema, which also undoes `see`'s blanking of an empty one's words.
-                if Self.trimmed(now.words) == Self.trimmed(now.schema) { synced[id] = TypeSyncSides(words: now.words, schema: "{}") }
+                if Self.trimmed(now.words) == Self.trimmed(now.schema) {
+                    synced[id] = TypeSyncSides(words: now.words, schema: "{}")
+                } else if record[RelationshipProperty.self] == true {
+                    // A relationship type that has words for the first time (it was not synced while it had none, and its
+                    // schema was written by the card's list): its words are ahead of the schema it has, and they are being
+                    // typed (its panel's box writes each keystroke), so they wait as an edit does: read once typing pauses,
+                    // or at once on the box's commit, never after the first letter.
+                    synced[id]?.words = MentionText(plain: "")
+                    return
+                }
                 // And read at once, on the next turn: a draw or an undo that follows lands first.
                 commitOnNextTurn(id)
             }

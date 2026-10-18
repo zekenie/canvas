@@ -54,7 +54,7 @@ private let drillSchema = #"{"type": "object", "properties": {"role": {"type": "
             expect(false, "the tags level did not open: depth \(form.depth)")
         }
         r.cards.close()
-        expectEqual(r.editor.undoHistory.undoName, "Change Layer")
+        expectEqual(r.editor.undoHistory.undoName, "Change In")
         r.editor.undo()
         expectEqual(r.editor.document, start, "one Undo")
         expect(try r.s.bytes() == startBytes)

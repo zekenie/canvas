@@ -49,8 +49,8 @@ extension Editable {
 }
 
 extension LaidOutBox {
-    func erasedLaidOutSize(of record: AnyShapeRecord, in context: ShapeContext) -> CGSize? {
-        record.typed(as: Props.self).map { laidOutSize(of: $0, in: context) }
+    func erasedLaidOut(of record: AnyShapeRecord, in context: ShapeContext) -> LaidOutSize? {
+        record.typed(as: Props.self).map { LaidOutSize(size: laidOutSize(of: $0, in: context), anchor: laidOutAnchor(of: $0, in: context)) }
     }
 }
 

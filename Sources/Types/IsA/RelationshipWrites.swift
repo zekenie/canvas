@@ -6,7 +6,7 @@ import Selection
 import Topology
 
 extension TypesStyle {
-    /// The step the name card takes, inside the step the gesture made.
+    /// The step a name typed in a relationship type's pill takes, where the gesture that made it is not its step.
     public static let nameRelationshipType = "Name Relationship Type"
     /// How much clear arrow each end of a new relationship type is given before the type's box: the types' names on the
     /// arrows are typed after, and a head and a name must not hide each other.
@@ -21,27 +21,28 @@ public enum RelationshipTone: Sendable, Equatable {
     case plain, wrong
 }
 
-/// What the parts of Types above IsA do for it, handed over by `TypesPlugin` so IsA names none of them: showing the
-/// card that names a relationship type, which is Form's; the tone of an arrow's chip, which is the check's (Checks);
-/// and the arrow's card a chip opens, which is Form's.
+/// What the parts of Types above IsA do for it, handed over by `TypesPlugin` so IsA names none of them: the tone of
+/// an arrow's chip, which is the check's (Checks); the arrow's card a chip opens, which is Form's; and the card that
+/// defines a relationship type, which Tab in its pill's name asks for.
 @MainActor
 public final class RelationshipHooks {
-    /// Shows the card that names a relationship type, at its pill, for the writer that made it (inside the writer's
-    /// step); false when none shows (a read-only board or shape, a shape drawn as a skeleton).
-    let nameIt: @MainActor (ShapeID) -> Bool
     /// How the chip of a relationship type on this arrow is drawn: wrong while the check calls one of its ends a
     /// misfit. Plain where there is no check to ask (a list without the check).
     public let tone: @MainActor (ShapeID) -> RelationshipTone
     /// Opens the card of an arrow's relationship, hung from the arrow's anchor, with the arrow selected; false when
     /// none opens (the relationship's type has no fields, the board is shown as skeletons).
     public let openCard: @MainActor (ShapeID) -> Bool
+    /// Opens the card that defines a relationship type, hung from its pill, at `add field`: what Tab does in the
+    /// pill's name, once the name is kept and editing has ended. False when none opens (nothing fills it in: a list
+    /// without the card, a board shown as skeletons); the type keeps its name either way.
+    public var openDefinition: @MainActor (ShapeID) -> Bool
 
-    public init(nameIt: @escaping @MainActor (ShapeID) -> Bool,
-                tone: @escaping @MainActor (ShapeID) -> RelationshipTone = { _ in .plain },
-                openCard: @escaping @MainActor (ShapeID) -> Bool = { _ in false }) {
-        self.nameIt = nameIt
+    public init(tone: @escaping @MainActor (ShapeID) -> RelationshipTone = { _ in .plain },
+                openCard: @escaping @MainActor (ShapeID) -> Bool = { _ in false },
+                openDefinition: @escaping @MainActor (ShapeID) -> Bool = { _ in false }) {
         self.tone = tone
         self.openCard = openCard
+        self.openDefinition = openDefinition
     }
 }
 
@@ -54,13 +55,13 @@ extension RelationshipHooks: EditorService {
 extension CanvasEditor {
     /// A relationship type put between two types, with an arrow to it from the first and another from it to the
     /// second, and `connection` (the arrow a port's drag drew between them), if given, taken away: one step,
-    /// "New Relationship Type", which stays open past the press while the card that names it is shown. The new note is
-    /// of the first kind that can hold the mark and has a tool to place it (the first type's own kind if it can), with
-    /// the starter schema, the mark, no words and no title, drawn small, put between the two where each arrow shows a
-    /// body (`Surroundings.between`) and settled; the two arrows are made as `canvas draw` makes an edge
-    /// (`registry.drawConnection`), one head each. It is then selected, never edited, and the card that names it is
-    /// shown by this writer, inside the step (`RelationshipHooks.nameIt`), so one Undo, once the card is dismissed, takes
-    /// back the note, both arrows and the name.
+    /// "New Relationship Type", which stays open past the press while its name is typed. The new note is of the first
+    /// kind that can hold the mark and has a tool to place it (the first type's own kind if it can), with the starter
+    /// schema, the mark, no words and no title; it is drawn as a pill (`TypeRows.pill`), its stored frame centered on the
+    /// middle of the straight line between the two types where each arrow shows a body (`Surroundings.between`) and
+    /// settled; the two arrows are made as `canvas draw` makes an edge (`registry.drawConnection`), one head each. It is
+    /// then selected and its name edited in place, inside the step (a note placed begins its own editing the same way), so
+    /// one Undo, once the editing is over, takes back the note, both arrows and the name.
     ///
     /// One of the two may be a type on another board: it is related through a pill on the board shown that stands for it
     /// (the pill the other type already has an arrow into is reused, else one is put down where a draw run puts it, beyond
@@ -83,7 +84,7 @@ extension CanvasEditor {
               let kind = relationshipTypeKind(besides: firstBoard == board ? first : second), let base = registry.placement(for: kind) else { return nil }
         let placement = base.setting(TypeSchemaProperty.self, to: SchemaText(TypeSchemaProperty.starter))
             .setting(RelationshipProperty.self, to: true)
-        // Its room is what it is laid out at (drawn small), and its stored box is the placement's.
+        // Its room is what it is laid out at (a pill), and its stored box is the placement's, centered on where it lands.
         let probe = placement.shape(at: .zero)
         let size = shapeContext.layingOut(with: [probe]).frame(of: probe)?.size ?? placement.size
         // The end on another board: the pill that stands for it, reused or made, and what it takes.
@@ -109,9 +110,11 @@ extension CanvasEditor {
         } else {
             landing = surroundings.near(near)
         }
-        // The paper is drawn from the top-left its box stores, so the box's top-left is the landing's.
+        // The pill is drawn about the middle of the box it stores, so the box's middle is the landing's: on the straight line between the
+        // two types where the gap holds it (the middle of the line between them, which is where the two arrows leave them).
         guard let landing else { return nil }
-        let record = placement.shape(at: CGPoint(x: landing.rect.minX + placement.size.width / 2, y: landing.rect.minY + placement.size.height / 2))
+        let middle = Self.pillMiddle(of: landing, between: first, second, in: surroundings)
+        let record = placement.shape(at: middle.point)
         // A new pill goes where a draw run puts it, past the new type.
         var farLanding: Landing?
         if let pending = pill, pending.reused == nil, let route = verdicts.route, let record = shape(inFile: far) {
@@ -172,12 +175,34 @@ extension CanvasEditor {
             } catch {
                 return nil
             }
+            // On the line between the two types, it is on it as they are now (they have their new rows): one line through the pill, straight.
+            if middle.isOnLine { straighten(record.id) }
             selection = record.id
-            _ = service(RelationshipHooks.self)?.nameIt(record.id)
+            // Its name is typed in the pill, in this step; zoomed out nothing shows, as with a card: the type is made, selected and untitled.
+            if !drawsSkeletons { beginEditing(record.id) }
             return record.id
         }
         if let refused { refuseChanges(to: [refused]) }
         return made
+    }
+
+    /// Where the pill's middle is: the landing's, moved onto the straight line between the middles of the two types when the landing
+    /// is across the gap between them and so within a pill's width of that line (a landing beside the middle, clear of something in the
+    /// way, is not on it and stays where the solver put it).
+    private static func pillMiddle(of landing: Landing, between first: ShapeID, _ second: ShapeID, in surroundings: Surroundings) -> (point: CGPoint, isOnLine: Bool) {
+        let middle = CGPoint(x: landing.rect.midX, y: landing.rect.midY)
+        guard first != second, let a = surroundings.reading.shapes.geometry(of: first)?.bounds, let b = surroundings.reading.shapes.geometry(of: second)?.bounds,
+              !a.isNull, !b.isNull else { return (middle, false) }
+        // Each type as it is about to be, a row taller: the line the arrows will run along.
+        let growth = TypesStyle.relationshipRowGrowth / 2
+        let from = CGPoint(x: a.midX, y: a.midY + growth), to = CGPoint(x: b.midX, y: b.midY + growth)
+        let line = CGPoint(x: to.x - from.x, y: to.y - from.y)
+        let length2 = line.x * line.x + line.y * line.y
+        guard length2 > 0 else { return (middle, false) }
+        let t = ((middle.x - from.x) * line.x + (middle.y - from.y) * line.y) / length2
+        let onLine = CGPoint(x: from.x + t * line.x, y: from.y + t * line.y)
+        let off = hypot(onLine.x - middle.x, onLine.y - middle.y)
+        return off <= min(landing.rect.width, landing.rect.height) ? (onLine, true) : (middle, false)
     }
 
     /// The kind a relationship type put down beside `owner` is: the owner's, if it can hold the mark and has a tool to

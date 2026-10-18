@@ -195,7 +195,7 @@ enum FieldKindReader {
             guard let target = SchemaReferences.target(of: ref), target.fragment.isEmpty else { return .other }
             return .typeFields(target.shape)
         }
-        if let options = options(of: schema) { return options.isEmpty ? .other : .plain(.choice(options)) }
+        if let options = options(of: schema) { return options.isEmpty ? (isChoiceOfNone(schema) ? .plain(.choice([])) : .other) : .plain(.choice(options)) }
         switch types(of: schema) {
         case ["array"]: return list(of: schema)
         case ["object"]: return object(schema)
@@ -209,7 +209,7 @@ enum FieldKindReader {
     /// value and an either's two plain kinds are asked for.
     static func plain(_ written: SchemaValue) -> PlainKind? {
         let schema = withoutNull(written)
-        if let options = options(of: schema) { return options.isEmpty ? nil : .choice(options) }
+        if let options = options(of: schema) { return options.isEmpty ? (isChoiceOfNone(schema) ? .choice([]) : nil) : .choice(options) }
         guard schema["$ref"] == nil else { return nil }
         switch types(of: schema) {
         case ["boolean"]: return .yesNo
@@ -220,6 +220,12 @@ enum FieldKindReader {
             return format == "date" ? .date : format == "date-time" ? .dateTime : .text
         default: return nil
         }
+    }
+
+    /// A string with an empty `enum` (what the field writer writes for a Choice before its first option): a choice of none,
+    /// which reads as a Choice with no options and not as `Other`.
+    private static func isChoiceOfNone(_ schema: SchemaValue) -> Bool {
+        schema["enum"]?.elements?.isEmpty == true && types(of: schema) == ["string"]
     }
 
     /// An `enum` of scalars (a null among them is a "may be null", dropped), or a scalar `const`. Nil when

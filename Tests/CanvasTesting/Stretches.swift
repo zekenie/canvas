@@ -113,6 +113,7 @@ public enum Stretches {
 struct StretchDefinition {
     let log: StretchLog
     let shrinking: Bool
+    let anchor: CGPoint
 }
 
 extension StretchDefinition: ShapeDefinition {
@@ -130,6 +131,8 @@ extension StretchDefinition: LaidOutBox {
         if shrinking { return CGSize(width: room.width, height: room.height) }
         return CGSize(width: max(room.width, shape.frame.width), height: max(room.height, shape.frame.height))
     }
+
+    func laidOutAnchor(of shape: ShapeRecord<Stretch>, in context: ShapeContext) -> CGPoint { anchor }
 }
 
 extension StretchDefinition: Editable {
@@ -204,15 +207,19 @@ public struct StretchesPlugin: CanvasPlugin {
     /// smaller than the box): the default keeps a stretch no smaller than it stores, as most tests
     /// of a laid-out frame rely on.
     public let shrinking: Bool
-    public init(log: StretchLog = StretchLog(), shrinking: Bool = false) {
+    /// The point of the stored box that stays where it is when a stretch takes its laid-out size (`LaidOutBox.laidOutAnchor`), in
+    /// unit coordinates: the top-left by default, (0.5, 0.5) for a stretch drawn about the middle of its box.
+    public let anchor: CGPoint
+    public init(log: StretchLog = StretchLog(), shrinking: Bool = false, anchor: CGPoint = .zero) {
         self.log = log
         self.shrinking = shrinking
+        self.anchor = anchor
     }
     public var id: PluginID { "stretches" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        let log = log, shrinking = shrinking
-        registrar.shape(StretchDefinition(log: log, shrinking: shrinking)) { stretch in
+        let log = log, shrinking = shrinking, anchor = anchor
+        registrar.shape(StretchDefinition(log: log, shrinking: shrinking, anchor: anchor)) { stretch in
             stretch.tool(label: "Stretch", systemImage: "arrow.up.left.and.arrow.down.right",
                          placing: stretch.placement(size: CGSize(width: 100, height: 60)) { Stretch(.zero) })
         }

@@ -63,7 +63,7 @@ import Validation
             }
         }
         editor.undoHistory.seal()
-        expectEqual(keptIssues(of: m.featureNote, in: editor), ["layer has 2 notes, and should have at most 1"])
+        expectEqual(keptIssues(of: m.featureNote, in: editor), ["in has 2 notes, and should have at most 1"])
         expectEqual(try incompleteIDs(editor), [bo], "the second Feature note has none")
         // The re-aim: the second arrow's start handle, pressed and dragged onto the other Feature note, released.
         let arrow = try require(drawn.last)
@@ -79,7 +79,7 @@ import Validation
         let check = try require(editor.fieldChecks).fullCheck(of: try require(editor.document[m.featureNote]))
         expectEqual(check.problems.map(\.message), [], "the check of the note the arrow left")
         expectEqual(try incompleteIDs(editor), [], "the other note has a relationship now, and nothing is incomplete")
-        expectEqual(try m.look(of: m.featureNote, "layer"), .plain, "the row of the note the arrow left: one pill, not red")
+        expectEqual(try m.look(of: m.featureNote, "in"), .plain, "the row of the note the arrow left: one pill, not red")
         expectEqual(editor.validation?.result(for: m.featureNote)?.isValid ?? true, true, "and no ring")
     },
     test("an empty Needed row is no warning of a run, and a second job drawn by a run that names only the edge leaves the note it does not restate in error on the board") {

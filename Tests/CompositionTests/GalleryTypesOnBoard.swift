@@ -74,10 +74,10 @@ extension Optional {
 
 @MainActor
 let selfStates: [GalleryState] = [
-    GalleryState("Rel2-p3-several", answers: "Board 2, frame 2.3", "Employment with one arrow in from Person and two out, to Company and to Agency: any of them, `to` beside each unnamed end; a Person's `employment` row names both", size: boardStage) { stage in
+    GalleryState("Rel2-p3-several", answers: "Board 2, frame 2.3", "Employment with one arrow in from Person and two out, to Company and to Agency: each half its own line to the pill, no head at it; a Person's `employment` row names both", size: boardStage) { stage in
         let editor = stage.editor
         let person = editor.put(personType, at: CGPoint(x: 40, y: 40))
-        // Clear of both sides: an arrow between two shapes that touch has no body to see, and its `from` would be drawn
+        // Clear of both sides: an arrow between two shapes that touch has no body to see, and its head would be drawn
         // over the note it starts in.
         let company = editor.put(companyType, at: CGPoint(x: 620, y: 20))
         let agency = editor.put(agencyType, at: CGPoint(x: 620, y: 280))

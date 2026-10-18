@@ -175,15 +175,26 @@ public enum AdornmentLayout {
         var isCompact = false
         /// The item and the rest of its group are folded into one "+N" chip, which is placed here.
         var isOverflow = false
+        /// The lead of a label (`AdornmentPlacement.inLabelLead`): where it is in world units, which the geometry
+        /// gave it, and which of the label's faces is drawn there (0 the whole one). Its frame is that rect at the
+        /// origin, one world unit to a point.
+        var lead: (rect: CGRect, face: Int)?
 
         /// From the top-left corner.
         func frame(width: CGFloat) -> CGRect { isFromRight ? frame.offsetBy(dx: width, dy: 0) : frame }
 
         /// The corner, in world units, of a shape with these bounds.
-        func corner(in bounds: CGRect) -> CGPoint { CGPoint(x: isFromRight ? bounds.maxX : bounds.minX, y: bounds.minY) }
+        func corner(in bounds: CGRect) -> CGPoint {
+            if let lead { return lead.rect.origin }
+            return CGPoint(x: isFromRight ? bounds.maxX : bounds.minX, y: bounds.minY)
+        }
+
+        /// World units a point: `scale` for what is placed from the shape's edge, one for a label's lead.
+        func unit(_ scale: CGFloat) -> CGFloat { lead == nil ? scale : 1 }
 
         /// The frame in world units, for a shape with these bounds, at `scale` world units per point.
         func worldRect(in bounds: CGRect, scale: CGFloat) -> CGRect {
+            if let lead { return lead.rect }
             let corner = corner(in: bounds)
             return CGRect(x: corner.x + frame.minX * scale, y: corner.y + frame.minY * scale,
                           width: frame.width * scale, height: frame.height * scale)
@@ -367,6 +378,7 @@ public enum AdornmentLayout {
         guard shift != 0 else { return 0 }
         for i in items.indices {
             guard let slot = slots[i] else { continue }
+            guard slot.lead == nil else { continue }
             slots[i] = Slot(frame: slot.frame.offsetBy(dx: shift, dy: 0), isFromRight: slot.isFromRight, isCompact: slot.isCompact,
                             isOverflow: slot.isOverflow)
         }

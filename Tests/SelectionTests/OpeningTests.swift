@@ -35,6 +35,30 @@ import TestKit
         expectEqual(h.editor.selection, t.a)
         expectEqual(h.editor.board, .root)
     },
+    test("an opener that says which of its kind's shapes it opens: the ones it says no to are opened as a kind with no opener is, edited in place") {
+        final class Claim { var yes = true }
+        let claim = Claim()
+        var opened: [ShapeID] = []
+        let t = PocketBoards()
+        let h = try pocketsHarness(t, [Contributor(id: "claiming") { r in
+            r.opens(Card.self, "Open", where: { _, _ in claim.yes }) { card, _ in opened.append(card.id) }
+        }])
+        h.press(at: t.cPoint, clickCount: 2); h.release()
+        expectEqual(opened, [t.c], "claimed: its opener runs")
+        expectEqual(h.editor.editingShapeID, nil)
+        expect(h.editor.canOpen(t.c))
+        claim.yes = false
+        h.editor.selection = nil
+        h.press(at: t.cPoint, clickCount: 2); h.release()
+        expectEqual(opened, [t.c], "declined: not again")
+        expectEqual(h.editor.editingShapeID, t.c, "edited in place")
+        expect(h.editor.canOpen(t.c), "it still opens, by editing")
+        h.editor.endEditing()
+        claim.yes = true
+        h.editor.selection = t.c
+        h.editor.openSelection()
+        expectEqual(opened, [t.c, t.c], "Return too")
+    },
     test("a double-click on empty canvas still places what claims it") {
         let t = PocketBoards()
         let h = try pocketsHarness(t, cards: doubleClickCards())

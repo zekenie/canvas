@@ -22,9 +22,9 @@ import Validation
 
 // Board 1 of the relationships wireframes, the first minute's drag, on the shipped list with real notes and real
 // arrows: a Feature type and a Layer type, a Feature note and a Layer note with a value each and no title and no words.
-// A port's drag from one type to the other puts a relationship type between them, drawn small and selected, with the card
-// that names it open; every Feature note has a `layer` row and every Layer note a `feature` row; the name is typed; one
-// Undo, once the card is dismissed, returns the board to the start. Then a drag from the Feature note to the Layer note
+// A port's drag from one type to the other puts a relationship type between them, a pill on the line, selected and edited
+// in place, the caret in it; every Feature note has a `layer` row and every Layer note a `feature` row; the name is typed;
+// one Undo, once editing is over, returns the board to the start. Then a drag from the Feature note to the Layer note
 // takes the type at once, in the press's step, and opens no list. (The rows' list and its pick are the next slice's.)
 
 @MainActor
@@ -100,11 +100,12 @@ final class Minute {
     }
 
     func names(of note: ShapeID) -> [String] { rows.rows(of: note).map(\.name) }
-    var cardField: NSTextView? { editor.card.flatMap { $0.view.subviews.compactMap { $0 as? NSTextView }.first } }
+    /// The line the name of the relationship type being edited is typed in (its pill's editing view), if one is.
+    var pillField: NSTextView? { canvas.descendants(TypePillEditor.self).first?.field }
 }
 
 @MainActor let relationshipReleaseShippedTests = Suite("The first minute's drag, shipped", [
-    test("board 1, steps 0 to 5 and 9: a drag from Feature to Layer puts a small relationship type between them, selected, with its name card; every Feature has a layer row and every Layer a feature row; the name is typed; one Undo returns the board; a drag between the notes takes the type") {
+    test("board 1, steps 0 to 5 and 9: a drag from Feature to Layer puts a relationship type between them, a pill on the line, selected and edited in place; every Feature has a layer row and every Layer a feature row; the name is typed; one Undo returns the board; a drag between the notes takes the type") {
         let m = try Minute()
         defer { m.close() }
         let editor = m.editor
@@ -129,17 +130,18 @@ final class Minute {
         expectEqual(relationship[TypeSchemaProperty.self]?.text, TypeSchemaProperty.starter)
         expectEqual(relationship.typed(as: StickyNote.self)?.props.text.stored, "")
         expectEqual(relationship[TitleProperty.self], nil)
-        expectEqual(try m.frame(made).size, CGSize(width: 160, height: 34), "drawn small")
+        expectEqual(try m.frame(made).size, TypePills.pill(title: nil, fields: 0).size, "drawn as a pill")
         let box = try m.frame(made), featureBox = try m.frame(m.feature), layerBox = try m.frame(m.layer)
         expect(!box.intersects(featureBox) && !box.intersects(layerBox), "overlapping neither: \(box)")
         let toIt = try require(m.arrows.first { $0.props.start.binding?.shapeID == m.feature && $0.props.end.binding?.shapeID == made })
         let fromIt = try require(m.arrows.first { $0.props.start.binding?.shapeID == made && $0.props.end.binding?.shapeID == m.layer })
         expect(toIt.props.endArrowhead && !toIt.props.startArrowhead && fromIt.props.endArrowhead && !fromIt.props.startArrowhead, "one head each")
         expectEqual(editor.selectedShapeIDs, [made])
-        expect(editor.editingShapeID == nil, "selected and not edited")
-        expect(editor.titlePillRect(of: made) != nil, "its pill shows")
+        expectEqual(editor.editingShapeID, made, "selected and edited in place")
+        expect(editor.titlePillRect(of: made) == nil, "no title pill above it: it is the pill")
         expectEqual(editor.undoHistory.undoName, "New Relationship Type", "one step")
-        expect(editor.card != nil && editor.card?.shape == made, "its name card is open")
+        expect(editor.card == nil, "and no card")
+        expect(m.pillField != nil, "the caret is in its pill")
         // Step 4: at once, before a name, the rows.
         expectEqual(m.names(of: m.featureNote), ["purpose", "layer"])
         expectEqual(m.names(of: m.layerNote), ["order", "purpose", "title", "feature"])
@@ -149,10 +151,10 @@ final class Minute {
         expectEqual(editor.document[m.layerNote], layerNote)
         expectEqual(m.rows.rows(of: m.feature).last?.content, .relationType(direction: "→", chips: [m.layer], more: 0), "the type notes say the way it runs")
         // Step 5: `in`, Return.
-        let field = try require(m.cardField)
+        let field = try require(m.pillField)
         field.insertText("in", replacementRange: NSRange(location: 0, length: 0))
         field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
-        expect(editor.card == nil, "Return dismisses the card")
+        expectEqual(editor.editingShapeID, nil, "Return ends editing")
         expectEqual(editor.document[made]?[TitleProperty.self], "in")
         expectEqual(editor.undoHistory.undoName, "New Relationship Type")
         let named = editor.document
@@ -163,7 +165,7 @@ final class Minute {
         expectEqual(m.names(of: m.featureNote), ["purpose"])
         editor.redo()
         expectEqual(editor.document, named, "Redo brings all three back, named")
-        expectEqual(m.names(of: m.featureNote), ["purpose", "layer"])
+        expectEqual(m.names(of: m.featureNote), ["purpose", "in"])
         // Step 9: a drag from the Feature note to the Layer note takes the type at once, in the press's step, with no list.
         editor.selectedShapeIDs = []
         editor.undoHistory.seal()
@@ -185,16 +187,16 @@ final class Minute {
         expectEqual(editor.document, before, "one Undo takes back the arrow and its type together")
         expect(m.model.requests.isEmpty, "no step asked the model")
     },
-    test("the same drag with the name card left open, and a press elsewhere: the type stays untitled and the Undo is still one") {
+    test("the same drag with nothing typed, and Escape: the type stays untitled with both arrows and the Undo is still one") {
         let m = try Minute()
         defer { m.close() }
         let editor = m.editor
         let start = editor.document
         try m.drag(from: m.feature, to: m.layer)
-        expect(editor.card != nil)
-        // Escape in the field: the card closes, the type stays with both arrows, untitled.
-        try require(m.cardField).doCommand(by: #selector(NSResponder.cancelOperation(_:)))
-        expect(editor.card == nil)
+        expect(editor.editingShapeID != nil)
+        // Escape in the line: editing ends, the type stays with both arrows, untitled.
+        try require(m.pillField).doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(editor.editingShapeID, nil)
         let made = try require(editor.document.shapes.last { $0[RelationshipProperty.self] == true }).id
         expectEqual(editor.document[made]?[TitleProperty.self], nil)
         expectEqual(m.arrows.count, 2)
@@ -204,19 +206,19 @@ final class Minute {
 ])
 
 @MainActor let relationshipReleaseEdgeTests = Suite("The drag between two types, at its edges", [
-    test("the small relationship type sits across the gap on the line between the two types, with room for each arrow, and not above it for the box it stores") {
+    test("the relationship type's pill sits across the gap, centered on the straight line between the two types, with room for each arrow, and not above it for the box it stores") {
         let m = try Minute()
         defer { m.close() }
         let line = (try m.frame(m.feature).midY + m.frame(m.layer).midY) / 2
         try m.drag(from: m.feature, to: m.layer)
         let made = try require(m.editor.document.shapes.last { $0[RelationshipProperty.self] == true }).id
         let box = try m.frame(made), feature = try m.frame(m.feature), layer = try m.frame(m.layer)
-        expectEqual(box.size, CGSize(width: 160, height: 34))
-        // The line is the one between the types as they will be once each gains a row, half that row's room lower.
-        let expected = line + TypesStyle.relationshipRowGrowth / 2
-        expect(abs(box.midY - expected) <= 1, "its middle \(box.midY) is on the line between the types (\(expected))")
+        expectEqual(box.size, TypePills.pill(title: nil, fields: 0).size)
+        // The line is the one between the types as they are once each has its row: the pill is put on it in the same step, so the two arrows are one straight line.
+        let expected = (feature.midY + layer.midY) / 2
+        expect(abs(box.midY - expected) <= 0.01, "its middle \(box.midY) is on the line between the types (\(expected))")
+        expect(abs(box.midY - line) <= TypesStyle.relationshipRowGrowth, "and near where it was asked to land: \(line)")
         expect(box.minX >= feature.maxX + TypesStyle.endArrowRoom - 0.5 && box.maxX <= layer.minX - TypesStyle.endArrowRoom + 0.5, "with the arrows' room each side: \(box)")
-        m.editor.closeCard()
     },
     test("both types in a frame: the relationship type is in the frame too, and one Undo returns the file's bytes") {
         let m = try Minute()
@@ -258,7 +260,7 @@ final class Minute {
         expectEqual(m.editor.undoHistory.undoName, steps, "no step")
         expect(m.editor.card == nil)
     },
-    test("zoomed out to 20%, where no card shows, the drag makes the type small, selected and untitled, and one Undo returns the bytes") {
+    test("zoomed out to 20%, where nothing can be edited, the drag makes the type, selected and untitled, and one Undo returns the bytes") {
         let m = try Minute(featureAt: CGPoint(x: 40, y: 40), layerAt: CGPoint(x: 400, y: 40))
         defer { m.close() }
         m.editor.camera.setZoom(0.2, around: .zero)

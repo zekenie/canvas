@@ -117,15 +117,15 @@ struct RelationScene {
         expectEqual(related.rect.minY - purpose.rect.maxY, TypesStyle.relationRuleHeight, "the dashed line takes eight points between the last field and the first relation row")
         expectEqual(s.names(s.layerNote), ["order", "purpose", "title"], "the other type has no end yet")
         s.toEnd()
-        expectEqual(s.names(s.note), ["purpose", "layer"], "named for the type at the other end")
+        expectEqual(s.names(s.note), ["purpose", "in"], "a from end is named for the relationship type")
         expectEqual(s.names(s.layerNote), ["order", "purpose", "title", "feature"])
         expectEqual(try s.height(s.layerNote), try s.stored(s.layerNote) + relationRowsHeight(4, rule: true))
-        expectEqual(try s.row(s.note, "layer").content, .empty("add layer"), "an empty row reads add and its name")
+        expectEqual(try s.row(s.note, "in").content, .empty("add in"), "an empty row reads add and its name")
         expectEqual(try s.row(s.layerNote, "feature").content, .empty("add feature"))
         // Every instance on every board, and the two type notes.
         expectEqual(try s.height(s.away), try s.stored(s.away) + relationRowsHeight(2, rule: true), "on a board that is not shown")
         expectEqual(try s.height(s.awayLayer), try s.stored(s.awayLayer) + relationRowsHeight(4, rule: true))
-        expectEqual(s.names(s.feature), ["purpose", "layer"])
+        expectEqual(s.names(s.feature), ["purpose", "in"])
         expectEqual(s.names(s.layer), ["order", "purpose", "title", "feature"])
         expectEqual(try s.height(s.feature), try s.stored(s.feature) + relationRowsHeight(2, rule: true))
     },
@@ -134,7 +134,7 @@ struct RelationScene {
         s.fromEnd()
         expectEqual(try s.row(s.feature, "in").content, .relationType(direction: "→", chips: [], more: 0), "no type at the other end yet: any")
         s.toEnd()
-        expectEqual(try s.row(s.feature, "layer").content, .relationType(direction: "→", chips: [s.layer], more: 0))
+        expectEqual(try s.row(s.feature, "in").content, .relationType(direction: "→", chips: [s.layer], more: 0))
         expectEqual(try s.row(s.layer, "feature").content, .relationType(direction: "←", chips: [s.feature], more: 0))
         // Four more types at the to side: two chips and a count.
         let others = (1...4).map { s.editor.addSlipType(featureRowsSchema, title: "Other \($0)", at: CGPoint(x: 40, y: 2000 + 300 * Double($0))) }
@@ -146,8 +146,8 @@ struct RelationScene {
         let friendship = s.editor.addRelationshipType("Friendship", at: CGPoint(x: 240, y: 300))
         s.editor.addBond(s.feature, friendship)
         s.editor.addBond(friendship, s.feature)
-        expectEqual(try s.row(s.feature, "feature").content, .relationType(direction: "↔", chips: [s.feature], more: 0))
-        expectEqual(s.names(s.note), ["purpose", "feature"])
+        expectEqual(try s.row(s.feature, "friendship").content, .relationType(direction: "↔", chips: [s.feature], more: 0))
+        expectEqual(s.names(s.note), ["purpose", "friendship"], "a type related to itself, unnamed on both sides: the relationship type's name")
     },
     test("a typed name is shown as typed, and the later of two relationship types' rows of one name says whose it is") {
         let s = try RelationScene()
@@ -157,17 +157,17 @@ struct RelationScene {
         let contract = s.editor.addRelationshipType("Contract", at: CGPoint(x: 240, y: 300))
         s.editor.addBond(s.feature, contract)
         s.editor.addBond(contract, s.layer)
-        expectEqual(s.names(s.note), ["purpose", "Employer", "layer"])
-        let other = s.editor.addRelationshipType("Retainer", at: CGPoint(x: 240, y: 600))
+        expectEqual(s.names(s.note), ["purpose", "Employer", "contract"])
+        let other = s.editor.addRelationshipType("Contract", at: CGPoint(x: 240, y: 600))
         s.editor.addBond(s.feature, other)
         s.editor.addBond(other, s.layer)
-        expectEqual(s.names(s.note), ["purpose", "Employer", "layer", "layer · Retainer"])
+        expectEqual(s.names(s.note), ["purpose", "Employer", "contract", "contract · Contract"])
         s.editor.undo()
         s.editor.undo()
-        expectEqual(s.names(s.note), ["purpose", "Employer", "layer"])
-        // A rename of the type at the other end renames the derived rows, and no typed one.
-        s.editor.transact("Rename") { $0.update(s.layer) { $0[TitleProperty.self] = "Level" } }
-        expectEqual(s.names(s.note), ["purpose", "Employer", "level"])
+        expectEqual(s.names(s.note), ["purpose", "Employer", "contract"])
+        // A rename of the relationship type renames the rows derived from it, and no typed one.
+        s.editor.transact("Rename") { $0.update(contract) { $0[TitleProperty.self] = "Deal" } }
+        expectEqual(s.names(s.note), ["purpose", "Employer", "deal"])
     },
     test("a relationship type with no title is `untitled`, and an end that names no type at the other end is named for it") {
         let s = try RelationScene()
@@ -193,13 +193,13 @@ struct RelationScene {
         s.toEnd()
         let task = s.editor.addSlipType(featureRowsSchema, words: "A task", title: "Task", at: CGPoint(x: 40, y: 900))
         s.editor.addTypeLink(s.feature, to: task)
-        let inherited = try s.row(task, "layer")
+        let inherited = try s.row(task, "in")
         expect(inherited.isFaint && inherited.tick == s.feature, "the row Feature gives, ticked in its color")
         expectEqual(inherited.content, .relationType(direction: "→", chips: [s.layer], more: 0))
-        let own = try s.row(s.feature, "layer")
+        let own = try s.row(s.feature, "in")
         expect(!own.isFaint && own.tick == nil)
         let taskNote = s.editor.addSlip("A task", of: [task], at: CGPoint(x: 700, y: 900))
-        expectEqual(s.names(taskNote), ["purpose", "layer"], "the note of a type that builds on Feature has Feature's row")
+        expectEqual(s.names(taskNote), ["purpose", "in"], "the note of a type that builds on Feature has Feature's row")
     },
     test("a note with fields and no relation rows has no dashed line, and a note with relation rows only has none either") {
         let s = try RelationScene()
@@ -232,7 +232,7 @@ struct RelationScene {
         expect(s.heard.last?.layout.isEmpty == true && s.heard.last?.notes.isSuperset(of: [s.note, s.layerNote]) == true, "\(String(describing: s.heard.last))")
         for id in notes { _ = s.rows(id) }
         expectEqual(s.book.rowsShown - rowsShown, 2, "the two notes' rows were built again, no others")
-        guard case .related(let pills, 0) = try s.row(s.note, "layer").content else { throw Failure("a pill") }
+        guard case .related(let pills, 0) = try s.row(s.note, "in").content else { throw Failure("a pill") }
         expectEqual(pills.map(\.target), [s.layerNote])
         // Deleted, undone, redone: the same.
         let shown = s.book.rowsShown
@@ -241,14 +241,14 @@ struct RelationScene {
         expectEqual(s.editor.layoutRevision, layout)
         for id in notes { _ = s.rows(id) }
         expectEqual(s.book.rowsShown - shown, 2)
-        expectEqual(try s.row(s.note, "layer").content, .empty("add layer"))
+        expectEqual(try s.row(s.note, "in").content, .empty("add in"))
         s.editor.undo()
         expectEqual(try ids.map { try s.height($0) }, heights, "and back")
         // Re-aimed at another note of the type.
         s.editor.transact("Re-aim") { $0.update(relation, as: Bond.self) { $0.props.to = otherLayer } }
         expectEqual(try ids.map { try s.height($0) }, heights, "re-aimed")
         expectEqual(s.editor.layoutRevision, layout)
-        guard case .related(let aimed, 0) = try s.row(s.note, "layer").content else { throw Failure("a pill") }
+        guard case .related(let aimed, 0) = try s.row(s.note, "in").content else { throw Failure("a pill") }
         expectEqual(aimed.map(\.target), [otherLayer])
         expectEqual(try s.row(s.layerNote, "feature").content, .empty("add feature"), "the note it left shows nothing")
     },
@@ -276,7 +276,7 @@ struct RelationScene {
         let layout = s.editor.layoutRevision
         s.toEnd()
         expectEqual(try [s.note, s.away, s.feature].map { try s.height($0) }, heights, "a row that was there is renamed, not added")
-        expectEqual(s.names(s.note), ["purpose", "layer"])
+        expectEqual(s.names(s.note), ["purpose", "in"])
         expectEqual(try s.height(s.awayLayer), try s.stored(s.awayLayer) + relationRowsHeight(4, rule: true))
         expect(s.editor.layoutRevision > layout, "Layer's notes were laid out")
     },
@@ -308,12 +308,12 @@ struct RelationScene {
         expectEqual(s.names(s.note), ["purpose"])
         s.editor.undo()
         expectEqual(try [s.note, s.layerNote, s.away, s.awayLayer, s.feature, s.layer].map { try s.height($0) }, with)
-        expectEqual(s.names(s.note), ["purpose", "layer"])
+        expectEqual(s.names(s.note), ["purpose", "in"])
         // Deleted outright and brought back.
         s.editor.transact("Delete") { $0.delete([s.rel]) }
         expectEqual(s.names(s.note), ["purpose"])
         s.editor.undo()
-        expectEqual(s.names(s.note), ["purpose", "layer"])
+        expectEqual(s.names(s.note), ["purpose", "in"])
     },
     test("a lineage edit lays out what it must: a type that starts to build on Feature gains its rows, with its notes near and far, and undo takes them away") {
         let s = try RelationScene()
@@ -324,9 +324,9 @@ struct RelationScene {
         expectEqual(s.names(taskNote), ["purpose"])
         let before = try s.height(taskNote)
         s.editor.addTypeLink(s.feature, to: task)
-        expectEqual(s.names(taskNote), ["purpose", "layer"])
+        expectEqual(s.names(taskNote), ["purpose", "in"])
         expectEqual(try s.height(taskNote), before + TypesStyle.rowHeight + TypesStyle.relationRuleHeight)
-        expectEqual(s.names(task), ["purpose", "layer"])
+        expectEqual(s.names(task), ["purpose", "in"])
         s.editor.undo()
         expectEqual(s.names(taskNote), ["purpose"])
         expectEqual(try s.height(taskNote), before)

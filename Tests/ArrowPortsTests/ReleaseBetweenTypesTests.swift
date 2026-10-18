@@ -15,8 +15,8 @@ import Titles
 import Types
 
 // The release of a port's drag between two types: the selection and the bytes an Undo returns, a type dragged onto itself,
-// the room the new relationship type is given among other notes, the name card closed by a press, a delete or the host's
-// save point, and an end re-aimed from one relationship type to another.
+// the room the new relationship type is given among other notes, and an end re-aimed from one relationship type to another.
+// (The name typed in the pill, and what a press, a delete or the host's save point do to it, are the shipped note's: NotePillTests.)
 
 @MainActor private struct ReleaseBoard {
     let h: EditorHarness
@@ -82,11 +82,7 @@ import Types
         let startSelection = w.h.editor.selectedShapeIDs
         w.drag(from: ReleaseBoard.personFrame, to: w.center(ReleaseBoard.companyFrame))
         let made = try require(w.h.editor.document.shapes.last { $0[RelationshipProperty.self] == true && $0.id != w.employment }).id
-        let card = try require(w.h.editor.card)
-        let field = try require(card.view.subviews.compactMap { $0 as? NSTextView }.first)
-        field.insertText("in", replacementRange: NSRange(location: 0, length: 0))
-        field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
-        expect(w.h.editor.card == nil)
+        expect(w.h.editor.card == nil, "a slab has no editing view, and no card asks a name")
         let namedBytes = try w.bytes()
         w.h.editor.undo()
         expectEqual(w.h.editor.selectedShapeIDs, startSelection, "selection restored")
@@ -104,53 +100,6 @@ import Types
         expectEqual(w.h.editor.document, before, "nothing is made")
         expectEqual(w.h.editor.undoHistory.undoName, nil, "and no step")
         expect(w.h.editor.card == nil)
-    },
-    test("a press elsewhere with the card open keeps the name and one Undo returns the board") {
-        let w = try ReleaseBoard()
-        let start = w.h.editor.file
-        w.drag(from: ReleaseBoard.personFrame, to: w.center(ReleaseBoard.companyFrame))
-        let card = try require(w.h.editor.card)
-        let field = try require(card.view.subviews.compactMap { $0 as? NSTextView }.first)
-        field.insertText("in", replacementRange: NSRange(location: 0, length: 0))
-        w.h.move(to: CGPoint(x: 1300, y: 1300))
-        w.h.press()
-        w.h.release()
-        expect(w.h.editor.card == nil, "closed by the press")
-        let made = try require(w.h.editor.document.shapes.last { $0[RelationshipProperty.self] == true && $0.id != w.employment }).id
-        expectEqual(w.h.editor.document[made]?[TitleProperty.self], "in")
-        w.h.editor.undo()
-        expect(w.h.editor.file == start, "one Undo")
-        expect(!w.h.editor.canUndo)
-    },
-    test("the note deleted while the card is open: the card closes and Undo twice returns the board") {
-        let w = try ReleaseBoard()
-        let start = w.h.editor.file
-        w.drag(from: ReleaseBoard.personFrame, to: w.center(ReleaseBoard.companyFrame))
-        let made = try require(w.h.editor.document.shapes.last { $0[RelationshipProperty.self] == true && $0.id != w.employment }).id
-        let card = try require(w.h.editor.card)
-        let field = try require(card.view.subviews.compactMap { $0 as? NSTextView }.first)
-        field.insertText("in", replacementRange: NSRange(location: 0, length: 0))
-        w.h.editor.transact("Delete") { $0.delete([made]) }
-        expect(w.h.editor.card == nil, "card closed")
-        w.h.editor.undo()
-        expect(w.h.editor.document[made] != nil, "back")
-        expectEqual(w.h.editor.document[made]?[TitleProperty.self], "in")
-        w.h.editor.undo()
-        expect(w.h.editor.file == start, "two Undos")
-        expect(!w.h.editor.canUndo)
-    },
-    test("the autosave break while the card is open, then a name: undo steps return the board") {
-        let w = try ReleaseBoard()
-        let start = w.h.editor.file
-        w.drag(from: ReleaseBoard.personFrame, to: w.center(ReleaseBoard.companyFrame))
-        w.h.editor.undoHistory.breakStep()
-        let card = try require(w.h.editor.card)
-        let field = try require(card.view.subviews.compactMap { $0 as? NSTextView }.first)
-        field.insertText("in", replacementRange: NSRange(location: 0, length: 0))
-        field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
-        w.h.editor.undo()
-        w.h.editor.undo()
-        expect(w.h.editor.file == start)
     },
     test("an end re-aimed from one relationship type to another: the old loses it and the new gains it at the release only") {
         let h = try EditorHarness(plugins: PortBoard.plugins(more: [DetailPanelPlugin(), DrawPlugin(), PortEdgesPlugin(), SlabsPlugin()]))
@@ -177,7 +126,8 @@ import Types
         expectEqual(index.graph.sides(of: employment.id).from.map(\.type), [person.id])
         h.editor.selection = arrow.id
         let geometry = try require(h.editor.arrowGeometry(of: arrow.id))
-        h.move(to: h.editor.camera.toView(geometry.endHandle))
+        // An end's handle at the relationship type is where its line meets the type, not the type's middle.
+        h.move(to: h.editor.camera.toView(geometry.end))
         h.press()
         h.drag(to: CGPoint(x: 1000, y: 1100), speed: fast)
         expectEqual(index.end(arrow.id)?.type, employment.id, "still an end of Employment while dragging")

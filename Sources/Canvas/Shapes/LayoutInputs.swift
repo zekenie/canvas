@@ -88,7 +88,7 @@ final class LayoutSource {
 
     /// The size kept for a shape, if it is as kept: the editor's, for a shape this source's reader
     /// hasn't changed (then what this source asked since), else only what this source asked.
-    func keptSize(of id: ShapeID) -> CGSize? {
+    func keptSize(of id: ShapeID) -> LaidOutSize? {
         guard let isChanged else { return sizes.size(of: id) }
         if !isChanged(id), let size = sizes.size(of: id) { return size }
         return fresh?.size(of: id)
@@ -96,12 +96,26 @@ final class LayoutSource {
 
     /// Keeps a size just worked out: in the editor's, for its committed reading of a shape in the file
     /// (so it holds until a commit changes the shape), else in what this source keeps for itself.
-    func keep(_ size: CGSize, for id: ShapeID) {
+    func keep(_ size: LaidOutSize, for id: ShapeID) {
         if isChanged == nil {
             if shape(id) != nil { sizes.keep(size, for: id) }
         } else {
             fresh?.keep(size, for: id)
         }
+    }
+}
+
+/// What a `LaidOutBox` kind answered for a shape: the size it is laid out at, and the point of its box (in unit
+/// coordinates of the box: (0, 0) its top-left, (0.5, 0.5) its middle) that stays where it is while the box
+/// takes that size, which is how the laid-out frame is placed on the stored one.
+struct LaidOutSize: Equatable {
+    var size: CGSize
+    var anchor: CGPoint
+
+    /// The frame this size makes of a box: the box's origin for the top-left anchor, else the box's anchor point
+    /// kept in place as the box takes the size.
+    func frame(of box: CGRect) -> CGRect {
+        CGRect(origin: CGPoint(x: box.minX + (box.width - size.width) * anchor.x, y: box.minY + (box.height - size.height) * anchor.y), size: size)
     }
 }
 
@@ -111,10 +125,10 @@ final class LayoutSource {
 /// where the shape is, so a drag, an undo of a move and a board switch keep it.
 @MainActor
 final class LaidOutSizes {
-    private var sizes: [ShapeID: CGSize] = [:]
+    private var sizes: [ShapeID: LaidOutSize] = [:]
 
-    func size(of id: ShapeID) -> CGSize? { sizes[id] }
-    func keep(_ size: CGSize, for id: ShapeID) { sizes[id] = size }
+    func size(of id: ShapeID) -> LaidOutSize? { sizes[id] }
+    func keep(_ size: LaidOutSize, for id: ShapeID) { sizes[id] = size }
 
     func forget(_ ids: some Sequence<ShapeID>) {
         guard !sizes.isEmpty else { return }
@@ -240,14 +254,14 @@ extension ShapeContext {
         guard let box = record.box else { return nil }
         guard let layout, !record.isOpaque, let definition = registry.laidOutBoxes[record.kind] else { return box }
         return laidOut(box, id: record.id, in: layout) {
-            definition.erasedLaidOutSize(of: record, in: self)
+            definition.erasedLaidOut(of: record, in: self)
         }
     }
 
     public func frame<P: BoxShapeProps>(of shape: ShapeRecord<P>) -> CGRect {
         guard let layout, registry.laidOutBoxes[P.kind] != nil else { return shape.frame }
         return laidOut(shape.frame, id: shape.id, in: layout) {
-            registry.laidOutBoxes[P.kind]?.erasedLaidOutSize(of: AnyShapeRecord(shape), in: self)
+            registry.laidOutBoxes[P.kind]?.erasedLaidOut(of: AnyShapeRecord(shape), in: self)
         }
     }
 
@@ -256,18 +270,21 @@ extension ShapeContext {
     func frame<D: LaidOutBox>(of shape: ShapeRecord<D.Props>, laidOutBy definition: D) -> CGRect {
         guard let layout else { return shape.frame }
         return laidOut(shape.frame, id: shape.id, in: layout) {
-            definition.laidOutSize(of: shape, in: self)
+            LaidOutSize(size: definition.laidOutSize(of: shape, in: self), anchor: definition.laidOutAnchor(of: shape, in: self))
         }
     }
 
-    /// The kept size at the box's origin, else the kind's as it says it (larger or smaller than the box,
-    /// but finite and above zero on both sides, else the box's), kept.
-    private func laidOut(_ box: CGRect, id: ShapeID, in layout: LayoutSource, asking ask: () -> CGSize?) -> CGRect {
-        if let size = layout.keptSize(of: id) { return CGRect(origin: box.origin, size: size) }
-        var size = box.size
-        if let asked = ask(), asked.width.isFinite, asked.height.isFinite, asked.width > 0, asked.height > 0 { size = asked }
-        layout.keep(size, for: id)
-        return CGRect(origin: box.origin, size: size)
+    /// The kept size on the box (at its origin, or about the anchor point the kind says), else the kind's as it says
+    /// it (larger or smaller than the box, but finite and above zero on both sides, else the box's), kept.
+    private func laidOut(_ box: CGRect, id: ShapeID, in layout: LayoutSource, asking ask: () -> LaidOutSize?) -> CGRect {
+        if let kept = layout.keptSize(of: id) { return kept.frame(of: box) }
+        var laid = LaidOutSize(size: box.size, anchor: .zero)
+        if let asked = ask(), asked.size.width.isFinite, asked.size.height.isFinite, asked.size.width > 0, asked.size.height > 0,
+           asked.anchor.x.isFinite, asked.anchor.y.isFinite {
+            laid = asked
+        }
+        layout.keep(laid, for: id)
+        return laid.frame(of: box)
     }
 
     /// This context, for sizing shapes that aren't in the file yet: `records` are read by layout

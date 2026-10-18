@@ -206,6 +206,7 @@ final class SelectionState {
         guard kept != selectedIDs else { return }
         hasJustArrived = false
         if recording { record(leaving: selectedIDs, for: kept) }
+        let left = selectedIDs
         selectedIDs = kept
         selectedSet = seen
         if !kept.isEmpty { focus = focus(of: kept, selected: seen) }
@@ -216,6 +217,12 @@ final class SelectionState {
             hoveredHandle = nil            // handles belong to the only selected shape
         }
         editor.setNeedsDisplay()
+        tellObservers(left: left)
+    }
+
+    /// The plugins that follow the selection (`SelectionObservers`) are told it changed.
+    private func tellObservers(left: [ShapeID]) {
+        for observer in editor.registry.contributions(to: SelectionObservers.self) { observer.value(editor, left, selectedIDs) }
     }
 
     // MARK: Going back
@@ -375,10 +382,12 @@ extension SelectionState: EditorService {
         clearPointerState()
         focus = []
         guard !selectedIDs.isEmpty else { return }
+        let left = selectedIDs
         selectedIDs = []
         selectedSet = []
         onlySelectedID = nil
         revision += 1
+        tellObservers(left: left)
     }
 
     /// What the pointer was doing: the press, the hover (and the one elsewhere), the hovered handle

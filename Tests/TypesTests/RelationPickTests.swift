@@ -198,7 +198,7 @@ extension RelationScene {
         let s = try RelationScene.drawn()
         expect(s.editor.relate(s.note, to: s.awayLayer, in: try s.featureRow()) != nil)
         s.setOpen(s.awayLayer, false)
-        let pill = try require(try s.pills(s.note, "layer").pills.first)
+        let pill = try require(try s.pills(s.note, "in").pills.first)
         expectEqual(pill.state, .notAdmitted(s.awayLayer, needs: "open"))
         let picker = RelationPicker(editor: s.editor, owner: s.note, row: try s.featureRow())
         picker.setQuery("Down")
@@ -243,11 +243,11 @@ extension RelationScene {
         expectEqual(made[FieldValuesProperty.self], nil)
         expectEqual(s.editor.document[s.note], noteBefore, "no copy is stored in the note")
         expectEqual(s.editor.document[s.layerNote], layerBefore)
-        expectEqual(try s.pills(s.note, "layer").pills.map(\.target), [s.layerNote])
+        expectEqual(try s.pills(s.note, "in").pills.map(\.target), [s.layerNote])
         s.editor.relate(s.note, to: second, in: try s.featureRow())
-        expectEqual(try s.pills(s.note, "layer").pills.count, 2)
+        expectEqual(try s.pills(s.note, "in").pills.count, 2)
         s.editor.undo()
-        expectEqual(try s.pills(s.note, "layer").pills.map(\.target), [s.layerNote], "the second pick is a step of its own")
+        expectEqual(try s.pills(s.note, "in").pills.map(\.target), [s.layerNote], "the second pick is a step of its own")
         s.editor.undo()
         expectEqual(s.editor.document, start)
         expectEqual(s.editor.undoHistory.undoName, steps)
@@ -259,7 +259,7 @@ extension RelationScene {
         expectEqual(made.props.from, s.note, "from the Feature note")
         expectEqual(made.props.to, s.layerNote)
         expectEqual(try s.pills(s.layerNote, "feature").pills.map(\.target), [s.note])
-        expectEqual(try s.pills(s.note, "layer").pills.map(\.target), [s.layerNote], "and the Feature note's row shows it")
+        expectEqual(try s.pills(s.note, "in").pills.map(\.target), [s.layerNote], "and the Feature note's row shows it")
     },
     test("a far note a pill can stand for as it is: the pill goes on the board shown beside the note, the arrow runs to it, nothing is written on the far board, and the row reads through the pill") {
         let s = try RelationScene.drawn()
@@ -271,7 +271,7 @@ extension RelationScene {
         expectEqual(pill.props.says, "Down", "called by the note's name")
         expectEqual(s.editor.document[arrow]?.typed(as: Bond.self)?.props.to, pill.id)
         expectEqual(s.editor.contents(of: s.pocketBoard), farBefore, "its board is as it was")
-        let shown = try s.pills(s.note, "layer").pills
+        let shown = try s.pills(s.note, "in").pills
         expectEqual(shown.map(\.state), [.note(s.awayLayer)])
         expectEqual(shown.first?.via, pill.id)
         expectEqual(s.editor.board, .root)
@@ -385,23 +385,23 @@ extension RelationScene {
     test("a far pick reads as a note through its pill; made private it is a dashed pill with the note's name; deleted, the name the pill kept; undone, solid again") {
         let s = try RelationScene.drawn()
         s.editor.relate(s.note, to: s.awayLayer, in: try s.featureRow())
-        var pill = try require(try s.pills(s.note, "layer").pills.first)
+        var pill = try require(try s.pills(s.note, "in").pills.first)
         expectEqual(pill.state, .note(s.awayLayer))
         expect(pill.isLive)
         s.setOpen(s.awayLayer, false)
-        pill = try require(try s.pills(s.note, "layer").pills.first)
+        pill = try require(try s.pills(s.note, "in").pills.first)
         expectEqual(pill.state, .notAdmitted(s.awayLayer, needs: "open"))
         expect(!pill.isLive)
         expectEqual(pill.label, "Down")
         s.setOpen(s.awayLayer)
         s.editor.transact(on: s.pocketBoard, "Delete") { $0.delete([s.awayLayer]) }
-        pill = try require(try s.pills(s.note, "layer").pills.first)
+        pill = try require(try s.pills(s.note, "in").pills.first)
         expectEqual(pill.state, .gone(called: "Down"), "the name the pill kept")
         expect(pill.target == nil && pill.via == s.relays().first?.id)
         s.editor.undo()
         // The undo of a delete on another board shows that board first.
         expect(s.editor.showBoard(.root))
-        expectEqual(try require(try s.pills(s.note, "layer").pills.first).state, .note(s.awayLayer))
+        expectEqual(try require(try s.pills(s.note, "in").pills.first).state, .note(s.awayLayer))
     },
 ])
 

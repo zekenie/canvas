@@ -501,27 +501,12 @@ public final class RowBook {
     }
 
     /// The provider of `TypeRows.extent`, cheapest test first: a board first shown asks it of every note,
-    /// and a note in full asks it every frame.
+    /// and a note in full asks it every frame. A relationship type has no rows: it is a pill (`TypeRows.pill`).
     static func provide(_ record: AnyShapeRecord, _ reading: LayoutReading) -> RowsExtent? {
         guard record[TypeSchemaProperty.self] != nil || !(record[IsAProperty.self] ?? []).isEmpty else { return nil }
+        guard record[RelationshipProperty.self] != true || record[TypeSchemaProperty.self] == nil else { return nil }
         guard let book = reading.service(RowBook.self), book.kinds.contains(record.kind) else { return nil }
         return reading.isCommitted ? book.extent(of: record) : book.extent(of: record, reading: reading)
-    }
-
-    /// The provider of `TypeRows.isCompact`: a relationship type (the mark on a shape that holds `schema`) with no
-    /// words and nothing to show where its rows go (no field, no relation row, no bars, no reason) is drawn
-    /// small. The cheapest test first: a plain note costs one added-value lookup. True, else none.
-    static func provideCompact(_ record: AnyShapeRecord, _ reading: LayoutReading) -> Bool? {
-        guard record[RelationshipProperty.self] == true, record[TypeSchemaProperty.self] != nil else { return nil }
-        guard let book = reading.service(RowBook.self), book.kinds.contains(record.kind), !book.hasWords(record) else { return nil }
-        return book.hasNoRows(record, reading: reading) ? true : nil
-    }
-
-    /// Whether a type's note, known to have no words, has nothing to show where its rows go: `extent(of:)` is nil. The committed
-    /// file's answer is the template and the spot, asked with the words known to be none (the extent would read the words again).
-    private func hasNoRows(_ record: AnyShapeRecord, reading: LayoutReading) -> Bool {
-        guard reading.isCommitted else { return extent(of: record, reading: reading) == nil }
-        return spot(of: record, template: template(RowSubject(list: [record.id], isType: true)), hasWords: false, observing: false) == nil
     }
 
     /// The same mid-transaction (a draw, a paste, a duplicate, `/is-a` itself, a type and its instance written

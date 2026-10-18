@@ -131,7 +131,7 @@ extension Minute {
         editor.undo()
         expect(try m.bytes() == bytes, "undo exact both boards")
     },
-    test("the relationship type made by the offer is named through its card, from the click and from the context menu alike: the name lands, no model is asked, and one Undo returns the bytes") {
+    test("the relationship type made by the offer is named in its pill, from the click and from the context menu alike: the name lands, no model is asked, and one Undo returns the bytes") {
         for viaMenu in [false, true] {
             let m = try Minute()
             defer { m.close() }
@@ -151,10 +151,10 @@ extension Minute {
                 editor.menuDidPopUp()
             }
             let made = try require(editor.document.shapes.first { !known.contains($0.id) && $0[RelationshipProperty.self] == true }).id
-            let field = try require(m.cardField)
+            let field = try require(m.pillField)
             field.insertText("in", replacementRange: NSRange(location: 0, length: 0))
             field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
-            expect(editor.card == nil)
+            expectEqual(editor.editingShapeID, nil)
             expectEqual(editor.document[made]?[TitleProperty.self], "in", "viaMenu \(viaMenu)")
             m.h.scheduler.advance(by: TypeSync<TypeSchemaProperty>.idleDelay)
             m.h.wait(100)

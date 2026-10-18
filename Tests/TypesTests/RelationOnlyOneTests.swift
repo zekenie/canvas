@@ -39,7 +39,7 @@ extension RelationScene {
         expectEqual(s.editor.undoHistory.undoName, "Add Relationship")
         expect(s.editor.document[first] == nil, "the old arrow is gone, with its values")
         expectEqual(s.relationships().map(\.id), [replacement])
-        expectEqual(try s.pills(s.note, "layer").pills.map(\.target), [second])
+        expectEqual(try s.pills(s.note, "in").pills.map(\.target), [second])
         expectEqual(s.editor.fieldChecks?.fullCheck(of: try require(s.editor.document[s.note])).problems ?? [], [], "one: nothing to say")
         s.editor.undo()
         expectEqual(s.editor.document, before, "one Undo takes both back")
@@ -69,7 +69,7 @@ extension RelationScene {
         let first = s.relate(s.note, s.layerNote), second = s.relate(s.note, other)
         expectEqual(Set(s.relationships().map(\.id)), [first, second], "nothing was refused or deleted")
         let issues = s.editor.issues(s.note)
-        expectEqual(issues.map(\.message), ["layer has 2 notes, and should have at most 1"])
+        expectEqual(issues.map(\.message), ["in has 2 notes, and should have at most 1"])
         expectEqual(issues.first?.severity, .error)
         expectEqual(s.editor.issues(first) + s.editor.issues(second), [])
         // A pick now replaces both: the row holds more than one.
@@ -140,7 +140,7 @@ extension RelationScene {
         expectEqual(now.count, 1, "replaced, not added: \(now)")
         expect(!now.contains(a1))
         r.cards.close()
-        expectEqual(r.editor.undoHistory.undoName, "Change Layer")
+        expectEqual(r.editor.undoHistory.undoName, "Change In")
         r.editor.undo()
         expectEqual(r.editor.document, start, "one Undo")
     },

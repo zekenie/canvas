@@ -38,8 +38,9 @@ public struct ArrowGeometry: Sendable {
     public static let minBend: CGFloat = 8
 
     /// `shape` looks up the shapes the arrow is bound to. An end bound to a shape it can't find is
-    /// drawn at the origin.
-    public init(arrow: Arrow, strokeWidth: CGFloat, shape: (ShapeID) -> ConnectableShape?) {
+    /// drawn at the origin. A bend under `minBend` draws straight: a line through a pill (`ArrowThrough`) asks for any,
+    /// since its bend is worked out from the pill's place, never a person's.
+    public init(arrow: Arrow, strokeWidth: CGFloat, minBend: CGFloat = ArrowGeometry.minBend, shape: (ShapeID) -> ConnectableShape?) {
         var startShape = arrow.start.binding.flatMap { binding in
             shape(binding.shapeID).map { BoundShape($0, isExact: binding.isExact) }
         }
@@ -69,7 +70,7 @@ public struct ArrowGeometry: Sendable {
             startArrowhead: arrow.startArrowhead,
             endArrowhead: arrow.endArrowhead
         )
-        if abs(arrow.bend) >= Self.minBend,
+        if abs(arrow.bend) >= minBend,
            let handleArc = Arc(from: startHandle, through: bendPoint, to: endHandle),
            handleArc.length.isFinite, handleArc.length > 0 {
             let (startT, endT, middle) = clipping.curved(handleArc, bendPoint: bendPoint, startShape: &startShape, endShape: &endShape)
@@ -81,6 +82,13 @@ public struct ArrowGeometry: Sendable {
             path = .straight
             (start, end, middle) = clipping.straight(from: startHandle, to: endHandle, startShape: &startShape, endShape: &endShape)
         }
+    }
+
+    /// Where an end is aimed, with no other end to read it against: a free end's point, a bound one's anchor in its shape (the
+    /// middle of its bounds unless precise); nil for one bound to a shape that isn't there.
+    public static func anchor(of terminal: ArrowTerminal, in shape: ConnectableShape?) -> CGPoint? {
+        if case .bound = terminal, shape == nil { return nil }
+        return handle(for: terminal, shape: shape.map { BoundShape($0, isExact: terminal.binding?.isExact ?? false) }, forcePrecise: false)
     }
 
     private static func handle(for terminal: ArrowTerminal, shape: BoundShape?, forcePrecise: Bool) -> CGPoint {

@@ -13,12 +13,23 @@ public struct ShapeGeometry: Sendable {
     /// `isLabel` geometry), within `bounds`; nil for none. Kept with the rest, so what's drawn zoomed
     /// out (a skeleton) and what's hit find it without working it out again.
     public var label: CGRect?
+    /// The part of `label` kept for something other than text, at its start, in world units: a plugin
+    /// draws a pill there (Adornments' label lead) and the text goes after it. The label's frame, and
+    /// so the cut a line makes around it, holds it. Nil for none; the core reads nothing of it.
+    public var labelLead: CGRect?
+    /// What the definition worked out besides the outline that a draw or a hit test reads, kept with the rest so they
+    /// don't work it out again (an arrow's, how it is drawn when a plugin says it is part of a line through a pill). The
+    /// core reads nothing of it.
+    public var detail: (any Sendable)?
 
-    public init(outline: [CGPoint], bounds: CGRect? = nil, isClosed: Bool = true, label: CGRect? = nil) {
+    public init(outline: [CGPoint], bounds: CGRect? = nil, isClosed: Bool = true, label: CGRect? = nil, labelLead: CGRect? = nil,
+                detail: (any Sendable)? = nil) {
         self.outline = outline
         self.bounds = bounds ?? CGRect(enclosing: outline)
         self.isClosed = isClosed
         self.label = label
+        self.labelLead = labelLead
+        self.detail = detail
     }
 }
 

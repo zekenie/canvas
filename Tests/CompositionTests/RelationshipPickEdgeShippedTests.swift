@@ -133,7 +133,7 @@ private final class PickWorld {
         let m = try Minute()
         defer { m.close() }
         _ = try m.nameTheType()
-        expect(try m.click(row: "layer", of: m.featureNote))
+        expect(try m.click(row: "in", of: m.featureNote))
         expectEqual(m.listed, ["1 · expose foobar · foundation"])
         m.window.press(" ", code: 49)
         expectEqual(m.listed, ["1 · expose foobar · foundation"], "a space typed: still the list of nothing typed")
@@ -146,7 +146,7 @@ private final class PickWorld {
         let m = try Minute()
         defer { m.close() }
         _ = try m.nameTheType()
-        let row = try require(m.rows.rows(of: m.featureNote).first { $0.name == "layer" })
+        let row = try require(m.rows.rows(of: m.featureNote).first { $0.name == "in" })
         m.h.click(at: m.h.view(CGPoint(x: row.valueRect.minX + 8, y: row.rect.midY)))
         m.h.scheduler.advance(by: .zero)
         expectEqual(m.editor.selection, m.featureNote)
@@ -179,7 +179,7 @@ private final class PickWorld {
         defer { m.close() }
         _ = try m.nameTheType()
         let before = m.editor.document
-        expect(try m.click(row: "layer", of: m.featureNote))
+        expect(try m.click(row: "in", of: m.featureNote))
         m.window.pressDelete()                      // closes the list
         expect(m.rowsView?.openList == nil)
         m.window.pressDelete()                      // on the row, no pill
@@ -195,11 +195,11 @@ private final class PickWorld {
         _ = try m.nameTheType()
         let row = try require(m.editor.relationships?.rows(for: [m.feature], isType: false).first)
         expect(m.editor.relate(m.featureNote, to: m.layerNote, in: row) != nil)
-        expectEqual(try m.pills(of: m.featureNote, "layer").first?.label, "1 · expose foobar · foundation")
+        expectEqual(try m.pills(of: m.featureNote, "in").first?.label, "1 · expose foobar · foundation")
         m.editor.transact("Change Purpose") { $0.update(m.layerNote) { $0[FieldValuesProperty.self] = FieldValues(["order": 2, "purpose": "stream", "title": "foundation"]) } }
-        expectEqual(try m.pills(of: m.featureNote, "layer").first?.label, "2 · stream · foundation", "the pill follows the value")
+        expectEqual(try m.pills(of: m.featureNote, "in").first?.label, "2 · stream · foundation", "the pill follows the value")
         m.editor.undo()
-        expectEqual(try m.pills(of: m.featureNote, "layer").first?.label, "1 · expose foobar · foundation", "and its undo")
+        expectEqual(try m.pills(of: m.featureNote, "in").first?.label, "1 · expose foobar · foundation", "and its undo")
     },
     test("the app's picks and `canvas draw` of the same two edges leave the same two pills at the same rects (the second joins the column)") {
         let pasteboard = NSPasteboard.withUniqueName()

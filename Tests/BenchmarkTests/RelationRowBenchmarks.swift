@@ -19,7 +19,7 @@ import Types
 extension Budget {
     /// What 450 pills add to a frame of 150 notes of a Feature type in full at 40%, each holding three relationships (to
     /// three Layer notes), over the same notes and 450 arrows of another relationship type that has no end at Feature, so each
-    /// row is the empty `add layer`, an arrow and its chip are in the frame either way, and the pills are what differs: a pill's
+    /// row is the empty `add in`, an arrow and its chip are in the frame either way, and the pills are what differs: a pill's
     /// one `drawMentionText` into the context, the rows built once and kept.
     /// Measured: 7.23, 7.69 and 6.90 ms in three runs alone (the empty rows' frame 45 ms), 16 us a pill, and the budget about a
     /// third over the median (the thread's CPU, release). A pill is `drawMentionText` into the context, as `linkRowsFrame`
@@ -28,7 +28,7 @@ extension Budget {
     /// white fill and hairline (4) and the label as `NSString` draws it (7), which a kept Core Text line does not draw as it does
     /// (a point lower, heavier). The row, its name, its `+N` and `›` come with it.
     static let relationRowsFrame = 10.0
-    /// What 450 notes of an end type each with an empty `add layer` row and its dashed line add to a frame in full at
+    /// What 450 notes of an end type each with an empty `add in` row and its dashed line add to a frame in full at
     /// 40%, over the same 450 notes before the end was drawn, which have no such row: the row's name and its words as
     /// kept Core Text lines, and one stroked path each. A proposal.
     static let relationEmptyRowsFrame = 3.0
@@ -124,7 +124,7 @@ extension Budget {
             return
         }
         expectEqual(pills.count, 3)
-        expectEqual(try require(empty.rowBook).rows(of: emptyBoard.note).last?.content, .empty("add layer"))
+        expectEqual(try require(empty.rowBook).rows(of: emptyBoard.note).last?.content, .empty("add in"))
         let withPills = try frames(pilled, size: full, zoom: 0.4), withEmpty = try frames(empty, size: full, zoom: 0.4)
         report(String(format: "150 notes with three pills each (450) in full at 40%%: a frame %5.2f ms, %5.2f more than the same notes with empty relation rows (%5.2f) (budget %.0f more)",
                       withPills, withPills - withEmpty, withEmpty, Budget.relationRowsFrame))
@@ -133,7 +133,7 @@ extension Budget {
         let ended = try editor(relationBoard(notes: 450, columns: 30, ends: true), size: wide, zoom: 0.4)
         let before = try editor(relationBoard(notes: 450, columns: 30, ends: false), size: wide, zoom: 0.4)
         let withRows = try frames(ended, size: wide, zoom: 0.4), without = try frames(before, size: wide, zoom: 0.4)
-        report(String(format: "450 notes with an empty `add layer` row and its dashed line in full at 40%%: a frame %5.2f ms, %5.2f more than the same notes before the end (%5.2f) (budget %.0f more)",
+        report(String(format: "450 notes with an empty `add in` row and its dashed line in full at 40%%: a frame %5.2f ms, %5.2f more than the same notes before the end (%5.2f) (budget %.0f more)",
                       withRows, withRows - without, without, Budget.relationEmptyRowsFrame))
         if holdsToBudgets {
             expect(withPills - withEmpty < Budget.relationRowsFrame, "450 pills added \(withPills - withEmpty) ms to a frame in full")

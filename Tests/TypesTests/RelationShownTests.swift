@@ -48,7 +48,7 @@ extension RelationScene {
         s.toEnd()
         let zed = s.addLayerNote("Zed"), alpha = s.addLayerNote("Alpha"), mid = s.addLayerNote("Mid")
         let arrows = [zed, alpha, mid].map { s.relate(s.note, $0) }
-        let (pills, more) = try s.pills(s.note, "layer")
+        let (pills, more) = try s.pills(s.note, "in")
         expectEqual(more, 0)
         expectEqual(pills.map(\.label), ["Alpha", "Mid", "Zed"], "by the name each shows, whatever order the arrows were drawn in")
         expectEqual(pills.map(\.target), [alpha, mid, zed])
@@ -71,7 +71,7 @@ extension RelationScene {
         s.fromEnd()
         s.toEnd()
         for index in 0..<30 { s.relate(s.note, s.addLayerNote("Layer \(index)", at: CGPoint(x: 40 + 30 * Double(index), y: 1500))) }
-        let row = try s.row(s.note, "layer")
+        let row = try s.row(s.note, "in")
         guard case .related(let pills, let more) = row.content else { throw Failure("pills") }
         expect(more > 0 && pills.count + more == 30, "as many as fit, the rest counted: \(pills.count) and \(more)")
         let last = try require(pills.last)
@@ -86,7 +86,7 @@ extension RelationScene {
         s.editor.open(s.layerNote)
         let relay = s.editor.addRelay(standingFor: [s.layerNote], says: "Foundation")
         s.editor.addBond(s.note, relay, of: [s.rel])
-        var (pills, _) = try s.pills(s.note, "layer")
+        var (pills, _) = try s.pills(s.note, "in")
         expectEqual(pills.count, 1)
         expectEqual(pills[0].state, .note(s.layerNote))
         expectEqual(pills[0].target, s.layerNote)
@@ -95,7 +95,7 @@ extension RelationScene {
         expectEqual(pills[0].destination, s.layerNote)
         // The note private again: the pill is there and may not stand for it.
         s.editor.transact { $0.update(s.layerNote) { $0.meta[Open.self] = nil } }
-        (pills, _) = try s.pills(s.note, "layer")
+        (pills, _) = try s.pills(s.note, "in")
         expectEqual(pills[0].state, .notAdmitted(s.layerNote, needs: "open"))
         expect(!pills[0].isLive)
         expectEqual(pills[0].target, s.layerNote)
@@ -104,20 +104,20 @@ extension RelationScene {
         // The note gone: the pill keeps the name it says.
         s.editor.open(s.layerNote)
         s.editor.transact("Delete") { $0.delete([s.layerNote]) }
-        (pills, _) = try s.pills(s.note, "layer")
+        (pills, _) = try s.pills(s.note, "in")
         expectEqual(pills[0].state, .gone(called: "Foundation"))
         expect(!pills[0].isLive && pills[0].target == nil)
         expectEqual(pills[0].label, "Foundation")
         expectEqual(pills[0].destination, relay)
         s.editor.undo()
-        (pills, _) = try s.pills(s.note, "layer")
+        (pills, _) = try s.pills(s.note, "in")
         expectEqual(pills[0].state, .note(s.layerNote), "undo brings it back")
         // A pill that finds several, one that stands for nothing.
         let query = s.editor.addRelay(standingFor: [s.layerNote, s.note], says: "every layer", at: CGPoint(x: 40, y: 1700))
         let nothing = s.editor.addRelay(standingFor: [], says: "", at: CGPoint(x: 400, y: 1700))
         s.editor.addBond(s.note, query, of: [s.rel])
         s.editor.addBond(s.note, nothing, of: [s.rel])
-        let (all, more) = try s.pills(s.note, "layer")
+        let (all, more) = try s.pills(s.note, "in")
         expectEqual(more, 0)
         expectEqual(all.count, 3)
         let found = try require(all.first { if case .query = $0.state { true } else { false } })
@@ -133,9 +133,9 @@ extension RelationScene {
         s.fromEnd()
         s.toEnd()
         let arrow = s.editor.addBond(s.note, nil, of: [s.rel])
-        expectEqual(try s.row(s.note, "layer").content, .empty("add layer"))
+        expectEqual(try s.row(s.note, "in").content, .empty("add in"))
         s.editor.transact("Bind") { $0.update(arrow, as: Bond.self) { $0.props.to = s.layerNote } }
-        expectEqual(try s.pills(s.note, "layer").pills.map(\.target), [s.layerNote])
+        expectEqual(try s.pills(s.note, "in").pills.map(\.target), [s.layerNote])
     },
     test("a pill is laid out with the name of the note it stands for, and the notes that show it are filed: a rename lets go of exactly their rows, and a keystroke below the first line of the note lets go of none") {
         let s = try RelationScene()
@@ -153,14 +153,14 @@ extension RelationScene {
         expectEqual(s.book.holders[other], [s.note])
         expectEqual(s.book.holders[s.note], [s.layerNote, other], "the far notes' pills of this note")
         let long = "Ahead of the foundation, with a name that is longer than it was"
-        let wasWide = try s.pills(s.note, "layer").pills.first { $0.target == s.layerNote }?.width ?? 0
+        let wasWide = try s.pills(s.note, "in").pills.first { $0.target == s.layerNote }?.width ?? 0
         let built = s.book.rowsShown
         s.editor.transact("Rename") { $0.update(s.layerNote, as: RowSlip.self) { $0.props.text = MentionText(plain: long) } }
         for id in [s.note, third, bystander, other] { _ = s.rows(id) }
         // The two notes that show it were built again, and the layer note's own row (its pill is Sign in's).
         expectEqual(s.book.rowsShown - built, 2, "the two notes that show the pill, no other")
         expectEqual(s.book.pillLabels[s.layerNote], long)
-        let nowWide = try s.pills(s.note, "layer").pills.first { $0.target == s.layerNote }?.width ?? 0
+        let nowWide = try s.pills(s.note, "in").pills.first { $0.target == s.layerNote }?.width ?? 0
         expect(nowWide > wasWide, "the pill is laid out with the new name: \(wasWide) then \(nowWide)")
         // A keystroke below the first line: the name is the same.
         let kept = s.book.rowsShown
@@ -172,8 +172,8 @@ extension RelationScene {
         s.editor.transact("Delete") { $0.delete([s.layerNote]) }
         for id in [s.note, third] { _ = s.rows(id) }
         expectEqual(s.book.rowsShown - before, 2)
-        expectEqual(try s.pills(s.note, "layer").pills.map(\.target), [other])
-        expectEqual(try s.row(third, "layer").content, .empty("add layer"))
+        expectEqual(try s.pills(s.note, "in").pills.map(\.target), [other])
+        expectEqual(try s.row(third, "in").content, .empty("add in"))
     },
     test("a relationship moved, re-aimed or drawn on a far board shows in the rows of its notes") {
         let s = try RelationScene()
@@ -186,7 +186,7 @@ extension RelationScene {
         s.editor.transact(on: BoardID(owner: s.pocket), "Draw") { $0.insert(typed) }
         expect(s.editor.relationships?.relations(of: s.away).map(\.arrow) == [id])
         expect(s.editor.showBoard(BoardID(owner: s.pocket)))
-        guard case .related(let pills, 0) = try s.row(s.away, "layer").content else { throw Failure("a pill") }
+        guard case .related(let pills, 0) = try s.row(s.away, "in").content else { throw Failure("a pill") }
         expectEqual(pills.map(\.target), [s.awayLayer])
         expect(s.editor.showBoard(.root))
     },
@@ -198,7 +198,7 @@ extension RelationScene {
         s.fromEnd()
         s.toEnd()
         s.relate(s.note, s.layerNote)
-        s.harness.click(at: try s.point(onPill: 0, of: s.note, "layer"))
+        s.harness.click(at: try s.point(onPill: 0, of: s.note, "in"))
         s.settle()
         expectEqual(s.editor.selection, s.layerNote)
         // The other end's pill goes back.
@@ -206,7 +206,7 @@ extension RelationScene {
         s.settle()
         expectEqual(s.editor.selection, s.note)
         s.editor.freeze([s.note])
-        s.harness.click(at: try s.point(onPill: 0, of: s.note, "layer"))
+        s.harness.click(at: try s.point(onPill: 0, of: s.note, "in"))
         s.settle()
         expectEqual(s.editor.selection, s.layerNote, "going to a note changes nothing in the locked one")
     },
@@ -216,9 +216,9 @@ extension RelationScene {
         s.toEnd()
         let relay = s.editor.addRelay(standingFor: [s.layerNote], says: "Foundation")
         s.editor.addBond(s.note, relay, of: [s.rel])
-        let pill = try require(try s.pills(s.note, "layer").pills.first)
+        let pill = try require(try s.pills(s.note, "in").pills.first)
         expect(!pill.isLive, "the note is private: the pill may not stand for it")
-        s.harness.click(at: try s.point(onPill: 0, of: s.note, "layer"))
+        s.harness.click(at: try s.point(onPill: 0, of: s.note, "in"))
         s.settle()
         expectEqual(s.editor.selection, relay)
     },
@@ -226,7 +226,7 @@ extension RelationScene {
         let s = try RelationScene()
         s.fromEnd()
         s.toEnd()
-        let row = try s.row(s.feature, "layer")
+        let row = try s.row(s.feature, "in")
         s.harness.click(at: CGPoint(x: row.nameRect.minX + 4, y: row.rect.midY))
         s.settle()
         expectEqual(s.editor.selection, s.rel)
@@ -244,16 +244,16 @@ extension RelationScene {
         let s = try RelationScene(more: [FreezingPlugin(log: RefusalLog())])
         s.fromEnd()
         s.toEnd()
-        expect(s.book.chevronRect(of: try s.row(s.note, "layer")) == nil, "an empty row says add and nothing more")
+        expect(s.book.chevronRect(of: try s.row(s.note, "in")) == nil, "an empty row says add and nothing more")
         s.relate(s.note, s.layerNote)
-        let row = try s.row(s.note, "layer")
+        let row = try s.row(s.note, "in")
         let chevron = try require(s.book.chevronRect(of: row))
-        let pill = try require(try s.pills(s.note, "layer").pills.first)
+        let pill = try require(try s.pills(s.note, "in").pills.first)
         expect(chevron.minX >= row.valueRect.minX + pill.x + pill.width, "after the pill: \(chevron) \(pill.x + pill.width)")
         expect(chevron.maxX <= row.valueRect.maxX + 0.5, "inside the column")
         // With many, after the count; the pills leave it room.
         for index in 0..<30 { s.relate(s.note, s.addLayerNote("Layer \(index)", at: CGPoint(x: 40 + 30 * Double(index), y: 1500))) }
-        let crowded = try s.row(s.note, "layer")
+        let crowded = try s.row(s.note, "in")
         guard case .related(let pills, let more) = crowded.content, let last = pills.last else { throw Failure("pills") }
         expect(more > 0)
         let crowdedChevron = try require(s.book.chevronRect(of: crowded))
@@ -282,7 +282,7 @@ extension RelationScene {
         s.fromEnd()
         s.toEnd()
         let before = s.editor.document[s.note]
-        let row = try s.row(s.note, "layer")
+        let row = try s.row(s.note, "in")
         s.harness.click(at: CGPoint(x: row.valueRect.minX + 6, y: row.rect.midY))
         s.settle()
         expect(s.book.makePicker != nil, "a list can be made for the row")

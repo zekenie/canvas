@@ -94,6 +94,11 @@ struct StickyNoteDefinition {}
 extension StickyNoteDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
         let layout = NoteLayout(shape, in: context.shapes)
+        // A relationship type is a pill: a capsule in its color with its name, and nothing of a note.
+        if let pill = layout.pill {
+            renderPill(pill, of: shape, in: layout.frame, context)
+            return
+        }
         // A type's note is white paper, its highlights behind its words, under its editor too, whose text
         // lays out as this does (a note that isn't a type costs one lookup). Any other note is its color's paper.
         let isType = shape[TypeSchemaProperty.self] != nil
@@ -109,7 +114,8 @@ extension StickyNoteDefinition: ShapeDefinition {
     }
 
     func indicatorPath(of shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> CGPath {
-        NoteStyle.path(context.frame(of: shape))
+        let frame = context.frame(of: shape)
+        return NoteLayout.pill(shape, in: context) == nil ? NoteStyle.path(frame) : NoteStyle.capsule(frame)
     }
 }
 
@@ -119,8 +125,13 @@ extension StickyNoteDefinition: ShapeDefinition {
 extension StickyNoteDefinition: LaidOutBox {
     func laidOutSize(of shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> CGSize {
         let rows = context.layoutInput(TypeRows.extent, of: shape)
-        if rows == nil, NoteLayout.isCompact(shape, in: context) { return NoteStyle.compactSize }
+        if rows == nil, let pill = NoteLayout.pill(shape, in: context) { return pill.size }
         return NoteLayout.size(of: shape.props, rows: rows)
+    }
+
+    /// A relationship type's pill is about the middle of the box it stores; a note is from its top-left.
+    func laidOutAnchor(of shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> CGPoint {
+        context.layoutInput(TypeRows.extent, of: shape) == nil && NoteLayout.pill(shape, in: context) != nil ? CGPoint(x: 0.5, y: 0.5) : .zero
     }
 }
 
@@ -136,13 +147,14 @@ extension StickyNoteDefinition: DerivedProps {
 }
 
 extension StickyNoteDefinition: Editable {
-    /// The paper as it is laid out; a note drawn small is edited over the box it stores, so the caret has a line
-    /// (the paper is full from the first keystroke, from the same top-left).
+    /// The paper as it is laid out; a relationship type's, the capsule.
     func editingFrame(of shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> CGRect? {
-        NoteLayout.isCompact(shape, in: context) ? shape.frame : context.frame(of: shape)
+        context.frame(of: shape)
     }
 
     func makeEditingView(for shape: ShapeRecord<StickyNote>, context: EditContext<StickyNote>) -> EditingView {
+        // A relationship type is edited in its pill: its name, one line over the capsule.
+        if let editor = pillEditor(for: shape, context: context) { return EditingView(view: editor, firstResponder: editor.field) }
         let editor = NoteEditor(text: shape.props.text, stored: shape.frame, frame: context.frame ?? shape.frame, context: context)
         return EditingView(view: editor, firstResponder: editor.first ?? editor.textView)
     }
@@ -151,9 +163,6 @@ extension StickyNoteDefinition: Editable {
 @MainActor
 enum NoteStyle {
     static let size = StickyNote.defaultSize
-    /// A relationship type that holds no words and no fields is drawn this size, from the top-left it stores
-    /// (a layout, never stored): the paper is a pill's worth, and the skeleton and the outline follow.
-    static let compactSize = CGSize(width: 160, height: 34)
     static let cornerRadius: CGFloat = 4
     static let padding: CGFloat = 16
     /// Between a note's words and the rows under them, when it has words.
@@ -195,6 +204,12 @@ enum NoteStyle {
     static func path(_ frame: CGRect) -> CGPath {
         CGPath(roundedRect: frame, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
     }
+    /// A relationship type's pill: its frame with its ends round, which is also how it is outlined.
+    static func capsule(_ frame: CGRect) -> CGPath {
+        CGPath(roundedRect: frame, cornerWidth: frame.height / 2, cornerHeight: frame.height / 2, transform: nil)
+    }
+    /// What a pill is filled with when nothing says its type's color (a list without Types' index): a gray.
+    static let pillFallback = NSColor(white: 0.45, alpha: 1)
 
     /// How tall a note `width` wide is to show all of `text` (as it's drawn: `NoteStyle.text`, with
     /// its pills): its lines (the empty one after a last Return too, where the caret is), and the

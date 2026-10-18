@@ -3,7 +3,9 @@ import Geometry
 
 /// A box kind whose shapes may be laid out at another size than the box they store: larger (a note
 /// with rows no record holds) or smaller (a note drawn small while it holds nothing). The laid-out
-/// frame has the stored box's origin and the size the kind answers, as it answers it; the core takes
+/// frame has the stored box's origin and the size the kind answers, as it answers it (or, for a kind that
+/// answers an anchor, the box's anchor point kept in place: a shape drawn about its middle grows and shrinks
+/// both ways, and the point it stays on is the stored one); the core takes
 /// the box's own size for an answer that isn't finite and above zero on both sides. Everything that asks how much room the
 /// shape takes goes by it (`ShapeContext.frame(of:)`); the kind's geometry, outline and editing
 /// frame are it unless the kind says otherwise. A kind that holds shapes (`ShapeContaining`) can't
@@ -15,9 +17,15 @@ import Geometry
 /// extension, like every capability.
 public protocol LaidOutBox: ShapeDefinition where Props: BoxShapeProps {
     func laidOutSize(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGSize
+    /// The point of the stored box that stays where it is when the box takes the laid-out size, in unit
+    /// coordinates of the box: (0, 0), the default, its top-left corner; (0.5, 0.5) its middle, so the laid-out frame
+    /// is centered on the box. Kept with the size, so it follows from the same things the size does.
+    func laidOutAnchor(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGPoint
 }
 
 extension LaidOutBox {
+    public func laidOutAnchor(of shape: ShapeRecord<Props>, in context: ShapeContext) -> CGPoint { .zero }
+
     public func geometry(of shape: ShapeRecord<Props>, in context: ShapeContext) -> ShapeGeometry {
         let frame = context.frame(of: shape, laidOutBy: self)
         return ShapeGeometry(outline: frame.polygon, bounds: frame)
@@ -95,6 +103,15 @@ public struct EditContext<Props: ShapeProps> {
     /// being edited, what it commits is the editing session's undo step ("Typing").
     public func update(_ change: (inout Props) -> Void) {
         editor?.transact(nil, coalescing: nil, origin: .editing) { $0.update(shapeID, as: Props.self) { change(&$0.props) } }
+    }
+
+    /// Changes the shape's added values (or anything else of the file a view's commit is for) in a transaction, as
+    /// `update` changes its props: part of the editing session's step, which `name` names where nothing else has (a
+    /// group the session began in, an earlier commit of it), as a menu says Undo Name Relationship Type. The shape is
+    /// `transaction.update(shapeID) { … }`'s to change. Does nothing once the session has ended.
+    public func transact(_ name: String? = nil, _ body: (inout Transaction) -> Void) {
+        guard let editor, editor.editingShapeID == shapeID else { return }
+        editor.transact(name, coalescing: nil, origin: .editing) { body(&$0) }
     }
 
     /// Ends this editing session: nothing once it has ended, or another has begun, so a view may

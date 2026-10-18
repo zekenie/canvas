@@ -25,11 +25,16 @@ import Validation
 
 private let friends = "friends"
 
+/// What a pill is moved right, past the length a test names, to leave the arrow as long as it was when the type was a square note
+/// (an arrow stops short of a pill by its standoff), the pill level with the note it comes from, so the arrow is level.
+private let capsuleGap: CGFloat = 22
+
 extension Minute {
     /// A note marked as a relationship type, as Is a ▸ does it, beside the types.
     fileprivate func addRelationshipTypeNote(at origin: CGPoint = CGPoint(x: 500, y: 40)) -> ShapeID {
         let id = ShapeID()
-        editor.transact { $0.insert(AnyShapeRecord(ShapeRecord(id: id, StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 200, height: 200)), text: "")))) }
+        // Stored the size it is drawn at, so `origin` is where its pill starts (a pill is drawn about the middle of the box it stores).
+        editor.transact { $0.insert(AnyShapeRecord(ShapeRecord(id: id, StickyNote(frame: CGRect(origin: origin, size: TypePills.pill(title: nil, fields: 0).size), text: "")))) }
         editor.makeRelationshipType(id)
         editor.selectedShapeIDs = []
         editor.undoHistory.seal()
@@ -131,39 +136,18 @@ extension Minute {
         expectEqual(editor.document, start)
         expect(m.model.requests.isEmpty, "no step asked the model")
     },
-    test("an end's `from` on an arrow 40 world units long is within the arrow's own extent: centred on its middle, not 60 points left of it over the note it starts from") {
-        let m = try Minute()
-        defer { m.close() }
-        let editor = m.editor
-        // Feature, laid out with its rows, ends at x 360; the relationship type starts at 400.
-        let type = m.addRelationshipTypeNote(at: CGPoint(x: 400, y: 40))
-        let arrow = editor.galleryArrow(m.feature, type)
-        let geometry = try require(editor.shapeContext.geometry(of: arrow))
-        let bounds = geometry.bounds
-        expect(bounds.width > 40 && bounds.width < 60, "a short arrow (40 across, its head a little more): \(bounds)")
-        let mark = try require(editor.adornmentFrames(of: arrow).first { $0.label.text == "from" }, "an unnamed end says from")
-        expect(mark.rect.minX >= bounds.minX - 0.5 && mark.rect.maxX <= bounds.maxX + 0.5, "the word \(mark.rect) is within the arrow \(bounds)")
-        expect(abs(mark.rect.midX - geometry.outline[geometry.outline.count / 2].x) < 0.01, "centred on the arrow middle")
-    },
-    test("an end's `from` is within its arrow from 40 world units up at 50%, 100% and 200%, and from 20 at 100% and 200%; on a 20-unit arrow at 50% the word is wider than the arrow, over both notes (the limit)") {
-        for (length, zoom) in [(40, 0.5), (40, 1), (40, 2), (80, 0.5), (80, 1), (80, 2), (20, 1), (20, 2), (20, 0.5)] as [(CGFloat, CGFloat)] {
+    test("an end of the type says nothing on the line, whatever its length: no `from`, no label, no cut; the line is part of the one through the pill") {
+        for length in [20, 40, 80] as [CGFloat] {
             let m = try Minute()
             defer { m.close() }
             let editor = m.editor
             let feature = try m.frame(m.feature)
-            let type = m.addRelationshipTypeNote(at: CGPoint(x: feature.maxX + length, y: 40))
+            let type = m.addRelationshipTypeNote(at: CGPoint(x: feature.maxX + length + capsuleGap, y: feature.midY - TypesStyle.pillHeight / 2))
             let arrow = editor.galleryArrow(m.feature, type)
-            editor.camera = Camera(origin: .zero, zoom: zoom)
             let geometry = try require(editor.shapeContext.geometry(of: arrow))
-            let bounds = geometry.bounds
-            let mark = try require(editor.adornmentFrames(of: arrow).first { $0.label.text == "from" }, "an unnamed end says from")
-            let name = "\(length) units at \(zoom)"
-            if length == 20, zoom == 0.5 {
-                // A view-point size is more world units zoomed out: the word is 50 across, the arrow 20 and its head.
-                expect(mark.rect.width > bounds.width, "\(name): the word \(mark.rect) is wider than the arrow \(bounds)")
-            } else {
-                expect(mark.rect.minX >= bounds.minX - 0.5 && mark.rect.maxX <= bounds.maxX + 0.5, "\(name): the word \(mark.rect) is within the arrow \(bounds)")
-            }
+            expectEqual(geometry.label, nil, "\(length) units: no label")
+            expect(editor.adornmentFrames(of: arrow).isEmpty, "\(length) units: nothing is drawn beside it: \(editor.adornmentFrames(of: arrow).map(\.label.text))")
+            expectEqual(editor.arrowGeometry(of: arrow)?.endArrowhead, false, "no head at the pill, whatever it stores")
         }
     },
     test("a note's rows: one row where the two ends are named alike, one named for the type where neither is named, two where they are named apart; the type's own note says it runs both ways") {

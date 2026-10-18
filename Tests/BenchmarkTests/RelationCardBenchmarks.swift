@@ -20,9 +20,9 @@ import Types
 
 extension Budget {
     /// What 450 arrows that each hold a relationship add to a frame in full at 100% over the same arrows of a relationship type
-    /// with no fields: each chip's number, a kept face (the thread's CPU, release).
+    /// with no fields: each pill's value, a kept face (the thread's CPU, release).
     static let relationshipChipsFrame = 3.0
-    /// A keystroke in an arrow's card: the field's commit on one of 450 arrows of a relationship type with fields, and its chip
+    /// A keystroke in an arrow's card: the field's commit on one of 450 arrows of a relationship type with fields, and its pill
     /// made again. A proposal: 1 ms (the thread's CPU, release).
     static let arrowCardKeystroke = 1.0
     /// A keystroke in one relationship's cell at a hub of 1,000 relationships: the commit of the arrow's field every service
@@ -63,7 +63,7 @@ extension Budget {
 }
 
 @MainActor let relationCardBenchmarks = Suite("Relationship data benchmarks", [
-    test("450 arrows that each hold a relationship, their chips saying how many fields it has, cost little more in a frame than the same arrows of a type with no fields; a keystroke in an arrow's card is 1 ms") {
+    test("450 arrows that each hold a relationship, their pills saying the first value, cost little more in a frame than the same arrows of a type with no fields; a keystroke in an arrow's card is 1 ms") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         // 450 free arrows, 150 long, 30 columns by 15 rows at 160 by 60 apart: all in a view of 4,800 by 900 at 100%.
@@ -88,7 +88,7 @@ extension Budget {
             let context = try bitmapContext(size)
             draw(editor, into: context, size: size)
             draw(editor, into: context, size: size)
-            let counted = board.arrows.filter { editor.adornmentFrames(of: $0).contains { $0.adornment == .of(TypeChips.self) && $0.label.count == 4 } }.count
+            let counted = board.arrows.filter { editor.adornmentFrames(of: $0).contains { $0.adornment == .of(RelationshipPill.self) && $0.label.text != nil } }.count
             var step = 0.0
             let ms = median(runs: 11, prepare: { step = step == 0 ? 1 : 0; editor.camera = Camera(origin: CGPoint(x: step, y: 0), zoom: 1) }, onThread: true) {
                 draw(editor, into: context, size: size)
@@ -96,11 +96,11 @@ extension Budget {
             return (ms, counted, editor)
         }
         let with = try frame(board(typed: \.related, values: true)), without = try frame(board(typed: \.plain, values: false))
-        expectEqual(with.counted, 450, "each arrow's chip says its four fields")
-        expectEqual(without.counted, 0, "a type with no fields has no number")
-        report(String(format: "450 relationships whose chips say how many fields in full at 100%%: a frame %5.2f ms, %5.2f more than the same arrows of a type with no fields (%5.2f) (budget %.0f more)",
+        expectEqual(with.counted, 450, "each arrow has its pill (150 long, so the value is dropped: the line's room, not the arrow's data)")
+        expectEqual(without.counted, 450, "a relationship type with no fields has its pill too")
+        report(String(format: "450 relationships whose pills say their first value in full at 100%%: a frame %5.2f ms, %5.2f more than the same arrows of a type with no fields (%5.2f) (budget %.0f more)",
                       with.ms, with.ms - without.ms, without.ms, Budget.relationshipChipsFrame))
-        // A keystroke in an arrow's card: the field's commit on one of the 450 and its chip made again.
+        // A keystroke in an arrow's card: the field's commit on one of the 450 and its pill made again.
         let editor = with.editor
         let arrows = Array(editor.document.shapes.filter { $0[IsAProperty.self] != nil && $0.typed(as: Arrow.self) != nil }.map(\.id))
         let target = arrows[200]
@@ -110,7 +110,7 @@ extension Budget {
             editor.fieldWriter?.setTyped(typed ? "engineer lead" : "engineer", as: .text, at: FieldPath(field: "role"), of: target)
             _ = editor.adornmentFrames(of: target)
         }
-        report(String(format: "a keystroke in an arrow's card, the commit and the chip made again, among 450 relationships: %5.3f ms (budget %.1f)", keystroke, Budget.arrowCardKeystroke))
+        report(String(format: "a keystroke in an arrow's card, the commit and the pill made again, among 450 relationships: %5.3f ms (budget %.1f)", keystroke, Budget.arrowCardKeystroke))
         if holdsToBudgets {
             expect(with.ms - without.ms < Budget.relationshipChipsFrame, "450 relationships' chips added \(with.ms - without.ms) ms to a frame")
             expect(keystroke < Budget.arrowCardKeystroke, "a keystroke in an arrow's card took \(keystroke) ms")

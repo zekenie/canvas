@@ -22,9 +22,9 @@ import Types
 private let roleAndDate = #"{"type": "object", "properties": {"role": {"type": "string"}, "since": {"type": "string"}}}"#
 
 extension Minute {
-    /// The number on an arrow's chip, nil for none.
-    func chipNumber(of arrow: ShapeID) -> Int? {
-        editor.adornmentFrames(of: arrow).first { $0.adornment == .of(TypeChips.self) }?.label.count
+    /// What the arrow's pill says after the relationship's name: the first value it holds.
+    func pillNote(of arrow: ShapeID) -> String? {
+        editor.adornmentFrames(of: arrow).first { $0.adornment == .of(RelationshipPill.self) }?.label.note
     }
 
     /// The center of the `›` of a note's row, where a person would press.
@@ -42,7 +42,7 @@ extension Minute {
         let editor = m.editor
         let made = try m.nameTheType()
         editor.transact("Fields") { $0.update(made) { $0[TypeSchemaProperty.self] = SchemaText(roleAndDate) } }
-        expect(try m.click(row: "layer", of: m.featureNote))
+        expect(try m.click(row: "in", of: m.featureNote))
         m.window.pressReturn()
         editor.endEditing()
         let arrow = try require(m.arrows.first { $0.props.start.binding?.shapeID == m.featureNote }).id
@@ -62,15 +62,15 @@ extension Minute {
         let made = try m.nameTheType()
         editor.transact("Fields") { $0.update(made) { $0[TypeSchemaProperty.self] = SchemaText(roleAndDate) } }
         // The relationship, drawn from the row (first minute, steps 6 and 7).
-        expect(try m.click(row: "layer", of: m.featureNote))
+        expect(try m.click(row: "in", of: m.featureNote))
         m.window.pressReturn()
         editor.endEditing()
         let arrow = try require(m.arrows.first { $0.props.start.binding?.shapeID == m.featureNote }).id
-        expectEqual(m.chipNumber(of: arrow), 2, "the chip says the relationship's two fields")
-        expect(editor.adornmentFrames(of: arrow).allSatisfy { $0.adornment == .of(TypeChips.self) }, "and nothing else of them is on the board")
-        // The chip opens the arrow's card, with the arrow selected.
-        let chip = try require(editor.adornmentFrames(of: arrow).first { $0.adornment == .of(TypeChips.self) })
-        TypeChips.click(AdornmentClick(shape: arrow, tag: chip.tag, rect: chip.rect, isOverflow: false), in: editor)
+        expectEqual(m.pillNote(of: arrow), nil, "the pill says the relationship's name and, filled in, its first value")
+        expect(editor.adornmentFrames(of: arrow).allSatisfy { $0.adornment == .of(RelationshipPill.self) }, "and nothing else of them is on the board")
+        // The pill opens the arrow's card, with the arrow selected.
+        let chip = try require(editor.adornmentFrames(of: arrow).first { $0.adornment == .of(RelationshipPill.self) })
+        RelationshipPill.click(AdornmentClick(shape: arrow, tag: chip.tag, rect: chip.rect, isOverflow: false), in: editor)
         expectEqual(editor.fieldCards?.openTarget?.shape, arrow)
         expectEqual(editor.fieldCards?.openTarget?.target, .shape)
         expectEqual(editor.selectedShapeIDs, [arrow])
@@ -80,12 +80,12 @@ extension Minute {
         m.window.pressEscape()
         expect(editor.fieldCards?.openTarget == nil)
         editor.undoHistory.seal()
-        expectEqual(m.chipNumber(of: arrow), 2, "a value typed changes no number")
+        expectEqual(m.pillNote(of: arrow), "engineer", "the value typed is the pill's note")
         // The note's row ends in › and opens a card whose line holds it.
         editor.endEditing()
         let beforeSession = editor.document
         editor.selection = m.featureNote
-        let began = editor.beginEditing(m.featureNote, at: try m.chevron(of: m.featureNote, "layer"))
+        let began = editor.beginEditing(m.featureNote, at: try m.chevron(of: m.featureNote, "in"))
         expect(began)
         m.h.scheduler.advance(by: .zero)
         let open = try require(editor.fieldCards?.openTarget, "the card of the row")
@@ -102,7 +102,7 @@ extension Minute {
         m.window.type("2021")
         expectEqual(editor.fieldWriter?.values(of: arrow).value(at: FieldPath(field: "role")), "lead")
         expectEqual(editor.fieldWriter?.values(of: arrow).value(at: FieldPath(field: "since")), "2021")
-        expectEqual(editor.undoHistory.undoName, "Change Layer", "named for the row")
+        expectEqual(editor.undoHistory.undoName, "Change In", "named for the row")
         expectEqual(editor.document[m.featureNote]?[FieldValuesProperty.self], beforeSession[m.featureNote]?[FieldValuesProperty.self], "nothing is stored on the note")
         editor.fieldCards?.close()
         editor.endEditing()

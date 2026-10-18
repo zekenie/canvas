@@ -180,7 +180,7 @@ struct SlabsPlugin: CanvasPlugin {
         expectEqual(w.h.editor.undoHistory.undoName, "Add Arrow")
         expectEqual(w.h.editor.document.shapes.count, 5 + 2 + 3, "no relationship type made")
     },
-    test("between two types: the arrow is replaced by a relationship type and two arrows in one step, New Relationship Type; the type is selected and its name card is shown; one Undo, once the card is dismissed, returns the board") {
+    test("between two types: the arrow is replaced by a relationship type and two arrows in one step, New Relationship Type; the type is selected; one Undo returns the board") {
         let w = try Release()
         let start = w.h.editor.document
         w.h.editor.selection = w.ann
@@ -190,25 +190,19 @@ struct SlabsPlugin: CanvasPlugin {
         let made = try require(w.h.editor.document.shapes.last { $0[RelationshipProperty.self] == true && $0.id != w.employment })
         expectEqual(w.h.editor.undoHistory.undoName, "New Relationship Type")
         expectEqual(w.h.editor.selectedShapeIDs, [made.id])
-        expect(w.h.editor.editingShapeID == nil, "not edited")
-        let card = try require(w.h.editor.card, "the name card")
-        expectEqual(card.shape, made.id)
+        expect(w.h.editor.editingShapeID == nil, "a slab has no editing view")
+        expect(w.h.editor.card == nil, "and no card asks a name")
         expectEqual(w.arrows.count, 4, "the drag's arrow is gone, two new ones")
         let toIt = try require(w.arrows.first { $0.props.end.binding?.shapeID == made.id && $0.props.start.binding?.shapeID == w.person })
         let fromIt = try require(w.arrows.first { $0.props.start.binding?.shapeID == made.id && $0.props.end.binding?.shapeID == w.company })
         expect(toIt.props.endArrowhead && !toIt.props.startArrowhead, "one head")
         expect(fromIt.props.endArrowhead && !fromIt.props.startArrowhead)
-        // The name is typed in the card and is part of the same step.
-        let field = try require(card.view.subviews.compactMap { $0 as? NSTextView }.first)
-        field.insertText("in", replacementRange: NSRange(location: 0, length: 0))
-        expectEqual(w.h.editor.document[made.id]?[TitleProperty.self], "in")
         expectEqual(w.h.editor.undoHistory.undoName, "New Relationship Type")
-        w.h.editor.closeCard()
         w.h.editor.undo()
         expectEqual(w.h.editor.document.shapes.map(\.id), start.shapes.map(\.id), "the board as it was")
         _ = selected
         w.h.editor.redo()
-        expectEqual(w.h.editor.document[made.id]?[TitleProperty.self], "in")
+        expect(w.h.editor.document[made.id] != nil)
         expectEqual(w.arrows.count, 4)
     },
     test("released on nothing, or let go of with Escape: no step, nothing held, no end and nothing laid out") {
@@ -281,9 +275,9 @@ struct SlabsPlugin: CanvasPlugin {
         expectEqual(w.h.editor.relationships?.end(arrow)?.type, w.employment)
         let heard = ReleaseHeard(w.h.editor)
         w.h.editor.selection = arrow
-        // The arrow runs from Person to Employment: its end handle is at Employment's side.
+        // The arrow runs from Person to Employment: its end handle is where its line meets Employment's pill.
         let geometry = try require(w.h.editor.arrowGeometry(of: arrow))
-        let handle = w.h.editor.camera.toView(geometry.endHandle)
+        let handle = w.h.editor.camera.toView(geometry.end)
         w.h.move(to: handle)
         w.h.press()
         w.h.drag(to: w.center(Release.companyFrame), speed: fast)

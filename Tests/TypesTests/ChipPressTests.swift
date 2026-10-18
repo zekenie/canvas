@@ -12,8 +12,8 @@ import Types
 
 // A real press on the chip of an arrow's relationship, which is a press off the open card as well.
 
-@MainActor let chipPressTests = Suite("A press on an arrow's chip", [
-    test("it opens the arrow's card; pressed again it is a press off the open card, which closes it, and the click opens the card afresh") {
+@MainActor let chipPressTests = Suite("A press on an arrow's pill", [
+    test("it opens the arrow's card; the pill is the rect the card hangs from, so a press on it is not a press off the card and its click closes it, and a third opens it afresh") {
         let r = try ArrowCardRig()
         defer { r.close() }
         let undo = r.editor.undoHistory.undoName
@@ -25,7 +25,10 @@ import Types
         expectEqual(r.editor.selectedShapeIDs, [r.arrow])
         r.s.harness.click(at: point)
         r.s.harness.scheduler.advance(by: .zero)
-        expectEqual(r.cards.openTarget?.shape, r.arrow, "the second press leaves the card open")
-        expectEqual(r.editor.undoHistory.undoName, undo, "and makes no step")
+        expectEqual(r.cards.openTarget?.shape, nil, "the second click on the pill closes it, as asking again does")
+        r.s.harness.click(at: point)
+        r.s.harness.scheduler.advance(by: .zero)
+        expectEqual(r.cards.openTarget?.shape, r.arrow, "the third opens it afresh")
+        expectEqual(r.editor.undoHistory.undoName, undo, "and none makes a step")
     },
 ])

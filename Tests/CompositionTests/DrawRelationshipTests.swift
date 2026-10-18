@@ -26,7 +26,7 @@ edge "Employment" -> "Company" text: "staff"
 
 private let notes = """
 sticky-note "Ann" below "Person" is: "Person"
-sticky-note "Bo" right of "Ann" is: "Person"
+sticky-note "Bo" below "Ann" is: "Person"
 sticky-note "Acme" below "Company" is: "Company"
 """
 

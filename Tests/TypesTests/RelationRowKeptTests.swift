@@ -51,7 +51,7 @@ private struct Failure: Error {
         s.editor.transact("Many") { transaction in for record in records { transaction.insert(record) } }
         for record in records where record.kind == records[0].kind { _ = s.rows(record.id) }
         expect((s.book.holders[s.layerNote]?.count ?? 0) <= 2_048, "the kept names were wiped when the rows were: \(s.book.holders[s.layerNote]?.count ?? 0)")
-        guard case .related(let pills, _) = try s.row(records[0].id, "layer").content else { throw Failure("a pill") }
+        guard case .related(let pills, _) = try s.row(records[0].id, "in").content else { throw Failure("a pill") }
         expectEqual(pills.map(\.target), [s.layerNote])
         expectEqual(s.book.pillLabels[s.layerNote], "Foundation")
     },
@@ -159,10 +159,10 @@ private struct Failure: Error {
         let relay = s.editor.addRelay(standingFor: [s.awayLayer], says: "Down", at: CGPoint(x: 400, y: 1700))
         let third = s.editor.addSlip("Third", of: [s.feature], at: CGPoint(x: 1600, y: 500))
         s.editor.addBond(third, relay, of: [s.rel])
-        expect(!(try s.pills(third, "layer").pills.first?.isLive ?? true), "the pill may not stand for it")
-        s.harness.move(to: try s.point(onPill: 0, of: s.note, "layer"))
+        expect(!(try s.pills(third, "in").pills.first?.isLive ?? true), "the pill may not stand for it")
+        s.harness.move(to: try s.point(onPill: 0, of: s.note, "in"))
         expectEqual(s.editor.hovered, s.layerNote)
-        s.harness.move(to: try s.point(onPill: 0, of: third, "layer"))
+        s.harness.move(to: try s.point(onPill: 0, of: third, "in"))
         expectEqual(s.editor.hovered, relay)
     },
     test("zoomed out, where a note is a skeleton, a click on its pill is the note's") {
@@ -170,7 +170,7 @@ private struct Failure: Error {
         s.fromEnd()
         s.toEnd()
         s.relate(s.note, s.layerNote)
-        let point = try s.point(onPill: 0, of: s.note, "layer")
+        let point = try s.point(onPill: 0, of: s.note, "in")
         s.editor.camera.setZoom(0.2, around: .zero)
         expect(s.editor.drawsSkeletons)
         s.harness.click(at: s.harness.view(point))
@@ -184,7 +184,7 @@ private struct Failure: Error {
         s.toEnd()
         s.editor.freeze([s.note])
         let before = s.editor.document[s.note]
-        let row = try s.row(s.note, "layer")
+        let row = try s.row(s.note, "in")
         s.harness.click(at: CGPoint(x: row.valueRect.minX + 6, y: row.rect.midY))
         s.settle()
         expectEqual(log.refusals, [[s.note]])
@@ -208,7 +208,7 @@ private struct Failure: Error {
         editor.addBond(rel, layer)
         let relay = editor.addRelay(standingFor: [hidden], says: "Down")
         editor.addBond(note, relay, of: [rel])
-        guard case .related(let pills, _)? = try require(editor.rowBook).rows(of: note).first(where: { $0.name == "layer" })?.content, let pill = pills.first else {
+        guard case .related(let pills, _)? = try require(editor.rowBook).rows(of: note).first(where: { $0.name == "in" })?.content, let pill = pills.first else {
             throw Failure("a pill")
         }
         expectEqual(pill.state, .unavailable(called: "Down"))

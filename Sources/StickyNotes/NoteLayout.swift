@@ -12,24 +12,30 @@ struct NoteLayout {
     let words: CGRect
     /// Where the rows go; nil with none.
     let block: CGRect?
+    /// What a relationship type is drawn as: a pill, not a note (Types'); nil for every other note. Its frame is the capsule's.
+    let pill: TypePill?
 
     /// With no rows, the stored frame and its words inset by the padding, nothing measured: the note
     /// as it was drawn before it had any. With rows, the frame `size(of:rows:)` says, its words at the
-    /// width the rows leave them, and the rows right under the words. A relationship type that holds
-    /// nothing (`TypeRows.isCompact`) is the small paper from its stored top-left, with nothing in it.
+    /// width the rows leave them, and the rows right under the words. A relationship type
+    /// (`TypeRows.pill`) is a capsule of the size Types says, centered on the middle of its stored frame, with no words
+    /// and no rows (those it keeps are not drawn).
     init(_ shape: ShapeRecord<StickyNote>, in context: ShapeContext) {
         let p = NoteStyle.padding
         guard let rows = context.layoutInput(TypeRows.extent, of: shape) else {
-            if NoteLayout.isCompact(shape, in: context) {
-                frame = CGRect(origin: shape.frame.origin, size: NoteStyle.compactSize)
-                words = frame.insetBy(dx: p, dy: p)
+            if let pill = NoteLayout.pill(shape, in: context) {
+                frame = NoteLayout.pillFrame(pill, in: shape.frame)
+                words = .zero
+                self.pill = pill
             } else {
                 frame = shape.frame
                 words = shape.frame.insetBy(dx: p, dy: p)
+                pill = nil
             }
             block = nil
             return
         }
+        pill = nil
         let size = NoteLayout.size(of: shape.props, rows: rows)
         let inner = size.width - p * 2
         let height = NoteWords.height(of: shape.props.text, width: inner)
@@ -39,10 +45,19 @@ struct NoteLayout {
         block = CGRect(x: frame.minX + p, y: frame.minY + p + height + gap, width: inner, height: rows.height)
     }
 
-    /// Whether the note is drawn small: Types says a relationship type with no words and no fields is. A compact note
-    /// has no rows (it is the case of none), so this is asked only where there are none: a plain note costs one lookup.
-    static func isCompact(_ shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> Bool {
-        context.layoutInput(TypeRows.isCompact, of: shape) == true
+    /// What Types says a relationship type is drawn as. A pill has no rows (it is the case of none), so this is asked only
+    /// where there are none: a plain note costs one lookup.
+    static func pill(_ shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> TypePill? {
+        // Only a relationship type is a pill: the mark, one added value, before the layout input, which a frame of type notes
+        // zoomed out would otherwise ask of every one.
+        guard shape[RelationshipProperty.self] == true else { return nil }
+        return context.layoutInput(TypeRows.pill, of: shape)
+    }
+
+    /// The capsule's frame about the middle of the box the note stores, so a longer name grows both ways and what is
+    /// drawn through it stays put.
+    static func pillFrame(_ pill: TypePill, in box: CGRect) -> CGRect {
+        CGRect(x: box.midX - pill.size.width / 2, y: box.midY - pill.size.height / 2, width: pill.size.width, height: pill.size.height)
     }
 
     /// The paper's size: the stored one, no rows. With rows, as wide as they read at and as tall as

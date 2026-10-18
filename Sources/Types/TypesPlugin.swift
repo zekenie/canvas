@@ -45,32 +45,42 @@ public struct TypesPlugin: ListedPlugin {
         // What changes a shape's field values (one writer for every surface), what is said of them (the check),
         // and the card a row with more in it opens.
         registrar.service { FieldWriter(editor: $0) }
+        // And what changes the fields a type defines: the one writer of its schema's properties.
+        registrar.service { FieldDefiner(editor: $0) }
         registrar.service { editor in
             let registry = editor.registry
             return FieldChecks(editor: editor, rowKinds: Set(registry.kinds.filter { registry.typeRows(of: $0) != nil }))
         }
         registrar.service { FieldCards(editor: $0) }
-        // What the writers and chips of IsA ask of the parts above it: the card that names a relationship type the drag
-        // between two types made and the arrow's card a chip opens, which are Form's, and the tone of an arrow's chip, which is the
-        // check's.
+        // And the card that defines a relationship type, under its pill.
+        registrar.service { DefinitionCards(editor: $0) }
+        // What the writers and chips of IsA ask of the parts above it: the arrow's card a chip opens and the card that
+        // defines a relationship type (Tab in its pill's name; nothing fills it in yet), which are Form's, and the tone of an
+        // arrow's chip, which is the check's.
         registrar.service { editor in
-            RelationshipHooks(nameIt: { [weak editor] id in editor?.nameRelationshipType(id) ?? false },
-                              tone: { [weak editor] id in
+            RelationshipHooks(tone: { [weak editor] id in
                                   // Only a shape of a kind that relates can be a misfit: a note holding `is` is not asked of the check.
                                   guard let editor, let arrow = editor.shape(inFile: id), editor.registry.relates(arrow.kind),
                                         editor.fieldChecks?.check(of: arrow).isMisfit == true else { return .plain }
                                   return .wrong
                               },
-                              openCard: { [weak editor] id in editor?.openRelationshipCard(for: id) ?? false })
+                              openCard: { [weak editor] id in editor?.openRelationshipCard(for: id) ?? false },
+                              openDefinition: { [weak editor] id in editor?.definitionCards?.open(id, focus: .addField) ?? false })
         }
         // What a shape's rows are made of and the room they take, announced as a type changes: last, so it
         // hears each commit after the index, the field book and the sync.
         registrar.service { RowBook(editor: $0) }
         registrar.layoutInput(TypeRows.extent) { record, reading in RowBook.provide(record, reading) }
-        // And whether a relationship type that holds nothing is drawn small.
-        registrar.layoutInput(TypeRows.isCompact) { record, reading in RowBook.provideCompact(record, reading) }
+        // And how a relationship type is drawn: a pill.
+        registrar.layoutInput(TypeRows.pill) { record, reading in RowBook.providePill(record, reading) }
+        // The line through a relationship type's pill: what its end arrows are told (`TypeRows.endArrow`), after the index it hears.
+        registerEndArrows(into: &registrar)
+        // And the select tool's: a point on either half is the relationship type, which outlines its halves with it.
+        registerEndSelection(into: &registrar)
         // A click on a row that answers a click, on the canvas and under the editor.
         registerRowFaces(into: &registrar)
+        // A click on a relationship type's pill opens the card that defines it.
+        registerDefinitionFace(into: &registrar)
         // A click on a pill in a type's words that names a type it is not yet related to: `Relate to Layer`. Asked before
         // Mentions' faces, since Types is listed after Mentions.
         registerRelateOffer(into: &registrar)
@@ -87,13 +97,15 @@ public struct TypesPlugin: ListedPlugin {
         // Needed and Only one, on the arrow that is an end: its menu (its panel is the details plugin's).
         registerEndRuleMenu(into: &registrar)
         registerTypeChips(into: &registrar)
-        // `from` or `to` beside an end's arrow that has no name.
-        registerEndSideMark(into: &registrar)
-        // A type's pill is its title in its color (Colors', else its id's), after the mark of a type (an arrow where a relationship
-        // type's is); untitled, gray and dimmed. Asked of the kinds that hold a schema, a note's, and a plain note's pill is as it was.
+        // Where an arrow of a relationship type has its label: its pill, and the offer of one on a selected plain arrow.
+        registerRelationshipPills(into: &registrar)
+        // A type's pill is its title in its color (Colors', else its id's), after the mark of a type; untitled, gray and dimmed. A
+        // relationship type has none: it is a pill itself. Asked of the kinds that hold a schema, a note's, and a plain note's pill is as it was.
         registrar.titlePillLook(forShapesHolding: TypeSchemaProperty.self) { record, title, context in
             guard record[TypeSchemaProperty.self] != nil else { return nil }
-            let symbol = record[RelationshipProperty.self] == true ? TypesStyle.relationshipTypeSymbol : TypesStyle.typeSymbol
+            // A relationship type is a pill itself (`TypeRows.pill`): its name is on it, and no pill shows above it.
+            if record[RelationshipProperty.self] == true { return TitlePillLook(hidesPill: true) }
+            let symbol = TypesStyle.typeSymbol
             let tint = title == nil ? nil : context.service(TypeIndex.self).map { $0.look(of: record.id).solid }
             return TitlePillLook(symbol: symbol, tint: tint, placeholder: TypesStyle.untitledType)
         }

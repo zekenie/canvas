@@ -20,10 +20,10 @@ import Types
         defer { m.close() }
         let editor = m.editor
         _ = try m.nameTheType()
-        expect(try m.click(row: "layer", of: m.featureNote))
+        expect(try m.click(row: "in", of: m.featureNote))
         expect(m.rowsView?.openList != nil, "an empty row: the list")
         m.window.pressReturn()
-        expectEqual(m.rowsView?.focusedRow, "layer")
+        expectEqual(m.rowsView?.focusedRow, "in")
         expect(editor.fieldCards?.openTarget == nil, "no card yet")
         m.window.pressReturn()
         m.h.scheduler.advance(by: .zero)

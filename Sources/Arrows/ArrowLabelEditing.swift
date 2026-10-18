@@ -19,7 +19,7 @@ extension ArrowDefinition: Editable {
     }
 
     func editingFrame(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGRect? {
-        ArrowLabels.frame(of: shape.props, on: arrowGeometry(shape.props, in: context), names: context.mentionNames(of: shape.id), editing: true)
+        ArrowLabels.laid(of: shape, on: arrowGeometry(of: shape, in: context), in: context, editing: true)?.text
     }
 }
 

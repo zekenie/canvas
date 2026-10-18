@@ -17,11 +17,12 @@ import Validation
 
 // The gallery's states for a relationship on its arrow and in the note's card (slice 5), appended to `relationStates`: frames 3.4
 // to 3.7 of board 3 at three arrow lengths (349, 229 and 123 between the notes' edges, as the drawing's), at 100% and at 50%, light
-// and dark: the arrow's card under the arrow, and the chip saying how many fields (the values are shown nowhere on the board:
-// the owner's call on 2026-10-14, which took away the line of values these frames first drew); frame 4.3, the card the note's
-// `friends` row opens; and the check's states an earlier slice left undrawn, frames 5.1 and 5.2: a misfit (the ring, the red chip,
-// the Issues sentence), an end that cannot be read, a free end, and a loose end; and the chip on slanted arrows (`Rel3-p6-slant`):
-// five arrows of one relationship type at 0, 20 falling, 35 falling, 35 rising and 70 degrees, one with words.
+// and dark: the arrow's card under its pill, and the pill in the line's cut saying the name and the first value (the other values are
+// in the card: the owner's call on 2026-10-14 took away the line of values these frames first drew); frame 4.3, the card the note's
+// `friends` row opens; and the check's states an earlier slice left undrawn, frames 5.1 and 5.2: a misfit (the ring, the red pill,
+// the Issues sentence), an end that cannot be read, a free end, and a loose end; and the pill on slanted arrows (`Rel3-p6-slant`):
+// five arrows of one relationship type at 0, 20 falling, 35 falling, 35 rising and 70 degrees, one with words; and the pill's other
+// states: the dashed one on a selected plain arrow, the short lines (the name alone, then a dot), a long name, and zoomed out.
 
 private let person: FieldFixtures.TypeText = (rowsTypeID(95), "Person", "A person has a name.", fieldsSchema(["name"], required: ["name"]))
 private let company: FieldFixtures.TypeText = (rowsTypeID(96), "Company", "A company has a name.", fieldsSchema(["name"]))
@@ -64,11 +65,11 @@ private func jobBoard(_ stage: GalleryStage, length: CGFloat, values: JSONObject
 
 private let employmentValues: JSONObject = ["role": "engineer", "since": "2021", "until": "2027", "hours": 32]
 
-/// The number on an arrow's relationship chip, and whether the chip is all that is shown of it.
+/// What an arrow's pill says after the relationship's name, and whether the pill is all that is shown of it.
 @MainActor
-private func chipNumber(_ stage: GalleryStage, _ arrow: ShapeID) -> (number: Int?, alone: Bool) {
+private func pillReading(_ stage: GalleryStage, _ arrow: ShapeID) -> (note: String?, alone: Bool) {
     let frames = stage.editor.adornmentFrames(of: arrow)
-    return (frames.first { $0.adornment == .of(TypeChips.self) }?.label.count, frames.allSatisfy { $0.adornment == .of(TypeChips.self) })
+    return (frames.first { $0.adornment == .of(RelationshipPill.self) }?.label.note, frames.allSatisfy { $0.adornment == .of(RelationshipPill.self) })
 }
 
 /// Where the states of one arrow length and zoom are written: the stage is as wide as the board at that zoom.
@@ -86,21 +87,21 @@ private func arrowStates() -> [GalleryState] {
             let size = armSize(length: length, zoom: zoom)
             let name = "L\(Int(length))-\(tag)"
             states.append(GalleryState("Rel3-p5-chip-\(name)", answers: "Board 3, frames 3.5 and 3.7",
-                                       "the arrow \(Int(length)) long between two notes at \(Int(zoom * 100))%, holding four values: the `Employment` chip saying 4, its fields, and nothing of the values on the board",
+                                       "the arrow \(Int(length)) long between two notes at \(Int(zoom * 100))%, holding four values: the `Employment` pill in the line's cut saying `engineer`, the first, and nothing else of the values on the board; on the shortest line the name alone",
                                        size: size) { stage in
                 let board = jobBoard(stage, length: length, values: employmentValues)
                 stage.look(at: .zero, zoom: zoom)
-                let chip = chipNumber(stage, board.arrow)
-                guard chip.number == 4, chip.alone else { throw GalleryFailure("the chip says 4 and is all that is shown: \(chip)") }
+                let pill = pillReading(stage, board.arrow)
+                guard pill.alone, pill.note == "engineer" || length < 200 else { throw GalleryFailure("the pill says the first value and is all that is shown: \(pill)") }
                 return .image(stage.render(at: .zero, zoom: zoom))
             })
             states.append(GalleryState("Rel3-p4-card-\(name)", answers: "Board 3, frame 3.4",
-                                       "the same arrow with its card open under it, the arrow selected: the type's chip, `role`, `since`, `until` and `hours`",
+                                       "the same arrow with its card open under its pill, the arrow selected: the type's chip, `role`, `since`, `until` and `hours`",
                                        size: size) { stage in
                 let board = jobBoard(stage, length: length, values: ["role": "engineer", "since": "2021"])
                 stage.look(at: .zero, zoom: zoom)
                 guard stage.editor.openRelationshipCard(for: board.arrow), stage.editor.fieldCards?.openTarget?.shape == board.arrow else {
-                    throw GalleryFailure("the chip's card opens")
+                    throw GalleryFailure("the pill's card opens")
                 }
                 return .image(stage.picture())
             })
@@ -139,23 +140,12 @@ private func friendsBoard(_ stage: GalleryStage) throws -> (ann: ShapeID, friend
 
 // MARK: Slanted arrows
 
-/// The least distance from the arrow's body to any of its adornments, in view points at `zoom`.
+/// How far the middle of the arrow's label (the pill, and its words after it) is from the middle of its visible body, in world units.
 @MainActor
-private func clearance(_ stage: GalleryStage, _ arrow: ShapeID, zoom: CGFloat) -> CGFloat {
-    let outline = stage.editor.shapeContext.geometry(of: arrow)?.outline ?? []
-    var least = CGFloat.infinity
-    for frame in stage.editor.adornmentFrames(of: arrow) {
-        for (from, to) in zip(outline, outline.dropFirst()) {
-            let length = hypot(to.x - from.x, to.y - from.y)
-            for step in 0...Int(length) {
-                let t = length == 0 ? 0 : CGFloat(step) / length
-                let p = CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t)
-                let dx = max(frame.rect.minX - p.x, 0, p.x - frame.rect.maxX), dy = max(frame.rect.minY - p.y, 0, p.y - frame.rect.maxY)
-                least = min(least, hypot(dx, dy) * zoom)
-            }
-        }
-    }
-    return least
+private func offMiddle(_ stage: GalleryStage, _ arrow: ShapeID) -> CGFloat {
+    guard let body = stage.editor.arrowGeometry(of: arrow)?.body, let lead = stage.editor.arrowLabelFrame(of: arrow) else { return .infinity }
+    let middle = body.point(at: 0.5)
+    return hypot(lead.midX - middle.x, lead.midY - middle.y)
 }
 
 @MainActor
@@ -166,7 +156,7 @@ private func slantState() -> GalleryState {
     ]
     let zoom: CGFloat = 0.4
     return GalleryState("Rel3-p6-slant", answers: "Board 3, frames 3.5 and 3.7 on a slanted arrow",
-                        "five arrows of one relationship type between notes, at 0, 20 falling, 35 falling, 35 rising and 70 degrees, one with words on it: the chip above each arrow's anchor, saying how many fields, slides clear of the arrow's body, only as far as it must (the level one is as it was)",
+                        "five arrows of one relationship type between notes, at 0, 20 falling, 35 falling, 35 rising and 70 degrees, one with words on it: the pill sits in each line's cut, the label centred on its middle whatever the slope, and the words of the one that has them follow the pill",
                         size: CGSize(width: 1_400, height: 780)) { stage in
         let editor = stage.editor
         employmentTypes(stage)
@@ -185,11 +175,9 @@ private func slantState() -> GalleryState {
         editor.selection = nil
         stage.look(at: .zero, zoom: zoom)
         for arrow in made {
-            let chip = chipNumber(stage, arrow)
-            guard chip.number == 4, chip.alone else { throw GalleryFailure("each arrow shows its chip, saying 4, and nothing else: \(chip)") }
-            guard clearance(stage, arrow, zoom: zoom) >= AdornmentLayout.margin - 0.5 else {
-                throw GalleryFailure("the chip keeps clear of the body: \(clearance(stage, arrow, zoom: zoom))")
-            }
+            let pill = pillReading(stage, arrow)
+            guard pill.note == "engineer", pill.alone else { throw GalleryFailure("each arrow shows its pill, saying `engineer`, and nothing else: \(pill)") }
+            guard offMiddle(stage, arrow) < 1 else { throw GalleryFailure("the label is at the line's middle: \(offMiddle(stage, arrow))") }
         }
         return .image(stage.render(at: .zero, zoom: zoom))
     }
@@ -202,8 +190,90 @@ private func issues(_ stage: GalleryStage, _ id: ShapeID) -> [String] {
     stage.editor.validation?.result(for: id)?.issues.map(\.message) ?? []
 }
 
+// MARK: The pill's other states
+
+/// The pill on an arrow between two notes, drawn at `zoom` on a stage of its own.
 @MainActor
-let arrowCardStates: [GalleryState] = arrowStates() + [slantState()] + [
+private func pillStates() -> [GalleryState] {
+    [
+        GalleryState("Rel3-p7-dashed", answers: "Board 3, frame 3.7 (the pill)",
+                     "a plain arrow between a Person and a Company, the only shape selected: a dashed empty pill in the line's cut, where an Employment pill would sit, since Employment fits it",
+                     size: armSize(length: 349, zoom: 1)) { stage in
+            let editor = stage.editor
+            employmentTypes(stage)
+            let ann = editor.instance(of: [person.id], words: "", ["name": "Ann Lee"], at: CGPoint(x: 40, y: 80))
+            let width = editor.shapeContext.frame(of: ann)?.width ?? 320
+            let acme = editor.instance(of: [company.id], words: "", ["name": "Acme"], at: CGPoint(x: 40 + width + 349, y: 80))
+            let arrow = editor.galleryArrow(ann, acme)
+            editor.selection = arrow
+            stage.look(at: .zero)
+            guard editor.adornmentFrames(of: arrow).contains(where: { $0.adornment == .of(RelationshipOfferPill.self) }) else {
+                throw GalleryFailure("the dashed pill is on the selected plain arrow: \(editor.adornmentFrames(of: arrow).map(\.adornment))")
+            }
+            return .image(stage.picture())
+        },
+        GalleryState("Rel3-p7-dashed-gone", answers: "Board 3, frame 3.7 (the pill)",
+                     "the same arrow once something else is selected: the dashed pill is gone and the line is whole",
+                     size: armSize(length: 349, zoom: 1)) { stage in
+            let editor = stage.editor
+            employmentTypes(stage)
+            let ann = editor.instance(of: [person.id], words: "", ["name": "Ann Lee"], at: CGPoint(x: 40, y: 80))
+            let width = editor.shapeContext.frame(of: ann)?.width ?? 320
+            let acme = editor.instance(of: [company.id], words: "", ["name": "Acme"], at: CGPoint(x: 40 + width + 349, y: 80))
+            let arrow = editor.galleryArrow(ann, acme)
+            editor.selection = arrow
+            editor.selection = ann
+            stage.look(at: .zero)
+            guard editor.adornmentFrames(of: arrow).isEmpty, editor.arrowLabelFrame(of: arrow) == nil else { throw GalleryFailure("nothing on the arrow") }
+            return .image(stage.picture())
+        },
+        GalleryState("Rel3-p8-zoomed-out", answers: "Board 3, frame 3.8",
+                     "the arrow 349 long at 30%, where shapes are skeletons: a capsule in the type's tint where the pill is, no letters",
+                     size: armSize(length: 349, zoom: 0.3)) { stage in
+            let board = jobBoard(stage, length: 349, values: employmentValues)
+            stage.look(at: .zero, zoom: 0.3)
+            guard stage.editor.drawsSkeletons, stage.editor.shapeContext.geometry(of: board.arrow)?.labelLead != nil else { throw GalleryFailure("zoomed out, the arrow has its pill's room") }
+            return .image(stage.render(at: .zero, zoom: 0.3))
+        },
+        GalleryState("Rel3-p9-short", answers: "Board 3, frame 3.9",
+                     "three Employment arrows holding a value, 349, 215 and 50 long between the notes: the name and the value, the name alone, then a dot, each in the type's tint and each still clickable",
+                     size: CGSize(width: 1_000, height: 1_100)) { stage in
+            let editor = stage.editor
+            employmentTypes(stage)
+            var made: [ShapeID] = []
+            for (row, length) in [349, 215, 50].enumerated() {
+                let ann = editor.instance(of: [person.id], words: "", ["name": "Ann Lee"], at: CGPoint(x: 40, y: 40 + CGFloat(row) * 340))
+                let width = editor.shapeContext.frame(of: ann)?.width ?? 320
+                let acme = editor.instance(of: [company.id], words: "", ["name": "Acme"], at: CGPoint(x: 40 + width + CGFloat(length), y: 40 + CGFloat(row) * 340))
+                let arrow = editor.galleryArrow(ann, acme, of: employmentID)
+                for (key, value) in employmentValues { editor.fieldWriter?.set(value, at: FieldPath(field: key), of: arrow) }
+                made.append(arrow)
+            }
+            editor.selection = nil
+            stage.look(at: .zero)
+            let faces = made.map { editor.adornmentFrames(of: $0).first { $0.adornment == .of(RelationshipPill.self) }?.label }
+            guard faces[0]?.note == "engineer", faces[1]?.text == "Employment", faces[1]?.note == nil, faces[2]?.mark == .dot else {
+                throw GalleryFailure("the name and value, the name alone, a dot: \(faces.map { $0.map { ($0.text, $0.note, $0.mark) } })")
+            }
+            return .image(stage.render(at: .zero))
+        },
+        GalleryState("Rel3-p9-long-name", answers: "Board 3, frame 3.9",
+                     "an arrow of a relationship type named at length, holding a value: the pill stops at 240 points, the name ending in an ellipsis and the value whole",
+                     size: armSize(length: 560, zoom: 1)) { stage in
+            let editor = stage.editor
+            let board = jobBoard(stage, length: 560, values: employmentValues)
+            editor.transact("Name") { $0.update(employmentID) { $0[TitleProperty.self] = "owner or primary driver of record" } }
+            stage.look(at: .zero)
+            guard let pill = editor.adornmentFrames(of: board.arrow).first(where: { $0.adornment == .of(RelationshipPill.self) }), pill.rect.width <= 240 else {
+                throw GalleryFailure("the pill is no wider than 240")
+            }
+            return .image(stage.render(at: .zero))
+        },
+    ]
+}
+
+@MainActor
+let arrowCardStates: [GalleryState] = arrowStates() + [slantState()] + pillStates() + [
     GalleryState("Rel4-p3-row-card", answers: "Board 4, frame 4.3",
                  "a click on the `›` of Ann's `friends` row: a card under it, a line for each friendship, the friend as a pill and the relationship's own field, `since`; Dana's is empty and needed, so it says `add since` in amber; the blank line last",
                  size: CGSize(width: 1_000, height: 560)) { stage in
@@ -226,14 +296,14 @@ let arrowCardStates: [GalleryState] = arrowStates() + [slantState()] + [
         return .image(stage.picture())
     },
     GalleryState("Rel5-p1-misfit", answers: "Edges 5, frame 5.1",
-                 "an Employment arrow re-aimed from a Company to a Layer note: the ring round the arrow and its chip red with a wave; nothing refused",
+                 "an Employment arrow re-aimed from a Company to a Layer note: the ring round the arrow and its pill red with a wave; nothing refused",
                  size: CGSize(width: 1_000, height: 900)) { stage in
         let editor = stage.editor
         let board = jobBoard(stage, length: 229, values: [:])
         let layer = editor.instance(of: [layerOfThree.id], words: "", ["order": 1, "title": "foundation"], at: CGPoint(x: 40 + 320 + 229, y: 520))
         editor.transact("Re-aim") { $0.update(board.arrow, as: Arrow.self) { $0.props.end = .bound(ArrowBinding(shapeID: layer, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)) } }
-        guard let chip = editor.adornmentFrames(of: board.arrow).first(where: { $0.adornment == .of(TypeChips.self) }), chip.label.isWrong,
-              editor.validation?.result(for: board.arrow)?.isValid == false else { throw GalleryFailure("the chip is red and the arrow rings") }
+        guard let chip = editor.adornmentFrames(of: board.arrow).first(where: { $0.adornment == .of(RelationshipPill.self) }), chip.label.isWrong,
+              editor.validation?.result(for: board.arrow)?.isValid == false else { throw GalleryFailure("the pill is red and the arrow rings") }
         return .image(stage.render(at: .zero))
     },
     GalleryState("Rel5-p1-misfit-issues", answers: "Edges 5, frame 5.1", "the Issues sentence of that arrow, naming the end", size: CGSize(width: 1_000, height: 460), isText: true) { stage in
@@ -246,13 +316,13 @@ let arrowCardStates: [GalleryState] = arrowStates() + [slantState()] + [
         return .text("arrow\n\(said.map { "error: \($0)" }.joined(separator: "\n"))\n")
     },
     GalleryState("Rel5-p2-unread-end", answers: "Edges 5, frame 5.2",
-                 "an Employment arrow that ends on a pill for an Acme that is not public: orange, not red; the chip stays plain",
+                 "an Employment arrow that ends on a pill for an Acme that is not public: orange, not red; the pill stays plain",
                  size: CGSize(width: 1_000, height: 460)) { stage in
         let editor = stage.editor
         let board = jobBoard(stage, length: 229, values: [:])
         let pill = editor.galleryPill(for: board.acme, label: "Acme", at: CGPoint(x: 40 + 320 + 229 + 40, y: 330))
         editor.transact("Re-aim") { $0.update(board.arrow, as: Arrow.self) { $0.props.end = .bound(ArrowBinding(shapeID: pill, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)) } }
-        guard let chip = editor.adornmentFrames(of: board.arrow).first(where: { $0.adornment == .of(TypeChips.self) }), !chip.label.isWrong else { throw GalleryFailure("the chip is plain") }
+        guard let chip = editor.adornmentFrames(of: board.arrow).first(where: { $0.adornment == .of(RelationshipPill.self) }), !chip.label.isWrong else { throw GalleryFailure("the pill is plain") }
         guard issues(stage, board.arrow).first?.contains("isn’t public") == true else { throw GalleryFailure("an unread end is one warning: \(issues(stage, board.arrow))") }
         editor.selection = nil
         return .image(stage.render(at: .zero))

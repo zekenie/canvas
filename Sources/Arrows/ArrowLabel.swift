@@ -1,4 +1,6 @@
+import Adornments
 import AppKit
+import Canvas
 import Geometry
 import Mentions
 
@@ -157,26 +159,94 @@ enum ArrowLabels {
     /// whole points too).
     /// An empty one is shown halfway, where typing puts it.
     static func frame(of arrow: Arrow, on geometry: ArrowGeometry, names: [String]? = nil, editing: Bool = false) -> CGRect? {
-        guard editing || arrow.hasText else { return nil }
+        laid(of: arrow, on: geometry, names: names, editing: editing, lead: nil)?.frame
+    }
+
+    /// A label laid out: its frame (what the body is cut around), the room kept in it for the pill that leads it, and
+    /// where its text goes. Without a lead, the frame is the text's, whole.
+    struct Laid: Equatable {
+        let frame: CGRect
+        /// Where the pill is, in `frame`: nil for no lead.
+        let lead: CGRect?
+        /// The part of `frame` the text is in (`placement(of:in:)` insets it by the padding).
+        let text: CGRect
+    }
+
+    /// The label with a pill leading it (`faces`: the sizes the pill may take, widest first, what Adornments says of an
+    /// arrow's: `AdornmentLead.faces`), or none. The pill's face is the widest of them whose label, the text after it
+    /// squeezed as it is, is no wider than the body less `labelSqueezeMargin` (a label's own room), else the last, which
+    /// is a dot's. The frame is the padding, the pill, then the text as it is measured, its own padding the gap; with
+    /// no text it is the pill and a padding either side, a pill's height and a padding above and below it. A label with
+    /// a lead is shown where the arrow has none but the lead: there is text, or `editing`, or a lead.
+    static func laid(of arrow: Arrow, on geometry: ArrowGeometry, names: [String]? = nil, editing: Bool = false,
+                     lead faces: [CGSize]?) -> Laid? {
+        let faces = faces?.isEmpty == false ? faces : nil
+        let hasWords = editing || arrow.hasText
+        guard hasWords || faces != nil else { return nil }
         let body = geometry.body
-        let size = self.size(of: arrow.text.stored.isEmpty ? "i" : arrow.text, bodyBounds: geometry.bodyPath.boundingBoxOfPath, names: names)
-        let position = arrow.hasText ? arrow.labelPosition : ArrowLabelLayout.defaultPosition
-        var frame = ArrowLabelLayout.frame(size: size, at: position, on: body, clearance: ArrowStyle.labelClearance,
+        let bounds = geometry.bodyPath.boundingBoxOfPath
+        let padding = ArrowStyle.labelPadding
+        func words(reserving reserved: CGFloat) -> CGSize? {
+            hasWords ? size(of: arrow.text.stored.isEmpty ? "i" : arrow.text, bodyBounds: bounds, names: names, reserving: reserved) : nil
+        }
+        let whole: CGSize, pill: CGSize?
+        if let faces {
+            let room = body.length - ArrowStyle.labelSqueezeMargin
+            var chosen = faces.count - 1
+            func total(_ face: CGSize) -> CGSize {
+                let text = words(reserving: padding + face.width)
+                return CGSize(width: padding + face.width + (text?.width ?? padding),
+                              height: max(text?.height ?? 0, face.height + 2 * padding))
+            }
+            for (index, face) in faces.enumerated() where total(face).width <= room {
+                chosen = index
+                break
+            }
+            pill = faces[chosen]
+            whole = total(faces[chosen])
+        } else {
+            pill = nil
+            whole = words(reserving: 0) ?? .zero
+        }
+        let position = arrow.hasText || faces != nil ? arrow.labelPosition : ArrowLabelLayout.defaultPosition
+        var frame = ArrowLabelLayout.frame(size: whole, at: position, on: body, clearance: ArrowStyle.labelClearance,
                                            clearsStart: arrow.startArrowhead || arrow.start.binding != nil,
                                            clearsEnd: arrow.endArrowhead || arrow.end.binding != nil)
         if frame.origin.x.isFinite, frame.origin.y.isFinite { frame.origin = CGPoint(x: frame.minX.rounded(), y: frame.minY.rounded()) }
-        return frame
+        guard let pill else { return Laid(frame: frame, lead: nil, text: frame) }
+        let lead = CGRect(x: frame.minX + padding, y: (frame.midY - pill.height / 2).rounded(), width: pill.width, height: pill.height)
+        return Laid(frame: frame, lead: lead, text: CGRect(x: lead.maxX, y: frame.minY, width: frame.maxX - lead.maxX, height: frame.height))
+    }
+
+    /// The label of a shape as its context lays it out: the names its mentions show now, and the lead Adornments says
+    /// the arrow has.
+    static func laid(of shape: ShapeRecord<Arrow>, on geometry: ArrowGeometry, in context: ShapeContext, editing: Bool = false) -> Laid? {
+        laid(of: shape.props, on: geometry, names: context.mentionNames(of: shape.id), editing: editing,
+             lead: context.layoutInput(AdornmentLead.faces, of: shape)?.sizes)
+    }
+
+    /// The label as a shape's kept geometry has it: nil for none.
+    static func laid(from geometry: ShapeGeometry) -> Laid? {
+        guard let frame = geometry.label, let text = textFrame(of: geometry) else { return nil }
+        return Laid(frame: frame, lead: geometry.labelLead, text: text)
+    }
+
+    /// Where a shape's label text goes in its geometry: the label's frame less its lead.
+    static func textFrame(of geometry: ShapeGeometry) -> CGRect? {
+        guard let label = geometry.label else { return nil }
+        guard let lead = geometry.labelLead else { return label }
+        return CGRect(x: lead.maxX, y: label.minY, width: label.maxX - lead.maxX, height: label.height)
     }
 
     /// The text's box, padding and all (tldraw's `getArrowLabelSize`): as wide as its widest line,
     /// but on a body wider than it's tall no wider than the body less a margin (and no narrower than
     /// the margin), else no wider than sixteen ems, where it wraps.
-    static func size(of text: MentionText, bodyBounds: CGRect, names: [String]? = nil) -> CGSize {
+    static func size(of text: MentionText, bodyBounds: CGRect, names: [String]? = nil, reserving reserved: CGFloat = 0) -> CGSize {
         let free = measure(text, width: nil, names: names)
         let limit: CGFloat
         if bodyBounds.width > bodyBounds.height {
             let margin = ArrowStyle.labelSqueezeMargin
-            limit = max(min(free.width, margin), min(bodyBounds.width - margin, free.width))
+            limit = max(min(free.width, margin), min(bodyBounds.width - margin - reserved, free.width))
         } else {
             limit = ArrowStyle.labelMaxEms * ArrowStyle.labelFont.pointSize
         }

@@ -3,6 +3,7 @@ import Canvas
 import CoreGraphics
 import Find
 import Foundation
+import Titles
 
 extension PluginID {
     public static let fieldFind: PluginID = "field-find"
@@ -11,7 +12,7 @@ extension PluginID {
 /// Field values, for Find: on every kind that says where its rows go and holds `fieldValues`, a text for each
 /// field of a note that is one that has a value, as its row shows it, and on every arrow that can be a relationship (a kind that relates
 /// and holds `fieldValues`) a text for each field of the types it is of that has a value, as its card says it (a hit
-/// marks the relationship's chip, since its values are shown nowhere on the board); a row's pills are not searched, the note each names is found on its own; a row with more in it gives every text
+/// marks the relationship's pill, since its values are shown nowhere on the board but the first); a row's pills are not searched, the note each names is found on its own; a row with more in it gives every text
 /// under it, one a line, at any depth. A hit marks its row's value as a highlighter does, the same mark for
 /// each range of the text: a match inside a row with more in it marks that row's summary, a match in a folded
 /// row the fold. A type's own note gives nothing (its kinds are not values) and a yes or no has no text.
@@ -33,12 +34,12 @@ public struct FieldFindPlugin: ListedPlugin {
                                 rects: { record, field, ranges, context in
                                     let none = ranges.map { _ in [CGRect]() }
                                     guard let bounds = context.editor.shapeContext.geometry(of: record.id)?.bounds, !bounds.isNull else { return none }
-                                    // A relationship's values are shown nowhere on the board: a hit marks its chip, which opens
-                                    // them (its arrow's anchor, where the chip is not shown).
+                                    // A relationship's values are shown nowhere on the board (its pill says the first): a hit marks its pill, which
+                                    // opens them (its arrow's anchor, where the pill is not shown).
                                     if context.editor.registry.relates(record.kind) {
                                         let graph = context.service(RelationshipIndex.self)?.graph
                                         let chip = context.editor.adornmentFrames(of: record.id).first { frame in
-                                            frame.adornment == .of(TypeChips.self) && !frame.isOverflow
+                                            (frame.adornment == .of(RelationshipPill.self) || frame.adornment == .of(TypeChips.self)) && !frame.isOverflow
                                                 && frame.tag.flatMap { UUID(uuidString: $0.raw) }.map { graph?.isRelationshipType(ShapeID($0)) == true } == true
                                         }
                                         guard let rect = chip?.rect ?? context.editor.adornmentAnchor(of: record.id) else { return none }
@@ -48,6 +49,21 @@ public struct FieldFindPlugin: ListedPlugin {
                                     guard let book = context.service(RowBook.self), let rect = book.findRect(of: record, field: field) else { return none }
                                     let place = rect.offsetBy(dx: -bounds.minX, dy: -bounds.minY)
                                     return ranges.map { _ in [place] }
+                                })
+        // A relationship type is a pill with its name on it, and its title pill is hidden (the capsule is the name), so
+        // Titles gives Find no text for it: its name is found here, a hit ringing the capsule, which is the shape's whole box.
+        registrar.findableTexts("relationship type name", where: { $0.holds(TypeSchemaProperty.self) && $0.holds(RelationshipProperty.self) },
+                                look: .ring,
+                                texts: { record, context in
+                                    guard record[RelationshipProperty.self] == true, let title = context.registry.title(of: record) else { return [] }
+                                    return [FindableText(field: TitleProperty.key.rawValue, text: title)]
+                                },
+                                rects: { record, _, ranges, context in
+                                    guard let bounds = context.editor.shapeContext.geometry(of: record.id)?.bounds, !bounds.isNull else {
+                                        return ranges.map { _ in [] }
+                                    }
+                                    let ring = CGRect(origin: .zero, size: bounds.size)
+                                    return ranges.map { _ in [ring] }
                                 })
     }
 }

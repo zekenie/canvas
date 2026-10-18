@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 import Canvas
 import Colors
@@ -20,15 +21,27 @@ extension ArrowDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<Arrow>, in context: RenderContext) {
         guard let geometry = context.shapes.geometry(of: shape.id), let body = ArrowSkeleton(geometry, zoom: context.zoom) else { return }
         let cg = context.cg, color = context.colors(of: shape)?.solid ?? ArrowStyle.color.cgColor, arrow = shape.props
+        let (startHead, endHead) = ArrowDefinition.heads(of: arrow, in: geometry)
         body.add(to: cg)
         cg.setStrokeColor(color)
         cg.setLineWidth(max(ArrowStyle.strokeWidth, ArrowStyle.skeletonLineWidth / context.zoom))
         cg.strokePath()
-        if arrow.startArrowhead || arrow.endArrowhead {
-            if arrow.startArrowhead { body.addHead(at: .start, strokeWidth: ArrowStyle.strokeWidth, to: cg) }
-            if arrow.endArrowhead { body.addHead(at: .end, strokeWidth: ArrowStyle.strokeWidth, to: cg) }
+        if startHead || endHead {
+            if startHead { body.addHead(at: .start, strokeWidth: ArrowStyle.strokeWidth, to: cg) }
+            if endHead { body.addHead(at: .end, strokeWidth: ArrowStyle.strokeWidth, to: cg) }
             cg.setFillColor(color)
             cg.fillPath()
+        }
+        // The pill that leads its label, which Adornments draws only in full: a capsule of its size, tinted as it is, no letters.
+        if let lead = geometry.labelLead, let tint = context.shapes.layoutInput(AdornmentLead.faces, of: shape)?.tint {
+            let capsule = CGPath(roundedRect: lead, cornerWidth: min(lead.width, lead.height) / 2, cornerHeight: min(lead.width, lead.height) / 2, transform: nil)
+            cg.addPath(capsule)
+            cg.setFillColor(tint.color.withAlphaComponent(ArrowStyle.skeletonCapsuleFill).cgColor)
+            cg.fillPath()
+            cg.addPath(capsule)
+            cg.setStrokeColor(tint.color.withAlphaComponent(ArrowStyle.skeletonCapsuleLine).cgColor)
+            cg.setLineWidth(max(ArrowStyle.skeletonLineWidth, 1 / context.zoom))
+            cg.strokePath()
         }
     }
 }
@@ -36,13 +49,25 @@ extension ArrowDefinition: CustomSkeleton {
 extension ArrowDefinition: CustomSkeletonOutline {
     func skeletonIndicatorPath(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGPath? {
         guard let geometry = context.geometry(of: shape.id), let body = ArrowSkeleton(geometry, zoom: context.zoom) else { return nil }
-        return body.outline(startHead: shape.props.startArrowhead, endHead: shape.props.endArrowhead, strokeWidth: ArrowStyle.strokeWidth)
+        let (startHead, endHead) = Self.heads(of: shape.props, in: geometry)
+        return body.outline(startHead: startHead, endHead: endHead, strokeWidth: ArrowStyle.strokeWidth)
+    }
+}
+
+extension ArrowDefinition {
+    /// The heads a skeleton draws: the arrow's, but for an end of a relationship type's none at its pill (`EndLine`).
+    static func heads(of arrow: Arrow, in geometry: ShapeGeometry) -> (start: Bool, end: Bool) {
+        guard let line = geometry.detail as? EndLine else { return (arrow.startArrowhead, arrow.endArrowhead) }
+        return (line.hasHead(at: .start, of: arrow), line.hasHead(at: .end, of: arrow))
     }
 }
 
 extension ArrowStyle {
     /// The narrowest a skeleton's body is, in view points: the core's open skeletons' line.
     static let skeletonLineWidth: CGFloat = 1
+    /// A relationship's pill zoomed out is a capsule in its type's color: how strongly its fill and its line show.
+    static let skeletonCapsuleFill: CGFloat = 0.4
+    static let skeletonCapsuleLine: CGFloat = 0.8
 }
 
 /// An arrow's visible body as its kept geometry has it (`ShapeGeometry.outline`: where it starts,

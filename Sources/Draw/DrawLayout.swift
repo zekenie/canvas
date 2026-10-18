@@ -22,7 +22,7 @@ extension Drawing {
         let target = target, context = target.shapes, document = target.document, registry = registry
         for index in items.indices where !items[index].moves {
             guard let box = items[index].existing?.box else { throw broken(items[index], "it has no frame") }
-            items[index].placed = CGRect(origin: box.origin, size: items[index].room)
+            items[index].placed = CGRect(origin: CGPoint(x: box.minX + items[index].roomOffset.x, y: box.minY + items[index].roomOffset.y), size: items[index].room)
         }
 
         // What's in the way: board shapes that stay, those restated in place at their new size.
@@ -260,7 +260,7 @@ extension Drawing {
             let item = items[index]
             var record = item.record
             // Written at the size it is stored at; the room it takes is the layout's (`ShapeItem.room`).
-            record.box = item.placed.map { CGRect(origin: $0.origin, size: item.size) }
+            record.box = item.placed.map { CGRect(origin: CGPoint(x: $0.minX - item.roomOffset.x, y: $0.minY - item.roomOffset.y), size: item.size) }
             guard record.box?.isFinite == true else { throw broken(item, "its frame isn't finite") }
             if let title = item.title, item.existing != nil, item.rename == nil { try keepsName(record, title, item) }
             if let existing = item.existing, record != existing, target.isReadOnly(existing), target.isReadOnly(record) {

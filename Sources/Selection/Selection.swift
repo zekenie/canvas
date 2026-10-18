@@ -58,6 +58,24 @@ extension DragCopies: ExtensionPoint {
     public static var owner: PluginID { .selection }
 }
 
+/// What a plugin does when the selection changes, told as it has (after the change, the shapes it left and the shapes it
+/// holds now, in order): the arrow that offers a relationship type's pill while it is the only shape selected
+/// (Types'). Every plugin's is told, each time the selection changes, including when it is cleared by showing another
+/// board; keep it cheap.
+public enum SelectionObservers {}
+
+extension SelectionObservers: ExtensionPoint {
+    public typealias Contribution = @MainActor (CanvasEditor, _ left: [ShapeID], _ now: [ShapeID]) -> Void
+    public static var owner: PluginID { .selection }
+}
+
+extension PluginRegistrar {
+    /// This plugin is told each time the selection changes (see `SelectionObservers`).
+    public mutating func selectionChanged(_ observe: @escaping @MainActor (CanvasEditor, _ left: [ShapeID], _ now: [ShapeID]) -> Void) {
+        contribute(observe, to: SelectionObservers.self)
+    }
+}
+
 // Sugar, so opting in or out is one line.
 extension ShapeRegistrar {
     /// The select tool sees through this kind's shapes: a press lands on what's beneath them (or

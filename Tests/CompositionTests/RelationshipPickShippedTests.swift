@@ -27,7 +27,7 @@ extension Minute {
     func nameTheType(_ name: String = "in") throws -> ShapeID {
         try drag(from: feature, to: layer)
         let made = try require(editor.document.shapes.last { $0[RelationshipProperty.self] == true }).id
-        let field = try require(cardField)
+        let field = try require(pillField)
         field.insertText(name, replacementRange: NSRange(location: 0, length: 0))
         field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
         editor.selectedShapeIDs = []
@@ -65,12 +65,12 @@ extension Minute {
         let start = editor.document
         let featureBefore = start[m.featureNote], layerBefore = start[m.layerNote]
         // Step 6.
-        expect(try m.click(row: "layer", of: m.featureNote))
+        expect(try m.click(row: "in", of: m.featureNote))
         expectEqual(editor.selection, m.featureNote)
         expectEqual(m.listed, ["1 · expose foobar · foundation"], "exactly one line: the Layer note, by its values")
         expectEqual(m.rowsView?.openList?.highlighted, 0)
         expect(m.rowsView?.openList?.rows.first != .empty("No Layer notes"))
-        expectEqual(m.rowsView?.focusedRow, "layer")
+        expectEqual(m.rowsView?.focusedRow, "in")
         // Step 7.
         m.window.pressReturn()
         let arrow = try require(m.arrows.first { $0.props.start.binding?.shapeID == m.featureNote }, "an arrow from the Feature note")
@@ -80,7 +80,7 @@ extension Minute {
         expectEqual(arrow[FieldValuesProperty.self], nil, "no values")
         expectEqual(editor.undoHistory.undoName, "Add Relationship")
         expectEqual(m.arrows.count, 3)
-        let featurePills = try m.pills(of: m.featureNote, "layer"), layerPills = try m.pills(of: m.layerNote, "feature")
+        let featurePills = try m.pills(of: m.featureNote, "in"), layerPills = try m.pills(of: m.layerNote, "feature")
         expectEqual(featurePills.count, 1)
         expect(featurePills.first?.label.hasPrefix("1 · expose foobar") == true, "\(String(describing: featurePills.first?.label))")
         expectEqual(layerPills.count, 1)
@@ -90,15 +90,15 @@ extension Minute {
         expectEqual(editor.document[m.layerNote]?[TitleProperty.self], nil, "the Layer note never has a title")
         expectEqual(editor.validation?.result(for: arrow.id)?.isValid ?? true, true, "no issues")
         expect(m.rowsView?.openList == nil, "the list went with the pick")
-        expectEqual(m.rowsView?.focusedRow, "layer", "the row stays focused")
+        expectEqual(m.rowsView?.focusedRow, "in", "the row stays focused")
         expect(m.model.requests.isEmpty, "no step asked the model")
         // Step 8.
         editor.endEditing()
         let done = editor.document
         editor.undo()
         expectEqual(editor.document, start, "one Undo: the arrow, and with it both pills")
-        expectEqual(try m.pills(of: m.featureNote, "layer").count, 0)
-        expectEqual(try require(m.rows.rows(of: m.featureNote).last).content, .empty("add layer"))
+        expectEqual(try m.pills(of: m.featureNote, "in").count, 0)
+        expectEqual(try require(m.rows.rows(of: m.featureNote).last).content, .empty("add in"))
         expectEqual(try require(m.rows.rows(of: m.layerNote).last).content, .empty("add feature"))
         editor.redo()
         expectEqual(editor.document, done)
@@ -119,11 +119,11 @@ extension Minute {
         defer { m.close() }
         _ = try m.nameTheType()
         let start = m.editor.document
-        expect(try m.click(row: "layer", of: m.featureNote))
+        expect(try m.click(row: "in", of: m.featureNote))
         // Escape: closed, the row focused and nothing stored.
         m.window.pressEscape()
         expect(m.rowsView?.openList == nil)
-        expectEqual(m.rowsView?.focusedRow, "layer")
+        expectEqual(m.rowsView?.focusedRow, "in")
         expect(m.editor.editingShapeID == m.featureNote, "still editing")
         // Typing opens it with the characters.
         m.window.type("exp")
@@ -153,7 +153,7 @@ extension Minute {
         m.editor.lock([m.featureNote])
         m.editor.undoHistory.seal()
         let before = m.editor.document
-        _ = try? m.click(row: "layer", of: m.featureNote)
+        _ = try? m.click(row: "in", of: m.featureNote)
         expect(m.rowsView?.openList == nil)
         expectEqual(m.editor.document, before)
     },
@@ -173,17 +173,17 @@ extension Minute {
         let row0 = try require(m.editor.relationships?.rows(for: [m.feature], isType: false).first)
         let first = try require(m.editor.relate(m.featureNote, to: two, in: row0))
         let secondArrow = try require(m.editor.relate(m.featureNote, to: three, in: row0))
-        expectEqual(try m.pills(of: m.featureNote, "layer").count, 2)
+        expectEqual(try m.pills(of: m.featureNote, "in").count, 2)
         _ = made
         m.editor.undoHistory.seal()
         // The row focused with its pills (a click off them): the list opens; Escape closes it.
-        let row = try require(m.rows.rows(of: m.featureNote).first { $0.name == "layer" })
+        let row = try require(m.rows.rows(of: m.featureNote).first { $0.name == "in" })
         let off = row.valueRect.minX + 8
         m.editor.selection = m.featureNote
         expect(m.editor.beginEditing(m.featureNote, at: CGPoint(x: off, y: row.rect.midY)))
         m.h.scheduler.advance(by: .zero)
         m.window.pressEscape()
-        expectEqual(m.rowsView?.focusedRow, "layer")
+        expectEqual(m.rowsView?.focusedRow, "in")
         expectEqual(m.rowsView?.focusedPill, nil)
         // ← from nothing focuses the last pill, ← again the first, → the next, and the ends are clamped.
         m.window.press(String(UnicodeScalar(NSLeftArrowFunctionKey)!), code: 123)
@@ -205,12 +205,12 @@ extension Minute {
         expectEqual(m.editor.document, before, "the first Backspace shows which goes")
         m.window.pressDelete()
         expectEqual(m.editor.undoHistory.undoName, "Remove Relationship")
-        expectEqual(try m.pills(of: m.featureNote, "layer").count, 1)
+        expectEqual(try m.pills(of: m.featureNote, "in").count, 1)
         expectEqual(m.arrows.count, 3)
         expect(m.arrows.contains { $0.id == first })
         m.editor.undo()
         expectEqual(m.editor.document, before, "one step")
-        expectEqual(try m.pills(of: m.featureNote, "layer").count, 2)
+        expectEqual(try m.pills(of: m.featureNote, "in").count, 2)
         // A locked relationship is refused whole: nothing goes.
         m.editor.lock([secondArrow])
         m.editor.undoHistory.seal()
@@ -220,7 +220,7 @@ extension Minute {
         expect(m.editor.beginEditing(m.featureNote, at: CGPoint(x: row.valueRect.minX + 8, y: row.rect.midY)))
         m.h.scheduler.advance(by: .zero)
         m.window.pressEscape()
-        expectEqual(m.rowsView?.focusedRow, "layer")
+        expectEqual(m.rowsView?.focusedRow, "in")
         m.window.pressDelete()
         expectEqual(m.rowsView?.focusedPill, 1)
         m.window.pressDelete()

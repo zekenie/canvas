@@ -19,7 +19,7 @@ import Types
 // with two pills and `+N`, a pill in each dashed state, and the same zoomed out. Added to `galleryStates`
 // (GalleryTypesLook.swift) as `relationStates`. The types sit off the stage unless they are the picture; the relationship type
 // is a plain type with the mark. Slice 3b appends `releaseStates` (board 1's steps 1 to 5 and 9, and frame 3.3): the drag
-// from one type to the other, the small relationship type it lands with its name card, the rows both notes gain, the name
+// from one type to the other, the relationship type it lands as, a pill edited in place, the rows both notes gain, the name
 // typed, and a drag between the notes that takes the type; the list at the arrow is its outline, as a menu is. Slice 3c appends
 // `pickStates` (GalleryPicks.swift): board 1's steps 6 to 8 and the far pick's frames 5.2 and 5.3.
 
@@ -109,14 +109,14 @@ let relationStates: [GalleryState] = [
         return canvas(stage)
     },
     GalleryState("Rel1-p4-empty-rows", answers: "Board 1, step 4",
-                 "a Feature note and a Layer note once the ends are drawn: their fields, the dashed line and an empty row each, `add layer` and `add feature`, in faint italic",
+                 "a Feature note and a Layer note once the ends are drawn: their fields, the dashed line and an empty row each, `add in` and `add feature`, in faint italic",
                  size: CGSize(width: 860, height: 340)) { stage in
         let editor = stage.editor
         editor.drawnEnds()
         let feature = editor.instance(of: [featureType.id], words: "", ["purpose": "sign in with no password"], at: CGPoint(x: 40, y: 40))
         let layer = editor.instance(of: [layerType.id], words: "", ["order": 1, "purpose": "expose foobar", "title": "foundation"], at: CGPoint(x: 460, y: 40))
         editor.selection = nil
-        guard try relationRow(stage, feature, "layer").content == .empty("add layer"), try relationRow(stage, layer, "feature").content == .empty("add feature") else {
+        guard try relationRow(stage, feature, "in").content == .empty("add in"), try relationRow(stage, layer, "feature").content == .empty("add feature") else {
             throw GalleryFailure("an empty row under the dashed line on each note")
         }
         return canvas(stage)
@@ -130,20 +130,20 @@ let relationStates: [GalleryState] = [
             editor.galleryArrow(feature, layer, of: relationshipID)
         }
         editor.selection = nil
-        guard case .related(let pills, let more) = try relationRow(stage, feature, "layer").content, pills.count == 2, more == 4,
+        guard case .related(let pills, let more) = try relationRow(stage, feature, "in").content, pills.count == 2, more == 4,
               pills.map(\.label) == ["Foundation", "Integration"] else {
             throw GalleryFailure("two pills in name order and the rest counted")
         }
         return canvas(stage)
     },
-    GalleryState("relations-both-ends", "a relationship drawn: the Feature note's `layer` row holds a pill for the Layer note, and the Layer note's `feature` row a pill for the Feature note", size: CGSize(width: 860, height: 340)) { stage in
+    GalleryState("relations-both-ends", "a relationship drawn: the Feature note's `in` row holds a pill for the Layer note, and the Layer note's `feature` row a pill for the Feature note", size: CGSize(width: 860, height: 340)) { stage in
         let editor = stage.editor
         editor.drawnEnds()
         let feature = editor.instance(of: [featureType.id], words: "", ["purpose": "sign in with no password"], at: CGPoint(x: 40, y: 40))
         let layer = editor.instance(of: [layerType.id], words: "", ["order": 1, "purpose": "expose foobar", "title": "foundation"], at: CGPoint(x: 460, y: 40))
         editor.galleryArrow(feature, layer, of: relationshipID)
         editor.selection = nil
-        guard case .related(let one, 0) = try relationRow(stage, feature, "layer").content, one.map(\.target) == [layer],
+        guard case .related(let one, 0) = try relationRow(stage, feature, "in").content, one.map(\.target) == [layer],
               case .related(let two, 0) = try relationRow(stage, layer, "feature").content, two.map(\.target) == [feature] else {
             throw GalleryFailure("a pill in the row of each note")
         }
@@ -195,7 +195,7 @@ let relationStates: [GalleryState] = [
         editor.galleryArrow(nothing, editor.add(blank), of: relationshipID)
         editor.selection = nil
         @MainActor func state(_ id: ShapeID) throws -> EndReading {
-            let found = try relationRow(stage, id, "layer")
+            let found = try relationRow(stage, id, "in")
             guard case .related(let pills, _) = found.content, let one = pills.first else { throw GalleryFailure("a pill") }
             return one.state
         }
@@ -222,11 +222,11 @@ let relationStates: [GalleryState] = [
         return state
     },
 ]
-    + releaseStates + pickStates + wordsStates + arrowCardStates + selfStates + ruleStates
+    + releaseStates + definitionStates + pickStates + wordsStates + arrowCardStates + selfStates + ruleStates
 
 // MARK: The release (slice 3b)
 
-private let releaseStage = CGSize(width: 1_180, height: 700)
+let releaseStage = CGSize(width: 1_180, height: 700)
 
 extension GalleryStage {
     /// A port's drag from the right dot of a shape to the middle of another, at a view point's speed of 3 a millisecond,
@@ -251,7 +251,7 @@ extension GalleryStage {
 
 /// Feature and Layer types at the top of the stage with room between them, and a Feature note and a Layer note under them.
 @MainActor
-private func releaseBoard(_ stage: GalleryStage) -> (feature: ShapeID, layer: ShapeID, featureNote: ShapeID, layerNote: ShapeID) {
+func releaseBoard(_ stage: GalleryStage) -> (feature: ShapeID, layer: ShapeID, featureNote: ShapeID, layerNote: ShapeID) {
     let editor = stage.editor
     let feature = editor.put(featureType, at: CGPoint(x: 40, y: 40)), layer = editor.put(layerType, at: CGPoint(x: 780, y: 40))
     let featureNote = editor.instance(of: [feature], words: "", ["purpose": "sign in with no password"], at: CGPoint(x: 40, y: 440))
@@ -261,7 +261,7 @@ private func releaseBoard(_ stage: GalleryStage) -> (feature: ShapeID, layer: Sh
 }
 
 @MainActor
-private func relationshipTypeMade(_ editor: CanvasEditor) throws -> ShapeID {
+func relationshipTypeMade(_ editor: CanvasEditor) throws -> ShapeID {
     try editor.document.shapes.last { $0[RelationshipProperty.self] == true }.map(\.id).orThrow(GalleryFailure("a relationship type was made"))
 }
 
@@ -285,15 +285,15 @@ let releaseStates: [GalleryState] = [
         stage.release(at: CGPoint(x: frame.midX, y: frame.midY))
         return .image(picture)
     },
-    GalleryState("Rel1-p3-landed", answers: "Board 1, step 3", "released: a relationship type drawn small between the two types with an arrow to it from each, selected, and the card that names it open at its pill; the notes under show their new rows",
+    GalleryState("Rel1-p3-landed", answers: "Board 1, step 3", "released: a relationship type as a pill on the line between the two types, an arrow to it from each, selected and its name edited in place, the caret in it; the notes under show their new rows",
                  size: releaseStage) { stage in
         let board = releaseBoard(stage)
         try stage.dragPort(from: board.feature, to: board.layer)
         let made = try relationshipTypeMade(stage.editor)
-        guard stage.editor.selectedShapeIDs == [made], stage.editor.card != nil,
-              stage.editor.shapeContext.frame(of: made)?.size == CGSize(width: 160, height: 34),
+        guard stage.editor.selectedShapeIDs == [made], stage.editor.editingShapeID == made, stage.editor.card == nil,
+              stage.editor.shapeContext.frame(of: made)?.size == TypePills.pill(title: nil, fields: 0).size,
               stage.editor.document.shapes.filter({ $0.kind == Arrow.kind }).count == 2 else {
-            throw GalleryFailure("a small relationship type, selected, with its card and two arrows")
+            throw GalleryFailure("a relationship type pill, selected and edited in place, and two arrows")
         }
         return .image(stage.render(at: .zero))
     },
@@ -302,7 +302,7 @@ let releaseStates: [GalleryState] = [
         let board = releaseBoard(stage)
         let before = (stage.editor.document[board.featureNote], stage.editor.document[board.layerNote])
         try stage.dragPort(from: board.feature, to: board.layer)
-        stage.editor.closeCard()
+        stage.editor.endEditing()
         stage.editor.selection = nil
         guard try relationRow(stage, board.featureNote, "layer").content == .empty("add layer"), try relationRow(stage, board.layerNote, "feature").content == .empty("add feature"),
               stage.editor.document[board.featureNote] == before.0, stage.editor.document[board.layerNote] == before.1 else {
@@ -310,23 +310,105 @@ let releaseStates: [GalleryState] = [
         }
         return .image(stage.render(at: .zero))
     },
-    GalleryState("Rel1-p5-named", answers: "Board 1, step 5", "`in` typed in the card and Return: the relationship type's pill reads `in`, still small, with its arrow", size: releaseStage) { stage in
+    GalleryState("Rel1-p5-named", answers: "Board 1, step 5", "`in` typed in the pill and Return: the relationship type's pill reads `in`, solid in its color, on its line", size: releaseStage) { stage in
         let board = releaseBoard(stage)
         try stage.dragPort(from: board.feature, to: board.layer)
         let made = try relationshipTypeMade(stage.editor)
-        guard let field = stage.editor.card.flatMap({ $0.view.subviews.compactMap { $0 as? NSTextView }.first }) else { throw GalleryFailure("the name card has its field") }
+        guard let field = stage.canvas.descendants(TypePillEditor.self).first?.field else { throw GalleryFailure("the pill has its line") }
         field.insertText("in", replacementRange: NSRange(location: 0, length: 0))
         field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
-        guard stage.editor.card == nil, stage.editor.document[made]?[TitleProperty.self] == "in" else { throw GalleryFailure("named, and the card dismissed") }
+        guard stage.editor.editingShapeID == nil, stage.editor.document[made]?[TitleProperty.self] == "in" else { throw GalleryFailure("named, and editing over") }
         stage.editor.selection = nil
         return .image(stage.render(at: .zero))
     },
-    GalleryState("Rel1-p9-took", answers: "Board 1, step 9", "a drag from the Feature note to the Layer note once `in` is named: the arrow is of `in` at once, its chip above it, no list; the Feature note's `layer` row holds a pill",
+    GalleryState("Rel1-p6-fields", answers: "Board 1, step 6 of the pill design", "the relationship type `owner` with two fields, at rest: `owner · 2`, solid in its color, on its line", size: releaseStage) { stage in
+        let board = releaseBoard(stage)
+        try stage.dragPort(from: board.feature, to: board.layer)
+        let made = try relationshipTypeMade(stage.editor)
+        guard let field = stage.canvas.descendants(TypePillEditor.self).first?.field else { throw GalleryFailure("the pill has its line") }
+        field.insertText("owner", replacementRange: NSRange(location: 0, length: 0))
+        field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        stage.editor.transact("Fields") { $0.update(made) { $0[TypeSchemaProperty.self] = SchemaText(#"{"type": "object", "properties": {"since": {"type": "string", "format": "date"}, "primary": {"type": "boolean"}}}"#) } }
+        guard stage.editor.rowBook?.pill(of: made)?.fields == 2 else { throw GalleryFailure("the pill counts two fields") }
+        stage.editor.selection = nil
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Rel1-p12-zoomed-out", answers: "Board 1, the pill design's zoomed-out frame", "the same board at 20%: the pill is a capsule in its color with no letters, on its line between the types' skeletons", size: releaseStage) { stage in
+        let board = releaseBoard(stage)
+        try stage.dragPort(from: board.feature, to: board.layer)
+        let made = try relationshipTypeMade(stage.editor)
+        guard let field = stage.canvas.descendants(TypePillEditor.self).first?.field else { throw GalleryFailure("the pill has its line") }
+        field.insertText("owner", replacementRange: NSRange(location: 0, length: 0))
+        field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        stage.editor.selection = nil
+        let picture = stage.render(at: .zero, zoom: 0.2)
+        guard stage.editor.drawsSkeleton(of: made) else { throw GalleryFailure("skeletons are drawn") }
+        return .image(picture)
+    },
+    GalleryState("Rel1-p13-line-straight", answers: "Board 1, the pill design's pair of halves", "the pair at rest, named and with two fields: one line through the pill, no head at it and the head at the Layer type, no words on either half", size: releaseStage) { stage in
+        let line = try ownerLine(stage)
+        let c = [line.feature, line.hub, line.layer].compactMap { stage.editor.shapeContext.frame(of: $0) }.map { CGPoint(x: $0.midX, y: $0.midY) }
+        guard isStraight(line, stage.editor) else { throw GalleryFailure("both halves are straight: the middles \(c)") }
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Rel1-p13-line-moved", answers: "Board 1, frame 13: move a type", "the Layer type moved down: the pill stays where it is and the two halves are one smooth arc through it, the head at the Layer type",
+                 size: releaseStage) { stage in
+        let line = try ownerLine(stage)
+        let pill = try stage.editor.shapeContext.frame(of: line.hub).orThrow(GalleryFailure("the pill"))
+        stage.editor.transact("Move") { $0.translate([line.layer], by: CGPoint(x: 0, y: 300)) }
+        guard stage.editor.shapeContext.frame(of: line.hub) == pill, !isStraight(line, stage.editor) else { throw GalleryFailure("the pill stayed and the line is an arc") }
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Rel1-p13-line-dragged", answers: "Board 1, the pill dragged", "the pill dragged off the line, down: both halves bend through it",
+                 size: releaseStage) { stage in
+        let line = try ownerLine(stage)
+        stage.editor.transact("Drag the pill") { $0.translate([line.hub], by: CGPoint(x: 0, y: 260)) }
+        guard !isStraight(line, stage.editor) else { throw GalleryFailure("the line bends through the pill") }
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Rel1-p14-pair-selected", answers: "Board 1, frame 14: select the pair", "the relationship type selected: the pill and both halves outlined together",
+                 size: releaseStage) { stage in
+        let line = try ownerLine(stage)
+        stage.editor.pointerMoved(PointerEvent(location: CGPoint(x: 600, y: 600), timestamp: 100, clickCount: 0))
+        stage.editor.selection = line.hub
+        guard Set(stage.editor.outlines.shapes) == Set([line.hub] + line.ends) else { throw GalleryFailure("the pill and both halves are outlined") }
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Rel1-p14-half-selected", answers: "Board 1, frame 14: select one end", "one half of the line selected alone, with its end handles; the pill and the other half as they are",
+                 size: releaseStage) { stage in
+        let line = try ownerLine(stage)
+        let half = try line.ends.first { stage.editor.relationships?.end($0)?.side == .from }.orThrow(GalleryFailure("a from end"))
+        stage.editor.pointerMoved(PointerEvent(location: CGPoint(x: 600, y: 600), timestamp: 100, clickCount: 0))
+        stage.editor.selection = half
+        guard stage.editor.outlines.shapes == [half] else { throw GalleryFailure("only the half is outlined") }
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Rel1-p13-line-zoomed-out", answers: "Board 1, frame 12 with the arc", "the moved Layer type's arc at 30%: capsule in the middle, both halves' skeletons on the same arc, the head at the Layer type only",
+                 size: releaseStage) { stage in
+        let line = try ownerLine(stage)
+        stage.editor.transact("Move") { $0.translate([line.layer], by: CGPoint(x: 0, y: 300)) }
+        let picture = stage.render(at: .zero, zoom: 0.3)
+        guard stage.editor.drawsSkeleton(of: line.hub), !isStraight(line, stage.editor) else { throw GalleryFailure("skeletons, on an arc") }
+        return .image(picture)
+    },
+    GalleryState("Rel1-p19-long", answers: "Board 1, the pill design's long-name frame", "a long name: the pill stops at 240 points and ends in an ellipsis, the count first", size: releaseStage) { stage in
+        let board = releaseBoard(stage)
+        try stage.dragPort(from: board.feature, to: board.layer)
+        let made = try relationshipTypeMade(stage.editor)
+        guard let field = stage.canvas.descendants(TypePillEditor.self).first?.field else { throw GalleryFailure("the pill has its line") }
+        field.insertText("the person who owns the car and keeps it garaged", replacementRange: NSRange(location: 0, length: 0))
+        field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        stage.editor.transact("Fields") { $0.update(made) { $0[TypeSchemaProperty.self] = SchemaText(#"{"type": "object", "properties": {"since": {"type": "string"}, "primary": {"type": "boolean"}}}"#) } }
+        guard stage.editor.shapeContext.frame(of: made)?.width == TypesStyle.pillMaximumWidth else { throw GalleryFailure("the pill is at its widest") }
+        stage.editor.selection = nil
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Rel1-p9-took", answers: "Board 1, step 9", "a drag from the Feature note to the Layer note once `in` is named: the arrow is of `in` at once, its pill in the line, no list; the Feature note's `layer` row holds a pill",
                  size: releaseStage) { stage in
         let board = releaseBoard(stage)
         try stage.dragPort(from: board.feature, to: board.layer)
         let made = try relationshipTypeMade(stage.editor)
-        guard let field = stage.editor.card.flatMap({ $0.view.subviews.compactMap { $0 as? NSTextView }.first }) else { throw GalleryFailure("the name card has its field") }
+        guard let field = stage.canvas.descendants(TypePillEditor.self).first?.field else { throw GalleryFailure("the pill has its line") }
         field.insertText("in", replacementRange: NSRange(location: 0, length: 0))
         field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
         stage.editor.selection = nil
@@ -358,3 +440,29 @@ let releaseStates: [GalleryState] = [
         return .text(lines.joined(separator: "\n") + "\n")
     },
 ]
+
+/// Feature and Layer at the top of the stage, a level line apart, with a relationship type `owner` (two fields) drawn between them by a port's drag:
+/// one line through the pill. Nothing selected.
+@MainActor
+func ownerLine(_ stage: GalleryStage) throws -> (hub: ShapeID, feature: ShapeID, layer: ShapeID, ends: [ShapeID]) {
+    let board = releaseBoard(stage)
+    try stage.dragPort(from: board.feature, to: board.layer)
+    let made = try relationshipTypeMade(stage.editor)
+    guard let field = stage.canvas.descendants(TypePillEditor.self).first?.field else { throw GalleryFailure("the pill has its line") }
+    field.insertText("owner", replacementRange: NSRange(location: 0, length: 0))
+    field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+    stage.editor.transact("Fields") { $0.update(made) { $0[TypeSchemaProperty.self] = SchemaText(#"{"type": "object", "properties": {"since": {"type": "string", "format": "date"}, "primary": {"type": "boolean"}}}"#) } }
+    // The notes under the types are beside the point, and in the way of a type moved.
+    stage.editor.transact("Clear") { $0.delete([board.featureNote, board.layerNote]) }
+    stage.editor.selection = nil
+    let ends = Array(try stage.editor.relationships.orThrow(GalleryFailure("relationships")).endArrows(of: made))
+    return (made, board.feature, board.layer, ends)
+}
+
+/// Whether both halves of the line are drawn straight now.
+@MainActor
+func isStraight(_ line: (hub: ShapeID, feature: ShapeID, layer: ShapeID, ends: [ShapeID]), _ editor: CanvasEditor) -> Bool {
+    line.ends.count == 2 && line.ends.allSatisfy { arrow in
+        if case .straight? = editor.arrowGeometry(of: arrow)?.path { true } else { false }
+    }
+}

@@ -91,6 +91,13 @@ public enum AdornmentPlacement: Hashable, Sendable, CaseIterable {
     /// The top-right corner: centered on the top edge (16 points tall), reaching 6 points past the
     /// right edge, then leftward along it; a point clear of the row. A tally, "☑ 2/5".
     case onTopRightCorner
+    /// The lead of an open shape's label (an arrow's), where the shape's geometry keeps room for it
+    /// (`ShapeGeometry.labelLead`): a pill that sits in the line's cut with the label's words after it, drawn
+    /// and pointed at in world units, as the words are, so it follows the zoom as they do. One to a shape,
+    /// the first of the contributions that shows anything, drawn in the face that fits the room the geometry
+    /// gave (`AdornmentLabel.narrowing(to:)`). The geometry asks how wide it is (`AdornmentLead.faces`, a layout
+    /// input Adornments provides) and leaves that room; a shape whose geometry leaves none shows none.
+    case inLabelLead
 }
 
 /// An adornment's identity: its type. Equal when the types are.
@@ -191,7 +198,7 @@ public struct AdornmentLabel: Hashable, Sendable {
     }
 
     /// On one line: each run of whitespace, newlines included, folds into a space. Blank shows nothing.
-    public let text: String?
+    public private(set) var text: String?
     /// An SF Symbol: with text, drawn small before it, in a place as wide as the text is tall;
     /// alone, in a disc as tall as its place.
     public let systemImage: String?
@@ -223,6 +230,22 @@ public struct AdornmentLabel: Hashable, Sendable {
     /// The color it is drawn in (`tinted(_:)`), in place of its tone's; nil for none. Part of what
     /// makes two labels equal, so a shape whose tint changes is laid out again.
     public private(set) var tint: AdornmentTint?
+    /// A word after the text in the ink of the number (`noted(_:)`): what a relationship's pill says of its
+    /// first filled value. Kept whole where the text gives way, as a number is.
+    public private(set) var note: String? = nil
+    /// No text: a dot or a dashed outline (`mark(_:)`), the lead's narrowest face and its offer.
+    public private(set) var mark: Mark? = nil
+    /// The faces the label's place may take instead, widest first (`narrowing(to:)`): at the lead of an
+    /// open shape's label, where the room may be less than the whole. Never a face's own.
+    private var narrower: [AdornmentLabel] = []
+
+    /// What a label with no text is.
+    public enum Mark: Hashable, Sendable {
+        /// A filled disc, `AdornmentStyle.dotSize` across, in the tint: a pill where there is no room for one.
+        case dot
+        /// A dashed outline of a pill with nothing in it, in the canvas's label color: where a pill could be.
+        case ghost
+    }
 
     /// Text, after a small symbol if `systemImage` names one (a kind's mark: a subboard's `rectangle.stack`).
     public init(_ text: String, systemImage: String? = nil, tone: Tone = .neutral) {
@@ -267,6 +290,14 @@ public struct AdornmentLabel: Hashable, Sendable {
         tint = nil
     }
 
+    /// A label with no text: a dot or a ghost (`Mark`), drawn in the tint it is given.
+    public static func mark(_ mark: Mark) -> AdornmentLabel {
+        var label = AdornmentLabel(text: "", systemImage: nil, tone: .neutral, isPlaceholder: false)
+        label.text = nil
+        label.mark = mark
+        return label
+    }
+
     /// Plain text with no capsule, in `ink`, which follows the appearance: a word in the row where a name would be (an
     /// arrow's `from`), laid out there as a chip of its width is. Blank shows nothing.
     public static func line(_ text: String, ink: LineInk = .primary) -> AdornmentLabel {
@@ -298,6 +329,31 @@ public struct AdornmentLabel: Hashable, Sendable {
         label.count = text == nil || lineInk != nil ? nil : count.flatMap { $0 < 0 ? nil : $0 }
         return label
     }
+
+    /// The same label with a word after its text, in the number's ink: `owner · 2021`. Blank is none, and a
+    /// label with no text or a plain line has none.
+    public func noted(_ note: String?) -> AdornmentLabel {
+        var label = self
+        let words = note.map { $0.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        label.note = text == nil || lineInk != nil || words?.isEmpty != false ? nil : words
+        return label
+    }
+
+    /// The same label with the narrower faces its place may take when it has less room than the whole (the
+    /// lead of an open shape's label), widest first: the geometry takes the first that fits. A face is no
+    /// label's own narrower; one that shows nothing is left out.
+    public func narrowing(to faces: [AdornmentLabel]) -> AdornmentLabel {
+        var label = self
+        label.narrower = faces.filter(\.showsSomething).map { face in
+            var face = face
+            face.narrower = []
+            return face
+        }
+        return label
+    }
+
+    /// The narrower faces (`narrowing(to:)`), widest first.
+    public var narrowerFaces: [AdornmentLabel] { narrower }
 
     /// The same label, drawn this opaque (0 to 1), its compact face too.
     public func opacity(_ opacity: CGFloat) -> AdornmentLabel {
@@ -360,7 +416,28 @@ public struct AdornmentLabel: Hashable, Sendable {
     public var compactFace: AdornmentLabel? { compactFaces.first }
 
     /// Whether it says anything: text that isn't blank, or a symbol.
-    var showsSomething: Bool { text.map { !$0.isEmpty } ?? (systemImage != nil) }
+    var showsSomething: Bool { mark != nil || (text.map { !$0.isEmpty } ?? (systemImage != nil)) }
+}
+
+/// What an open shape's geometry reads to leave room for the pill that leads its label (`AdornmentPlacement.inLabelLead`):
+/// how big each face the pill may take is, widest first, and the tint it is drawn in (so a skeleton can draw its
+/// capsule). Adornments provides it, from the contributions placed there; nil for a shape with none. Nothing is stored:
+/// when what the pill says changes with no commit to the shape, Adornments says the layout changed
+/// (`adornmentsDidChange(for:)`).
+public enum AdornmentLead {
+    public struct Faces: Hashable, Sendable {
+        /// Each face's size in world units, at one to one: widest first, the first the pill in full.
+        public let sizes: [CGSize]
+        /// The color it is drawn in.
+        public let tint: AdornmentTint?
+
+        public init(sizes: [CGSize], tint: AdornmentTint?) {
+            self.sizes = sizes
+            self.tint = tint
+        }
+    }
+
+    public static let faces = LayoutInputKey<Faces>("adornment-lead")
 }
 
 /// What an every-shape adornment's label may read besides its shape. The registry never changes.
@@ -576,6 +653,7 @@ extension CanvasEditor {
     public func adornmentsDidChange(for ids: Set<ShapeID>) {
         guard let state = adornmentState else { return }
         state.forget(ids)
+        state.leadsMayHaveChanged(ids)
         setNeedsDisplay()
         canvasButtonsDidChange()
     }
@@ -605,6 +683,10 @@ public struct AdornmentsPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { AdornmentState(editor: $0) }
         registrar.service { ChipFade(editor: $0) }
+        // How big the pill that leads an open shape's label is, which the geometry leaves room for.
+        registrar.layoutInput(AdornmentLead.faces) { record, reading in
+            reading.service(AdornmentState.self)?.leadFaces(of: record, recording: reading.isCommitted)
+        }
         registrar.overlay(AdornmentOverlay())
         // A clickable adornment is a canvas button: the select tool clicks it before anything else.
         registrar.canvasButtons(at: { editor, point in editor.adornmentState?.button(atViewPoint: point) },

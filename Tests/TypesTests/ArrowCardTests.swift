@@ -57,6 +57,15 @@ final class ArrowCardRig {
         let frame = try require(frames.first { text == nil || $0.label.text == text }, "no chip \(text ?? "") on \(frames.map { $0.label.text ?? "" })")
         return AdornmentClick(shape: id, tag: frame.tag, rect: frame.rect, isOverflow: frame.isOverflow)
     }
+
+    /// A click on the pill or chip with this text, passed to the adornment that is it: the relationship's pill leads the
+    /// arrow's label, a plain type's chip is above it.
+    func press(_ text: String? = nil, on shape: ShapeID? = nil) throws {
+        let id = shape ?? arrow
+        let frame = try require(arrowChips(of: id, in: editor).first { text == nil || $0.label.text == text }, "no pill or chip \(text ?? "")")
+        let click = try self.click(text, on: id)
+        if frame.adornment == .of(RelationshipPill.self) { RelationshipPill.click(click, in: editor) } else { TypeChips.click(click, in: editor) }
+    }
 }
 
 /// The titles of a menu's items, in order ("-" for a separator).
@@ -69,7 +78,7 @@ final class ArrowCardRig {
         let r = try ArrowCardRig()
         defer { r.close() }
         let undo = r.editor.undoHistory.undoName
-        TypeChips.click(try r.click("in"), in: r.editor)
+        try r.press("in")
         expect(r.editor.menuToPopUp == nil, "a card, not a menu")
         expectEqual(r.cards.openTarget?.shape, r.arrow)
         expectEqual(r.cards.openTarget?.target, .shape)
@@ -81,26 +90,25 @@ final class ArrowCardRig {
         let r = try ArrowCardRig(fields: nil)
         defer { r.close() }
         // In: no fields, so no card.
-        TypeChips.click(try r.click("in"), in: r.editor)
+        try r.press("in")
         expect(r.cards.openTarget == nil, "no card")
         expectEqual(menuItems(r.editor.menuToPopUp?.menu), ["Go to “in”", "Remove “in”"])
         r.editor.menuDidPopUp()
         // A plain type on the arrow, with fields, is a chip as any: the menu.
         let plain = r.editor.addSlipType(roleSchema, title: "Plain", at: CGPoint(x: 40, y: 1300))
         r.editor.addTypeLink(plain, to: r.arrow)
-        TypeChips.click(try r.click("Plain"), in: r.editor)
+        try r.press("Plain")
         expect(r.cards.openTarget == nil)
         expectEqual(menuItems(r.editor.menuToPopUp?.menu), ["Go to “Plain”", "Remove “Plain”"])
         r.editor.menuDidPopUp()
         // A note's chip.
-        TypeChips.click(try r.click("Feature", on: r.s.note), in: r.editor)
+        try r.press("Feature", on: r.s.note)
         expect(r.cards.openTarget == nil)
         expectEqual(menuItems(r.editor.menuToPopUp?.menu), ["Go to “Feature”", "Remove “Feature”"])
         r.editor.menuDidPopUp()
         // A relationship type that is gone: a dashed chip, the menu (Remove alone).
         r.editor.transact("Delete") { $0.delete([r.s.rel]) }
-        let gone = try r.click("in")
-        TypeChips.click(gone, in: r.editor)
+        try r.press("in")
         expect(r.cards.openTarget == nil, "a type that is gone has no card")
         expectEqual(menuItems(r.editor.menuToPopUp?.menu), ["Remove “in”"])
         r.editor.menuDidPopUp()
@@ -110,10 +118,10 @@ final class ArrowCardRig {
         defer { r.close() }
         let plain = r.editor.addSlipType(roleSchema, title: "Plain", at: CGPoint(x: 40, y: 1300))
         r.editor.addTypeLink(plain, to: r.arrow)
-        TypeChips.click(try r.click("Plain"), in: r.editor)
+        try r.press("Plain")
         expect(r.cards.openTarget == nil && r.editor.menuToPopUp != nil, "the plain chip is a menu")
         r.editor.menuDidPopUp()
-        TypeChips.click(try r.click("in"), in: r.editor)
+        try r.press("in")
         expectEqual(r.cards.openTarget?.target, .shape, "the relationship type's is the card")
         expectEqual(r.form?.sheet.lines.map(\.name), ["role", "since"], "the fields of both types, the shape's own")
     },
@@ -122,7 +130,7 @@ final class ArrowCardRig {
         let r = try ArrowCardRig(more: [FreezingPlugin(log: log)])
         defer { r.close() }
         r.editor.freeze([r.arrow])
-        TypeChips.click(try r.click("in"), in: r.editor)
+        try r.press("in")
         let form = try require(r.form)
         expect(form.isReadOnly, "read-only")
         expect(form.sheet.lines.allSatisfy { $0.cells.allSatisfy { !$0.isEditable } }, "nothing to type in")
@@ -135,7 +143,7 @@ final class ArrowCardRig {
 ])
 
 @MainActor let arrowCardTests = Suite("The card of an arrow", [
-    test("it holds a line for each field of the arrow's types in the chain's order under the type's chip, hangs 4 points under the arrow's anchor and has the caret in its first line") {
+    test("it holds a line for each field of the arrow's types in the chain's order under the type's chip, hangs 4 points under the pill that leads the arrow's label and has the caret in its first line") {
         let r = try ArrowCardRig()
         defer { r.close() }
         expect(r.editor.openRelationshipCard(for: r.arrow))
@@ -144,9 +152,9 @@ final class ArrowCardRig {
         expectEqual(form.sheet.chip, r.s.rel, "the relationship type's chip is the card's header")
         expectEqual(form.sheet.back, nil, "no line back")
         expect(form.sheet.lines.allSatisfy { $0.cells.first?.placeholder.hasPrefix("add ") == true }, "an empty line says add and its name")
-        let anchor = try require(r.editor.adornmentAnchor(of: r.arrow))
+        let pill = try require(r.chips.first { $0.adornment == .of(RelationshipPill.self) }).rect
         let frame = try require(r.canvas.cardFrame)
-        expectEqual(frame.minY, r.editor.camera.toView(anchor).maxY + 4, "4 points under the anchor")
+        expectEqual(frame.minY, r.editor.camera.toView(pill).maxY + 4, "4 points under the pill")
         expect(r.window.firstResponder === form.cellEditor, "the caret is in the first line")
         expectEqual(form.focus, FieldStop(line: 0, column: 0))
         expectEqual(r.editor.selectedShapeIDs, [r.arrow])
@@ -194,7 +202,9 @@ final class ArrowCardRig {
         r.advance()
         let after = try require(r.editor.card).anchor
         expect(after != before, "the card hangs from where the arrow is now: \(before) \(after)")
-        expectEqual(after, r.editor.adornmentAnchor(of: r.arrow))
+        let pill = try require(r.chips.first { $0.adornment == .of(RelationshipPill.self) }).rect
+        expectEqual(after.midX, pill.midX, "it hangs from the pill, which went with the arrow")
+        expectEqual(after.minY, pill.minY)
         r.editor.transact("Delete") { $0.delete([r.arrow]) }
         r.advance()
         expect(r.cards.openTarget == nil && r.editor.card == nil, "an arrow that is gone has no card")

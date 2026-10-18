@@ -179,8 +179,8 @@ private struct Offer {
         expectEqual(bonds.map(\.from), [s.feature, type.id], "from the type whose words mention, through the new type")
         expectEqual(bonds.map(\.to), [type.id, s.layer])
         expectEqual(s.editor.selectedShapeIDs, [type.id], "the new type is selected")
-        expect(s.editor.editingShapeID == nil)
-        expect(s.editor.card != nil, "its name is asked at its pill")
+        expect(s.editor.editingShapeID == nil, "a memo has no editing view: the shipped note's tests hold the name typed in its pill")
+        expect(s.editor.card == nil, "and no card asks it")
         expectEqual(s.editor.document[s.feature], before[s.feature], "Feature's words and schema")
         expectEqual(s.editor.document[s.layer], before[s.layer])
         expectEqual(s.editor.undoHistory.undoName, TypesStyle.newRelationshipType)
@@ -189,7 +189,6 @@ private struct Offer {
         expectEqual(s.editor.typeSync?.status(of: s.feature), .idle)
         let graph = try require(s.editor.relationships?.graph)
         expectEqual(graph.relationshipTypes(joining: s.feature, and: s.layer), [type.id])
-        s.editor.closeCard()
         // The offer is gone for the pill: it is Mentions' again, and no menu is queued.
         try s.click(on: s.feature)
         expect(s.waiting == nil, "related already: no offer")

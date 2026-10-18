@@ -59,7 +59,7 @@ private struct Bench {
 }
 
 @MainActor let relationFindTests = Suite("Field values for Find, on an arrow", [
-    test("a relationship's values are found on its arrow, one text for each field that has a value, and the hit marks the relationship's chip") {
+    test("a relationship's values are found on its arrow, one text for each field that has a value, and the hit marks the relationship's pill") {
         let b = try Bench()
         b.set(b.job, ["role": "Staff engineer", "since": "2021-03-01"])
         let find = try b.search("engineer")
@@ -69,7 +69,7 @@ private struct Bench {
         expectEqual(marks.count, 1)
         let mark = try require(marks.first)
         let bounds = try require(b.editor.shapeContext.geometry(of: b.job)?.bounds)
-        let chip = try require(b.editor.adornmentFrames(of: b.job).first { $0.adornment == .of(TypeChips.self) }, "the relationship's chip").rect
+        let chip = try require(b.editor.adornmentFrames(of: b.job).first { $0.adornment == .of(RelationshipPill.self) }, "the relationship's pill").rect
         _ = bounds
         expect(abs(mark.minX - chip.minX) < 0.5 && abs(mark.minY - chip.minY) < 0.5 && abs(mark.width - chip.width) < 0.5,
                "the mark is the chip: \(mark) against \(chip)")
@@ -78,7 +78,7 @@ private struct Bench {
         _ = try b.search("nothing of the sort")
         expectEqual(find.results.map(\.id), [])
     },
-    test("the mark on a relationship's chip follows the zoom, as the chip keeps its size on the screen") {
+    test("the mark on a relationship's pill follows the zoom, as the pill does: it is the label's, in world units") {
         let b = try Bench()
         b.set(b.job, ["role": "Staff engineer"])
         let find = try b.search("engineer")
@@ -86,9 +86,9 @@ private struct Bench {
         _ = find.rects(of: hit, in: b.job)
         b.editor.camera = Camera(origin: .zero, zoom: 2)
         let mark = try require(find.rects(of: hit, in: b.job).first)
-        let chip = try require(b.editor.adornmentFrames(of: b.job).first { $0.adornment == .of(TypeChips.self) }, "the chip").rect
+        let chip = try require(b.editor.adornmentFrames(of: b.job).first { $0.adornment == .of(RelationshipPill.self) }, "the pill").rect
         expect(abs(mark.minX - chip.minX) < 0.5 && abs(mark.width - chip.width) < 0.5,
-               "at 200% the mark is the chip as it is there: \(mark) against \(chip)")
+               "at 200% the mark is the pill as it is there: \(mark) against \(chip)")
     },
     test("an edit finds the new value, a value taken away finds nothing, and Undo finds it again") {
         let b = try Bench()

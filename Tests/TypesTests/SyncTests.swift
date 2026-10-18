@@ -1055,6 +1055,44 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         b.editor.undo()
         expectEqual(b.schema(id), TypeSchemaProperty.starter, "undo brings the schema back")
     },
+    test("a relationship type whose words are empty is never synced: a field added to its schema asks nothing; with words it syncs as any type") {
+        let b = try SyncBench()
+        var record = typeRecord(TypeSchemaProperty.starter, title: "Owner", at: .zero)
+        record[RelationshipProperty.self] = true
+        let id = record.id
+        b.editor.transact { $0.insert(record) }
+        b.typeSchema(id, #"{"type": "object", "properties": {"since": {"type": "string", "format": "date"}}}"#)
+        b.sync.commit(id)
+        b.scheduler.advance(by: .seconds(10))
+        b.settle()
+        expectEqual(b.model.requests.count, 0, "no call: the schema is written by the card's list and the words are not drawn")
+        expectEqual(b.status(id), .idle)
+        expectEqual(b.words(id), "", "and the words stay empty")
+        b.typeWords(id, "who owns a car")
+        b.sync(id, answer: petSchema)
+        expectEqual(b.model.requests.count, 1, "with words it asks")
+        expectEqual(b.status(id), .idle)
+    },
+    test("a relationship type's first words wait as an edit does (its panel's box writes each keystroke): nothing is asked on the next turn, and they are read once typing pauses") {
+        let b = try SyncBench()
+        var record = typeRecord(TypeSchemaProperty.starter, title: "Owner", at: .zero)
+        record[RelationshipProperty.self] = true
+        let id = record.id
+        b.editor.transact { $0.insert(record) }
+        b.typeWords(id, "w")
+        b.scheduler.advance(by: .zero)
+        b.settle()
+        expectEqual(b.model.requests.count, 0, "not after the first letter")
+        b.typeWords(id, "who owns a car")
+        b.scheduler.advance(by: .seconds(1))
+        b.settle()
+        expectEqual(b.model.requests.count, 0, "nor while typing goes on")
+        b.model.queue(petSchema)
+        b.scheduler.advance(by: .seconds(5))
+        spinRunLoop(until: { b.model.requests.count == 1 && !b.isUpdating(id) })
+        expectEqual(b.model.requests.count, 1, "read once typing paused")
+        expect(b.model.lastRequest?.system?.contains("A relationship type\n") == true)
+    },
 ])
 
 @MainActor let promptTests = Suite("Schema prompts", [

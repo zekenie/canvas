@@ -232,13 +232,13 @@ private struct FreshReadFailure: Error {
             layers.append(id)
             s.relate(s.note, id)
         }
-        let (pills, more) = try pillsOf(s, s.note, "layer")
+        let (pills, more) = try pillsOf(s, s.note, "in")
         expect(more > 0, "some are counted")
         let hidden = try require(layers.last)
         expect(!pills.contains { $0.target == hidden }, "the last by name is counted, not shown")
         s.editor.transact("Rename") { $0.update(hidden, as: RowSlip.self) { $0.props.text = MentionText(plain: "Aardvark") } }
-        let kept = try pillsOf(s, s.note, "layer").pills.map(\.label)
-        guard case .related(let fresh, _)? = try freshRows(s, s.note).first(where: { $0.name == "layer" })?.content else { throw FreshReadFailure("fresh pills") }
+        let kept = try pillsOf(s, s.note, "in").pills.map(\.label)
+        guard case .related(let fresh, _)? = try freshRows(s, s.note).first(where: { $0.name == "in" })?.content else { throw FreshReadFailure("fresh pills") }
         expectEqual(kept, fresh.map(\.label), "pills sort by the name each shows")
         expectEqual(kept.first, "Aardvark")
     },
@@ -249,11 +249,11 @@ private struct FreshReadFailure: Error {
         let other = s.addLayerNote("Elsewhere")
         let relay = s.editor.addRelay(standingFor: [s.layerNote], says: "Foundation")
         s.editor.addBond(s.note, relay, of: [s.rel])
-        var pill = try require(try pillsOf(s, s.note, "layer").pills.first)
+        var pill = try require(try pillsOf(s, s.note, "in").pills.first)
         expectEqual(pill.state, .notAdmitted(s.layerNote, needs: "open"))
         s.editor.transact("Re-point") { $0.update(relay, as: Relay.self) { $0.props.stands = [Citation(other)] } }
         expectEqual(s.index.relations(of: s.note).first?.far.reading, .notAdmitted(other, needs: "open"), "the index reads the new note")
-        pill = try require(try pillsOf(s, s.note, "layer").pills.first)
+        pill = try require(try pillsOf(s, s.note, "in").pills.first)
         expectEqual(pill.state, .notAdmitted(other, needs: "open"), "the row shows it")
         expectEqual(pill.label, "Elsewhere")
     },
@@ -263,18 +263,18 @@ private struct FreshReadFailure: Error {
         s.toEnd()
         let query = s.editor.addRelay(standingFor: [s.layerNote, s.note], says: "every layer")
         s.editor.addBond(s.note, query, of: [s.rel])
-        expectEqual(try pillsOf(s, s.note, "layer").pills.first?.label, "every layer")
+        expectEqual(try pillsOf(s, s.note, "in").pills.first?.label, "every layer")
         s.editor.transact("Words") { $0.update(query, as: Relay.self) { $0.props.says = "all the layers" } }
         expectEqual(s.index.relations(of: s.note).first?.far.reading, .query(called: "all the layers"), "the index reads the new words")
-        expectEqual(try pillsOf(s, s.note, "layer").pills.first?.label, "all the layers", "the row shows them")
+        expectEqual(try pillsOf(s, s.note, "in").pills.first?.label, "all the layers", "the row shows them")
         // A pill that stands for nothing, then for a note it may not stand for.
         let third = s.editor.addSlip("Third", of: [s.feature], at: CGPoint(x: 1600, y: 500))
         let blank = s.editor.addRelay(standingFor: [], says: "", at: CGPoint(x: 400, y: 1700))
         s.editor.addBond(third, blank, of: [s.rel])
-        expectEqual(try pillsOf(s, third, "layer").pills.first?.state, .empty)
+        expectEqual(try pillsOf(s, third, "in").pills.first?.state, .empty)
         s.editor.transact("Fill") { $0.update(blank, as: Relay.self) { $0.props.stands = [Citation(s.layerNote)] } }
         expectEqual(s.index.relations(of: third).first?.far.reading, .notAdmitted(s.layerNote, needs: "open"))
-        expectEqual(try pillsOf(s, third, "layer").pills.first?.state, .notAdmitted(s.layerNote, needs: "open"), "the row shows the note")
+        expectEqual(try pillsOf(s, third, "in").pills.first?.state, .notAdmitted(s.layerNote, needs: "open"), "the row shows the note")
     },
     test("a far note on another board renamed there: the row on the board shown that reads it through a pill is laid out with the new name") {
         let s = try RelationScene()
@@ -283,10 +283,10 @@ private struct FreshReadFailure: Error {
         s.editor.transact(on: BoardID(owner: s.pocket), "Open") { $0.update(s.awayLayer) { $0.meta[Open.self] = true } }
         let relay = s.editor.addRelay(standingFor: [s.awayLayer], says: "Down")
         s.editor.addBond(s.note, relay, of: [s.rel])
-        let before = try require(try pillsOf(s, s.note, "layer").pills.first)
+        let before = try require(try pillsOf(s, s.note, "in").pills.first)
         expectEqual(before.label, "Down")
         s.editor.transact(on: BoardID(owner: s.pocket), "Rename") { $0.update(s.awayLayer, as: RowSlip.self) { $0.props.text = MentionText(plain: "Down in the far foundations, renamed") } }
-        let after = try require(try pillsOf(s, s.note, "layer").pills.first)
+        let after = try require(try pillsOf(s, s.note, "in").pills.first)
         expectEqual(after.label, "Down in the far foundations, renamed")
         expect(after.width > before.width)
     },
@@ -297,7 +297,7 @@ private struct FreshReadFailure: Error {
         let task = s.editor.addSlipType(featureRowsSchema, words: "", title: "Task", at: CGPoint(x: 40, y: 2000))
         s.editor.addTypeLink(s.feature, to: task)
         let taskNote = s.editor.addSlip("A task", of: [task], at: CGPoint(x: 700, y: 2000))
-        expectEqual(s.names(taskNote), ["purpose", "layer"])
+        expectEqual(s.names(taskNote), ["purpose", "in"])
         @MainActor func agrees(_ when: String) throws {
             let fresh = try bondEditor(file: s.editor.file)
             _ = fresh.showBoard(BoardID(owner: s.pocket))
@@ -401,9 +401,9 @@ private struct FreshReadFailure: Error {
         s.editor.transact(on: BoardID(owner: s.pocket), "Open") { $0.update(s.awayLayer) { $0.meta[Open.self] = true } }
         let relay = s.editor.addRelay(standingFor: [s.awayLayer], says: "Down")
         s.editor.addBond(s.note, relay, of: [s.rel])
-        let pill = try require(try pillsOf(s, s.note, "layer").pills.first)
+        let pill = try require(try pillsOf(s, s.note, "in").pills.first)
         expect(pill.isLive, "it reads through to the far board: \(pill.state)")
-        s.harness.click(at: try s.point(onPill: 0, of: s.note, "layer"))
+        s.harness.click(at: try s.point(onPill: 0, of: s.note, "in"))
         s.settle()
         expectEqual(s.editor.board, BoardID(owner: s.pocket), "the far note's board is shown")
         expectEqual(s.editor.selection, s.awayLayer)
@@ -417,10 +417,10 @@ private struct FreshReadFailure: Error {
         let far = s.addLayerNote("placeholder")
         s.editor.transact("Words") { $0.update(far, as: RowSlip.self) { $0.props.text = MentionText([.text("see "), .mention(named, label: "Short")]) } }
         s.relate(s.note, far)
-        let before = try require(try pillsOf(s, s.note, "layer").pills.first)
+        let before = try require(try pillsOf(s, s.note, "in").pills.first)
         s.editor.transact("Rename") { $0.update(named, as: RowSlip.self) { $0.props.text = MentionText(plain: "A very much longer name than it had before") } }
-        let after = try require(try pillsOf(s, s.note, "layer").pills.first)
-        guard case .related(let fresh, _)? = try freshRows(s, s.note).first(where: { $0.name == "layer" })?.content, let made = fresh.first else { throw FreshReadFailure("fresh pills") }
+        let after = try require(try pillsOf(s, s.note, "in").pills.first)
+        guard case .related(let fresh, _)? = try freshRows(s, s.note).first(where: { $0.name == "in" })?.content, let made = fresh.first else { throw FreshReadFailure("fresh pills") }
         expectEqual(after.label, made.label, "label (was \(before.label))")
         expectEqual(after.width, made.width, "width (was \(before.width))")
     },

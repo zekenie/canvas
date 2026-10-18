@@ -280,23 +280,49 @@ private let noFieldsSchema = #"{"type": "object"}"#
         spinRunLoop(until: { !b.isUpdating(id) })
         expectEqual(height(), typed + rowsHeight(1), "a reason")
     },
-    test("a relationship type is drawn small only when its words are gone and no read is out or has failed: bars and the reason keep it full") {
+    test("a relationship type has no rows whatever its words and its read say: it is a pill, so no bars and no reason need room, and its words are kept") {
         let b = try SyncBench(more: [RowSlipsPlugin()])
         let id = placeSlip(b)
         b.editor.transact("Mark") { $0.update(id) { $0[RelationshipProperty.self] = true } }
-        @MainActor func compact() -> Bool? { b.editor.shapeContext.layoutInput(TypeRows.isCompact, for: id) }
-        expectEqual(compact(), true, "no words, no fields, nothing out: small")
+        @MainActor func extent() -> RowsExtent? { b.editor.shapeContext.layoutInput(TypeRows.extent, for: id) }
+        @MainActor func pill() -> TypePill? { b.editor.shapeContext.layoutInput(TypeRows.pill, for: id) }
+        expectEqual(extent(), nil)
+        expect(pill() != nil, "no words, no fields: a pill")
         typeSlipWords(b, id, "a pet in my household")
         b.model.holdsAnswers = true
         b.model.queue(petSchema)
         b.sync.commit(id)
-        typeSlipWords(b, id, "")
-        expectEqual(try spot(b, id), .reading)
-        expectEqual(compact(), nil, "the words just cleared while the read is out: the bars need the room")
+        expectEqual(extent(), nil, "while a read is out: no bars")
+        expect(pill() != nil)
         spinRunLoop(until: { b.model.waiting == 1 })
         b.model.release()
         spinRunLoop(until: { b.status(id) == .idle })
         b.model.holdsAnswers = false
+        expectEqual(extent(), nil, "with the fields read: no rows")
+        expectEqual(pill()?.fields, 3, "but the count")
+        expectEqual(b.editor.document[id]?.typed(as: RowSlip.self)?.props.text.stored, "a pet in my household", "its words are kept")
+        let failing = placeSlip(b)
+        b.editor.transact("Mark") { $0.update(failing) { $0[RelationshipProperty.self] = true } }
+        typeSlipWords(b, failing, "a pet in my household")
+        b.model.queue(.overloaded)
+        b.sync.commit(failing)
+        spinRunLoop(until: { !b.isUpdating(failing) })
+        expectEqual(b.editor.shapeContext.layoutInput(TypeRows.extent, for: failing), nil, "a failed read: no reason drawn")
+        expect(b.editor.shapeContext.layoutInput(TypeRows.pill, for: failing) != nil)
+    },
+    test("a relationship type is never read with no words: a read out when they are cleared is dropped and writes nothing, and a failure is not kept once they are cleared") {
+        let b = try SyncBench(more: [RowSlipsPlugin()])
+        let id = placeSlip(b)
+        b.editor.transact("Mark") { $0.update(id) { $0[RelationshipProperty.self] = true } }
+        typeSlipWords(b, id, "a pet in my household")
+        b.model.holdsAnswers = true
+        b.sync.commit(id)
+        expect(b.isUpdating(id), "with words it is read as any type is")
+        typeSlipWords(b, id, "")
+        expectEqual(b.status(id), .idle, "the words cleared: the read is dropped")
+        b.model.holdsAnswers = false
+        b.settle()
+        expectEqual(b.editor.shapeContext.layoutInput(TypeRows.pill, for: id)?.fields, 0, "the dropped read writes nothing")
         let failing = placeSlip(b)
         b.editor.transact("Mark") { $0.update(failing) { $0[RelationshipProperty.self] = true } }
         typeSlipWords(b, failing, "a pet in my household")
@@ -304,7 +330,6 @@ private let noFieldsSchema = #"{"type": "object"}"#
         b.sync.commit(failing)
         spinRunLoop(until: { !b.isUpdating(failing) })
         typeSlipWords(b, failing, "")
-        expectEqual(try spot(b, failing), .failed(LanguageModelError.overloaded.message, action: .retry))
-        expectEqual(b.editor.shapeContext.layoutInput(TypeRows.isCompact, for: failing), nil, "the words just cleared after a failed read: the reason needs the room")
+        expectEqual(b.status(failing), .idle, "the words cleared after a failed read: no failure is kept for them")
     },
 ])

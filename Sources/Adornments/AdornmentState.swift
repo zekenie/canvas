@@ -32,6 +32,14 @@ final class AdornmentState {
     /// a service that hears first: Selection, looking for a button under a still pointer), what's
     /// asked for is made afresh and not kept, so it's never stale and nothing else is thrown away.
     private var heardRevision: Int
+    /// The kinds' contributions at a label's lead, found once.
+    private var leadCandidatesKept: [ShapeKind: [AdornmentContribution]] = [:]
+    /// The faces measured for each lead label.
+    private var leadFacesKept: [AdornmentLabel: AdornmentLead.Faces] = [:]
+    /// What the layout input last answered the editor's geometry, by shape: for the shapes whose kind has a lead.
+    private var leadAnswered: [ShapeID: LeadAnswer] = [:]
+    /// The same, kept for the answer to be reused while the shape and what it reads are as they were (dropped as `kept` is).
+    private var leadMemo: [ShapeID: LeadAnswer] = [:]
     #if DEBUG
     /// How many faces have been made: labels' text set and measured, symbols' images found.
     private(set) var facesMade = 0
@@ -71,7 +79,7 @@ final class AdornmentState {
             }
         }
         guard !shown.isEmpty else {
-            if isHeard { kept[record.id] = LaidOutAdornments(shown: [], items: [], faces: [], compactFaces: [], overflowFaces: []) }
+            if isHeard { kept[record.id] = LaidOutAdornments(shown: [], items: [], faces: [], compactFaces: [], overflowFaces: [], leadLooks: []) }
             return nil
         }
         let faces = shown.map { AdornmentStyle.face(of: $0.label, in: $0.id.placement) }
@@ -87,14 +95,86 @@ final class AdornmentState {
         let items = (0..<shown.count).map {
             shown[$0].item(width: faces[$0].width, compactWidth: compactFaces[$0]?.width, overflowWidth: overflowFaces[$0]?.width)
         }
-        let laidOut = LaidOutAdornments(shown: shown, items: items, faces: faces, compactFaces: compactFaces, overflowFaces: overflowFaces)
+        let leadLooks: [[(label: AdornmentLabel, face: AdornmentStyle.Face)]] = shown.indices.map { index in
+            guard shown[index].id.placement == .inLabelLead else { return [] }
+            return [(shown[index].label, faces[index])] + shown[index].label.narrowerFaces.map { ($0, AdornmentStyle.face(of: $0, in: .inLabelLead)) }
+        }
+        let laidOut = LaidOutAdornments(shown: shown, items: items, faces: faces, compactFaces: compactFaces, overflowFaces: overflowFaces,
+                                        leadLooks: leadLooks)
         if isHeard { kept[record.id] = laidOut }
         return laidOut
     }
 
     /// These shapes' labels are made again when they're next asked for.
     func forget(_ ids: Set<ShapeID>) {
-        for id in ids { kept[id] = nil }
+        for id in ids {
+            kept[id] = nil
+            leadMemo[id] = nil
+        }
+    }
+
+    // MARK: A label's lead
+
+    /// What the lead of a shape's label says its faces are, answered for the layout input geometry reads
+    /// (`AdornmentLead.faces`): from the first of the shape's contributions at `inLabelLead` that shows anything.
+    /// Nil for a shape with none, which is what a kind that places none costs: a lookup. `recording` (the editor's own
+    /// reading, not a transaction's) keeps the answer, so that a change of what the pill says with no commit to the shape
+    /// can tell the layout (`leadsMayHaveChanged`). Faces are measured once for each label.
+    func leadFaces(of record: AnyShapeRecord, recording: Bool) -> AdornmentLead.Faces? {
+        let leads = leadCandidates(for: record.kind)
+        guard !leads.isEmpty, !isEmpty else { return nil }
+        // A shape that only moved (a note it is bound to was dragged) has the answer it had, as its labels are: kept until a commit names it
+        // or `adornmentsDidChange` does, and only once this has heard the commit, so it is never stale.
+        let isHeard = recording && heardRevision == editor.revision
+        if isHeard, let known = leadMemo[record.id] { return known.faces }
+        let faces = leadFaces(of: record, among: leads)
+        if recording { leadAnswered[record.id] = LeadAnswer(faces: faces, revision: editor.revision) }
+        if isHeard { leadMemo[record.id] = LeadAnswer(faces: faces, revision: editor.revision) }
+        return faces
+    }
+
+    private func leadFaces(of record: AnyShapeRecord, among leads: [AdornmentContribution]) -> AdornmentLead.Faces? {
+        let context = AdornmentContext(editor: editor)
+        for lead in leads {
+            guard let label = lead.labels(record, context).first(where: \.showsSomething) else { continue }
+            if let known = leadFacesKept[label] { return known }
+            let ladder = [label] + label.narrowerFaces
+            let sizes = ladder.map { label -> CGSize in
+                let face = AdornmentStyle.face(of: label, in: .inLabelLead)
+                return CGSize(width: face.width, height: face.height(in: .inLabelLead))
+            }
+            let faces = AdornmentLead.Faces(sizes: sizes, tint: label.tint)
+            if leadFacesKept.count >= 512 { leadFacesKept.removeAll(keepingCapacity: true) }
+            leadFacesKept[label] = faces
+            return faces
+        }
+        return nil
+    }
+
+    private func leadCandidates(for kind: ShapeKind) -> [AdornmentContribution] {
+        if let known = leadCandidatesKept[kind] { return known }
+        let found = candidates(for: kind).filter { $0.adornment.placement == .inLabelLead }
+        leadCandidatesKept[kind] = found
+        return found
+    }
+
+    /// What the pill of these shapes says may have changed with no commit to them (a type renamed, a field added, a
+    /// check that turned): the shapes whose answer is not what geometry last read are laid out again.
+    func leadsMayHaveChanged(_ ids: Set<ShapeID>) {
+        guard !leadAnswered.isEmpty else { return }
+        var moved: [ShapeID] = []
+        for id in ids {
+            guard let known = leadAnswered[id], let record = editor.document[id] ?? editor.shape(inFile: id) else { continue }
+            let leads = leadCandidates(for: record.kind)
+            if leadFaces(of: record, among: leads) != known.faces { moved.append(id) }
+        }
+        if !moved.isEmpty { editor.shapesDidChangeLayout(moved) }
+    }
+
+    /// What was answered, and as of which commit.
+    private struct LeadAnswer {
+        let faces: AdornmentLead.Faces?
+        let revision: Int
     }
 
     /// A group's "+N" face: the same text, in the same place, is the same face on every shape, so it is made
@@ -156,6 +236,8 @@ final class AdornmentState {
         let slope: CGFloat?
         /// An open shape with no label: the anchor is a point widened, and the row is centred on it.
         var isPoint = false
+        /// The room its geometry keeps at the start of its label for a pill (`ShapeGeometry.labelLead`).
+        var lead: CGRect?
     }
 
     static func anchored(of id: ShapeID, in shapes: ShapeContext, zoom: CGFloat) -> Anchored? {
@@ -170,7 +252,7 @@ final class AdornmentState {
             let dx = last.x - first.x, dy = last.y - first.y
             if dx != 0 { slope = dy / dx } else if dy != 0 { slope = .infinity }
         }
-        return Anchored(rect: anchor, slope: slope, isPoint: label == nil)
+        return Anchored(rect: anchor, slope: slope, isPoint: label == nil, lead: label == nil ? nil : geometry.labelLead)
     }
 
     /// A shape's adornments' slots, into `slots`: the layout against its anchor, and the slope of an open shape's
@@ -183,7 +265,25 @@ final class AdornmentState {
             AdornmentLayout.Slant(anchorHeight: anchored.rect.height / scale, slope: $0, maxSlide: AdornmentLayout.slideLimit(atScale: scale),
                                   centersRow: anchored.isPoint)
         }
-        return AdornmentLayout.slots(of: laidOut.items, width: anchored.rect.width / scale, slant: slant, into: &slots)
+        let shift = AdornmentLayout.slots(of: laidOut.items, width: anchored.rect.width / scale, slant: slant, into: &slots)
+        placeLeads(of: laidOut, in: anchored, into: &slots)
+        return shift
+    }
+
+    /// The lead of the shape's label, where its geometry kept room for it, in the face that room is the size of;
+    /// nothing where the geometry kept none.
+    private func placeLeads(of laidOut: LaidOutAdornments, in anchored: Anchored, into slots: inout [AdornmentLayout.Slot?]) {
+        guard laidOut.hasLead, let lead = anchored.lead else { return }
+        for index in laidOut.shown.indices where laidOut.shown[index].id.placement == .inLabelLead {
+            let looks = laidOut.leadLooks[index]
+            var best = 0, nearest = CGFloat.infinity
+            for (face, look) in looks.enumerated() {
+                let size = CGSize(width: look.face.width, height: look.face.height(in: .inLabelLead))
+                let distance = abs(size.width - lead.width) + abs(size.height - lead.height)
+                if distance < nearest { (best, nearest) = (face, distance) }
+            }
+            slots[index] = AdornmentLayout.Slot(frame: CGRect(origin: .zero, size: lead.size), isFromRight: false, lead: (lead, best))
+        }
     }
 
     /// The anchor of a shape moved along with its row: where something that hangs from the row hangs (a card, a
@@ -233,8 +333,8 @@ final class AdornmentState {
             self.slots(of: laidOut, anchored: anchored, scale: scale, into: &slots)
             for (index, slot) in slots.enumerated() {
                 guard let slot else { continue }
-                let corner = slot.corner(in: anchor)
-                let local = CGPoint(x: (point.x - corner.x) / scale, y: (point.y - corner.y) / scale)
+                let corner = slot.corner(in: anchor), unit = slot.unit(scale)
+                let local = CGPoint(x: (point.x - corner.x) / unit, y: (point.y - corner.y) / unit)
                 let distance = AdornmentLayout.distance(from: local, to: slot.frame)
                 if distance <= AdornmentLayout.hitMargin, distance < nearest?.distance ?? .infinity { nearest = (index, distance, slot.isOverflow) }
             }
@@ -271,9 +371,26 @@ extension AdornmentState: EditorService {
         heardRevision = editor.revision
         // A shape that only moved (a drag) has the labels it had: they are laid out against its bounds when
         // asked, never kept at a place. Everything else a commit touched is made again.
-        for id in changes.added { kept[id] = nil }
-        for id in changes.removed { kept[id] = nil }
-        for id in changes.changed where !changes.moved.contains(id) { kept[id] = nil }
+        for id in changes.added {
+            kept[id] = nil
+            leadMemo[id] = nil
+        }
+        for id in changes.removed {
+            kept[id] = nil
+            leadAnswered[id] = nil
+            leadMemo[id] = nil
+        }
+        // A shape the commit changed has its geometry worked out again, with an answer of its own: what was answered before this
+        // commit (not what a service that heard before this one asked for during it) is void.
+        if !leadAnswered.isEmpty {
+            for id in changes.added.union(changes.changed.subtracting(changes.moved)) where leadAnswered[id].map({ $0.revision < editor.revision }) == true {
+                leadAnswered[id] = nil
+            }
+        }
+        for id in changes.changed where !changes.moved.contains(id) {
+            kept[id] = nil
+            leadMemo[id] = nil
+        }
     }
 
     /// Another board is shown: what the board left's shapes showed goes, and the shown board's
@@ -285,6 +402,8 @@ extension AdornmentState: EditorService {
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         heardRevision = editor.revision
         kept = [:]
+        leadAnswered = [:]
+        leadMemo = [:]
     }
 
     /// The canvas started or stopped drawing skeletons: zoomed out, a skeleton shows no adornments, so
@@ -309,10 +428,17 @@ struct LaidOutAdornments {
     let compactFaces: [AdornmentStyle.Face?]
     /// Each group member's "+N" face, the one that stands for it and those after it.
     let overflowFaces: [AdornmentStyle.Face?]
+    /// For an adornment at a label's lead, each face it may take: the whole one, then the narrower ones, widest
+    /// first (empty for any other).
+    let leadLooks: [[(label: AdornmentLabel, face: AdornmentStyle.Face)]]
+
+    /// Some adornment is at a label's lead.
+    var hasLead: Bool { shown.contains { $0.id.placement == .inLabelLead } }
 
     /// The label and face drawn for adornment `index` in `slot`: its compact ones where the layout
-    /// placed those, the "+N" chip's where it folded into one.
+    /// placed those, the "+N" chip's where it folded into one, the face of a label's lead that its room is the size of.
     func look(of index: Int, in slot: AdornmentLayout.Slot) -> (label: AdornmentLabel, face: AdornmentStyle.Face) {
+        if let lead = slot.lead, leadLooks[index].indices.contains(lead.face) { return leadLooks[index][lead.face] }
         if slot.isOverflow, let face = overflowFaces[index], let label = shown[index].overflowLabel { return (label, face) }
         if slot.isCompact, let face = compactFaces[index], let label = shown[index].label.compactFace { return (label, face) }
         return (shown[index].label, faces[index])

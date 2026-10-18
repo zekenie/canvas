@@ -72,6 +72,8 @@ extension TypeChips {
 func registerTypeChips(into registrar: inout PluginRegistrar) {
     registrar.adornmentsForEveryShape(TypeChips.self, where: { $0.holds(IsAProperty.self) }) { shape, context in
         guard let types = context.service(TypeIndex.self) else { return [] }
+        // A relationship type is a pill, drawn alone: it shows no chip above it.
+        if shape[RelationshipProperty.self] == true, shape[TypeSchemaProperty.self] != nil { return [] }
         let links = shape[IsAProperty.self] ?? []
         // On an arrow, a relationship type's chip says how many fields it gives the arrow, and turns red with a wave while an
         // end of it is a misfit; any other chip is as it was.
@@ -79,7 +81,9 @@ func registerTypeChips(into registrar: inout PluginRegistrar) {
         let relationships = relates ? context.service(RelationshipIndex.self) : nil
         let isWrong = relationships != nil && context.service(RelationshipHooks.self)?.tone(shape.id) == .wrong
         let book = relationships != nil ? context.service(FieldBook.self) : nil
-        return links.map { link in
+        // The first relationship type of an arrow is its pill, in the lead of its label (`RelationshipPill`), not a chip.
+        let leads = relationships.flatMap { _ in RelationshipPill.link(of: shape, in: context) }?.shape
+        return links.filter { $0.shape != leads }.map { link in
             let label = TypeChips.label(for: link, in: types)
             guard let relationships, relationships.graph.isRelationshipType(link.shape) else { return label }
             let counted = label.counted(book.flatMap { TypeChips.fieldCount(of: link.shape, in: $0) })

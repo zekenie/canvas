@@ -774,9 +774,8 @@ in parts today ([Types](#types-shapes-that-hold-a-schema)).
   already. `editor.shapesDidChangeLayout(ids)` does the same for a set value's other reasons. It
   is no transaction and no undo step, and nothing is stored or marked edited. Mentions does this for
   an arrow's label (`x.mentionLayout { $0.props.text }`, `context.mentionNames(of:)`).
-- **A shape laid out at another size than its box is a `LaidOutBox`.** A box kind that shows more than
-  it stores (a note with rows no record holds) or less (a relationship type drawn small while it holds
-  nothing) adopts it, in an extension like every capability, with
+- **A shape laid out at another size than its box is a `LaidOutBox`** (it may also answer `laidOutAnchor`, the point of its box that stays put, so it grows both ways: a relationship type's pill). A box kind that shows more than
+  it stores (a note with rows no record holds) or less (a relationship type, drawn as a pill whatever it holds) adopts it, in an extension like every capability, with
   `laidOutSize(of:in:)`, answered from its record and its layout inputs and nothing else. The core
   puts the stored box's origin at that size, larger or smaller than the box (a size that isn't finite
   and above zero on both sides counts as the box), keeps the size by
@@ -4600,6 +4599,15 @@ a kind without a frame has them too), in view points:
 
 These are from a closed shape's bounds. An open shape (an arrow) has no top edge to sit on, so
 they go from its [anchor](#an-open-shapes-anchor) instead.
+
+A fourth place, `.inLabelLead`, is not one of these: it is the pill at the start of an open shape's
+label (an arrow's, where Types puts a relationship's), in the line's cut, with the label's words after
+it. The shape's geometry keeps room for it (`ShapeGeometry.labelLead`, a rect in world units within
+`label`), and asks how wide the pill is through the layout input Adornments provides
+(`AdornmentLead.faces`: the size of each face the pill may take, widest first, so a short line can take a
+narrower one, `AdornmentLabel.narrowing(to:)`); Adornments draws the face that fits the rect, in world
+units, so it follows the zoom as the words do, and a click on it is a click on a clickable adornment. A
+shape whose geometry keeps no room shows none.
 
 In a place, adornments sit 4 points apart. They keep their size on screen down to 25% zoom, and
 shrink with the shapes below it (0.4× at 10%); below 35% a shape drawn as a skeleton shows none, but
@@ -11192,11 +11200,13 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   (`TypeRowsPlaces`, one contribution a kind, refused for a kind that holds neither `schema` nor `is`). The
   note is a `LaidOutBox` that reads it: at least 320 wide and as tall as its words and the rows, never
   shorter than a new note, with no record written: the stored box is the note as it is with no rows.
-  Nothing is stored of the rows, and no change of them is an undo step. A relationship type that holds no words and
-  no fields is drawn small: Types also provides `TypeRows.isCompact` (`LayoutInputKey<Bool>`, true or none), and the
-  note lays the type out at `NoteStyle.compactSize` (160 by 34) from the top-left it stores (a `LaidOutBox` laid out
-  smaller than it stores), its view over the box it stores while it is edited, full again from the first word or
-  field, with nothing written when it grows or shrinks.
+  Nothing is stored of the rows, and no change of them is an undo step. A relationship type has no rows: it is a
+  pill. Types provides `TypeRows.pill` (`LayoutInputKey<TypePill>`: its name or none, its field count, and the size
+  its text measures) for every shape that holds `schema` and the mark, of a kind that says where its rows go, whatever
+  it holds. The note lays the type out at that size, about the middle of the box it stores (a `LaidOutBox` that answers
+  an anchor, `laidOutAnchor`, besides its size, so a longer name grows both ways and what is drawn through it stays put),
+  paints a capsule in the type's color with its name and `· 2`, and edits its name in place (the title, never the words).
+  Nothing is written when it grows or shrinks.
 - **The rows** are `RowList`'s: nine fields or fewer all show; ten or more fold the rows a type builds on
   into `from Person` (two or more of them) and show at most eight of the rest and `+N more`, so a note has at
   most ten rows. `RowBook` (`editor.rowBook`) keeps one template for each distinct list of types, dropped
@@ -11240,7 +11250,7 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   drag is still changing is not counted until the release (`Session.touching`, `editor.connectionReleased`): a
   pass over a relationship type makes no end and lays out no instance.
 - **A relationship type from a drag.** Released between two types, the arrow is replaced, in one step ("New
-  Relationship Type"), by a relationship type placed between them (`Surroundings.between`, drawn small) and an
+  Relationship Type"), by a relationship type placed between them (`Surroundings.between`, drawn as a pill) and an
   arrow to it from each type (`registry.drawConnection`, as `canvas draw` makes an edge); the type is selected
   and not edited, and a card with one field is shown at its pill by the writer itself, inside the step, with
   `CanvasCard.adoptsPress`: the name typed is part of the step, so one Undo, once the card is dismissed, takes
@@ -11266,7 +11276,7 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   (and does not hold the fields of, a `$ref`) is a face (Selection's `shapeFaces`, Types', asked before
   Mentions' since Types is listed after it): a click pops one menu under it, `Relate to Layer`, whose item
   is `newRelationshipType` between the two types, from the type whose words mention to the type mentioned,
-  in one step with the name card inside it, and writes neither type's words nor schema (the sync hears no
+  in one step with the name typed in its pill inside it, and writes neither type's words nor schema (the sync hears no
   change, so no model is asked). A double-click and the hover are Mentions' as before, given by the face
   itself, so only the single click changes. The same item is in the canvas's context menu on the pill. A
   type that mentions itself is made related to itself; a type on another board is related through a pill,
@@ -11383,9 +11393,10 @@ A relationship's values are shown nowhere on the board: the chip of a relationsh
 many fields the type gives the arrow (`friendship 2`, Adornments' [`counted(_:)`](#plain-text-and-a-number)), and a
 click on it opens the arrow's card, where they are.
 
-An end's arrow (the arrow between a type and a relationship type) with no name says `from` or `to` in gray above
-its anchor (`EndSideMark`, Adornments' plain line at `aboveTopLeft`), where its name would be; typing a name on
-the arrow replaces it.
+An end's arrow (the arrow between a type and a relationship type) says nothing on the line: the two arrows at a
+relationship type are the halves of one line through its pill (a layout input, `EndArrow.input`, which Arrows reads:
+no head at the pill, no words, and, with one end on each side, each half its part of the circle through the two
+types and the pill), and the type's card names the rows.
 
 ### The values a type's fields hold, checked
 
@@ -13186,13 +13197,13 @@ core                 tool hand · command undo · command redo · command zoomIn
 keyboard             service KeyboardState · tool tips · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
-arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property endRule → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
+arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property endRule → arrow · ShapeOpening → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · property relationship → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
 framing              shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title cover surface → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · CanvasContextMenu
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
-adornments           service AdornmentState · service ChipFade · overlay AdornmentOverlay · CanvasButtons · DecorationHits
+adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState · host inspector
 context-menus        service ContextMenuState · secondary-click menu · CanvasContextMenu
 slash-commands       service SlashCommandState
@@ -13217,10 +13228,10 @@ grouping             property groups · property groups → every shape · servi
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ContentsMarks
-types                property schema · property is · property fieldValues · property relationship · property endRule · edge type is-a · edges → every shape · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldChecks · service FieldCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-compact · ShapeFaces · ShapeFaces · willDelete · ShapePopovers · /is-a → every shape · CanvasContextMenu · CanvasContextMenu · CanvasContextMenu · adornment TypeChips → every shape · adornment EndSideMark → every shape · title pill look → every shape · title pill look → every shape
+types                property schema · property is · property fieldValues · property relationship · property endRule · edge type is-a · edges → every shape · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu · DecorationHits · outlines · ShapeFaces · ShapeFaces · ShapeFaces · willDelete · ShapePopovers · /is-a → every shape · CanvasContextMenu · CanvasContextMenu · CanvasContextMenu · adornment TypeChips → every shape · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape · adornment RelationshipOfferPill → every shape · title pill look → every shape · title pill look → every shape
 type-validation      ValidationRules · ValidationRules · ValidationRules
 type-details         ShapeDetails · ShapeDetails · ShapeDetails · ShapeDetails
-field-find           findable field value → every shape
+field-find           findable field value → every shape · findable relationship type name → every shape
 colors               property color · file property colors · service ColorBook · shape tints · /color → every shape · CanvasContextMenu
 color-validation     service ColorWarnings · ValidationRules
 color-details        ShapeDetails

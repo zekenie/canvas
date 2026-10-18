@@ -91,7 +91,7 @@ let ruleStates: [GalleryState] = [
         editor.setEndRule([try featureEnd(editor)], onlyOne: true)
         let first = editor.galleryArrow(feature, foundation, of: rulesRelationshipID), second = editor.galleryArrow(feature, roof, of: rulesRelationshipID)
         let said = issues(stage, feature)
-        guard said == ["layer has 2 notes, and should have at most 1"], issues(stage, first).isEmpty, issues(stage, second).isEmpty else {
+        guard said == ["in has 2 notes, and should have at most 1"], issues(stage, first).isEmpty, issues(stage, second).isEmpty else {
             throw GalleryFailure("one sentence on the note, none on the arrows: \(said)")
         }
         return .text("note\n\(said.map { "error: \($0)" }.joined(separator: "\n"))\n")

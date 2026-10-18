@@ -286,7 +286,7 @@ import Validation
         expectEqual(RelationChecks.note(rows: [both], count: { _ in 1 }, graph: w.graph), [])
         expectEqual(RelationChecks.note(rows: [both], count: { _ in 2 }, graph: w.graph).map(\.kind), [.wrong])
     },
-    test("two ruled rows are two problems, in the rows' order, and a row with no rule gives none; a row with no name typed is called by its other type") {
+    test("two ruled rows are two problems, in the rows' order, and a row with no rule gives none; a row with no name typed on a from end is called by its relationship type") {
         let w = try World()
         let first = RelationshipRow(key: RelationshipRowKey(type: w.employment, label: .unnamed(.from)), sides: [.from], others: [w.company],
                                     rule: EndRule(needed: true, onlyOne: false), carriers: [ShapeID()], source: w.person)
@@ -295,7 +295,7 @@ import Validation
         let plain = RelationshipRow(key: RelationshipRowKey(type: w.employment, label: .typed("friend")), sides: [.from], others: [w.person],
                                     rule: EndRule(), carriers: [ShapeID()], source: w.person)
         let problems = RelationChecks.note(rows: [first, plain, second], count: { _ in 0 }, graph: w.graph)
-        expectEqual(problems.map(\.message), ["company is needed", "mentor is needed"])
+        expectEqual(problems.map(\.message), ["employment is needed", "mentor is needed"])
         expectEqual(problems.map(\.locus), [.row(first.key), .row(second.key)])
         expect(RelationChecks.namesATitle(problems), "the first is named by a type's title")
         expect(!RelationChecks.namesATitle([problems[1]]), "the second by its end's own words")

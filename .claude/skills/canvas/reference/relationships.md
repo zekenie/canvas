@@ -34,7 +34,7 @@ edge "Person" -> "Employment" text: "jobs" endRule: {"onlyOne": true}
 edge "Employment" -> "Company" text: "staff"
 ```
 
-Those are ordinary arrows. An arrow between two types is plain, and so is one between a relationship type and a note: only an arrow that joins a relationship type and a type is an end, whichever way it points and whatever its heads (a two-headed arrow is read from its start to its end, and draw warns of one at an end: for a type related to itself, write two edges, which are drawn bent apart).
+In the app a relationship type is drawn as a pill in its color, and its two ends as one line through it (`Person ——[Employment]——> Company`): the arrow into it has no head there, and an end's text names a row without being drawn on the line. A click on the pill shows the relationship type's fields and each end's row name and rules. The arrows themselves are ordinary arrows. An arrow between two types is plain, and so is one between a relationship type and a note: only an arrow that joins a relationship type and a type is an end, whichever way it points and whatever its heads (a two-headed arrow is read from its start to its end, and draw warns of one at an end: for a type related to itself, write two edges, which are drawn bent apart).
 
 **The types, their ends and the notes may be one run.** A run lays a note out against the ends it draws itself: the rows an end gives the notes of its types are in the `at` of their rows, a dry run says the same, and so does `canvas measure` of the script. A misfit, a missing row and a plain arrow's `fits` are judged by the run's own ends too. Write the model first and the notes after it, as below, in one script or in several. A note the script does not restate keeps the size it had before the run: give an end to a type and the notes already of it grow by their row when the run commits, so a shape you place against one of them in that run is placed against its old size (it may end up under the row). Restate those notes in the script, or place the shape in a run of its own after.
 
@@ -131,7 +131,7 @@ sticky-note "Employment"
 Ann's relationship said `"is": ["Employment"]`. A second note, and an arrow between it and Acme that has no `is:`, says which relationship types would take it:
 
 ```draw
-sticky-note "Bo" right of "Ann" is: "Person" fieldValues: {"name": "Bo Park"}
+sticky-note "Bo" below "Ann" is: "Person" fieldValues: {"name": "Bo Park"}
 edge "Bo" -> "Acme"
 ```
 

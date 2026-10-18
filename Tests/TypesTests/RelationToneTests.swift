@@ -11,9 +11,10 @@ import Types
 // fits; a warning (an end that is free) turns neither; the chip is plain where there is no check to ask. Over bonds, in
 // `RelationScene`'s editor (a Feature, a Layer and the relationship type `in` between them).
 
-/// The relationship's chips on an arrow, as the editor lays them out.
+/// The relationship's pill on an arrow (the lead of its label), then its chips (the plain types'), as the editor lays them out.
 @MainActor func arrowChips(of arrow: ShapeID, in editor: CanvasEditor) -> [AdornmentFrame] {
-    editor.adornmentFrames(of: arrow).filter { $0.adornment == .of(TypeChips.self) }
+    let frames = editor.adornmentFrames(of: arrow)
+    return frames.filter { $0.adornment == .of(RelationshipPill.self) } + frames.filter { $0.adornment == .of(TypeChips.self) }
 }
 
 @MainActor let chipToneTests = Suite("The chip of a misfit", [
@@ -83,7 +84,7 @@ import Types
         let misfit = s.relate(s.note, other)
         let hooks = try require(s.editor.service(RelationshipHooks.self))
         expectEqual(hooks.tone(misfit), .wrong)
-        expectEqual(RelationshipHooks(nameIt: { _ in false }).tone(misfit), .plain, "the default tone asks no check")
+        expectEqual(RelationshipHooks().tone(misfit), .plain, "the default tone asks no check")
     },
     test("the pill in the row of the note at the end that fits is red with a wave; the row of the other end shows nothing wrong and the pill heals with the arrow") {
         let s = try RelationScene()
@@ -92,15 +93,15 @@ import Types
         let other = s.editor.addSlip("Another", of: [s.feature], at: CGPoint(x: 40, y: 900))
         let fits = s.relate(s.note, s.layerNote)
         let misfit = s.relate(s.note, other)
-        let (pills, _) = try s.pills(s.note, "layer")
+        let (pills, _) = try s.pills(s.note, "in")
         expectEqual(pills.map(\.arrow).sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }, [fits, misfit].sorted { $0.rawValue.uuidString < $1.rawValue.uuidString })
         let wrong = try require(pills.first { $0.arrow == misfit })
         expect(wrong.isWrong, "the end that does not fit")
         expect(!(try require(pills.first { $0.arrow == fits }).isWrong))
         // Heals with the arrow, with nothing written to the note.
         s.editor.transact("Re-aim") { $0.update(misfit, as: Bond.self) { $0.props.to = s.layerNote } }
-        expect(try s.pills(s.note, "layer").pills.allSatisfy { !$0.isWrong }, "healed")
+        expect(try s.pills(s.note, "in").pills.allSatisfy { !$0.isWrong }, "healed")
         s.editor.undo()
-        expect(try s.pills(s.note, "layer").pills.contains { $0.isWrong }, "and red again by the undo")
+        expect(try s.pills(s.note, "in").pills.contains { $0.isWrong }, "and red again by the undo")
     },
 ])

@@ -16,6 +16,14 @@ extension StickyNoteDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
         let frame = context.shapes.frame(of: shape)
         let isType = shape[TypeSchemaProperty.self] != nil
+        // A relationship type's pill: the capsule in its type's color, no letters.
+        if isType, NoteLayout.pill(shape, in: context.shapes) != nil {
+            let color = context.service(TypeIndex.self)?.look(of: shape.id).row.cgColor ?? NoteStyle.pillFallback.cgColor
+            context.cg.setFillColor(color)
+            context.cg.addPath(NoteStyle.capsule(frame))
+            context.cg.fillPath()
+            return
+        }
         context.cg.setFillColor(isType ? NoteStyle.typePaperCG : context.colors(of: shape)?.paper ?? NoteStyle.skeletonFill)
         context.cg.fill(frame)
         var box = frame.insetBy(dx: NoteStyle.padding, dy: NoteStyle.padding)

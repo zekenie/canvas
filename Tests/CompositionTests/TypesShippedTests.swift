@@ -323,7 +323,7 @@ private let petAnswer = """
         expectEqual(editor.document[ann]?[IsAProperty.self], nil)
         expect(zeke != person)
 
-        // The arrow's label: the same command, the same step, the chip above the label.
+        // The arrow's label: the same command, the same step, the relationship type's pill leading the label.
         let arrow = editor.add(Arrow(start: .free(CGPoint(x: 100, y: 700)), end: .free(CGPoint(x: 500, y: 700)), text: "keep"))
         editor.selection = arrow
         expect(editor.beginEditing(arrow))
@@ -339,9 +339,10 @@ private let petAnswer = """
         expectEqual(editor.undoHistory.undoName, "Add Type")
         window.pressEscape()
         let labelFrame = try require(editor.arrowLabelFrame(of: arrow))
-        let arrowChips = editor.adornmentFrames(of: arrow).filter { $0.adornment == .of(TypeChips.self) }
-        expectEqual(arrowChips.map { $0.label.text ?? "" }, ["Employment"])
-        expect(arrowChips[0].rect.maxY <= labelFrame.minY, "above the label")
+        let pills = editor.adornmentFrames(of: arrow).filter { $0.adornment == .of(RelationshipPill.self) }
+        expectEqual(pills.map { $0.label.text ?? "" }, ["Employment"])
+        expect(labelFrame.contains(pills[0].rect), "in the label's cut, ahead of its words: \(pills[0].rect) in \(labelFrame)")
+        expect(editor.adornmentFrames(of: arrow).filter { $0.adornment == .of(TypeChips.self) }.isEmpty, "no chip above it")
     },
     test("/is-a company typed on a note offers New type “Company”; Return puts a white type note beside it, in editing, and links the note: one step, New Type; undo takes both, then the typing") {
         let pasteboard = NSPasteboard.withUniqueName()

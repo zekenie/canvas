@@ -35,7 +35,7 @@ import Types
         r.window.type("near")
         r.cards.close()
         let after = try s.bytes()
-        expectEqual(s.editor.undoHistory.undoName, "Change Layer")
+        expectEqual(s.editor.undoHistory.undoName, "Change In")
         s.editor.undo()
         expect(try s.bytes() == start, "one Undo returns both boards")
         s.editor.redo()
