@@ -20,6 +20,10 @@ public struct Statement: Sendable, Equatable {
         case shape(ShapeStatement)
         case edge(EdgeStatement)
         case delete(DeleteStatement)
+        /// `group "A" and "B"`: the shapes become one group.
+        case group(GroupStatement)
+        /// `ungroup "A"`: the shapes are in no group.
+        case ungroup(GroupStatement)
     }
 
     /// Its line in the script, from 1.
@@ -187,6 +191,21 @@ public enum DeleteStatement: Sendable, Equatable {
     /// keys that tell two connections of one pair apart (`delete edge "A" -> "B" is: "T"`), as
     /// written, for the caller to check: the language knows no kind.
     case edges(from: ShapeName, to: ShapeName, eitherWay: Bool, attributes: [Attribute] = [])
+}
+
+/// `group "A" and "B" { and "C" }` (two or more shapes) or `ungroup "A" { and "B" }` (one or more): the shapes a statement
+/// puts together or takes apart, each named as a statement names a shape the file has, joined by `and` (or commas). What a
+/// group is, and which shapes count as in one, is the caller's: the language knows only the names.
+public struct GroupStatement: Sendable, Equatable {
+    /// The shapes it names, in the order written.
+    public var shapes: [ShapeName]
+
+    public init(shapes: [ShapeName]) {
+        self.shapes = shapes
+    }
+
+    /// The names as a script writes them: `"A"`, `"A" and "B"`, `"A", "B" and #7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`.
+    public var written: String { listed(shapes.map(\.written)) }
 }
 
 /// `style <name> attribute { attribute }`: attributes to give any shape that names it.

@@ -62,11 +62,16 @@ struct KindVocabulary {
     var properties: JSONObject { schema.properties }
 
     /// Whether a script can write it: not the one titles are written to, a place, one named like a
-    /// language key, or one the schema marks `readOnly` (what the app fills in, an id or a mirror
-    /// of other text: `Property.readOnly()`).
+    /// language key, one the schema marks `readOnly` (what the app fills in, an id or a mirror
+    /// of other text: `Property.readOnly()`), or one a plugin keeps for itself (`unlisted()`:
+    /// Grouping's groups, which a script writes with `group`).
     func isAttribute(_ name: String) -> Bool {
         properties[name] != nil && name != namingProperty && !coordinates.contains(name) && !collisions.contains(name) && !isReadOnly(name)
+            && !isUnlisted(name)
     }
+
+    /// Whether the schema marks it as its plugin's own (`unlisted()`): no script lists, reads or writes it.
+    func isUnlisted(_ name: String) -> Bool { schema.isUnlisted(name) }
 
     /// Whether the schema marks it `readOnly`: filled in by the app, never by a script.
     func isReadOnly(_ name: String) -> Bool {

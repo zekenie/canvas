@@ -18,20 +18,21 @@ final class ContextMenuState {
 
     /// A secondary click: the context menu for what it's on, as the select tool sees it. That's the
     /// selection, on a selected shape or on empty space inside a multi-selection's box; otherwise
-    /// the selectable shape there, alone (the select tool's hit rule: unselectable shapes are seen
-    /// through, and what's drawn for a shape outside it is the shape); otherwise the canvas, whose
-    /// menu is only its own items. With a menu to show, editing ends and a shape that wasn't
-    /// selected becomes the selection, as in Keynote and tldraw. Without one (nothing applies),
-    /// nothing changes. A Control-click counts only in the select tool: other tools get it as a
-    /// press with ⌃ held.
+    /// the selectable shape there, alone, or the group it's in, whole, as a click would select it
+    /// (the select tool's hit rule: unselectable shapes are seen through, and what's drawn for a
+    /// shape outside it is the shape; `editor.selectionUnit(of:)`); otherwise the canvas, whose
+    /// menu is only its own items. With a menu to show, editing ends and what wasn't selected
+    /// becomes the selection, as in Keynote and tldraw. Without one (nothing applies), nothing
+    /// changes. A Control-click counts only in the select tool: other tools get it as a press with
+    /// ⌃ held.
     func menu(for pointer: Pointer) -> NSMenu? {
         if pointer.isControlClick, editor.currentToolID != .select { return nil }
         let hit = editor.selectableShape(at: pointer.world)
         let ids: [ShapeID]
-        var selects: ShapeID?
-        if let hit, !editor.isSelected(hit) {
-            ids = [hit]
-            selects = hit
+        var selects: [ShapeID]?
+        if let hit, case let unit = editor.selectionUnit(of: hit), !editor.areSelected(unit) {
+            ids = unit
+            selects = unit
         } else if hit != nil || editor.isInSelectionBox(pointer.world) {
             ids = editor.selectedShapeIDs
         } else {
@@ -41,7 +42,7 @@ final class ContextMenuState {
         guard !entries.isEmpty else { return nil }
         let revision = editor.revision
         editor.endEditing()
-        if let selects { editor.selection = selects }
+        if let selects { editor.selectedShapeIDs = selects }
         // Ending editing may have saved the editing view: resolve against what it saved.
         if editor.revision != revision { entries = self.entries(for: ids, at: pointer.world) }
         return entries.isEmpty ? nil : ContextMenuItems.menu(entries)

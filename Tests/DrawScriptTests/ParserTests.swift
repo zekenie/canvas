@@ -71,13 +71,13 @@ import TestKit
 ])
 
 @MainActor let statementTests = Suite("Statements", [
-    test("any first word but edge, delete and style is a kind word, left for the caller") {
+    test("any first word but edge, delete, group, ungroup and style is a kind word, left for the caller") {
         for word in ["card", "node", "box", "link", "whatever-kind"] {
             let statement = try shape("\(word) \"A\"")
             expectEqual(statement.word, word)
             expectEqual(statement.title, "A")
         }
-        expectEqual(Keyword.allCases.map(\.rawValue), ["edge", "delete", "style"])
+        expectEqual(Keyword.allCases.map(\.rawValue), ["edge", "delete", "style", "group", "ungroup"])
     },
     test("a shape statement: a kind, a title, then attributes and placements in any order") {
         let card = try shape(#"card "API" priority: high right of "Web" size: 300x120 notes: "a b" gap: wide below "Top" overlap: allow"#)
@@ -118,7 +118,7 @@ import TestKit
     test("a statement starts with a word; the hint depends on what came first") {
         let quoted = parseError(#""A" right of "B""#)
         expectEqual(quoted?.reason, .syntax)
-        expectEqual(quoted?.message, #"a statement starts with a kind, edge, delete or style, not "A""#)
+        expectEqual(quoted?.message, #"a statement starts with a kind, edge, delete, group, ungroup or style, not "A""#)
         expectEqual(quoted?.hint, #"write the kind first: <kind> "A" (canvas kinds lists them)"#)
         expectEqual(parseError(#""A" -> "B""#)?.hint, #"to join two shapes, write edge "A" -> "B""#)
         expectEqual(parseError(#""A" --> "B""#)?.hint, #"to join two shapes, write edge "A" -> "B""#)
@@ -689,7 +689,8 @@ import TestKit
         let error = ScriptError(line: 3, reason: .syntax, "bad", hint: "fix it")
         expectEqual(error.description, "line 3: bad (fix it)")
         expectEqual(ScriptError.Reason.noRoom.rawValue, "no_room")
-        expectEqual(ScriptError.Reason.allCases.count, 33)
+        expectEqual(ScriptError.Reason.allCases.count, 34)
+        expectEqual(ScriptError.Reason.noGroups.rawValue, "no_groups")
     },
 ])
 

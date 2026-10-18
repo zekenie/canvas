@@ -91,6 +91,10 @@ public final class BoardWindowController: NSWindowController {
     @objc public func paste(_ sender: Any?) { board?.editor.perform(.paste) }
     /// Edit › Duplicate (⌘D): the command a plugin claims (Clipboard's).
     @objc public func duplicate(_ sender: Any?) { board?.editor.perform(.duplicate) }
+    /// Arrange › Group (⌥⌘G) and Ungroup (⌥⇧⌘G): the commands a plugin claims (Grouping's, on the
+    /// selection).
+    @objc public func groupSelection(_ sender: Any?) { board?.editor.perform(.group) }
+    @objc public func ungroupSelection(_ sender: Any?) { board?.editor.perform(.ungroup) }
 
     /// The menu items that run a command, enabled while it can run.
     private static let commands: [Selector: CanvasCommand] = [
@@ -99,13 +103,15 @@ public final class BoardWindowController: NSWindowController {
         #selector(showJumpTo(_:)): .jumpTo,
         #selector(cut(_:)): .cut, #selector(copy(_:)): .copy, #selector(paste(_:)): .paste,
         #selector(duplicate(_:)): .duplicate,
+        #selector(groupSelection(_:)): .group, #selector(ungroupSelection(_:)): .ungroup,
         #selector(zoomIn(_:)): .zoomIn, #selector(zoomOut(_:)): .zoomOut, #selector(zoomToActualSize(_:)): .zoomToActualSize,
         #selector(zoomToFit(_:)): .zoomToFit, #selector(zoomToSelection(_:)): .zoomToSelection,
     ]
 
-    /// The items whose keys text takes (⌘↑ and ⌘↓ move its caret, and ⌘D is not the shape's while one is edited): off while text has the keyboard,
-    /// so a disabled item leaves the key to it.
-    private static let textKeys: Set<Selector> = [#selector(enclosingBoard(_:)), #selector(openSelection(_:)), #selector(duplicate(_:))]
+    /// The items whose keys text takes (⌘↑ and ⌘↓ move its caret, and ⌘D, ⌥⌘G and ⌥⇧⌘G are not the shapes' while one is edited): off
+    /// while text has the keyboard, so a disabled item leaves the key to it.
+    private static let textKeys: Set<Selector> = [#selector(enclosingBoard(_:)), #selector(openSelection(_:)), #selector(duplicate(_:)),
+                                                  #selector(groupSelection(_:)), #selector(ungroupSelection(_:))]
 
     /// The root board is called what the file is ("Untitled", "Plans"), kept as the title is: the
     /// editor's `rootName`, which whatever names boards reads (the root's crumb on the path).

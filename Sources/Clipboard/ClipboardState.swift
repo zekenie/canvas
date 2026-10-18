@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Geometry
+import Grouping
 import Selection
 
 /// Per editor: the copyability rules, gathered once (the registry is frozen), and what copying,
@@ -22,7 +23,10 @@ import Selection
 /// A container copied (`ShapeContaining`: a frame) takes what it holds, at any depth, as an owner
 /// takes its board: each copy keeps the container it's in among what's copied, and one whose
 /// container isn't copied is in none. A paste puts its copies in the containers they came in, then
-/// settles what it put down by the in-or-out rule (`Transaction.settle`), where it lands.
+/// settles what it put down by the in-or-out rule (`Transaction.settle`), where it lands. Copies
+/// that shared a group (Grouping's) are a group of their own, under a new id, on each board, and a
+/// group only one of them was in is none of theirs (`BoardGroups.copied`); a shape a cut moves
+/// keeps its groups, as it keeps its id.
 @MainActor
 final class ClipboardState {
     /// This app's shapes on a pasteboard.
@@ -269,8 +273,10 @@ final class ClipboardState {
         let pasting: (selected: [ShapeID], nudges: [ShapeID: CGPoint])
         do {
             pasting = try editor.transact(name) { transaction -> (selected: [ShapeID], nudges: [ShapeID: CGPoint]) in
-                for record in carry(shapes, renaming: { ids[$0]! }, naming: { ids[$0] }, in: transaction.shapes) {
-                    transaction.insert(pasted(record, as: ids[record.id]!, renaming: ids),
+                let carried = carry(shapes, renaming: { ids[$0]! }, naming: { ids[$0] }, in: transaction.shapes)
+                let groups = copiedGroups(of: carried, renaming: ids)
+                for record in carried {
+                    transaction.insert(pasted(record, as: ids[record.id]!, renaming: ids, groups: groups),
                                        contents: pastedBoards(under: record.id, in: file, renaming: ids))
                 }
                 let placed = shapes.compactMap { ids[$0.id] }.filter { transaction.document[$0] != nil }
@@ -310,11 +316,28 @@ final class ClipboardState {
     }
 
     /// `record` under `id`: under its own, the shape itself, moved; under a new one, a copy, naming
-    /// the shape it's a copy of. In the container it came in, as pasted (`ids`), if one.
-    private func pasted(_ record: AnyShapeRecord, as id: ShapeID, renaming ids: [ShapeID: ShapeID]) -> AnyShapeRecord {
+    /// the shape it's a copy of, in the groups `groups` gives it (`copiedGroups`). In the container it
+    /// came in, as pasted (`ids`), if one.
+    private func pasted(_ record: AnyShapeRecord, as id: ShapeID, renaming ids: [ShapeID: ShapeID],
+                        groups: [ShapeID: [String]]) -> AnyShapeRecord {
         var shape = record.copy(as: id, container: record.container.flatMap { ids[$0] })
-        if id != record.id { shape.meta[CopiedFrom.self] = CopySource(shape: record.id) }
+        if id != record.id {
+            shape.meta[CopiedFrom.self] = CopySource(shape: record.id)
+            if let path = groups[record.id] { shape[GroupsProperty.self] = path }
+        }
         return shape
+    }
+
+    /// The groups the copies among `records` (one board's, those `ids` gives new ids) are in, by the
+    /// id each was copied from: those two or more of them share, under new ids, and none that only
+    /// one is in (`BoardGroups.copied`). A shape that keeps its id isn't among them.
+    private func copiedGroups(of records: [AnyShapeRecord], renaming ids: [ShapeID: ShapeID]) -> [ShapeID: [String]] {
+        var paths: [ShapeID: [String]] = [:]
+        for record in records where ids[record.id] != record.id {
+            if let path = record[GroupsProperty.self], !path.isEmpty { paths[record.id] = path }
+        }
+        guard !paths.isEmpty else { return [:] }
+        return BoardGroups.copied(paths) { UUID().uuidString }
     }
 
     /// The boards under `owner` in `file` as pasted, each under its owner's id as pasted (`ids`),
@@ -328,7 +351,8 @@ final class ClipboardState {
             guard let board = file.children[owner] else { continue }
             let carried = carry(board.shapes, renaming: { ids[$0]! }, naming: { ids[$0] },
                                 in: ShapeContext(document: board, registry: editor.registry))
-            boards[ids[owner]!] = CanvasDocument(shapes: carried.map { pasted($0, as: ids[$0.id]!, renaming: ids) })
+            let groups = copiedGroups(of: carried, renaming: ids)
+            boards[ids[owner]!] = CanvasDocument(shapes: carried.map { pasted($0, as: ids[$0.id]!, renaming: ids, groups: groups) })
             owners += carried.map(\.id)
         }
         return boards

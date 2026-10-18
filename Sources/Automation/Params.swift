@@ -6,7 +6,7 @@ import Canvas
 struct DrawParams: SchemaDefined {
     static let properties = Properties<DrawParams>(title: "draw") {
         Property("script", \.script).required().keywords(["x-stdin": true, "x-value-name": "script"])
-            .description("What to draw: one statement a line (a shape, an edge, a delete or a style), in quotes for the shell.")
+            .description("What to draw: one statement a line (a shape, an edge, a delete, a group or a style), in quotes for the shell.")
         Property("dryRun", \.dryRun).description("Work everything out and say what would happen, changing nothing.")
         Property("reveal", \.reveal).description("Then ease the view to what was drawn.")
     }

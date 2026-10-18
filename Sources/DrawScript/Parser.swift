@@ -170,7 +170,7 @@ struct LineParser {
                 ?? (first.kind == .quoted ? "write the kind first: <kind> \(first.raw) (canvas kinds lists them)"
                 : first.kind == .key ? "an attribute goes after the shape it's about: <kind> \"A\" \(first.raw) …"
                 : nil)
-            throw error("a statement starts with a kind, edge, delete or style, not \(first.raw)", hint: hint)
+            throw error("a statement starts with a kind, edge, delete, group, ungroup or style, not \(first.raw)", hint: hint)
         }
         if first.text.hasPrefix(Self.otherComment) {
             throw error("\(Self.otherComment) doesn't start a comment here", hint: "comments start with \(Lexer.comment)")
@@ -179,6 +179,8 @@ struct LineParser {
         switch Keyword(rawValue: first.text) {
         case .edge?: return .statement(.edge(try edge()))
         case .delete?: return .statement(.delete(try delete()))
+        case .group?: return .statement(.group(try group(.group)))
+        case .ungroup?: return .statement(.ungroup(try group(.ungroup)))
         case .style?: return .style(try style())
         case nil: return .statement(.shape(try shape(first.text)))
         }
@@ -399,6 +401,62 @@ struct LineParser {
         }
         if let extra = peek() {
             throw error("delete takes one title, and nothing after it (\(extra.raw))", hint: "delete each shape on a line of its own")
+        }
+        return statement
+    }
+
+    /// `group "A" and "B"` and `ungroup "A"`: the shapes a statement names, each a title in quotes or an id, joined by `and` (or by
+    /// commas, as a placement's targets are). A group is two shapes or more, `ungroup` takes one or more, and nothing follows the
+    /// names: the shapes' own lines say where they go and what they hold.
+    mutating func group(_ keyword: Keyword) throws(ScriptError) -> GroupStatement {
+        let word = keyword.rawValue
+        let example = keyword == .group ? "\(word) \"A\" \(Word.and.rawValue) \"B\"" : "\(word) \"A\""
+        var statement = GroupStatement(shapes: [])
+        repeat {
+            guard let token = peek() else {
+                if statement.shapes.isEmpty {
+                    throw error(keyword == .group ? "\(word) names the shapes it puts in one group" : "\(word) names the shapes it takes out of their groups",
+                                hint: "write \(example)")
+                }
+                let joiner = tokens[at - 1].kind == .comma ? "a comma" : Word.and.rawValue
+                throw error("\(joiner) joins a shape, and none follows it", hint: "write \(example)")
+            }
+            if token.kind == .quoted {
+                at += 1
+                statement.shapes.append(.title(try title(token)))
+            } else if Self.isIDWord(token) {
+                at += 1
+                statement.shapes.append(.id(try id(token)))
+            } else if token.kind == .word, !token.isWord(Word.and.rawValue) {
+                // The names as they should have been written: every bare word that stands where a name goes, quoted.
+                var fixed = statement.shapes.map(\.written)
+                for rest in tokens[at...] {
+                    if rest.kind == .quoted || Self.isIDWord(rest) {
+                        fixed.append(rest.raw)
+                    } else if rest.kind == .word, !rest.isWord(Word.and.rawValue) {
+                        fixed.append(quote(rest.text))
+                    } else if rest.kind == .comma || rest.isWord(Word.and.rawValue) {
+                        continue
+                    } else {
+                        break
+                    }
+                }
+                throw error("\(token.raw) isn't quoted, and titles are in double quotes", hint: "write \(word) \(listed(fixed))")
+            } else {
+                throw error("\(token.raw) is out of place: \(word) names shapes by their titles", hint: "write \(example)")
+            }
+            subject = "\(word) \(statement.written)"
+        } while joinsAnother()
+        if let extra = peek() {
+            if extra.kind == .quoted || Self.isIDWord(extra) {
+                throw error("\(extra.raw) is \(extra.kind == .quoted ? "a title" : "an id") where none goes",
+                            hint: "join the shapes with \(Word.and.rawValue): \(statement.shapes.last?.written ?? "\"A\"") \(Word.and.rawValue) \(extra.raw)")
+            }
+            throw error("\(word) takes the shapes and nothing after them (\(extra.raw))",
+                        hint: "a placement or an attribute goes on a shape's own line; write \(example)")
+        }
+        if keyword == .group, statement.shapes.count < 2 {
+            throw error("a group is two shapes or more, and this names one", hint: "join another with \(Word.and.rawValue): \(example)")
         }
         return statement
     }

@@ -23,6 +23,7 @@ The examples on this page are one story. They run in order on one empty board: e
 - [Edges](#edges)
 - [Styles](#styles)
 - [Restating, renaming, deleting](#restating-renaming-deleting)
+- [Groups](#groups)
 - [References](#references)
 - [How a run is applied](#how-a-run-is-applied)
 - [The result](#the-result)
@@ -68,7 +69,7 @@ After a timeout the app may still draw the script: it doesn't drop what it was s
 - **A bare word** runs to the next space, `"`, `(`, `)` or `//`. A comma at its end is a separator of its own.
 - **A key** is a bare word ending in a colon, like `text:`. Only a key opens an attribute, and it needs a space after the colon: `size:200x100` is refused, with `size: 200x100` as the fix.
 - **A JSON value** is a value, right after a key, that starts with `[` or `{`. It runs to its matching bracket, skipping over JSON strings, and must close on the same line.
-- **`(` and `)`** hold a placement's gap. **`,` and `and`** join the shapes a placement names, and the styles a shape takes.
+- **`(` and `)`** hold a placement's gap. **`,` and `and`** join the shapes a placement or a `group` names, and the styles a shape takes.
 - **A value with spaces is quoted.** `text: hello world` is refused, and the fix is `text: "hello world"`. Quote any text value to be safe.
 
 This first script puts a legend in the corner of the window, then draws a small pipeline in the middle of it:
@@ -90,10 +91,12 @@ sticky-note "Load" right of "Clean" text: "Write to the warehouse"
 edge <a> -> <b> { attribute }                    a connection from a to b (also <- and <->); each end a "<title>" or an #<id>
 delete "<title>" | #<id>                         remove a shape, and every connection with an end on it
 delete edge <a> -> <b> [is: "<type>"]            remove the connections from a to b (<-> either way; with is:, only those of that type)
+group <a> and <b> { and <c> }                    put those shapes in one group (two or more); each a "<title>" or an #<id>
+ungroup <a> { and <b> }                          take those shapes out of every group (one or more)
 style <name> attribute { attribute }             a named set of attributes, for this script
 ```
 
-The first word decides the statement. `edge`, `delete` and `style` are the language's own words. Any other first word is a kind. After a shape's kind and title, attributes and placements come in any order: `sticky-note "A" text: "Hi" below "B"` and `sticky-note "A" below "B" text: "Hi"` are the same statement.
+The first word decides the statement. `edge`, `delete`, `group`, `ungroup` and `style` are the language's own words. Any other first word is a kind. After a shape's kind and title, attributes and placements come in any order: `sticky-note "A" text: "Hi" below "B"` and `sticky-note "A" below "B" text: "Hi"` are the same statement.
 
 ## Shapes and titles
 
@@ -112,7 +115,7 @@ A kind is drawable when a tool places it. These are the shipped ones:
 
 ### Titles are the names
 
-A shape is referred to by its title. An id is for a shape that has none. Everywhere a statement names a shape the file already has, a quoted title may be written as an id instead, in the spelling a query uses: `#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`, a `#` and 36 characters, no quotes. The places are an edge's ends, `delete` and `delete edge`, a placement's target (`right of #…`), `in #…`, a shape statement's own name (`sticky-note #… text: "…"`, which restates that shape) and `share:`'s host. A query's rows give the ids (`id`), and so do a run's, for every shape the file has. Write one only for a shape with no title; where it has a title, use it. A shape named by its id and by its title in one script is one shape (two statements about it are `duplicate`).
+A shape is referred to by its title. An id is for a shape that has none. Everywhere a statement names a shape the file already has, a quoted title may be written as an id instead, in the spelling a query uses: `#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`, a `#` and 36 characters, no quotes. The places are an edge's ends, `delete` and `delete edge`, a placement's target (`right of #…`), `in #…`, a shape statement's own name (`sticky-note #… text: "…"`, which restates that shape), the shapes a `group` or `ungroup` names and `share:`'s host. A query's rows give the ids (`id`), and so do a run's, for every shape the file has. Write one only for a shape with no title; where it has a title, use it. A shape named by its id and by its title in one script is one shape (two statements about it are `duplicate`).
 
 - **An id names a shape the file already has, never makes one.** One no shape has is `unknown_id` (it may have been deleted: run the query again), a malformed one `not_an_id`; a shape on a board the app can't show, or kept aside, is `unknown_id` too. The statement is refused at its line and nothing is drawn.
 - **An id names only a shape a title could name**: an arrow's, a reference's and any other kind's that has no title are `invalid_value`. Name an arrow by its two ends, and a reference by the shape it stands for.
@@ -817,6 +820,58 @@ delete "Owner"
 subboard "Owner" above-left of "Ingest"
 ```
 
+## Groups
+
+```text
+group <a> and <b> { and <c> }    put those shapes in one group (two or more)
+ungroup <a> { and <b> }          take those shapes out of every group (one or more)
+```
+
+A group is something shapes have, not a shape of its own: it has no title and takes no room on the board. Shapes in a group are selected as one in the app: a click on any of them selects them all, and what the user does to the selection (move it, copy it, lock it) is done to them all. Each statement names its shapes by a quoted title or an `#id` ([Titles are the names](#titles-are-the-names)), joined by `and` or commas, as a placement's targets are. A `group` names two or more, an `ungroup` one or more.
+
+- **A group is exactly the shapes you name, flat.** Each leaves the groups it was in and is in the new one alone. The others in a group it left stay a group while two or more of them are left; one left alone is in no group. Shapes that are in a group inside a group leave both.
+- **`ungroup` takes a shape out of every group it is in**, at every level. The others stay a group while two or more of them are left.
+- **Already as asked is `unchanged`**: shapes that already are one group and nothing else, or that are in no group, change nothing, and a run of statements that change nothing opens no undo step. A shape that still holds the id of a group that no longer counts (the others left it, or were deleted) is in no group.
+- **A group is its shapes on one board**, so every title and id must be on the board the script draws on, as a placement's target must: shapes on two boards are `several_boards`. Name shapes on a subboard's board, and the run draws there. A group may hold shapes of different kinds, a frame and the notes beside it, say.
+- **A shape is named once in a script**, by one `group` or `ungroup`: named twice, in one statement or in two, by its title or its id, is `duplicate`.
+- **Shapes the script draws can be named**, above or below the statement that draws them, new or restated, by the title the statement calls them: groups and ungroups are applied last, in the order written. The deletes are done before, so a shape the script deletes can't be named.
+- **A shape that is locked, or in a locked frame, or on a locked subboard's board, is `read_only`** if the statement would change what it is in; a statement that changes nothing goes through. An arrow and a reference have no title, and an id of one is `invalid_value`, as it is anywhere else.
+- **The row** has `line`, `did` (`grouped`, `ungrouped` or `unchanged`) and `shapes`, in the order written, each by its title; it has no `kind`. `--dry-run` says the same and changes nothing, and `canvas measure` leaves both statements out.
+
+Login bug, Billing and Search are the notes in Sprint. Group all three, then make a group of two of them, which takes those two out of the first, and leaves Billing in none:
+
+```draw
+group "Login bug" and "Billing" and "Search"
+```
+
+```draw
+group "Login bug" and "Search"
+```
+
+Ungroup takes a shape out of its group, and the other is then alone:
+
+```draw
+ungroup "Login bug"
+```
+
+A group of one is refused, and so is a shape named by two statements, and shapes on two boards (Cutoff is on Monday's board):
+
+```draw-error
+// reason: syntax
+group "Billing"
+```
+
+```draw-error
+// reason: duplicate
+group "Billing" and "Spike"
+ungroup "Billing"
+```
+
+```draw-error
+// reason: several_boards
+group "Billing" and "Cutoff"
+```
+
 ## References
 
 A script draws a reference in one of two ways. As an edge's stand-in it's a direct one, standing for the one shape on the other end ([Through a reference](#through-a-reference)): the statement is the edge, and never names the pill. On a statement of its own it's drawn by its query: it stands for what the query finds among the file's public shapes (the first in file order, or with `all: true` every one, up to fifty), and the app finds it a moment after the script, and again whenever the file changes. `canvas query` waits for that answer (up to two seconds) before it reads edges, so a query just after the script reads arrows into the pill as arrows into what it found. A script can't pick the shape a pill stands for or type words into it: those are the user's. [references.md](references.md) is what a reference does to what you read.
@@ -835,9 +890,9 @@ reference above "Owner" query: "sticky-note[public"
 ## How a run is applied
 
 1. **Read.** Every line is read. Lines that can't be read are reported together, up to 20.
-2. **Resolve.** Kinds, titles, attributes (JSON member by member), styles, placements' targets, each edge's ends and attribute keys, and each delete's shape and connections are checked against the board as it is. An edge that goes through a reference ([Through a reference](#through-a-reference)) adds the reference to the run as a shape of its own here, with the placements the edge writes for it, or beside its end. Mistakes that don't depend on each other are reported together here too.
+2. **Resolve.** Kinds, titles, attributes (JSON member by member), styles, placements' targets, each edge's ends and attribute keys, each delete's shape and connections, and the shapes each group and ungroup names are checked against the board as it is. An edge that goes through a reference ([Through a reference](#through-a-reference)) adds the reference to the run as a shape of its own here, with the placements the edge writes for it, or beside its end. Mistakes that don't depend on each other are reported together here too.
 3. **Place.** Positions are worked out against the board as it is, the references an edge goes through placed as any new shape is. Only the first placing error is reported, since one mistake there makes others.
-4. **Apply**, in one change or not at all. Deletes come first (a reference that a delete leaves with no arrow among them), then new and restated shapes (each after any shape the script draws or restates that it's placed `inside` or `on`, a reference an edge goes through among them), then edges. Each edge's channel and sides are checked as it's drawn, one at a time: the first that's wrong (`no_channel`, `cannot_connect`, a channel or side that's `invalid_value`, `ambiguous_edge`, `read_only`) is the error, and nothing is drawn. The result and its warnings are read from the changed board.
+4. **Apply**, in one change or not at all. Deletes come first (a reference that a delete leaves with no arrow among them), then new and restated shapes (each after any shape the script draws or restates that it's placed `inside` or `on`, a reference an edge goes through among them), then edges, then groups and ungroups, in the order written (so they may name a shape the script draws). Each edge's channel and sides are checked as it's drawn, one at a time: the first that's wrong (`no_channel`, `cannot_connect`, a channel or side that's `invalid_value`, `ambiguous_edge`, `read_only`) is the error, and nothing is drawn. The result and its warnings are read from the changed board.
 
 A dry run goes through all four steps and then throws the change away.
 
@@ -873,7 +928,7 @@ An illustration (not the board on this page):
 
 - **`board`**: the file it ran on, as `canvas boards` lists it: its `id` and `name`, and the board inside it the window shows, `shows` (`"root"`, or the id of the shape that owns it) and `showsPath` (from the root down).
 - **`on`**: the board the script drew on ([Which board](#which-board)): `board` (`"root"`, or the id of the shape that holds it), that shape's `title`, and whether the window `shown` it.
-- **`changes`**: a row for each thing done, with its `line`. `did` is `created`, `updated`, `moved`, `renamed`, `unchanged`, `deleted`, `connected` or `reconnected`. A shape's row has its `kind` and `title`, its `id`, and `at`, its bounds as `[[x, y], [width, height]]` in world units (top-left first, y down). A connection's row has `from`, `to` (a title, or for an end with none the id as written, plus `fromId` or `toId` for each end the statement named by id; on a `deleted` row, an end the statement named by something else than an id and that has no title is `<kind> at x,y`) and `channel` (if it's on one) instead, and `via: "reference"` when it goes through one, with `shared: true` when its reference was one that was there already and `sharedWith` the title of the shape it was beside when the edge named one (`share:`) ([Through a reference](#through-a-reference)). A reference an edge made has a row of its own on the edge's line, before the edge's: `created`, with `kind: "reference"` and `at`, and no title. One a delete took (`delete edge`, or `delete` of a shape whose arrows ran into it) is a `deleted` row with its kind alone, after the arrows'. **`id`** is on the row of every shape the file has after the run, the one a query's row gives: a `created` row says it after a real run, and a dry run's has none (the shape isn't made, so it has no id yet); a `deleted` row says it only when the statement named the shape by its id. It is how a shape with no title is named by a later script ([Titles are the names](#titles-are-the-names)).
+- **`changes`**: a row for each thing done, with its `line`. `did` is `created`, `updated`, `moved`, `renamed`, `unchanged`, `deleted`, `connected`, `reconnected`, `grouped` or `ungrouped`. A shape's row has its `kind` and `title`, its `id`, and `at`, its bounds as `[[x, y], [width, height]]` in world units (top-left first, y down). A connection's row has `from`, `to` (a title, or for an end with none the id as written, plus `fromId` or `toId` for each end the statement named by id; on a `deleted` row, an end the statement named by something else than an id and that has no title is `<kind> at x,y`) and `channel` (if it's on one) instead, and `via: "reference"` when it goes through one, with `shared: true` when its reference was one that was there already and `sharedWith` the title of the shape it was beside when the edge named one (`share:`) ([Through a reference](#through-a-reference)). A reference an edge made has a row of its own on the edge's line, before the edge's: `created`, with `kind: "reference"` and `at`, and no title. One a delete took (`delete edge`, or `delete` of a shape whose arrows ran into it) is a `deleted` row with its kind alone, after the arrows'. **`id`** is on the row of every shape the file has after the run, the one a query's row gives: a `created` row says it after a real run, and a dry run's has none (the shape isn't made, so it has no id yet); a `deleted` row says it only when the statement named the shape by its id. It is how a shape with no title is named by a later script ([Titles are the names](#titles-are-the-names)). A `group` or `ungroup`'s row has `shapes`, the shapes it named in the order written, each by its title (an id as written for a shape with none), and no `kind` ([Groups](#groups)).
 - **`inView`**: whether the shape landed in the window (on a board the window doesn't show, in the part of it the window shows when it's opened).
 - **`pushedPast`**: what the shape was pushed past to keep clear ([Keeping clear](#keeping-clear)).
 - **`was`**: a renamed shape's old title.
@@ -902,7 +957,7 @@ As text, for a person at a terminal, each row leads with its line and what it di
 
 ## Measuring a script
 
-`canvas measure <script>|-` takes a script as `draw` does and says how big its shapes would be, without drawing anything. It is for a tool that lays shapes out before it draws them, and has nothing to do with writing a script by hand. It changes nothing and opens no undo step. Every shape is new, whatever the board holds. With a board (the one in front, or `--board`), an `is:` finds a type of that board's file as `draw` does; with none open, only one the script draws. A name it can't find (an `is:`, a mention) is a warning, and the shape is measured without it, or with the text as written. Where shapes go is ignored: placements, `in` (a shape's, or an edge's for its reference) and `delete` do nothing, and a placement against a shape that isn't there isn't an error. Its edges are read, so the notes of a type are measured with the rows the script's own ends give them (a type, a relationship type, its ends and the notes in one script measure as a run of it draws them, with a board too: the ends the board has count; but a relationship type the script restates is a new shape there, with none of the ends the board has, so restate its ends with it or leave it out), and an edge whose end it can't find is a warning, left out. An edge that says `via:` is only a reference's size. A script `draw` can't read is refused with `draw`'s own messages. The answer is one JSON object:
+`canvas measure <script>|-` takes a script as `draw` does and says how big its shapes would be, without drawing anything. It is for a tool that lays shapes out before it draws them, and has nothing to do with writing a script by hand. It changes nothing and opens no undo step. Every shape is new, whatever the board holds. With a board (the one in front, or `--board`), an `is:` finds a type of that board's file as `draw` does; with none open, only one the script draws. A name it can't find (an `is:`, a mention) is a warning, and the shape is measured without it, or with the text as written. Where shapes go is ignored: placements, `in` (a shape's, or an edge's for its reference), `delete`, `group` and `ungroup` do nothing, and a placement against a shape that isn't there isn't an error. Its edges are read, so the notes of a type are measured with the rows the script's own ends give them (a type, a relationship type, its ends and the notes in one script measure as a run of it draws them, with a board too: the ends the board has count; but a relationship type the script restates is a new shape there, with none of the ends the board has, so restate its ends with it or leave it out), and an edge whose end it can't find is a warning, left out. An edge that says `via:` is only a reference's size. A script `draw` can't read is refused with `draw`'s own messages. The answer is one JSON object:
 
 ```json
 {"shapes": [{"line": 1, "title": "Checkout v2", "kind": "sticky-note", "size": [300, 200], "above": 27}],
@@ -936,24 +991,24 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 
 | reason | what it means, with an example message | the fix |
 |---|---|---|
-| `syntax` | The line can't be read. `sticky-note: Web isn't quoted, and titles are in double quotes` · `edge: --> isn't an arrow` · `--> joins shapes only in an edge statement` · `edge "A" -> "B": "calls" is a title where none goes` (an edge's text is `text: "calls"`) · `titles and text are in straight double quotes: "Web"` · `sticky-note "A": rigth isn't a placement` · `# doesn't start a comment here` · `attributes are written key: value, without braces` · `an attribute is written key: value, not key = value` | Follow the hint, which names what to write. |
+| `syntax` | The line can't be read. `sticky-note: Web isn't quoted, and titles are in double quotes` · `edge: --> isn't an arrow` · `--> joins shapes only in an edge statement` · `edge "A" -> "B": "calls" is a title where none goes` (an edge's text is `text: "calls"`) · `titles and text are in straight double quotes: "Web"` · `sticky-note "A": rigth isn't a placement` · `# doesn't start a comment here` · `attributes are written key: value, without braces` · `an attribute is written key: value, not key = value` · `group "A": a group is two shapes or more, and this names one` · `group "A": "B" is a title where none goes` (shapes are joined by `and`) | Follow the hint, which names what to write. |
 | `unknown_kind` | The first word isn't a kind the app has. `node "Web"`, with the drawable kinds listed, and the one like it named (`note`: `did you mean sticky-note?`) | Use a kind from `canvas kinds`. |
 | `not_placeable` | The kind exists but no tool places it, like an arrow. | Draw an arrow as `edge "A" -> "B"`. |
 | `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, locked:, public:, text:` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
 | `invalid_value` | The value doesn't fit the key. An id of a shape a title couldn't name (`#7C1E… is an arrow, which a script can't name`: an arrow, a reference) · `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on subboard-link`) · a head its arrow doesn't say (`edge "A" -> "B": startArrowhead: true isn't what the edge as written says`) · a mention in a text of a shape it can't mention, or `@[]` with no title (its hint, like `unknown_title`'s, says how to write the characters `@[`; the others' say how to mend the mention) · `via:` with a kind that stands for nothing (`edge "A" -> "B": via: tile isn't a kind of shape that stands for others`, the hint listing the kinds that do) or for a shape that can't be stood for (`edge "Ingest" -> "Clean": via: reference can't stand for "Clean": only a public shape can be stood for`) · `via:` over an edge drawn straight (`the edge "A" -> "B" is drawn straight to "B"`) or through a reference to the other end · a side named for a reference that has no port on it (`to: top: a reference has no ports on its top`) · `share:` with a value that isn't `true` or a title (`share: false`), on an edge drawn straight (`edge "A" -> "B": share: is for an edge that goes through a reference, and this one is drawn straight`), naming the edge's own start, or a shape that has no reference for the end (`edge "Draft" -> "Cutoff": share: "Retry" has no reference to "Cutoff" beside it`) or isn't in the start's container | Write a value of the kind the hint names. For `share:`, draw the host's edge above the line, or write `share: true`, or leave `share:` out. |
-| `duplicate` | Something is written twice. `"locked" is written twice (true, false)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice | Keep one. |
+| `duplicate` | Something is written twice. `"locked" is written twice (true, false)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice · a shape named twice by `group` and `ungroup` (`"Billing" is named twice, here and on line 1`) | Keep one. |
 | `not_an_id` | A word after `#` where a statement names a shape isn't an id. `# takes a shape's id, and #Services isn't one` · an id of the wrong length or with a character that isn't a hex digit | An id is what a query's row gives: 36 characters, hex digits in groups of 8, 4, 4, 4 and 12. A title is in double quotes. |
 | `unknown_id` | No shape the app can show has that id. `there's no shape with the id #7C1E…` · one on a board the app can't show · one kept aside · one the script deletes, `an edge is drawn to #7C1E…, which this script deletes` | Run the query that gave the id again: the shape may have been deleted. An id never makes a shape; to make one, write its kind and a title. |
 | `unknown_title` | No shape has that title. `right of "Injest"`, with up to 3 near titles · `board` on an empty board · a mention in a text, `"Plan": text: there's no shape called "Lod"` · a title only a shape the script deletes has, `"Plan": text: names "Old", which this script deletes` | Write the title exactly (`did you mean "Ingest"?`). On an empty board, leave one shape unplaced instead. If a text meant the characters `@[`, write `\\@[`. |
 | `ambiguous_title` | Two or more shapes have the title, each listed with its kind and where it is · the title is on two boards, neither the one the window shows: `"Retry" is on 2 boards: "Payments"'s board and "Billing"'s board` · a mention in a text of a title two shapes have where it's first found (`the board has 2 shapes called "Address": …`) | Ask the user to rename one. Titles only work as names while each is used once. For two boards, say which with `in "Payments"`. |
-| `several_boards` | The script lands on two boards, and a run draws on one. `this script draws on "Payments"'s board ("Retry", line 1) and on the root board ("Ingest")` · a placement between shapes on two boards · an edge between shapes on two boards that a reference can't join, because neither end is public (`this script draws on the root board ("Load", line 2) and on "Monday"'s board ("Scratch")`, whose hint says only a public shape can be reached and to ask the user to make one public) · `via:` with a start on a board the run doesn't draw on | Split it into a run for each board. An edge joins shapes on one board, or goes into a reference for a public shape on another: if the user wants the edge, ask them to make that shape public. |
+| `several_boards` | The script lands on two boards, and a run draws on one. `this script draws on "Payments"'s board ("Retry", line 1) and on the root board ("Ingest")` · a placement between shapes on two boards · an edge between shapes on two boards that a reference can't join, because neither end is public (`this script draws on the root board ("Load", line 2) and on "Monday"'s board ("Scratch")`, whose hint says only a public shape can be reached and to ask the user to make one public) · `via:` with a start on a board the run doesn't draw on · a `group` of shapes on two boards | Split it into a run for each board. An edge joins shapes on one board, or goes into a reference for a public shape on another: if the user wants the edge, ask them to make that shape public. |
 | `cannot_contain` | `in` names a shape that holds no shapes: no subboard, and no frame. `"Notes" is a sticky-note, which holds no shapes` | Name a subboard or a frame. To put a shape over another, use `inside` or `on`. |
 | `board_shown` | A delete would take the board the window shows, or one above it: `"Payments" holds the board the window shows, so it can't be deleted` | `canvas show --root` (or a board above it) first, if the user wants it gone. |
 | `ambiguous_edge` | `"A" -> "B" is drawn 2 times` (straight, or through references) | Write `is:` to say which, or `delete edge "A" -> "B"` above the line, then draw it once. |
 | `untitlable` | The kind can't be given a title: `a <kind>'s title is worked out from what it is`, or `a <kind> has no title` | Leave the title out, and don't plan to name it later. |
 | `renames` | The change would take away the name of a shape whose name comes from what it is (`this would leave "Row" without a title`); no shipped kind's name is | Keep what names it. |
 | `wrong_kind` | The title belongs to a shape of another kind. `"Ingest" is a sticky-note` | Use its kind, or change it with `delete "Ingest"` and a new statement in the same script. |
-| `read_only` | The shape or connection is locked, or in a locked frame, or on a locked subboard's board (at any depth), and the change would really change it; or a new shape or edge would go in a locked frame, or on a board that's read-only. `"Ship" is read-only (locked, say), so it can't be deleted` · `one of "Ingest"'s connections is read-only (locked, say), so "Ingest" can't be deleted with it` · a subboard whose board holds a locked shape, deleted · `the reference that delete edge "A" -> "B" leaves with no arrow is read-only (locked, say), so it can't be deleted` · `"Sprint" is read-only (locked, say), so nothing goes in it` (a frame, or a subboard with `in`) · `"N" would go in "Sprint", which is read-only (locked, say)` · `"N" would go on "Plans"'s board, which is read-only (locked, say)` · `edge "A" -> "B" would go on "Plans"'s board, which is read-only (locked, say)` | Tell the user. Leave it, or ask them to unlock it. |
+| `read_only` | The shape or connection is locked, or in a locked frame, or on a locked subboard's board (at any depth), and the change would really change it; or a new shape or edge would go in a locked frame, or on a board that's read-only. `"Ship" is read-only (locked, say), so it can't be deleted` · `one of "Ingest"'s connections is read-only (locked, say), so "Ingest" can't be deleted with it` · a subboard whose board holds a locked shape, deleted · `the reference that delete edge "A" -> "B" leaves with no arrow is read-only (locked, say), so it can't be deleted` · `"Sprint" is read-only (locked, say), so nothing goes in it` (a frame, or a subboard with `in`) · `"N" would go in "Sprint", which is read-only (locked, say)` · `"N" would go on "Plans"'s board, which is read-only (locked, say)` · `edge "A" -> "B" would go on "Plans"'s board, which is read-only (locked, say)` · `"Ship" is read-only (locked, say), so it can't be grouped` (or `ungrouped`) | Tell the user. Leave it, or ask them to unlock it. |
 | `unplaced` | Nothing says where a shape sits. `"Between" does not say where it sits vertically: right of "Ingest" and left of "Load" would put it in different places` · `exactly one new shape may say nothing about where it goes, but 2 do: "Idea one" and "Idea two"` · `"N" says nothing about where it sits horizontally` | Add a placement for that axis (the hint names one), or place all but one shape. |
 | `unanchored` | Shapes are placed only against each other, with nothing tying them to the board. `nothing ties "Left half" to the board horizontally` | Place one against a shape on the board, `board` or `view`, or leave exactly one unplaced. |
 | `no_room` | The placements can't all hold. `"Squeeze" is right of "Ingest" and left of "Clean", and there's no room between them` · `… clear of "Q"` · `"N" is inside "Z" top-left, and there's no room left in "Z"` · `"Wide" is in "Sprint", and there's no room left in "Sprint"` | Drop or change a placement, or ask for a smaller gap. Shapes on the board don't move, so to make room, restate them with placements. |
@@ -963,6 +1018,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `cannot_connect` | The app won't connect that end at all, and the message names the end. | Connect a different shape. |
 | `no_edges` | No plugin in this app draws connections. | Draw shapes only. |
 | `no_names` | No plugin in this app names shapes, so titles can't be matched. | Titled statements can't work in this app. |
+| `no_groups` | No plugin in this app groups shapes: `group` and `ungroup` can't work. | Leave them out. |
 | `no_view` | `view` was named, but the board's window has no size. Under the kind's smallest it's `invalid_value`, with the size to write. | Place against a shape or `board`, or leave one shape unplaced. |
 | `unsupported` | Something the language doesn't do. `an edge joins two shapes, and this one goes on to a third` · `in` a subboard or frame this script draws · a placement against a shape in a frame the script moves · `frame: says where "N" is, and there are no coordinates here` · `x: would say where "N" is, and there are no coordinates here` · `"N" is new, and title: renames a shape` · `title: null would take the shape's title away, and a script only renames` | Leave it out, write each edge on its own line, place the shape instead, or put the title after the kind. |
 | `nothing_to_delete` | `delete edge` found no connection. | Check the direction, or use `<->`. |
@@ -1111,7 +1167,7 @@ These are left out on purpose. What they protect is that the app never chooses a
 - **Reading positions back.** `canvas query` ([query.md](query.md)) lists a file's shapes, their titles and attributes, what's inside what and what's connected to what, but not where a shape is: only a script's result says where what it drew landed.
 - **Drawing on two boards in one run**, a subboard and what goes in it among them: draw the subboard, then its contents with `in` in a run of their own. The same for a frame and what goes in it, though they're on one board. An edge to a public shape on another board is the one thing that reaches across, and it draws only the reference it goes into ([Through a reference](#through-a-reference)).
 - **Moving a shape to another board.** `in` a subboard places a new shape; a shape restated stays on its board. (`in` a frame moves a restated shape into it.)
-- **Frames that grow** to fit what's drawn in them, and **groups**. Zones are plain shapes, and their contents are placed once; a frame holds what's in it.
+- **Frames that grow** to fit what's drawn in them. Zones are plain shapes, and their contents are placed once; a frame holds what's in it.
 - **Routing.** A line may cross shapes it has nothing to do with. There's no `between` or `below "X"` for edges yet.
 - **Extending a list** across runs, other than by restating every member.
 - **Chains** (`edge "A" -> "B" -> "C"`).

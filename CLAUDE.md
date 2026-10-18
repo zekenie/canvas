@@ -86,6 +86,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [validation](.claude/rules/validation.md): rules and issues (and where in a value one is), the schema rule, what each commit re-checks and `recheck`, rings, where issues show.
 - [titles](.claude/rules/titles.md): named and derived titles, the pill and the looks other plugins give it, the cover zoomed out, `TitleHeader`, `/title`, shared titles.
 - [locking](.claude/rules/locking.md): locked shapes, read-only, the chip, `/lock`.
+- [grouping](.claude/rules/grouping.md): shapes grouped, selected as one: the groups a shape is in (`groups`, unlisted), what counts as a group on a board (`BoardGroups`), Group and Ungroup (⌥⌘G, ⌥⇧⌘G, the context menu, Arrange), copies, and agents' `group`, `ungroup` and `:grouped-with`; what a click does with groups is [selection](.claude/rules/selection.md)'s.
 - [publishing](.claude/rules/publishing.md): public shapes (what another shape may stand for), the two dials, the chip and its count, refusing while held (the panel goes to Connections), `/public`.
 - [connections](.claude/rules/connections.md): ports, channels and the connector.
 - [mentions](.claude/rules/mentions.md): mentions in text: pills, the `@` picker (its lines with their board), mention edges, what mentions a shape (its quote, Show What Mentions), layout by names, mentions' warnings.

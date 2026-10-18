@@ -19,7 +19,7 @@ extension PluginID {
     public static let drawEngine: PluginID = "draw-engine"
 }
 
-/// The draw engine's plugin: it owns the seven points the plugins that own a concern fill with this
+/// The draw engine's plugin: it owns the eight points the plugins that own a concern fill with this
 /// app's words (DrawPoints.swift), and contributes the engine's mark. A plugin that isn't a language
 /// runs the engine through the free functions `draw` (here), `measure` (Measure.swift) and `kinds`
 /// (Kinds.swift); the command line's commands over it are Automation's.
@@ -97,14 +97,17 @@ struct DrawBoard: Encodable, Sendable {
 /// One shape or edge a statement is about, as the board has it now.
 struct DrawChange: Sendable {
     enum Did: String, Encodable, Sendable {
-        case created, moved, updated, renamed, unchanged, deleted, connected, reconnected
+        case created, moved, updated, renamed, unchanged, deleted, connected, reconnected, grouped, ungrouped
     }
 
     var line: Int
     var did: Did
-    var kind: String
+    /// The kind of the shape or edge the statement is about; none for a `group` or `ungroup`, which is about several shapes.
+    var kind: String?
     /// What it's called now (a deleted shape: what it was called).
     var title: String?
+    /// The shapes a `group` or `ungroup` names, in the order written: each by its title, or, for a shape with none, the id as written.
+    var shapes: [String]?
     /// Its id, the one a query's row gives and a script names a shape with no title by (`#<id>`): for a shape the file has, and
     /// for one a real run made; a dry run's `created` row has none, since the shape it would make has no id yet. A deleted
     /// shape's row says it only when the statement named the shape by its id.
@@ -143,7 +146,7 @@ extension DrawChange: Encodable {
     /// A row's own members, which an edge's attributes (written beside them) and a report's members can't be named
     /// (`DrawEdges.check`, `DrawReports.check`).
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case line, did, kind, title, id, was, at, inView, pushedPast, from, to, fromId, toId, via, shared, sharedWith, problems
+        case line, did, kind, title, shapes, id, was, at, inView, pushedPast, from, to, fromId, toId, via, shared, sharedWith, problems
     }
 
     private struct AttributeKey: CodingKey {
@@ -157,8 +160,9 @@ extension DrawChange: Encodable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(line, forKey: .line)
         try container.encode(did, forKey: .did)
-        try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(kind, forKey: .kind)
         try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(shapes, forKey: .shapes)
         try container.encodeIfPresent(id, forKey: .id)
         try container.encodeIfPresent(was, forKey: .was)
         try container.encodeIfPresent(at, forKey: .at)

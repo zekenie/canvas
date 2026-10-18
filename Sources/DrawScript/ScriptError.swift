@@ -29,6 +29,7 @@ public struct ScriptError: Error, Sendable, Equatable, CustomStringConvertible {
         case cannotConnect = "cannot_connect"
         case noEdges = "no_edges"
         case noNames = "no_names"
+        case noGroups = "no_groups"
         case noView = "no_view"
         case unsupported
         case nothingToDelete = "nothing_to_delete"

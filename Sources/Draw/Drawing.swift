@@ -6,8 +6,9 @@ import Topology
 
 // Resolving a script against the board as the run starts: each statement's kind, the shape its
 // title names (restated) or a new one, its attributes read by its kind's schema, its placements'
-// targets; each edge's ends and attributes; each delete's shape or connections. Problems that
-// don't depend on each other are all found (up to `ScriptErrors.limit`), each statement's first.
+// targets; each edge's ends and attributes; each delete's shape or connections; each group's or
+// ungroup's shapes. Problems that don't depend on each other are all found (up to
+// `ScriptErrors.limit`), each statement's first.
 
 /// A shape statement, resolved.
 struct ShapeItem {
@@ -183,6 +184,10 @@ struct Drawing {
     /// The item of each board shape a statement restates, by id (named by its title or its id).
     private(set) var itemByID: [ShapeID: Int] = [:]
     private(set) var edges: [EdgeItem] = []
+    /// The group and ungroup statements, resolved, in script order (`DrawGroups.swift`).
+    var groupings: [GroupItem] = []
+    /// The line of the statement that named each shape a group or ungroup names: a run says a shape's group once.
+    var groupNamed: [ShapeID: Int] = [:]
     /// The stand-ins the run has made for edges, in order, for `share:` (`DrawStandIns.swift`).
     var madeStandIns: [MadeStandIn] = []
     /// The board's direct stand-ins by what each stands for, and what its arrows join, once something
@@ -296,6 +301,17 @@ struct Drawing {
                 } else {
                     keep(error)
                 }
+            }
+        }
+        // Groups and ungroups name shapes the script draws as well as the board's, so every shape is known.
+        for statement in script.statements {
+            switch statement.body {
+            case .group(let group):
+                do throws(DrawError) { try resolve(group, ungrouping: false, statement) } catch { keep(error) }
+            case .ungroup(let group):
+                do throws(DrawError) { try resolve(group, ungrouping: true, statement) } catch { keep(error) }
+            case .shape, .edge, .delete:
+                continue
             }
         }
         for style in script.styles {
@@ -832,7 +848,7 @@ struct Drawing {
         // Its attributes, its own and its styles'.
         for attribute in shape.attributes {
             let key = attribute.key
-            guard vocabulary.properties[key] != nil, !vocabulary.isReadOnly(key) else {
+            guard vocabulary.properties[key] != nil, !vocabulary.isReadOnly(key), !vocabulary.isUnlisted(key) else {
                 if attribute.fromStyle != nil { continue }
                 if Self.coordinateKeys.contains(key) {
                     throw DrawError(statement, .unsupported, "\(key): would say where \(subject) is, and there are no coordinates here",
@@ -1451,7 +1467,7 @@ extension Script {
             switch statement.body {
             case .shape(let shape):
                 shape.name != nil || shape.clauses.contains { $0.targets.contains(where: \.isName) }
-            case .edge, .delete: true
+            case .edge, .delete, .group, .ungroup: true
             }
         }
     }

@@ -46,6 +46,13 @@ enum SelectionStyle {
     /// sets text to be read at. Further out the shapes are there but can't be read, so going to them
     /// brings them closer.
     static let readableZoom: CGFloat = 0.7
+    /// The box around the group the selection is inside (`GroupFocusOverlay`): dashed, as tldraw
+    /// draws a focused group, in the accent, standing off what it holds past their outlines (which
+    /// stand off 4).
+    static let groupFocusStroke = NSColor.controlAccentColor.withAlphaComponent(0.7)
+    static let groupFocusStrokeWidth: CGFloat = 1
+    static let groupFocusDash: [CGFloat] = [4, 3]
+    static let groupFocusStandoff: CGFloat = 10
     /// How far an arrow key nudges the selection, and with ⇧, in world units (tldraw's 1 and 10).
     static let nudge: CGFloat = 1
     static let shiftNudge: CGFloat = 10

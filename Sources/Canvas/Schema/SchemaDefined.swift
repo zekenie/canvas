@@ -101,6 +101,10 @@ extension PropertyModifiers {
     public func maxItems(_ count: Int) -> Self { keywords(["maxItems": .number(Double(count))]) }
     public func deprecated() -> Self { keywords(["deprecated": true]) }
     public func readOnly() -> Self { keywords(["readOnly": true]) }
+    /// What a plugin keeps for itself (`x-canvas-unlisted`): neither `canvas draw` nor `canvas
+    /// query` lists, reads or writes it, as an attribute or a row's; its plugin gives them words of its
+    /// own for what it means (Grouping's groups).
+    public func unlisted() -> Self { keywords([KindSchema.unlistedKeyword: true]) }
     /// What the text is, as JSON Schema's `format` names it (`"date"`, or a plugin's own: `x-canvas-query`).
     public func format(_ name: String) -> Self { keywords(["format": .string(name)]) }
 }

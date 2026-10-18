@@ -12,7 +12,9 @@ import Geometry
 /// goes somewhere makes the rest of its double-click the click's (`ignoresPress`). A plain click on
 /// the shape that was already the only one selected, of a kind edited in place (a note), edits it
 /// from where it's released (tldraw's), so that press waits for the threshold too; a double-click
-/// edits a shape from where it's pressed.
+/// edits a shape from where it's pressed. A shape in a group (`SelectionGroups`) is pressed as its
+/// group, whole: the press selects the group, and a click on a shape of a group that's selected, or a
+/// double-click, selects the part under the pointer, one level in (tldraw's).
 final class SelectTool {}
 
 extension SelectTool: Tool {
@@ -68,24 +70,40 @@ extension SelectTool: Tool {
             } else if insideSelection {
                 editor.session = PointingSelectionSession(press: pointer.view)
             } else {
-                if !shift && !command { editor.selection = nil }       // deselected on the press
+                if !shift && !command {
+                    editor.selection = nil                              // deselected on the press
+                    editor.selectionState?.leaveFocus(unlessInside: pointer.world)
+                }
                 editor.session = PointingCanvasSession(press: pointer.view)
             }
             return
         }
         let id = hit.id
+        // tldraw's PointingShape: what a press on it selects is the shape, or the group it's in,
+        // whole (`SelectionGroups`); not selected on the press with ⌘, when already selected, or
+        // inside a multi-selection's box; otherwise ⇧ adds it, and a plain press selects just it.
+        let unit = editor.selectionUnit(of: id)
+        let unitSelected = editor.areSelected(unit)
+        // A shape in a group past the one the selection is inside is pressed as the group: its own
+        // parts (a face, a label) answer once a click has gone into the group.
+        let isReached = unit == [id]
         // A face in the shape's content, asked only for a plain press.
         let isPlain = pointer.modifiers.isDisjoint(with: [.shift, .command, .option])
-        let face = isPlain ? editor.faceHit(on: hit, at: pointer.world) : nil
-        // tldraw's PointingShape: not selected on the press with ⌘, when already selected, or
-        // inside a multi-selection's box; otherwise ⇧ adds it, and a plain press selects just it.
-        let keepsSelection = command || editor.isSelected(id) || insideSelection
+        let face = isPlain && isReached ? editor.faceHit(on: hit, at: pointer.world) : nil
+        let keepsSelection = command || unitSelected || insideSelection
         let wasOnlySelection = editor.selectedShapeIDs == [id]
         if !keepsSelection {
-            editor.selectedShapeIDs = shift ? editor.selectedShapeIDs + [id] : [id]
+            editor.selectedShapeIDs = shift ? editor.selectedShapeIDs + unit : unit
         }
         // A press never restacks: the shape keeps its place in the paint order (as in tldraw; the
         // POC brought it to the front).
+        // A double-click on a shape in a group goes into the group, a level, selecting the part
+        // under the pointer, rather than opening it (tldraw's: as two clicks would); once the shape
+        // is the part, a double-click opens it.
+        if isDoubleClick, !isReached, let state = editor.selectionState {
+            editor.selectedShapeIDs = unitSelected ? state.unit(inside: id, within: state.focus) : unit
+            return
+        }
         if isDoubleClick, let face, let doubleClick = face.source.doubleClick {
             editor.selection = id
             doubleClick(face.face, editor)
@@ -102,7 +120,7 @@ extension SelectTool: Tool {
         }
         // On a label (`LabeledShape`), a click edits and a drag moves the label: both wait for the
         // threshold.
-        let onLabel = hit.isOnShape && editor.isOnLabel(id, at: pointer.world)
+        let onLabel = isReached && hit.isOnShape && editor.isOnLabel(id, at: pointer.world)
         // A face waits for the drag threshold, even on a lone box: released within it, it clicks.
         if let face {
             editor.session = PointingShapeSession(shapeID: id, press: pointer.view, didSelectOnPress: !keepsSelection,
@@ -145,9 +163,10 @@ extension SelectTool: Tool {
         editor.hoverPopover(nil)
     }
 
-    /// Escape with nothing under way deselects all.
+    /// Escape with nothing under way deselects all, or, with the selection inside a group, goes out
+    /// of it, selecting the group whole (tldraw's).
     func cancel(in editor: CanvasEditor) -> Bool {
-        editor.selection = nil
+        if let state = editor.selectionState { state.escape() } else { editor.selection = nil }
         return true
     }
 }
@@ -226,12 +245,7 @@ extension PointingShapeSession: Session {
         }
         guard !didSelectOnPress else { return }
         let hit = editor.selectableShape(at: pointer.world) ?? shapeID
-        let additive = !pointer.modifiers.isDisjoint(with: [.shift, .command])
-        if editor.isSelected(hit) {
-            if additive { editor.selectedShapeIDs.removeAll { $0 == hit } } else { editor.selection = hit }
-        } else {
-            editor.selectedShapeIDs = additive ? editor.selectedShapeIDs + [hit] : [hit]
-        }
+        editor.selectionState?.release(on: hit, additive: !pointer.modifiers.isDisjoint(with: [.shift, .command]))
     }
 
     /// Escape drops the press (tldraw); the rest of the drag does nothing.
@@ -239,20 +253,20 @@ extension PointingShapeSession: Session {
 }
 
 /// tldraw's selectOnCanvasPointerUp: the release of a press on empty canvas, or on empty space in
-/// a multi-selection's box. ⇧ or ⌘ toggles the shape under the release; otherwise it's selected
-/// (if it isn't already), or with nothing there, nothing is.
+/// a multi-selection's box. ⇧ or ⌘ toggles the shape under the release (its group, whole);
+/// otherwise it's selected (if it isn't already), or with nothing there, nothing is, and a release
+/// outside the box of the group the selection was inside leaves it.
 @MainActor
 func selectOnCanvasRelease(_ pointer: Pointer, in editor: CanvasEditor) {
     let additive = !pointer.modifiers.isDisjoint(with: [.shift, .command])
     guard let hit = editor.selectableShape(at: pointer.world) else {
-        if !additive { editor.selection = nil }
+        if !additive {
+            editor.selection = nil
+            editor.selectionState?.leaveFocus(unlessInside: pointer.world)
+        }
         return
     }
-    if additive {
-        if editor.isSelected(hit) { editor.selectedShapeIDs.removeAll { $0 == hit } } else { editor.selectedShapeIDs += [hit] }
-    } else if !editor.isSelected(hit) {
-        editor.selection = hit
-    }
+    editor.selectionState?.canvasRelease(on: hit, additive: additive)
 }
 
 /// Empty canvas was pressed (tldraw's PointingCanvas). Past the drag threshold, a brush. Escape
@@ -296,22 +310,29 @@ extension PointingSelectionSession: Session {
 }
 
 /// A marquee from the press (tldraw's Brushing). It selects as it goes: what it touches, or with
-/// ⌘ only what it strictly contains; with ⇧, added to the selection from before the brush. ⇧ and
-/// ⌘ take effect as they change, without a pointer move. Escape restores the old selection.
+/// ⌘ only what it strictly contains; with ⇧, added to the selection from before the brush. A shape
+/// in a group brings the group, whole (with ⌘, a group only if it holds all of it), as the selection
+/// was inside groups when it began (`SelectionGroups`). ⇧ and ⌘ take effect as they change, without
+/// a pointer move. Escape restores the old selection.
 @MainActor
 final class BrushingSession {
     let origin: CGPoint                // world units, at the press
     let initial: [ShapeID]
+    /// The groups the selection was inside as it began.
+    let focus: [AnyHashable]
     private(set) var brush: CGRect
     init(origin: CGPoint, in editor: CanvasEditor) {
         self.origin = origin
         initial = editor.selectedShapeIDs
+        focus = editor.selectionFocus
         brush = CGRect(origin: origin, size: .zero)
     }
 
     private func update(to point: CGPoint, modifiers: Modifiers, in editor: CanvasEditor) {
         brush = CGRect(enclosing: [origin, point])
-        let hits = editor.shapes(inBrush: brush, mustContain: modifiers.contains(.command))
+        let mustContain = modifiers.contains(.command)
+        let reached = editor.shapes(inBrush: brush, mustContain: mustContain)
+        let hits = editor.selectionState?.units(of: reached, mustContain: mustContain, within: focus) ?? reached
         editor.selectedShapeIDs = modifiers.contains(.shift) ? initial + hits : hits    // the setter drops repeats
         editor.setNeedsDisplay()                                                       // the brush moved even if the selection didn't
     }

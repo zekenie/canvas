@@ -138,6 +138,15 @@ private let stickyNoteSchema = #"""
     "frame" : {
       "$ref" : "#/$defs/core.rect"
     },
+    "groups" : {
+      "description" : "The groups the shape is in, outermost first, by id.",
+      "items" : {
+        "type" : "string"
+      },
+      "type" : "array",
+      "x-canvas-owner" : "grouping",
+      "x-canvas-unlisted" : true
+    },
     "is" : {
       "description" : "The types the shape is, by the ids of the shapes that are them, in the order they were added: a later one wins where two say the same.",
       "items" : {

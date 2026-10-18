@@ -165,6 +165,7 @@ public struct SelectionPlugin: ListedPlugin {
         registrar.tool(ToolDescriptor(id: .select, label: "Select", systemImage: "cursorarrow"), shortcut: "v") { _ in SelectTool() }
         registrar.defaultTool(.select)
         registrar.outlines { $0.selectionOutlines }
+        registrar.overlay(GroupFocusOverlay())
         registrar.overlay(HandlesOverlay())
         // Delete and Forward Delete, and Edit › Delete, delete the selection, while there is one (a
         // locked one too, which shakes); ⌘A and Edit › Select All select everything, while the

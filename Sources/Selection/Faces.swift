@@ -93,6 +93,9 @@ extension CanvasEditor {
     /// (`hit`), or the shape a face there names in its place.
     func shapeToHover(_ hit: SelectableHit?, at point: CGPoint) -> ShapeID? {
         guard let hit else { return nil }
+        // A shape in a group past the one the selection is inside is hovered as the group: its faces
+        // answer once a click has gone into the group.
+        guard selectionUnit(of: hit.id) == [hit.id] else { return hit.id }
         guard let face = faceHit(on: hit, at: point), let named = face.source.hovering?(face.face, self), isSelectable(named) else { return hit.id }
         return named
     }

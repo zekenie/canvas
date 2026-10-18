@@ -8,11 +8,11 @@ import Queries
 // Validation's), how text of a
 // media type is written (DrawTextFormats, one for each media type, Mentions' for mention text),
 // how a value a script writes joins what a shape holds (DrawValueWriters, one for each property),
-// what a shape with no title is called for the pill that stands for it (DrawLabels, Mentions') and what
-// each row of a run reports (DrawReports, Types').
+// what a shape with no title is called for the pill that stands for it (DrawLabels, Mentions'), what
+// each row of a run reports (DrawReports, Types') and how shapes are grouped (DrawGroups, Grouping's).
 // Without one, `draw` does without: no titles (a titled statement is `no_names`), no edges
-// (`no_edges`), only the schemas' bounds checked, text kept as written and a value replacing what
-// the shape holds.
+// (`no_edges`), no groups (`group` and `ungroup` are `no_groups`), only the schemas' bounds checked,
+// text kept as written and a value replacing what the shape holds.
 
 // MARK: Names
 
@@ -420,6 +420,33 @@ extension DrawValueWriters: KeyedExtensionPoint {
     }
 }
 
+// MARK: Groups
+
+/// How shapes are grouped, for `canvas draw`'s `group` and `ungroup`. The plugin that owns what a group is writes them: `group` is
+/// handed the shapes a statement names (two or more, each once, all on the board the run draws on, in the order written) and the
+/// run's transaction, and puts exactly those shapes in one group of their own; `ungroup`, the shapes it names (one or more, each
+/// once), and leaves each in no group. Each writes through the transaction, a read-only shape refusing the write as it refuses any
+/// (the run says which, `read_only`), and says whether it changed anything: a group already as asked, or shapes already in none,
+/// are no change, and the statement's row says `unchanged`. A run applies the statements in script order, once every shape and
+/// edge it draws is in the transaction, so a shape the script draws can be named. Draw knows no meaning of a group: not what holds
+/// one, nor which of the shapes are in one. Only the sugar makes one (`registrar.drawGroups`).
+@MainActor
+public struct DrawGrouping {
+    let group: @MainActor (_ shapes: [ShapeID], _ transaction: inout Transaction) -> Bool
+    let ungroup: @MainActor (_ shapes: [ShapeID], _ transaction: inout Transaction) -> Bool
+}
+
+/// What groups shapes for `canvas draw`: at most one plugin.
+public enum DrawGroups {}
+
+extension DrawGroups: KeyedExtensionPoint {
+    public typealias Contribution = DrawGrouping
+    public static var owner: PluginID { .drawEngine }
+    public static func uniqueKeys(of _: DrawGrouping, for _: ShapeTarget) -> [AnyHashable] { [DrawPointKey(name: label)] }
+    public static func summary(of _: DrawGrouping, for _: ShapeTarget) -> String { label }
+    static let label = "draw groups"
+}
+
 /// The one key each draw point's contribution claims: "draw names" in a conflict.
 struct DrawPointKey: Hashable, CustomStringConvertible {
     let name: String
@@ -501,6 +528,17 @@ extension PluginRegistrar {
         contribute(DrawCheck(check: check, touched: touched, rest: rest), to: DrawChecks.self)
     }
 
+    /// Groups shapes for `canvas draw`'s `group "A" and "B"` and `ungroup "A"`: `group` puts the shapes it is handed (two or more,
+    /// each once, on the board the run draws on, in the order the statement names them) in one group of their own, `ungroup` takes
+    /// the shapes it is handed (one or more, each once) out of every group; each writes through the transaction the run applies
+    /// everything in, once every shape and edge the script draws is in it, and says whether it changed anything (a group already as
+    /// asked, or shapes already in none, change nothing). A shape that is read-only refuses the write as any change is refused, and
+    /// the run says so (`read_only`). Without this, a script with either statement is `no_groups`. At most one plugin groups shapes.
+    public mutating func drawGroups(group: @escaping @MainActor (_ shapes: [ShapeID], _ transaction: inout Transaction) -> Bool,
+                                    ungroup: @escaping @MainActor (_ shapes: [ShapeID], _ transaction: inout Transaction) -> Bool) {
+        contribute(DrawGrouping(group: group, ungroup: ungroup), to: DrawGroups.self)
+    }
+
     /// Writes the strings of a script whose schema says `contentMediaType: mediaType`: `write` gets
     /// the text as the script wrote it (its string's escapes undone) and what it may ask
     /// (`DrawTextContext`), and returns the text to keep, or throws a refusal, which `draw` says on
@@ -553,6 +591,9 @@ extension Registry {
     @MainActor func drawLabel(of record: AnyShapeRecord) -> String? {
         contributions(to: DrawLabels.self).first?.value.label(record, self)
     }
+
+    /// What groups shapes for `group` and `ungroup`, if something does.
+    var drawGrouping: DrawGrouping? { contributions(to: DrawGroups.self).first?.value }
 
     var drawReporting: DrawReporting? { contributions(to: DrawReports.self).first?.value }
 

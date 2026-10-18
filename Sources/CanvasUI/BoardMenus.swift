@@ -80,6 +80,11 @@ public enum BoardMenus {
                 item("Correct Spelling Automatically", NSSelectorFromString("toggleAutomaticSpellingCorrection:")),
             ])),
         ])
+        // Group and Ungroup, Keynote's and Freeform's keys (⌘G is Find Next): the commands a plugin claims.
+        let arrange = menu("Arrange", [
+            item("Group", #selector(BoardWindowController.groupSelection(_:)), "g", [.command, .option]),
+            item("Ungroup", #selector(BoardWindowController.ungroupSelection(_:)), "g", [.command, .option, .shift]),
+        ])
         let view = menu("View", [
             item("Show Toolbar", #selector(NSWindow.toggleToolbarShown(_:)), "t", [.command, .option]),
             item("Show Inspector", #selector(BoardWindowController.toggleDetails(_:)), "i", [.command, .control]),
@@ -108,7 +113,7 @@ public enum BoardMenus {
         ])
         let help = menu("Help", [])
         let main = MenuBar(title: "Main Menu")
-        for menu in [app, file, edit, view, go, windows, help] { main.addItem(submenu(menu.title, menu)) }
+        for menu in [app, file, edit, arrange, view, go, windows, help] { main.addItem(submenu(menu.title, menu)) }
         return Menus(main: main, services: services, windows: windows, help: help)
     }
 

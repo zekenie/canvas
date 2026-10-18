@@ -18,7 +18,8 @@ public struct AutomationPlugin: ListedPlugin {
             "draw", "Draw shapes on a board, and connect them, from a script.",
             discussion: """
                 A script is one statement a line: a shape (its kind, its title in double quotes, its attributes and \
-                where it goes against other shapes: right of "API"), an edge (edge "API" -> "DB"), a delete, or a \
+                where it goes against other shapes: right of "API"), an edge (edge "API" -> "DB"), a delete, a group \
+                (group "API" and "DB": a click on one selects both; ungroup "API" takes it out), or a \
                 style. A statement about a title the board has changes that shape; one about a title it doesn't \
                 makes a new one. A shape with no title is named by its id (#<id>), the one a query's row gives, \
                 where a statement names a shape that's there: it never makes one. It's applied all at once, as one step of the app's undo, or not at all, and the \
@@ -39,6 +40,7 @@ public struct AutomationPlugin: ListedPlugin {
                 CommandExample(#"\#(canvas) draw '<kind> "DB" below "API"'"#, "Another, below it."),
                 CommandExample(#"\#(canvas) draw 'edge "API" -> "DB"'"#, "Connect the two."),
                 CommandExample(#"\#(canvas) draw 'delete "DB"'"#, "Delete one, and what connects to it."),
+                CommandExample(#"\#(canvas) draw 'group "API" and "DB"'"#, "Put the two in one group: a click on either selects both."),
                 CommandExample(#"\#(canvas) draw '<kind> "Cache" in "Backend"'"#, "A shape on the board of the subboard titled Backend."),
                 CommandExample("\(canvas) draw --dry-run - < plan.txt", "Read the script from standard input, and say what it would do."),
             ]

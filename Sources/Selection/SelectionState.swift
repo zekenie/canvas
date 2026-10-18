@@ -11,7 +11,7 @@ import Observation
 @MainActor
 @Observable
 final class SelectionState {
-    @ObservationIgnored private unowned let editor: CanvasEditor
+    @ObservationIgnored unowned let editor: CanvasEditor
     /// Each kind's rule (`ShapeSelectability`), found once: the registry is frozen.
     @ObservationIgnored private let rules: [ShapeKind: @MainActor (AnyShapeRecord) -> Bool]
     /// Each kind's opener (`ShapeOpening`), found once.
@@ -23,9 +23,25 @@ final class SelectionState {
     /// drawn larger, and a resize would write the stored box under it.
     @ObservationIgnored let minimumSizes: [ShapeKind: CGSize]
     private(set) var selectedIDs: [ShapeID] = []
+    /// `selectedIDs`, for asking whether a shape is among them.
+    @ObservationIgnored private(set) var selectedSet: Set<ShapeID> = []
     /// +1 each time `selectedIDs` changes.
     private(set) var revision = 0
     private(set) var onlySelectedID: ShapeID?
+    /// The groups the selection is inside, outermost first (tldraw's focused group, as a path:
+    /// `SelectionGroups`): a click on a shape in them selects a part of them, not the whole. Worked
+    /// out from each selection (`focus(of:)`); an empty one keeps it, till a click outside it or
+    /// Escape leaves it.
+    @ObservationIgnored var focus: [AnyHashable] = [] {
+        didSet { if focus != oldValue { editor.setNeedsDisplay() } }
+    }
+    /// Where the groups come from (`SelectionGroups`), asked for on first use: the plugin's service is
+    /// made after this one.
+    @ObservationIgnored var groupSourceFound: (any SelectionGroupSource)??
+    /// Whether the hover is the pointer's over the canvas (the select tool's), which outlines what a
+    /// click there would select (a whole group), rather than a plugin's (a row of a list), which
+    /// outlines the shape alone.
+    @ObservationIgnored var hoversCanvas = false
     /// The selections to go back to (`editor.goBack()`).
     private(set) var history = SelectionHistory()
     /// The select tool's press under way, from the press until the session it starts ends.
@@ -135,7 +151,10 @@ final class SelectionState {
             hoveredHandle = nil
             let world = editor.camera.toWorld(point)
             let hit = editor.selectableHit(at: world)
-            hover(editor.shapeToHover(hit, at: world))
+            let hovering = editor.shapeToHover(hit, at: world)
+            hover(hovering)
+            // A face that names another shape (a pill's) outlines that shape alone: a click there doesn't select its group.
+            hoversCanvas = hovering == hit?.id
             popover = hit.flatMap { editor.popoverHit(on: $0, at: world) }
         }
         editor.hoverPopover(popover)
@@ -176,10 +195,11 @@ final class SelectionState {
     /// kind, else selectable.
     func isSelectable(_ record: AnyShapeRecord) -> Bool { !record.isOpaque && (rules[record.kind]?(record) ?? true) }
 
-    private func isSelectable(id: ShapeID) -> Bool { editor.document[id].map(isSelectable) ?? false }
+    func isSelectable(id: ShapeID) -> Bool { editor.document[id].map(isSelectable) ?? false }
 
     /// Drops what isn't there or isn't selectable, and repeats. Does nothing if that's what's
-    /// selected already. Unless `recording` is false, the selection left is a step back.
+    /// selected already. Unless `recording` is false, the selection left is a step back. What the
+    /// selection is inside (`focus`) is worked out again, unless nothing is selected now.
     func select(_ ids: [ShapeID], recording: Bool = true) {
         var seen = Set<ShapeID>()
         let kept = ids.filter { isSelectable(id: $0) && seen.insert($0).inserted }
@@ -187,6 +207,8 @@ final class SelectionState {
         hasJustArrived = false
         if recording { record(leaving: selectedIDs, for: kept) }
         selectedIDs = kept
+        selectedSet = seen
+        if !kept.isEmpty { focus = focus(of: kept, selected: seen) }
         revision += 1
         let only = kept.count == 1 ? kept[0] : nil
         if only != onlySelectedID {
@@ -351,8 +373,10 @@ extension SelectionState: EditorService {
         // Going back arrives at a step of its own, what it selects there.
         hasJustArrived = !isGoingBack
         clearPointerState()
+        focus = []
         guard !selectedIDs.isEmpty else { return }
         selectedIDs = []
+        selectedSet = []
         onlySelectedID = nil
         revision += 1
     }
@@ -472,10 +496,14 @@ extension CanvasEditor {
     /// moves and clears it as the pointer leaves, or wherever else a plugin shows shapes (their rows
     /// in the table of contents). Outlined faintly unless it's selected, and not while a session
     /// runs. Setting it drops a shape that isn't there or isn't selectable; changing tools clears
-    /// it. Without the Selection plugin, always nil.
+    /// it. Set here, it's outlined alone, never with its group (the select tool's hover outlines what
+    /// a click would select). Without the Selection plugin, always nil.
     public var hovered: ShapeID? {
         get { selectionState?.hoveredID }
-        set { selectionState?.hover(newValue) }
+        set {
+            selectionState?.hover(newValue)
+            selectionState?.hoversCanvas = false
+        }
     }
 
     /// Whether this shape is `hovered`. Observers of it hear only this shape's hover change, not the
@@ -586,10 +614,14 @@ extension CanvasEditor {
         return Outlines(shapes: selectedShapeIDs, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [])
     }
 
-    /// What the hover outlines faintly: the shape hovered, else the shape on the board shown that holds
-    /// the one hovered elsewhere, none if no shape on it does (one on a board above).
+    /// What the hover outlines faintly: the shape hovered (on the canvas, what a click there would
+    /// select: its group, whole), else the shape on the board shown that holds the one hovered
+    /// elsewhere, none if no shape on it does (one on a board above).
     private var hoverOutlines: [ShapeID] {
-        if let hovered { return [hovered] }
+        if let hovered {
+            guard let state = selectionState, state.hoversCanvas else { return [hovered] }
+            return state.unit(of: hovered, within: state.focus)
+        }
         guard let elsewhere = hoveredElsewhere, let holder = file.shape(on: board, holding: elsewhere) else { return [] }
         return [holder]
     }

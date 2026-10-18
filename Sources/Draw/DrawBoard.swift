@@ -8,7 +8,8 @@ import Topology
 // wherever it is in the file (the board shown's first), and so does an id (`#7C1E…`, for a shape with no title: the board
 // it is on), `in "X"` puts a shape on the board X holds
 // (a subboard's), or in X, on the board X is on, where X holds shapes on its own board (a frame), and
-// a script that names nothing on the file draws on the board shown. A run draws on one board, as one
+// a script that names nothing on the file draws on the board shown. The shapes a `group` or `ungroup`
+// names claim their boards as a placement's targets do. A run draws on one board, as one
 // transaction and one undo step: a script that names shapes on two is refused. Only boards the app
 // can show count (`editor.canShow`).
 //
@@ -443,6 +444,9 @@ extension Drawing {
                 book.claim(name, statement)
             case .delete(.edges(let from, let to, let eitherWay, _)):
                 book.claimEdge(from, to, via: false, bothHeads: eitherWay, statement)
+            case .group(let group), .ungroup(let group):
+                // A group is its shapes on one board: each claims the board it is on.
+                for name in group.shapes { book.claim(name, statement) }
             }
         }
         let anchor: (board: BoardID, statement: Statement, why: String)? = book.claims.first.map { ($0.board, $0.statement, $0.why) } ?? book.softStarts.first
@@ -523,7 +527,7 @@ extension Statement {
         switch body {
         case .shape(let shape): shape.container != nil
         case .edge(let edge): edge.container != nil
-        case .delete: false
+        case .delete, .group, .ungroup: false
         }
     }
 
@@ -537,7 +541,7 @@ extension Statement {
     var joinsShapes: Bool {
         switch body {
         case .edge, .delete(.edges): true
-        case .shape, .delete(.shape): false
+        case .shape, .delete(.shape), .group, .ungroup: false
         }
     }
 }

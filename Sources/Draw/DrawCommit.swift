@@ -16,7 +16,8 @@ import Queries
 // shapes first, then the containers. Then what it did, read from the transaction's
 // document, and what it should say: each shape's issues (DrawChecks), the issues it brought to shapes it
 // did not write (DrawBrought.swift), pushes, nudges, near misses, edges whose side faces away, shapes out of view. Anything wrong throws, and the transaction
-// commits nothing.
+// commits nothing. The groups and ungroups (DrawGroups.swift) are applied last of the writes, once every shape and edge
+// the script draws is where it goes.
 
 extension Drawing {
     func apply(to transaction: inout Transaction, reveals: Bool) throws(DrawError) -> DrawResult {
@@ -143,6 +144,9 @@ extension Drawing {
                 try settle(item, in: &transaction, nudges: &nudges, warnings: &warnings)
             }
         }
+
+        // Groups and ungroups, in script order: every shape and edge the script draws is in the transaction, so one may be named.
+        changes += try applyGroups(in: &transaction)
 
         // What it did, and what it should say, read from one context taken once every write is done (a context
         // is a snapshot, and anything worked out over one is worked out again for the next).

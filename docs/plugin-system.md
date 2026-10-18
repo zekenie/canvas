@@ -2,7 +2,7 @@
 
 Everything on the canvas comes from a plugin: sticky notes and the types they become, arrows, subboards,
 validation, titles, the pills and chips shown on shapes (adornments), the detail panel
-and the table of contents beside the canvas, selecting itself, copying and pasting, locking, the
+and the table of contents beside the canvas, selecting itself, copying and pasting, locking, grouping, the
 ports arrows are dragged from, text's mentions of shapes, the commands a line of text can run, the graph of what connects to what, the queries that find shapes in a file, snapping what's dragged to the shapes around it, turning a shape into another kind, what each key does, what the command line can do, the language model plugins ask, even the examples.
 The core (`Sources/Canvas`) knows how to hold shapes, run tools, draw, and wire plugins together,
 and nothing about any particular shape or concern. Its one built-in tool is tldraw's Hand, which
@@ -36,6 +36,7 @@ maps one onto the other.
 - [Adornments](#adornments)
 - [The clipboard](#the-clipboard)
 - [Locking](#locking)
+- [Grouping](#grouping)
 - [Publishing](#publishing)
 - [Ports](#ports)
 - [Mentions](#mentions)
@@ -2618,6 +2619,31 @@ stops what's under way, and a deleted shape stops shaking. `RefusalShake.offset(
 is the curve and `isShaking` says whether any shape is; Locking and Publishing's hold need nothing
 of their own for it.
 
+### Groups selected as one
+
+A plugin may say which shapes are selected as one: groups, Grouping's ([below](#grouping)).
+Selection knows nothing of what a group is, only what the source says on the board shown: the groups
+a shape is in, outermost first, any value that tells them apart, and a group's shapes, at any depth
+([Groups.swift](../Sources/Selection/Groups.swift)):
+
+```swift
+registrar.selectionGroups { $0.service(GroupIndex.self) }   // at most one plugin; a SelectionGroupSource
+```
+
+Over it Selection does what tldraw does with groups. A click on a shape in a group selects the group,
+all of its shapes, so whatever acts on the selection acts on the group; a click on a shape of a
+group that's selected, or a double-click on a grouped shape, selects the part under the pointer one
+level in (a shape, or a group in it), rather than opening it, and the selection is then inside the
+group (`editor.selectionFocus`, tldraw's focused group, as a path), drawn as a dashed box around it
+(`GroupFocusOverlay`), where a click selects a part, and Escape goes back out a level, selecting the
+group whole, then nothing. The marquee takes groups whole (with ⌘, a group only if it holds all of
+it), as the selection was inside groups when it began; a press on empty canvas outside the dashed
+box leaves it. The hover outlines what a click would select, a group whole (a row's hover, set by a
+plugin, outlines the shape alone), and a right-click's menu is for the group
+(`editor.selectionUnit(of:)`, what a click on a shape selects now). What the selection is inside is
+worked out from each selection (an empty one keeps it), and again when the source says its groups
+changed (`editor.selectionGroupsDidChange()`, after it hears a commit).
+
 ## Keyboard shortcuts
 
 What each key does on the canvas is a horizontal too ([`Sources/Keyboard`](../Sources/Keyboard)).
@@ -2658,6 +2684,7 @@ What the shipped app's keys do:
 | ⌘↑ | Goes up to the board above, with the shape whose board it left selected, as Go › Enclosing Board does (off the root) | Boards |
 | ⌘X, ⌘C, ⌘V | Cuts, copies and pastes shapes, as Edit › Cut, Copy and Paste do | Clipboard |
 | ⌘D | Duplicates the selection beside itself, as Edit › Duplicate does, without the pasteboard | Clipboard |
+| ⌥⌘G, ⌥⇧⌘G | Groups the selection, and takes apart the groups it holds whole, as Arrange › Group and Ungroup do (⌘G is Find Next) | Grouping |
 | ⌘Z, ⇧⌘Z | Undoes and redoes, as Edit › Undo and Redo do (held, again and again) | Keyboard, for the core's `.undo` and `.redo` |
 | ⌘=, ⌘-, ⌘0, ⇧1 | Zooms in and out to the next stop (held, again and again), to 100%, and to fit the board, as View's items do | Keyboard, for the core's `.zoomIn`, `.zoomOut`, `.zoomToActualSize` and `.zoomToFit` |
 | ⇧2 | Brings the selection into view, as View › Zoom to Selection does | Selection |
@@ -3870,7 +3897,7 @@ contextMenu {
   | 50 | A horizontal's feature, on the kinds that opt in (a flag's `FlagMenuGroup`, [below](#something-the-user-turns-on)), or on the shapes it knows something of (`MentionsMenuGroup`) |
   | 60 | What a feature brings to the shapes it can act on, after the first band (Transform's Turn into …, `TransformMenuGroup`) |
   | 70 | What a vertical makes of the shapes it's for (Frames' Create Frame, `FramesMenuGroup`) |
-  | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200; `StateMenuGroup`, 300, ContextMenus' own, which Locking's Lock and Unlock and Types' Is a ▸ share with no line between; `SelectionMenuGroup`, 400, ContextMenus' own Delete and Select All) |
+  | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200; `StateMenuGroup`, 300, ContextMenus' own, which Grouping's Group and Ungroup, Locking's Lock and Unlock and Types' Is a ▸ share with no line between; `SelectionMenuGroup`, 400, ContextMenus' own Delete and Select All) |
 
 - **Keyed.** Each item claims its target, group and `id` (the title by default), and an item in a
   submenu its path, so two plugins adding one item to a kind are a `conflict`
@@ -4987,6 +5014,9 @@ giving a shape back the id it had.
 | ⌘D, Edit › Duplicate | Puts copies of the selection's copyable shapes beside it (`ClipboardStyle.duplicateOffset`, 16 view points down and right), selected, in one step, "Duplicate", without touching the pasteboard: a paste's own machinery, new ids all the way down, each copy naming its original, settled in place first (a container's copy lies over its original, and the copies go in the containers their originals are in) and then moved. Off mid-gesture, on a board that takes no shapes, and with nothing copyable. A drag of the selection with ⌥ held does the same in place at the press and drags the copies (Selection's `registrar.copiesOnDrag`, claimed by Clipboard), in the press's step; Escape takes them away again; read-only shapes are not copied (the drag refuses them, as ever). |
 | ⌘V, Edit › Paste, Paste | Puts what's on the pasteboard on top of the board, settled where it lands by the in-or-out rule, and selects it: what a copy put there as copies, with new ids all the way down; what a cut put there moved, under the ids it had. Off on a board that takes no shapes (a locked subboard's, `editor.isBoardReadOnly`). |
 
+- **Copies that shared a group are a group of their own** ([Grouping](#grouping)): the copies on a
+  board that were in one group are in a new one, under a new id, and a group only one of them was in
+  is none of theirs; a shape a cut moves keeps its groups, as it keeps its id.
 - **Copies get new ids, and remember their originals.** Each copy's metadata names the shape it
   was copied from: `record.copiedFrom`, which is `meta[CopiedFrom.self]?.shape`, and its board
   keeps it. That's the shape the copy was made from: a copy, if a copy was copied; in whichever
@@ -5348,6 +5378,56 @@ from just outside it is decorated there, as Adornments does. Everything else goe
 shape is: hit testing, handles, arrows bound to it, and pictures of the board (the minimap).
 Deleting a shape drops its offset. The core's glide (`editor.glide(_:)`, a shape nudged into or out
 of a [container](#containers) easing there) is drawing offsets too.
+
+## Grouping
+
+Shapes grouped together are selected as one from then on, as in tldraw and Keynote, until they're
+ungrouped. A group is something its shapes have, as a lock is, not a shape: nothing new is on the
+board or in the table of contents, and a drag, Delete, Copy, Lock or a color acts on the whole
+group because a click selected all of it. Group (⌥⌘G) and Ungroup (⌥⇧⌘G) are in the context menu
+beside Lock and in Arrange in the menu bar. It's a horizontal
+([`Sources/Grouping`](../Sources/Grouping)) on Selection, ContextMenus, Keyboard and Queries,
+that every kind is in; what a click, the marquee, the hover and Escape do with groups is
+[Selection's](#groups-selected-as-one) ([Grouping.swift](../Sources/Grouping/Grouping.swift)):
+
+```swift
+registrar.declare(GroupsProperty.self)                  // the groups a shape is in, outermost first, by id
+registrar.optInEveryShape(to: GroupsProperty.self)
+registrar.service { GroupIndex(editor: $0) }            // the board shown's groups, kept as commits write paths
+registrar.selectionGroups { $0.service(GroupIndex.self) }
+registrar.command(.group, shortcuts: [KeyChord("g", [.command, .option])], isEnabled: { $0.canGroupSelection }) {
+    $0.group($0.selectedShapeIDs)
+}
+registrar.command(.ungroup, shortcuts: [KeyChord("g", [.command, .option, .shift])], isEnabled: { $0.canUngroupSelection }) {
+    $0.ungroup($0.selectedShapeIDs)
+}
+registrar.contextMenuForCanvas {
+    MenuItem("Group", in: StateMenuGroup.self, when: { $0.groupable && $0.editor.canGroup($0.shapes) }) { ids, editor in editor.group(ids) }
+    MenuItem("Ungroup", in: StateMenuGroup.self, when: { $0.groupable && $0.editor.canUngroup($0.shapes) }) { ids, editor in editor.ungroup(ids) }
+}
+```
+
+- **A shape's groups are an [added property](#added-properties)**, `groups`: the ids of the groups
+  it's in, outermost first, a UUID's string each, nothing on a shape in none. It's `unlisted()`
+  (`x-canvas-unlisted`): neither `canvas draw` nor `canvas query` lists, reads or writes it, since a
+  group has no name an agent could know it by; they get words of their own (below).
+- **What counts is the board's** (`BoardGroups`, pure, made from the shapes' paths alone, so the
+  board shown, a transaction, a query and a copy read groups alike): a group is its shapes on one
+  board, and counts while it holds two parts or more there, a part being a shape or a group in it
+  that counts. A group a delete, a move to another board or a regrouping leaves with one part is no
+  group, and a shape may still hold its id, harmlessly, until something writes its path again.
+- **Group** puts the shapes in a new group inside the groups they're all in (as the selection is
+  inside them), a group they hold whole staying a group in the new one, a group they hold part of
+  left; it needs two parts or more. **Ungroup** takes apart the outermost groups they hold whole,
+  a level, as tldraw's does. Each is one step, "Group" or "Ungroup", all or nothing: a locked shape
+  among them leaves them as they were, and shakes. Nothing is restacked.
+- **Copies** that shared a group are a group of their own ([the clipboard](#the-clipboard): a
+  paste, ⌘D, a drag with ⌥), and a group only one copy was in is none of theirs; a cut and its paste
+  move the shapes, which keep their groups.
+- **Agents** group shapes with `canvas draw`'s `group "A" and "B"` and take one out with `ungroup
+  "A"` ([the command line](#the-command-line)), and find a shape's group with `canvas query`'s
+  `:grouped-with("A")` (`GroupQueriesPlugin`, a plugin value of its own, so a list without Queries
+  leaves it out), a relation read from the file's paths off the main actor, the outermost group.
 
 ## Ports
 
@@ -9760,7 +9840,7 @@ input, and an error may say where in a script it is).
 struct DrawParams: SchemaDefined {
     static let properties = Properties<DrawParams>(title: "draw") {
         Property("script", \.script).required().keywords(["x-stdin": true, "x-value-name": "script"])
-            .description("What to draw: one statement a line (a shape, an edge, a delete or a style), in quotes for the shell.")
+            .description("What to draw: one statement a line (a shape, an edge, a delete, a group or a style), in quotes for the shell.")
         Property("dryRun", \.dryRun).description("Work everything out and say what would happen, changing nothing.")
         Property("reveal", \.reveal).description("Then ease the view to what was drawn.")
     }
@@ -9960,11 +10040,13 @@ engine that Automation's `draw`, `measure` and `kinds` run), in four steps, the 
 against the board as the run starts:
 
 1. **Read.** DrawScript's `Script(parsing:)` cuts the script into statements, one a line: shapes
-   (any first word but `edge`, `delete` and `style` is a kind word, left for Draw to resolve),
+   (any first word but `edge`, `delete`, `group`, `ungroup` and `style` is a kind word, left for Draw to resolve),
    edges (`from:`, `to:`, `via:` and `share:` are the language's own keys, `EdgeKey`; `via:`'s
    value is a kind word, found by Draw, and `share:`'s is `true` or a name, `EdgeShare`; placements
    and `in` on an edge, read as a shape's, are where the stand-in it goes through goes),
-   deletes, and styles, which it merges into the statements that name them. Where a statement
+   deletes, groups and ungroups (`group "A" and "B"`, two shapes or more, `ungroup "A"`, one or
+   more: a `GroupStatement` of names joined by `and` or commas), and styles, which it merges into the
+   statements that name them. Where a statement
    names a shape the file has (an edge's ends, a delete, a placement's target, `in`, a shape's own
    name, `share:`'s host) the name is a `ShapeName`: a quoted title, or a word that starts with `#`,
    an id, kept as text and checked only for its shape (`not_an_id`); what it names is Draw's. An attribute that
@@ -9994,7 +10076,8 @@ against the board as the run starts:
    DrawEdges' `ends` joins to it, and any other of the edge kind bound to it,
    `record.boundShapes(in:)`: one with an end left free) and the boards it owns (a subboard's, and
    every board under it, `file.subtree(ownedBy:)`: refused, `read_only`, if one holds a read-only
-   shape, as a transaction would refuse the delete; else said in a warning). A new shape starts as
+   shape, as a transaction would refuse the delete; else said in a warning); and the shapes each
+   group and ungroup names, found as a placement's target is, once a run each (`duplicate`). A new shape starts as
    what its tool places (`placement.shape(at:)`), and every shape's attributes are set by the core
    (`registry.shape(_:setting:)`), so the registry builds every record, and what the kind derives
    from them (a note's height, from its text, `DerivedProps`) is the size it's
@@ -10055,7 +10138,8 @@ against the board as the run starts:
    end may be new, each one's channel and sides checked as it's made, the first that's wrong
    ending the run (before the shapes are put down, so what puts them down judges by a transaction that holds
    the edges: the room a shape takes can depend on an arrow, and the layout made the same arrows, laid in,
-   to give it: `Drawing.layOut()`); then the result, read back from `transaction.document`
+   to give it: `Drawing.layOut()`); the groups and ungroups, last of the writes, in script order, so
+   they may name a shape the script draws ([below](#groups-in-draw)); then the result, read back from `transaction.document`
    in one context taken after the last write, and the warnings. Anything wrong throws out of
    the body, and a body that throws commits nothing, and makes no undo step
    ([the document](#the-editor-the-document-and-drawing)).
@@ -10234,6 +10318,21 @@ and `needs`](#stand-ins-forwarding)), and References' `reference` is what answer
   with its `kind` and `at` and no title, before the edge's; `deleted`, with its kind alone, after its
   arrows'. A dry run says the same, and one undo takes the stand-in and the arrow back together.
 
+<a id="groups-in-draw"></a>
+**Groups** ([DrawGroups.swift](../Sources/Draw/DrawGroups.swift)). `group "A" and "B"` puts shapes in
+one group, `ungroup "A"` takes them out of every group; shapes in a group are selected as one in the
+app. Draw owns the statement and no meaning of a group: it finds each shape named as a placement's
+target is (a title or an id; a shape the script draws, restates or renames counts, by the title its
+statement calls it; one the script deletes, or an arrow or a reference by its id, is refused), on the
+board the run draws on (a name claims its board as a target does, so shapes on two boards are
+`several_boards`), refuses a shape named twice in a run (`duplicate`), and, once every shape and edge
+the script draws is in the transaction, hands the shapes of each statement, in the order written, and
+the transaction to what groups shapes (the `DrawGroups` point, below), which writes and says whether
+it changed anything. A write a read-only shape refused is `read_only`; a statement that writes
+nothing goes through. A row has `did` `grouped`, `ungrouped` or `unchanged` and `shapes`, the shapes
+as the statement called them, and no `kind`; `measure` leaves both statements out; a list without the
+point refuses them, `no_groups`.
+
 Before any of it, a run is refused while a drag is under way on the board (`editor.session`,
 `busy`: its Escape would put back what the script moved), or a press is held
 (`undoHistory.isPressHeld`: whatever commits during a press is part of its undo step, so the run
@@ -10259,7 +10358,7 @@ order, and never by id, since titles are the names:
 ```
 
 A row's `did` is `created`, `moved` (its bounds changed), `updated`, `renamed` (with `was`),
-`unchanged`, `deleted`, `connected` or `reconnected`. A shape's row has its `kind`, `title` and
+`unchanged`, `deleted`, `connected`, `reconnected`, `grouped` or `ungrouped`. A shape's row has its `kind`, `title` and
 `at` (`[[x, y], [width, height]]`, world units), `inView` while the board is in a window, and
 `pushedPast`; an edge's has `from`, `to`, `via` where it goes through a stand-in, and the attributes
 DrawEdges declares (`channel`; not its kind's, which are as written), but a
@@ -10343,7 +10442,7 @@ the default gap, the list step, the clearances, and each kind's least size
 
 ### What draw takes from other plugins
 
-Draw knows no title, port, validity or mention. `draw` takes each from a point Draw declares
+Draw knows no title, port, validity, mention or group. `draw` takes each from a point Draw declares
 ([DrawPoints.swift](../Sources/Draw/DrawPoints.swift)), keyed so it takes at most one contribution
 (one for each media type, for text), which the horizontals give, a plugin value of its own in each
 (AutomationTests make their own, over fixtures). Without one, `draw` does without:
@@ -10357,10 +10456,13 @@ Draw knows no title, port, validity or mention. `draw` takes each from a point D
 | `DrawTextFormats` | `registrar.drawTextFormat(mediaType:describes:write:)` | Each string a script writes whose schema says `contentMediaType` of that media type, as `write` gets it (its string's escapes undone) with a `DrawTextContext` (the registry, the string's schema as its kind declares it, and `shape(called:admitting:)`, which finds the shape a title names as the script finds one, `admitting` taking the record and the keys the script writes on it, for a shape drawn in the same run: what to keep, or a refusal. `describes` is said after the attribute's type in `canvas kinds`. A list whose schema is `uniqueItems` is written with each once, the first, after its strings are written (two titles of one shape are one id) | Text kept as written; `kinds` says nothing after its type | MentionTextsPlugin, TypeNamesPlugin |
 | `DrawValueWriters` | `registrar.drawValueWriter(for:write:merge:)` | The value a script writes for a property, as `write` gets it (JSON, strings still as written, with the same `DrawTextContext`) and returns what the property stores, or a refusal said on the statement's line; then `merge(written, held)`, with what the shape holds now (nil for a new one; for an edge, the connection as its maker left it), is what the shape is set to, so a script run again changes nothing. One writer a property key | A value replaces what the shape holds | FieldValuesPlugin |
 | `DrawReports` | `registrar.drawReports(members: ["is"]) { record, written, shapes, bothHeads in … }` | Each shape and edge row of the run, once every statement is in the transaction, with what its statement wrote for each property that has a value writer (nil for an `unchanged` row) and the board as the script leaves it: a `DrawShapeReport` of warnings (`DrawIssue`s, said with the statement's line) and `problems` (Queries' `ShapeProblem`: `field`, `path`, `class`, `message`) that go on the shape's row, and `members` (a `[String: JSONValue]`) that go flat beside the row's own, only the keys it declared in `members:` (the registry refuses one that is a row's own key, an edge attribute, blank or declared twice); `bothHeads` is whether the statement of a connection wrote `<->`; it is asked of each connection the run deletes too, with the record as it was (gone from `shapes`, `written` nil for a `delete edge` that names no identity key, `[:]` for any other), for its members and warnings only | No `problems`, no warnings, no members from it | FieldValuesPlugin |
+| `DrawGroups` | `registrar.drawGroups(group:ungroup:)` | For a `group` or `ungroup` statement, the shapes it names (resolved: each once, on the board the run draws on, in the order written) and the run's transaction, once every shape and edge the script draws is in it: `group` puts exactly those shapes in one group of their own, `ungroup` leaves each in none. Each writes through the transaction (a read-only shape refuses the write, and the run says `read_only`) and answers whether it changed anything, else the statement's row is `unchanged` | No groups: `group` and `ungroup` are `no_groups` | GroupDrawPlugin |
 
 `TypeNamesPlugin` ([TypeNames.swift](../Sources/Types/Engines/TypeNames.swift)) writes `is: "Employee card"`, on a shape and on an edge, as the id of the type that title names (`TypeLink.mediaType`), admitting what `TypeIndex.canBeNamed(_:registry:writing:)` says, a pure function of the record and the registry (a type that is no pill), and refuses any other shape "which isn't a type or a shape", and the shape itself (`DrawTextContext.owner`); a quoted value for a list of text is a list of that one item (Draw's, `KindVocabulary.value(of:)`), several are JSON.
 
 `FieldValuesPlugin` ([FieldValuesDraw.swift](../Sources/Types/Engines/FieldValuesDraw.swift)) writes `fieldValues: {…}` as a note's or arrow's own value joined with what it holds, member by member at every depth: a list is replaced whole, `null` clears the member it is written at, an object left empty is pruned (`FieldValuesMerge.merged`, pure, then `FieldValues.pruned`), and an object that sets nothing over a text or a list held leaves it, as the one writer does, and reports on each shape a run draws: its row's `problems` (what its values still need and what's wrong, by the check of the run, over types the script draws too) and each member of the written object no field of its types names.
+
+`GroupDrawPlugin` ([GroupDraw.swift](../Sources/Grouping/GroupDraw.swift)) writes Grouping's groups (a shape's `groups`, outermost first), read from the transaction's shapes by `BoardGroups`, which counts a group while it holds two parts or more on the board: `group` writes exactly the shapes named one new group (a fresh id), flat, each leaving the groups it was in, unless they already are one group that counts and nothing else (nothing is written); `ungroup` clears the `groups` of each shape named that is in a group that counts, at every level. A shape that holds only the id of a group that no longer counts is in none.
 
 The other four registrations, whole but for `PortEdgesPlugin`'s policy and the clauses
 `MentionTextsPlugin` says ([TitleNames.swift](../Sources/Titles/TitleNames.swift),
@@ -10751,7 +10853,7 @@ by name):
   `ToolID(placing:)`: the one that places it, or draws it by hand);
 - `drawable`, and `why` not: its tool draws one by hand (a line, by its drag) or it has none
   (`registry.placement(for:)` is nil either way), it's what edges are (DrawEdges' kind), or it's
-  named like a word of the language (`edge`, `delete`, `style`);
+  named like a word of the language (`edge`, `delete`, `group`, `ungroup`, `style`);
 - `names`: `named` when DrawNames gives its titles a property, else `derived` when DrawNames says
   it works them out, else `none`;
 - `size`, what its tool places (`"200x200"`);
@@ -13082,7 +13184,7 @@ and a test checks it loads and registers.
 ```
 core                 tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
 keyboard             service KeyboardState · tool tips · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit
-selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
+selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge
 topology             service TopologyIndex · edge type stands-for
 arrows               shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property endRule → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · property relationship → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
@@ -13111,6 +13213,7 @@ validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
 mention-validation   ValidationRules
 title-validation     service TitleIndex · ValidationRules
+grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group · shortcut ⌥⌘G → command group · command ungroup · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
 locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · CanvasContextMenu · /lock → every shape
 publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ContentsMarks
@@ -13135,6 +13238,7 @@ mention-texts        draw labels · draw text text/x-canvas-mentions
 type-names           draw text text/x-canvas-type
 draw-field-values    draw value fieldValues · draw value endRule · draw reports members is, endOf, fits, relates
 color-names          draw text text/x-canvas-color
+group-draw           draw groups
 queries              service QueryState · query engine
 query-translation    service QueryTranslator
 title-queries        query names
@@ -13143,6 +13247,7 @@ mention-queries      query word :mentions · query word :mentioned-by · query t
 validation-queries   query word :invalid · query word :warned · query word :incomplete
 type-queries         query word :is-a · query text text/x-canvas-type · query word :misfit · ask fact fields · query path fieldValues
 color-queries        query text text/x-canvas-color
+group-queries        query word :grouped-with
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
 neighbors            service NeighborState · outlines

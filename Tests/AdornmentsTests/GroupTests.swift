@@ -253,11 +253,11 @@ let names = ["Alexander", "Benjamin", "Charlotte", "Dominique"]
     },
     test("a group is refused anywhere but the row's left end, with its adornment and its plugin named") {
         let base: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), AdornmentsPlugin()]
-        expectThrows(RegistryError.invalid(point: "ShapeAdornments", reason: "AdornmentsTests.RightChips (from groups) shows several labels, which only aboveTopLeft allows, not aboveTopRight")) {
-            _ = try Registry(plugins: base + [Contributor(id: "groups") { $0.adornmentsForEveryShape(RightChips.self) { _, _ in [chip("a")] } }])
+        expectThrows(RegistryError.invalid(point: "ShapeAdornments", reason: "AdornmentsTests.RightChips (from chip-groups) shows several labels, which only aboveTopLeft allows, not aboveTopRight")) {
+            _ = try Registry(plugins: base + [Contributor(id: "chip-groups") { $0.adornmentsForEveryShape(RightChips.self) { _, _ in [chip("a")] } }])
         }
-        expectThrows(RegistryError.invalid(point: "ShapeAdornments", reason: "AdornmentsTests.CornerChips (from groups) shows several labels, which only aboveTopLeft allows, not onTopRightCorner")) {
-            _ = try Registry(plugins: base + [Contributor(id: "groups") { $0.adornments(CornerChips.self, on: Box.self) { _ in [chip("a")] } }])
+        expectThrows(RegistryError.invalid(point: "ShapeAdornments", reason: "AdornmentsTests.CornerChips (from chip-groups) shows several labels, which only aboveTopLeft allows, not onTopRightCorner")) {
+            _ = try Registry(plugins: base + [Contributor(id: "chip-groups") { $0.adornments(CornerChips.self, on: Box.self) { _ in [chip("a")] } }])
         }
         _ = try Registry(plugins: base + [chipsPlugin(["a"])])
         // One label at the right end is as it was.

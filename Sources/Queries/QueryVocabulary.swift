@@ -122,7 +122,8 @@ public struct QueryVocabulary: Sendable {
             let names = naming?.source(kind, registry) ?? .none
             let holdsBoard = registry.boardOwningKinds.contains(kind)
             var attributes: [AttributeEntry] = []
-            for name in schema.properties.keys where !schema.holdsPlace(name) && !(names != .none && name == naming?.attribute) {
+            for name in schema.properties.keys where !schema.holdsPlace(name) && !schema.isUnlisted(name)
+                && !(names != .none && name == naming?.attribute) {
                 guard let shape = schema.shape(of: name) else { continue }
                 let mediaType = shape.mediaType.flatMap { formats[$0] == nil ? nil : $0 }
                 attributes.append(AttributeEntry(name: name, shape: shape, compactType: schema.compactType(of: name), isName: false,

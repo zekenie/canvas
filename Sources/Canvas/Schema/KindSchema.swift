@@ -32,6 +32,15 @@ public struct KindSchema: Sendable {
     /// arrow's end), which no text writes or tests.
     public func holdsPlace(_ property: String) -> Bool { placeHolding.contains(property) }
 
+    /// Whether the schema marks the property as its plugin's own (`unlisted()`): no language lists,
+    /// reads or writes it.
+    public func isUnlisted(_ property: String) -> Bool {
+        properties[property].map { resolved($0)[Self.unlistedKeyword]?.boolValue == true } ?? false
+    }
+
+    /// The keyword that marks a property no language lists (`PropertyModifiers.unlisted()`).
+    public static let unlistedKeyword = "x-canvas-unlisted"
+
     // MARK: What each is
 
     /// What a property's values are, its `$ref`s followed; nil for a property the kind hasn't.

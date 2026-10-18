@@ -3,11 +3,12 @@ import CoreGraphics
 // DrawScript: the language `canvas draw` reads, and the solver that places what it says.
 //
 // A script is one statement a line: a shape (`card "API" right of "Web" priority: high`), an edge
-// (`edge "Web" -> "API"`), a delete, or a style (a named bundle of attributes). Shapes are placed
+// (`edge "Web" -> "API"`), a delete, a group or an ungroup (`group "API" and "Web"`: shapes that are
+// selected as one), or a style (a named bundle of attributes). Shapes are placed
 // by where they sit against others, never by coordinates, and a gap is a minimum. This module reads
 // the text into statements (`Script(parsing:)`, which merges styles into the statements that use
 // them) and places boxes (`LayoutProblem.solve()`): it knows no canvas, registry, kind or plugin.
-// Every first word but `edge`, `delete` and `style` is a kind word, left for the caller to resolve;
+// Every first word but `edge`, `delete`, `group`, `ungroup` and `style` is a kind word, left for the caller to resolve;
 // titles are left as written; an attribute that isn't the language's own is a key and a value the
 // caller checks against the kind. The caller (Draw) resolves the words, builds the layout problem
 // from its board (the shapes that stay put, the parts of their outlines, the view) and applies
@@ -25,6 +26,8 @@ import CoreGraphics
 /// The words a statement may start with other than a kind's.
 public enum Keyword: String, Sendable, CaseIterable {
     case edge, delete, style
+    /// `group "A" and "B"`: shapes that are one group, and `ungroup "A"`: shapes that are in none.
+    case group, ungroup
 }
 
 /// The attribute keys the language keeps for itself. Every other key on a shape is one of its

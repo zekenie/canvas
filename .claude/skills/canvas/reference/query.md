@@ -620,6 +620,7 @@ Words the app's plugins add, as this app has them. Without a plugin, its words a
 | `:incomplete` | `validation-queries` | it still needs something |
 | `:is-a(S)` | `type-queries` | it is, however far, a type S matches: its types and theirs |
 | `:misfit` | `type-queries` | it is an arrow whose ends do not fit its relationship type |
+| `:grouped-with(S)` | `group-queries` | it is in a group with a shape S matches: a click on either selects both |
 | `:selected` | `selection-queries` | the person has it selected |
 
 - `:mentions` and `:mentioned-by` follow mention edges: `:mentions(S)` is `:edge-to(S, only mention)`. A shape that mentions itself counts.
@@ -630,6 +631,7 @@ Words the app's plugins add, as this app has them. Without a plugin, its words a
 - `:misfit` is an arrow of a relationship type whose ends do not fit it: an end that is none of the type's from or to types, or one that builds on none of them, on every board of the file. A side the relationship type draws no end on takes any note. An end that cannot be read gives no verdict: an arrow with an end free, or to a reference that is gone, not available now, or stands for several notes, is not a misfit. It lists the arrows, and `arrow:misfit:invalid` gives each its `problems` (`field` `from` or `to`, `class` `wrong`, and what is wrong in words). [relationships.md](relationships.md) has the types and their ends.
 - **A relationship is read by the arrow's type.** `sticky-note[relationship]` is the relationship types, `arrow:is-a("Employment")` the relationships of one (the arrow is a thing of that type, as a note is), and the notes at their ends are `:end-of` and `:start-of` of the arrows: `:end-of(arrow:is-a("Employment"):starts-at("Ann"))` is where Ann works, `:start-of(arrow:is-a("Employment"):ends-at("Acme"))` who works at Acme. A value a relationship holds is read as a note's is: `arrow:is-a("Employment")[fieldValues.since<"2022-01-01"]`. Never put the type as an edge word's second argument: a title in quotes after a comma is not an edge type, and `:edge-to("Acme", "Employment")` is refused (`bad_argument`), with the form to write when a shape is titled Employment. [relationships.md](relationships.md) runs them all on a story of its own.
 - `:selected` is what the person had selected as the query started.
+- `:grouped-with(S)` follows groups: shapes the person (or `canvas draw`'s `group`) grouped are selected as one, and the word finds the others in a shape's group, the outermost one, on every board, never the shape itself. `:grouped-with(*)` is every shape in a group. A group is its shapes on one board, two or more.
 
 ```query
 /* matches: "Ann" */
@@ -700,6 +702,13 @@ Only the shapes that name Person themselves, by the title it reads as:
 ```query
 /* matches: "Auth" */
 :selected
+```
+
+The story groups nothing:
+
+```query
+/* count: 0 */
+:grouped-with(*)
 ```
 
 The type whose schema isn't JSON has an error:

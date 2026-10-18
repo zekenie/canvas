@@ -109,7 +109,7 @@ public func measure(script text: String, program: String, in registry: Registry,
             } else if registry.drawEdging != nil {
                 statements.append(Statement(line: statement.line, text: statement.text, body: .edge(edge)))
             }
-        case .delete:
+        case .delete, .group, .ungroup:
             break
         }
     }
