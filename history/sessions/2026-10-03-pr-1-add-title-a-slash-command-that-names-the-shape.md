@@ -1,0 +1,87 @@
+# PR #1: Add /title: a slash command that names the shape
+Branch claude/trusting-johnson-rnbw94, opened 2026-10-03T23:37:42Z, merged 2026-10-03T23:59:13Z.
+Made by a Claude Code session in the cloud; its transcript isn't on this machine, so this PR is the record of it.
+
+## Description
+
+## What
+
+A new slash command, `/title <text>`. Type it on a line of its own in a shape's text (a note's editor) and press Return. The shape's title becomes `<text>` and the line is removed from the text, the same way `/lock` behaves.
+
+- It's offered only on kinds that keep a named title (`TitleProperty`). In the shipped app those are notes, subboards and frames, and only notes have text to type it in.
+- Schema cards don't offer it: their title comes from their JSON's `"title"` and is renamed there.
+- `/title` with nothing after it isn't accepted, so Return just makes a new line.
+- A mention pill in the line becomes part of the title as `@Label`.
+- It's one undo step, shown as **Undo Title**.
+- On a new line of a note, typing `/` now lists `title` then `lock`.
+
+## How
+
+- The command lives in **Titles** (`Sources/Titles/Titles.swift`), so Titles now depends on SlashCommands, as Locking does for `/lock`. `/lock` stays in Locking.
+- It's registered with `slashCommandsForEveryShape(where: { $0.holds(TitleProperty.self) })`, after Titles' pill adornment.
+- Because of the new dependency, every plugin list with `TitlesPlugin()` now needs `SlashCommandsPlugin()`. The registry refuses a contribution whose owner isn't installed. As a result:
+  - 12 test targets gain a `SlashCommands` dependency in `Package.swift`, with the matching import.
+  - MentionsTests' `mentionPlugins` now includes it, so call sites stop passing it themselves.
+
+## Behaviour changes to existing tests
+
+- **CompositionTests `/lock` test:** the list on a new line is `["title", "lock"]`. A locked note now still lists `/title`, because `/title` is offered regardless of the shape's state. It can't be typed, since a locked note's text can't be edited.
+- **MentionsTests:** jots are titled, so their slash list is now `["ping", "near", "title"]`.
+- **Removed test half:** "without SlashCommandsPlugin a text view hosts nothing" can no longer be set up in MentionsTests, because every list there has Titles and so needs the plugin. That half is removed. The other half ("a slash is a slash where nothing is offered") now runs on an untitled Brief's panel box.
+- **Report pins:** the registry report in ShippedTests, TitlesTests and `docs/plugin-system.md` gains `· /title → every shape` on the `titles` line. TitlesTests' report also gains a `slash-commands` line.
+
+## New tests
+
+- **TitlesTests `titleSlashTests`:**
+  - offered on a titled kind; not on an untitled kind or a kind whose title is derived;
+  - runs as one "Title" step, and undo/redo work whether or not the shape had a name;
+  - empty or blank arguments are refused;
+  - a pill reads as `@Label`;
+  - Titles is refused without `SlashCommandsPlugin`;
+  - the report line.
+- **CompositionTests:** types `/title Groceries` into a shipped note in a `CanvasView`:
+  - the note is named;
+  - the line goes and its line break stays;
+  - editing continues;
+  - Undo is "Title", then "Typing";
+  - `/title ` alone is a new line.
+
+## Testing instructions
+
+This was written in an environment that can't build Swift, so **none of it has been compiled or run yet.** On a Mac, from the repo root:
+
+1. Build (this also runs the module-graph and import audit):
+   ```sh
+   ./build.sh
+   ```
+   If it fails with "this SDK is not supported by the compiler", prefix with `SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk`.
+2. Run the suites this touches first:
+   ```sh
+   TEST_FILTER="Titles and slash commands" ./test.sh
+   TEST_FILTER="Slash commands" ./test.sh          # SlashCommandsTests, MentionsTests' slash tests, the shipped ones
+   TEST_FILTER="registry report" ./test.sh         # ShippedTests' and TitlesTests' report pins
+   TEST_FILTER="guide shows the registry report" ./test.sh
+   ```
+3. Run everything:
+   ```sh
+   ./test.sh
+   ```
+4. Try it in the app: `./build.sh && open build/InfiniteCanvas.app`.
+   - Place a note (N) and type a line, then Return.
+   - Type `/`. The list shows `title` and `lock`.
+   - Type `title Groceries` and press Return. The note's pill reads **Groceries** and the `/title …` line is gone from the text.
+   - Edit → Undo is **Undo Title** and takes the name away. The next Undo takes back the typing.
+   - `/title` with nothing after it, then Return, makes a new line and names nothing.
+   - On a schema card's description, `/` lists nothing: schema cards don't offer `/title`.
+
+If the new CompositionTests case fails, check its undo-name expectations first. They assume the command's step closes the typing step and that editing continues after the title is written.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+https://claude.ai/code/session_018yUYrwqjb6eJanhKWM11i9
+
+---
+_Generated by [Claude Code](https://claude.ai/code/session_018yUYrwqjb6eJanhKWM11i9)_
+
+## Commits
+- abf18207 Add /title: a line of a shape's text that names the shape
