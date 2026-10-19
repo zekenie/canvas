@@ -34,10 +34,8 @@ public struct StandInRoute {
 
     /// The same, for a caller that holds `StandIns` and not a route (nil where nothing stands in).
     static func read(_ id: ShapeID, in document: CanvasDocument, _ standIns: StandIns?) -> (shape: ShapeID, kind: ShapeKind)? {
-        guard let standIns, let record = document[id],
-              case .shapes(let named)? = standIns.forwarding(of: record), let first = named.first, first != id,
-              named.allSatisfy({ $0 == first }) else { return nil }
-        return (first, record.kind)
+        guard let standIns, let record = document[id], let target = standIns.directTarget(of: record), target != id else { return nil }
+        return (target, record.kind)
     }
 
     /// The board's direct pills by the shape each stands for, in document order, found in one pass.

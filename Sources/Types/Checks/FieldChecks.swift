@@ -484,8 +484,7 @@ public final class FieldChecks {
         let at = bound.compactMap { end -> ShapeID? in
             guard let shape = reading.shape(inFile: end) else { return nil }
             guard relationships.standInKinds.contains(shape.kind) else { return isType(end) ? end : nil }
-            let named = Set(relationships.shapesNamed(by: shape))
-            guard named.count == 1, let target = named.first, isType(target) else { return nil }
+            guard let target = registry.standIns.directTarget(of: shape), isType(target) else { return nil }
             return target
         }
         let type = at.first(where: marked.contains)
@@ -537,12 +536,12 @@ public final class FieldChecks {
     /// them, over and over (an instance of a type that refers to a changed type is reached), the types themselves included.
     func reached(byTypes changed: Set<ShapeID>) -> Set<ShapeID> {
         guard let index, !changed.isEmpty else { return [] }
-        let references = knownReferences(index)
+        let references = knownReferences(index), topology = editor?.topology
         var reached = changed, frontier = changed
         while !frontier.isEmpty {
             var next: Set<ShapeID> = []
             for id in frontier {
-                for instance in index.instances(of: id) where reached.insert(instance).inserted { next.insert(instance) }
+                if let topology { TypeIndex.forEachInstance(of: id, in: topology) { instance in if reached.insert(instance).inserted { next.insert(instance) } } }
                 for referrer in references.referrers[id] ?? [] where reached.insert(referrer).inserted { next.insert(referrer) }
             }
             frontier = next
@@ -753,12 +752,12 @@ public final class FieldChecks {
             editor.validation?.recheck(named)
             return
         }
-        let references = knownReferences(index, changing: changed)
+        let references = knownReferences(index, changing: changed), topology = editor.topology
         var reached = changed, frontier = changed
         while !frontier.isEmpty {
             var next: Set<ShapeID> = []
             for id in frontier {
-                for instance in index.instances(of: id) where reached.insert(instance).inserted { next.insert(instance) }
+                if let topology { TypeIndex.forEachInstance(of: id, in: topology) { instance in if reached.insert(instance).inserted { next.insert(instance) } } }
                 for referrer in references.referrers[id] ?? [] where reached.insert(referrer).inserted { next.insert(referrer) }
             }
             frontier = next

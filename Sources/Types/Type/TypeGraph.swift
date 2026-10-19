@@ -70,6 +70,13 @@ public struct TypeGraph: Sendable {
 /// The order shapes are read in when each lists the shapes it builds on: a type before every type it
 /// builds on, so a general type never beats a more specific one that is built on it.
 public enum TypeOrder {
+    /// A shape's own list as a chain reads it: each type once, the first (as the index and `canvas draw` read a
+    /// list that names one twice), latest first. What `linearized` is handed for a list.
+    public static func heads(of list: [ShapeID]) -> [ShapeID] {
+        var seen: Set<ShapeID> = []
+        return Array(list.filter { seen.insert($0).inserted }.reversed())
+    }
+
     /// The shapes `heads` lead to in one order: a shape before every shape it builds on, and where that
     /// leaves a choice, the one a list names first (a list is read latest first). Each once. `heads` is
     /// an instance's own list already reversed (latest first); `parents(x)` is `x`'s own list likewise.

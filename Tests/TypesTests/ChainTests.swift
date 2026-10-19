@@ -302,8 +302,10 @@ private struct Random {
             }
             let types = (0..<(1 + random.next(3))).map { _ in id(random.next(count + 1)) }
             let resolved = Chain.resolve(types: types, in: Shelf(nodes: graph))
+            // A list that names a type twice is each type once, the first, read latest first.
             var seen: Set<ShapeID> = []
-            let heads = types.reversed().filter { seen.insert($0).inserted }
+            let heads = Array(types.filter { seen.insert($0).inserted }.reversed())
+            expectEqual(TypeOrder.heads(of: types), heads, "round \(round): the list's heads")
             let order = TypeOrder.linearized(heads, parents: { graph[$0]?.parents ?? [] }).filter { graph[$0] != nil }
             expectEqual(resolved.order, order, "round \(round)")
             for name in names {

@@ -162,6 +162,8 @@ struct Drawing {
     let edging: DrawEdging?
     /// What edges are, if something makes them.
     let edgeKind: ShapeKind?
+    /// The property keys that tell the edges of one pair apart (`DrawEdgeIdentities`), the edge kind's or not.
+    let edgeIdentityKeys: [String]
     /// The window's part of the board; nil when the board isn't in one.
     let view: CGRect?
 
@@ -248,6 +250,7 @@ struct Drawing {
         naming = registry.drawNaming
         edging = registry.drawEdging
         edgeKind = registry.drawEdging.flatMap { $0.kind(registry) }
+        edgeIdentityKeys = registry.drawEdgeIdentityKeys
         // What stands in for what matters only to a script that joins shapes, or deletes them: the
         // stand-ins a delete's arrows ran into go with them.
         let hasDeletes = script.statements.contains(where: \.isDelete)
@@ -1326,11 +1329,11 @@ struct Drawing {
         return try writtenValue(texts, of: key, connector, owner: nil, joining: nil, prefix: "\(written): \(key)", statement).written
     }
 
-    /// The edge kind's identity keys (`DrawEdging.identity`) that it has as properties (one it lacks,
+    /// The identity keys (`DrawEdgeIdentities`) that the edge kind has as properties (one it lacks,
     /// because no plugin gave it to the kind in this app, tells nothing apart): nil when it has none,
     /// so a statement is about the pair.
-    private func identityKeys(_ connector: KindVocabulary) -> [String]? {
-        let keys = (edging?.identity ?? []).filter(connector.isAttribute)
+    func identityKeys(_ connector: KindVocabulary) -> [String]? {
+        let keys = edgeIdentityKeys.filter(connector.isAttribute)
         return keys.isEmpty ? nil : keys
     }
 

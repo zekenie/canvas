@@ -79,6 +79,21 @@ import Titles
         expectEqual(h.state(of: reference), .unavailable(label: "Out of sight"))
         expectEqual(h.state(of: h.addReference(to: ShapeID(), label: "Gone")), .missing(label: "Gone"))
     },
+    test("a reference on a board the app can't show names nothing: Topology, which keeps who names what, keeps no stand-in there") {
+        let nowhere = ShapeID()      // an owner no shape of the file has
+        let box = ShapeRecord(Box(boxFrame))
+        var props = Reference(frame: CGRect(origin: pillOrigin, size: Reference.defaultSize))
+        ReferenceEdits.pick(&props, ReferenceTarget(id: box.id, label: "On the root"))
+        let hidden = ShapeRecord(props)
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(box)]), children: [nowhere: CanvasDocument(shapes: [AnyShapeRecord(hidden)])])
+        let h = try referenceHarness(file: file)
+        let state = try require(h.editor.references)
+        expectEqual(state.directReferences(naming: [box.id]), [])
+        expectEqual(state.target(of: hidden.id), nil)
+        let shown = h.addReference(to: box.id, label: "On the root")
+        expectEqual(state.directReferences(naming: [box.id]), [shown], "one on a board the app can show does")
+        expectEqual(state.target(of: shown), box.id)
+    },
     test("a shape of a kind that can't be mentioned is not available") {
         let h = try referenceHarness()
         let disc = h.add(Disc(boxFrame))

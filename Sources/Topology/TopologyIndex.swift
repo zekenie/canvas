@@ -157,6 +157,13 @@ public final class TopologyIndex {
         tables.edges(of: id, direction, types: filter, in: types, view: view)
     }
 
+    /// Calls `body` with each edge `edges(of:_:types:view:)` returns, in its order, making no array: for a walk
+    /// over many shapes' edges, where most have none of the kind asked for (a type's instances, and theirs).
+    public func forEachEdge(of id: ShapeID, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all, view: EdgeView,
+                            _ body: (Edge) -> Void) {
+        tables.forEachEdge(of: id, direction, types: filter, in: types, view: view, body)
+    }
+
     /// `hasEdges(of:_:types:where:)`, as `view` reads them.
     public func hasEdges(of id: ShapeID, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all, view: EdgeView,
                          where predicate: (Edge) -> Bool = { _ in true }) -> Bool {
@@ -189,6 +196,23 @@ public final class TopologyIndex {
     /// don't meet, a target on a board the editor can't show, or one that is gone): who points at it, for a
     /// reader that treats a direct stand-in as the shape it names. Provided ones are not here. No order.
     public func standIns(naming target: ShapeID) -> [ShapeID] { Array(declaredBy[target] ?? []) }
+
+    /// The one shape a direct stand-in's record names (`Forwarding.onlyShape`), whether or not it stands
+    /// for it now: the other way round from `standIns(naming:)`. Nil for one that stands for what's
+    /// provided or names none or several, and for a shape that isn't a stand-in on a board the editor can
+    /// show. O(1): the rule as the index read it.
+    public func directTarget(of standIn: ShapeID) -> ShapeID? {
+        guard !standing.isEmpty else { return nil }
+        return standing[standIn]?.forwarding?.onlyShape
+    }
+
+    /// The kind of a stand-in on a board the editor can show (whatever it stands for now), nil for any
+    /// other shape: what a plugin that keeps its own kind's stand-ins asks of a commit's shapes, once the
+    /// index has heard it. O(1).
+    public func standInKind(of id: ShapeID) -> ShapeKind? {
+        guard !standing.isEmpty else { return nil }
+        return standing[id]?.kind
+    }
 
     /// Whether any shape on a board the editor can show is a stand-in (of a kind that stands in,
     /// whatever it stands for now): a follower that looks for stand-ins among a change's shapes

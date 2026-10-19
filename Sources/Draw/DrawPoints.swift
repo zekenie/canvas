@@ -5,7 +5,8 @@ import Queries
 // What `canvas draw` needs from concerns it doesn't own, each an extension point with at most one
 // contribution, from the plugins that own the concerns (AutomationTests bind them to fixtures of
 // their own): what a shape is called (DrawNames, Titles'), what an edge is (DrawEdges,
-// Connections'), what's wrong with a shape drawn and which other shapes a run's writes reach (DrawChecks,
+// Connections'), what tells two edges of one pair apart (DrawEdgeIdentities, one for each property,
+// Types' `is`), what's wrong with a shape drawn and which other shapes a run's writes reach (DrawChecks,
 // Validation's), how text of a
 // media type is written (DrawTextFormats, one for each media type, Mentions' for mention text),
 // how a value a script writes joins what a shape holds (DrawValueWriters, one for each property),
@@ -128,9 +129,6 @@ public struct EdgeRequest: Hashable, Sendable {
 public struct DrawEdging {
     let kind: @MainActor (Registry) -> ShapeKind?
     let attributes: [String]
-    /// The property keys of the edge kind that tell two edges of one pair apart (an arrow's `is`): an
-    /// edge is its pair and, for a statement that writes one, these. None: the pair alone.
-    let identity: [String]
     let sides: @MainActor (ShapeKind, Registry) -> [EdgeRequest.Side: [String]]
     let ends: @MainActor (AnyShapeRecord, Registry) -> (from: ShapeID, to: ShapeID)?
     let make: @MainActor (EdgeRequest, AnyShapeRecord?, ShapeContext) throws(DrawError) -> AnyShapeRecord
@@ -155,24 +153,51 @@ extension DrawEdges: KeyedExtensionPoint {
             var seen: Set<String> = []
             for key in edging.attributes {
                 func refuse(_ reason: String) -> RegistryError { .invalid(point: "DrawEdges", reason: "attribute \(key): \(reason)") }
-                guard !key.isEmpty, !key.contains(where: { $0.isWhitespace || $0 == ":" || $0 == "\"" }) else {
+                guard isScriptKey(key) else {
                     throw refuse("a key is a word a script can write before a colon")
                 }
                 guard !languageEdgeKeys.contains(key) else { throw refuse("the language keeps \(key): for itself") }
                 guard !rowKeys.contains(key) else { throw refuse("a draw result's row has \(key) of its own") }
                 guard seen.insert(key).inserted else { throw refuse("it's declared twice") }
             }
-            // An identity key is a property of the edge kind (checked per run, against its vocabulary).
-            var keys: Set<String> = []
-            for key in edging.identity {
-                func refuse(_ reason: String) -> RegistryError { .invalid(point: "DrawEdges", reason: "identity \(key): \(reason)") }
-                guard !key.isEmpty, !key.contains(where: { $0.isWhitespace || $0 == ":" || $0 == "\"" }) else {
-                    throw refuse("a key is a word a script can write before a colon")
-                }
-                guard !languageEdgeKeys.contains(key) else { throw refuse("the language keeps \(key): for itself") }
-                guard !edging.attributes.contains(key) else { throw refuse("it's one of the maker's attributes, and an identity key is a property of the kind's schema") }
-                guard keys.insert(key).inserted else { throw refuse("it's declared twice") }
+        }
+    }
+}
+
+// MARK: Edge identities
+
+/// A property of the edge kind that tells two edges of one pair apart (an arrow's `is`): an edge is its
+/// pair and, for a statement that writes some of these, what it writes of them. The plugin that owns the
+/// property names it, so whatever makes edges names none; one the edge kind lacks (no plugin gave it the
+/// property) tells nothing apart. Only the sugar makes one (`registrar.drawEdgeIdentity`).
+public struct DrawEdgeIdentifying {
+    let key: String
+}
+
+/// What tells the edges of one pair apart for `canvas draw`: at most one plugin for each property key,
+/// read in plugin order.
+public enum DrawEdgeIdentities {}
+
+extension DrawEdgeIdentities: KeyedExtensionPoint {
+    public typealias Contribution = DrawEdgeIdentifying
+    public static var owner: PluginID { .drawEngine }
+    public static func uniqueKeys(of identity: DrawEdgeIdentifying, for _: ShapeTarget) -> [AnyHashable] {
+        [DrawPointKey(name: "draw edge identity \(identity.key)")]
+    }
+    public static func summary(of identity: DrawEdgeIdentifying, for _: ShapeTarget) -> String { "draw edge identity \(identity.key)" }
+
+    /// A key a script can write before a colon, none of the language's own, and none of the maker's
+    /// attributes: an identity key is a property of the edge kind's schema (checked per run, against its
+    /// vocabulary).
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        let attributes = Set(registry.contributions(to: DrawEdges.self).flatMap(\.value.attributes))
+        for key in registry.contributions(to: DrawEdgeIdentities.self).map(\.value.key) {
+            func refuse(_ reason: String) -> RegistryError { .invalid(point: "DrawEdgeIdentities", reason: "identity \(key): \(reason)") }
+            guard isScriptKey(key) else {
+                throw refuse("a key is a word a script can write before a colon")
             }
+            guard !languageEdgeKeys.contains(key) else { throw refuse("the language keeps \(key): for itself") }
+            guard !attributes.contains(key) else { throw refuse("it's one of the maker's attributes, and an identity key is a property of the kind's schema") }
         }
     }
 }
@@ -378,7 +403,7 @@ extension DrawReports: KeyedExtensionPoint {
             var seen: Set<String> = []
             for key in reporting.members {
                 func refuse(_ reason: String) -> RegistryError { .invalid(point: "DrawReports", reason: "member \(key): \(reason)") }
-                guard !key.isEmpty, !key.contains(where: { $0.isWhitespace || $0 == ":" || $0 == "\"" }) else {
+                guard isScriptKey(key) else {
                     throw refuse("a key is a word a row can carry")
                 }
                 guard !rowKeys.contains(key) else { throw refuse("a draw result's row has \(key) of its own") }
@@ -454,6 +479,12 @@ struct DrawPointKey: Hashable, CustomStringConvertible {
     var description: String { name }
 }
 
+/// Whether a key is a word a script can write before a colon: what every point that takes keys a script
+/// writes (an edge's attributes and identity, a report's members) checks.
+func isScriptKey(_ key: String) -> Bool {
+    !key.isEmpty && !key.contains(where: { $0.isWhitespace || $0 == ":" || $0 == "\"" })
+}
+
 // MARK: Sugar (what the concerns write)
 
 extension PluginRegistrar {
@@ -499,9 +530,6 @@ extension PluginRegistrar {
 
     /// Makes edges for `canvas draw`: `kind` is what connections are (nil: nothing draws them now,
     /// and an edge is `no_edges`), `attributes` the keys an edge takes beside `from:` and `to:`,
-    /// `identity` the property keys of the edge kind that tell two edges of one pair apart (a statement
-    /// that writes one addresses the edge of the pair that holds that value; one that writes none, any
-    /// edge of the pair, and two are `ambiguous_edge`),
     /// `sides` which sides of a kind an edge may leave by and what it carries from each (what
     /// `canvas kinds` lists), `ends` which shapes a connection starts and ends on (nil: not two), and
     /// `make` a connection as a request asks, not inserted: new (`existing` nil), or `existing`
@@ -510,11 +538,20 @@ extension PluginRegistrar {
     /// line. Its closure says so, `{ request, existing, shapes throws(DrawError) in … }`, as a
     /// command's does. `shapes` is the board as the script leaves it, so either end may be new. At
     /// most one plugin makes edges.
-    public mutating func drawEdges(kind: @escaping @MainActor (Registry) -> ShapeKind?, attributes: [String] = [], identity: [String] = [],
+    public mutating func drawEdges(kind: @escaping @MainActor (Registry) -> ShapeKind?, attributes: [String] = [],
                                    sides: @escaping @MainActor (ShapeKind, Registry) -> [EdgeRequest.Side: [String]],
                                    ends: @escaping @MainActor (AnyShapeRecord, Registry) -> (from: ShapeID, to: ShapeID)?,
                                    make: @escaping @MainActor (EdgeRequest, AnyShapeRecord?, ShapeContext) throws(DrawError) -> AnyShapeRecord) {
-        contribute(DrawEdging(kind: kind, attributes: attributes, identity: identity, sides: sides, ends: ends, make: make), to: DrawEdges.self)
+        contribute(DrawEdging(kind: kind, attributes: attributes, sides: sides, ends: ends, make: make), to: DrawEdges.self)
+    }
+
+    /// Says that the property `key` of the edge kind tells two edges of one pair apart in `canvas draw`
+    /// (an arrow's `is`): a statement that writes it addresses the edge of the pair that holds that value,
+    /// and one that writes none of these keys any edge of the pair (two are `ambiguous_edge`). The plugin
+    /// that owns the property says so; a property the edge kind lacks tells nothing apart. At most one
+    /// plugin names each key.
+    public mutating func drawEdgeIdentity(_ key: PropertyKey) {
+        contribute(DrawEdgeIdentifying(key: key.rawValue), to: DrawEdgeIdentities.self)
     }
 
     /// Checks each shape `canvas draw` makes or changes, as the script leaves the board: what it
@@ -586,6 +623,8 @@ extension Registry {
     /// What names shapes, if something does.
     public var drawNaming: DrawNaming? { contributions(to: DrawNames.self).first?.value }
     var drawEdging: DrawEdging? { contributions(to: DrawEdges.self).first?.value }
+    /// The property keys that tell the edges of one pair apart, in plugin order.
+    var drawEdgeIdentityKeys: [String] { contributions(to: DrawEdgeIdentities.self).map(\.value.key) }
     var drawCheck: DrawCheck? { contributions(to: DrawChecks.self).first?.value }
 
     /// What a shape with no title is called for a pill, if something says.

@@ -116,7 +116,7 @@ final class RunGraph {
             types.relationshipTypes.remove(id)
         }
         if let record, registry.isTypeable(record.kind) {
-            let list = record[IsAProperty.self] ?? []
+            let list = TypeIndex.links(of: record)
             types.links[id] = list.isEmpty ? nil : list
         } else if record == nil {
             types.links[id] = nil
@@ -222,10 +222,7 @@ final class RunGraph {
     private func typeAt(_ end: ShapeID, in reading: LayoutReading) -> ShapeID? {
         guard let record = reading.shape(inFile: end) else { return nil }
         guard standInKinds.contains(record.kind) else { return types.types.contains(end) ? end : nil }
-        guard case .shapes(let named)? = registry.standIns.forwarding(of: record) else { return nil }
-        var distinct: [ShapeID] = []
-        for id in named where !distinct.contains(id) { distinct.append(id) }
-        guard distinct.count == 1, let target = distinct.first, types.types.contains(target) else { return nil }
+        guard let target = registry.standIns.directTarget(of: record), types.types.contains(target) else { return nil }
         return target
     }
 
@@ -396,10 +393,7 @@ extension RelationshipIndex {
         let called = standIns.calls(record)
         guard let forwarding = standIns.forwarding(of: record) else { return .empty }
         guard case .shapes(let named) = forwarding else { return .query(called: called) }
-        var distinct: [ShapeID] = []
-        for id in named where !distinct.contains(id) { distinct.append(id) }
-        guard let target = distinct.first else { return .empty }
-        guard distinct.count == 1 else { return .query(called: called) }
+        guard let target = forwarding.onlyShape else { return named.isEmpty ? .empty : .query(called: called) }
         if let shape = reading.shape(inFile: target) {
             return standIns.admits(record.kind, shape) ? .note(target) : .notAdmitted(target, needs: standIns.needs(record.kind) ?? "")
         }

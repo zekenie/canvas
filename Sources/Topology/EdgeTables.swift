@@ -39,21 +39,33 @@ struct EdgeTables: Sendable {
     /// forwarded into several shapes that `view` reads back as one are one.
     func edges(of id: ShapeID, _ direction: EdgeDirection, types filter: EdgeTypeFilter, in types: EdgeTypeTree,
                view: EdgeView = .resolved) -> [Edge] {
-        guard let group = byNode[id] else { return [] }
         var found: [Edge] = []
+        forEachEdge(of: id, direction, types: filter, in: types, view: view) { found.append($0) }
+        return found
+    }
+
+    /// Calls `body` with each edge `edges(of:_:types:in:view:)` returns, in its order, making no array: what a walk
+    /// over many shapes' edges (each one's instances, and theirs) reads them by.
+    func forEachEdge(of id: ShapeID, _ direction: EdgeDirection, types filter: EdgeTypeFilter, in types: EdgeTypeTree,
+                     view: EdgeView = .resolved, _ body: (Edge) -> Void) {
+        guard let group = byNode[id] else { return }
         if view == .resolved {
             group.forEach { edge in
-                if edge.touches(id, direction), filter.isAll || filter.admits(edge.type, in: types) { found.append(edge) }
+                if edge.touches(id, direction), filter.isAll || filter.admits(edge.type, in: types) { body(edge) }
             }
-            return found
+            return
         }
         var mapped: Set<Edge> = []
         group.forEach { edge in
+            // An edge as emitted is itself in every view, and no forwarded copy reads back as it.
+            if case .emitted = edge.origin {
+                if edge.touches(id, direction), filter.isAll || filter.admits(edge.type, in: types) { body(edge) }
+                return
+            }
             guard let seen = viewed(edge, view), seen.touches(id, direction), filter.isAll || filter.admits(seen.type, in: types),
                   seen == edge || mapped.insert(seen).inserted else { return }
-            found.append(seen)
+            body(seen)
         }
-        return found
     }
 
     /// Whether `id` has an edge `edges(of:_:types:in:view:)` would find that `predicate` takes: it
@@ -65,7 +77,8 @@ struct EdgeTables: Sendable {
             return group.contains { $0.touches(id, direction) && (filter.isAll || filter.admits($0.type, in: types)) && predicate($0) }
         }
         return group.contains { edge in
-            guard let seen = viewed(edge, view) else { return false }
+            // An edge as emitted is itself in every view.
+            guard let seen = edge.origin == .emitted ? edge : viewed(edge, view) else { return false }
             return seen.touches(id, direction) && (filter.isAll || filter.admits(seen.type, in: types)) && predicate(seen)
         }
     }

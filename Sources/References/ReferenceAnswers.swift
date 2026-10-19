@@ -66,7 +66,7 @@ public enum ReferenceFailure: Equatable, Sendable {
 }
 
 /// What ReferenceState keeps for each dynamic reference (one whose record holds a query), on any
-/// board of the file.
+/// board the app can show.
 struct Finding {
     /// The question its record asks now: its query and whether it wants every match.
     var key: ForwardingKey
@@ -159,7 +159,7 @@ extension ReferenceState {
         return finding.outcome ?? .finding(slow: isSlow && finding.asked != nil)
     }
 
-    /// The references with a query, on every board of the file.
+    /// The references with a query, on every board the app can show.
     public var dynamicReferences: Set<ShapeID> { Set(dynamic.keys) }
 
     /// Whether answers are still on their way: a wait armed, a hop to answer at once, or a batch out.
@@ -182,7 +182,7 @@ extension ReferenceState {
     /// kept for it first; any other change but moves after `ReferenceStyle.settle` of quiet, every
     /// dynamic reference. A commit that only moved shapes costs one test.
     /// (The test for a commit that only moved shapes is `documentDidChange`'s, before this.)
-    /// `touched` is the references the commit touched, each once, as they are now
+    /// `touched` is the references the commit touched, each once, as they are now, nil for one that went
     /// (`referencesTouched(by:)`): any other shape it touched asks nothing of its own, and is one of
     /// the others.
     func hearDynamic(_ changes: ChangeSet, touched: [ShapeID: AnyShapeRecord?]) {
@@ -201,7 +201,7 @@ extension ReferenceState {
         }
     }
 
-    /// Reads the reference `id` again (on any board): whether its own question changed (it has a
+    /// Reads the reference `id` again (on any board the app can show): whether its own question changed (it has a
     /// query whose key isn't the one kept, or it came or went). A shape that isn't a reference with a
     /// query, and wasn't one, changed nothing of its own.
     private func noteDynamic(_ id: ShapeID, _ record: AnyShapeRecord?) -> Bool {
@@ -223,14 +223,15 @@ extension ReferenceState {
         return true
     }
 
-    /// Every dynamic reference of the file, read afresh (a file or board put in place), asked at once.
+    /// Every dynamic reference of the file, read afresh (a file or board put in place), asked at once:
+    /// those Topology keeps (on a board the app can show), the only ones an answer is taken for.
     func rebuildDynamic() {
         let before = Set(dynamic.keys)
         dynamic = [:]
         memo = [:]
-        let file = editor.file
+        let file = editor.file, topology = editor.topology
         func scan(_ document: CanvasDocument) {
-            for record in document.shapes where record.kind == Reference.kind {
+            for record in document.shapes where record.kind == Reference.kind && (topology.map { Self.isReference(record.id, in: $0) } ?? false) {
                 guard let props = record.typed(as: Reference.self)?.props, props.target == nil, let query = props.query else { continue }
                 dynamic[record.id] = Finding(key: Self.key(query: query, all: props.all), all: props.all)
             }

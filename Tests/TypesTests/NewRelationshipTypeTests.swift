@@ -66,7 +66,6 @@ struct RecordingBondEdgesPlugin: CanvasPlugin {
         let log = log
         registrar.drawEdges(kind: { _ in Bond.kind },
                             attributes: [],
-                            identity: [IsAProperty.key.rawValue],
                             sides: { _, _ in [:] },
                             ends: { record, _ in
                                 guard let bond = record.typed(as: Bond.self)?.props, let from = bond.from, let to = bond.to else { return nil }

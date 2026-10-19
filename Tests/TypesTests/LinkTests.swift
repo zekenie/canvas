@@ -32,13 +32,16 @@ private struct ThreeBoards {
     }
 }
 
-/// Every instance's list in the file, as its record says, against what the index holds.
+/// Every instance's list in the file, as its record says (each type once, the first: a list is
+/// `uniqueItems`, and Topology's edges count a repeat as one), against what the index holds. Every
+/// board here is one the app can show.
 @MainActor private func expectIndexMatchesFile(_ editor: CanvasEditor, _ message: String = "") throws {
     let index = try require(editor.types), file = editor.file
     var holders: [ShapeID: [ShapeID]] = [:]
     for board in [file.root] + Array(file.children.values) {
         for record in board.shapes where editor.registry.isTypeable(record.kind) {
-            let listed = record[IsAProperty.self]?.map(\.shape) ?? []
+            var seen: Set<ShapeID> = []
+            let listed = (record[IsAProperty.self]?.map(\.shape) ?? []).filter { seen.insert($0).inserted }
             expectEqual(index.links(of: record.id).map(\.shape), listed, "links of \(record.id) \(message)")
             for type in listed { holders[type, default: []].append(record.id) }
         }
@@ -97,6 +100,51 @@ private struct ThreeBoards {
         editor.undo()
         expectEqual(types.instances(of: tree.person), [tree.ann, tree.bob, tree.cy])
         try expectIndexMatchesFile(editor)
+    },
+    test("what a shape is follows the boards the app can show, as Topology's is-a edges do: a type on one it can't show passes on nothing it builds on, and a note there is of no type") {
+        let nowhere = ShapeID()      // an owner no shape of the file has: its board can't be shown
+        let person = ShapeID(), employee = ShapeID(), ann = ShapeID(), cy = ShapeID()
+        var builtOn = typeRecord(TypeSchemaProperty.starter, title: "Employee", id: employee)
+        builtOn[IsAProperty.self] = [TypeLink(person)]
+        let file = CanvasFile(
+            root: CanvasDocument(shapes: [typeRecord(TypeSchemaProperty.starter, title: "Person", id: person),
+                                          instanceRecord("Ann", of: [employee], title: "Ann", at: CGPoint(x: 400, y: 40), id: ann)]),
+            children: [nowhere: CanvasDocument(shapes: [builtOn, instanceRecord("Cy", of: [person], at: CGPoint(x: 400, y: 40), id: cy)])])
+        let editor = try typeEditor(file: file)
+        let types = try require(editor.types)
+        expect(types.isType(employee), "a type wherever it is: its name and schema are read from every board")
+        expectEqual(types.links(of: ann), [TypeLink(employee)], "Ann, on the root, is an Employee")
+        expectEqual(types.links(of: employee), [], "but what Employee builds on isn't read where the app can't show it")
+        expectEqual(types.lineage(of: ann), [employee])
+        expect(!types.graph.reaches(person, from: ann), "so Ann is no Person to a query either")
+        expectEqual(types.instances(of: person), [], "and Cy, there, is no Person")
+        expect(!types.hasInstances(person))
+        expectEqual(types.links(of: cy), [])
+        expectEqual(types.instances(of: employee), [ann])
+        expect(types.hasInstances(employee))
+        expectEqual(types.affected(by: [employee]), [ann])
+    },
+    test("a record's list as the index reads it is the is-a edges Topology's rule emits for it: each type once, the first, in order") {
+        let editor = try typeEditor()
+        let a = ShapeID(), b = ShapeID()
+        for list in [[a], [a, b], [a, b, a], [b, a, b, a], []] {
+            let record = instanceRecord("x", of: list)
+            let emitted = editor.registry.edges(of: record).filter { $0.type == IsAEdge.id }.map { TypeLink($0.target) }
+            expectEqual(TypeIndex.links(of: record), emitted, "\(list)")
+        }
+    },
+    test("a list that names a type twice is each type once, the first, in the index's lineage and the chain alike") {
+        let a = ShapeID(), b = ShapeID(), note = ShapeID()
+        let file = CanvasFile(root: CanvasDocument(shapes: [
+            typeRecord(#"{"type": "object", "properties": {"x": {"type": "string"}, "onlyA": {"type": "string"}}}"#, title: "A", id: a),
+            typeRecord(#"{"type": "object", "properties": {"x": {"type": "number"}}}"#, title: "B", at: CGPoint(x: 400, y: 40), id: b),
+            instanceRecord("both", of: [a, b, a], at: CGPoint(x: 40, y: 400), id: note)]))
+        let editor = try typeEditor(file: file)
+        let types = try require(editor.types), book = try require(editor.fieldBook)
+        expectEqual(types.links(of: note), [TypeLink(a), TypeLink(b)])
+        expectEqual(types.lineage(of: note), [b, a], "B is the later of A and B: it wins")
+        expectEqual(book.fields(types: [a, b, a]).order, [b, a], "and so it does in the chain")
+        expectEqual(book.fields(types: [a, b, a]).order, book.fields(types: [a, b]).order)
     },
     test("the lineage is what a shape's types lead to, a type before the types it builds on, each once, never the shape itself") {
         let editor = try typeEditor()

@@ -26,10 +26,7 @@ extension RelationshipIndex {
         let called = standIns.calls(record)
         guard let forwarding = standIns.forwarding(of: record) else { return .empty }
         guard case .shapes(let named) = forwarding else { return .query(called: called) }
-        var distinct: [ShapeID] = []
-        for id in named where !distinct.contains(id) { distinct.append(id) }
-        guard let target = distinct.first else { return .empty }
-        guard distinct.count == 1 else { return .query(called: called) }
+        guard let target = forwarding.onlyShape else { return named.isEmpty ? .empty : .query(called: called) }
         switch editor.topology?.forwarding(of: literal) {
         case .record(let live)? where live == [target]:
             return .note(target)

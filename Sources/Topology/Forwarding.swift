@@ -18,6 +18,16 @@ public enum Forwarding: Hashable, Sendable {
     case provided(ForwardingKey)
 }
 
+extension Forwarding {
+    /// The one shape a record that names shapes names (once, or several times over): what a reader that
+    /// treats a direct stand-in as the shape it names reads it as, whether or not it may stand for it now.
+    /// Nil for one that stands for what's provided, and one that names none, or several.
+    public var onlyShape: ShapeID? {
+        guard case .shapes(let named) = self, let first = named.first, named.allSatisfy({ $0 == first }) else { return nil }
+        return first
+    }
+}
+
 /// What a stand-in that stands for what's provided asks, as its record says: an answer counts only
 /// for the key the record holds now.
 public struct ForwardingKey: Hashable, Sendable {
@@ -173,6 +183,12 @@ public struct StandIns {
         guard !record.isOpaque, let rule = rules[record.kind] else { return nil }
         return rule.forward(record, registry)
     }
+
+    /// The one shape a direct stand-in's record names (`Forwarding.onlyShape`), whether or not it may
+    /// stand for it now: nil for a shape of a kind that doesn't stand in, one that stands for what's
+    /// provided, and one that names none or several. Of a record, so a run's own shapes, which no index
+    /// holds yet, read as the file's do.
+    public func directTarget(of record: AnyShapeRecord) -> ShapeID? { forwarding(of: record)?.onlyShape }
 
     /// The kinds that can be made to stand for a given shape (`standsIn(makes:)`), in plugin order:
     /// those a tool places, since it's from what the tool places that one is made.

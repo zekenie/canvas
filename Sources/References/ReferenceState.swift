@@ -7,27 +7,20 @@ import Mentions
 import Selection
 import Topology
 
-/// Per editor, for the whole file: which references name which shapes, kept as commits change shapes
-/// (a commit's `ChangeSet`, `elsewhere` and the boards it brought or took included, and a file put
-/// in place read afresh), and what each reference stands for now (`state(of:)`), the one place the
-/// panel, the table of contents and the menu ask. A pill reads the same condition from its render
+/// Per editor, for the whole file: what each reference stands for now (`state(of:)`), the one place
+/// the panel, the table of contents and the menu ask. A pill reads the same condition from its render
 /// context, where it can't ask a service.
 ///
 /// What a direct reference stands for is a function of its record and the file, so there's nothing
 /// to be told: a rename, a deletion or a change of publicness of the shape it names changes what the
 /// pill, its row and its panel show, and `directReferences(naming:)` says which references that is,
-/// in O(what changed), for the rows the list makes again. Services before the table of contents in
-/// the plugin list hear a commit before it asks. What a dynamic reference stands for is what its
-/// query finds, which this service asks the engine and hands to Topology (`ReferenceAnswers.swift`).
+/// in O(what changed), for the rows the list makes again: Topology's, which keeps which stand-in
+/// names which shape (`standIns(naming:)`) on every board the app can show and hears each commit
+/// before anyone reads it. What a dynamic reference stands for is what its query finds, which this
+/// service asks the engine and hands to Topology (`ReferenceAnswers.swift`).
 @MainActor
 public final class ReferenceState {
     unowned let editor: CanvasEditor
-    /// The shape each reference names, and which references name each shape: every board of the file.
-    private var targetOf: [ShapeID: ShapeID] = [:]
-    private var referencesTo: [ShapeID: Set<ShapeID>] = [:]
-    /// Every reference in the file, on any board: what a commit's shapes are held against, since a
-    /// shape's kind never changes (`referencesTouched(by:)`).
-    private var known: Set<ShapeID> = []
     /// The reference being typed into whose list has only the words row left (the hand-off to
     /// natural language): its pill leads with the magnifier.
     private var handingOff: ShapeID?
@@ -37,7 +30,7 @@ public final class ReferenceState {
     /// What each direct reference's pill was last drawn standing for, and the target it was worked
     /// out for (`drawnCondition(of:target:_:)`): a frame of a thousand pills looks up none of their
     /// shapes again. A commit lets go of those it changed and those that name a shape it changed
-    /// (the reverse map, as the rows' `affected`), a file put in place of all.
+    /// (Topology's `standIns(naming:)`, as the rows' `affected`), a file put in place of all.
     /// With the name of the board its shape is on when that isn't the pill's board (`drawnBoard(of:)`),
     /// and the owners of the boards named (a change to one lets go of the names kept).
     private var drawnConditions: [ShapeID: (target: ReferenceTarget, condition: ReferenceCondition, board: String?)] = [:]
@@ -58,7 +51,7 @@ public final class ReferenceState {
     var pathReaders: [ShapeID: Set<ShapeID>] = [:]
 
     // What dynamic references found (`ReferenceAnswers.swift`).
-    /// Every reference with a query, on every board of the file, and what its query found.
+    /// Every reference with a query on a board the app can show, and what its query found.
     var dynamic: [ShapeID: Finding] = [:]
     /// Whether every dynamic reference's answer may be out of date (a commit that changed something
     /// else than their own questions): asked of them all at the next batch.
@@ -99,7 +92,6 @@ public final class ReferenceState {
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        rebuild()
         settling = editor.topology?.keepsSettling { [weak self] in self?.isFinding ?? false }
         following = editor.topology?.follow { [weak self] change in self?.edgesChanged(change) }
         rebuildDynamic()
@@ -203,29 +195,30 @@ public final class ReferenceState {
 
     // MARK: Who names what
 
-    /// The direct references that name any of these shapes: those whose pill, row and panel show what
-    /// a change to the shape changed.
+    /// The direct references, on boards the app can show, that name any of these shapes: those whose
+    /// pill, row and panel show what a change to the shape changed. Topology's (`standIns(naming:)`),
+    /// the references among them.
     public func directReferences(naming ids: some Sequence<ShapeID>) -> Set<ShapeID> {
+        guard let topology = editor.topology, topology.hasStandIns else { return [] }
         var found: Set<ShapeID> = []
-        for id in ids {
-            if let references = referencesTo[id] { found.formUnion(references) }
-        }
+        for id in ids { insertReferences(naming: id, from: topology, into: &found) }
         return found
     }
 
-    /// The shape the direct reference names, wherever it is.
-    public func target(of reference: ShapeID) -> ShapeID? { targetOf[reference] }
+    /// The shape the direct reference names, wherever it is (a reference on a board the app can show).
+    public func target(of reference: ShapeID) -> ShapeID? {
+        guard let topology = editor.topology, Self.isReference(reference, in: topology) else { return nil }
+        return topology.directTarget(of: reference)
+    }
 
     /// The references a commit may change the rows of without changing them: those that name a shape it
     /// changed (renamed, made private, deleted, brought back by an undo), and those whose row's path
     /// names a shape it changed or was read from one (a frame or a board's owner renamed, or put
     /// somewhere else: `pathReaders`), moved ones aside. O(what the commit changed).
     func rowsAffected(by changes: ChangeSet) -> Set<ShapeID> {
-        guard !referencesTo.isEmpty || !pathReaders.isEmpty else { return [] }
-        var found: Set<ShapeID> = []
-        forEachChanged(by: changes) { id in
-            if let references = referencesTo[id] { found.formUnion(references) }
-            if let readers = pathReaders[id] { found.formUnion(readers) }
+        var found = references(namingWhatChanged: changes)
+        if !pathReaders.isEmpty {
+            forEachChanged(by: changes) { id in if let readers = pathReaders[id] { found.formUnion(readers) } }
         }
         return found
     }
@@ -233,13 +226,19 @@ public final class ReferenceState {
     /// The direct references that name a shape a commit changed, moved ones aside: those whose pill
     /// may stand for something else now.
     private func references(namingWhatChanged changes: ChangeSet) -> Set<ShapeID> {
-        guard !referencesTo.isEmpty else { return [] }
+        guard let topology = editor.topology, topology.hasStandIns else { return [] }
         var found: Set<ShapeID> = []
-        forEachChanged(by: changes) { id in
-            if let references = referencesTo[id] { found.formUnion(references) }
-        }
+        forEachChanged(by: changes) { id in insertReferences(naming: id, from: topology, into: &found) }
         return found
     }
+
+    /// The references among the stand-ins whose record names `id`.
+    private func insertReferences(naming id: ShapeID, from topology: TopologyIndex, into found: inout Set<ShapeID>) {
+        for standIn in topology.standIns(naming: id) where Self.isReference(standIn, in: topology) { found.insert(standIn) }
+    }
+
+    /// Whether the shape is a reference Topology keeps (on a board the app can show), as it has heard the file.
+    static func isReference(_ id: ShapeID, in topology: TopologyIndex) -> Bool { topology.standInKind(of: id) == Reference.kind }
 
     /// Every shape a commit added, changed other than by moving it, or removed, on any board.
     private func forEachChanged(by changes: ChangeSet, _ body: (ShapeID) -> Void) {
@@ -249,72 +248,34 @@ public final class ReferenceState {
         for id in changes.elsewhere { body(id) }
     }
 
-    /// Keeps what the shape `id` is now (`record`, nil when it's in no board of the file) in the
-    /// index: whether it's a reference, and what it names.
-    private func index(_ id: ShapeID, _ record: AnyShapeRecord?) {
-        // Its row, made again for the reference as it is now, notes what its path reads then.
-        forgetPath(of: id)
-        if let old = targetOf.removeValue(forKey: id) {
-            referencesTo[old]?.remove(id)
-            if referencesTo[old]?.isEmpty == true { referencesTo[old] = nil }
-        }
-        guard let record, record.kind == Reference.kind else {
-            known.remove(id)
-            return
-        }
-        known.insert(id)
-        guard let target = record.typed(as: Reference.self)?.props.target?.id else { return }
-        targetOf[id] = target
-        referencesTo[target, default: []].insert(id)
-    }
-
-    private func rebuild() {
-        targetOf = [:]
-        referencesTo = [:]
-        known = []
+    /// A file put in place: what was drawn is let go of, and what rows read their paths from is kept for the
+    /// rows the list kept, but for the references that went.
+    private func filePutInPlace() {
         drawnConditions = [:]
         drawnBoardOwners = []
         drawnMismatches = [:]
-        let file = editor.file
-        func scan(_ document: CanvasDocument) {
-            for record in document.shapes where record.kind == Reference.kind { index(record.id, record) }
-        }
-        scan(file.root)
-        for document in file.children.values { scan(document) }
-        // What rows read their paths from holds for the rows the list kept: only those of
-        // references that went are let go of.
-        for id in Array(pathRead.keys) where !known.contains(id) { forgetPath(of: id) }
+        let topology = editor.topology
+        for id in Array(pathRead.keys) where !(topology.map { Self.isReference(id, in: $0) } ?? false) { forgetPath(of: id) }
     }
 
-    /// The references a commit touched, each once, as they are now (nil: in no board of the file): the
-    /// file's that it added, changed (moves aside), removed or touched elsewhere, and those it brought,
-    /// added on the board shown, on a board it brought (read from the board's shapes, as `rebuild`
-    /// reads one) or elsewhere on a board it changed. A shape's kind never changes, so any other
-    /// shape is no reference: a commit of thousands of shapes and no reference costs a set hit a shape
-    /// (and a look at those it added), never a lookup in the file.
+    /// The references a commit touched, each once, as they are now: those it added, changed (moves
+    /// aside), removed from the board shown to put elsewhere, or touched elsewhere (every shape of a board
+    /// it brought or took, and what it wrote on a board it changed), and, as nil, those of its shapes that
+    /// are no reference now but something is kept of (a reference it deleted, or took with a board). What
+    /// is a reference is Topology's to say (`standInKind(of:)`: a stand-in of this kind on a board the app
+    /// can show), which has heard the commit, so a commit of thousands of shapes and no reference costs a
+    /// dictionary hit a shape (none while the file has no stand-in and nothing is kept), never a lookup in
+    /// the file.
     private func referencesTouched(by changes: ChangeSet) -> [ShapeID: AnyShapeRecord?] {
         var touched: [ShapeID: AnyShapeRecord?] = [:]
-        let file = editor.file, document = editor.document
-        func readAgain(_ id: ShapeID) { touched.updateValue(file.record(id), forKey: id) }
-        if !known.isEmpty {
-            for id in changes.changed where known.contains(id) && !changes.moved.contains(id) { readAgain(id) }
-            for id in changes.removed where known.contains(id) { readAgain(id) }
-            for id in changes.elsewhere where known.contains(id) { readAgain(id) }
-        }
-        for id in changes.added {
-            if known.contains(id) {
-                readAgain(id)
-            } else if let record = document[id], record.kind == Reference.kind {
-                touched.updateValue(record, forKey: id)
-            }
-        }
-        for board in changes.boardsAdded {
-            for record in file[board].shapes where record.kind == Reference.kind { touched.updateValue(record, forKey: record.id) }
-        }
-        // What else `elsewhere` holds is on the boards it took, gone, unless it changed a board.
-        if !changes.boardsChanged.isEmpty {
-            for id in changes.elsewhere where !known.contains(id) {
-                if let record = file.record(id), record.kind == Reference.kind { touched.updateValue(record, forKey: id) }
+        guard let topology = editor.topology,
+              topology.hasStandIns || !pathRead.isEmpty || !dynamic.isEmpty || !drawnConditions.isEmpty else { return touched }
+        let file = editor.file
+        forEachChanged(by: changes) { id in
+            if Self.isReference(id, in: topology) {
+                touched.updateValue(file.record(id), forKey: id)
+            } else if pathRead[id] != nil || dynamic[id] != nil || drawnConditions[id] != nil {
+                touched.updateValue(nil, forKey: id)
             }
         }
         return touched
@@ -505,10 +466,9 @@ extension ReferenceState: EditorService {
         editor.setNeedsDisplay()
     }
 
-    /// Keeps which references name which shapes: those the commit added, changed (but for those it only
-    /// moved) or removed, on the board shown or, as `elsewhere`, on any other. What it reads is the
-    /// references it touched (`referencesTouched(by:)`), so a commit that touches none costs what it
-    /// touched a set hit, whatever the file holds.
+    /// Lets go of what's kept of the references the commit touched (`referencesTouched(by:)`) and of
+    /// those that name a shape it changed, and hears their questions: a commit that touches none costs a
+    /// dictionary hit for what it touched, whatever the file holds.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         // A drag's every event: one test.
         if changes.changed.count == changes.moved.count, changes.added.isEmpty, changes.removed.isEmpty, changes.elsewhere.isEmpty,
@@ -519,14 +479,15 @@ extension ReferenceState: EditorService {
         }
         // A board put in place: every board read afresh.
         guard !changes.replacedDocument else {
-            rebuild()
+            filePutInPlace()
             rebuildDynamic()
             return
         }
         let touched = referencesTouched(by: changes)
         forgetDrawn(changes, touched: touched)
         hearDynamic(changes, touched: touched)
-        for (id, record) in touched { index(id, record) }
+        // Its row, made again for the reference as it is now, notes what its path reads then.
+        for id in touched.keys { forgetPath(of: id) }
     }
 
     /// Editing ended: nothing is being handed off.
@@ -536,12 +497,12 @@ extension ReferenceState: EditorService {
         interpretationEditingEnded(id)
     }
 
-    /// A file put in place is read afresh. Another board shown changes nothing: the file's index is kept
-    /// by every commit, whatever board it was on (`elsewhere`), so a switch works out no change set.
+    /// A file put in place is read afresh. Another board shown changes nothing: what's kept is the file's,
+    /// kept by every commit, whatever board it was on (`elsewhere`), so a switch works out no change set.
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         if change.isFileReplaced {
             dropInterpretations()
-            rebuild()
+            filePutInPlace()
             rebuildDynamic()
         }
     }

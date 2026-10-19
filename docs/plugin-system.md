@@ -330,7 +330,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Let agents (or scripts) do something to a board from outside the app | `registrar.automationCommand("name", "…", params: P.self) { params, context in … }`: a `canvas` command | [The command line](#the-command-line) |
 | Have a command answer later (it waits on a model, or runs off the main actor), its output written off the main actor | `registrar.automationCommand(…, runAsync: { params, context async throws(AutomationError) in … })` | [A command may be async](#a-command-may-be-async) |
 | Read text as a kind's property reads it (a value typed by its schema), or say briefly what a property takes | The core's `KindSchema(schema)`, over `registry.schema(for:)` | [A kind's schema](#a-kinds-schema) |
-| Let `canvas draw` name shapes, draw edges, warn about what it draws, or write a kind of text, from the plugin that owns the concern | A plugin value of its own in the concern's module, which imports Draw: `registrar.drawNames`, `drawEdges`, `drawChecks` or `drawTextFormat` | [What draw takes from other plugins](#what-draw-takes-from-other-plugins) |
+| Let `canvas draw` name shapes, draw edges, tell two edges of a pair apart, warn about what it draws, or write a kind of text, from the plugin that owns the concern | A plugin value of its own in the concern's module, which imports Draw: `registrar.drawNames`, `drawEdges`, `drawEdgeIdentity`, `drawChecks` or `drawTextFormat` | [What draw takes from other plugins](#what-draw-takes-from-other-plugins) |
 | Make or change a shape without the pointer: what a kind's tool places, a shape from its JSON, or some of a shape's properties set from JSON | `registry.placement(for:)`, `placement.shape(at:)`; `registry.shape(_:properties:)`, `registry.shape(_:setting:)` | [The command line](#making-and-changing-shapes-without-the-pointer) |
 | Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; adornments follow by themselves, and an overlay with `context.worldDrawingOffset(of:)` | [Refusing a change: the shake](#refusing-a-change-the-shake) |
 | Change where a drag puts the shapes it moves (snap them, keep them on a grid), and draw while it does | `registrar.translationAdjuster { editor, start in … }`, a `TranslationAdjuster`: Snapping claims it | [The translation adjuster](#the-cores-part-the-translation-adjuster) |
@@ -5806,8 +5806,8 @@ connection, and the arrow may end only on a shape that takes its channel, so a n
 while a subboard takes every
 channel, so anything with ports links to one, and one to anything with ports. They belong to
 Connections ([`Sources/Connections`](../Sources/Connections)), a horizontal any kind opts into,
-built on Selection, whose [canvas buttons](#canvas-buttons) the dots are, on Draw, whose edges its
-connections are, and on Types, whose `is` tells two connections of one pair apart. It holds ports,
+built on Selection, whose [canvas buttons](#canvas-buttons) the dots are, and on Draw, whose edges its
+connections are (what tells two of one pair apart, an arrow's `is`, Types says to Draw itself). It holds ports,
 channels and the connector's interface, in three plugin values, `PortsPlugin`, `PortEdgesPlugin` and
 `ConnectMenuPlugin` (Connect in a right-click, after `ContextMenusPlugin`), and names no arrow. The connector is [Arrows](#the-connector-arrows) ([`Sources/Arrows`](../Sources/Arrows)),
 a product of its own on Connections (and on TableOfContents and TextEditing, for the arrow's row and
@@ -7890,7 +7890,9 @@ x.standsIn(maxTargets: 50, admitting: { target, registry in … }) { shape, regi
   a view reads back as one edge are one.
 - **New reads**: `forwards(of:)`, what a stand-in stands for now, in order; `standIns(for:)`, what
   stands for a shape; `standIns(naming:)`, the stand-ins whose record names a shape, whether or not they
-  stand for it now; `forwarding(of:)`, `ForwardingState` (`.none`, `.record([…])`,
+  stand for it now, and the other way round `directTarget(of:)`, the one shape a stand-in's record names
+  (`Forwarding.onlyShape`), with `standInKind(of:)`, a stand-in's kind (References asks these and keeps
+  no index of its own of who names what); `forwarding(of:)`, `ForwardingState` (`.none`, `.record([…])`,
   `.provided([…])`, `.pending`, waiting for an answer); `edges(through:)`, the resolved edges
   forwarded through a stand-in, one per shape it stands for; and `standInKinds`, on the index and
   a snapshot.
@@ -7987,6 +7989,7 @@ file. Every query costs what it returns, never a board:
 | `neighbors(of: id, direction, types:)` | The shapes at the other ends, by each edge's type, each once per type, in the order its first edge comes: what's connected to a shape, and how. The shape itself, for an edge from it to itself. |
 | `edges(ofType: filter)` | Every edge in the file of the types the filter admits: type by type (declared ones in plugin order, then the rest by name), each by carrier. |
 | `edges(carriedBy: carrier)` | What a shape carries, in the order it emits them. |
+| `forEachEdge(of: id, direction, types:, view:) { edge in … }` | What `edges(of:)` returns, handed to the closure one by one, making no array: for a walk over many shapes' edges (Types' over a type's instances, and theirs). |
 | `end(id)` | How a shape at an end of an edge is now (`EdgeEnd`): `.live(board)` on a board the editor can show, `.unavailable` in the file on a board it can't (under an owner kept aside), `.missing` in no board of the file. |
 | `revision(of: id)`, `touched` | A shape's revision, +1 each time its edges (at either end) change, from the first time it's read: reading it observes only that shape (a key path per shape, as Mentions' `labelRevision`), so a SwiftUI view of one shape's connections redraws when they change. `touched` is the shapes whose edges the last change to them, a commit's or a [provide's](#provided-answers-the-one-delivery-settling), changed (none after a switch of board), and `touched(types:)` those whose edges of some types it changed; `follow` tells each change as it comes, the way to hear one. |
 
@@ -10023,7 +10026,7 @@ query are that query; others are turned into one by the model, live while they'r
 Its registration ([References.swift](../Sources/References/References.swift)):
 
 ```swift
-registrar.service { ReferenceState(editor: $0) }          // which references name which shape; what each stands for now
+registrar.service { ReferenceState(editor: $0) }          // what each stands for now (which name which shape is Topology's)
 registrar.overlay(ReferenceButtonOverlay())               // the leading symbol's hover and pressed looks
 registrar.canvasButtons(at: { editor, point in … }, click: { button, editor in … })   // the leading symbol goes to the original
 registrar.command(.goToOriginal, title: ReferenceStyle.goToOriginal, isEnabled: { … }) { … }  // the panel's button, the menu's item
@@ -10070,16 +10073,17 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   board: the name it holds), not available (in the file on a board the app can't show), and, for words,
   not interpreted, interpreting (the model is being asked), failed, or nothing to interpret them with; for a query, being found, found (`ReferenceFound`: all or first, the count, the
   matches given, the first's appearance), no matches, refused (in the engine's words), failed (past
-  the deadline: Retry), or nothing to ask (no engine installed). The state also keeps which references
-  name which shape across the whole file (from every commit's `ChangeSet`, reading only the references
-  the commit touched: a shape's kind never changes), so a rename, a change of publicness or a deletion
-  remakes the right rows, and a commit of thousands of shapes and no reference costs a set hit each.
-  It also keeps which shapes each row read its path from (below, the table of contents), noted as the
+  the deadline: Retry), or nothing to ask (no engine installed). Which references name which shape is
+  Topology's, which keeps it for every board the app can show (`standIns(naming:)`, the references
+  among them by `standInKind(of:)`), so a rename, a change of publicness or a deletion remakes the right
+  rows, and a commit of thousands of shapes and no reference costs a dictionary hit each. The state
+  keeps which shapes each row read its path from (below, the table of contents), noted as the
   row is made, so a frame or a board's owner renamed or put somewhere else remakes the rows whose
   paths it's in, and no other.
 - **What a dynamic reference finds** (`ReferenceAnswers.swift`). `ReferenceState` keeps every reference
-  with a query in the file (from `ChangeSet`, other boards and boards added and removed included; read
-  afresh for a file put in place) and asks the engine for them: one `queries.matches` batch, on one
+  with a query on a board the app can show (from `ChangeSet`, other boards and boards added and removed
+  included; read afresh for a file put in place; Topology takes no answer for one on a board it can't
+  show) and asks the engine for them: one `queries.matches` batch, on one
   snapshot, for every one whose answer may be out of date and that isn't being typed into, each on the
   **recorded** view (what direct references forward, never another dynamic one's answer), admitting
   public shapes alone (`editor.publishing.admitting`), eight matches for a first-match one (what All
@@ -10239,7 +10243,7 @@ The modules, one job each:
 | CanvasUI's `CommandServer` | app | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
 | Automation | platform | The commands plugins give the command line (`AutomationCommands`), its own four, `draw`, `kinds` and `measure` (each resolving its board, calling the draw engine (Draw) and saying its `DrawError` as the wire's `AutomationError`) and `show`, which borrows Draw's naming. The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
 | Colors | platform | The color a shape of a kind that opted in holds ([Colors](#colors)): the property, the built-in names and a file's own, the book that says what every color looks like, the panel's row, `/color`, Color ▸, and the words draw and queries take; what a color looks like is [Palette](#palette)'s. |
-| Draw | platform | The engine of `canvas draw`, `measure` and `kinds` ([draw](#draw)), and the seven points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
+| Draw | platform | The engine of `canvas draw`, `measure` and `kinds` ([draw](#draw)), and the nine points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawEdgeIdentities`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`, `DrawGroups`): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
 | DrawScript | core | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
 | FuzzyMatching | core | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | platform | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
@@ -10881,7 +10885,8 @@ Draw knows no title, port, validity, mention or group. `draw` takes each from a 
 |---|---|---|---|---|
 | `DrawNames` | `registrar.drawNames(name:namingProperty:isDerived:fold:)` | What a shape is called; the property of its kind's schema a title is written to (nil: its shapes can't be named); whether the kind works names out itself; how a title a script writes is folded | No titles: a titled statement is `no_names` | TitleNamesPlugin |
 | `DrawLabels` | `registrar.drawLabels { record, registry in … }` | What a shape with no title is called for the reference `draw` puts beside the shape an edge ends at on another board (the label the maker is handed): the name where it is named in words, its first line or its values | The kind's name (`Untitled sticky note`) | MentionTextsPlugin |
-| `DrawEdges` | `registrar.drawEdges(kind:attributes:identity:sides:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; the property keys of the kind that tell two edges of one pair apart (`is`); what an edge may leave a kind on, by side (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdgesPlugin |
+| `DrawEdges` | `registrar.drawEdges(kind:attributes:sides:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; what an edge may leave a kind on, by side (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdgesPlugin |
+| `DrawEdgeIdentities` | `registrar.drawEdgeIdentity(IsAProperty.key)` | A property of the edge kind that tells two edges of one pair apart, named by the plugin that owns it (one a key) | The pair alone: two connections of one pair are `ambiguous_edge` | TypeNamesPlugin (`is`) |
 | `DrawChecks` | `registrar.drawChecks(touched: { changes, shapes in … }, rest: "canvas query …") { record, shapes in … }` | What's wrong with a shape made or changed, as the script leaves the board: `DrawIssue`s (a message, its level: a warning, an error, or `incomplete`, that the shape still needs something; the property it's about). And `touched`: of what the run wrote (`transaction.pending`, with its shapes), the other shapes to look at, on any board; the run checks each as it found it and as it leaves it and warns of each issue it brought (`rest` is the command that lists them all, an error, a warning or what a shape still needs, said after the twentieth shape) | Each shape checked against its kind's schema (`registry.schemaViolations(of:)`); with no `touched`, a run says only what's wrong with the shapes it wrote | ValidationChecksPlugin |
 | `DrawTextFormats` | `registrar.drawTextFormat(mediaType:describes:write:)` | Each string a script writes whose schema says `contentMediaType` of that media type, as `write` gets it (its string's escapes undone) with a `DrawTextContext` (the registry, the string's schema as its kind declares it, and `shape(called:admitting:)`, which finds the shape a title names as the script finds one, `admitting` taking the record and the keys the script writes on it, for a shape drawn in the same run: what to keep, or a refusal. `describes` is said after the attribute's type in `canvas kinds`. A list whose schema is `uniqueItems` is written with each once, the first, after its strings are written (two titles of one shape are one id) | Text kept as written; `kinds` says nothing after its type | MentionTextsPlugin, TypeNamesPlugin |
 | `DrawValueWriters` | `registrar.drawValueWriter(for:write:merge:)` | The value a script writes for a property, as `write` gets it (JSON, strings still as written, with the same `DrawTextContext`) and returns what the property stores, or a refusal said on the statement's line; then `merge(written, held)`, with what the shape holds now (nil for a new one; for an edge, the connection as its maker left it), is what the shape is set to, so a script run again changes nothing. One writer a property key | A value replaces what the shape holds | FieldValuesPlugin |
@@ -10912,7 +10917,6 @@ registrar.drawNames(name: { record, registry in registry.title(of: record) },
 // PortEdgesPlugin: an edge is the connector's connection, on the channel this plugin picks.
 registrar.drawEdges(kind: { registry in registry.makesConnections ? registry.connectorKind : nil },
                     attributes: [ChannelProperty.key.rawValue],
-                    identity: [IsAProperty.key.rawValue],
                     sides: { kind, registry in EdgeChannels.sides(of: kind, in: registry) },
                     ends: { record, registry in registry.connectionEnds(of: record) },
                     make: { request, existing, shapes throws(DrawError) in
@@ -10962,9 +10966,10 @@ registrar.drawTextFormat(mediaType: MentionTextFormat.mediaType, describes: "@[T
   `DrawEdges.check` refuses an attribute key the language keeps (`from`, `to`, `via`, `style`),
   one a result's row has of its own (`line`, `did`, `kind`, …: a row carries an edge's attributes
   beside its own members), one a script couldn't write before a colon, and one declared twice.
-- **Identity: which connection of a pair an edge is.** `drawEdges(identity:)` names property keys
-  of the edge kind that tell two connections of one pair apart (Connections names `is`, so two
-  arrows of one pair of different types are two edges). A statement that writes none of them is
+- **Identity: which connection of a pair an edge is.** `drawEdgeIdentity(_:)` names a property
+  of the edge kind that tells two connections of one pair apart, and the plugin that owns the
+  property names it, not the one that makes edges (Types names `is`, so two arrows of one pair of
+  different types are two edges, and Connections, which makes them, knows no type). A statement that writes none of them is
   about the pair, as above. One that writes some is about the connections of the pair that hold
   what it writes (a list as a set; absent, `null` and `[]` are one "none"): one is that connection
   (`unchanged` or `reconnected`, its identity not written again), two are `ambiguous_edge`, and
@@ -10972,8 +10977,9 @@ registrar.drawTextFormat(mediaType: MentionTextFormat.mediaType, describes: "@[T
   writes (`reconnected`), else a new connection is made (`connected`); written as `none`, it is the
   plain connection alone. Two statements for one pair in a script are `duplicate` unless both write
   a key, differently. `delete edge "A" -> "B" is: "T"` takes the connections that hold it; Draw
-  refuses every other attribute there (`unknown_attribute`), and `DrawEdges.check` refuses an
-  identity key that is empty, written twice, one of `attributes`, or one the language keeps. A key
+  refuses every other attribute there (`unknown_attribute`), and `DrawEdgeIdentities.check` refuses
+  an identity key that is empty, one of the maker's `attributes`, or one the language keeps (the
+  registry, one named by two plugins). A key
   the edge kind has no property for tells nothing apart. Which board a pair is on never depends on
   its identity.
 - **A connection by id, from any plugin.** `registry.drawsConnections` (something
@@ -11543,8 +11549,11 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   then keeps them by each commit's `ChangeSet` alone (what it added, removed and changed, on the
   board shown and `elsewhere`, the kind checked first; a whole file put in place read again), never
   per frame: `isType(_:)`, `types`, `name(of:)`, a `revision(of:)` that moves whenever a type's
-  schema or name does, and `onChange(_:)` for what depends on a type. It also keeps what is what, the
-  same way: `links(of:)` (a shape's types, in order), `instances(of:)` (directly), `lineage(of:)` (what
+  schema or name does, and `onChange(_:)` for what depends on a type. It also says what is what, as
+  Topology's `is-a` edges have it as drawn (so of shapes on the boards the app can show; a shape's
+  list kept in the graph as a value, read from the edges for each shape a commit names, a type's
+  instances asked of Topology): `links(of:)` (a shape's types, in order), `instances(of:)` (directly)
+  and `hasInstances(_:)`, `lineage(of:)` (what
   a shape's types lead to in the one order they are read in: a type before every type it builds on,
   and where a list leaves a choice the later added first (C3, Python's method resolution order; where
   it has no order a depth-first walk breaks the ties and the rule still holds), cycle-safe), `affected(by:)` (their instances, near and far) and `name(of: TypeLink)` (the live title, or
@@ -13737,7 +13746,7 @@ title-names          draw names
 port-edges           draw edges
 validation-checks    draw checks
 mention-texts        draw labels · draw text text/x-canvas-mentions
-type-names           draw text text/x-canvas-type · draw value schema
+type-names           draw text text/x-canvas-type · draw edge identity is · draw value schema
 draw-field-values    draw value fieldValues · draw value endRule · draw reports members is, endOf, fits, relates
 color-names          draw text text/x-canvas-color
 group-draw           draw groups
@@ -13802,7 +13811,7 @@ locked (`adornment LockChip → every shape holding locked`, with its mark on th
 its menu's items, `CanvasContextMenu → every shape holding locked`, and `/lock`, all in its one scope);
 `adornments` lends them their layout and drawing, a canvas button (`CanvasButtons`) and their hits
 (`DecorationHits`), and places none of its own. `draw-engine` is the draw engine's mark
-(`draw engine`), whose seven points the horizontals' plugins fill. The automation line is its commands
+(`draw engine`), whose nine points the horizontals' plugins fill. The automation line is its commands
 (`command line draw`, `command line show`, `command line kinds`, `command line measure`), and the
 six after it are Titles', Connections', Validation's and Mentions' plugins and Types' two, which fill Draw's
 points (`draw text` is one a media type, `draw value` one a property). `queries` is the query engine's service

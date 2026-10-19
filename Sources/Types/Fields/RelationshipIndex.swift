@@ -443,10 +443,7 @@ public final class RelationshipIndex {
     func typeAt(_ end: ShapeID) -> ShapeID? {
         guard let editor, let record = editor.shape(inFile: end) else { return nil }
         guard standInKinds.contains(record.kind) else { return types.isType(end) ? end : nil }
-        guard case .shapes(let named)? = standIns.forwarding(of: record) else { return nil }
-        var distinct: [ShapeID] = []
-        for id in named where !distinct.contains(id) { distinct.append(id) }
-        guard distinct.count == 1, let target = distinct.first, types.isType(target) else { return nil }
+        guard let target = standIns.directTarget(of: record), types.isType(target) else { return nil }
         return target
     }
 
@@ -840,7 +837,7 @@ public final class RelationshipIndex {
         // So does a list that is no type's (a type taken away that its instances still name): the chain runs
         // through it.
         var chains = pendingTypes.lineage
-        for id in pendingTypes.lists where !types.isType(id) && !types.instances(of: id).isEmpty { chains.insert(id) }
+        for id in pendingTypes.lists where !types.isType(id) && types.hasInstances(id) { chains.insert(id) }
         if !chains.isEmpty {
             revision &+= 1
             out.ended = true

@@ -82,7 +82,7 @@ struct EdgeMatch {
 }
 
 /// What tells the edges of one pair apart in a statement that writes some of it: the values it gives
-/// the edge kind's identity keys (`DrawEdging.identity`), by key, as the value writers left them (an
+/// the edge kind's identity keys (`DrawEdgeIdentities`), by key, as the value writers left them (an
 /// `is:` title as the id it became). Equal by meaning: a list of ids is a set, and an absent key, `null`
 /// and an empty list are one "none".
 struct EdgeIdentity {

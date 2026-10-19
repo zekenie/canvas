@@ -20,7 +20,7 @@ extension PluginID {
     public static let drawEngine: PluginID = "draw-engine"
 }
 
-/// The draw engine's plugin: it owns the eight points the plugins that own a concern fill with this
+/// The draw engine's plugin: it owns the nine points the plugins that own a concern fill with this
 /// app's words (DrawPoints.swift), and contributes the engine's mark. A plugin that isn't a language
 /// runs the engine through the free functions `draw` (here), `measure` (Measure.swift) and `kinds`
 /// (Kinds.swift); the command line's commands over it are Automation's.

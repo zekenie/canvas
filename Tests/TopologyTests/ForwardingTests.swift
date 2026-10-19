@@ -203,6 +203,35 @@ private let views: [(name: String, view: EdgeView)] = [("resolved", .resolved), 
         expectEqual(topology.standIns(naming: ShapeID()), [])
     },
 
+    test("the other way round: the one shape a stand-in's record names, whatever it stands for, and its kind; nothing of one that names several, a shape that isn't one, or one on a board the app can't show") {
+        let a = ShapeID(), c = ShapeID(), b = ShapeID(), r = ShapeID(), q = ShapeID(), twice = ShapeID(), g = ShapeID(), gone = ShapeID()
+        let hidden = ShapeID(), nowhere = ShapeID()      // an owner no shape of the file has: its board can't be shown
+        let file = CanvasFile(root: board(box(a), box(c), box(b), proxy(r, [a]), proxy(q, [gone, a]), proxy(twice, [a, a]), gate(g, [c])),
+                              children: [nowhere: board(proxy(hidden, [a]))])
+        let h = try standing(file)
+        let topology = h.topology
+        expectEqual(topology.directTarget(of: r), a)
+        expectEqual(topology.directTarget(of: twice), a, "named over again")
+        expectEqual(topology.directTarget(of: q), nil, "it names two, one of them nowhere")
+        expectEqual(topology.directTarget(of: g), c, "whether or not it may stand for it")
+        expectEqual(topology.forwards(of: g), [], "the gate stands for nothing: the box isn't open")
+        expectEqual(topology.standInKind(of: r), Proxy.kind)
+        expectEqual(topology.standInKind(of: g), Gate.kind)
+        expectEqual(topology.standInKind(of: b), nil, "a box is no stand-in")
+        expectEqual(topology.directTarget(of: b), nil)
+        expectEqual(topology.standInKind(of: hidden), nil, "a stand-in on a board the app can't show isn't one here")
+        expectEqual(topology.directTarget(of: hidden), nil)
+        expectEqual(Set(topology.standIns(naming: a)), [r, q, twice], "and names nothing")
+        h.editor.transact { $0.update(r, as: Proxy.self) { $0.props.stands = [Citation(c)] } }
+        expectEqual(topology.directTarget(of: r), c, "re-pointed")
+        h.editor.transact { $0.delete([r]) }
+        expectEqual(topology.standInKind(of: r), nil, "gone")
+        expectEqual(topology.directTarget(of: r), nil)
+        h.editor.undo()
+        expectEqual(topology.directTarget(of: r), c, "undone")
+        expectEqual(topology.standInKind(of: r), Proxy.kind)
+    },
+
     test("re-pointing a stand-in, deleting what it stands for and undoing set again only what's at it, and touch every end") {
         let a = ShapeID(), c = ShapeID(), b = ShapeID(), r = ShapeID(), l = ShapeID(), m = ShapeID(), far = ShapeID()
         let h = try standing(CanvasFile(root: board(box(a), box(c), box(b), box(far), proxy(r, [a]), link(l, b, r), memo(m, lead: r))))

@@ -6,9 +6,9 @@ import CoreGraphics
 import Draw
 import TestKit
 
-// An edge is its pair and, for an edge kind that names identity keys, what a statement writes of
-// them (`DrawEdging.identity`). A fixture edge kind, the tie, has two: `bond` (text) and `tags` (a
-// list of text); `memo` is another property of it, no identity.
+// An edge is its pair and, for an edge kind that has identity keys, what a statement writes of
+// them (`DrawEdgeIdentities`, named by whoever owns the property). A fixture edge kind, the tie, has
+// two: `bond` (text) and `tags` (a list of text); `memo` is another property of it, no identity.
 
 /// What a tie is bound by.
 enum Bond {}
@@ -43,7 +43,8 @@ extension Memo: ShapeProperty {
         registrar.optIn(Link.self, to: Tags.self)
         registrar.declare(Memo.self)
         registrar.optIn(Link.self, to: Memo.self)
-        registrar.drawEdges(kind: { _ in Link.kind }, identity: identity, sides: { _, _ in [:] }, ends: { record, _ in
+        for key in identity { registrar.drawEdgeIdentity(PropertyKey(rawValue: key)) }
+        registrar.drawEdges(kind: { _ in Link.kind }, sides: { _, _ in [:] }, ends: { record, _ in
             guard let link = record.typed(as: Link.self), let from = link.props.from, let to = link.props.to else { return nil }
             return (from, to)
         }, make: { request, existing, _ throws(DrawError) in
@@ -233,15 +234,16 @@ private func dids(_ result: JSON) -> [JSON?] { rows(result).map { $0["did"] } }
     test("an identity key must be a word, once, no language key and no attribute of the maker") {
         @MainActor func identityRefusal(_ identity: [String], attributes: [String] = []) -> String? {
             refusal { registrar in
-                registrar.drawEdges(kind: { _ in nil }, attributes: attributes, identity: identity, sides: { _, _ in [:] }, ends: { _, _ in nil },
+                for key in identity { registrar.drawEdgeIdentity(PropertyKey(rawValue: key)) }
+                registrar.drawEdges(kind: { _ in nil }, attributes: attributes, sides: { _, _ in [:] }, ends: { _, _ in nil },
                                     make: { _, _, _ throws(DrawError) in throw DrawError("no", reason: "no") })
             }
         }
-        expectEqual(identityRefusal(["from"]), "DrawEdges: identity from: the language keeps from: for itself")
-        expectEqual(identityRefusal([""]), "DrawEdges: identity : a key is a word a script can write before a colon")
-        expectEqual(identityRefusal(["is", "is"]), "DrawEdges: identity is: it's declared twice")
+        expectEqual(identityRefusal(["from"]), "DrawEdgeIdentities: identity from: the language keeps from: for itself")
+        expectEqual(identityRefusal([""]), "DrawEdgeIdentities: identity : a key is a word a script can write before a colon")
+        expectEqual(identityRefusal(["is", "is"]), "more and more both claim draw edge identity is in DrawEdgeIdentities")
         expectEqual(identityRefusal(["bond"], attributes: ["bond"]),
-                    "DrawEdges: identity bond: it's one of the maker's attributes, and an identity key is a property of the kind's schema")
+                    "DrawEdgeIdentities: identity bond: it's one of the maker's attributes, and an identity key is a property of the kind's schema")
         expectEqual(identityRefusal(["is", "bond"]), nil)
     },
     test("an identity key the edge kind has no property for tells nothing apart: the pair is the edge") {

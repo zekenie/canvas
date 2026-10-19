@@ -10,8 +10,9 @@ import Draw
 /// there is `TypeIndex.canBeNamed`, the one function over a record and the registry that says which
 /// shapes are types (and, later, custom shapes); any other shape named is refused: `"Ann" is a
 /// sticky-note, which isn't a type or a shape`. A quoted title for a list is a one-item list
-/// (Draw's), several are JSON: `is: ["Person", "Employee card"]`. And `schema:` keeps the type's
-/// `$color` when it says none.
+/// (Draw's), several are JSON: `is: ["Person", "Employee card"]`. An edge's `is` tells two arrows of
+/// one pair apart (`drawEdgeIdentity`: a statement that writes it is about the pair's arrow of those
+/// types). And `schema:` keeps the type's `$color` when it says none.
 public struct TypeNamesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "type-names" }
@@ -34,6 +35,8 @@ public struct TypeNamesPlugin: ListedPlugin {
             }
             return found.id.description
         }
+        // Two arrows of one pair are two edges, told apart by the types each is of.
+        registrar.drawEdgeIdentity(IsAProperty.key)
         // A schema written whole keeps the type's `$color` unless it says one, as the model's does
         // (`TypeColorDirective.carried`): a script run again says `unchanged`, and a color given to the
         // type since stays; `color: null` takes it away.

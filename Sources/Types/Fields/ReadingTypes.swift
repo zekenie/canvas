@@ -22,7 +22,11 @@ struct ReadingTypes: ChainCatalog {
     func node(_ id: ShapeID) -> ChainNode? {
         MainActor.assumeIsolated {
             guard let shape = shape(id), let schema = shape[TypeSchemaProperty.self] else { return nil }
-            return ChainNode(level: book.level(readFrom: schema.text, of: id), parents: (shape[IsAProperty.self] ?? []).reversed().map(\.shape))
+            // Its own list as the commit has it: the index's for a type the run left as it was (so none on a board the
+            // app can't show, which a transaction reaches), else the record's, read as the index reads one.
+            let committed = id != record?.id && !reading.isChanged(id) ? reading.service(TypeIndex.self) : nil
+            let links = committed?.links(of: id) ?? TypeIndex.links(of: shape)
+            return ChainNode(level: book.level(readFrom: schema.text, of: id), parents: links.reversed().map(\.shape))
         }
     }
 }

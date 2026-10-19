@@ -172,6 +172,21 @@ func ajar(_ id: ShapeID) -> AnyShapeRecord {
         expectEqual(standIns.forwarding(of: try require(h.editor.document[a])), nil, "a box doesn't stand in")
         expectEqual(standIns.forwarding(of: try require(h.editor.document.shapes.last)), nil, "an echo that cites nothing stands for nothing")
     },
+    test("the one shape a direct stand-in's record names is that shape, named once or over again, whether or not it may stand for it; nothing for one that names none or several, asks a question, or doesn't stand in") {
+        let a = ShapeID(), b = ShapeID()
+        let h = try graph(more: [StandInsPlugin(), LensesPlugin()])
+        let standIns = h.editor.registry.standIns
+        expectEqual(standIns.directTarget(of: proxy(ShapeID(), [a])), a)
+        expectEqual(standIns.directTarget(of: proxy(ShapeID(), [a, a])), a, "named over again")
+        expectEqual(standIns.directTarget(of: proxy(ShapeID(), [a, b])), nil, "several")
+        expectEqual(standIns.directTarget(of: proxy(ShapeID(), [])), nil, "none")
+        expectEqual(standIns.directTarget(of: gate(ShapeID(), [a])), a, "a gate names the box, though it may not stand for it")
+        expectEqual(standIns.directTarget(of: lens(ShapeID(), asks: "boxes")), nil, "a question")
+        expectEqual(standIns.directTarget(of: box(a)), nil, "a box doesn't stand in")
+        expectEqual(Forwarding.shapes([b, b]).onlyShape, b)
+        expectEqual(Forwarding.shapes([]).onlyShape, nil)
+        expectEqual(Forwarding.provided(ForwardingKey("boxes")).onlyShape, nil)
+    },
     test("a stand-in of a kind admits what the kind's rule admits, and never a stand-in or a shape kept aside") {
         let open = ShapeID(), shut = ShapeID(), echo = ShapeID()
         let h = try graph(CanvasFile(root: board(ajar(open), box(shut), AnyShapeRecord(ShapeRecord(id: echo, Echo(unit, cites: open, says: "x"))))),

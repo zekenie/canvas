@@ -51,14 +51,16 @@ public struct TypeChange: Sendable {
 /// The file's types, on every board: each shape that holds a schema (`TypeSchemaProperty`), its
 /// name (its title, Titles') and a revision that moves whenever its schema or its name changes, so
 /// what depends on a type (a `$ref`'s completion, a type's highlights, an instance's chips) can tell
-/// it changed without reading it. And what is what: the types each shape is (`is`, `links(of:)`),
-/// the instances of each type (`instances(of:)`) and the chain a shape's types make
-/// (`lineage(of:)`). Read when the file opens, a scan of every board, then kept by each commit's
-/// `ChangeSet` alone (what it added, removed and changed, on the board shown and elsewhere, the kind
-/// checked first), a commit heard out of turn and a file put in place read again. Nothing per frame,
-/// and nothing for a shape that only moved. It never transacts; it tells Adornments to make the
-/// chips of the instances of a type again when the type is renamed, recolored (its shape's `color`,
-/// or the file's colors it names), deleted or comes back.
+/// it changed without reading it. And what is what, as Topology has it (the `is-a` edges as drawn, the
+/// literal view: on the boards the app can show): the types each shape is (`is`, `links(of:)`, kept as
+/// a value in the graph, in the order of its list, for a query and a run to read), the instances of each
+/// type (`instances(of:)`, asked of Topology) and the chain a shape's types make (`lineage(of:)`). Read
+/// when the file opens, a scan of every board, then kept by each commit's `ChangeSet` alone (what it
+/// added, removed and changed, on the board shown and elsewhere, the kind checked first), a commit heard
+/// out of turn and a file put in place read again. Nothing per frame, and nothing for a shape that only
+/// moved. It never transacts; it tells Adornments to make the chips of the instances of a type again
+/// when the type is renamed, recolored (its shape's `color`, or the file's colors it names), deleted or
+/// comes back.
 @MainActor
 @Observable
 public final class TypeIndex {
@@ -95,11 +97,11 @@ public final class TypeIndex {
     /// The kinds that stand in for other shapes (pills): never a type, whatever they stand for.
     @ObservationIgnored private let standInKinds: Set<ShapeKind>
     @ObservationIgnored private var observers: [@MainActor (TypeChange) -> Void] = []
-    /// Each shape's types, in the order of its list (only the shapes that are some), and the names of
-    /// the types: kept as a value, so a query takes it up in O(1).
+    /// Each shape's types, in the order of its list (only the shapes that are some: Topology's `is-a`
+    /// edges as drawn, so on a board the app can show), and the names of the types: kept as a value, so a
+    /// query takes it up in O(1), the relationships' fit reads it off the main actor and a run lays its
+    /// own lists over a copy.
     @ObservationIgnored private var kept = TypeGraph()
-    /// The shapes whose list names each shape.
-    @ObservationIgnored private var instancesByType: [ShapeID: Set<ShapeID>] = [:]
     /// The last title each type was known by in this session.
     @ObservationIgnored private var lastNames: [ShapeID: String] = [:]
     /// How often a type's name, or whether it's there, has changed: what a reader of `name(of:)`
@@ -136,8 +138,8 @@ public final class TypeIndex {
     public var types: Set<ShapeID> { Set(entries.keys) }
 
     /// Whether any shape lists a type that is gone (deleted, or no longer a type): its fields are unknown,
-    /// and the values of the shapes that list it are kept. O(the types listed).
-    public var listsAGoneType: Bool { instancesByType.contains { entries[$0.key] == nil && !$0.value.isEmpty } }
+    /// and the values of the shapes that list it are kept. O(the entries listed).
+    public var listsAGoneType: Bool { kept.links.values.contains { $0.contains { entries[$0.shape] == nil } } }
 
     /// Moves whenever a type comes, goes, or changes its schema, name or own types: what the lines `--ask` is
     /// told (`FileFields.text(for:)`) are made from.
@@ -182,8 +184,26 @@ public final class TypeIndex {
     public func links(of id: ShapeID) -> [TypeLink] { kept.links[id] ?? [] }
 
     /// The shapes whose list names the shape: its instances, directly (not those of the types that
-    /// are instances of it).
-    public func instances(of type: ShapeID) -> Set<ShapeID> { instancesByType[type] ?? [] }
+    /// are instances of it). Topology's: the carriers of the `is-a` edges into it, as drawn.
+    public func instances(of type: ShapeID) -> Set<ShapeID> {
+        var found: Set<ShapeID> = []
+        if let topology = editor?.topology { Self.forEachInstance(of: type, in: topology) { found.insert($0) } }
+        return found
+    }
+
+    /// Calls `body` with each of `instances(of:)` as `topology` (the editor's) has them, making no set: what
+    /// a walk over the instances of instances reads them by, Topology looked up once for the walk.
+    public static func forEachInstance(of type: ShapeID, in topology: TopologyIndex, _ body: (ShapeID) -> Void) {
+        topology.forEachEdge(of: type, .incoming, types: isA, view: .literal) { body($0.carrier) }
+    }
+
+    /// Whether any shape's list names the shape: `instances(of:)` not empty, making nothing.
+    public func hasInstances(_ type: ShapeID) -> Bool {
+        editor?.topology?.hasEdges(of: type, .incoming, types: Self.isA, view: .literal) ?? false
+    }
+
+    /// What a shape is, among the edges Topology keeps: made once, as a filter is made of a list.
+    private static let isA = EdgeTypeFilter.only(IsAEdge.id)
 
     /// The shapes a shape is, in the order its types are read in: a type before every type it builds
     /// on; where a shape's list leaves a choice, the later added first (C3; where it has no order, a
@@ -201,11 +221,12 @@ public final class TypeIndex {
     /// so on, each once (the shapes themselves only where the chain comes back to them). What a
     /// change to a type changes: its instances, near and far.
     public func affected(by changed: Set<ShapeID>) -> Set<ShapeID> {
+        guard let topology = editor?.topology else { return [] }
         var reached: Set<ShapeID> = [], level = changed
         while !level.isEmpty {
             var next: Set<ShapeID> = []
             for shape in level {
-                for instance in instancesByType[shape] ?? [] where reached.insert(instance).inserted { next.insert(instance) }
+                Self.forEachInstance(of: shape, in: topology) { instance in if reached.insert(instance).inserted { next.insert(instance) } }
             }
             level = next
         }
@@ -334,19 +355,30 @@ public final class TypeIndex {
         put(record.id, Entry(schema: schema.text, name: name, revision: revisions, color: color, isRelationship: mark))
     }
 
-    /// What the shape's list is now, filed under the types it names. True if that changed.
+    /// A record's list as the index reads a committed shape's: each type its `is` names once, the first, in
+    /// order, as Topology's property rule emits the `is-a` edges (TypesTests hold the two to each other); none for
+    /// a shape kept aside. For a record no index holds yet: what a run writes.
+    public static func links(of record: AnyShapeRecord) -> [TypeLink] {
+        guard !record.isOpaque, let list = record[IsAProperty.self] else { return [] }
+        var seen: Set<ShapeID> = []
+        return list.filter { seen.insert($0.shape).inserted }
+    }
+
+    /// The types a carrier's edges, as emitted, say it is, in their order.
+    private static func links(from edges: [Edge]) -> [TypeLink] {
+        edges.compactMap { $0.type == IsAEdge.id ? TypeLink($0.target) : nil }
+    }
+
+    /// What the shape's list is now, as Topology has it: its `is-a` edges as drawn, in the order of its
+    /// list (none on a board the app can't show, or kept aside). True if that changed.
     @discardableResult
-    private func readLinks(_ record: AnyShapeRecord) -> Bool {
+    private func readLinks(of id: ShapeID, in topology: TopologyIndex) -> Bool {
         #if DEBUG
         recordsRead += 1
         #endif
-        let now = record[IsAProperty.self] ?? []
-        let before = kept.links[record.id] ?? []
-        guard now != before else { return false }
-        for link in before { instancesByType[link.shape]?.remove(record.id) }
-        for link in before where instancesByType[link.shape]?.isEmpty == true { instancesByType[link.shape] = nil }
-        kept.links[record.id] = now.isEmpty ? nil : now
-        for link in now { instancesByType[link.shape, default: []].insert(record.id) }
+        let now = Self.links(from: topology.edges(carriedBy: id, view: .literal))
+        guard now != kept.links[id] ?? [] else { return false }
+        kept.links[id] = now.isEmpty ? nil : now
         return true
     }
 
@@ -374,32 +406,28 @@ public final class TypeIndex {
     /// A list changed: it is told in `lists`. A type's own list changing is told in `types` and `lineage`
     /// too, and moves the stamp: what its instances resolve to may have changed. An instance's list is in
     /// no chain, so it moves nothing else.
-    private func readLinks(of record: AnyShapeRecord, heard: inout Heard) {
-        guard readLinks(record) else { return }
-        heard.lists.insert(record.id)
-        guard entries[record.id] != nil else { return }
+    private func readLinks(of id: ShapeID, in topology: TopologyIndex, heard: inout Heard) {
+        guard readLinks(of: id, in: topology) else { return }
+        heard.lists.insert(id)
+        guard entries[id] != nil else { return }
         chainRevision &+= 1
-        heard.types.insert(record.id)
-        heard.lineage.insert(record.id)
+        heard.types.insert(id)
+        heard.lineage.insert(id)
     }
 
     /// A shape that's gone from the file holds no list.
     private func forgetLinks(of id: ShapeID, heard: inout Heard) {
-        guard let before = kept.links.removeValue(forKey: id) else { return }
+        guard kept.links.removeValue(forKey: id) != nil else { return }
         heard.lists.insert(id)
-        for link in before {
-            instancesByType[link.shape]?.remove(id)
-            if instancesByType[link.shape]?.isEmpty == true { instancesByType[link.shape] = nil }
-        }
     }
 
     private func readEveryShape(in editor: CanvasEditor) {
-        let registry = editor.registry, file = editor.file
+        let registry = editor.registry, file = editor.file, topology = editor.topology
         var heard = Heard()
         func read(_ shapes: [AnyShapeRecord]) {
             for record in shapes {
                 if kinds.contains(record.kind) { self.read(record, registry: registry, heard: &heard) }
-                if typeableKinds.contains(record.kind) { readLinks(record) }
+                if let topology, typeableKinds.contains(record.kind) { readLinks(of: record.id, in: topology) }
             }
         }
         read(file.root.shapes)
@@ -419,9 +447,10 @@ public final class TypeIndex {
     private func told(renamed: Set<ShapeID>, in editor: CanvasEditor) {
         guard !renamed.isEmpty else { return }
         var chips: Set<ShapeID> = []
+        let topology = editor.topology
         for type in renamed {
             withMutation(keyPath: \.[nameVersion: type]) { nameVersions[type, default: 0] += 1 }
-            chips.formUnion(instancesByType[type] ?? [])
+            if let topology { Self.forEachInstance(of: type, in: topology) { chips.insert($0) } }
         }
         if !chips.isEmpty { editor.adornmentsDidChange(for: chips) }
     }
@@ -446,7 +475,6 @@ public final class TypeIndex {
         chainRevision &+= 1
         entries = [:]
         kept = TypeGraph()
-        instancesByType = [:]
         if !sameFile { lastNames = [:] }
         readEveryShape(in: editor)
         let now = Set(entries.keys)
@@ -472,17 +500,18 @@ extension TypeIndex: EditorService {
             readAfresh(in: editor, sameFile: outOfTurn && !changes.replacedDocument)
             return
         }
-        let registry = editor.registry, file = editor.file
+        let registry = editor.registry, file = editor.file, topology = editor.topology
         var heard = Heard()
         for id in changes.removed where file.record(id) == nil {
             drop(id, heard: &heard)
             forgetLinks(of: id, heard: &heard)
         }
-        // A shape that only moved (a drag) has the schema, the name and the types it had.
+        // A shape that only moved (a drag) has the schema, the name and the types it had. Its list is
+        // Topology's, which has heard the commit (looking it up has it hear first).
         func hear(_ id: ShapeID) {
             guard let record = editor.document[id] else { return }
             if kinds.contains(record.kind) { read(record, registry: registry, heard: &heard) }
-            if typeableKinds.contains(record.kind) { readLinks(of: record, heard: &heard) }
+            if let topology, typeableKinds.contains(record.kind) { readLinks(of: id, in: topology, heard: &heard) }
         }
         // (Two passes, not a set of both: a drag of everything makes none, and a set of its ids costs more than it saves.)
         for id in changes.added where !changes.moved.contains(id) { hear(id) }
@@ -495,7 +524,7 @@ extension TypeIndex: EditorService {
                 continue
             }
             if kinds.contains(record.kind) { read(record, registry: registry, heard: &heard) }
-            if typeableKinds.contains(record.kind) { readLinks(of: record, heard: &heard) }
+            if let topology, typeableKinds.contains(record.kind) { readLinks(of: id, in: topology, heard: &heard) }
         }
         tell(heard.change)
         told(renamed: heard.renamed, in: editor)

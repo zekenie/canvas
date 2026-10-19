@@ -372,7 +372,7 @@ extension RelationshipGraph {
     public nonisolated func rows(for list: [ShapeID], isType: Bool) -> [RelationshipRow] {
         guard !ends.rows.isEmpty, !list.isEmpty else { return [] }
         if isType, let own = list.first, types.relationshipTypes.contains(own) { return [] }
-        let order = TypeOrder.linearized(Array(list.reversed()), parents: types.parents(of:))
+        let order = TypeOrder.linearized(TypeOrder.heads(of: list), parents: types.parents(of:))
         var rows: [RelationshipRow] = []
         var places: [RelationshipRowKey: Int] = [:]
         for type in order.reversed() where types.types.contains(type) && !types.relationshipTypes.contains(type) {

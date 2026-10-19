@@ -182,8 +182,7 @@ public enum Chain {
             nodes[id] = found
             return found
         }
-        var named: Set<ShapeID> = []
-        let heads = types.reversed().filter { named.insert($0).inserted }
+        let heads = TypeOrder.heads(of: types)
         var resolved = Resolved()
         // A shape the catalog has nothing for (gone, or not a type) ends its branch and is not listed.
         resolved.order = TypeOrder.linearized(heads, parents: { node($0)?.parents ?? [] }).filter { node($0) != nil }

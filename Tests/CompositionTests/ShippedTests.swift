@@ -167,7 +167,7 @@ import Validation
         port-edges           draw edges
         validation-checks    draw checks
         mention-texts        draw labels · draw text text/x-canvas-mentions
-        type-names           draw text text/x-canvas-type · draw value schema
+        type-names           draw text text/x-canvas-type · draw edge identity is · draw value schema
         draw-field-values    draw value fieldValues · draw value endRule · draw reports members is, endOf, fits, relates
         color-names          draw text text/x-canvas-color
         group-draw           draw groups

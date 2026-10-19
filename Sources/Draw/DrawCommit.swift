@@ -346,7 +346,7 @@ extension Drawing {
         let pair = "\(edge.fromName.said) \(arrow) \(edge.toName.said)"
         guard matches.count < 2 else {
             let vocabulary = KindVocabulary(kind, in: registry)
-            let keys = edging.identity.filter(vocabulary.isAttribute).map { "\($0):" }
+            let keys = (identityKeys(vocabulary) ?? []).map { "\($0):" }
             let hint: String
             if let identity = edge.identity {
                 let said = edge.edge.attributes.filter { identity.written[$0.key] != nil }.map { "\($0.key): \($0.value.written)" }

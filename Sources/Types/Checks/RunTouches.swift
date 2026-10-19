@@ -97,7 +97,7 @@ enum RunTouches {
                 reads = wasType != nowType || marked != wasMarked
             } else if list(was) != list(now) {
                 // A shape that is no type and that notes still list (a type taken away): the chain runs through it.
-                if !index.instances(of: id).isEmpty { chains.insert(id) }
+                if index.hasInstances(id) { chains.insert(id) }
                 reads = true
             }
             // What the arrows drawn at the shape run to, or are, is another thing now: it came or went, as a shape or as a

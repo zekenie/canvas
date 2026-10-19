@@ -1,6 +1,5 @@
 import Canvas
 import Draw
-import Types
 
 /// Draw's edges, in Connections: `canvas draw`'s edges are Connections' connections. An edge is
 /// what the connector draws (`registry.connectorKind`, while it makes connections without a drag),
@@ -15,7 +14,6 @@ public struct PortEdgesPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.drawEdges(kind: { registry in registry.makesConnections ? registry.connectorKind : nil },
                             attributes: [ChannelProperty.key.rawValue],
-                            identity: [IsAProperty.key.rawValue],
                             sides: { kind, registry in EdgeChannels.sides(of: kind, in: registry) },
                             ends: { record, registry in registry.connectionEnds(of: record) },
                             make: { request, existing, shapes throws(DrawError) in

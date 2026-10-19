@@ -92,13 +92,12 @@ struct BondsPlugin: CanvasPlugin {
     }
 }
 
-/// What makes edges for `canvas draw`, with bonds: no channel, no side, the pair and its `is` the identity.
+/// What makes edges for `canvas draw`, with bonds: no channel, no side, the pair and its `is` the identity (TypeNamesPlugin's).
 struct BondEdgesPlugin: CanvasPlugin {
     var id: PluginID { "bond-edges" }
     func register(into registrar: inout PluginRegistrar) {
         registrar.drawEdges(kind: { _ in Bond.kind },
                             attributes: [],
-                            identity: [IsAProperty.key.rawValue],
                             sides: { _, _ in [:] },
                             ends: { record, _ in
                                 guard let bond = record.typed(as: Bond.self)?.props, let from = bond.from, let to = bond.to else { return nil }
