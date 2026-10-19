@@ -1,3 +1,4 @@
+import CanvasRPC
 import CoreGraphics
 import Foundation
 

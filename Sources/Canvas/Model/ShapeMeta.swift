@@ -1,3 +1,4 @@
+import CanvasRPC
 import Foundation
 
 /// A member of a shape's metadata (`AnyShapeRecord.meta`): something a plugin keeps about a shape

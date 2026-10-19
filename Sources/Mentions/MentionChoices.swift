@@ -1,6 +1,6 @@
+import Boards
 import Canvas
 import TextEditing
-import Titles
 
 /// A candidate and where it is: the name of its board when that isn't the board shown (nil on it).
 /// What a list of shapes to pick from shows for each (the `@` picker's rows, a reference's, a
@@ -36,11 +36,11 @@ extension MentionState {
         candidates.map { MentionChoice(candidate: $0, board: boardName(ofShape: $0.id)) }
     }
 
-    /// The name of the board a shape is on, nil on the board shown: its owner's title, else its
-    /// owner's kind's name, else "Board" for the root (whose name is the file's, which the host knows).
+    /// The name of the board a shape is on, nil on the board shown: what Boards calls it
+    /// (`editor.name(of:root:)`: its owner's title, else its kind's placeholder, "Untitled Subboard",
+    /// else its kind's name), "Board" for the root (whose name is the file's, which the host knows).
     public func boardName(ofShape id: ShapeID) -> String? {
         guard let board = editor.file.board(containing: id), board != editor.board else { return nil }
-        guard let owner = editor.owner(of: board) else { return MentionStyle.rootBoardName }
-        return registry.title(of: owner) ?? registry.label(of: owner.kind).name
+        return editor.name(of: board, root: MentionStyle.rootBoardName)
     }
 }

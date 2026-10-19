@@ -1,9 +1,9 @@
 import AppKit
+import Boards
 import Canvas
 import DetailPanel
 import LanguageModels
 import Mentions
-import Publishing
 import Selection
 import SwiftUI
 
@@ -194,7 +194,7 @@ extension ReferenceState {
         var rows: [ReferenceMatchRow] = []
         for (index, match) in found.ids.prefix(ReferenceStyle.matchRows).enumerated() {
             guard let record = editor.shape(inFile: match), let appearance = editor.mentionAppearance(of: record) else { continue }
-            let board = editor.file.board(containing: match).flatMap { $0 == editor.board ? nil : editor.publishing?.boardName(of: $0) }
+            let board = editor.file.board(containing: match).flatMap { $0 == editor.board ? nil : editor.name(of: $0, root: ReferenceStyle.rootBoardName) }
             rows.append(ReferenceMatchRow(id: match, symbol: appearance.systemImage, tint: appearance.tint, name: appearance.label, board: board,
                                           dimmed: !found.all && index > 0))
         }

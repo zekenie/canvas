@@ -1,3 +1,4 @@
+import CanvasRPC
 import Foundation
 
 /// A value a plugin keeps on the file as a whole: what belongs to no shape and no board of it (the

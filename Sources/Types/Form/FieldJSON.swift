@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Foundation
 
 /// The panel's box of JSON for a field no control suits (`Other`): a value as the box shows it, and what the

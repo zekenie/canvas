@@ -1,7 +1,9 @@
 import Canvas
+import CanvasRPC
 import CanvasTesting
 import Foundation
 import Queries
+import QueryLanguage
 import TestKit
 import Topology
 
@@ -130,6 +132,29 @@ let glossaryPlugin = Contributor(id: "glossary") { registrar in
         expectEqual(try plan(#":contains("x")"#, on: quiet).editorWords, [])
         expectEqual(try plan(#"chore[hush="x"]:contains("x")"#, on: quiet).readsOnlyTheFile, true)
         _ = prepared
+    },
+    test("a query stored to run later is checked as any is, and refused for the first word that reads the editor, named") {
+        let h = try wiresHarness()
+        let queries = try require(h.editor.queries)
+        expectEqual(try queries.checkStored("chore:not(:wired-to(*))").canonical, try plan("chore:not(:wired-to(*))", on: h).canonical)
+        for (query, word) in [("chore:audited:starred", ":audited"), (":current-board", ":current-board"), (#"chore[shout^="H"]"#, "[shout]")] {
+            do throws(QueryError) {
+                _ = try queries.checkStored(query)
+                expect(false, "\(query) is refused")
+            } catch {
+                expectEqual(error.reason, .unsupported, query)
+                expectEqual(error.message, QueryError.cantBeUsed(word), query)
+                expectEqual(error.message, "“\(word)” can’t be used here.", query)
+                expectEqual(error.hint, "A stored query reads only the file, never who is looking or what is selected.", query)
+            }
+        }
+        // What `check` refuses, it refuses as `check` does.
+        do throws(QueryError) {
+            _ = try queries.checkStored("chore[")
+            expect(false, "refused")
+        } catch {
+            expectEqual(error.reason, .syntax)
+        }
     },
     test("a file word's preparation is given the file as the query takes it up, once, and its verdict is the word's") {
         let prepared = Prepared()

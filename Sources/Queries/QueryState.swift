@@ -1,5 +1,5 @@
 import Canvas
-import DrawScript
+import FuzzyMatching
 import QueryLanguage
 import Topology
 
@@ -73,6 +73,17 @@ public final class QueryState {
         guard let editor else { throw .boardClosed }
         guard let topology = editor.topology else { throw .noTopology }
         return try check(text, presentEdgeTypes: topology.snapshot().presentTypes)
+    }
+
+    /// `check` for a query stored to be run later (a reference's, a property that holds one,
+    /// `x-canvas-query`): refused too for a word that reads the editor (`QueryPlan.editorWords`: who
+    /// is looking, what is selected), the first named, since a stored query reads only the file.
+    /// The one gate every stored query goes through: the translator's `.reference` answers, a
+    /// reference's answers, draft and warning, and `canvas draw`'s check of a query it writes.
+    public func checkStored(_ text: String) throws(QueryError) -> QueryPlan {
+        let plan = try check(text)
+        if let word = plan.editorWords.first { throw .readsTheEditor(word) }
+        return plan
     }
 
     /// `check` over the edge types the file has, which the caller took (a batch takes them once).

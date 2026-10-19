@@ -9,7 +9,7 @@ import TestKit
 // `/public` while a shape is private, `/private` while it's public (refused, like the chip, while
 // anything stands for it). Typing them is the shipped app's (CompositionTests).
 
-/// The names of what Publishing offers on a shape (Titles' `/title` is on the plaque too).
+/// The names of what Publishing offers on a shape.
 @MainActor private func ours(_ state: SlashCommandState, _ id: ShapeID) -> [String] {
     state.commands(for: id).map(\.name).filter { $0 == "public" || $0 == "private" }
 }

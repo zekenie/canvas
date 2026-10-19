@@ -13,11 +13,11 @@ import Selection
 import SlashCommands
 import SwiftUI
 import TableOfContents
-import Titles
 import Topology
 
 // Fixtures only (CanvasTesting's boxes and links, and the kinds below), so every test here shows
-// Publishing knows no real kind: a plaque is public by choice (it holds `public`, and a title), a
+// Publishing knows no real kind: a plaque is public by choice (it holds `public`, and a name a
+// stand-in title pill says, `StubTitle`), a
 // seal is always public, a draft is never; a holder and a relay stand in for the shapes they cite;
 // a link carries a wire between what it joins.
 
@@ -25,8 +25,11 @@ struct Plaque: BoxShapeProps {
     static let kind: ShapeKind = "plaque"
     static let properties = Properties<Plaque> {
         Property("frame", \.frame).required()
+        Property("name", \.name)
     }
     var frame: CGRect
+    /// What `StubTitle` says above it, as a title pill would.
+    var name: String?
     init(_ frame: CGRect) { self.frame = frame }
 }
 
@@ -201,10 +204,9 @@ struct KindsPlugin: CanvasPlugin {
             sink.emit(WireEdge.id, from: from, to: to)
         }
         registrar.shape(PlaqueDefinition()) { plaque in
-            plaque.title()
             plaque.details { DetailSection("Look", in: PlaqueTab.self) { _ in Text("A plaque") } }
         }
-        registrar.shape(SealDefinition()) { $0.title() }
+        registrar.shape(SealDefinition())
         registrar.shape(DraftDefinition())
         registrar.shape(HolderDefinition()) { holder in
             holder.standsIn(admitting: { target, registry in registry.isPublic(target) }) { shape, _ in .shapes(shape.props.stands.map(\.shape)) }
@@ -223,11 +225,11 @@ struct KindsPlugin: CanvasPlugin {
 let plaqueFrame = CGRect(x: 100, y: 100, width: 150, height: 100)
 
 /// What the app has around Publishing: the keys, the selection, the graph, the context menu, the
-/// table of contents, the panel, adornments, slash commands and titles; and `more` after them
-/// (fixture chips, read-only shapes), on `file`.
+/// table of contents, the panel, adornments and slash commands; and `more` after them (fixture
+/// chips and a title pill, read-only shapes), on `file`.
 @MainActor func publishingPlugins(_ more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), LinksPlugin(), KindsPlugin(), ContextMenusPlugin(),
-     TableOfContentsPlugin(), DetailPanelPlugin(), AdornmentsPlugin(), SlashCommandsPlugin(), TitlesPlugin(), PublishingPlugin()] + more
+     TableOfContentsPlugin(), DetailPanelPlugin(), AdornmentsPlugin(), SlashCommandsPlugin(), PublishingPlugin()] + more
 }
 
 @MainActor func publishingHarness(_ more: [any CanvasPlugin] = [], file: CanvasFile = CanvasFile()) throws -> EditorHarness {

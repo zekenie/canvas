@@ -1,9 +1,9 @@
 import AppKit
+import Boards
 import Canvas
 import Geometry
 import LanguageModels
 import Mentions
-import Publishing
 import Selection
 import Topology
 
@@ -152,7 +152,7 @@ public final class ReferenceState {
         let condition = compute()
         var board: String?
         if condition.appearance != nil, let there = editor.file.board(containing: target.id), there != editor.file.board(containing: id) {
-            board = editor.publishing?.boardName(of: there)
+            board = editor.name(of: there, root: ReferenceStyle.rootBoardName)
             if let owner = there.owner { drawnBoardOwners.insert(owner) }
         }
         drawnConditions[id] = (target, condition, board)
@@ -464,7 +464,7 @@ public final class ReferenceState {
     /// "Note · Payments": the kind, then the board's name when the shape isn't on the board shown.
     private func kindAndBoard(_ appearance: MentionAppearance, of target: ReferenceTarget?) -> String {
         guard let target, let board = editor.file.board(containing: target.id), board != editor.board else { return appearance.kindName }
-        return appearance.kindName + " · " + (editor.publishing?.boardName(of: board) ?? "Board")
+        return appearance.kindName + " · " + editor.name(of: board, root: ReferenceStyle.rootBoardName)
     }
 }
 

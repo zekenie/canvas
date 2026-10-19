@@ -302,7 +302,7 @@ let pickedWord = Contributor(id: "picked") { registrar in
         h.answer(after: 250)
         expectEqual(h.standsFor(id), [alpha])
     },
-    test("a query that reads what the person is doing isn't asked: refused, naming the word") {
+    test("a query that reads what the person is doing isn't asked: refused, naming the word, and warned of") {
         let h = try referenceHarness([pickedWord])
         _ = boxes(h)
         let state = try require(h.editor.references)
@@ -312,6 +312,8 @@ let pickedWord = Contributor(id: "picked") { registrar in
         expectEqual(h.status(id), .refused("“:picked” can’t be used here."))
         expectEqual(state.batchesAsked, asked, "nothing asked of the engine")
         expectEqual(h.editor.topology?.forwarding(of: id), .provided([]))
+        expectEqual(h.editor.validation?.result(for: id)?.issues ?? [], [.warning("“:picked” can’t be used here.", field: "query")],
+                    "the same gate as the answers': a stored query reads only the file")
     },
     test("a query the engine can't read is refused in its words, and warned of; a query it can is no issue") {
         let h = try referenceHarness()

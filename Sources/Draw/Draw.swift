@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import CoreGraphics
 import DrawScript
 import Geometry

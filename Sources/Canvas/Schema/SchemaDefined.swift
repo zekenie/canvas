@@ -1,3 +1,4 @@
+import CanvasRPC
 import Foundation
 
 /// A struct defined by its list of properties: the list is how it's written in a board and read
@@ -185,11 +186,11 @@ public struct Property<Root, Value: Codable & SchemaDescribed & Sendable>: Prope
                 var json = Value.schema(in: &definitions).merging(keywords) { _, new in new }
                 let value = prototype[keyPath: keyPath]
                 // A default is what every `init()` gives: one that varies (a new id) is none.
-                if !isRequired, !isNil(value), let encoded = try? JSONValue(encoding: value),
-                   (try? JSONValue(encoding: another[keyPath: keyPath])) == encoded {
+                if !isRequired, !isNil(value), let encoded = try? JSONValue(boardEncoding: value),
+                   (try? JSONValue(boardEncoding: another[keyPath: keyPath])) == encoded {
                     json["default"] = encoded
                 }
-                let encodedExamples = examples.compactMap { try? JSONValue(encoding: $0) }
+                let encodedExamples = examples.compactMap { try? JSONValue(boardEncoding: $0) }
                 if !encodedExamples.isEmpty { json["examples"] = .array(encodedExamples) }
                 return json
             })
@@ -305,8 +306,10 @@ extension Optional: OptionalValue {
 }
 
 extension JSONValue {
-    /// A value as a board writes it.
-    init(encoding value: some Encodable) throws {
+    /// A value as a board writes it: dates in ISO 8601 and a number that isn't finite as text
+    /// (`BoardCodec`'s coders), where the wire's `init(encoding:)` writes Foundation's default
+    /// date and refuses a number that isn't finite.
+    init(boardEncoding value: some Encodable) throws {
         self = try BoardCodec.makeDecoder().decode(JSONValue.self, from: BoardCodec.makeEncoder().encode(value))
     }
 }

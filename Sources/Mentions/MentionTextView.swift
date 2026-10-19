@@ -500,7 +500,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     /// over. Remove Mention is for text that can be edited (not a locked shape's in the panel).
     public override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event)
-        guard let range = pillRange(at: convert(event.locationInWindow, from: nil)), let pill = pill(at: range.location), let helper else {
+        guard let range = pillRange(at: convert(event.locationInWindow, from: nil)), let pill = pill(at: range.location) else {
             return menu
         }
         setSelectedRange(range)
@@ -508,15 +508,15 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         var items: [NSMenuItem] = []
         if pill.resolution.isLive {
             let target = pill.target
-            items.append(helper.item(MentionStyle.goTo(pill.shownLabel)) { [weak self] in self?.mentions?.follow(target) })
+            items.append(NSMenuItem(title: MentionStyle.goTo(pill.shownLabel)) { [weak self] in self?.mentions?.follow(target) })
             if let mentions, owner != target || mentions.isMentioned(target) {
-                items.append(helper.item(MentionStyle.showWhatMentions(pill.shownLabel)) { [weak self] in
+                items.append(NSMenuItem(title: MentionStyle.showWhatMentions(pill.shownLabel)) { [weak self] in
                     self?.mentions?.showWhatMentions([target])
                 })
             }
         }
         if isEditable {
-            items.append(helper.item(MentionStyle.removeMention) { [weak self] in self?.removeMention(target: pill) })
+            items.append(NSMenuItem(title: MentionStyle.removeMention) { [weak self] in self?.removeMention(target: pill) })
         }
         if !items.isEmpty { items.append(.separator()) }
         for (index, item) in items.enumerated() { result.insertItem(item, at: index) }
@@ -899,8 +899,8 @@ extension HostlessTextDelegate: NSTextViewDelegate {
 }
 
 /// What a mention text view needs of Objective-C, kept off the generic view: the notifications
-/// it observes (undo), its menu items' actions, and its tooltips. (Its picker's window follows the
-/// view by itself.)
+/// it observes (undo) and its tooltips. (Its picker's window follows the view by itself; its menu
+/// items are the core's `NSMenuItem(title:run:)`.)
 @MainActor
 final class MentionTextViewHelper: NSObject, NSViewToolTipOwner {
     private var undone: ((UndoManager) -> Void)?
@@ -926,26 +926,9 @@ final class MentionTextViewHelper: NSObject, NSViewToolTipOwner {
         undone?(manager)
     }
 
-    /// A menu item that runs `action`.
-    func item(_ title: String, _ action: @escaping () -> Void) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: #selector(runAction(_:)), keyEquivalent: "")
-        item.target = self
-        item.representedObject = MenuAction(action)
-        return item
-    }
-
-    @objc private func runAction(_ item: NSMenuItem) { (item.representedObject as? MenuAction)?.run() }
-
     nonisolated func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
         MainActor.assumeIsolated { toolTip?(point) ?? "" }
     }
-}
-
-/// A menu item's action, held by the item.
-@MainActor
-private final class MenuAction: NSObject {
-    let run: () -> Void
-    init(_ run: @escaping () -> Void) { self.run = run }
 }
 
 /// What Mentions posts to VoiceOver (its picker's list posts through it too), posted, and in debug

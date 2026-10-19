@@ -41,9 +41,11 @@ public final class ProseMapService {
     /// The pairs read since the frame before with no answer that may be asked about, by shape and
     /// target.
     @ObservationIgnored private var wanted: [Want.Place: Want] = [:]
-    /// The pairs being asked about. A call isn't cancelled: whatever the shape says by the time it
-    /// lands, its answer is kept for its pair.
+    /// The pairs being asked about. A call isn't cancelled while the editor lives: whatever the shape
+    /// says by the time it lands, its answer is kept for its pair.
     @ObservationIgnored private var asking: Set<ProseMapAnswers.Key> = []
+    /// The calls out, by the number each was asked as (`clock`): the editor's going cancels them.
+    @ObservationIgnored private var calls: [Int: Task<Void, Never>] = [:]
     @ObservationIgnored private var waiting: [Want] = []
     @ObservationIgnored private var failed: Set<ProseMapAnswers.Key> = []
     /// Pairs whose call failed in a way that may pass (`isTransient`): not asked about until `retryDelay` has gone.
@@ -51,7 +53,7 @@ public final class ProseMapService {
     @ObservationIgnored private var revisions: [ShapeID: Int] = [:]
     /// Counts the asks and the answers shapes read, in order: what a shape was said last is its last.
     @ObservationIgnored private var clock = 0
-    @ObservationIgnored nonisolated(unsafe) private var keyObserver: (any NSObjectProtocol)?
+    @ObservationIgnored private var keyObserver: (any NSObjectProtocol)?
 
     /// What a shape shows of a target: what it read last and the map it made, and the answer it last
     /// had for any of its pairs.
@@ -102,8 +104,13 @@ public final class ProseMapService {
         }
     }
 
-    deinit {
+    /// The file closed and the editor went: a call out is cancelled, so it doesn't run on (a minute
+    /// at most) spending the person's tokens on an answer nothing lands (an answer is kept only as it
+    /// lands, which a service gone never hears). Isolated, so each is the main actor's to cancel, as
+    /// it is while the editor lives.
+    isolated deinit {
         if let keyObserver { NotificationCenter.default.removeObserver(keyObserver) }
+        for call in calls.values { call.cancel() }
     }
 
     // MARK: Reading
@@ -230,7 +237,7 @@ public final class ProseMapService {
             let number = clock
             asking.insert(want.key)
             let request = ProseMapPrompt.request(want.type, prose: want.key.prose, target: want.key.text, context: want.key.context)
-            Task { [weak self] in
+            calls[number] = Task { [weak self] in
                 let result: Result<ModelResponse, LanguageModelError>
                 do throws(LanguageModelError) {
                     result = .success(try await model.respond(to: request))
@@ -243,6 +250,7 @@ public final class ProseMapService {
     }
 
     private func land(_ want: Want, asked number: Int, _ result: Result<ModelResponse, LanguageModelError>) {
+        calls[number] = nil
         asking.remove(want.key)
         if case .success(let response) = result, let links = ProseMapPrompt.links(from: response) {
             ProseMapAnswers.remember(links, for: want.key)

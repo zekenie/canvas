@@ -115,8 +115,8 @@ extension Transaction {
     /// (`move(_:to:)`) is put down as a drop or a placement puts it down on the board shown, a
     /// container among it taking in what it lands on. What this transaction brought there (moved, or
     /// in with its owner) isn't held, as what it adds here isn't. A refusal (`.refused(by:)`) changes
-    /// nothing there and is noted in `refusedShapes`, as `settle(_:)`'s is: the caller throws,
-    /// dropping the whole move, and says so (`editor.refuseChanges(to:)`), as Transform drops a turn.
+    /// nothing there and is noted in `refusedShapes`, as `settle(_:)`'s is, so a caller in
+    /// `editor.transactWhole` drops the whole move and says so, as Transform drops a turn.
     /// The nudges are on that board, where nothing glides. On this transaction's own board it's
     /// `settle(_:)`; a board the editor couldn't show once this transaction commits settles nothing.
     /// `board` can't be one going with a shape this transaction deleted. O(that board).

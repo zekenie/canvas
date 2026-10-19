@@ -1,6 +1,5 @@
 import AppKit
 import Palette
-import QueryTranslation
 import TextEditing
 
 /// The pill's look. World units, so at 100% they are view points. Its colors are semantic or
@@ -217,13 +216,14 @@ enum ReferenceStyle {
     static func mismatchLine(name: String, channels: String) -> String { "“\(name)” doesn’t take \(channels)." }
 
     /// Menu items and the panel's button.
+    /// What the root board is called where a line names a shape's board (the pill, the header, a
+    /// match's row): no owner gives it a name. Any other board is what Boards calls it.
+    static let rootBoardName = "Board"
+
     static let goToOriginal = "Go to Original"
     static let showMatches = "Show Matches"
     static let matchAll = "Match All"
     static let matchFirst = "Match First"
-
-    /// What a query that reads what the person is doing is refused with.
-    static func cantBeUsed(_ word: String) -> String { QueryTranslator.cantBeUsed(word) }
 
     // MARK: The panel
 

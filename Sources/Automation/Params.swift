@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 
 // The params of the commands over the draw engine (Draw): what `canvas` reads their arguments by
 // (`x-stdin` is the command line's), checked and decoded before a command runs.

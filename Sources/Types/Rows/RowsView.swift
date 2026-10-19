@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import CanvasRPC
 import Draw
 import Mentions
 import TextEditing

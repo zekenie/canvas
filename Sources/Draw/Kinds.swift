@@ -1,6 +1,8 @@
 import Canvas
+import CanvasRPC
 import CoreGraphics
 import DrawScript
+import FuzzyMatching
 
 // `canvas kinds`: what a script can draw, and with what. The kinds the app has, each as the language
 // sees it: whether a script can draw it (and why not), its names, size, attributes with their types,

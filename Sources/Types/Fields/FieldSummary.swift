@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Foundation
 
 /// What a row with more in it reads: one line in plain words, then `›`. One place, so the row, the fold

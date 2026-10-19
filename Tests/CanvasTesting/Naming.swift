@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import CanvasRPC
 
 // Values that name shapes loosely (`ShapeNaming`), and kinds that hold them in every way a value
 // can: what core tests of names use, never a real vertical's.

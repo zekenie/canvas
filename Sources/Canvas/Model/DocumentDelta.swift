@@ -1,3 +1,4 @@
+import CanvasRPC
 import CoreGraphics
 
 /// What a step did to a file: on the board it was made on (`board`), shape by shape, each touched

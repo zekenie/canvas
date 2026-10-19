@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 
 /// The `$ref`s in `json` that its `$defs` don't have.
 public func danglingReferences(in json: JSONObject) -> [String] {

@@ -10,6 +10,7 @@ import Foundation
 import Geometry
 import Mentions
 import Selection
+import ShippedTesting
 import StickyNotes
 import TableOfContents
 import TestKit
@@ -42,9 +43,9 @@ final class NestedWindow {
     let nest = NestedFile()
     var editor: CanvasEditor { board.editor }
 
-    /// `extra`: plugins after the shipped list. `pasteboard`: the clipboard's and Copy as Image's (a
-    /// test that copies passes its own).
-    init(pasteboard: NSPasteboard = .general, extra: [any CanvasPlugin] = []) throws {
+    /// `extra`: plugins after the shipped list. `pasteboard`: the clipboard's and Copy as Image's (the
+    /// test's own unless it passes one).
+    init(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, extra: [any CanvasPlugin] = []) throws {
         try configureBoards(pasteboard: pasteboard, extra: extra)
         board = try nestedDocument()
         board.makeWindowControllers()

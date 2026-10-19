@@ -319,11 +319,7 @@ extension ReferenceState {
             // Topology takes no answer for a reference on a board the app can't show.
             guard let props = editor.shape(inFile: id)?.typed(as: Reference.self)?.props, let query = props.query else { continue }
             do throws(QueryError) {
-                let plan = try queries.check(query)
-                if let word = plan.editorWords.first {
-                    refusals[id] = .refused(ReferenceStyle.cantBeUsed(word))
-                    continue
-                }
+                _ = try queries.checkStored(query)
             } catch {
                 refusals[id] = .refused(error.message)
                 continue

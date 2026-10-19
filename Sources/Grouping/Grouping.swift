@@ -69,28 +69,17 @@ extension CanvasEditor {
         return write(paths, named: "Ungroup")
     }
 
-    /// Writes each shape's path, all or nothing: a read-only shape refuses, nothing commits and no
-    /// step opens, and the shapes refused shake.
+    /// Writes each shape's path, all or nothing (`transactWhole`): a read-only shape refuses, nothing
+    /// commits and no step opens, and the shapes refused shake.
     private func write(_ paths: [ShapeID: [String]], named name: String) -> Bool {
-        var refused: Set<ShapeID> = []
-        do {
-            try transact(name) { transaction in
-                for (id, path) in paths.sorted(by: { $0.key.rawValue.uuidString < $1.key.rawValue.uuidString }) {
-                    transaction.update(id) { $0[GroupsProperty.self] = path }
-                }
-                refused = transaction.refusedShapes
-                if !refused.isEmpty { throw GroupingRefused() }
+        let written: Void? = transactWhole(name) { transaction in
+            for (id, path) in paths.sorted(by: { $0.key.rawValue.uuidString < $1.key.rawValue.uuidString }) {
+                transaction.update(id) { $0[GroupsProperty.self] = path }
             }
-        } catch {
-            if !refused.isEmpty { refuseChanges(to: refused) }
-            return false
         }
-        return true
+        return written != nil
     }
 }
-
-/// What leaves a group or ungroup a read-only shape would refuse: nothing is written.
-private struct GroupingRefused: Error {}
 
 public struct GroupingPlugin: ListedPlugin {
     public init() {}

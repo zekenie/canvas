@@ -10,6 +10,8 @@ import Foundation
 import LanguageModels
 import Locking
 import Mentions
+import Publishing
+import References
 import Selection
 import ShippedTesting
 import StickyNotes
@@ -72,6 +74,23 @@ extension CanvasEditor {
 }
 
 @MainActor let mentionsBoardsTests = Suite("Mentions in a file of boards, as shipped", [
+    test("a shape on an untitled subboard's board is on \"Untitled Subboard\", as the path says it, in the @ picker's line and a reference's") {
+        let f = PlansFile()
+        let h = try f.harness(ShippedPlugins.pasteboard)
+        h.editor.transact { $0.update(f.plans) { $0[TitleProperty.self] = nil } }
+        expectEqual(h.editor.name(of: f.plansBoard), "Untitled Subboard", "the path's")
+        expectEqual(try require(h.editor.mentions).boardName(ofShape: f.alpha), "Untitled Subboard", "the @ picker's line")
+        expect(h.enter(f.plans))
+        h.editor.makePublic([f.alpha])
+        h.editor.goToEnclosingBoard()
+        var props = Reference(frame: CGRect(origin: CGPoint(x: 600, y: 400), size: Reference.defaultSize))
+        ReferenceEdits.pick(&props, ReferenceTarget(id: f.alpha, label: "Alpha"))
+        let pill = h.editor.add(props)
+        let references = try require(h.editor.references)
+        expectEqual(references.header(of: props, id: pill).subtitle, "Note · Untitled Subboard", "the reference's header")
+        _ = renderBitmap(h.editor, size: CGSize(width: 1000, height: 700))
+        expectEqual(references.drawnBoard(of: pill), "Untitled Subboard", "and its pill")
+    },
     test("rows and pills that name notes on other boards stay right across switches: renamed away, undone, deleted with their board, undone") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

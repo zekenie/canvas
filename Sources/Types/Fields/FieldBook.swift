@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Mentions
 import Titles
 import Topology

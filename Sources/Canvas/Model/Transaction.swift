@@ -141,8 +141,8 @@ public struct Transaction {
     var refused: Set<ShapeID> = []
     /// The read-only shapes it was asked to change, restack, move or delete so far, and didn't, and
     /// read-only containers that wouldn't take a shape, and the owners of read-only boards that
-    /// wouldn't: what a plugin that must change everything or nothing reads, to throw so nothing
-    /// commits, then shake them (`editor.refuseChanges(to:)`).
+    /// wouldn't: what `editor.transactWhole` reads, so work that must change everything or nothing
+    /// commits nothing and shakes them.
     public var refusedShapes: Set<ShapeID> { refused }
     /// Shapes whose willDelete handlers have run in this transaction; removed together at the end
     /// of the outermost `delete`.

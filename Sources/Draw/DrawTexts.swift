@@ -1,6 +1,8 @@
 import Canvas
+import CanvasRPC
 import CoreGraphics
 import DrawScript
+import FuzzyMatching
 
 // Text in a script that a plugin writes: a string whose schema says `contentMediaType` of a media
 // type some plugin writes (DrawTextFormats) is handed to its format as the script wrote it, and

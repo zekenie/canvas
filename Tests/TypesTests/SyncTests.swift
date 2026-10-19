@@ -1093,6 +1093,27 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         expectEqual(b.model.requests.count, 1, "read once typing paused")
         expect(b.model.lastRequest?.system?.contains("A relationship type\n") == true)
     },
+    test("a call out when the file closes is cancelled, and an edit's wait with it: nothing is left holding or armed") {
+        var b: SyncBench? = try SyncBench()
+        let model = try require(b?.model), scheduler = try require(b?.scheduler)
+        weak var closing = b?.editor
+        let calling = try require(b?.place()), waiting = try require(b?.place())
+        model.holdsAnswers = true
+        b?.typeWords(calling, "a pet in my household")
+        b?.sync.commit(calling)
+        spinRunLoop(until: { model.waiting == 1 })
+        expectEqual(model.waiting, 1, "the call is out")
+        let before = scheduler.pendingCount
+        b?.typeWords(waiting, "a car and who owns it")
+        expectEqual(scheduler.pendingCount, before + 1, "the edit waits 3 s")
+        b = nil
+        spinRunLoop(until: { model.waiting == 0 })
+        expect(closing == nil, "the editor went as its file closed")
+        expectEqual(model.waiting, 0, "the call isn't left holding")
+        expectEqual(model.answered, 1, "it ended: cancelled")
+        expectEqual(scheduler.pendingCount, before, "the wait went with it")
+        expectEqual(model.requests.count, 1, "and asked nothing")
+    },
 ])
 
 @MainActor let promptTests = Suite("Schema prompts", [

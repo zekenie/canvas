@@ -55,7 +55,7 @@ public enum Suggestions {
 
     /// Lowercased, runs of whitespace one space, trimmed, × as x.
     static func folded(_ word: String) -> String {
-        word.lowercased().replacingAll("×", with: "x").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        String(word.lowercased().map { $0 == "×" ? "x" : $0 }).split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     /// How many edits a word this long may be off by.
@@ -79,12 +79,5 @@ public enum Suggestions {
             }
         }
         return table[a.count][b.count]
-    }
-}
-
-extension String {
-    /// With every `target` replaced (without Foundation).
-    func replacingAll(_ target: Character, with replacement: Character) -> String {
-        String(map { $0 == target ? replacement : $0 })
     }
 }

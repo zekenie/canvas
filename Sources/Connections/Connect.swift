@@ -48,20 +48,19 @@ extension CanvasEditor {
         guard ids.count == 2 else { return }
         let ports = service(PortState.self)
         let standing = ids.map { id in document[id].flatMap { record in ports.map { $0.standingKinds(of: record) } ?? [] } }
-        do {
-            guard let from = standing[0], let to = standing[1] else { throw Refused() }
-            try transact(ConnectionsStyle.connect) { transaction in
-                guard let made = registry.drawConnection(from: ids[0], to: ids[1], in: transaction.shapes, standingFor: (from, to))
-                else { throw Refused() }
-                transaction.insert(made)
-                guard transaction.document[made.id] != nil, transaction.refusedShapes.isEmpty else { throw Refused() }
-            }
-        } catch {
+        guard let from = standing[0], let to = standing[1] else {
             refuseChanges(to: Set(ids))
+            return
+        }
+        // Whole or not at all (`transactWhole`): a pair the connector refuses, or a board that takes nothing, commits
+        // nothing and shakes both.
+        transactWhole(ConnectionsStyle.connect, shaking: Set(ids)) { transaction in
+            guard let made = registry.drawConnection(from: ids[0], to: ids[1], in: transaction.shapes, standingFor: (from, to))
+            else { throw Transaction.Refused() }
+            transaction.insert(made)
+            guard transaction.document[made.id] != nil else { throw Transaction.Refused() }
         }
     }
-
-    private struct Refused: Error {}
 }
 
 @MainActor

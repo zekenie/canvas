@@ -1,5 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
+import CanvasRPC
 
 // A shape laid out larger than it stores (`LaidOutBox`), by a layout input a plugin provides: what
 // tests of the laid-out frame draw with, so they never depend on Types or StickyNotes. A stretch

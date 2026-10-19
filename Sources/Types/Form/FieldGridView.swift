@@ -1,6 +1,7 @@
 import AppKit
 import Adornments
 import Canvas
+import CanvasRPC
 import Mentions
 import TextEditing
 

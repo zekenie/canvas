@@ -12,7 +12,7 @@ import Canvas
 // come through its points (`QueryNames`, `QueryBoardNames`, `QueryWords`, `QueryTextFormats`),
 // which the plugins that own a meaning fill with this app's words (and QueriesTests with words of
 // their own). Kinds, attributes and edge types come from the query's text and are checked against
-// the registry as it resolves; DrawScript lends it only "did you mean" (`Suggestions`).
+// the registry as it resolves; FuzzyMatching lends it "did you mean" (`Suggestions`).
 //
 // A query costs the main actor its reading and one turn that takes up the file (`QuerySnapshot`,
 // O(1)); it's answered off the main actor (`Evaluation`), a set at a time, but for what only the

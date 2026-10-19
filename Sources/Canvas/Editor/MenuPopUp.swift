@@ -22,3 +22,27 @@ extension CanvasEditor {
     /// The host is popping the menu up: it no longer waits.
     @_spi(Host) public func menuDidPopUp() { menuWaiting = nil }
 }
+
+extension NSMenuItem {
+    /// An item that runs `run` when it's chosen, as a plugin's items that run something are (a chip's
+    /// menu, the path's fold, a list at an arrow, a text's menu). An item holds its target weakly, so
+    /// the target that runs `run` is kept as the item's `representedObject`, which is that target's:
+    /// nothing else may set it. A plain NSMenuItem, since AppKit may copy one through initializers a
+    /// subclass wouldn't inherit.
+    public convenience init(title: String, run: @escaping @MainActor () -> Void) {
+        let action = MenuAction(run)
+        self.init(title: title, action: #selector(MenuAction.fire), keyEquivalent: "")
+        target = action
+        representedObject = action
+    }
+}
+
+/// What an item made with `NSMenuItem(title:run:)` runs: its target, kept alive by the item.
+private final class MenuAction: NSObject {
+    private let run: @MainActor () -> Void
+
+    init(_ run: @escaping @MainActor () -> Void) { self.run = run }
+
+    /// AppKit sends menu actions on the main thread.
+    @MainActor @objc func fire() { run() }
+}

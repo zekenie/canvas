@@ -247,7 +247,7 @@ extension PluginRegistrar {
 /// A command's params as the request sends them, checked against their schema and decoded.
 private struct ParamsReading<Params: SchemaDefined> {
     let command: String
-    let schema = JSON(Params.jsonSchema.json)
+    let schema = JSON.object(Params.jsonSchema.json)
     let validator = SchemaValidator(Params.jsonSchema)
 
     init(command: String) {
@@ -255,7 +255,7 @@ private struct ParamsReading<Params: SchemaDefined> {
     }
 
     func params(from json: JSON) throws(AutomationError) -> Params {
-        if let violation = validator.violations(of: JSONValue(json)).first {
+        if let violation = validator.violations(of: json).first {
             throw AutomationError("\(RPC.commandName) \(command): \(violation.message)", reason: "invalid_params",
                                   hint: "`\(RPC.commandName) help \(command)` says what it takes.", invalidParams: true)
         }

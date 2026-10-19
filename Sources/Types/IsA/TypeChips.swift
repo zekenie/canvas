@@ -105,13 +105,7 @@ enum TypeChipMenus {
         let owner = click.shape, readOnly = editor.isReadOnly(inFile: owner)
         let menu = NSMenu()
         menu.autoenablesItems = false
-        func add(_ title: String, _ run: @escaping @MainActor () -> Void) {
-            let action = TypeMenuAction(run)
-            let item = NSMenuItem(title: title, action: #selector(TypeMenuAction.fire), keyEquivalent: "")
-            item.target = action
-            item.representedObject = action          // the item holds its target weakly
-            menu.addItem(item)
-        }
+        func add(_ title: String, _ run: @escaping @MainActor () -> Void) { menu.addItem(NSMenuItem(title: title, run: run)) }
         func items(for link: TypeLink) {
             let name = TypesStyle.menuName(types.name(of: link))
             let type = link.shape
@@ -128,15 +122,4 @@ enum TypeChipMenus {
         }
         return menu.items.isEmpty ? nil : menu
     }
-}
-
-/// What a menu item runs: its target, kept alive as its `representedObject`. The item stays a plain
-/// NSMenuItem, since AppKit may copy one through initializers a subclass wouldn't inherit.
-final class TypeMenuAction: NSObject {
-    private let run: @MainActor () -> Void
-
-    init(_ run: @escaping @MainActor () -> Void) { self.run = run }
-
-    /// AppKit sends menu actions on the main thread.
-    @MainActor @objc func fire() { run() }
 }

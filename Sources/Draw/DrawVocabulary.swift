@@ -1,5 +1,7 @@
 import Canvas
+import CanvasRPC
 import DrawScript
+import FuzzyMatching
 
 // A kind as `canvas draw` and `canvas kinds` see it: the attributes a script can write on its
 // shapes, read off the kind's schema (its own properties and those added to it), what each takes,

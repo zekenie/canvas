@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Draw
 
 /// Draw's mention text, in Mentions: in any text a script writes whose schema says it's mention

@@ -190,36 +190,9 @@ public final class TypeSync<Schema: SyncedSchema> {
     /// How long after the last keystroke an edit syncs by itself.
     public static var idleDelay: Duration { .seconds(3) }
 
-    private struct Call {
-        /// The side the answer writes.
-        let writes: TypeSide
-        /// Both sides as they were sent.
-        let sent: TypeSyncSides
-        /// The words the model was shown for the types the sides name, which its answer names them by.
-        let names: SchemaReferenceNames
-        /// Whether the answer's root `"title"` comes out (the shape's name went in as it).
-        let named: Bool
-        let number: Int
-        let task: Task<Void, Never>
-
-        var direction: SchemaPrompts.Direction { writes == .schema ? .toSchema : .toPrompt }
-    }
-
-    private struct Shape {
-        /// Both sides as the document last said them, to tell a change to either from one to
-        /// something else about the shape (its frame, a lock).
-        var seen: TypeSyncSides
-        /// An edit is waiting to sync: on `timer`, or for the list at the caret to close.
-        var isWaiting = false
-        var timer: ScheduledTask?
-        var call: Call?
-        /// A sync was asked for while the call was out: it runs once the call lands.
-        var wantsSync = false
-    }
-
     // Weak: a panel's text view may commit after its window, and the editor, went.
     @ObservationIgnored private weak var editor: CanvasEditor?
-    @ObservationIgnored private var shapes: [ShapeID: Shape] = [:]
+    @ObservationIgnored private let shapes = SyncShapes()
     /// Each shape's sides at its last sync: what each says of the other. Apart from `shapes`, so an
     /// undo step keeps it as it was (`UndoParticipant`) for the cost of a copy on write.
     @ObservationIgnored private var synced: [ShapeID: TypeSyncSides] = [:]
@@ -251,6 +224,7 @@ public final class TypeSync<Schema: SyncedSchema> {
         }
     }
 
+    /// The file closed and the editor went: what each shape has out stops as `shapes` goes.
     deinit {
         if let keyObserver { NotificationCenter.default.removeObserver(keyObserver) }
     }
@@ -335,7 +309,7 @@ public final class TypeSync<Schema: SyncedSchema> {
         let document = SchemaReadings.reading(of: sides.schema, for: record.id).document
         var pair = sides
         if document.error == nil, document.fields.isEmpty, !Self.trimmed(sides.words).isEmpty { pair.words = "" }
-        shapes[record.id] = Shape(seen: sides)
+        shapes[record.id] = SyncShape(seen: sides)
         synced[record.id] = pair
         inStep(record.id)
     }
@@ -446,7 +420,7 @@ public final class TypeSync<Schema: SyncedSchema> {
             }
             self?.land(id, call: number, result)
         }
-        shapes[id]?.call = Call(writes: writes, sent: now, names: names, named: named, number: number, task: task)
+        shapes[id]?.call = SyncCall(writes: writes, sent: now, names: names, named: named, number: number, task: task)
         setStatus(.updating(writes), of: id)
     }
 
@@ -500,7 +474,7 @@ public final class TypeSync<Schema: SyncedSchema> {
     }
 
     /// Writes what the answer says, if it still may; returns the shape's status after.
-    private func apply(_ result: Result<ModelResponse, LanguageModelError>, of call: Call, to id: ShapeID) -> TypeSyncStatus {
+    private func apply(_ result: Result<ModelResponse, LanguageModelError>, of call: SyncCall, to id: ShapeID) -> TypeSyncStatus {
         let response: ModelResponse
         switch result {
         case let .success(answer): response = answer
@@ -828,6 +802,63 @@ extension TypeSync: EditorService {
         for record in file.root.shapes where kinds.contains(record.kind) { see(record) }
         for board in file.children.values {
             for record in board.shapes where kinds.contains(record.kind) { see(record) }
+        }
+    }
+}
+
+/// A model call out for a shape.
+private struct SyncCall {
+    /// The side the answer writes.
+    let writes: TypeSide
+    /// Both sides as they were sent.
+    let sent: TypeSyncSides
+    /// The words the model was shown for the types the sides name, which its answer names them by.
+    let names: SchemaReferenceNames
+    /// Whether the answer's root `"title"` comes out (the shape's name went in as it).
+    let named: Bool
+    let number: Int
+    let task: Task<Void, Never>
+
+    var direction: SchemaPrompts.Direction { writes == .schema ? .toSchema : .toPrompt }
+}
+
+/// Where a shape's sync is.
+private struct SyncShape {
+    /// Both sides as the document last said them, to tell a change to either from one to
+    /// something else about the shape (its frame, a lock).
+    var seen: TypeSyncSides
+    /// An edit is waiting to sync: on `timer`, or for the list at the caret to close.
+    var isWaiting = false
+    var timer: ScheduledTask?
+    var call: SyncCall?
+    /// A sync was asked for while the call was out: it runs once the call lands.
+    var wantsSync = false
+}
+
+/// Each shape's sync, by id. A class of its own and not generic, so that its deinit can be isolated
+/// to the main actor: Swift's optimizer crashes on an isolated deinit of a generic class built for a
+/// macOS before 15.4 (`./build.sh` builds for 14), and `TypeSync` is generic.
+@MainActor
+private final class SyncShapes {
+    private var byID: [ShapeID: SyncShape] = [:]
+
+    subscript(id: ShapeID) -> SyncShape? {
+        get { byID[id] }
+        set { byID[id] = newValue }
+    }
+
+    var keys: Dictionary<ShapeID, SyncShape>.Keys { byID.keys }
+
+    func removeValue(forKey id: ShapeID) -> SyncShape? { byID.removeValue(forKey: id) }
+
+    /// The file closed and the editor went, and the sync with it: whatever is out for a shape stops.
+    /// A model call in flight is cancelled, so it doesn't run on (a minute at most) spending the
+    /// person's tokens on an answer nothing lands; so is each edit's wait. Isolated, so each is the
+    /// main actor's to cancel, as it is while the editor lives.
+    isolated deinit {
+        for shape in byID.values {
+            shape.timer?.cancel()
+            shape.call?.task.cancel()
         }
     }
 }

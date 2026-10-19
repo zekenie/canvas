@@ -1,6 +1,7 @@
 import Adornments
 import AppKit
 @_spi(Host) import Canvas
+import CanvasRPC
 import CanvasTesting
 @_spi(Host) import CanvasUI
 import CoreGraphics

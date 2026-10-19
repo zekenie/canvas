@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Titles
 
 // The one writer of a shape's `fieldValues`: every surface that changes a value (a row, a card, the fold,

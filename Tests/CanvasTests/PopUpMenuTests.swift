@@ -87,4 +87,15 @@ extension Host: CanvasEditorDelegate {
         e.menuDidPopUp()
         expect(e.menuItemToHighlight == nil)
     },
+    test("NSMenuItem(title:run:) runs its closure when chosen, its target kept alive by the item alone") {
+        var ran = 0
+        let menu = NSMenu()
+        autoreleasepool { menu.addItem(NSMenuItem(title: "Go") { ran += 1 }) }
+        let item = try require(menu.items.first)
+        expectEqual(item.title, "Go")
+        expect(item.target != nil, "nothing but the item holds the target, which outlives the pool it was made in")
+        try menu.choose("Go")
+        try menu.choose("Go")
+        expectEqual(ran, 2)
+    },
 ])

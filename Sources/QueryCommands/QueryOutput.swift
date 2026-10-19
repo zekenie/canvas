@@ -59,7 +59,7 @@ public enum QueryOutput {
         var object: [String: JSON] = ["id": .string(row.id.description), "kind": .string(row.kind.rawValue), "board": .string(row.board.description)]
         if let title = row.title { object["title"] = .string(title) }
         if !row.inside.isEmpty { object["inside"] = .array(row.inside.map(JSON.string)) }
-        if let properties = row.properties { object["properties"] = .object(properties.mapValues { JSON($0) }) }
+        if let properties = row.properties { object["properties"] = .object(properties) }
         if let cut = row.cut { object["cut"] = .array(cut.map(JSON.string)) }
         if let connection = row.connection {
             // An edge type is written as its id, as it encodes itself.

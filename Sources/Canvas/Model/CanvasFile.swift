@@ -1,3 +1,4 @@
+import CanvasRPC
 /// Every board of one file: the root, and a board for each shape that owns one (a shape of a
 /// `BoardOwning` kind), kept under the owner's id. A value, like `CanvasDocument`.
 ///

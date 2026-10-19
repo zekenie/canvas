@@ -15,10 +15,7 @@ enum RelationshipMenus {
         let menu = NSMenu()
         menu.autoenablesItems = false
         func item(_ title: String, image: NSImage? = nil, color: NSColor? = nil, _ run: @escaping @MainActor () -> Void) {
-            let action = TypeMenuAction(run)
-            let item = NSMenuItem(title: title, action: #selector(TypeMenuAction.fire), keyEquivalent: "")
-            item.target = action
-            item.representedObject = action          // the item holds its target weakly
+            let item = NSMenuItem(title: title, run: run)
             item.image = image
             if let color { item.attributedTitle = NSAttributedString(string: title, attributes: [.foregroundColor: color]) }
             menu.addItem(item)

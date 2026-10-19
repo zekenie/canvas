@@ -88,8 +88,9 @@ struct Block {
     /// the edge lets go where it's drawn, then moved as far there and put down there. `finish` runs last,
     /// in the same transaction (the table of contents' restack), and throws to drop it all. All or nothing: a read-only shape in the
     /// way (one of them, a locked frame that would take them, the locked owner of the board they'd go
-    /// onto, a locked shape a frame would take there) throws out of the transaction, so nothing changes
-    /// and no step is made, and the refused shapes are heard (`editor.refuseChanges(to:)`: they shake).
+    /// onto, a locked shape a frame would take there) gives the whole move up (`transactWhole`), so
+    /// nothing changes and no step is made, and the refused shapes are heard (`editor.refuseChanges(to:)`:
+    /// they shake).
     /// Landed on the board shown, from it, a shape being typed in that moved is put down (editing ends,
     /// what was typed kept), as a `canvas draw` that moves it puts it down, and what moved glides there
     /// from where it was; the camera stays where it is. Moved onto another board, the shapes are gone
@@ -98,55 +99,41 @@ struct Block {
         let ids = ids, editor = editor, source = board, target = landing.board, shown = editor.board, kinds = editor.registry.containingKinds
         let delta = CGPoint(x: landing.rect.minX - box.minX, y: landing.rect.minY - box.minY)
         let order = shapes.map(\.id)
-        let nudges: [ShapeID: CGPoint]
-        do {
-            nudges = try editor.transact(MovingStyle.stepName) { transaction -> [ShapeID: CGPoint] in
-                if target != source {
-                    // Onto the board first, so what's bound to them across the edge lets go where it's drawn (an
-                    // arrow's end stays where the shape was, as after a cut), then where they go there.
-                    let moved = source == shown ? transaction.move(ids, to: target) : transaction.move(ids, from: source, to: target)
-                    guard moved else { throw Refused(shapes: transaction.refusedShapes) }
-                }
-                // What the move took along (an arrow bound only to them) goes as far as they do.
-                transaction.translate(ids.union(transaction.rodeAlong), by: delta, on: target)
-                guard transaction.refusedShapes.isEmpty else { throw Refused(shapes: transaction.refusedShapes) }
-                if target == source {
-                    // Raised over what they're put on that paints above any of them, together, in their order.
-                    for above in landing.above {
-                        let there = transaction.contents(of: target)
-                        guard let theirs = there.index(of: above), order.contains(where: { (there.index(of: $0) ?? .max) < theirs }) else { continue }
-                        var anchor = above
-                        for id in order {
-                            transaction.move(id, above: anchor, on: target)
-                            anchor = kinds.isEmpty ? id : transaction.contents(of: target).descendants(of: id, containingKinds: kinds).last ?? id
-                        }
+        let committed = editor.transactWhole(MovingStyle.stepName) { transaction -> [ShapeID: CGPoint] in
+            if target != source {
+                // Onto the board first, so what's bound to them across the edge lets go where it's drawn (an
+                // arrow's end stays where the shape was, as after a cut), then where they go there.
+                let moved = source == shown ? transaction.move(ids, to: target) : transaction.move(ids, from: source, to: target)
+                guard moved else { throw Transaction.Refused() }
+            }
+            // What the move took along (an arrow bound only to them) goes as far as they do.
+            transaction.translate(ids.union(transaction.rodeAlong), by: delta, on: target)
+            guard transaction.refusedShapes.isEmpty else { throw Transaction.Refused() }
+            if target == source {
+                // Raised over what they're put on that paints above any of them, together, in their order.
+                for above in landing.above {
+                    let there = transaction.contents(of: target)
+                    guard let theirs = there.index(of: above), order.contains(where: { (there.index(of: $0) ?? .max) < theirs }) else { continue }
+                    var anchor = above
+                    for id in order {
+                        transaction.move(id, above: anchor, on: target)
+                        anchor = kinds.isEmpty ? id : transaction.contents(of: target).descendants(of: id, containingKinds: kinds).last ?? id
                     }
                 }
-                switch transaction.settle(ids, on: target) {
-                case .settled(let nudges):
-                    try finish(&transaction)
-                    return target == shown ? nudges : [:]
-                case .refused:
-                    throw Refused(shapes: transaction.refusedShapes)
-                }
             }
-        } catch let refusal as Refused {
-            if !refusal.shapes.isEmpty { editor.refuseChanges(to: refusal.shapes) }
-            return
-        } catch {
-            return
+            switch transaction.settle(ids, on: target) {
+            case .settled(let nudges):
+                try finish(&transaction)
+                return target == shown ? nudges : [:]
+            case .refused:
+                throw Transaction.Refused()
+            }
         }
-        guard target == shown, source == shown else { return }
+        guard let nudges = committed, target == shown, source == shown else { return }
         var moved: [ShapeID: CGPoint] = [:]
         if delta != .zero { for each in ids.union(carried) { moved[each] = delta } }
         for (each, nudge) in nudges { moved[each] = moved[each].map { CGPoint(x: $0.x + nudge.x, y: $0.y + nudge.y) } ?? nudge }
         if let editing = editor.editingShapeID, let by = moved[editing], by != .zero { editor.endEditing(discarding: false) }
         editor.glide(moved)
     }
-}
-
-/// What leaves a move a read-only shape stood in the way of, or that can't put the shapes where they
-/// were to go: nothing changes.
-struct Refused: Error {
-    let shapes: Set<ShapeID>
 }

@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import DetailPanel
 import Foundation
 import AppKit

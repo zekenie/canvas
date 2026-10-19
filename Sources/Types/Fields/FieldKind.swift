@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Foundation
 
 // What a field's schema comes to as a row: one kind, read once from the schema as the type wrote it

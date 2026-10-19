@@ -11,9 +11,6 @@ enum PublicStyle {
     static let makePrivate = "Make Private"
     /// Between "Public" and how many things stand for the shape.
     static let countSeparator = " · "
-    /// What a board that isn't the root is called when it has no owner to name it, and the root
-    /// (the file's name is the host's, which a concern doesn't know).
-    static let boardName = "Board"
 
     /// "Public", or "Public · 3" once three things stand for the shape.
     static func face(references count: Int) -> String {

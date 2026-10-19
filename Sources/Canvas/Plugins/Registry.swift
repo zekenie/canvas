@@ -1,4 +1,5 @@
 import AppKit
+import CanvasRPC
 import Foundation
 
 /// Everything the installed plugins registered: built once from the plugin list, checked, then
@@ -388,7 +389,7 @@ public struct Registry {
             guard let codec = table.codecs[key], let owner = table.owners[key] else { continue }
             var property = codec.schema(&shared)
             property["x-canvas-owner"] = .string(owner.rawValue)
-            if let value = codec.defaultValue, let encoded = try? JSONValue(encoding: value) { property["default"] = encoded }
+            if let value = codec.defaultValue, let encoded = try? JSONValue(boardEncoding: value) { property["default"] = encoded }
             properties[key.rawValue] = .object(property)
         }
         json["properties"] = .object(properties)

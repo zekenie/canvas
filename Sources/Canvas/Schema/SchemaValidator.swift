@@ -1,3 +1,4 @@
+import CanvasRPC
 import Foundation
 
 /// Where a JSON value breaks a schema: one keyword, at one place in the value.

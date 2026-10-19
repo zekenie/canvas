@@ -29,7 +29,7 @@ import Validation
         let names = try require(ShippedList.names, "the build puts the list in an executable whose line ends + shipped")
         expectEqual(names.first, "Keyboard.KeyboardPlugin")
         expectEqual(Set(names).count, names.count, "each once")
-        let plugins = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: .general), LanguageModelsPlugin(model: ScriptedLanguageModel())])
+        let plugins = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard), LanguageModelsPlugin(model: ScriptedLanguageModel())])
         expectEqual(plugins.map { String(reflecting: type(of: $0)) }, names, "every line a plugin of that type, in the list's order")
         expectEqual(ShippedPlugins.plugins(model: ScriptedLanguageModel()).map(\.id), plugins.map(\.id), "which is what every test here is given")
         _ = try Registry(plugins: plugins)
@@ -37,20 +37,41 @@ import Validation
     test("nothing but the app is made of the plugins that reach outside the process: the list won't load without a pasteboard's and a model's of the caller's own") {
         let outward = ["Clipboard.ClipboardPlugin", "LanguageModels.LanguageModelsPlugin"]
         expectThrows(ShippedListError.notSupplied(outward)) { _ = try ShippedList.plugins(supplying: []) }
-        expectThrows(ShippedListError.notSupplied([outward[1]])) { _ = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: .general)]) }
+        expectThrows(ShippedListError.notSupplied([outward[1]])) { _ = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard)]) }
         expectThrows(ShippedListError.notSupplied([outward[0]])) { _ = try ShippedList.plugins(supplying: [LanguageModelsPlugin(model: ScriptedLanguageModel())]) }
         // The model handed over is the one the editor asks: never the app's.
         let model = ScriptedLanguageModel()
-        let plugins = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: .general), LanguageModelsPlugin(model: model)])
+        let plugins = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard), LanguageModelsPlugin(model: model)])
         let editor = CanvasEditor(registry: try Registry(plugins: plugins), document: CanvasDocument(), scheduler: ManualScheduler())
         expect(editor.languageModel as? ScriptedLanguageModel === model)
         // Any other listed plugin can be handed over too, and takes its place; one the list hasn't is refused.
         let asked = QueryTranslationPlugin(prompt: "Ask.", referenceRule: "")
-        let swapped = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: .general), LanguageModelsPlugin(model: model), asked])
+        let swapped = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard), LanguageModelsPlugin(model: model), asked])
         expectEqual(swapped.map(\.id), plugins.map(\.id))
         expectThrows(ShippedListError.notInList(["CanvasTesting.Contributor"])) {
-            _ = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: .general), LanguageModelsPlugin(model: model), Contributor(id: "more") { _ in }])
+            _ = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard), LanguageModelsPlugin(model: model), Contributor(id: "more") { _ in }])
         }
+    },
+    test("a test that names no pasteboard copies to one of its own, never the user's: its editors share it, and it goes as the test ends") {
+        var taken: NSPasteboard?
+        var log: [String] = []
+        let failures = runAsTest({
+            let first = ShippedPlugins.makeEditor(model: ScriptedLanguageModel())
+            let second = ShippedPlugins.makeEditor(document: CanvasDocument(), model: ScriptedLanguageModel())
+            let note = try require(first.document.shapes.first { $0.kind == StickyNote.kind }?.id)
+            expectEqual(first.copy([note]), [note])
+            second.paste()
+            expectEqual(second.document.shapes.count, 1, "pasted from where the first editor copied to")
+            taken = ShippedPlugins.pasteboard
+            expect(taken?.name != .general, "never the user's")
+            expect(!(taken?.types ?? []).isEmpty, "the copy is on it")
+            afterThisTest { log.append("ended") }
+        }, afterEach: { log.append("afterEach") })
+        expectEqual(failures, [])
+        expectEqual(log, ["afterEach", "ended"], "what a test asks to run as it ends runs after afterEach")
+        let pasteboard = try require(taken)
+        expectEqual(pasteboard.types ?? [], [], "released as its test ended")
+        expect(ShippedPlugins.pasteboard !== pasteboard, "the next test's is another")
     },
     test("the toolbar is Select V, Hand H, Note N, Subboard B, Frame F, Reference R: arrows are drawn from ports") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())

@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import CanvasRPC
 import CanvasTesting
 import Foundation
 import SwiftUI

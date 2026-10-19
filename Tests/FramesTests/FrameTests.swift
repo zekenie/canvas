@@ -1,6 +1,7 @@
 import Adornments
 import AppKit
 import Canvas
+import CanvasRPC
 import CanvasTesting
 import DetailPanel
 import Frames

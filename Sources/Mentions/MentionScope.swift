@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 
 /// What a mention text may mention: its type's scope, `ScopedMentionText<Scope>`. The scope limits
 /// what the `@` picker offers, and says so in the text's schema. It never refuses a mention that's

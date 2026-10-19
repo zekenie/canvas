@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 
 // Reading and setting one value inside a shape's `fieldValues`, at any depth: pure, so the writer, the
 // rows, the card and the panel all change a value the same way.

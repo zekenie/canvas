@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import CanvasRPC
 
 // The panel's box of JSON for a field no control suits: the stored value as indented JSON, always open, in
 // the monospaced face. The form has one editor for it, over the box of the focused `Other` field, as it has

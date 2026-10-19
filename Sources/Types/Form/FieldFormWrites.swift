@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import CanvasRPC
 
 // What the form writes, always through the one writer with the level's step: each keystroke in a cell is a
 // commit, a box, a choice and a check line are one, Remove is one. What the file does not hold yet (the

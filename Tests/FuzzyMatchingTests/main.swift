@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([fuzzyMatcherTests, textSearchTests, pathMatcherTests, boundedHeapTests])
+runTests([fuzzyMatcherTests, textSearchTests, pathMatcherTests, boundedHeapTests, suggestionsTests])

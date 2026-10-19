@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import CanvasTesting
 import Foundation
 import TestKit

@@ -887,6 +887,13 @@ A query the app can't read is refused with the query language's own message, and
 reference above "Owner" query: "sticky-note[public"
 ```
 
+So is one that reads what the person is doing (`:selected`, `:current-board`), since a reference's query is kept and run later, whoever is looking:
+
+```draw-error
+// reason: invalid_value
+reference above "Owner" query: "sticky-note:selected"
+```
+
 ## How a run is applied
 
 1. **Read.** Every line is read. Lines that can't be read are reported together, up to 20.

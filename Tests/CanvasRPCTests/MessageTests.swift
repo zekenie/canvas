@@ -12,6 +12,14 @@ import TestKit
         expectEqual(json["b"]?["c"]?.intValue, -3)
         expectEqual(try JSON(text: "\"3\"").stringValue, "3", "a string of digits stays a string")
     },
+    test("JSON reads a string before a number, so a board's decoder, which takes \"nan\" and \"inf\" for numbers, keeps them text") {
+        let text = #"{"label":"nan","big":"inf","n":1.5,"none":null}"#
+        let board = JSONDecoder()
+        board.nonConformingFloatDecodingStrategy = .convertFromString(positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan")
+        for decoder in [JSONDecoder(), board] {
+            expectEqual(try decoder.decode(JSON.self, from: Data(text.utf8)), ["label": "nan", "big": "inf", "n": 1.5, "none": nil])
+        }
+    },
     test("printed for people and agents, a list of values takes a line, and the text reads back as the same JSON") {
         let json: JSON = ["id": "A", "bounds": [[-100, 0.5], [200, 200]], "tags": ["a", "b"], "none": [], "nested": ["x": [1, ["y": true]]], "empty": [:]]
         let text = json.prettyText

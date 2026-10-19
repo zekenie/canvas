@@ -1,3 +1,4 @@
+import CanvasRPC
 /// One step in a kind's history: rewrites one shape's props, as JSON, from the version before it
 /// to its own. A kind lists its steps as `static let migrations` beside `static let kind`; the
 /// list's length is the kind's version, which boards record.

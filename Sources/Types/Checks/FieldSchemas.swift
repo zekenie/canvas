@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 
 // The schema the check reads: a type's composed schema rewritten, on a copy, so that the validator says
 // what the plan means. Pure, nonisolated, and made once where a schema is compiled or served. Five

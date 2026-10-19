@@ -246,10 +246,7 @@ extension BoardPath {
         menu.autoenablesItems = false
         let readOnlyStart = editor.boardCrumbs?.readOnlyStart
         for crumb in folded {
-            let action = FoldedMenuAction { [weak editor] in editor?.goUp(to: crumb.board) }
-            let item = NSMenuItem(title: crumb.title, action: #selector(FoldedMenuAction.fire), keyEquivalent: "")
-            item.target = action
-            item.representedObject = action          // the item holds its target weakly
+            let item = NSMenuItem(title: crumb.title) { [weak editor] in editor?.goUp(to: crumb.board) }
             if crumb.board == readOnlyStart {
                 item.image = NSImage(systemSymbolName: BoardsStyle.readOnlySymbol, accessibilityDescription: BoardsStyle.readOnlyLabel)
             }
@@ -257,18 +254,6 @@ extension BoardPath {
         }
         return menu
     }
-}
-
-/// What an item of the fold's menu runs: its target, kept alive as its `representedObject`. The
-/// item stays a plain NSMenuItem, since AppKit may copy one through initializers a subclass wouldn't
-/// inherit.
-final class FoldedMenuAction: NSObject {
-    private let run: @MainActor () -> Void
-
-    init(_ run: @escaping @MainActor () -> Void) { self.run = run }
-
-    /// AppKit sends menu actions on the main thread.
-    @MainActor @objc func fire() { run() }
 }
 
 /// The view the fold's menu is placed against, kept for the button's action.

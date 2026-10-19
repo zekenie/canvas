@@ -1,5 +1,6 @@
 import Adornments
 import Canvas
+import CanvasRPC
 import CoreGraphics
 import Find
 import Foundation

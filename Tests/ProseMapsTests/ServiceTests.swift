@@ -243,4 +243,20 @@ import TestKit
         expect(b.read(id, "the sum of every item") == nil, "no last answer")
         expectEqual(b.quotes(b.read(id)), ["sum", "every item", "over ten dollars"], "its pair's answer, kept by its texts")
     },
+    test("a call out when the file closes is cancelled, not left running on an answer nothing lands") {
+        var b: MapBench? = try MapBench()
+        let model = try require(b?.model)
+        model.holdsAnswers = true
+        weak var closing = b?.editor
+        let id = try require(b?.box())
+        _ = b?.read(id)
+        b?.frame()
+        spinRunLoop(until: { model.waiting == 1 })
+        expectEqual(b?.maps.callsOut, 1, "the call is out")
+        b = nil
+        spinRunLoop(until: { model.waiting == 0 })
+        expect(closing == nil, "the editor went as its file closed")
+        expectEqual(model.waiting, 0, "the call isn't left holding")
+        expectEqual(model.answered, 1, "it ended: cancelled")
+    },
 ])

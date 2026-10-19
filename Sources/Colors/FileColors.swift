@@ -226,32 +226,19 @@ extension CanvasEditor {
         return holders
     }
 
-    /// Sets the file's colors and the color of each holder in one step, all or nothing: a holder
-    /// that is read-only throws it all away, and shakes.
+    /// Sets the file's colors and the color of each holder in one step, all or nothing
+    /// (`transactWhole`): a holder that is read-only throws it all away, and shakes.
     private func rewriting(_ step: String, list: FileColorList, holders: [ShapeID], to recolor: (inout ShapeColor) -> Void) -> Bool {
-        do {
-            try transact(step) { transaction in
-                transaction.setFileValue(FileColorsProperty.self, to: list)
-                for id in holders {
-                    transaction.update(inFile: id) { record in
-                        guard var color = record.ownColor else { return }
-                        recolor(&color)
-                        record[ColorProperty.self] = color
-                    }
+        let written: Void? = transactWhole(step) { transaction in
+            transaction.setFileValue(FileColorsProperty.self, to: list)
+            for id in holders {
+                transaction.update(inFile: id) { record in
+                    guard var color = record.ownColor else { return }
+                    recolor(&color)
+                    record[ColorProperty.self] = color
                 }
-                if !transaction.refusedShapes.isEmpty { throw ColorChangeRefused(shapes: transaction.refusedShapes) }
             }
-        } catch let refused as ColorChangeRefused {
-            refuseChanges(to: refused.shapes)
-            return false
-        } catch {
-            return false
         }
-        return true
+        return written != nil
     }
-}
-
-/// Thrown out of a transaction that would leave a read-only shape's color as it was.
-private struct ColorChangeRefused: Error {
-    let shapes: Set<ShapeID>
 }

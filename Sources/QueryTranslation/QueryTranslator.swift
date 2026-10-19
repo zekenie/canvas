@@ -167,17 +167,6 @@ public final class QueryTranslator {
         return (queries, model, editor.scheduler, facts)
     }
 
-    /// What is said when a stored query uses a word that reads the person or the editor
-    /// (`QueryPlan.editorWords`): the status a reference that holds one shows, and the refusal the
-    /// model is sent back.
-    public nonisolated static func cantBeUsed(_ word: String) -> String { "“\(word)” can’t be used here." }
-
-    /// The refusal for a stored query that uses such a word: what the model is sent back, and what
-    /// a reference that holds one says.
-    public nonisolated static func refusal(forEditorWord word: String) -> QueryError {
-        QueryError(.unsupported, cantBeUsed(word), hint: "A stored query reads only the file, never who is looking or what is selected.")
-    }
-
     /// Asks the editor's model to write a query for `question`, and runs it (listing as a query
     /// request says: `limit`, `countOnly`, `properties`). Refused `noQueries` without Queries,
     /// `noModel` without a model, `model` for the model's own failures, `declined`, `unanswerable`,
@@ -219,10 +208,7 @@ public final class QueryTranslator {
         do throws(QueryTranslationError) {
             return try await bounded(on: scheduler) { (bounds: AskBounds) async throws(QueryTranslationError) -> TranslatedQuery in
                 let talk = try await translator.converse(words, context: context, queries: queries, model: model, facts: facts, bounds: bounds) { (text: String) async throws(QueryError) -> String in
-                    let plan = try queries.check(text)
-                    if context == .reference, let word = plan.editorWords.first {
-                        throw Self.refusal(forEditorWord: word)
-                    }
+                    let plan = try context == .reference ? queries.checkStored(text) : queries.check(text)
                     if let refusal = await queries.checkNames(plan) { throw refusal }
                     return plan.canonical
                 }

@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Foundation
 
 // What a list of types checks a value against: compiled once and kept (`FieldChecks` keeps one for

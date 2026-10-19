@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Foundation
 
 /// What the file's types say of the members a note's values can hold, by key at each depth: the union over

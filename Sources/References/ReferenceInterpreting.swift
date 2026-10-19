@@ -240,8 +240,7 @@ extension ReferenceState {
         guard var entry = interpretations[id], let draft = entry.draft, let queries = editor.queries else { return }
         entry.evaluation?.cancel()
         do throws(QueryError) {
-            let plan = try queries.check(draft.query)
-            if let word = plan.editorWords.first { throw QueryTranslator.refusal(forEditorWord: word) }
+            _ = try queries.checkStored(draft.query)
         } catch {
             entry.draft?.outcome = .refused(error.message)
             interpretations[id] = entry

@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Validation
 
 /// Each type's schema read once: its rules, the sync, its highlights and its panel all read the same

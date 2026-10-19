@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import CanvasRPC
 import CoreGraphics
 
 // What the rows of a note that is one do when they are used: what each row is to the keyboard and the

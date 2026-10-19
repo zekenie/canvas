@@ -678,7 +678,9 @@ plugin after the ones whose points it fills.
 - **Tests** get the product's plugins from ShippedTesting's `ShippedPlugins`:
   `plugins(pasteboard:model:)`, `registry(pasteboard:model:)` and
   `makeEditor(document:scheduler:pasteboard:model:)`, the list with a clipboard on the test's
-  pasteboard and the test's model, whose `model` has no default.
+  pasteboard and the test's model, whose `model` has no default. A test that passes no pasteboard
+  gets its own (`ShippedPlugins.pasteboard`: made when the test first asks, shared by its editors,
+  released as it ends, through TestKit's `afterThisTest`), never the user's.
 
 `./build.sh graph` prints the list after the modules, and leaves what `+ shipped` links out of
 each line's dependencies: what ships is membership in the product, not one module's design
@@ -1018,6 +1020,10 @@ The details:
   before that drops it, as does a file put in place. One waits at a time: a newer replaces it.
   `highlighting: item` (one of the menu's items) opens it with that item highlighted, so Return
   takes it: the host pops it up as `menu.popUp(positioning: item, at:in:)` (`menuItemToHighlight`).
+  Its items that run something are `NSMenuItem(title:run:)`, the core's: an item that runs a
+  closure, the target that runs it kept by the item (which holds its target weakly) as its
+  `representedObject`, which nothing else may set. A chip's menu, the path's fold, a list at an
+  arrow, a mention's menu in text and a context menu are made of them.
 - **Redrawing**: the core redraws whenever the document, camera, tool or session changes. A plugin
   whose drawn state changes some other way (its own state, a timer) calls `editor.setNeedsDisplay()`,
   as Selection does when the selection or hover changes; a tool whose cursor follows such state
@@ -3161,7 +3167,8 @@ stand-ins in it, an arrow's label's too: it's mention text).
 ## FuzzyMatching
 
 FuzzyMatching ([`Sources/FuzzyMatching`](../Sources/FuzzyMatching)) matches what's typed against
-text: three matchers on one folding, and a heap for the best few of what they match, a core module that depends on no other module of the
+text: three matchers on one folding, a heap for the best few of what they match, and the "did you
+mean" a language's refusal offers (`Suggestions`), a core module that depends on no other module of the
 project (it knows no canvas, registry or plugin, and not TextEditing), pure and nonisolated, so any
 thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on TestKit alone.
 
@@ -3223,6 +3230,13 @@ thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on Test
   `leafScore(after:label:)` from its parent container's row, which costs one match of each group of
   its label, a few for a few pieces. A one-piece query has no path in it: that's `FuzzyMatcher` over
   the leaves.
+- **`Suggestions`** is the "did you mean" a refusal offers for a word a language doesn't have (a
+  title, a kind, an attribute, a word of `canvas draw`'s or `canvas query`'s), DrawScript's, Draw's
+  and Queries': `closest(to:among:limit:)` gives the few most like it, best first (the same but for
+  case, spacing and × written as x; then one inside the other; then sharing a word; then a few
+  letters off, a swapped pair one edit), and `isNearMiss` whether one title is a slip of another.
+  It folds on its own (lowercased, whitespace one space, × as x), not as the matchers do, and counts
+  edits only where they decide something, so a board's titles cost their folding.
 
 ## Palette
 
@@ -5396,9 +5410,9 @@ giving a shape back the id it had.
   pasted is beside it, not in it: a frame pasted in place, on its original, holds only its own
   copies, and takes none of the original's. What's selected is what isn't in another shape pasted
   with it. A read-only container (a locked frame, or a locked frame's copy just pasted) takes
-  nothing: a paste one would take puts nothing down, thrown out of its transaction so no step is
-  left and what there was to redo stays, and services hear the container refused
-  (`editor.refuseChanges(to:)`, the core's: Selection shakes it), as they hear a drop's.
+  nothing: a paste one would take puts nothing down, given up whole (`editor.transactWhole`) so no
+  step is left and what there was to redo stays, and services hear the container refused (Selection
+  shakes it), as they hear a drop's.
 - **Shapes bound to shapes.** A kind whose props are bound to other shapes (an arrow's bound ends)
   adopts the core's `ShapeReferencing`, which deleting a shape asks too. Copying asks it to let go
   of the shapes left out of the copy, and pasting asks it to bind the copies of those copied with it. So
@@ -5701,9 +5715,18 @@ record. The core holds them where every change goes through it:
   shape edited there as it becomes read-only stops being edited.
 - **Changing everything or nothing.** `transaction.refusedShapes` is the read-only shapes the
   transaction was asked to change, restack, move or delete so far and didn't (and the read-only
-  containers that wouldn't take a shape, and the owners of read-only boards that wouldn't). A plugin whose change makes no sense in part (a shape
-  turned into another kind that must take what it held with it) reads it, throws so nothing commits
-  and no step is left, and says so itself (`editor.refuseChanges(to:)`), as Clipboard's paste does.
+  containers that wouldn't take a shape, a settle's included, and the owners of read-only boards that
+  wouldn't). A change that makes no sense in part (a shape turned into another kind that must take
+  what it held with it, a group, a move, a paste) goes through `editor.transactWhole(name) { … }`:
+  one transaction that commits only when its body returns with nothing refused, and otherwise commits
+  nothing, opens no step (what there was to redo stays) and shakes the refused shapes
+  (`editor.refuseChanges(to:)`), answering the body's value or nil. A body gives up for a reason of
+  its own by throwing `Transaction.Refused(shapes)` (they shake too); one that throws anything else
+  gives up with nothing shaking, as a body that throws out of `transact` is heard refusing nothing.
+  `shaking:` says exactly what shakes instead, whatever stopped it (the note whose row asked, or
+  none). Grouping, Colors'
+  file-wide rewrites, Moving, Transform, Clipboard's paste, Types' relationship writes, Connect and
+  the core's own placements go through it; no plugin keeps a refusal error of its own.
 
 Selection shows no handles on a read-only shape, and the detail panel disables its controls; both
 ask the core (`editor.isReadOnly`, the panel of the shape it shows on every commit), not Locking.
@@ -6691,7 +6714,8 @@ follows undo and redo, during which nothing may):
   `@`, `/move-to` and the reference list do not, and cost what they did (the "3 mentionable among
   10,000 empty notes" benchmark does not move). `choices(_:)` gives each
   candidate with the name of the board it is on when that isn't the board shown (`MentionChoice`,
-  `boardName(ofShape:)`), and `MentionChoice.items` the caret list's lines for them (the name, the matched
+  `boardName(ofShape:)`: what Boards calls the board, `editor.name(of:root:)`, so an untitled
+  subboard's is "Untitled Subboard" as on the path; "Board" for the root), and `MentionChoice.items` the caret list's lines for them (the name, the matched
   letters, the kind's symbol and tint, the board as the detail, "Kind · Board" for two called alike): one
   line for the `@` picker's neighbours (the Reference picker's, a row's list of notes), written once.
 - **Going and hovering**: `follow(_:)` goes to a shape on the next turn of the scheduler
@@ -8113,7 +8137,7 @@ Queries ([`Sources/Queries`](../Sources/Queries)) finds the shapes of a file a q
 selector in a CSS-like language over every shape on every board the app can show, by kind, title,
 id, attributes typed by their kind's schema, text, Topology's containment and typed edges, and the
 words plugins add. It's an engine on Selection and Topology, over the core and QueryLanguage
-(DrawScript lends it only its "did you mean", `Suggestions`), knows no horizontal's meaning, and hears no
+(FuzzyMatching lends it its "did you mean", `Suggestions`), knows no horizontal's meaning, and hears no
 commit: the engine every plugin may run, where the language agents write is `canvas query` and the
 words their owners give it. Agents ask through [`canvas query`](#query); any plugin may ask too (a
 word for a horizontal's meaning comes from the horizontal's own module):
@@ -9426,7 +9450,7 @@ transforms.turn([frame], into: Subboard.kind)    // true: one undo step, "Turn i
   subboard's board, isn't turned,
   and neither is one that holds a locked shape: the target moves everything, so if anything it would move
   is read-only (`transaction.refusedShapes`), or a read-only container would take the turned shape, the
-  whole turn throws out of its transaction. Nothing changes, no step is made, and the refused shapes are
+  whole turn is given up (`editor.transactWhole`). Nothing changes, no step is made, and the refused shapes are
   heard (`editor.refuseChanges(to:)`, so Locking shakes them). A shape that's read-only is refused before
   its target runs. A target that throws turns nothing either. `turn` returns whether it turned any.
 
@@ -9668,7 +9692,7 @@ registrar.forShapes(adopting: .box) { boxes in
   nearest clear spot around it, ring by ring. Zones are draw's too: a frame that holds X is a region
   the shape sits on, not a shape in its way, so a note moved beside a note in a frame lands in the
   frame, and one landing over a zone that paints above it is raised above it.
-- **One step, all or nothing.** It's one `editor.transact("Move")`, with the core's tools as draw's
+- **One step, all or nothing.** It's one `editor.transactWhole("Move")`, with the core's tools as draw's
   commit uses them. On the board shown: `translate` (what a frame holds goes along),
   `move(_:above:)` over what it sits on that paints above it, and `settle` (the in-or-out rule: in
   the frame it's mostly over, out of the one it left, [Containers](#containers)). Onto another
@@ -9679,8 +9703,8 @@ registrar.forShapes(adopting: .box) { boxes in
   ([Boards in a file](#the-editor-and-the-file)).
   A read-only shape in the way (a locked frame it would land in, the owner of a board that takes no
   shapes it would go onto, locked or under one that is, a locked note in a frame going onto another
-  board) throws out of the transaction: nothing changes, no step is made, and the locked shapes shake
-  (`editor.refuseChanges(to:)`), as a refused [turn](#turning) does. (A shape on a read-only board
+  board) gives the whole move up: nothing changes, no step is made, and the locked shapes shake, as a
+  refused [turn](#turning) does. (A shape on a read-only board
   is offered no command at all, as no read-only shape is, so none moves off one.) On the board shown, what moved glides there and a note being
   edited is put down (editing ends, as a `canvas draw` that moves it ends it); onto another board,
   it's gone from the one shown, the window stays where it is, and Undo Move puts both boards back
@@ -10063,7 +10087,8 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   a gesture or an undo), at once, on the scheduler's next turn; any other commit but a move, after
   250 ms of quiet (`ReferenceStyle.settle`, each commit waiting again, on `editor.scheduler`); a commit
   that only moved shapes, never (one test). A plan that reads the person (`editorWords`) isn't asked:
-  it's refused, “`:selected` can’t be used here.” An answer lands only for the question the record
+  it's refused, “`:selected` can’t be used here.” (`queries.checkStored`, Queries' one gate for a
+  stored query, which the reference's draft, its warning and `canvas draw` go through too). An answer lands only for the question the record
   asks now and only if no older than the latest that landed for it (kept per key), and goes to Topology
   in one `provide` (the first match, or up to fifty), then, if it says something new (every quiet asks
   every reference again, and most answers are what they were), the pills (`setNeedsDisplay`), panels
@@ -10387,7 +10412,8 @@ registrar.automationCommand("query", "Find the shapes of a file that a query mat
 - **Its output is written as JSON off the main actor** (`AutomationCommand.encoded`, `@concurrent`,
   handed the output whole, `consume`), where it's freed too, so a large one costs the main actor
   neither its writing nor its freeing. One that's the wire's `JSON` already passes through as it is
-  (`JSON(_: JSONValue)` makes one; `query` builds its answer member by member, off the main actor).
+  (what the core writes is one: its `JSONValue` is the wire's `JSON`; `query` builds its answer
+  member by member, off the main actor).
   `run:` is unchanged: it never suspends, and answers in the turn it's asked in, as `draw` and
   `kinds` do. Write the `runAsync:` label out: a trailing closure that doesn't await picks `run:`.
 - **It may be cancelled.** `canvas` hanging up (its timeout, ^C) cancels the request's task,
@@ -10470,9 +10496,10 @@ against the board as the run starts:
    doesn't have without a word: an unknown member, or a value of the wrong type anywhere in it, is
    `invalid_value`, with a "did you mean" over the object's members; a property the schema marks
    `readOnly` is no attribute (`unknown_attribute`; `kinds` leaves it out), and a string whose
-   `format` is `x-canvas-query` is checked by `editor.queries?.check` (syntax and vocabulary, so a
-   bad one is `invalid_value` with the engine's message and hint; unchecked without QueriesPlugin;
-   Draw uses Queries), and a string whose `contentMediaType` is one a plugin writes
+   `format` is `x-canvas-query` is checked by `editor.queries?.checkStored` (syntax and vocabulary,
+   and no word that reads the editor, `:selected`, since the query is stored to run later; so a bad
+   one is `invalid_value` with the engine's message and hint; unchecked without QueriesPlugin; Draw
+   uses Queries), and a string whose `contentMediaType` is one a plugin writes
    (`DrawTextFormats`: mention text's) is written by that plugin, wherever it is in the value,
    `DrawTexts.swift`; the naming property and coordinates refused); each placement's targets; each
    edge's ends and attribute keys; and each delete's shape, with the connections on it (those
@@ -11178,10 +11205,11 @@ about:)` is what the app asks when a query isn't run now but kept (a reference's
 40 s mark, and a `TranslatedQuery` (`query`, canonical; `answers`, `inputTokens`, `outputTokens`,
 `repaired`) for an answer, which differs from `ask` in what it validates and that it runs nothing.
 `--ask` repairs every refusal `run` raises, and the commonest model error, a wrong title, is raised
-only there (`check` leaves titles for `run`), so `translate` validates in three steps, each refusal
-going into the one second try: `check`; in the `.reference` context, that the plan reads only the
-file (`plan.editorWords` is empty, else a refusal naming the first word, “`:selected`” can’t be used
-here., `QueryTranslator.cantBeUsed`, the message a reference's own gate says too); and `checkNames`
+only there (`check` leaves titles for `run`), so `translate` validates in two steps, each refusal
+going into the one second try: in the `.reference` context `checkStored`, the one gate of every
+stored query (the plan reads only the file: `plan.editorWords` is empty, else a refusal naming the
+first word, “`:selected`” can’t be used here., `QueryError.cantBeUsed`, which a reference's own
+answers, draft and warning and `canvas draw`'s check say too), in `.person` `check`; and `checkNames`
 (a title or id the file doesn't have). So a wrong title is repaired, never returned, and nothing is
 evaluated: the batch that follows the stored query is its first evaluation. `TranslationContext` is
 `.person` (`--ask`'s: the selection in `<board>`, every word in `<vocabulary>`) or `.reference`: the
@@ -11864,7 +11892,11 @@ and the prompts it sends (`SyncedSchema`: a type's is `TypeSchemaProperty`, with
 - **While a call is out** the side it writes is read-only (the JSON, `detailUpdating`; a note's editor,
   read-only and faint, showing what lands), and its answer is dropped if that side changed; edits to
   the other side wait for it. A failure says why, with Retry, Open Settings… alone (saving a key
-  retries) or nothing (`editByHand`); `NO_CHANGE` writes nothing.
+  retries) or nothing (`editByHand`); `NO_CHANGE` writes nothing. The file closing (the editor
+  going, and the sync with it: the `isolated deinit` of its `SyncShapes`, a class apart and not
+  generic, since Swift's optimizer crashes on one in a generic class built for macOS 14) cancels
+  every call out and every edit's wait,
+  so none runs on spending the person's tokens on an answer nothing lands.
 - **The words' answer** comes inside `<answer>` and `</answer>` (`SchemaPrompts.answerTag`), and
   only what is inside them is the words (`SchemaPrompts.parse`): the model sometimes opens with a
   remark, and asking it not to made that worse. The last complete pair is read; an opening tag
@@ -12101,7 +12133,9 @@ if let map = context.proseMaps?.map(Snippet.self, of: shape.id, prose: words, ta
   failure keeps nothing, and its pair isn't asked about again until a key is saved in Settings, but one
   that may pass (too many requests, overloaded, the network, a timeout) is asked again 30 s later
   (`retryDelay`), when it's next drawn; a cancelled call is asked again when it's next read. A shape taken out of the file keeps nothing but
-  its answers, by their texts; one moved to another board keeps its last.
+  its answers, by their texts; one moved to another board keeps its last. While the editor lives no
+  call is cancelled; the file closing (the service going with its editor, an `isolated deinit`)
+  cancels every call out, whose answer nothing would land.
 - **The request** (`ProseMapPrompt`) is one for every target: the `frame`, every target's task and
   rules (copy the words exactly, typos and all; the fewest words; never overlapping, in the prose's
   order; only what the target says), with the target's name and its guide in it, and the context
@@ -12300,8 +12334,9 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   transaction says: `transaction.byAgent`). Transactions don't nest. A body that throws commits
   nothing, whatever it changed first: services hear of no change and no refusal, the board isn't
   edited, no undo step opens (what there was to redo stays), and the error comes out of `transact`
-  (untyped: catch it and cast), so work that must happen whole or not at all throws to leave, as
-  [`canvas draw`](#draw) does. A frame that isn't finite never gets in: such an insert or update is dropped, since a board
+  (untyped: catch it and cast), as [`canvas draw`](#draw) throws to leave whole; a plugin's work that
+  must happen whole or not at all goes through `editor.transactWhole` ([the core's
+  part](#the-cores-part-read-only-shapes)), which shakes what was refused. A frame that isn't finite never gets in: such an insert or update is dropped, since a board
   must always save. An added value the shape's kind can't hold is dropped too, and an insert fills
   in the defaults of what its kind opts into. A read-only shape (a locked one,
   `registrar.readOnlyShapes`) keeps whatever a transaction does to it, unless the change leaves it
@@ -13136,8 +13171,8 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   shapes stay as they are, in or out, and a read-only container takes nothing: if anything would go
   into one, nothing changes, services hear that container refused (`didRefuseChanges`: Locking
   shakes it), and the answer names it (`Settlement.refused(by:)`), for the caller to send what was
-  dropped back, or to give up what it was doing, throwing out of its transaction so no step is left,
-  and say so itself (`editor.refuseChanges(to:)`, as Clipboard's paste does).
+  dropped back, or to give up what it was doing: in an `editor.transactWhole`, as Clipboard's paste
+  is, the refusal gives the whole up, no step is left, and the container shakes.
   Each container put down then takes in what it lands on, `settle(container:)`, which is also what's
   called after a container is resized: what's in it hanging over its edge is nudged in, or leaves,
   mostly outside; what's at its level that it reaches is taken in, mostly inside, or nudged out;
@@ -14058,9 +14093,10 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   `adornmentFacesKept` and `adornmentFacesMade` the shapes that show something, their faces kept, and
   the faces made in all, so one holds zooming out to making and measuring nothing.
 - **The clipboard.** A test that copies gives the clipboard a pasteboard of its own, so it never
-  touches the user's: `ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName())`, or
-  `ShippedPlugins.makeEditor(pasteboard:model:)` (and `releaseGlobally()` it after). Two editors on one
-  pasteboard are two boards copying and pasting between them. ClipboardTests' `moveTests` hold cut
+  touches the user's: `ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName())` (and
+  `releaseGlobally()` it after), or `ShippedPlugins.makeEditor(model:)`, whose pasteboard is the
+  test's own unless it passes one (`ShippedPlugins.pasteboard`, released as the test ends). Two
+  editors on one pasteboard are two boards copying and pasting between them. ClipboardTests' `moveTests` hold cut
   and paste to a move: the cut's mark, cleared by a copy or any write; a second paste, a copy;
   an id in use, an orphan board or an unreadable entry under a cut id, and a refused deletion, each
   pasting that shape as a copy; a moved copy keeping its `CopiedFrom`; a name left behind naming

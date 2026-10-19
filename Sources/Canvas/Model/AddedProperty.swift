@@ -1,3 +1,4 @@
+import CanvasRPC
 import Foundation
 
 /// A property a plugin adds to the kinds that opt in: something those shapes know (a title, say)
@@ -63,7 +64,7 @@ public struct PropertyKeywords<Value: Encodable>: PropertyModifiers, Sendable {
     }
 
     public func examples(_ values: Value...) -> Self {
-        let more = values.compactMap { try? JSONValue(encoding: $0) }
+        let more = values.compactMap { try? JSONValue(boardEncoding: $0) }
         return keywords(["examples": .array((json["examples"]?.arrayValue ?? []) + more)])
     }
 }
@@ -116,7 +117,7 @@ struct AddedValues: Equatable, Sendable {
     /// Every value kept aside: what a shape the app can't use holds.
     mutating func keepAll(at versions: (PropertyKey) -> Int) {
         for (key, value) in values {
-            if let json = try? JSONValue(encoding: value) { kept[key] = KeptJSON(version: versions(key), json: json) }
+            if let json = try? JSONValue(boardEncoding: value) { kept[key] = KeptJSON(version: versions(key), json: json) }
         }
         values = [:]
     }
@@ -179,7 +180,7 @@ extension AnyShapeRecord {
     /// and keeps aside, `keptProperties`). For a plugin that reads a property by the name a user's text
     /// gives it (`registry.properties(for:)` lists the names), without the type.
     public func addedJSON(for key: PropertyKey) -> JSONValue? {
-        added[key].flatMap { try? JSONValue(encoding: $0) }
+        added[key].flatMap { try? JSONValue(boardEncoding: $0) }
     }
 
     /// Added properties this shape holds values for that the app can't use, kept as they were.

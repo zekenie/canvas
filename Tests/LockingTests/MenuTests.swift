@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import CanvasTesting
 import ContextMenus
 import CoreGraphics

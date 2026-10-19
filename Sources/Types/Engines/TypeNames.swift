@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Draw
 
 /// Types in draw, in Types: `is: "Employee card"` on a shape, and on an edge

@@ -1,3 +1,4 @@
+import CanvasRPC
 /// The props of a shape a board keeps but the app can't use: its kind isn't installed, it's from a
 /// newer version of its kind, or it didn't load. Kept exactly as the JSON it was, at the version it
 /// was, and written back that way. Nothing draws, hits, selects or edits it: definitions see only

@@ -123,54 +123,44 @@ extension CanvasEditor {
             pill?.record = made
             farLanding = spotLanding
         }
-        struct Refused: Error {}
-        var refused: ShapeID?
         let made: ShapeID? = undoHistory.group(TypesStyle.newRelationshipType) {
-            do {
-                try transact(TypesStyle.newRelationshipType) { transaction in
-                    if let connection { transaction.delete([connection]) }
-                    var ends = (first, second)
-                    if let pending = pill {
-                        if pending.fulfil { transaction.update(inFile: far) { _ = registry.standIns.fulfil(pending.kind, &$0) } }
-                        // Asked again as the step leaves the far type: it may have gone private or away since.
-                        guard let farBoard = transaction.board(containing: far), let there = transaction.contents(of: farBoard)[far],
-                              registry.standIns.admits(pending.kind, there) else { throw Refused() }
-                    }
-                    transaction.insert(record)
-                    if case .refused(let container) = transaction.settle([record.id]) {
-                        refused = container
-                        throw Refused()
-                    }
-                    if let pending = pill {
-                        if let reused = pending.reused {
-                            if farFirst { ends.0 = reused } else { ends.1 = reused }
-                        } else if let pillRecord = pending.record {
-                            transaction.insert(pillRecord)
-                            guard transaction.document[pillRecord.id] != nil else { throw Refused() }
-                            if case .refused(let container) = transaction.settle([pillRecord.id]) {
-                                refused = container
-                                throw Refused()
-                            }
-                            for above in farLanding?.above ?? [] {
-                                guard let mine = transaction.document.index(of: pillRecord.id), let theirs = transaction.document.index(of: above), theirs > mine else { continue }
-                                transaction.move(pillRecord.id, above: above)
-                            }
-                            if farFirst { ends.0 = pillRecord.id } else { ends.1 = pillRecord.id }
-                        }
-                    }
-                    let stood: [ShapeKind] = pill.map { [$0.standingFor] } ?? []
-                    // The first arrow is in the document before the second is made: a type related to itself joins one
-                    // pair twice, and the maker reads the bend of the arrow the second goes beside from there.
-                    guard let toIt = registry.drawConnection(from: ends.0, to: record.id, in: transaction.shapes, standingFor: (farFirst ? stood : [], [])) else { throw Refused() }
-                    transaction.insert(toIt)
-                    guard let fromIt = registry.drawConnection(from: record.id, to: ends.1, in: transaction.shapes, standingFor: ([], farFirst ? [] : stood),
-                                                               beside: first == second ? [toIt.id] : nil) else { throw Refused() }
-                    transaction.insert(fromIt)
-                    guard transaction.refusedShapes.isEmpty else { throw Refused() }
+            // Whole or not at all (`transactWhole`): a read-only container a shape would land in refuses it,
+            // nothing commits and no step is left, and the container shakes.
+            let drawn: Void? = transactWhole(TypesStyle.newRelationshipType) { transaction in
+                if let connection { transaction.delete([connection]) }
+                var ends = (first, second)
+                if let pending = pill {
+                    if pending.fulfil { transaction.update(inFile: far) { _ = registry.standIns.fulfil(pending.kind, &$0) } }
+                    // Asked again as the step leaves the far type: it may have gone private or away since.
+                    guard let farBoard = transaction.board(containing: far), let there = transaction.contents(of: farBoard)[far],
+                          registry.standIns.admits(pending.kind, there) else { throw Transaction.Refused() }
                 }
-            } catch {
-                return nil
+                transaction.insert(record)
+                guard case .settled = transaction.settle([record.id]) else { throw Transaction.Refused() }
+                if let pending = pill {
+                    if let reused = pending.reused {
+                        if farFirst { ends.0 = reused } else { ends.1 = reused }
+                    } else if let pillRecord = pending.record {
+                        transaction.insert(pillRecord)
+                        guard transaction.document[pillRecord.id] != nil else { throw Transaction.Refused() }
+                        guard case .settled = transaction.settle([pillRecord.id]) else { throw Transaction.Refused() }
+                        for above in farLanding?.above ?? [] {
+                            guard let mine = transaction.document.index(of: pillRecord.id), let theirs = transaction.document.index(of: above), theirs > mine else { continue }
+                            transaction.move(pillRecord.id, above: above)
+                        }
+                        if farFirst { ends.0 = pillRecord.id } else { ends.1 = pillRecord.id }
+                    }
+                }
+                let stood: [ShapeKind] = pill.map { [$0.standingFor] } ?? []
+                // The first arrow is in the document before the second is made: a type related to itself joins one
+                // pair twice, and the maker reads the bend of the arrow the second goes beside from there.
+                guard let toIt = registry.drawConnection(from: ends.0, to: record.id, in: transaction.shapes, standingFor: (farFirst ? stood : [], [])) else { throw Transaction.Refused() }
+                transaction.insert(toIt)
+                guard let fromIt = registry.drawConnection(from: record.id, to: ends.1, in: transaction.shapes, standingFor: ([], farFirst ? [] : stood),
+                                                           beside: first == second ? [toIt.id] : nil) else { throw Transaction.Refused() }
+                transaction.insert(fromIt)
             }
+            guard drawn != nil else { return nil }
             // On the line between the two types, it is on it as they are now (they have their new rows): one line through the pill, straight.
             if middle.isOnLine { straighten(record.id) }
             selection = record.id
@@ -178,7 +168,6 @@ extension CanvasEditor {
             if !drawsSkeletons { beginEditing(record.id) }
             return record.id
         }
-        if let refused { refuseChanges(to: [refused]) }
         return made
     }
 

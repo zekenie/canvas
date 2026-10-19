@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Foundation
 
 // What typed text is stored as, and how a stored value shows: the one place rows, cards and the panel

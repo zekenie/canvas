@@ -82,6 +82,12 @@ let slips = Contributor(id: "slips") { registrar in
         let unknown = try refused(#"slip query: "nothing-like-this""#, on: editor)
         expectEqual(unknown.reason, "invalid_value", "a word the language doesn't have")
         expect(unknown.hint != nil, "the engine's hint")
+        // A query is kept to run later, so a word that reads the editor is refused, named, with the engine's hint.
+        let stored = try refused(#"slip query: "slip:current-board""#, on: editor)
+        expectEqual(stored.reason, "invalid_value")
+        expectEqual(stored.message, "the slip on line 1: query: “:current-board” can’t be used here.")
+        expect(stored.hint?.contains("reads only the file") == true, "the engine's hint: \(stored.hint ?? "none")")
+        expectEqual(editor.document.shapes.count, 0, "nothing drawn")
         let ok = try drawn(#"slip query: "slip""#, on: editor)
         expectEqual(rows(ok).map { $0["did"] }, ["created"])
         expectEqual(slip(in: editor)?.props.query, "slip")

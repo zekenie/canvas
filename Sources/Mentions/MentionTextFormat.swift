@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Foundation
 
 /// The stored form's shared pieces: its schema definition (`mentions.text`, which every mention

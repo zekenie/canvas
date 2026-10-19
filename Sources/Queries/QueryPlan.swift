@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Foundation
 import QueryLanguage
 import Topology

@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 
 /// A schema as it was written: JSON with an object's members in the order they were written, which
 /// `JSONValue`'s dictionaries lose and rows and cards need (the fields of a group are shown in the

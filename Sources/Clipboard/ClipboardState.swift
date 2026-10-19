@@ -274,49 +274,33 @@ final class ClipboardState {
         for board in [file.root] + file.children.values {
             for record in board.shapes { ids[record.id] = isCut && target.isUnused(record.id) ? record.id : ShapeID() }
         }
-        let pasting: (selected: [ShapeID], nudges: [ShapeID: CGPoint])
-        do {
-            pasting = try editor.transact(name) { transaction -> (selected: [ShapeID], nudges: [ShapeID: CGPoint]) in
-                let carried = carry(shapes, renaming: { ids[$0]! }, naming: { ids[$0] }, in: transaction.shapes)
-                let groups = copiedGroups(of: carried, renaming: ids)
-                for record in carried {
-                    transaction.insert(pasted(record, as: ids[record.id]!, renaming: ids, groups: groups),
-                                       contents: pastedBoards(under: record.id, in: file, renaming: ids))
-                }
-                let placed = shapes.compactMap { ids[$0.id] }.filter { transaction.document[$0] != nil }
-                let centered = point.flatMap { point in transaction.shapes.bounds(of: placed).map { point - $0.center } }
-                // A paste moves what it puts down before it settles it; a duplicate settles it where it is (a
-                // container's copy lies over its original and doesn't take it in, the copies go in the
-                // containers their originals are in) and then moves it beside the original.
-                if fixed == nil, let offset = centered ?? offset(placing: placed, in: transaction.shapes), offset != .zero {
-                    transaction.translate(Set(placed), by: offset)
-                }
-                switch transaction.settle(placed) {
-                case .settled(let nudges):
-                    if let fixed, fixed != .zero { transaction.translate(Set(placed), by: fixed) }
-                    let pastedIDs = Set(placed), document = transaction.document
-                    let tops = placed.filter { id in !(document.container(of: id, containingKinds: kinds).map(pastedIDs.contains) ?? false) }
-                    return (tops, nudges)
-                case .refused(let container):
-                    // Thrown, so nothing is put down, and no step is left.
-                    throw PasteRefused(container: container)
-                }
+        // A read-only container a paste would go in refuses it whole (`transactWhole`): nothing is put
+        // down, no step is left, and the container shakes.
+        let outcome = editor.transactWhole(name) { transaction -> (selected: [ShapeID], nudges: [ShapeID: CGPoint]) in
+            let carried = carry(shapes, renaming: { ids[$0]! }, naming: { ids[$0] }, in: transaction.shapes)
+            let groups = copiedGroups(of: carried, renaming: ids)
+            for record in carried {
+                transaction.insert(pasted(record, as: ids[record.id]!, renaming: ids, groups: groups),
+                                   contents: pastedBoards(under: record.id, in: file, renaming: ids))
             }
-        } catch let refusal as PasteRefused {
-            editor.refuseChanges(to: [refusal.container])
-            return []
-        } catch {
-            assertionFailure("a paste failed: \(error)")
-            return []
+            let placed = shapes.compactMap { ids[$0.id] }.filter { transaction.document[$0] != nil }
+            let centered = point.flatMap { point in transaction.shapes.bounds(of: placed).map { point - $0.center } }
+            // A paste moves what it puts down before it settles it; a duplicate settles it where it is (a
+            // container's copy lies over its original and doesn't take it in, the copies go in the
+            // containers their originals are in) and then moves it beside the original.
+            if fixed == nil, let offset = centered ?? offset(placing: placed, in: transaction.shapes), offset != .zero {
+                transaction.translate(Set(placed), by: offset)
+            }
+            guard case .settled(let nudges) = transaction.settle(placed) else { throw Transaction.Refused() }
+            if let fixed, fixed != .zero { transaction.translate(Set(placed), by: fixed) }
+            let pastedIDs = Set(placed), document = transaction.document
+            let tops = placed.filter { id in !(document.container(of: id, containingKinds: kinds).map(pastedIDs.contains) ?? false) }
+            return (tops, nudges)
         }
+        guard let pasting = outcome else { return [] }
         editor.selectedShapeIDs = pasting.selected
         editor.glide(pasting.nudges)
         return pasting.selected
-    }
-
-    /// What leaves a paste a read-only container would take: nothing goes down.
-    private struct PasteRefused: Error {
-        let container: ShapeID
     }
 
     /// `record` under `id`: under its own, the shape itself, moved; under a new one, a copy, naming

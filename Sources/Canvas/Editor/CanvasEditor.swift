@@ -475,8 +475,9 @@ public final class CanvasEditor {
     ///
     /// A body that throws commits nothing, whatever it changed first: services hear of no change
     /// and no refusal, the board isn't edited, no undo step opens (what there was to redo stays),
-    /// and the error comes out of `transact` (untyped: catch it and cast). So work that must happen
-    /// whole, or not at all, throws to leave.
+    /// and the error comes out of `transact` (untyped: catch it and cast). Work that must happen
+    /// whole, or not at all, goes through `transactWhole`, which gives it up when anything is refused
+    /// and shakes what was.
     @discardableResult
     public func transact<T>(_ name: String? = nil, coalescing key: AnyHashable? = nil, _ body: (inout Transaction) throws -> T) rethrows -> T {
         try transact(name, coalescing: key, origin: .ordinary, body)
@@ -623,8 +624,9 @@ public final class CanvasEditor {
 
     /// Something tried to change these read-only shapes, and didn't: services hear which
     /// (`EditorService.didRefuseChanges`: Selection shakes them), as they hear a transaction's
-    /// refusals. A plugin calls it for a change it gave up whole, which no transaction committed to
-    /// refuse (a paste a locked frame would take, thrown out of its transaction so no step is left).
+    /// refusals. `transactWhole` calls it for work it gave up whole, which no transaction committed
+    /// to refuse (a paste a locked frame would take), and a plugin for a change it refuses before any
+    /// transaction (a writer that finds the shape locked).
     public func refuseChanges(to ids: Set<ShapeID>) {
         for service in serviceOrder { service.didRefuseChanges(to: ids, in: self) }
     }
@@ -1152,19 +1154,13 @@ public final class CanvasEditor {
     /// `place(_:around:padding:minimumSize:)`, over any record (a copy, say), whatever container it names.
     @discardableResult
     public func place(_ shape: AnyShapeRecord, around ids: [ShapeID], padding: CGFloat = 0, minimumSize: CGSize = .zero) -> ShapeID? {
-        var refused: Set<ShapeID> = []
-        // A refusal throws it all away with it: nothing is put down, and no step is left.
-        let nudges = try? transact("Add \(registry.label(of: shape.kind).name)") { transaction -> [ShapeID: CGPoint]? in
-            let nudges = transaction.enclose(ids, in: shape, padding: padding, minimumSize: minimumSize)
-            refused = transaction.refusedShapes
-            if !refused.isEmpty { throw PlacementRefused() }
+        // Nothing to hold, or a refusal, gives it all up: nothing is put down, no step is left, and the refused shake.
+        let placed = transactWhole("Add \(registry.label(of: shape.kind).name)") { transaction -> [ShapeID: CGPoint] in
+            guard let nudges = transaction.enclose(ids, in: shape, padding: padding, minimumSize: minimumSize)
+            else { throw Transaction.Refused() }
             return nudges
         }
-        if !refused.isEmpty {
-            refuseChanges(to: refused)
-            return nil
-        }
-        guard let nudges else { return nil }
+        guard let nudges = placed else { return nil }
         if !isToolLocked { setTool(registry.defaultTool) }
         for service in serviceOrder { service.didPlace(shape.id, in: self) }
         glide(nudges)
@@ -1184,20 +1180,16 @@ public final class CanvasEditor {
         let label = registry.tools.first { $0.id == tool }?.label
         let follows = point != nil
         let before = follows ? undoHistory.snapshots() : [:]
-        var settled = Settlement.settled(nudges: [:])
+        var nudges: [ShapeID: CGPoint] = [:]
         if follows || registry.containingKinds.isEmpty {
             transact("Add \(label ?? "Shape")") { $0.insert(record) }
         } else {
-            // A refusal throws the insert away with it: nothing is placed.
-            try? transact("Add \(label ?? "Shape")") { transaction in
+            // A refusal throws the insert away with it: nothing is placed, and the container shakes.
+            guard let landed = transactWhole("Add \(label ?? "Shape")", { transaction in
                 transaction.insert(record)
-                settled = transaction.settle([record.id])
-                if case .refused = settled { throw PlacementRefused() }
-            }
-            if case .refused(let container) = settled {
-                refuseChanges(to: [container])
-                return
-            }
+                return transaction.settle([record.id])
+            }) else { return }
+            nudges = landed.nudges
         }
         if !isToolLocked { setTool(registry.defaultTool) }
         for service in serviceOrder { service.didPlace(record.id, in: self) }
@@ -1206,16 +1198,11 @@ public final class CanvasEditor {
             session = PlacingSession(record.id, from: point, edits: edits, restoring: before, in: self)
             return
         }
-        var nudges = settled.nudges
         // Its editing view is laid out where it is.
         if edits { nudges[record.id] = nil }
         glide(nudges)
         if edits { beginEditing(record.id) }
     }
-
-    /// What leaves a placement with no press that a read-only container refused (`place`), or a
-    /// container put down around shapes one of which is read-only (`place(_:around:)`).
-    private struct PlacementRefused: Error {}
 
     // MARK: Commands
 

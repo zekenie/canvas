@@ -128,13 +128,13 @@ func message(_ request: ModelRequest) -> String { request.messages.first?.text ?
         expectEqual(query.query, "chore")
         expect(query.repaired)
         let error = try require(model.requests.last?.messages.last?.text)
-        expect(error.contains(QueryTranslator.cantBeUsed(":picked")), "the one message the reference's own gate says: \(error)")
+        expect(error.contains(QueryError.cantBeUsed(":picked")), "the one message the reference's own gate says: \(error)")
 
         let twice = ScriptedLanguageModel(answers: ["chore:picked", ":picked"])
         let again = try translateHarness(twice)
         guard case .failure(.unusable(_, let last, let refusal?)) = try translated("what's picked", on: again) else { return expect(false, "refused twice") }
         expectEqual(last, ":picked")
-        expectEqual(refusal.message, QueryTranslator.cantBeUsed(":picked"))
+        expectEqual(refusal.message, QueryError.cantBeUsed(":picked"))
 
         let person = ScriptedLanguageModel(answers: ["chore:picked"])
         let there = try translateHarness(person)

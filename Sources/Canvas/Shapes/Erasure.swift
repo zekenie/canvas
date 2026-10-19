@@ -1,4 +1,5 @@
 import AppKit
+import CanvasRPC
 
 // The core calls definitions through these. Their signatures don't mention `Props`, so they're
 // callable on `any ShapeDefinition`. Inserting a record checks that its kind's definition accepts

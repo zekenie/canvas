@@ -22,8 +22,8 @@ extension Transaction {
     /// than lying under it; those from a container it didn't take in stay in it.
     ///
     /// Returns what settling nudged, by how far; nil, changing nothing, when none of them can be held,
-    /// or when one that would be is read-only (all or nothing: noted in `refusedShapes`, for the caller
-    /// to throw, as a refusal settling meets on the way is).
+    /// or when one that would be is read-only (all or nothing: noted in `refusedShapes`, for
+    /// `editor.transactWhole` to give it all up, as a refusal settling meets on the way is).
     mutating func enclose(_ ids: [ShapeID], in container: AnyShapeRecord, padding: CGFloat, minimumSize: CGSize) -> [ShapeID: CGPoint]? {
         let kinds = registry.containingKinds
         guard registry.isContainer(container) else { return nil }

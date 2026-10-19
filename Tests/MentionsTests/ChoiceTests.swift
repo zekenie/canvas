@@ -41,11 +41,11 @@ import Titles
 }
 
 @MainActor let choiceTests = Suite("Choices", [
-    test("a shape's board is nil on the board shown, else its owner's title, else its owner's kind's name, and Board for the root") {
+    test("a shape's board is nil on the board shown, else what Boards calls it (its owner's title, else its kind's placeholder or name), and Board for the root") {
         let r = try Boards()
         expectEqual(r.state.boardName(ofShape: r.onA), nil)
         expectEqual(r.state.boardName(ofShape: r.onRoot), "Board")
-        expectEqual(r.state.boardName(ofShape: r.onB), r.h.editor.registry.label(of: Pocket.kind).name, "a pocket with no title")
+        expectEqual(r.state.boardName(ofShape: r.onB), r.h.editor.registry.label(of: Pocket.kind).name, "a pocket with no title, whose kind says no placeholder here")
         expectEqual(r.state.boardName(ofShape: ShapeID()), nil, "a shape that isn't in the file")
         expect(r.h.editor.showBoard(.root))
         r.h.editor.rename(r.b, "Vendors")

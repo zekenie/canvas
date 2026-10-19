@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Foundation
 
 // The chain: what an instance's types say to it, in the one order they are read in. Pure: it reads a

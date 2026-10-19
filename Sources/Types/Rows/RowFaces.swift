@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import CanvasRPC
 import CoreGraphics
 import LanguageModels
 import Mentions
@@ -71,10 +72,7 @@ extension RowMenus {
         let menu = NSMenu()
         menu.autoenablesItems = false
         func add(_ title: String, ticked: Bool, _ run: @escaping @MainActor () -> Void) {
-            let action = TypeMenuAction(run)
-            let item = NSMenuItem(title: title, action: #selector(TypeMenuAction.fire), keyEquivalent: "")
-            item.target = action
-            item.representedObject = action          // the item holds its target weakly
+            let item = NSMenuItem(title: title, run: run)
             item.state = ticked ? .on : .off
             menu.addItem(item)
         }

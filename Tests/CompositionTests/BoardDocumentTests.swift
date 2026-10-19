@@ -19,9 +19,9 @@ import SwiftUI
 import TestKit
 
 /// Boards as the app configures them, with the app's content less its toolbar, and their clipboard
-/// and Copy as Image's pasteboard on `pasteboard` (a test that copies passes its own).
+/// and Copy as Image's pasteboard on `pasteboard` (the test's own unless it passes one).
 /// `extra`: plugins after the shipped list.
-@MainActor func configureBoards(pasteboard: NSPasteboard = .general, extra: [any CanvasPlugin] = []) throws {
+@MainActor func configureBoards(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, extra: [any CanvasPlugin] = []) throws {
     BoardDocument.configuration = BoardConfiguration(registry: try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()) + extra),
                                                      imagePasteboard: pasteboard) { board in
         AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails, showsMinimap: board.view.showsMinimap,

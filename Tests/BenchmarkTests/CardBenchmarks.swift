@@ -1,5 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
+import CanvasRPC
 import CanvasTesting
 import CanvasUI
 import CoreGraphics

@@ -114,19 +114,32 @@ public func require<T>(_ value: T?, _ message: @autoclosure () -> String = "", f
     return value
 }
 
+@MainActor private var endings: [@MainActor () -> Void] = []
+
+/// Runs `body` as the test running now ends, after `afterEach`, in its pool, in the order asked:
+/// for what a helper made for that test alone (ShippedTesting's pasteboard, released). Asked
+/// outside a test, it runs as the next test ends.
+@MainActor
+public func afterThisTest(_ body: @escaping @MainActor () -> Void) {
+    endings.append(body)
+}
+
 /// Runs `body` as `runTests` runs a test, and returns its failures (file:line and what failed),
 /// which aren't the calling test's: in an autorelease pool of its own, as the app handles each event
 /// in one, so what it let go is gone when it returns. Without the pool nothing a test made with
 /// AppKit went (no run loop here drains one): its windows, their views and what those had scheduled
-/// (a panel handing the keyboard back a turn later) lived on into the tests after it.
+/// (a panel handing the keyboard back a turn later) lived on into the tests after it. What `body`
+/// asks to run as it ends (`afterThisTest`) runs as it returns, and the calling test's waits.
 @MainActor
 public func runAsTest(_ body: @MainActor () throws -> Void, afterEach: @MainActor () -> Void = {}) -> [String] {
-    let outer = failures
+    let outer = failures, outerEndings = endings
     failures = []
-    defer { failures = outer }
+    endings = []
+    defer { failures = outer; endings = outerEndings }
     autoreleasepool {
         do { try body() } catch is RequireFailed {} catch { failures.append("threw \(error)") }
         afterEach()
+        while !endings.isEmpty { endings.removeFirst()() }
     }
     return failures
 }
@@ -134,8 +147,8 @@ public func runAsTest(_ body: @MainActor () throws -> Void, afterEach: @MainActo
 /// Runs every test (TEST_FILTER=substring runs the matching ones; empty means all), prints failures
 /// with file:line, ends with "N passed, M failed" (test.sh reads it), and exits 1 if any failed.
 /// TEST_TIMES=1 writes each test's seconds to standard error ("0.123 Suite: test"). `afterEach` runs
-/// after each test, whatever it did, as part of it: what it expects there fails that test. Each test
-/// runs as `runAsTest` runs one.
+/// after each test, whatever it did, as part of it: what it expects there fails that test; then what
+/// the test asked to run as it ends (`afterThisTest`). Each test runs as `runAsTest` runs one.
 @MainActor
 public func runTests(_ suites: [Suite], afterEach: @MainActor () -> Void = {}) -> Never {
     // Line-buffered even into a file (test.sh sends this to one), so a crash doesn't swallow what came before.

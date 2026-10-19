@@ -102,8 +102,6 @@ public enum RelationStep: @unchecked Sendable {
     }
 }
 
-private struct Refused: Error {}
-
 extension CanvasEditor {
     /// Relates `note` to `other` in `row`: an arrow of the row's relationship type between them, in one step
     /// ("Add Relationship"), made as `canvas draw` makes an edge (`registry.drawConnection`) and given the type. The
@@ -177,42 +175,37 @@ extension CanvasEditor {
         // A row that allows one relationship is replaced by a pick: the one it holds goes in the same step, with the pill it empties
         // (a locked one refuses the whole pick). A second arrow drawn by hand is never taken away; the note carries the issue.
         let replaced = row.rule.onlyOne ? (relationships?.relations(of: note, in: row).map(\.arrow) ?? []) : []
-        var made: ShapeID?
-        do {
-            try transact(step.name(TypesStyle.addRelationship), coalescing: step.key) { transaction in
-                if !replaced.isEmpty { try Self.unrelateBody(&transaction, replaced, registry: registry, keeping: reused.map { [$0] } ?? []) }
-                var end = other
-                if let kind {
-                    if fulfil { transaction.update(inFile: other) { _ = registry.standIns.fulfil(kind, &$0) } }
-                    // Asked again as the step leaves the far note: it may have gone private or away since the list was drawn.
-                    guard let farBoard = transaction.board(containing: other), let record = transaction.contents(of: farBoard)[other],
-                          registry.standIns.admits(kind, record) else { throw Refused() }
-                    if let reused {
-                        end = reused
-                    } else if let pill {
-                        transaction.insert(pill.record)
-                        guard transaction.document[pill.record.id] != nil else { throw Refused() }
-                        if case .refused = transaction.settle([pill.record.id]) { throw Refused() }
-                        for above in pill.above {
-                            guard let mine = transaction.document.index(of: pill.record.id), let theirs = transaction.document.index(of: above), theirs > mine else { continue }
-                            transaction.move(pill.record.id, above: above)
-                        }
-                        end = pill.record.id
+        // Whole or not at all (`transactWhole`): any refusal, the core's or the pick's own, commits nothing, leaves no
+        // step, and shakes the note whose row asked.
+        return transactWhole(step.name(TypesStyle.addRelationship), coalescing: step.key, shaking: [note]) { transaction in
+            if !replaced.isEmpty { try Self.unrelateBody(&transaction, replaced, registry: registry, keeping: reused.map { [$0] } ?? []) }
+            var end = other
+            if let kind {
+                if fulfil { transaction.update(inFile: other) { _ = registry.standIns.fulfil(kind, &$0) } }
+                // Asked again as the step leaves the far note: it may have gone private or away since the list was drawn.
+                guard let farBoard = transaction.board(containing: other), let record = transaction.contents(of: farBoard)[other],
+                      registry.standIns.admits(kind, record) else { throw Transaction.Refused() }
+                if let reused {
+                    end = reused
+                } else if let pill {
+                    transaction.insert(pill.record)
+                    guard transaction.document[pill.record.id] != nil else { throw Transaction.Refused() }
+                    guard case .settled = transaction.settle([pill.record.id]) else { throw Transaction.Refused() }
+                    for above in pill.above {
+                        guard let mine = transaction.document.index(of: pill.record.id), let theirs = transaction.document.index(of: above), theirs > mine else { continue }
+                        transaction.move(pill.record.id, above: above)
                     }
+                    end = pill.record.id
                 }
-                let (start, finish) = from ? (note, end) : (end, note)
-                guard var arrow = registry.drawConnection(from: start, to: finish, in: transaction.shapes, standingFor: standingFor),
-                      registry.relates(arrow.kind), registry.isTypeable(arrow.kind) else { throw Refused() }
-                arrow[IsAProperty.self] = [TypeLink(type)]
-                transaction.insert(arrow)
-                guard transaction.document[arrow.id] != nil, transaction.refusedShapes.isEmpty else { throw Refused() }
-                made = arrow.id
             }
-        } catch {
-            refuseChanges(to: [note])
-            return nil
+            let (start, finish) = from ? (note, end) : (end, note)
+            guard var arrow = registry.drawConnection(from: start, to: finish, in: transaction.shapes, standingFor: standingFor),
+                  registry.relates(arrow.kind), registry.isTypeable(arrow.kind) else { throw Transaction.Refused() }
+            arrow[IsAProperty.self] = [TypeLink(type)]
+            transaction.insert(arrow)
+            guard transaction.document[arrow.id] != nil else { throw Transaction.Refused() }
+            return arrow.id
         }
-        return made
     }
 
     /// Takes these relationships away, in one step ("Remove Relationship"): each arrow with its values and the pills the
@@ -230,20 +223,15 @@ extension CanvasEditor {
             return false
         }
         let registry = registry
-        do {
-            try transact(step.name(TypesStyle.removeRelationship), coalescing: step.key) { transaction in
-                try Self.unrelateBody(&transaction, present, registry: registry)
-            }
-        } catch {
-            if let note { refuseChanges(to: [note]) }
-            return false
+        let removed: Void? = transactWhole(step.name(TypesStyle.removeRelationship), coalescing: step.key, shaking: note.map { [$0] } ?? []) { transaction in
+            try Self.unrelateBody(&transaction, present, registry: registry)
         }
-        return true
+        return removed != nil
     }
 
     /// The delete itself, for a writer that has a transaction of its own: the arrows grouped by the board they are on,
-    /// the pills each board's delete leaves with no arrow added, and the core's delete across boards. Throws when the
-    /// core refuses any shape, leaving the caller's transaction to commit nothing.
+    /// the pills each board's delete leaves with no arrow added, and the core's delete across boards. Throws
+    /// (`Transaction.Refused`) when the core refuses any shape, so the caller's `transactWhole` commits nothing.
     static func unrelateBody(_ transaction: inout Transaction, _ arrows: [ShapeID], registry: Registry, keeping kept: Set<ShapeID> = []) throws {
         var byBoard: [BoardID: Set<ShapeID>] = [:]
         for arrow in arrows { if let board = transaction.board(containing: arrow) { byBoard[board, default: []].insert(arrow) } }
@@ -253,6 +241,6 @@ extension CanvasEditor {
             for (board, ids) in byBoard { doomed.formUnion(route.emptied(by: ids, in: transaction.contents(of: board)).filter { !kept.contains($0) }) }
         }
         transaction.delete(inFile: doomed)
-        guard transaction.refusedShapes.isEmpty else { throw Refused() }
+        guard transaction.refusedShapes.isEmpty else { throw Transaction.Refused() }
     }
 }

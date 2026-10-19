@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Foundation
 
 // What a shape holds under its types' fields: the values themselves, an added property of the kinds

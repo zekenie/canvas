@@ -1,6 +1,8 @@
 import Canvas
+import CanvasRPC
 import CoreGraphics
 import DrawScript
+import FuzzyMatching
 import Geometry
 import Topology
 

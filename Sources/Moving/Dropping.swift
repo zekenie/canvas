@@ -87,7 +87,7 @@ struct Drop {
         block.commit(landing) { transaction in
             let there = transaction.contents(of: place.board)
             guard moved.allSatisfy({ there[$0] != nil && there.container(of: $0, containingKinds: kinds) == place.container }) else {
-                throw Refused(shapes: [])
+                throw Transaction.Refused()
             }
             place.restack(dropped, in: &transaction, containingKinds: kinds)
         }

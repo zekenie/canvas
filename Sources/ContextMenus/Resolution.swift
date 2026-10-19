@@ -285,10 +285,7 @@ enum ContextMenuItems {
             for entry in entries where entry.group == group {
                 switch entry.content {
                 case .item(let isEnabled, let state, let perform):
-                    let action = MenuAction(perform)
-                    let item = NSMenuItem(title: entry.title, action: #selector(MenuAction.fire), keyEquivalent: "")
-                    item.target = action
-                    item.representedObject = action          // the item holds its target weakly
+                    let item = NSMenuItem(title: entry.title, run: perform)
                     item.isEnabled = isEnabled
                     if let state { item.state = state }
                     if let key = entry.menuKey {                     // shown, not run: the menu bar and the canvas run the key
@@ -305,15 +302,4 @@ enum ContextMenuItems {
         }
         return menu
     }
-}
-
-/// What a menu item runs: its target, kept alive as its `representedObject`. The item stays a
-/// plain NSMenuItem, since AppKit may copy one through initializers a subclass wouldn't inherit.
-final class MenuAction: NSObject {
-    private let run: @MainActor () -> Void
-
-    init(_ run: @escaping @MainActor () -> Void) { self.run = run }
-
-    /// AppKit sends menu actions on the main thread.
-    @MainActor @objc func fire() { run() }
 }

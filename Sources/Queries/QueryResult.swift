@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import QueryLanguage
 import Topology
 
@@ -389,4 +390,11 @@ extension QueryError {
     static var noTopology: QueryError {
         QueryError(.noTopology, "Nothing in this app knows what's on which board, or what's inside or connected to what.")
     }
+    /// A query stored to be run later (`checkStored`) that uses a word reading the editor.
+    static func readsTheEditor(_ word: String) -> QueryError {
+        QueryError(.unsupported, cantBeUsed(word), hint: "A stored query reads only the file, never who is looking or what is selected.")
+    }
+    /// What a stored query that uses `word`, which reads the editor, is refused with: the status a
+    /// reference that holds one shows, and what the model is sent back.
+    public static func cantBeUsed(_ word: String) -> String { "“\(word)” can’t be used here." }
 }

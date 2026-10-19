@@ -1,8 +1,10 @@
 import Foundation
 
-/// JSON as a value: what requests and responses carry. Numbers are doubles, as they are in
-/// JavaScript, so integers beyond 2⁵³ lose precision. (The app's own `JSONValue`, in Canvas, is the
-/// same shape; this module knows nothing of the canvas, so it has its own.)
+/// JSON as a value: what requests and responses carry, and the app's own JSON too (Canvas's
+/// `JSONValue` is this type: what a migration rewrites, what a board keeps for a shape the app
+/// can't read, a shape's properties as JSON), so what the core writes goes on the wire as it is.
+/// Numbers are doubles, as they are in JavaScript, so integers beyond 2⁵³ lose precision. This
+/// module knows nothing of the canvas; a module that names its members imports it.
 public enum JSON: Hashable, Sendable {
     case null
     case bool(Bool)
@@ -44,10 +46,12 @@ extension JSON: Codable {
             self = .null
         } else if let value = try? container.decode(Bool.self) {
             self = .bool(value)
+        } else if let value = try? container.decode(String.self) {
+            // Before numbers: a board's decoder reads "nan" and "inf" as numbers, but in a string
+            // member they're text. Any other decoder reads a string as no number either way.
+            self = .string(value)
         } else if let value = try? container.decode(Double.self) {
             self = .number(value)
-        } else if let value = try? container.decode(String.self) {
-            self = .string(value)
         } else if let value = try? container.decode([JSON].self) {
             self = .array(value)
         } else {
@@ -78,7 +82,9 @@ extension JSON {
         try self.init(data: Data(text.utf8))
     }
 
-    /// Any encodable value, as JSON.
+    /// Any encodable value, as JSON, as the wire writes it: Foundation's default for a date, and a
+    /// number that isn't finite refused (a board writes them its own way: Canvas's
+    /// `init(boardEncoding:)`).
     public init(encoding value: some Encodable) throws {
         self = try JSON(data: JSON.encoder().encode(value))
     }

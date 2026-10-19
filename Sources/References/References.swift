@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import CanvasRPC
 import Connections
 import ContextMenus
 import DetailPanel
@@ -207,7 +208,7 @@ public struct ReferencesPlugin: ListedPlugin {
             reference.validate(ignoringMoves: true) { shape, context in
                 guard shape.props.target == nil, let query = shape.props.query, let queries = context.service(QueryState.self) else { return [] }
                 do throws(QueryError) {
-                    _ = try queries.check(query)
+                    _ = try queries.checkStored(query)
                     return []
                 } catch {
                     return [.warning(error.message, field: "query")]

@@ -40,12 +40,12 @@ public final class TransformState {
     /// another container is nudged out of it, and one too large for its own goes as the rule says;
     /// what moved glides there.
     ///
-    /// All or nothing for read-only shapes: if any of them, or anything the target moves, is read-only
-    /// (locked, or in a locked container), or a read-only container would take one of them, nothing
-    /// changes, no step is made, and services hear which were refused (`editor.refuseChanges(to:)`: they
-    /// shake). Once one is refused no other target runs (the turn is thrown away), but every read-only
-    /// one among them is still found, so each shakes. A target whose turn throws turns nothing too.
-    /// Returns whether it turned any.
+    /// All or nothing for read-only shapes (`editor.transactWhole`): if any of them, or anything the
+    /// target moves, is read-only (locked, or in a locked container), or a read-only container would
+    /// take one of them, nothing changes, no step is made, and services hear which were refused
+    /// (`editor.refuseChanges(to:)`: they shake). Once one is refused no other target runs (the turn
+    /// is thrown away), but every read-only one among them is still found, so each shakes. A target
+    /// whose turn throws turns nothing too. Returns whether it turned any.
     @discardableResult
     public func turn(_ ids: [ShapeID], into kind: ShapeKind) -> Bool {
         guard let target = editor.registry.contributions(to: TransformTargets.self, for: kind).first else { return false }
@@ -56,33 +56,23 @@ public final class TransformState {
             .sorted { ($0.depth, $1.index) > ($1.depth, $0.index) }
             .map(\.id)
         guard !turning.isEmpty else { return false }
-        let turned: (ids: [ShapeID], nudges: [ShapeID: CGPoint])
-        do {
-            turned = try editor.transact("Turn into \(target.label)") { transaction in
-                var done: [ShapeID] = [], refused: Set<ShapeID> = []
-                for id in turning {
-                    guard let record = transaction.document[id] else { continue }
-                    if transaction.isReadOnly(record) {
-                        refused.insert(id)
-                    } else if refused.isEmpty, transaction.refusedShapes.isEmpty, try target.turn(id, &transaction) {
-                        done.append(id)
-                    }
-                }
-                // Thrown, so nothing commits, and no step is left; heard refused once it's out.
-                refused.formUnion(transaction.refusedShapes)
-                guard refused.isEmpty else { throw TurnRefused(shapes: refused) }
-                let shifts = Self.keepInContainers(done, in: &transaction)
-                switch transaction.settle(done) {
-                case .settled(let nudges): return (done, nudges.merging(shifts) { CGPoint(x: $0.x + $1.x, y: $0.y + $1.y) })
-                case .refused(let container): throw TurnRefused(shapes: [container])
+        // All or nothing (`transactWhole`): a refusal leaves no step, and the refused shake once it's out.
+        let turned = editor.transactWhole("Turn into \(target.label)") { transaction -> (ids: [ShapeID], nudges: [ShapeID: CGPoint]) in
+            var done: [ShapeID] = [], refused: Set<ShapeID> = []
+            for id in turning {
+                guard let record = transaction.document[id] else { continue }
+                if transaction.isReadOnly(record) {
+                    refused.insert(id)
+                } else if refused.isEmpty, transaction.refusedShapes.isEmpty, try target.turn(id, &transaction) {
+                    done.append(id)
                 }
             }
-        } catch let refusal as TurnRefused {
-            editor.refuseChanges(to: refusal.shapes)
-            return false
-        } catch {
-            return false
+            guard refused.isEmpty, transaction.refusedShapes.isEmpty else { throw Transaction.Refused(refused) }
+            let shifts = Self.keepInContainers(done, in: &transaction)
+            let nudges = transaction.settle(done).nudges
+            return (done, nudges.merging(shifts) { CGPoint(x: $0.x + $1.x, y: $0.y + $1.y) })
         }
+        guard let turned else { return false }
         editor.glide(turned.nudges)
         return !turned.ids.isEmpty
     }
@@ -105,11 +95,6 @@ public final class TransformState {
             for moved in [id] + document.descendants(of: id, containingKinds: kinds) { shifts[moved] = shift }
         }
         return shifts
-    }
-
-    /// What leaves a turn some read-only shape stood in the way of: nothing changes.
-    private struct TurnRefused: Error {
-        let shapes: Set<ShapeID>
     }
 }
 

@@ -1,6 +1,7 @@
 import Canvas
-import DrawScript
+import CanvasRPC
 import Foundation
+import FuzzyMatching
 import QueryLanguage
 import Topology
 

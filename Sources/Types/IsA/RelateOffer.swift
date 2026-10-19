@@ -62,11 +62,7 @@ enum RelateOffers {
     static func menu(for face: RelateFace, in editor: CanvasEditor) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let action = TypeMenuAction { [weak editor] in editor?.acceptRelateOffer(face) }
-        let item = NSMenuItem(title: title(for: face, in: editor), action: #selector(TypeMenuAction.fire), keyEquivalent: "")
-        item.target = action
-        item.representedObject = action          // the item holds its target weakly
-        menu.addItem(item)
+        menu.addItem(NSMenuItem(title: title(for: face, in: editor)) { [weak editor] in editor?.acceptRelateOffer(face) })
         return menu
     }
 }

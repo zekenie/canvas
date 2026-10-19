@@ -1,3 +1,4 @@
+import CanvasRPC
 import Foundation
 
 // Added properties (`ShapeProperty`): the plugin that owns one declares it, and kinds opt in.

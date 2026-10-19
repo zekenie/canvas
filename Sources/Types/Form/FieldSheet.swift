@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Foundation
 
 // The form a card and the panel hold, as values: what each line says, in which cells, and where the

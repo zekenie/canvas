@@ -1,7 +1,9 @@
 import Canvas
+import CanvasRPC
 import CoreGraphics
 import DrawScript
 import Foundation
+import FuzzyMatching
 import Topology
 
 // Resolving a script against the board as the run starts: each statement's kind, the shape its

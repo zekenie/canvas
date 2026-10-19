@@ -1,4 +1,5 @@
 import CoreGraphics
+import FuzzyMatching
 
 // Modified from reladraw's src/parser.ts (Apache-2.0; THIRD_PARTY_NOTICES.md).
 
@@ -582,7 +583,7 @@ struct LineParser {
         let numbers: [Double]
         switch value {
         case .word(let word):
-            let parts = word.replacingAll("×", with: "x").split(separator: "x", omittingEmptySubsequences: false)
+            let parts = String(word.map { $0 == "×" ? "x" : $0 }).split(separator: "x", omittingEmptySubsequences: false)
             guard parts.count == 2 else { throw refusal }
             // A width alone (`300x`): the height is the kind's.
             let sides = parts[1].isEmpty ? [parts[0]] : parts

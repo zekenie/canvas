@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import Queries
 
 // What `canvas draw` needs from concerns it doesn't own, each an extension point with at most one
