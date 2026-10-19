@@ -43,7 +43,9 @@ let tintTag = AdornmentTag("tinted")
 
 /// A box with one chip, `label` tagged `tintTag`, and the chip's frame in view points.
 @MainActor func tintedBoard(_ label: AdornmentLabel) throws -> (h: EditorHarness, box: ShapeID, frame: CGRect) {
-    let h = try adornedHarness([Contributor(id: "tinted") { $0.adornmentsForEveryShape(Chips.self) { _, _ in [label.tagged(tintTag)] } }])
+    let h = try adornedHarness([Contributor(id: "tinted") { $0.forEveryShape { scope in
+        scope.adornments(Chips.self) { _, _ in [label.tagged(tintTag)] }
+    } }])
     let box = h.add(Box(boxFrame))
     return (h, box, h.editor.camera.toView(try require(h.editor.rects(box).first)))
 }
@@ -103,7 +105,9 @@ func luminance(_ color: [Int]) -> Int { color.prefix(3).reduce(0, +) / 3 }
     },
     test("a light label's capsule is its color at 0.14 over the canvas, with a line at the edge, and its text is the ink") {
         let (h, box, frame) = try tintedBoard(AdornmentLabel("Person").tinted(lightTint))
-        let plain = try adornedHarness([Contributor(id: "none") { $0.adornmentsForEveryShape(Chips.self) { _, _ in [] } }])
+        let plain = try adornedHarness([Contributor(id: "none") { $0.forEveryShape { scope in
+            scope.adornments(Chips.self) { _, _ in [] }
+        } }])
         plain.add(Box(boxFrame))
         for dark in [false, true] {
             let drawn = render(h, dark: dark), canvas = render(plain, dark: dark)
@@ -152,7 +156,9 @@ func luminance(_ color: [Int]) -> Int { color.prefix(3).reduce(0, +) / 3 }
         let fill = pixel(render(h), at: capsulePoint(frame))
         expect(zip(fill, [26, 102, 230]).allSatisfy { abs($0 - $1) <= 4 }, "the tint, not green: \(fill)")
         let (g, _, rect) = try tintedBoard(AdornmentLabel("Gone").tinted(solidTint).missing())
-        let plain = try adornedHarness([Contributor(id: "none") { $0.adornmentsForEveryShape(Chips.self) { _, _ in [] } }])
+        let plain = try adornedHarness([Contributor(id: "none") { $0.forEveryShape { scope in
+            scope.adornments(Chips.self) { _, _ in [] }
+        } }])
         plain.add(Box(boxFrame))
         expectEqual(pixel(render(g), at: capsulePoint(rect)), pixel(render(plain), at: capsulePoint(rect)), "no fill")
     },
@@ -184,7 +190,9 @@ func luminance(_ color: [Int]) -> Int { color.prefix(3).reduce(0, +) / 3 }
     test("a tint whose color follows the appearance fills its capsule in each, hovered and pressed too, and its ink follows") {
         for (tint, name) in [(followingSolid, "solid"), (followingLight, "light")] {
             let (h, _, frame) = try tintedBoard(AdornmentLabel("Person", systemImage: "curlybraces").tinted(tint))
-            let plain = try adornedHarness([Contributor(id: "none") { $0.adornmentsForEveryShape(Chips.self) { _, _ in [] } }])
+            let plain = try adornedHarness([Contributor(id: "none") { $0.forEveryShape { scope in
+                scope.adornments(Chips.self) { _, _ in [] }
+            } }])
             plain.add(Box(boxFrame))
             // Dark first, then light, then dark again: nothing kept for one appearance is drawn in the other.
             for dark in [true, false, true] {
@@ -232,7 +240,9 @@ func luminance(_ color: [Int]) -> Int { color.prefix(3).reduce(0, +) / 3 }
     },
     test("the \"+N\" of a group of tinted chips is gray") {
         let names = ["Alexander", "Benjamin", "Charlotte", "Dominique"]
-        let h = try adornedHarness([Contributor(id: "tinted") { $0.adornmentsForEveryShape(Chips.self) { _, _ in names.map { chip($0).tinted(solidTint) } } }])
+        let h = try adornedHarness([Contributor(id: "tinted") { $0.forEveryShape { scope in
+            scope.adornments(Chips.self) { _, _ in names.map { chip($0).tinted(solidTint) } }
+        } }])
         h.editor.camera = Camera(origin: .zero, zoom: 1)
         let widths = try boxWithChips(names, width: 600).frames.map(\.rect.width)
         let box = h.add(Box(CGRect(x: 100, y: 100, width: widths[0] + widths[1] + 8 + widths[2] - 1, height: 120)))

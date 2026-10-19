@@ -43,6 +43,8 @@ struct WattagePlugin: CanvasPlugin {
         expectEqual(h.editor.revision, revision + 1)
         expect(!(try require(h.secondaryClick(at: middle(0))).outline.contains("Brighter Bulb")), "at 100 W, there's nothing brighter")
         expectEqual(try require(h.secondaryClick(at: middle(1))).outline, ["Delete"], "a box has no wattage")
+        expect(h.editor.registry.report.contains("wattage") && h.editor.registry.report.contains("ShapeContextMenus → every shape holding wattage"),
+               "the kinds that hold the property, said as its scope")
     },
     test("on two kinds that opt in, a property's item is one item, and it edits each shape's value") {
         let h = try harness([WattagePlugin()])

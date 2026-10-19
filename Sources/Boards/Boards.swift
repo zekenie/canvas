@@ -34,14 +34,14 @@ public enum BoardKinds {}
 extension BoardKinds: KeyedExtensionPoint {
     public typealias Contribution = BoardKind
     public static var owner: PluginID { .boards }
+    /// A kind's boards open one kind at a time.
+    public static var scope: PointScope { .kinds }
     public static func uniqueKeys(of _: BoardKind, for target: ShapeTarget) -> [AnyHashable] { [target] }
 
-    /// A kind that isn't `BoardOwning` has no board to open; nor has every kind (`.any`).
+    /// A kind that isn't `BoardOwning` has no board to open.
     public static func check(_ registry: Registry) throws(RegistryError) {
         for contribution in registry.contributions(to: BoardKinds.self) {
-            guard case .kind(let kind) = contribution.target else {
-                throw .invalid(point: "BoardKinds", reason: "\(contribution.pluginID) opens boards for every kind; only a BoardOwning kind has one")
-            }
+            guard case .kind(let kind) = contribution.target else { continue }
             guard registry.boardOwningKinds.contains(kind) else {
                 throw .invalid(point: "BoardKinds", reason: "\(contribution.pluginID) opens the boards of \(kind), whose definition isn't BoardOwning")
             }

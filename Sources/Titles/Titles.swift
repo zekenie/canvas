@@ -162,10 +162,12 @@ public enum TitlePillLooks {}
 extension TitlePillLooks: ExtensionPoint {
     public typealias Contribution = TitlePillLookContribution
     public static var owner: PluginID { .titles }
+    /// A concern's look on other kinds' pills says which: the kinds that hold its property.
+    public static var scope: PointScope { .scoped }
 
-    /// "title pill look → every shape", "title pill look → note".
+    /// "title pill look → every shape holding schema", "title pill look → note".
     public static func summary(of contribution: TitlePillLookContribution, for target: ShapeTarget) -> String {
-        "title pill look → \(target == .any ? "every shape" : "\(target)")"
+        "title pill look → \(target)"
     }
 }
 
@@ -199,11 +201,10 @@ public struct TitleLookContext {
     static var none: TitleLookContext { TitleLookContext() }
 }
 
-/// What `TitlePillLooks` stores: the added property a concern's contribution goes by (nil for a
-/// kind's own, asked of its shapes) and what it says of a shape, its title and the context it is asked in.
+/// What `TitlePillLooks` stores: what a kind's own look, or a concern's on the kinds its scope reaches,
+/// says of a shape, its title and the context it is asked in.
 @MainActor
 public struct TitlePillLookContribution {
-    let key: PropertyKey?
     let look: @MainActor (AnyShapeRecord, String?, TitleLookContext) -> TitlePillLook?
 }
 
@@ -254,27 +255,29 @@ extension ShapeRegistrar {
     /// `TitlePillLook`. Asked where the pill's label is made, when a commit names the shape, where Find
     /// reads its title, and for the cover of a titled skeleton in view, never per frame otherwise.
     public mutating func titlePillLook(_ look: @escaping @MainActor (ShapeRecord<Definition.Props>, _ title: String?) -> TitlePillLook?) {
-        contribute(TitlePillLookContribution(key: nil) { record, title, _ in record.typed(as: Definition.Props.self).flatMap { look($0, title) } },
+        contribute(TitlePillLookContribution { record, title, _ in record.typed(as: Definition.Props.self).flatMap { look($0, title) } },
                    to: TitlePillLooks.self)
     }
 }
 
+extension ScopedRegistrar {
+    /// A concern's pill look, asked of the shapes of every kind the scope reaches and of no other kind:
+    /// Types gives the notes that hold a schema the look of a type's pill.
+    ///
+    ///     registrar.forShapes(holding: TypeSchemaProperty.self) { types in types.titlePillLook { record, title in … } }
+    public mutating func titlePillLook(_ look: @escaping @MainActor (AnyShapeRecord, _ title: String?) -> TitlePillLook?) {
+        contribute(TitlePillLookContribution { record, title, _ in look(record, title) }, to: TitlePillLooks.self)
+    }
+
+    /// As `titlePillLook(_:)`, for a look that reads a service of the editor (`TitleLookContext`). Asked
+    /// where the pill's label is made and where Find reads the title, with the editor's services; for a
+    /// cover with none, where it answers from the shape alone.
+    public mutating func titlePillLook(_ look: @escaping @MainActor (AnyShapeRecord, _ title: String?, TitleLookContext) -> TitlePillLook?) {
+        contribute(TitlePillLookContribution(look: look), to: TitlePillLooks.self)
+    }
+}
+
 extension PluginRegistrar {
-    /// A concern's pill look, asked of the shapes of every kind that holds `P` (opted into it) and of
-    /// no other kind: Types gives the notes that hold a schema the look of a type's pill.
-    public mutating func titlePillLook<P: ShapeProperty>(forShapesHolding _: P.Type,
-                                                         _ look: @escaping @MainActor (AnyShapeRecord, _ title: String?) -> TitlePillLook?) {
-        contribute(TitlePillLookContribution(key: P.key) { record, title, _ in look(record, title) }, to: TitlePillLooks.self)
-    }
-
-    /// As `titlePillLook(forShapesHolding:_:)`, for a look that reads a service of the editor
-    /// (`TitleLookContext`). Asked where the pill's label is made and where Find reads the title, with
-    /// the editor's services; for a cover with none, where it answers from the shape alone.
-    public mutating func titlePillLook<P: ShapeProperty>(forShapesHolding _: P.Type,
-                                                         _ look: @escaping @MainActor (AnyShapeRecord, _ title: String?, TitleLookContext) -> TitlePillLook?) {
-        contribute(TitlePillLookContribution(key: P.key, look: look), to: TitlePillLooks.self)
-    }
-
     /// A title Titles keeps, for a kind another plugin registers, as `title()` on a kind's
     /// own registrar.
     public mutating func title<P: ShapeProps>(_: P.Type, pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil,
@@ -350,11 +353,23 @@ extension CanvasEditor {
 private struct TitleKey: Hashable { let kind: ShapeKind }
 private struct PillLooksKey: Hashable { let kind: ShapeKind }
 
+extension ShapeCapability {
+    /// The kinds that took a title (`x.title()`, or one derived, `x.title { … }`): where what says a
+    /// title goes (Find's texts, the check of a title two shapes share).
+    public static let titled = ShapeCapability("with a title") { $0.registry.isTitled($0.kind) }
+
+    /// The kinds whose title shows in a pill above the shape: titled, and not with `pill: false`.
+    public static let titlePill = ShapeCapability("with a title pill") { $0.registry.showsTitlePill($0.kind) }
+}
+
 extension Registry {
     /// Whether a kind's shapes show their title in a pill: it's titled, and not with `pill: false`.
     func showsTitlePill(_ kind: ShapeKind) -> Bool {
         titleContribution(for: kind)?.showsPill == true
     }
+
+    /// Whether a kind's shapes have titles: named (`title()`), derived (`title { … }`), or both.
+    func isTitled(_ kind: ShapeKind) -> Bool { titleContribution(for: kind) != nil }
 
     /// What a shape's title pill says: its title, after its kind's symbol (`label(of:)`) where the
     /// kind asks for it (`symbolInPill`); on an untitled shape, the kind's placeholder, dimmed, where
@@ -385,10 +400,7 @@ extension Registry {
     }
 
     private func pillLooks(for kind: ShapeKind) -> [TitlePillLookContribution] {
-        memo(PillLooksKey(kind: kind)) {
-            let held = properties(for: kind)
-            return contributions(to: TitlePillLooks.self, for: kind).filter { $0.key.map(held.contains) ?? true }
-        }
+        memo(PillLooksKey(kind: kind)) { contributions(to: TitlePillLooks.self, for: kind) }
     }
 
     /// What the plugins that give a shape's pill a look say of it, merged: the first of each field
@@ -434,15 +446,17 @@ public struct TitlesPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.declare(TitleProperty.self)
-        // The pill, on every shape whose kind's title shows one: Titles places it, and defines no kind.
-        registrar.adornmentForEveryShape(TitlePill.self, where: { $0.registry.showsTitlePill($0.kind) }) { shape, context in
-            context.registry.titlePill(of: shape, in: TitleLookContext(context))
+        // The pill, on the shapes of the kinds whose title shows one: Titles places it, and defines no kind.
+        registrar.forShapes(adopting: .titlePill) { pilled in
+            pilled.adornment(TitlePill.self) { shape, context in context.registry.titlePill(of: shape, in: TitleLookContext(context)) }
         }
         // `/title Groceries` typed on a line of a shape's text: names the shape, on the kinds that can
         // be named. A derived title isn't Titles' to set, and is renamed where it's
         // derived from; a pill in the line is its name, "@Label", as the argument's text reads it.
-        registrar.slashCommandsForEveryShape(where: { $0.holds(TitleProperty.self) }) {
-            SlashCommand("title", argument: "title") { shape, arguments in shape[TitleProperty.self] = arguments.text }
+        registrar.forShapes(holding: TitleProperty.self) { named in
+            named.slashCommands {
+                SlashCommand("title", argument: "title") { shape, arguments in shape[TitleProperty.self] = arguments.text }
+            }
         }
         // Zoomed out, where a skeleton has no pill, the title is said on the shape.
         registrar.overlay(TitleCoverOverlay())

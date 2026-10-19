@@ -213,9 +213,11 @@ let tetherFrom = CGPoint(x: 50, y: 150), tetherTo = CGPoint(x: 350, y: 150)
     test("a shape laid out again with nothing changed (a note it is bound to moved) asks the label no more; a commit that changes it, or adornmentsDidChange, does") {
         let asked = Asked()
         let h = try leadHarness(nil, more: [Contributor(id: "counted") { r in
-            r.adornmentForEveryShape(Lead.self) { _, _ in
-                asked.count += 1
-                return ownerWithValue
+            r.forEveryShape { scope in
+                scope.adornment(Lead.self) { _, _ in
+                    asked.count += 1
+                    return ownerWithValue
+                }
             }
         }])
         let tether = h.add(Tether(from: tetherFrom, to: tetherTo))
@@ -264,7 +266,9 @@ extension LeadWords: EditorService {}
 @MainActor func pinsPlugin2() -> Contributor {
     Contributor(id: "lead-words") { r in
         r.service { _ in LeadWords() }
-        r.adornmentForEveryShape(Lead.self) { _, context in context.service(LeadWords.self)?.say }
+        r.forEveryShape { scope in
+            scope.adornment(Lead.self) { _, context in context.service(LeadWords.self)?.say }
+        }
     }
 }
 

@@ -257,6 +257,8 @@ public enum ShapeDetails {}
 extension ShapeDetails: KeyedExtensionPoint {
     public typealias Contribution = DetailContribution
     public static var owner: PluginID { .detailPanel }
+    /// Sections on other kinds' shapes say which: the kinds that hold a property, have a capability, or every shape.
+    public static var scope: PointScope { .scoped }
 
     public static func uniqueKeys(of contribution: DetailContribution, for target: ShapeTarget) -> [AnyHashable] {
         contribution.sections.map { DetailSectionKey(target: target, tab: $0.tab, section: $0.id) }
@@ -303,6 +305,8 @@ public enum DetailStatuses {}
 extension DetailStatuses: ExtensionPoint {
     public typealias Contribution = DetailStatusContribution
     public static var owner: PluginID { .detailPanel }
+    /// Lines on other kinds' shapes say which: the kinds that hold a property, have a capability, or every shape.
+    public static var scope: PointScope { .scoped }
 
     /// Two tabs with one title would show as two identical tabs.
     public static func check(_ registry: Registry) throws(RegistryError) {
@@ -380,9 +384,10 @@ extension ShapeRegistrar {
 }
 
 extension PluginRegistrar {
-    /// Sections over an added property's value, on every shape that has one, whatever its kind.
+    /// Sections over an added property's value, on every shape that has one, whatever its kind: for the
+    /// kinds that hold the property (the report's "every shape holding <key>").
     public mutating func details<P: ShapeProperty>(of _: P.Type, @DetailSectionsBuilder<P.Value> _ sections: () -> [DetailSection<P.Value>]) {
-        contribute(DetailContribution(property: P.self, sections: sections()), to: ShapeDetails.self, for: .any)
+        contribute(DetailContribution(property: P.self, sections: sections()), to: ShapeDetails.self, for: .holding(P.key))
     }
 
     /// Sections for a kind another plugin registers. Typed as the kind's own.
@@ -399,44 +404,44 @@ extension PluginRegistrar {
         contribute(DetailContribution(P.self, header: DetailContribution.makeHeader(P.self, header), sections: sections()), to: ShapeDetails.self, for: .kind(P.kind))
     }
 
-    /// Sections for every shape with a frame, editing the frame. Shapes without one (arrows)
-    /// don't get them.
+    /// Sections for every shape with a frame, editing the frame: for the kinds whose shapes are boxes
+    /// (`ShapeCapability.box`), so shapes without one (arrows) don't get them.
     public mutating func detailsForEveryBox(@DetailSectionsBuilder<CGRect> _ sections: () -> [DetailSection<CGRect>]) {
         let erased = sections().map { ErasedSection($0, value: \.box, binding: ShapeBinding<CGRect>.box) }
-        contribute(DetailContribution(header: nil, sections: erased), to: ShapeDetails.self, for: .any)
+        contribute(DetailContribution(header: nil, sections: erased), to: ShapeDetails.self, for: .adopting(.box))
     }
+}
 
-    /// Sections for every shape `isIncluded` picks, over the whole record: for what a feature shows
-    /// about any shape, whatever its kind, that no property or box says (a tab of the shape's state
-    /// that comes and goes). `isIncluded` is asked as the panel is laid out, so it reads cached
-    /// state. Writes through the binding change the record, one step named for the section.
+extension ScopedRegistrar {
+    /// Sections on the shapes of every kind the scope reaches, over the whole record: for what a feature
+    /// shows about shapes it doesn't define (Colors' row on the kinds that hold a color), or, in
+    /// `forEveryShape`, what every shape has (what it's connected to). A section that shows only in some
+    /// state says so with `shownWhile`. Writes through the binding change the record, one step named for
+    /// the section.
     ///
-    ///     registrar.detailsForEveryShape(where: { shape in ... }) { DetailSection("Title") { $shape in ... } }
-    public mutating func detailsForEveryShape(
-        where isIncluded: @escaping @MainActor (AnyShapeRecord) -> Bool,
-        @DetailSectionsBuilder<AnyShapeRecord> _ sections: () -> [DetailSection<AnyShapeRecord>]
-    ) {
+    ///     registrar.forShapes(holding: ColorProperty.self) { colorable in
+    ///         colorable.details { DetailSection(in: StyleTab.self, id: "color") { $record in … } }
+    ///     }
+    public mutating func details(@DetailSectionsBuilder<AnyShapeRecord> _ sections: () -> [DetailSection<AnyShapeRecord>]) {
         let erased = sections().map {
-            ErasedSection($0, value: { isIncluded($0) ? $0 : nil }, binding: { record, editor in
-                isIncluded(record) ? ShapeBinding<AnyShapeRecord>.record(of: record, in: editor) : nil
-            })
+            ErasedSection($0, value: { $0 }, binding: { record, editor in ShapeBinding<AnyShapeRecord>.record(of: record, in: editor) })
         }
-        contribute(DetailContribution(header: nil, sections: erased), to: ShapeDetails.self, for: .any)
+        contribute(DetailContribution(header: nil, sections: erased), to: ShapeDetails.self)
     }
 
-    /// Footer lines for every shape: return [] when there's nothing to say.
-    public mutating func detailStatusForEveryShape(_ make: @escaping @MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]) {
-        contribute(DetailStatusContribution(make), to: DetailStatuses.self, for: .any)
+    /// Footer lines for the shapes of every kind the scope reaches: return [] when there's nothing to say.
+    public mutating func detailStatus(_ make: @escaping @MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]) {
+        contribute(DetailStatusContribution(make), to: DetailStatuses.self)
     }
 
-    /// Lines in a tab of their own for every shape, the tab showing only while a shape has some:
-    /// return [] when there's nothing to say.
+    /// Lines in a tab of their own for the shapes of every kind the scope reaches, the tab showing only
+    /// while a shape has some: return [] when there's nothing to say.
     ///
-    ///     registrar.detailStatusForEveryShape(in: IssuesTab.self) { shape, context in ... }
-    public mutating func detailStatusForEveryShape<Tab: DetailTab>(
+    ///     registrar.forEveryShape { every in every.detailStatus(in: IssuesTab.self) { shape, context in ... } }
+    public mutating func detailStatus<Tab: DetailTab>(
         in tab: Tab.Type, _ make: @escaping @MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]
     ) {
-        contribute(DetailStatusContribution(in: tab, make), to: DetailStatuses.self, for: .any)
+        contribute(DetailStatusContribution(in: tab, make), to: DetailStatuses.self)
     }
 }
 

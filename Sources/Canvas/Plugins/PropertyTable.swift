@@ -140,9 +140,13 @@ struct PropertyTable {
             guard codecs[optIn.key] != nil else {
                 throw .invalid(point: c.pointName, reason: "\(c.pluginID) opts \(c.target == .any ? "every kind" : "\(c.target)") into property \(optIn.key), which no installed plugin declares")
             }
-            let targets: [ShapeKind] = switch c.target {
-            case .kind(let kind): [kind]
-            case .any: kinds.filter { kind in definitions[kind].map { optIn.appliesTo?($0) ?? true } ?? false }
+            let targets: [ShapeKind]
+            switch c.target {
+            case .kind(let kind): targets = [kind]
+            case .any: targets = kinds.filter { kind in definitions[kind].map { optIn.appliesTo?($0) ?? true } ?? false }
+            case .holding, .adopting:
+                // An opt-in says who holds a property, so it can't go by what's held: only the sugar makes one.
+                throw .invalid(point: c.pointName, reason: "\(c.pluginID) opts \(c.target) into property \(optIn.key); an opt-in is for a kind, or every kind")
             }
             for kind in targets {
                 let claim = OptInKey(target: .kind(kind), key: optIn.key)

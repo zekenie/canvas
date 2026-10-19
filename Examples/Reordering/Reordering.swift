@@ -17,9 +17,9 @@ extension CanvasCommand {
 }
 
 /// An Arrange submenu in every shape's context menu, as in Keynote and tldraw: Bring to Front,
-/// Bring Forward, Send Backward and Send to Back. The smallest plugin that adds items for every
-/// kind, and one that picks kinds by capability: a kind painted by anchor (an arrow, just above the
-/// shapes it joins) is left out, since document order doesn't decide where it's drawn.
+/// Bring Forward, Send Backward and Send to Back. The smallest plugin that adds items for many kinds,
+/// and one that picks them by capability (`restackable`): a kind painted by anchor (an arrow, just
+/// above the shapes it joins) is left out, since document order doesn't decide where it's drawn.
 ///
 /// Each is a command of its own, declared once with its title, its key (`]`, ⌥], ⌥[ and `[`) and its
 /// item in the menu bar's Arrange, after Grouping's, which the context menu's items run on the menu's
@@ -45,25 +45,31 @@ public struct ReorderingPlugin: ListedPlugin {
                           isEnabled: { $0.restackable }) { subject in
             subject.editor.transact("Send to Back") { $0.sendToBack(subject.shapes) }
         }
-        registrar.contextMenuForEveryShape(where: { !($0 is any PaintOrderAnchored) }) {
-            Submenu("Arrange", in: ReorderMenuGroup.self) {
-                MenuItem(command: .bringToFront)
-                MenuItem(command: .bringForward)
-                MenuItem(command: .sendBackward)
-                MenuItem(command: .sendToBack)
+        registrar.forShapes(adopting: .restackable) { restackable in
+            restackable.contextMenu {
+                Submenu("Arrange", in: ReorderMenuGroup.self) {
+                    MenuItem(command: .bringToFront)
+                    MenuItem(command: .bringForward)
+                    MenuItem(command: .sendBackward)
+                    MenuItem(command: .sendToBack)
+                }
             }
         }
     }
 }
 
+extension ShapeCapability {
+    /// The kinds painted in document order, not by an anchor (`PaintOrderAnchored`): the kinds that
+    /// restacking means something for.
+    static let restackable = ShapeCapability("painted in document order") { !$0.adopts((any PaintOrderAnchored).self) }
+}
+
 extension CommandSubject {
-    /// Whether the commands would restack anything: there are shapes, and none is painted by anchor
-    /// (the kinds Arrange leaves out).
+    /// Whether the commands would restack anything: there are shapes, and every one is of a kind painted
+    /// in document order (`.restackable`, the kinds Arrange is on).
     fileprivate var restackable: Bool {
         guard !shapes.isEmpty else { return false }
         let document = editor.document, registry = editor.registry
-        return shapes.allSatisfy { id in
-            document[id].flatMap { registry.definition(for: $0.kind) }.map { !($0 is any PaintOrderAnchored) } ?? false
-        }
+        return shapes.allSatisfy { id in document[id].map { registry.reaches(.adopting(.restackable), $0.kind) } ?? false }
     }
 }

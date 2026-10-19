@@ -21,7 +21,9 @@ extension StubLock: Adornment {
 }
 
 let stubLock = Contributor(id: "stub-lock") { r in
-    r.adornmentForEveryShape(StubLock.self) { _, _ in AdornmentLabel(systemImage: "lock.fill") }
+    r.forEveryShape { scope in
+        scope.adornment(StubLock.self) { _, _ in AdornmentLabel(systemImage: "lock.fill") }
+    }
 }
 
 extension EditorHarness {

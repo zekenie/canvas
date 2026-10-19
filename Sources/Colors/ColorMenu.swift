@@ -21,20 +21,19 @@ private func agreed(_ owns: [ShapeColor?]) -> ShapeColor?? {
     return nil
 }
 
-/// Color ▸ in the menu of every selection whose shapes all have colors, beside Lock (`StateMenuGroup`):
+/// Color ▸ in the menu of every selection whose shapes all have colors (`scope`), beside Lock (`StateMenuGroup`):
 /// the built-in colors by name, a line, the file's, a line, and None; a check by the color every
 /// selected shape has as its own (none, when they differ; None, when no shape has one). Choosing
 /// one colors the whole selection in one step ("Change Color"). Never dimmed: a read-only shape is
 /// refused by the core and shakes, while the rest of the selection changes. Items are plain titles:
 /// `MenuItem` shows no image.
 @MainActor
-func registerColorMenu(into registrar: inout PluginRegistrar) {
-    registrar.contextMenuForCanvas {
+func registerColorMenu(into scope: inout ScopedRegistrar) {
+    scope.contextMenuForCanvas {
         MenuItems(in: StateMenuGroup.self, id: "color") { subject in
             let editor = subject.editor
             let records = subject.shapes.compactMap { editor.document[$0] }
-            if let book = editor.colors, !records.isEmpty, records.count == subject.shapes.count,
-               records.allSatisfy({ editor.registry.isColorable($0.kind) }) {
+            if let book = editor.colors, !records.isEmpty, records.count == subject.shapes.count {
                 let owns = records.map { $0.ownColor.map { book.canonical($0) ?? $0 } }
                 let common = agreed(owns)
                 Submenu(ColorsStyle.color, in: StateMenuGroup.self, id: "color") {

@@ -193,7 +193,7 @@ extension ShapeBinding {
 }
 
 extension ShapeBinding where Value == AnyShapeRecord {
-    /// The whole record, for a section over every shape a `where` picks (`detailsForEveryShape`).
+    /// The whole record, for a section on the kinds a scope reaches (`scope.details`).
     static func record(of record: AnyShapeRecord, in editor: CanvasEditor) -> ShapeBinding? {
         let id = record.id
         return ShapeBinding(value: record, record: record, in: editor) { [weak editor] name, key, change in

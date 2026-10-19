@@ -25,9 +25,11 @@ private struct ProbePlugin: CanvasPlugin {
     var id: PluginID { "probe" }
     func register(into registrar: inout PluginRegistrar) {
         let probe = probe
-        registrar.validateEveryShape { shape, _ in
-            probe.asked.append(shape.id)
-            return []
+        registrar.forEveryShape { scope in
+            scope.validate { shape, _ in
+                probe.asked.append(shape.id)
+                return []
+            }
         }
     }
 }

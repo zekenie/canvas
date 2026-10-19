@@ -18,9 +18,8 @@ final class AdornmentState {
     let isEmpty: Bool
     /// Some adornment is clickable. Without one, no point is looked at for a button.
     private let hasButtons: Bool
-    /// Each kind's contributions in claim order: its own (and other plugins' for it), then every-shape
-    /// ones whose `where` lets it in, less those of a type it has its own of; sorted by order, then
-    /// first appearance.
+    /// Each kind's contributions in claim order: its own (and other plugins' for it), then those whose
+    /// scope reaches it, less those of a type it has its own of; sorted by order, then first appearance.
     private var candidates: [ShapeKind: [AdornmentContribution]] = [:]
     /// Each shape's shown adornments (none, for most), laid out: its labels, each with its face.
     /// Dropped for the shapes each commit names and `adornmentsDidChange` names, and for all of them
@@ -195,12 +194,11 @@ final class AdornmentState {
     private func candidates(for kind: ShapeKind) -> [AdornmentContribution] {
         if let known = candidates[kind] { return known }
         let registry = editor.registry
-        guard let definition = registry.definition(for: kind) else { return [] }
-        let adornable = AdornableKind(kind: kind, definition: definition, registry: registry)
-        // A kind's own come first, so each takes the place of an every-shape one of its type.
+        guard registry.definition(for: kind) != nil else { return [] }
+        // A kind's own come first, so each takes the place of a scoped one of its type.
         var seen = Set<AdornmentID>()
         let found = registry.contributions(to: ShapeAdornments.self, for: kind)
-            .filter { seen.insert($0.adornment).inserted && $0.appliesTo(adornable) }
+            .filter { seen.insert($0.adornment).inserted }
             .enumerated().sorted { ($0.element.adornment.order, $0.offset) < ($1.element.adornment.order, $1.offset) }
             .map(\.element)
         candidates[kind] = found

@@ -27,11 +27,15 @@ extension Echo: Adornment {
 
 @MainActor func fadingChips() -> Contributor {
     Contributor(id: "fading-chips") { r in
-        r.adornmentForEveryShape(Ghost.self, where: { _ in true }) { shape, context in
-            context.service(ChipFade.self)?.opacity(of: Ghost.self, on: shape.id).map { flagLabel.opacity($0) }
+        r.forEveryShape { scope in
+            scope.adornment(Ghost.self) { shape, context in
+                context.service(ChipFade.self)?.opacity(of: Ghost.self, on: shape.id).map { flagLabel.opacity($0) }
+            }
         }
-        r.adornmentForEveryShape(Echo.self, where: { _ in true }) { shape, context in
-            context.service(ChipFade.self)?.opacity(of: Echo.self, on: shape.id).map { pinLabel.opacity($0) }
+        r.forEveryShape { scope in
+            scope.adornment(Echo.self) { shape, context in
+                context.service(ChipFade.self)?.opacity(of: Echo.self, on: shape.id).map { pinLabel.opacity($0) }
+            }
         }
     }
 }

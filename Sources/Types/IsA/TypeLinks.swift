@@ -227,18 +227,20 @@ extension CanvasEditor {
 /// arrow in its label.
 @MainActor
 func registerIsACommand(into registrar: inout PluginRegistrar) {
-    registrar.slashCommandsForEveryShape(where: { $0.holds(IsAProperty.self) }) {
-        SlashCommand("is-a", argument: TypesStyle.isAArgument,
-                     choices: { owner, editor in TypeChoices.rows(for: owner, in: editor) },
-                     otherwise: { typed, owner, editor in TypeChoices.newRow(typed: typed, owner: owner, editor: editor) },
-                     step: TypesStyle.addType) { owner, choice, editor in
-            // Asked again: the line was run as it was found.
-            switch TypeChoice(choice) {
-            case .type: editor.makeType(owner)
-            case .relationshipType: editor.makeRelationshipType(owner)
-            case .existing(let type): editor.giveType(type, to: [owner])
-            case .new(let name): editor.newType(named: name, besides: owner)
-            case .none: break
+    registrar.forShapes(holding: IsAProperty.self) { typeable in
+        typeable.slashCommands {
+            SlashCommand("is-a", argument: TypesStyle.isAArgument,
+                         choices: { owner, editor in TypeChoices.rows(for: owner, in: editor) },
+                         otherwise: { typed, owner, editor in TypeChoices.newRow(typed: typed, owner: owner, editor: editor) },
+                         step: TypesStyle.addType) { owner, choice, editor in
+                // Asked again: the line was run as it was found.
+                switch TypeChoice(choice) {
+                case .type: editor.makeType(owner)
+                case .relationshipType: editor.makeRelationshipType(owner)
+                case .existing(let type): editor.giveType(type, to: [owner])
+                case .new(let name): editor.newType(named: name, besides: owner)
+                case .none: break
+                }
             }
         }
     }

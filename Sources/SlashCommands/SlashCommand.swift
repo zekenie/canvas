@@ -2,8 +2,8 @@ import Canvas
 
 /// One command a shape offers, typed as `/name` on a line of its text, over `Value`: the kind's
 /// props for a kind's own commands (`x.slashCommands { }`), an added property's value for its
-/// commands (`x.slashCommands(of: P.self) { }`), or `AnyShapeRecord` for every shape's
-/// (`slashCommandsForEveryShape { }`).
+/// commands (`x.slashCommands(of: P.self) { }`), or `AnyShapeRecord` for a scope's
+/// (`registrar.forShapes(holding: P.self) { $0.slashCommands { } }`).
 ///
 ///     SlashCommand("rename", argument: "name") { lamp, arguments in lamp.name = arguments.text }
 ///     SlashCommand("turn-on", when: { !$0.isOn }) { lamp, _ in lamp.isOn = true }
@@ -29,7 +29,7 @@ import Canvas
 /// otherwise, as a person would call what it did (`/public`: "Make Public", as the menu's item).
 ///
 /// A name is the command's identity: two plugins offering one name to the same shapes are a
-/// `conflict`, and a kind's own command takes the place of an every-shape one of the same name.
+/// `conflict`, and a kind's own command takes the place of a scope's of the same name.
 public struct SlashCommand<Value> {
     let name: String
     let argument: String?

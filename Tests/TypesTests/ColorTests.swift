@@ -75,9 +75,11 @@ private enum Probe: Adornment {
 
 @MainActor private func probing(_ asked: Asked) -> Contributor {
     Contributor(id: "probe") { registrar in
-        registrar.adornmentForEveryShape(Probe.self, where: { _ in true }) { shape, _ in
-            asked.counts[shape.id, default: 0] += 1
-            return nil
+        registrar.forEveryShape { scope in
+            scope.adornment(Probe.self) { shape, _ in
+                asked.counts[shape.id, default: 0] += 1
+                return nil
+            }
         }
     }
 }

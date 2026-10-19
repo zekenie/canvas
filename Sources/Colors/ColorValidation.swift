@@ -13,10 +13,12 @@ public struct ColorValidationPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { ColorWarnings(editor: $0) }
-        registrar.validateEveryShape(ignoringMoves: true) { shape, context in
-            guard case .named(let name)? = shape.ownColor, let book = context.service(ColorBook.self),
-                  !book.has(.named(name)) else { return [] }
-            return [.warning("Color “\(name)” isn’t in this file.", field: ColorProperty.key.rawValue)]
+        registrar.forShapes(holding: ColorProperty.self) { colorable in
+            colorable.validate(ignoringMoves: true) { shape, context in
+                guard case .named(let name)? = shape.ownColor, let book = context.service(ColorBook.self),
+                      !book.has(.named(name)) else { return [] }
+                return [.warning("Color “\(name)” isn’t in this file.", field: ColorProperty.key.rawValue)]
+            }
         }
     }
 }

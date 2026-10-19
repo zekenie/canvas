@@ -165,8 +165,8 @@ public final class SlashCommandState {
         self.editor = editor
     }
 
-    /// What a shape offers now: its kind's own commands, then every shape's that its kind lets in (a
-    /// kind's own taking the place of one of the same name, offered or not), each in plugin and
+    /// What a shape offers now: its kind's own commands, then those of the scopes that reach its kind
+    /// (a kind's own taking the place of one of the same name, offered or not), each in plugin and
     /// builder order, those whose `when` holds for the shape as it is. None for a shape that isn't on
     /// the board shown, or is kept aside, or is read-only (its text can't be edited, and a command
     /// would change it).
@@ -227,15 +227,13 @@ public final class SlashCommandState {
         return run(command, on: id, with: arguments)
     }
 
-    /// The kind's own commands, then every shape's that apply to it, one of each name, each in
+    /// The kind's own commands, then those of the scopes that reach it, one of each name, each in
     /// plugin and builder order.
     private func candidates(for kind: ShapeKind) -> [ErasedSlashCommand] {
         if let known = candidates[kind] { return known }
-        guard let definition = editor.registry.definition(for: kind) else { return [] }
-        let ofKind = SlashCommandKind(kind: kind, definition: definition, registry: editor.registry)
         var names = Set<String>()
         let found = editor.registry.contributions(to: ShapeSlashCommands.self, for: kind)
-            .filter { $0.appliesTo(ofKind) }.flatMap(\.commands).filter { names.insert($0.name).inserted }
+            .flatMap(\.commands).filter { names.insert($0.name).inserted }
         candidates[kind] = found
         return found
     }

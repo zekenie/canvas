@@ -97,11 +97,14 @@ func registerEndRuleMenu(into registrar: inout PluginRegistrar) {
 /// The arrow's panel, in the Types tab while it is an end: Needed and Only one, two checkboxes.
 @MainActor
 func registerEndRulePanel(into registrar: inout PluginRegistrar) {
-    registrar.detailsForEveryShape(where: { _ in true }) {
-        DetailSection<AnyShapeRecord>(TypesStyle.endTitle, in: TypesTab.self, id: "end-rule") { shape in
-            EndRuleControls(id: shape.shapeID, rule: shape.wrappedValue[RelationshipEndProperty.self] ?? EndRule(), index: shape.service(RelationshipIndex.self))
+    // On the kinds that relate, while the arrow is an end.
+    registrar.forShapes(holding: RelationshipEndProperty.self) { relating in
+        relating.details {
+            DetailSection<AnyShapeRecord>(TypesStyle.endTitle, in: TypesTab.self, id: "end-rule") { shape in
+                EndRuleControls(id: shape.shapeID, rule: shape.wrappedValue[RelationshipEndProperty.self] ?? EndRule(), index: shape.service(RelationshipIndex.self))
+            }
+            .shownWhile { shape, context in context.service(RelationshipIndex.self)?.end(shape.id) != nil }
         }
-        .shownWhile { shape, context in context.service(RelationshipIndex.self)?.end(shape.id) != nil }
     }
 }
 

@@ -103,6 +103,8 @@ public enum MentionScopeJoins {}
 extension MentionScopeJoins: KeyedExtensionPoint {
     public typealias Contribution = MentionScopeDeclaration
     public static var owner: PluginID { .mentions }
+    /// A kind joins a scope one kind at a time.
+    public static var scope: PointScope { .kinds }
     public static func uniqueKeys(of join: MentionScopeDeclaration, for target: ShapeTarget) -> [AnyHashable] {
         [JoinKey(scope: join.id, target: target)]
     }

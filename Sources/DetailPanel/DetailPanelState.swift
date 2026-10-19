@@ -112,11 +112,10 @@ public final class DetailPanelState {
                             statusesByTab: Dictionary(uniqueKeysWithValues: statuses.map { ($0.tab, $0.lines) }))
     }
 
-    /// The kind's own contributions, then every kind's, each in plugin order. Once per kind: the
-    /// registry is frozen.
+    /// The kind's own contributions, then those whose scope reaches it, each in plugin order. Once per
+    /// kind: the registry is frozen.
     private func resolve(_ kind: ShapeKind) -> Candidates {
-        let all = editor.registry.contributions(to: ShapeDetails.self)
-        let ordered = all.filter { $0.target == .kind(kind) } + all.filter { $0.target == .any }
+        let ordered = editor.registry.contributions(to: ShapeDetails.self, reaching: kind)
         let sections = ordered.flatMap { contribution in
             contribution.value.sections.map {
                 ResolvedSection(key: DetailSectionKey(target: contribution.target, tab: $0.tab, section: $0.id), section: $0)

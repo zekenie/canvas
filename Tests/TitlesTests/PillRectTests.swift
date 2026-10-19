@@ -31,8 +31,12 @@ extension CornerTally: Adornment {
         expectEqual(longer.minX, 60)
     },
     test("a shape that shows other adornments has the pill's rect, not the first adornment's") {
-        let tallies = Contributor(id: "corner-tallies") { $0.adornmentForEveryShape(CornerTally.self) { _, _ in AdornmentLabel(systemImage: "circle.fill") } }
-        let discs = Contributor(id: "corner-discs") { $0.adornmentForEveryShape(CornerDisc.self) { _, _ in AdornmentLabel(systemImage: "circle.fill") } }
+        let tallies = Contributor(id: "corner-tallies") { $0.forEveryShape { scope in
+            scope.adornment(CornerTally.self) { _, _ in AdornmentLabel(systemImage: "circle.fill") }
+        } }
+        let discs = Contributor(id: "corner-discs") { $0.forEveryShape { scope in
+            scope.adornment(CornerDisc.self) { _, _ in AdornmentLabel(systemImage: "circle.fill") }
+        } }
         let editor = try titleEditor([tallies, discs])
         let id = editor.add(Plaque(plaqueFrame), named: "Lobby")
         let frames = editor.adornmentFrames(of: id)

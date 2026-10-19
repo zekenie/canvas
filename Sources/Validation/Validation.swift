@@ -160,6 +160,8 @@ public struct ValidationRule {
 public enum ValidationRules: ExtensionPoint {
     public typealias Contribution = ValidationRule
     public static var owner: PluginID { .validation }
+    /// A rule for other kinds' shapes says which: the kinds that hold a property, have a capability, or every shape.
+    public static var scope: PointScope { .scoped }
 }
 
 extension ShapeRegistrar {
@@ -186,11 +188,16 @@ extension PluginRegistrar {
         }, to: ValidationRules.self, for: .kind(P.kind))
     }
 
-    /// A rule for every kind.
-    public mutating func validateEveryShape(ignoringMoves: Bool = false, affected: (@MainActor (ChangeSet, CanvasEditor) -> Set<ShapeID>)? = nil,
-                                            touches: (@MainActor (ChangeSet, ShapeContext) -> Set<ShapeID>)? = nil,
-                                            _ rule: @escaping @MainActor (AnyShapeRecord, ValidationContext) -> [ValidationIssue]) {
-        contribute(ValidationRule(ignoringMoves: ignoringMoves, affected: affected, touches: touches, rule), to: ValidationRules.self, for: .any)
+}
+
+extension ScopedRegistrar {
+    /// A rule for the shapes of every kind the scope reaches: a feature's check on the kinds that opted
+    /// into it (Colors' on the kinds that hold a color), or, in `forEveryShape`, what every shape is
+    /// checked for (its schema).
+    public mutating func validate(ignoringMoves: Bool = false, affected: (@MainActor (ChangeSet, CanvasEditor) -> Set<ShapeID>)? = nil,
+                                  touches: (@MainActor (ChangeSet, ShapeContext) -> Set<ShapeID>)? = nil,
+                                  _ rule: @escaping @MainActor (AnyShapeRecord, ValidationContext) -> [ValidationIssue]) {
+        contribute(ValidationRule(ignoringMoves: ignoringMoves, affected: affected, touches: touches, rule), to: ValidationRules.self)
     }
 }
 
@@ -781,6 +788,7 @@ public struct ValidationPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { ValidationEngine(editor: $0) }
         registrar.overlay(ValidationOverlay())
-        registrar.validateEveryShape(ignoringMoves: true, schemaIssues)
+        // Every shape has a schema, its kind's, so every shape is checked against it.
+        registrar.forEveryShape { $0.validate(ignoringMoves: true, schemaIssues) }
     }
 }

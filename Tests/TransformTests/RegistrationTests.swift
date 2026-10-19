@@ -37,9 +37,9 @@ extension OddKindDefinition: ShapeDefinition {
         let r = try Registry(plugins: transformPlugins([boxesTurnIntoDiscs()]))
         let lines = r.report.split(separator: "\n").map(String.init)
         let turning = try require(lines.first { $0.hasPrefix("turning") })
-        expect(turning.hasSuffix("offers channel container → corral · takes channel container → pocket · CanvasContextMenu · /turn-into-pocket → every shape"), turning)
+        expect(turning.hasSuffix("offers channel container → corral · takes channel container → pocket · CanvasContextMenu · /turn-into-pocket → every shape that can turn into pocket"), turning)
         let discs = try require(lines.first { $0.hasPrefix("disc-turning") })
-        expect(discs.hasSuffix("offers channel box → box · takes channel box → disc · CanvasContextMenu · /turn-into-disc → every shape"), discs)
+        expect(discs.hasSuffix("offers channel box → box · takes channel box → disc · CanvasContextMenu · /turn-into-disc → every shape that can turn into disc"), discs)
         let transform = try require(lines.first { $0.hasPrefix("transform") })
         expect(transform.hasSuffix("service TransformState"), transform)
         expectEqual(r.contributions(to: TransformSources.self).count, 2)
@@ -84,6 +84,11 @@ extension OddKindDefinition: ShapeDefinition {
             r.turnable(into: Disc.self, through: LooseChannel.self) { _, _ in }
             r.turnable(into: Pocket.self, through: LooseChannel.self) { _, _ in }
         }])
+    },
+
+    test("a channel is offered and taken by a kind at a time, never by every kind or a scope's kinds: both points say so, and the registry holds them to it") {
+        expect(TransformSources.scope == .kinds)
+        expect(TransformTargets.scope == .kinds)
     },
 
     test("only a kind the channel admits offers it: the container channel is for kinds that hold shapes, and a channel of its own says what it takes") {

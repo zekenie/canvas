@@ -52,7 +52,7 @@ enum BoxChannel {}
 extension BoxChannel: TransformChannel {
     static var name: String { "box" }
 
-    static func admits(_ kind: TransformKind) -> Bool { kind.kind == Box.kind }
+    static func admits(_ kind: RegisteredKind) -> Bool { kind.kind == Box.kind }
 
     static func source(of id: ShapeID, in transaction: Transaction) -> ShapeID? {
         transaction.document[id].flatMap { ($0.box?.width ?? 0) < 100 ? id : nil }

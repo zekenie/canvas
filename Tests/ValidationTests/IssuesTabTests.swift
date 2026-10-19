@@ -8,7 +8,9 @@ import Validation
 
 /// A box with no size has three issues, from two rules, in no particular order of severity.
 let emptyBoxRules = Contributor(id: "rules") { r in
-    r.validateEveryShape { shape, _ in shape.box?.width == 0 ? [.warning("Odd."), .error("No width.")] : [] }
+    r.forEveryShape { scope in
+        scope.validate { shape, _ in shape.box?.width == 0 ? [.warning("Odd."), .error("No width.")] : [] }
+    }
     r.validate(Box.self) { box, _ in box.frame.height == 0 ? [.error("No height.")] : [] }
 }
 
@@ -96,9 +98,9 @@ extension EditorHarness {
         let registry = try Registry(plugins: [ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin()])
         expectEqual(registry.report, """
         core                tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
-        validation          service ValidationEngine · overlay ValidationOverlay · ValidationRules
+        validation          service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape
         detail-panel        service DetailPanelState · host inspector
-        validation-details  DetailStatuses in Issues
+        validation-details  DetailStatuses in Issues → every shape
         """)
     },
 ])

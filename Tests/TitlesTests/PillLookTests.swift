@@ -30,9 +30,11 @@ let lookTint = AdornmentTint(NSColor(srgbRed: 0.1, green: 0.4, blue: 0.9, alpha:
 @MainActor var looksAsked: [ShapeKind] = []
 func looks(id: PluginID = "looks", _ look: @escaping @MainActor (AnyShapeRecord, String?) -> TitlePillLook?) -> Contributor {
     Contributor(id: id) { registrar in
-        registrar.titlePillLook(forShapesHolding: Starred.self) { shape, title in
-            looksAsked.append(shape.kind)
-            return look(shape, title)
+        registrar.forShapes(holding: Starred.self) { scope in
+            scope.titlePillLook { shape, title in
+                looksAsked.append(shape.kind)
+                return look(shape, title)
+            }
         }
     }
 }
@@ -221,11 +223,13 @@ struct LozengesPlugin: CanvasPlugin {
         seenServices = []
         let service = Contributor(id: "look-notes") { $0.service { _ in LookNotes() } }
         let withContext = Contributor(id: "context-looks") { registrar in
-            registrar.titlePillLook(forShapesHolding: Starred.self) { shape, _, context in
-                guard shape[Starred.self] == true else { return nil }
-                let note = context.service(LookNotes.self)
-                seenServices.append(note != nil)
-                return TitlePillLook(symbol: note?.symbol)
+            registrar.forShapes(holding: Starred.self) { scope in
+                scope.titlePillLook { shape, _, context in
+                    guard shape[Starred.self] == true else { return nil }
+                    let note = context.service(LookNotes.self)
+                    seenServices.append(note != nil)
+                    return TitlePillLook(symbol: note?.symbol)
+                }
             }
         }
         let editor = try titleEditor([starPlugin, service, withContext, looks(id: "two-argument", { shape, _ in shape[Starred.self] == true ? TitlePillLook(tint: lookTint) : nil })])
@@ -246,8 +250,10 @@ struct LozengesPlugin: CanvasPlugin {
     test("a pill a look hides stays hidden when the look reads a service, and its cover stays") {
         let service = Contributor(id: "look-notes") { $0.service { _ in LookNotes() } }
         let hiding = Contributor(id: "hider") { registrar in
-            registrar.titlePillLook(forShapesHolding: Starred.self) { shape, _, context in
-                shape[Starred.self] == true && context.service(LookNotes.self) != nil ? TitlePillLook(hidesPill: true) : nil
+            registrar.forShapes(holding: Starred.self) { scope in
+                scope.titlePillLook { shape, _, context in
+                    shape[Starred.self] == true && context.service(LookNotes.self) != nil ? TitlePillLook(hidesPill: true) : nil
+                }
             }
         }
         let editor = try titleEditor([starPlugin, service, hiding])

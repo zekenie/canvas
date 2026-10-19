@@ -243,7 +243,9 @@ let names = ["Alexander", "Benjamin", "Charlotte", "Dominique"]
         }
     },
     test("a group that isn't clickable is its shape's: no button, and the shape is hovered") {
-        let h = try adornedHarness([Contributor(id: "plain") { $0.adornmentsForEveryShape(PlainChips.self) { _, _ in [chip("a"), chip("b")] } }])
+        let h = try adornedHarness([Contributor(id: "plain") { $0.forEveryShape { scope in
+            scope.adornments(PlainChips.self) { _, _ in [chip("a"), chip("b")] }
+        } }])
         let box = h.add(Box(boxFrame))
         let frames = h.editor.adornmentFrames(of: box)
         expectEqual(frames.count, 2)
@@ -254,7 +256,9 @@ let names = ["Alexander", "Benjamin", "Charlotte", "Dominique"]
     test("a group is refused anywhere but the row's left end, with its adornment and its plugin named") {
         let base: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), AdornmentsPlugin()]
         expectThrows(RegistryError.invalid(point: "ShapeAdornments", reason: "AdornmentsTests.RightChips (from chip-groups) shows several labels, which only aboveTopLeft allows, not aboveTopRight")) {
-            _ = try Registry(plugins: base + [Contributor(id: "chip-groups") { $0.adornmentsForEveryShape(RightChips.self) { _, _ in [chip("a")] } }])
+            _ = try Registry(plugins: base + [Contributor(id: "chip-groups") { $0.forEveryShape { scope in
+                scope.adornments(RightChips.self) { _, _ in [chip("a")] }
+            } }])
         }
         expectThrows(RegistryError.invalid(point: "ShapeAdornments", reason: "AdornmentsTests.CornerChips (from chip-groups) shows several labels, which only aboveTopLeft allows, not onTopRightCorner")) {
             _ = try Registry(plugins: base + [Contributor(id: "chip-groups") { $0.adornments(CornerChips.self, on: Box.self) { _ in [chip("a")] } }])
@@ -273,7 +277,9 @@ let names = ["Alexander", "Benjamin", "Charlotte", "Dominique"]
     test("`adornmentsDidChange` makes a renamed chip again, and its tag stays where the pointer was") {
         let h = try adornedHarness([Contributor(id: "named") { r in
             r.service { _ in Names() }
-            r.adornmentsForEveryShape(Chips.self) { _, context in (context.service(Names.self)?.names ?? []).map { AdornmentLabel($0.1).tagged(AdornmentTag($0.0)) } }
+            r.forEveryShape { scope in
+                scope.adornments(Chips.self) { _, context in (context.service(Names.self)?.names ?? []).map { AdornmentLabel($0.1).tagged(AdornmentTag($0.0)) } }
+            }
         }])
         let box = h.add(Box(boxFrame))
         let service = try require(h.editor.service(Names.self))

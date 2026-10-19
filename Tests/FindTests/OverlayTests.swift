@@ -13,13 +13,15 @@ import TestKit
     var layouts = 0
 
     func register(into registrar: inout PluginRegistrar) {
-        registrar.findableTexts("slow", where: { $0.kind == Disc.kind }, texts: { _, _ in [FindableText(field: "slow", text: "slow disc")] },
+        registrar.forShapes(adopting: ShapeCapability("that is a disc") { $0.kind == Disc.kind }) { discs in
+            discs.findableTexts("slow", texts: { _, _ in [FindableText(field: "slow", text: "slow disc")] },
                                 rects: { [self] _, _, ranges, _ in
                                     layouts += 1
                                     let clock = ContinuousClock(), end = clock.now + .milliseconds(1)
                                     while clock.now < end {}
                                     return ranges.map { _ in [CGRect(x: 0, y: 0, width: 10, height: 10)] }
                                 })
+        }
     }
 }
 

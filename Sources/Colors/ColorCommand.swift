@@ -36,12 +36,12 @@ enum ColorCommandRows {
     }
 }
 
-/// `/color`, on every kind that has colors: a list of the named colors, each row a chip in its
-/// color, and a typed hex value as a row of its own. `None` is in the list while the shape has a
+/// `/color`, on the kinds that have colors (`scope`): a list of the named colors, each row a chip in
+/// its color, and a typed hex value as a row of its own. `None` is in the list while the shape has a
 /// color of its own. A pick runs at once ("Change Color"). A read-only shape is offered nothing.
 @MainActor
-func registerColorCommand(into registrar: inout PluginRegistrar) {
-    registrar.slashCommandsForEveryShape(where: { $0.holds(ColorProperty.self) }) {
+func registerColorCommand(into scope: inout ScopedRegistrar) {
+    scope.slashCommands {
         SlashCommand("color", argument: ColorsStyle.colorArgument,
                      choices: { owner, editor in ColorCommandRows.rows(for: owner, in: editor) },
                      otherwise: { typed, _, editor in ColorCommandRows.valueRow(typed: typed, in: editor) },

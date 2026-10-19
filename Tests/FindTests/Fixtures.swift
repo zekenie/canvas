@@ -91,13 +91,15 @@ struct MemoDefinition: ShapeDefinition {
     var layouts = 0
 
     func register(into registrar: inout PluginRegistrar) {
-        registrar.findableTexts("badge", where: { $0.kind == Box.kind }, look: .ring, followsZoom: true,
+        registrar.forShapes(adopting: ShapeCapability("that is a box") { $0.kind == Box.kind }) { boxes in
+            boxes.findableTexts("badge", look: .ring, followsZoom: true,
                                 zoomedOut: { record, _, _ in record.box.map { CGRect(x: $0.minX, y: $0.minY, width: $0.width, height: $0.height / 4) } },
                                 texts: { record, _ in [FindableText(field: "badge", text: "Badge \(Int(record.box?.width ?? 0))")] },
                                 rects: { [self] _, _, ranges, context in
                                     layouts += 1
                                     return ranges.map { _ in [CGRect(x: 0, y: -20 / context.editor.camera.zoom, width: 60, height: 16)] }
                                 })
+        }
     }
 }
 

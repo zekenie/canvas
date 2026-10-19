@@ -132,14 +132,18 @@ public struct PublishingPlugin: ListedPlugin {
         registrar.optInEveryShape(to: PublicProperty.self, where: { !($0 is any NeverPublic) && !($0 is any AlwaysPublic) })
         registrar.contribute(true, to: PublishingDials.self)
         registrar.service { PublishingState(editor: $0) }
-        registerPublicChip(into: &registrar)
         registerPublishMenus(into: &registrar)
-        // A globe at the end of a public shape's row, on the kinds that can be, saying how many
-        // things stand for the shape: its row is made again when they change (`contentsDidChange(for:)`,
-        // from the state's follower of Topology).
-        registrar.contentsMarkForEveryShape(where: { $0.holds(PublicProperty.self) }) { shape, context in
-            guard shape[PublicProperty.self] == true else { return nil }
-            return ContentsMark(symbol: PublicStyle.symbol, color: .secondary, help: PublicStyle.help(references: context.service(PublishingState.self)?.count(for: shape.id) ?? 0))
+        // What Publishing puts on shapes goes on the kinds that can be public, and no other.
+        registrar.forShapes(holding: PublicProperty.self) { publishable in
+            registerPublicChip(into: &publishable)
+            // A globe at the end of a public shape's row, saying how many things stand for the shape:
+            // its row is made again when they change (`contentsDidChange(for:)`, from the state's
+            // follower of Topology).
+            publishable.contentsMark { shape, context in
+                guard shape[PublicProperty.self] == true else { return nil }
+                return ContentsMark(symbol: PublicStyle.symbol, color: .secondary, help: PublicStyle.help(references: context.service(PublishingState.self)?.count(for: shape.id) ?? 0))
+            }
+            registerPublishSlashCommands(into: &publishable)
         }
     }
 }

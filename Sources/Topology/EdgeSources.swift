@@ -50,32 +50,31 @@ struct EdgeKey: Hashable {
 /// record's edges may name shapes that aren't there: which ends are live is worked out when read.
 public typealias EdgeEmitter = @MainActor (_ record: AnyShapeRecord, _ registry: Registry, _ sink: inout EdgeSink) -> Void
 
-/// A source of edges, for one kind or for the kinds `appliesTo` picks. Only the sugar makes one.
+/// A source of edges, for one kind or for the kinds a scope reaches. Only the sugar makes one.
 @MainActor
 public struct EdgeSource {
-    let appliesTo: (@MainActor (ShapeKind, Registry) -> Bool)?
     let emit: EdgeEmitter
 }
 
-/// What records carry edges: sources for a kind, or for every kind a `where` picks. They add up: a
-/// kind's shapes carry what each of its sources emits.
+/// What records carry edges: sources for a kind, or for the kinds a scope reaches (those that hold a
+/// property, or have a capability). They add up: a kind's shapes carry what each of its sources emits.
 public enum EdgeSources {}
 
 extension EdgeSources: ExtensionPoint {
     public typealias Contribution = EdgeSource
     public static var owner: PluginID { .topology }
+    /// Edges on other kinds' shapes say which: the kinds that hold a property, or have a capability.
+    public static var scope: PointScope { .scoped }
     public static func summary(of source: EdgeSource, for target: ShapeTarget) -> String {
-        "edges → " + (target == .any ? "every shape" : "\(target)")
+        "edges → \(target)"
     }
 }
 
 extension Registry {
-    /// What each source for `kind` emits, in plugin order: its own, then every kind's that picks it
-    /// (`where`, asked here). Worked out on each call: keep it per kind.
+    /// What each source for `kind` emits, in plugin order: its own, then those whose scope reaches it.
+    /// Worked out on each call: keep it per kind.
     func edgeEmitters(for kind: ShapeKind) -> [EdgeEmitter] {
-        contributions(to: EdgeSources.self, for: kind).compactMap { source in
-            (source.appliesTo.map { $0(kind, self) } ?? true) ? source.emit : nil
-        }
+        contributions(to: EdgeSources.self, for: kind).map(\.emit)
     }
 
     /// The edges a record carries, as its kind's sources emit them, in order: none for a shape kept
@@ -105,15 +104,7 @@ extension PluginRegistrar {
     /// over a kind it's given): `emit` gets each record of the kind (`record.typed(as: K.self)` for
     /// its props) and says what it carries. Pure: see `EdgeEmitter`.
     public mutating func edges<K: ShapeProps>(_ kind: K.Type, _ emit: @escaping EdgeEmitter) {
-        contribute(EdgeSource(appliesTo: nil, emit: emit), to: EdgeSources.self, for: .kind(K.kind))
-    }
-
-    /// The edges the shapes of every kind `appliesTo` picks carry (every kind by default), asked once
-    /// per kind: by the registry (`registry.namingKinds.contains(kind)`), or by what the kind opts
-    /// into. Pure: see `EdgeEmitter`.
-    public mutating func edgesForEveryShape(where appliesTo: @escaping @MainActor (ShapeKind, Registry) -> Bool = { _, _ in true },
-                                            _ emit: @escaping EdgeEmitter) {
-        contribute(EdgeSource(appliesTo: appliesTo, emit: emit), to: EdgeSources.self)
+        contribute(EdgeSource(emit: emit), to: EdgeSources.self, for: .kind(K.kind))
     }
 
     /// Every shape a value of the added property `P` names is an edge of type `T` from the shape that
@@ -122,9 +113,19 @@ extension PluginRegistrar {
     /// (`edgeType`).
     public mutating func edges<P: ShapeProperty, T: EdgeType>(in property: P.Type, as type: T.Type) where P.Value: ShapeNaming {
         let slot = P.key.rawValue, id = T.id
-        edgesForEveryShape(where: { kind, registry in registry.properties(for: kind).contains(P.key) }) { record, _, sink in
-            record[P.self]?.forEachNamedShape { sink.emit(id, from: record.id, to: $0, slot: slot) }
+        forShapes(holding: P.self) { holders in
+            holders.edges { record, _, sink in
+                record[P.self]?.forEachNamedShape { sink.emit(id, from: record.id, to: $0, slot: slot) }
+            }
         }
+    }
+}
+
+extension ScopedRegistrar {
+    /// The edges the shapes of every kind the scope reaches carry: Mentions' on the kinds that can name
+    /// shapes. Pure: see `EdgeEmitter`.
+    public mutating func edges(_ emit: @escaping EdgeEmitter) {
+        contribute(EdgeSource(emit: emit), to: EdgeSources.self)
     }
 }
 
@@ -132,7 +133,7 @@ extension ShapeRegistrar {
     /// The edges this kind's shapes carry: `emit` gets each one, typed, and says what it carries.
     /// Pure: see `EdgeEmitter`.
     public mutating func edges(_ emit: @escaping @MainActor (_ shape: ShapeRecord<Definition.Props>, _ registry: Registry, _ sink: inout EdgeSink) -> Void) {
-        contribute(EdgeSource(appliesTo: nil, emit: { record, registry, sink in
+        contribute(EdgeSource(emit: { record, registry, sink in
             guard let shape = record.typed(as: Definition.Props.self) else { return }
             emit(shape, registry, &sink)
         }), to: EdgeSources.self)

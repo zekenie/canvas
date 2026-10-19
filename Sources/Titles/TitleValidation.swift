@@ -31,30 +31,32 @@ public struct TitleValidationPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { TitleIndex(editor: $0) }
-        registrar.validateEveryShape(ignoringMoves: true, affected: { changes, editor in
-            editor.service(TitleIndex.self)?.affected(by: changes) ?? []
-        }, touches: { changes, shapes in
-            // Writes that have not committed (a run's): the other holders of a title they give a shape or take from one.
-            guard let reading = shapes.reading, let index = reading.service(TitleIndex.self) else { return [] }
-            return index.touched(by: changes, reading: reading)
-        }) { shape, context in
-            guard let title = context.registry.title(of: shape) else { return [] }
-            // Without an editor (a run's check, before it commits) the index is asked through the reading the shapes have,
-            // for the titles as the run leaves them.
-            let shared: Bool
-            if let index = context.service(TitleIndex.self) {
-                shared = index.isShared(title, by: shape.id)
-            } else if let reading = context.reading, let index = reading.service(TitleIndex.self) {
-                shared = index.isShared(title, by: shape.id, in: reading)
-            } else {
-                return []
+        registrar.forShapes(adopting: .titled) { titled in
+            titled.validate(ignoringMoves: true, affected: { changes, editor in
+                editor.service(TitleIndex.self)?.affected(by: changes) ?? []
+            }, touches: { changes, shapes in
+                // Writes that have not committed (a run's): the other holders of a title they give a shape or take from one.
+                guard let reading = shapes.reading, let index = reading.service(TitleIndex.self) else { return [] }
+                return index.touched(by: changes, reading: reading)
+            }) { shape, context in
+                guard let title = context.registry.title(of: shape) else { return [] }
+                // Without an editor (a run's check, before it commits) the index is asked through the reading the shapes have,
+                // for the titles as the run leaves them.
+                let shared: Bool
+                if let index = context.service(TitleIndex.self) {
+                    shared = index.isShared(title, by: shape.id)
+                } else if let reading = context.reading, let index = reading.service(TitleIndex.self) {
+                    shared = index.isShared(title, by: shape.id, in: reading)
+                } else {
+                    return []
+                }
+                #if DEBUG
+                Self.titlesChecked += 1
+                #endif
+                guard shared else { return [] }
+                let named = context.registry.properties(for: shape.kind).contains(TitleProperty.key)
+                return [.warning("“\(title)” is another shape’s title too.", field: named ? TitleProperty.key.rawValue : nil)]
             }
-            #if DEBUG
-            Self.titlesChecked += 1
-            #endif
-            guard shared else { return [] }
-            let named = context.registry.properties(for: shape.kind).contains(TitleProperty.key)
-            return [.warning("“\(title)” is another shape’s title too.", field: named ? TitleProperty.key.rawValue : nil)]
         }
     }
 }

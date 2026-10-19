@@ -87,10 +87,14 @@ struct SignsPlugin: CanvasPlugin {
     }
 }
 
-/// A plugin that puts `A` on every shape of the kinds `where` picks, showing what `label` says.
-@MainActor func everyShape<A: Adornment>(_: A.Type, id: PluginID = "every-shape", where appliesTo: @escaping @MainActor (AdornableKind) -> Bool = { _ in true },
+/// A plugin that puts `A` on every shape of the kinds `where` picks (a capability the plugin states, "that
+/// <id> picks"), else on every shape, showing what `label` says.
+@MainActor func everyShape<A: Adornment>(_: A.Type, id: PluginID = "every-shape", where appliesTo: (@MainActor @Sendable (RegisteredKind) -> Bool)? = nil,
                                          _ label: @escaping @MainActor (AnyShapeRecord) -> AdornmentLabel?) -> Contributor {
-    Contributor(id: id) { $0.adornmentForEveryShape(A.self, where: appliesTo) { shape, _ in label(shape) } }
+    Contributor(id: id) { r in
+        let adorn: (inout ScopedRegistrar) -> Void = { $0.adornment(A.self) { shape, _ in label(shape) } }
+        if let appliesTo { r.forShapes(adopting: ShapeCapability("that \(id) picks", appliesTo), adorn) } else { r.forEveryShape(adorn) }
+    }
 }
 
 /// What the app has around Adornments (the keys and the selection), the fixtures, signs and cards
@@ -159,7 +163,9 @@ func chip(_ name: String) -> AdornmentLabel { AdornmentLabel(name).tagged(Adornm
 
 /// A plugin that shows `names` as `Chips` on every shape.
 @MainActor func chipsPlugin(_ names: [String], id: PluginID = "chips") -> Contributor {
-    Contributor(id: id) { $0.adornmentsForEveryShape(Chips.self) { _, _ in names.map(chip) } }
+    Contributor(id: id) { $0.forEveryShape { scope in
+        scope.adornments(Chips.self) { _, _ in names.map(chip) }
+    } }
 }
 
 /// An open shape from one point to another through a middle one, with a label's rect if it has one:

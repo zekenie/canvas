@@ -34,7 +34,7 @@ private struct Sprint {
     test("a corral's menu has Turn into Pocket, in a group of its own after the shape's items and before the rest; choosing it turns the corral and everything it held, in one undo step") {
         let s = Sprint()
         let h = try transformHarness([plugin("around") { r in
-            r.contextMenuForEveryShape { MenuItem("Widen") { $0.box?.size.width += 10 } }
+            r.forEveryShape { $0.contextMenu { MenuItem("Widen") { $0.box?.size.width += 10 } } }
             r.contextMenuForCanvas { MenuItem("Paste Here", in: PastingGroup.self) { _, _ in } }
         }], file: s.file)
         h.editor.transact { $0.update(s.k) { $0[Tagline.self] = "Sprint" } }

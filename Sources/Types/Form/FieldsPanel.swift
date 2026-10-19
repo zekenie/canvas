@@ -95,14 +95,16 @@ extension FieldBook {
 
 @MainActor
 func registerFieldsPanel(into registrar: inout PluginRegistrar) {
-    // A type's own note shows kinds on the note, never values; a note that was a Person and is none now
-    // still holds its values, so they can be seen and removed.
-    registrar.detailsForEveryShape(where: {
-        $0[TypeSchemaProperty.self] == nil && ($0[IsAProperty.self] != nil || $0[FieldValuesProperty.self] != nil)
-    }) {
-        DetailSection(TypesStyle.fieldsTitle, in: TypesTab.self, id: "fields") { $record in FieldsList(record: $record) }
-            .enabledWhileReadOnly()
-            .shownWhile { shape, context in context.service(FieldBook.self)?.givesFieldsOrValues(shape) == true }
+    // On the kinds that can be of a type. A type's own note shows kinds on the note, never values; a note
+    // that was a Person and is none now still holds its values, so they can be seen and removed.
+    registrar.forShapes(holding: IsAProperty.self) { typeable in
+        typeable.details {
+            DetailSection(TypesStyle.fieldsTitle, in: TypesTab.self, id: "fields") { $record in FieldsList(record: $record) }
+                .enabledWhileReadOnly()
+                .shownWhile { shape, context in
+                    shape[TypeSchemaProperty.self] == nil && context.service(FieldBook.self)?.givesFieldsOrValues(shape) == true
+                }
+        }
     }
 }
 

@@ -34,10 +34,12 @@ final class BindingProbe {
 
     var contributor: Contributor {
         Contributor(id: "binding-probe") { registrar in
-            registrar.detailsForEveryShape(where: { _ in true }) {
-                DetailSection(ColorsStyle.color, in: StyleTab.self, id: "probe") { $record in
-                    let _ = self.keep($record)
-                    Text("probe")
+            registrar.forEveryShape { scope in
+                scope.details {
+                    DetailSection(ColorsStyle.color, in: StyleTab.self, id: "probe") { $record in
+                        let _ = self.keep($record)
+                        Text("probe")
+                    }
                 }
             }
         }

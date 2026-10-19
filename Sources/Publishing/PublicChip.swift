@@ -22,9 +22,10 @@ extension PublicChip: ClickableAdornment {
     public static func click(_ click: AdornmentClick, in editor: CanvasEditor) { editor.publishing?.click(click.shape) }
 }
 
+/// The chip, on the kinds `scope` reaches: those that can be public.
 @MainActor
-func registerPublicChip(into registrar: inout PluginRegistrar) {
-    registrar.adornmentForEveryShape(PublicChip.self, where: { $0.holds(PublicProperty.self) }) { shape, context in
+func registerPublicChip(into scope: inout ScopedRegistrar) {
+    scope.adornment(PublicChip.self) { shape, context in
         guard let state = context.service(PublishingState.self) else { return nil }
         return state.chip(of: shape)
     }

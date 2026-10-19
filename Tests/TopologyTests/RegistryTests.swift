@@ -90,16 +90,18 @@ import Topology
 
     test("sources add up, in plugin order, and a kind's own sugar gives it the record typed") {
         let extra = declaring("extra") { r in
-            r.edgesForEveryShape(where: { kind, _ in kind == Link.kind }) { record, _, sink in
-                guard let to = (record.props as? Link)?.to else { return }
-                sink.emit("echo", from: record.id, to: to)
+            r.forShapes(adopting: ShapeCapability("that is a link") { $0.kind == Link.kind }) { links in
+                links.edges { record, _, sink in
+                    guard let to = (record.props as? Link)?.to else { return }
+                    sink.emit("echo", from: record.id, to: to)
+                }
             }
         }
         let registry = try Registry(plugins: graphPlugins(more: [extra]))
         let a = ShapeID(), b = ShapeID(), l = ShapeID()
         expectEqual(registry.edges(of: link(l, a, b)), [edge(WireEdge.id, a, b, by: l), edge("echo", l, b, by: l)])
         expectEqual(registry.edges(of: link(l, nil, b)), [edge("echo", l, b, by: l)])
-        expectEqual(registry.edges(of: box(a)), [], "where picks links alone")
+        expectEqual(registry.edges(of: box(a)), [], "the scope reaches links alone")
 
         let own = declaring("own") { r in
             r.shape(OwnDefinition()) { own in

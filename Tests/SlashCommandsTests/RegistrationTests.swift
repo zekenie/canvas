@@ -4,8 +4,8 @@ import CoreGraphics
 import SlashCommands
 import TestKit
 
-// How commands are registered: every sugar form, the report, a kind's own command over an
-// every-shape one, `where`, and what the registry refuses.
+// How commands are registered: every sugar form, the report, a kind's own command over a scope's,
+// scopes, and what the registry refuses.
 
 @MainActor private func registry(_ more: [any CanvasPlugin]) throws -> Registry {
     try Registry(plugins: slashPlugins([LampsPlugin()] + more))
@@ -19,20 +19,20 @@ private func offering(_ name: String, id: PluginID) -> Contributor {
 }
 
 @MainActor let slashRegistrationTests = Suite("Slash command registration", [
-    test("every form of the sugar: a kind's own, over an added property, another plugin's for a kind and for a property, and for every shape") {
+    test("every form of the sugar: a kind's own, over an added property, another plugin's for a kind and for a property, and a scope's") {
         let r = try registry([Contributor(id: "bridge") { registrar in
             registrar.slashCommands(Box.self) {
                 SlashCommand("flip") { _, _ in }
                 SlashCommand("grow") { _, _ in }
             }
             registrar.slashCommands(of: Flagged.self) { SlashCommand("clear-flag") { _, _ in } }
-            registrar.slashCommandsForEveryShape { SlashCommand("rename", argument: "name") { _, _ in } }
+            registrar.forEveryShape { $0.slashCommands { SlashCommand("rename", argument: "name") { _, _ in } } }
         }])
         let lines = r.report.split(separator: "\n").map(String.init)
         let lamps = try require(lines.first { $0.hasPrefix("lamps") })
         expect(lamps.hasSuffix("/turn-on /turn-off /level → lamp · /unflag → lamp"), lamps)
         let bridge = try require(lines.first { $0.hasPrefix("bridge") })
-        expect(bridge.hasSuffix("/flip /grow → box · /clear-flag → every shape · /rename → every shape"), bridge)
+        expect(bridge.hasSuffix("/flip /grow → box · /clear-flag → every shape holding flag · /rename → every shape"), bridge)
         expectEqual(r.contributions(to: ShapeSlashCommands.self).count, 5)
     },
 
@@ -67,10 +67,10 @@ private func offering(_ name: String, id: PluginID) -> Contributor {
         }
     },
 
-    test("an every-shape command goes where `where` lets it: on the kinds that hold an added property") {
+    test("a scope's command goes on the kinds it reaches: those that hold an added property, those a capability picks") {
         let h = try EditorHarness(plugins: slashPlugins([LampsPlugin(), Contributor(id: "flags") { registrar in
-            registrar.slashCommandsForEveryShape(where: { $0.holds(Flagged.self) }) { SlashCommand("flag-all") { _, _, _ in } }
-            registrar.slashCommandsForEveryShape(where: { $0.definition is LampDefinition }) { SlashCommand("only-lamps") { _, _, _ in } }
+            registrar.forShapes(holding: Flagged.self) { $0.slashCommands { SlashCommand("flag-all") { _, _, _ in } } }
+            registrar.forShapes(adopting: LampDefinition.self) { $0.slashCommands { SlashCommand("only-lamps") { _, _, _ in } } }
         }]))
         let state = try require(h.editor.slashCommands)
         let lamp = h.add(Lamp(CGRect(x: 0, y: 0, width: 10, height: 10)))
@@ -81,26 +81,32 @@ private func offering(_ name: String, id: PluginID) -> Contributor {
         expectEqual(state.commands(for: box).map(\.name), [])
     },
 
-    test("a kind's own command takes the place of an every-shape one of the same name; offered or not") {
+    test("a kind's own command takes the place of a scope's of the same name; offered or not") {
         let h = try EditorHarness(plugins: slashPlugins([LampsPlugin(), Contributor(id: "every") { registrar in
-            registrar.slashCommandsForEveryShape { SlashCommand("level", argument: "n") { _, _, _ in } }
-            registrar.slashCommandsForEveryShape { SlashCommand("hello") { _, _, _ in } }
+            registrar.forEveryShape { every in
+                every.slashCommands { SlashCommand("level", argument: "n") { _, _, _ in } }
+                every.slashCommands { SlashCommand("hello") { _, _, _ in } }
+            }
         }]))
         let state = try require(h.editor.slashCommands)
         let lamp = h.add(Lamp(CGRect(x: 0, y: 0, width: 10, height: 10)))
         let box = h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
         expectEqual(state.commands(for: lamp).map(\.name), ["turn-on", "level", "hello"])
         expectEqual(state.commands(for: lamp).first { $0.name == "level" }?.argument, "1-3", "the lamp's own")
-        expectEqual(state.commands(for: box).map(\.name), ["level", "hello"], "a box takes the every-shape one")
+        expectEqual(state.commands(for: box).map(\.name), ["level", "hello"], "a box takes the scope's")
         expectEqual(state.commands(for: box).first { $0.name == "level" }?.argument, "n")
     },
 
-    test("two plugins can't offer one name to a kind, nor to every shape; a builder can't repeat a name; another target's is another command") {
+    test("two plugins can't offer one name to a kind, nor in one scope, nor in two scopes that reach one kind; a builder can't repeat a name; another target's is another command") {
         expectThrows(RegistryError.conflict(point: "ShapeSlashCommands", key: "box /flip", plugins: ["a", "b"])) {
             _ = try registry([offering("flip", id: "a"), offering("flip", id: "b")])
         }
-        expectThrows(RegistryError.conflict(point: "ShapeSlashCommands", key: "* /rename", plugins: ["a", "b"])) {
-            _ = try registry([Contributor(id: "a") { $0.slashCommandsForEveryShape { SlashCommand("rename") { _, _ in } } },
+        expectThrows(RegistryError.conflict(point: "ShapeSlashCommands", key: "every shape /rename", plugins: ["a", "b"])) {
+            _ = try registry([Contributor(id: "a") { $0.forEveryShape { $0.slashCommands { SlashCommand("rename") { _, _ in } } } },
+                              Contributor(id: "b") { $0.forEveryShape { $0.slashCommands { SlashCommand("rename") { _, _ in } } } }])
+        }
+        expectThrows(RegistryError.conflict(point: "ShapeSlashCommands", key: "chore /rename", plugins: ["a", "b"])) {
+            _ = try registry([Contributor(id: "a") { $0.forEveryShape { $0.slashCommands { SlashCommand("rename") { _, _ in } } } },
                               Contributor(id: "b") { $0.slashCommands(of: Flagged.self) { SlashCommand("rename") { _, _ in } } }])
         }
         expectThrows(RegistryError.conflict(point: "ShapeSlashCommands", key: "box /twice", plugins: ["dup", "dup"])) {
@@ -110,7 +116,7 @@ private func offering(_ name: String, id: PluginID) -> Contributor {
         }
         _ = try registry([offering("flip", id: "a"),
                           Contributor(id: "disc") { $0.slashCommands(Disc.self) { SlashCommand("flip") { _, _ in } } },
-                          Contributor(id: "every") { $0.slashCommandsForEveryShape { SlashCommand("flip") { _, _ in } } }])
+                          Contributor(id: "every") { $0.forEveryShape { $0.slashCommands { SlashCommand("flip") { _, _ in } } } }])
     },
 
     test("a name that can't be typed as one refuses the plugin list: lowercase letters, digits and single hyphens between words") {

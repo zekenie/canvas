@@ -103,23 +103,27 @@ public struct TypesPlugin: ListedPlugin {
         registerRelationshipPills(into: &registrar)
         // A type's pill is its title in its color (Colors', else its id's), after the mark of a type; untitled, gray and dimmed. A
         // relationship type has none: it is a pill itself. Asked of the kinds that hold a schema, a note's, and a plain note's pill is as it was.
-        registrar.titlePillLook(forShapesHolding: TypeSchemaProperty.self) { record, title, context in
-            guard record[TypeSchemaProperty.self] != nil else { return nil }
-            // A relationship type is a pill itself (`TypeRows.pill`): its name is on it, and no pill shows above it.
-            if record[RelationshipProperty.self] == true { return TitlePillLook(hidesPill: true) }
-            let symbol = TypesStyle.typeSymbol
-            let tint = title == nil ? nil : context.service(TypeIndex.self).map { $0.look(of: record.id).solid }
-            return TitlePillLook(symbol: symbol, tint: tint, placeholder: TypesStyle.untitledType)
+        registrar.forShapes(holding: TypeSchemaProperty.self) { typeKinds in
+            typeKinds.titlePillLook { record, title, context in
+                guard record[TypeSchemaProperty.self] != nil else { return nil }
+                // A relationship type is a pill itself (`TypeRows.pill`): its name is on it, and no pill shows above it.
+                if record[RelationshipProperty.self] == true { return TitlePillLook(hidesPill: true) }
+                let symbol = TypesStyle.typeSymbol
+                let tint = title == nil ? nil : context.service(TypeIndex.self).map { $0.look(of: record.id).solid }
+                return TitlePillLook(symbol: symbol, tint: tint, placeholder: TypesStyle.untitledType)
+            }
         }
         // A note that is one of a kind that draws rows shows no pill for a title copied from its field: the
         // name is already in its row, folded or not, and the chip above says what it is. Asked where the
         // pill's label is made and where Find reads the title, never for a cover.
-        registrar.titlePillLook(forShapesHolding: IsAProperty.self) { record, title, context in
-            // The cheap guards first: Find's build asks this of every titled shape in the file.
-            guard let title, record[TypeSchemaProperty.self] == nil, record[IsAProperty.self]?.isEmpty == false,
-                  let rows = context.service(RowBook.self), rows.kinds.contains(record.kind),
-                  let book = context.service(FieldBook.self), book.fieldTitled(record, title: title) != nil else { return nil }
-            return TitlePillLook(hidesPill: true)
+        registrar.forShapes(holding: IsAProperty.self) { typeable in
+            typeable.titlePillLook { record, title, context in
+                // The cheap guards first: Find's build asks this of every titled shape in the file.
+                guard let title, record[TypeSchemaProperty.self] == nil, record[IsAProperty.self]?.isEmpty == false,
+                      let rows = context.service(RowBook.self), rows.kinds.contains(record.kind),
+                      let book = context.service(FieldBook.self), book.fieldTitled(record, title: title) != nil else { return nil }
+                return TitlePillLook(hidesPill: true)
+            }
         }
     }
 
@@ -147,38 +151,42 @@ public struct TypeValidationPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         // Only the schema's text matters, never where the shape is: a drag of a thousand notes
         // checks none of them again for this.
-        registrar.validateEveryShape(ignoringMoves: true) { shape, _ in SchemaReadings.reading(of: shape)?.issues ?? [] }
+        registrar.forShapes(holding: TypeSchemaProperty.self) { typeKinds in
+            typeKinds.validate(ignoringMoves: true) { shape, _ in SchemaReadings.reading(of: shape)?.issues ?? [] }
+        }
         // The values of a note are a function of the values and the file's types, never of where it is.
         // Without an editor (draw's check, before it commits) it asks the service through the reading its shapes
         // have, so a type the run writes is read as it stands; with none, it says nothing.
         // What writes that have not committed reach (a run's): the instances of a type they change, the notes at the ends
         // of a relationship they draw or delete, the notes of an end type whose rows they change (`RunTouches`).
-        registrar.validateEveryShape(ignoringMoves: true, touches: { changes, shapes in
-            shapes.reading.map { FieldChecks.touched(by: changes, reading: $0) } ?? []
-        }) { shape, context in
-            let check: FieldCheck
-            if let checks = context.service(FieldChecks.self) {
-                var shown = checks.check(of: shape)
-                // The field with the caret is left out of what shows, as a value half typed is no error; what a shape
-                // still needs shows nowhere, so it is said whether or not the caret is in that field.
-                if checks.typing?.shape == shape.id {
-                    let left = checks.fullCheck(of: shape).problems.filter { $0.kind == .needed && !shown.problems.contains($0) }
-                    if !left.isEmpty { shown = FieldCheck(problems: shown.problems + left) }
+        registrar.forShapes(holding: IsAProperty.self) { typeable in
+            typeable.validate(ignoringMoves: true, touches: { changes, shapes in
+                shapes.reading.map { FieldChecks.touched(by: changes, reading: $0) } ?? []
+            }) { shape, context in
+                let check: FieldCheck
+                if let checks = context.service(FieldChecks.self) {
+                    var shown = checks.check(of: shape)
+                    // The field with the caret is left out of what shows, as a value half typed is no error; what a shape
+                    // still needs shows nowhere, so it is said whether or not the caret is in that field.
+                    if checks.typing?.shape == shape.id {
+                        let left = checks.fullCheck(of: shape).problems.filter { $0.kind == .needed && !shown.problems.contains($0) }
+                        if !left.isEmpty { shown = FieldCheck(problems: shown.problems + left) }
+                    }
+                    check = shown
+                } else if let reading = context.reading, let checks = reading.service(FieldChecks.self) {
+                    check = checks.check(of: shape, reading: reading)
+                } else {
+                    return []
                 }
-                check = shown
-            } else if let reading = context.reading, let checks = reading.service(FieldChecks.self) {
-                check = checks.check(of: shape, reading: reading)
-            } else {
-                return []
-            }
-            guard !check.problems.isEmpty else { return [] }
-            // A needed value left empty is the third level: the shape is valid and flagged by nothing, and a query's
-            // `:incomplete` and a run's warning of a shape it did not write read it.
-            return check.problems.map { problem in
-                switch problem.kind {
-                case .wrong: ValidationIssue.error(problem.message, field: problem.placeName, path: problem.pointer)
-                case .warning: ValidationIssue.warning(problem.message, field: problem.placeName, path: problem.pointer)
-                case .needed: ValidationIssue.incomplete(problem.message, field: problem.placeName, path: problem.pointer)
+                guard !check.problems.isEmpty else { return [] }
+                // A needed value left empty is the third level: the shape is valid and flagged by nothing, and a query's
+                // `:incomplete` and a run's warning of a shape it did not write read it.
+                return check.problems.map { problem in
+                    switch problem.kind {
+                    case .wrong: ValidationIssue.error(problem.message, field: problem.placeName, path: problem.pointer)
+                    case .warning: ValidationIssue.warning(problem.message, field: problem.placeName, path: problem.pointer)
+                    case .needed: ValidationIssue.incomplete(problem.message, field: problem.placeName, path: problem.pointer)
+                    }
                 }
             }
         }
@@ -186,18 +194,20 @@ public struct TypeValidationPlugin: ListedPlugin {
         // titles nothing (only the type that wrote it: an Employee inheriting Person's says nothing).
         // Without an editor (a run's check) it says the same over the reading; the types a run's writes reach are named
         // by the rule above (a type that refers to one written, or builds on one).
-        registrar.validateEveryShape(ignoringMoves: true) { shape, context in
-            guard shape[TypeSchemaProperty.self] != nil else { return [] }
-            guard let checks = context.service(FieldChecks.self) else {
-                guard let reading = context.reading, let checks = reading.service(FieldChecks.self) else { return [] }
-                return checks.typeWarnings(of: shape, reading: reading).map { ValidationIssue.warning($0, field: "schema") }
+        registrar.forShapes(holding: TypeSchemaProperty.self) { typeKinds in
+            typeKinds.validate(ignoringMoves: true) { shape, context in
+                guard shape[TypeSchemaProperty.self] != nil else { return [] }
+                guard let checks = context.service(FieldChecks.self) else {
+                    guard let reading = context.reading, let checks = reading.service(FieldChecks.self) else { return [] }
+                    return checks.typeWarnings(of: shape, reading: reading).map { ValidationIssue.warning($0, field: "schema") }
+                }
+                var issues = checks.goneReferences(of: shape.id).map { ValidationIssue.warning(FieldCheckWords.refersToGone($0), field: "schema") }
+                if let book = context.service(FieldBook.self),
+                   let problem = TitleSource.problem(book.fields(types: [shape.id]), writtenBy: shape.id) {
+                    issues.append(.warning(FieldCheckWords.title(problem), field: "schema"))
+                }
+                return issues
             }
-            var issues = checks.goneReferences(of: shape.id).map { ValidationIssue.warning(FieldCheckWords.refersToGone($0), field: "schema") }
-            if let book = context.service(FieldBook.self),
-               let problem = TitleSource.problem(book.fields(types: [shape.id]), writtenBy: shape.id) {
-                issues.append(.warning(FieldCheckWords.title(problem), field: "schema"))
-            }
-            return issues
         }
     }
 }

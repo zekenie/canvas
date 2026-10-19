@@ -98,42 +98,42 @@ import Validation
         topology             service TopologyIndex · edge type stands-for
         arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property endRule → arrow · ShapeOpening → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
         sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
-        subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
+        subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape that can turn into subboard
         framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title cover surface → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu
-        references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
-        validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
+        references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
+        validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape
         adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
         detail-panel         service DetailPanelState · host inspector
         context-menus        service ContextMenuState · secondary-click menu · selection menu · CanvasContextMenu
         slash-commands       service SlashCommandState · key hint / at a Line's Start Run a Command
         table-of-contents    service ContentsState
         contents-overview    detail overview
-        titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
-        mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
+        titles               property title · adornment TitlePill → every shape with a title pill · /title → every shape holding title · overlay TitleCoverOverlay
+        mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu
         board-navigation     service BoardCrumbs · command enclosingBoard in Go · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · host overlay · window subtitle
         board-contents       contents heading
         find-in-boards       service FindState · overlay FindOverlay · command find in Edit › Find · shortcut ⌘F → command find · command findNext in Edit › Find · shortcut ⌘G → command findNext · command findPrevious in Edit › Find · shortcut ⇧⌘G → command findPrevious
         find-panel           detail takeover
         board-find           find heading
-        title-find           findable title → every shape
-        mention-find         findable mention text → every shape · findable mention text over the canvas → every shape
+        title-find           findable title → every shape with a title
+        mention-find         findable mention text → every shape with mention text · findable mention text over the canvas → every shape with mention text
         jump-to              service JumpToState · command jumpTo in Go · shortcut ⌘K → command jumpTo · host overlay
         transform            service TransformState
-        validation-details   DetailStatuses in Issues
-        validation-contents  ContentsMarks
-        mention-validation   ValidationRules
-        title-validation     service TitleIndex · ValidationRules
+        validation-details   DetailStatuses in Issues → every shape
+        validation-contents  ContentsMarks → every shape
+        mention-validation   ValidationRules → every shape naming shapes
+        title-validation     service TitleIndex · ValidationRules → every shape with a title
         grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in Arrange · shortcut ⌥⌘G → command group · command ungroup in Arrange · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer in Edit · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate in Edit · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
-        locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · command lock · command unlock · shortcut ⇧L → command lock or unlock · CanvasContextMenu · /lock → every shape
-        publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · command makePublic · command makePrivate · CanvasContextMenu · /public /private → every shape · ContentsMarks
-        types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property relationship · property endRule · edge type is-a · edges → every shape · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu · DecorationHits · outlines · ShapeFaces · ShapeFaces · ShapeFaces · willDelete · ShapePopovers · /is-a → every shape · CanvasContextMenu · CanvasContextMenu · CanvasContextMenu · adornment TypeChips → every shape · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape · adornment RelationshipOfferPill → every shape · title pill look → every shape · title pill look → every shape
-        type-validation      ValidationRules · ValidationRules · ValidationRules
-        type-details         ShapeDetails · ShapeDetails · ShapeDetails · ShapeDetails
-        field-find           findable field value → every shape · findable relationship type name → every shape
-        colors               property color · file property colors · service ColorBook · shape tints · /color → every shape · CanvasContextMenu
-        color-validation     service ColorWarnings · ValidationRules
-        color-details        ShapeDetails
+        locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu → every shape holding locked · /lock → every shape holding locked
+        publishing           property public · property public → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu · adornment PublicChip → every shape holding public · ContentsMarks → every shape holding public · /public /private → every shape holding public
+        types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu · DecorationHits · outlines · ShapeFaces · ShapeFaces · ShapeFaces · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu · CanvasContextMenu → every shape holding is · CanvasContextMenu · adornment TypeChips → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · adornment RelationshipOfferPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
+        type-validation      ValidationRules → every shape holding schema · ValidationRules → every shape holding is · ValidationRules → every shape holding schema
+        type-details         ShapeDetails → every shape holding schema · ShapeDetails → every shape holding is · ShapeDetails → every shape holding is · ShapeDetails → every shape holding endRule
+        field-find           findable field value → every shape showing field values · findable relationship type name → every shape holding relationship
+        colors               property color · file property colors · service ColorBook · shape tints · /color → every shape holding color · CanvasContextMenu → every shape holding color
+        color-validation     service ColorWarnings · ValidationRules → every shape holding color
+        color-details        ShapeDetails → every shape holding color
         snapping             service SnapState · translation adjuster · key hint ⌘ or ⌃ Drag Move Without Snapping
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect
         connect-menu         CanvasContextMenu
@@ -165,9 +165,9 @@ import Validation
         arrow-lights         neighbor light · neighbor light
         mention-lights       neighbor light · neighbor light
         type-lights          neighbor light
-        neighbor-details     service NeighborList · ShapeDetails
-        moving               /move-to /move-near → every shape · ContentsMoves
-        reordering           command bringToFront in Arrange · shortcut ] → command bringToFront · command bringForward in Arrange · shortcut ⌥] → command bringForward · command sendBackward in Arrange · shortcut ⌥[ → command sendBackward · command sendToBack in Arrange · shortcut [ → command sendToBack · ShapeContextMenus
+        neighbor-details     service NeighborList · ShapeDetails → every shape
+        moving               /move-to /move-near → every shape with a box · ContentsMoves
+        reordering           command bringToFront in Arrange · shortcut ] → command bringToFront · command bringForward in Arrange · shortcut ⌥] → command bringForward · command sendBackward in Arrange · shortcut ⌥[ → command sendBackward · command sendToBack in Arrange · shortcut [ → command sendToBack · ShapeContextMenus → every shape painted in document order
         """)
     },
     test("the guide shows the registry report as it is") {

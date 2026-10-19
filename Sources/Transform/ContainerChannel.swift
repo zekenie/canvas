@@ -21,7 +21,7 @@ extension ContainerChannel: TransformChannel {
     public static var name: String { "container" }
 
     /// A kind that holds shapes.
-    public static func admits(_ kind: TransformKind) -> Bool { kind.definition is any ShapeContaining }
+    public static func admits(_ kind: RegisteredKind) -> Bool { kind.adopts((any ShapeContaining).self) }
 
     /// The container, if it's on the transaction's board, a container the core goes by, with a frame. What it
     /// holds is read when its turn comes: the shapes in it at any depth, which are fewer by what a container

@@ -26,13 +26,14 @@ public struct MentionValidationPlugin: ListedPlugin {
     #endif
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.validateEveryShape(ignoringMoves: true) { shape, context in
-            // A shape of a kind that can't hold names has no mention text: one set lookup.
-            guard context.registry.namingKinds.contains(shape.kind) else { return [] }
-            #if DEBUG
-            Self.textsChecked += 1
-            #endif
-            return context.registry.mentionProblems(of: shape, lookup: context.shape).map { .warning($0.message, field: $0.property) }
+        // A shape of a kind that can't hold names has no mention text, so the rule is for the kinds that can.
+        registrar.forShapes(adopting: .namingShapes) { naming in
+            naming.validate(ignoringMoves: true) { shape, context in
+                #if DEBUG
+                Self.textsChecked += 1
+                #endif
+                return context.registry.mentionProblems(of: shape, lookup: context.shape).map { .warning($0.message, field: $0.property) }
+            }
         }
     }
 }

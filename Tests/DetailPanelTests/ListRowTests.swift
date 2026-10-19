@@ -7,8 +7,8 @@ import Selection
 import SwiftUI
 import TestKit
 
-// Sections for every shape a `where` picks, DetailCheckbox and DetailShapeRow: generic pieces, on the
-// fixture gadget.
+// Sections for the shapes a scope reaches, shown while a shape says so, DetailCheckbox and DetailShapeRow:
+// generic pieces, on the fixture gadget.
 
 /// The binding a picked section was built with, for a test to write through.
 @MainActor var pickedBinding: ShapeBinding<AnyShapeRecord>?
@@ -16,10 +16,13 @@ import TestKit
 struct PickingPlugin: CanvasPlugin {
     var id: PluginID { "picking" }
     func register(into registrar: inout PluginRegistrar) {
-        registrar.detailsForEveryShape(where: { $0.typed(as: Gadget.self)?.props.name == "pick" }) {
-            DetailSection("Choice", in: GadgetTab.self) { $shape in
-                let _ = (pickedBinding = $shape)
-                Text("Picked")
+        registrar.forEveryShape { every in
+            every.details {
+                DetailSection("Choice", in: GadgetTab.self) { $shape in
+                    let _ = (pickedBinding = $shape)
+                    Text("Picked")
+                }
+                .shownWhile { shape, _ in shape.typed(as: Gadget.self)?.props.name == "pick" }
             }
         }
     }

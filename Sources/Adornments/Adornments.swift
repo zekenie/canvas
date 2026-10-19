@@ -5,7 +5,8 @@ import Selection
 
 /// Adornments, as a plugin: the small things shown on a shape, just outside it or on its corner,
 /// from what the shape knows (a title's pill, a lock). Any plugin puts one on
-/// any kind: its own, another plugin's, or every shape. This plugin lays them out, so none on a
+/// any kind: its own, another plugin's, or the kinds a scope reaches (those that can be locked). This
+/// plugin lays them out, so none on a
 /// shape overlaps another, and draws them; a point on one is a point on its shape, for the select
 /// tool, hover and the context menu (Selection's `DecorationHits`), but a clickable one (the lock)
 /// is a canvas button, its shape's only for the context menu. Zoomed out, on a shape the canvas
@@ -440,7 +441,7 @@ public enum AdornmentLead {
     public static let faces = LayoutInputKey<Faces>("adornment-lead")
 }
 
-/// What an every-shape adornment's label may read besides its shape. The registry never changes.
+/// What a scoped adornment's label may read besides its shape. The registry never changes.
 /// A service's state is read only by one that tells Adornments when it changes
 /// (`editor.adornmentsDidChange(for:)`): a shape's labels are made again only then, or when a
 /// commit names the shape.
@@ -451,30 +452,19 @@ public struct AdornmentContext {
     public func service<S: EditorService>(_: S.Type) -> S? { editor.service(S.self) }
 }
 
-/// A kind, as an every-shape adornment's `where` sees it: its definition (so its capabilities) and
-/// the registry (so what else it takes part in: Titles asks whether its title shows a pill).
-@MainActor
-public struct AdornableKind {
-    public let kind: ShapeKind
-    public let definition: any ShapeDefinition
-    public let registry: Registry
-
-    /// Whether this kind's shapes hold an added property: opted into it, however (Locking's lock
-    /// goes on the kinds that can be locked, `$0.holds(LockedProperty.self)`).
-    public func holds<P: ShapeProperty>(_: P.Type) -> Bool { registry.properties(for: kind).contains(P.key) }
-}
-
 // MARK: The extension point
 
-/// The adornments on each kind's shapes: a kind's own (or another plugin's for it), and every shape's that
-/// `where` lets in. Keyed: one of each adornment per kind, and one for every kind, so two plugins
-/// putting one adornment on a kind is `RegistryError.conflict`. A kind's own takes the place of an
-/// every-shape one of the same type, as a kind's own menu item does.
+/// The adornments on each kind's shapes: a kind's own (or another plugin's for it), and those for the
+/// kinds a scope reaches (`registrar.forShapes(holding:) { $0.adornment(…) }`). Keyed: one of each
+/// adornment per kind, so two plugins putting one adornment on a kind is `RegistryError.conflict`. A
+/// kind's own takes the place of a scoped one of the same type, as a kind's own menu item does.
 public enum ShapeAdornments {}
 
 extension ShapeAdornments: KeyedExtensionPoint {
     public typealias Contribution = AdornmentContribution
     public static var owner: PluginID { .adornments }
+    /// An adornment on other kinds' shapes says which: the kinds that hold a property, or have a capability.
+    public static var scope: PointScope { .scoped }
 
     public static func uniqueKeys(of contribution: AdornmentContribution, for target: ShapeTarget) -> [AnyHashable] {
         [AdornmentKey(target: target, adornment: contribution.adornment)]
@@ -488,9 +478,9 @@ extension ShapeAdornments: KeyedExtensionPoint {
         }
     }
 
-    /// "adornment TitlePill → every shape", "adornment Flag → box".
+    /// "adornment LockChip → every shape holding locked", "adornment Flag → box".
     public static func summary(of contribution: AdornmentContribution, for target: ShapeTarget) -> String {
-        "adornment \(contribution.adornment) → \(target == .any ? "every shape" : "\(target)")"
+        "adornment \(contribution.adornment) → \(target)"
     }
 }
 
@@ -505,8 +495,6 @@ struct AdornmentKey: Hashable, CustomStringConvertible {
 @MainActor
 public struct AdornmentContribution {
     let adornment: AdornmentID
-    /// Every-shape ones: which kinds. Always true for a kind's own.
-    let appliesTo: @MainActor (AdornableKind) -> Bool
     let labels: @MainActor (AnyShapeRecord, AdornmentContext) -> [AdornmentLabel]
     /// Several labels, in order, each its own chip, each shown whole or folded into a "+N" chip:
     /// only at `aboveTopLeft`.
@@ -514,15 +502,12 @@ public struct AdornmentContribution {
     /// From the type's `ClickableAdornment` conformance, if it has one.
     let click: (@MainActor (AdornmentClick, CanvasEditor) -> Void)?
 
-    init<A: Adornment>(_: A.Type, appliesTo: @escaping @MainActor (AdornableKind) -> Bool = { _ in true },
-                       label: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> AdornmentLabel?) {
-        self.init(A.self, appliesTo: appliesTo, isGroup: false) { shape, context in label(shape, context).map { [$0] } ?? [] }
+    init<A: Adornment>(_: A.Type, label: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> AdornmentLabel?) {
+        self.init(A.self, isGroup: false) { shape, context in label(shape, context).map { [$0] } ?? [] }
     }
 
-    init<A: Adornment>(_: A.Type, appliesTo: @escaping @MainActor (AdornableKind) -> Bool = { _ in true }, isGroup: Bool,
-                       labels: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> [AdornmentLabel]) {
+    init<A: Adornment>(_: A.Type, isGroup: Bool, labels: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> [AdornmentLabel]) {
         adornment = .of(A.self)
-        self.appliesTo = appliesTo
         self.isGroup = isGroup
         self.labels = labels
         if let clickable = A.self as? any ClickableAdornment.Type {
@@ -566,16 +551,6 @@ extension PluginRegistrar {
                    to: ShapeAdornments.self, for: .kind(P.kind))
     }
 
-    /// `adornments` on every shape of the kinds `where` picks, as `adornmentForEveryShape` does for
-    /// one label.
-    public mutating func adornmentsForEveryShape<A: Adornment>(
-        _: A.Type,
-        where appliesTo: @escaping @MainActor (AdornableKind) -> Bool = { _ in true },
-        _ labels: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> [AdornmentLabel]
-    ) {
-        contribute(AdornmentContribution(A.self, appliesTo: appliesTo, isGroup: true, labels: labels), to: ShapeAdornments.self, for: .any)
-    }
-
     /// `A` on the shapes of a kind another plugin registers, as `adornment` does on a
     /// kind's own registrar.
     public mutating func adornment<A: Adornment, P: ShapeProps>(_: A.Type, on _: P.Type,
@@ -583,21 +558,23 @@ extension PluginRegistrar {
         contribute(AdornmentContribution(A.self) { shape, _ in shape.typed(as: P.self).flatMap(label) },
                    to: ShapeAdornments.self, for: .kind(P.kind))
     }
+}
 
-    /// `A` on every shape of the kinds `where` picks (every kind by default), showing what `label`
-    /// says: what a horizontal places on shapes it doesn't define. `where` picks kinds by their
-    /// definition, so by capability, or by what the registry says of them (Titles: the kinds whose
-    /// title shows a pill); it's asked once per kind.
+extension ScopedRegistrar {
+    /// `A` on the shapes of every kind the scope reaches, showing what `label` says: what a horizontal
+    /// places on shapes it doesn't define, only where its feature is (Locking's lock on the kinds that
+    /// can be locked). A kind's own `A` takes its place.
     ///
-    ///     registrar.adornmentForEveryShape(LockChip.self) { shape, _ in
-    ///         shape.isLocked ? AdornmentLabel(systemImage: "lock.fill") : nil
+    ///     registrar.forShapes(holding: LockedProperty.self) { lock in
+    ///         lock.adornment(LockChip.self) { shape, _ in shape.isLocked ? AdornmentLabel(systemImage: "lock.fill") : nil }
     ///     }
-    public mutating func adornmentForEveryShape<A: Adornment>(
-        _: A.Type,
-        where appliesTo: @escaping @MainActor (AdornableKind) -> Bool = { _ in true },
-        _ label: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> AdornmentLabel?
-    ) {
-        contribute(AdornmentContribution(A.self, appliesTo: appliesTo, label: label), to: ShapeAdornments.self, for: .any)
+    public mutating func adornment<A: Adornment>(_: A.Type, _ label: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> AdornmentLabel?) {
+        contribute(AdornmentContribution(A.self, label: label), to: ShapeAdornments.self)
+    }
+
+    /// `adornments` on the shapes of every kind the scope reaches, as `adornment` does for one label.
+    public mutating func adornments<A: Adornment>(_: A.Type, _ labels: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> [AdornmentLabel]) {
+        contribute(AdornmentContribution(A.self, isGroup: true, labels: labels), to: ShapeAdornments.self)
     }
 }
 

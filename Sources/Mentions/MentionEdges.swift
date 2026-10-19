@@ -17,12 +17,14 @@ extension MentionEdge: EdgeType {
 @MainActor
 func registerMentionEdges(into registrar: inout PluginRegistrar) {
     registrar.edgeType(MentionEdge.self)
-    registrar.edgesForEveryShape(where: { kind, registry in registry.namingKinds.contains(kind) }) { record, registry, sink in
-        record.forEachNamingValue(in: registry) { property, value in
-            value.forEachNamingLeaf { leaf in
-                guard let text = leaf as? any MentionTextHolding else { return }
-                text.forEachMentionRun { run in
-                    if case .mention(let id, _) = run { sink.emit(MentionEdge.id, from: record.id, to: id, slot: property) }
+    registrar.forShapes(adopting: .namingShapes) { naming in
+        naming.edges { record, registry, sink in
+            record.forEachNamingValue(in: registry) { property, value in
+                value.forEachNamingLeaf { leaf in
+                    guard let text = leaf as? any MentionTextHolding else { return }
+                    text.forEachMentionRun { run in
+                        if case .mention(let id, _) = run { sink.emit(MentionEdge.id, from: record.id, to: id, slot: property) }
+                    }
                 }
             }
         }

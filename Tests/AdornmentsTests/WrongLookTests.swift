@@ -46,7 +46,9 @@ import TestKit
     },
     test("the fill is red at 14% over the canvas in both appearances, with no line at the edge, and the text is red") {
         let (h, _, frame) = try tintedBoard(AdornmentLabel("Role").wrong())
-        let plain = try adornedHarness([Contributor(id: "none") { $0.adornmentsForEveryShape(Chips.self) { _, _ in [] } }])
+        let plain = try adornedHarness([Contributor(id: "none") { $0.forEveryShape { scope in
+            scope.adornments(Chips.self) { _, _ in [] }
+        } }])
         plain.add(Box(boxFrame))
         for dark in [false, true] {
             let drawn = render(h, dark: dark), canvas = render(plain, dark: dark)
@@ -106,7 +108,9 @@ import TestKit
         let (h, _, frame) = try tintedBoard(AdornmentLabel(systemImage: "flag.fill").wrong())
         expect(reds(render(h), in: frame.insetBy(dx: 3, dy: 3)) > 4, "the symbol in red")
         let (g, _, rect) = try tintedBoard(AdornmentLabel("Gone").missing().wrong())
-        let plain = try adornedHarness([Contributor(id: "none") { $0.adornmentsForEveryShape(Chips.self) { _, _ in [] } }])
+        let plain = try adornedHarness([Contributor(id: "none") { $0.forEveryShape { scope in
+            scope.adornments(Chips.self) { _, _ in [] }
+        } }])
         plain.add(Box(boxFrame))
         expectEqual(pixel(render(g), at: capsulePoint(rect)), pixel(render(plain), at: capsulePoint(rect)), "no fill")
         expectEqual(reds(render(g), in: CGRect(x: rect.minX + 8, y: rect.midY + 5, width: rect.width - 16, height: 2)), 0, "and no wave")
@@ -115,7 +119,9 @@ import TestKit
         let (h, _, frame) = try tintedBoard(AdornmentLabel("Role").wrong())
         let (g, _, plainFrame) = try tintedBoard(AdornmentLabel("Role"))
         expectEqual(frame, plainFrame, "laid out as any chip")
-        let empty = try adornedHarness([Contributor(id: "none") { $0.adornmentsForEveryShape(Chips.self) { _, _ in [] } }])
+        let empty = try adornedHarness([Contributor(id: "none") { $0.forEveryShape { scope in
+            scope.adornments(Chips.self) { _, _ in [] }
+        } }])
         empty.add(Box(boxFrame))
         let inside = changedPixels(render(empty), render(h), in: frame.insetBy(dx: -1, dy: -1).integral)
         expect(inside > 100, "draws: \(inside)")

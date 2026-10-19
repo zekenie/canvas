@@ -32,15 +32,21 @@ func registerPublishMenus(into registrar: inout PluginRegistrar) {
                       }) { subject in
         subject.editor.makePrivate(subject.toMakePrivate)
     }
+    // Items for any shapes, not a scope's: a menu over a mix, some of kinds that can't be public, has
+    // them for the shapes that can be, which the commands pick out.
     registrar.contextMenuForCanvas {
         MenuItem(command: .makePublic, in: PublishMenuGroup.self, when: { !$0.toMakePublic.isEmpty }, dims: true)
         MenuItem(command: .makePrivate, in: PublishMenuGroup.self, when: { $0.toMakePublic.isEmpty && !$0.toMakePrivate.isEmpty }, dims: true)
     }
-    // `/public` while the shape can be made public, `/private` while it's public, typed on a line of
-    // its own in a shape's text, as `/lock` is. A read-only shape's text can't be edited, so neither is
-    // ever offered there. `/private` on a shape something stands for is refused as the chip is: nothing
-    // is written, the shape shakes.
-    registrar.slashCommandsForEveryShape(where: { $0.holds(PublicProperty.self) }) {
+}
+
+/// `/public` while the shape can be made public, `/private` while it's public, typed on a line of its
+/// own in a shape's text, as `/lock` is, on the kinds that can be public (`scope`). A read-only shape's
+/// text can't be edited, so neither is ever offered there. `/private` on a shape something stands for
+/// is refused as the chip is: nothing is written, the shape shakes.
+@MainActor
+func registerPublishSlashCommands(into scope: inout ScopedRegistrar) {
+    scope.slashCommands {
         SlashCommand("public", command: .makePublic)
         SlashCommand("private", command: .makePrivate, when: { $0[PublicProperty.self] == true }, tries: true)
     }

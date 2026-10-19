@@ -9,7 +9,7 @@ import TestKit
 @MainActor let lockMenuTests = Suite("Locking from the context menu", [
     test("a shape's menu offers Lock, then Unlock, after every other group; a lock is `locked: true`, and unlocking takes it away") {
         let h = try lockingHarness([Contributor(id: "widening") { r in
-            r.contextMenuForEveryShape { MenuItem("Widen") { $0.box?.size.width += 10 } }
+            r.forEveryShape { $0.contextMenu { MenuItem("Widen") { $0.box?.size.width += 10 } } }
         }])
         let box = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
         let menu = try require(h.secondaryClick(at: CGPoint(x: 150, y: 150)))
@@ -64,7 +64,7 @@ import TestKit
     },
     test("an item that edits a locked shape changes nothing, and shakes it") {
         let h = try lockingHarness([Contributor(id: "widening") { r in
-            r.contextMenuForEveryShape { MenuItem("Widen") { $0.box?.size.width += 10 } }
+            r.forEveryShape { $0.contextMenu { MenuItem("Widen") { $0.box?.size.width += 10 } } }
         }])
         let box = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
         h.editor.lock([box])

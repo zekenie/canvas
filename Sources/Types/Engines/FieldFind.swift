@@ -9,6 +9,14 @@ extension PluginID {
     public static let fieldFind: PluginID = "field-find"
 }
 
+extension ShapeCapability {
+    /// The kinds whose shapes show what their `fieldValues` hold: those that say where their rows go, and
+    /// those that relate (an arrow's values, found on its relationship's pill).
+    static let showingFieldValues = ShapeCapability("showing field values") {
+        $0.holds(FieldValuesProperty.self) && ($0.registry.typeRows(of: $0.kind) != nil || $0.registry.relates($0.kind))
+    }
+}
+
 /// Field values, for Find: on every kind that says where its rows go and holds `fieldValues`, a text for each
 /// field of a note that is one that has a value, as its row shows it, and on every arrow that can be a relationship (a kind that relates
 /// and holds `fieldValues`) a text for each field of the types it is of that has a value, as its card says it (a hit
@@ -22,8 +30,8 @@ public struct FieldFindPlugin: ListedPlugin {
     public var id: PluginID { .fieldFind }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.findableTexts("field value",
-                                where: { $0.holds(FieldValuesProperty.self) && ($0.registry.typeRows(of: $0.kind) != nil || $0.registry.relates($0.kind)) },
+        registrar.forShapes(adopting: .showingFieldValues) { shown in
+            shown.findableTexts("field value",
                                 // A relationship's mark is its chip, which keeps its size on the screen: laid out again at each zoom.
                                 followsZoom: true,
                                 affected: { changes, context in context.service(RowBook.self)?.reached(by: changes) ?? [] },
@@ -50,21 +58,24 @@ public struct FieldFindPlugin: ListedPlugin {
                                     let place = rect.offsetBy(dx: -bounds.minX, dy: -bounds.minY)
                                     return ranges.map { _ in [place] }
                                 })
+        }
         // A relationship type is a pill with its name on it, and its title pill is hidden (the capsule is the name), so
         // Titles gives Find no text for it: its name is found here, a hit ringing the capsule, which is the shape's whole box.
-        registrar.findableTexts("relationship type name", where: { $0.holds(TypeSchemaProperty.self) && $0.holds(RelationshipProperty.self) },
-                                look: .ring,
-                                texts: { record, context in
-                                    guard record[RelationshipProperty.self] == true, let title = context.registry.title(of: record) else { return [] }
-                                    return [FindableText(field: TitleProperty.key.rawValue, text: title)]
-                                },
-                                rects: { record, _, ranges, context in
-                                    guard let bounds = context.editor.shapeContext.geometry(of: record.id)?.bounds, !bounds.isNull else {
-                                        return ranges.map { _ in [] }
-                                    }
-                                    let ring = CGRect(origin: .zero, size: bounds.size)
-                                    return ranges.map { _ in [ring] }
-                                })
+        registrar.forShapes(holding: RelationshipProperty.self) { relationshipTypes in
+            relationshipTypes.findableTexts("relationship type name",
+                                            look: .ring,
+                                            texts: { record, context in
+                                                guard record[RelationshipProperty.self] == true, let title = context.registry.title(of: record) else { return [] }
+                                                return [FindableText(field: TitleProperty.key.rawValue, text: title)]
+                                            },
+                                            rects: { record, _, ranges, context in
+                                                guard let bounds = context.editor.shapeContext.geometry(of: record.id)?.bounds, !bounds.isNull else {
+                                                    return ranges.map { _ in [] }
+                                                }
+                                                let ring = CGRect(origin: .zero, size: bounds.size)
+                                                return ranges.map { _ in [ring] }
+                                            })
+        }
     }
 }
 

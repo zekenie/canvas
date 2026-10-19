@@ -27,9 +27,11 @@ private struct CountingLookPlugin: CanvasPlugin {
     var id: PluginID { "counting-look" }
     func register(into registrar: inout PluginRegistrar) {
         let count = count
-        registrar.titlePillLook(forShapesHolding: IsAProperty.self) { _, _, _ in
-            count.asked += 1
-            return nil
+        registrar.forShapes(holding: IsAProperty.self) { scope in
+            scope.titlePillLook { _, _, _ in
+                count.asked += 1
+                return nil
+            }
         }
     }
 }

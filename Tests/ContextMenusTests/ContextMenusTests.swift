@@ -261,13 +261,15 @@ import TestKit
 ])
 
 @MainActor let contributionTests = Suite("Context menu contributions", [
-    test("groups sort by order, then first appearance, with a separator between; every shape's items follow a kind's own") {
+    test("groups sort by order, then first appearance, with a separator between; a scope's items follow a kind's own") {
         let h = try harness([
             Contributor(id: "power") { r in r.contextMenu(Lamp.self) { MenuItem("Timer", in: PowerMenuGroup.self) { _ in } } },
             Contributor(id: "every") { r in
-                r.contextMenuForEveryShape {
-                    MenuItem("Late", in: LateMenuGroup.self) { _ in }
-                    MenuItem("Inspect") { _ in }
+                r.forEveryShape {
+                    $0.contextMenu {
+                        MenuItem("Late", in: LateMenuGroup.self) { _ in }
+                        MenuItem("Inspect") { _ in }
+                    }
                 }
             },
         ])
@@ -277,21 +279,23 @@ import TestKit
                     ["Turn Off", "Brighter", "Level ▸", "  ✓ 1", "  2", "  3", "Inspect", "—", "Timer", "—", "Late", "—", "Delete"])
         expectEqual(try require(h.secondaryClick(at: middle(1))).outline, ["Inspect", "—", "Late", "—", "Delete"])
     },
-    test("every shape's items can pick kinds by their definition, and so by capability") {
+    test("a scope's items go on the kinds it reaches: by capability, or by an added property") {
         let h = try harness([Contributor(id: "lamps-only") { r in
-            r.contextMenuForEveryShape(where: { $0 is LampDefinition }) { MenuItem("Dim") { _ in } }
+            r.forShapes(adopting: LampDefinition.self) { $0.contextMenu { MenuItem("Dim") { _ in } } }
         }])
         h.add(Lamp(slot(0)))
         h.add(Box(slot(1)))
         expect(try require(h.secondaryClick(at: middle(0))).outline.contains("Dim"))
         expectEqual(try require(h.secondaryClick(at: middle(1))).outline, ["Delete"], "no Dim on a box")
     },
-    test("a perform gets the shapes it's for, in selection order, once per contribution; a kind's own item replaces every shape's") {
+    test("a perform gets the shapes it's for, in selection order, once per contribution; a kind's own item replaces a scope's") {
         let log = PerformLog()
         let h = try harness([
             Contributor(id: "count") { r in
-                r.contextMenuForEveryShape {
-                    MenuItem("Count") { ids, editor in log.runs.append("every \(ids.count) at \(editor.revision)") }
+                r.forEveryShape {
+                    $0.contextMenu {
+                        MenuItem("Count") { ids, editor in log.runs.append("every \(ids.count) at \(editor.revision)") }
+                    }
                 }
                 r.contextMenu(Lamp.self) {
                     MenuItem("Count") { ids, _ in log.runs.append("lamp \(ids.count)") }
@@ -306,24 +310,67 @@ import TestKit
         try require(h.secondaryClick(at: middle(1))).choose("Count")
         expectEqual(log.runs, ["every 2 at \(revision)", "lamp 1"])
     },
-    test("two plugins can't add one item to a kind, nor one to every shape; a builder can't repeat one in a submenu") {
+    test("two plugins can't add one item to a kind, nor in one scope, nor in two scopes that reach one kind; a builder can't repeat one in a submenu") {
         expectThrows(RegistryError.conflict(point: "ShapeContextMenus", key: "lamp Turn On", plugins: ["appliances", "more"])) {
             _ = try harness([Contributor(id: "more") { r in r.contextMenu(Lamp.self) { MenuItem("Turn On") { _ in } } }])
         }
-        expectThrows(RegistryError.conflict(point: "ShapeContextMenus", key: "* Inspect", plugins: ["a", "b"])) {
-            _ = try harness([Contributor(id: "a") { $0.contextMenuForEveryShape { MenuItem("Inspect") { _ in } } },
-                             Contributor(id: "b") { $0.contextMenuForEveryShape { MenuItem("Inspect") { _ in } } }])
+        expectThrows(RegistryError.conflict(point: "ShapeContextMenus", key: "every shape Inspect", plugins: ["a", "b"])) {
+            _ = try harness([Contributor(id: "a") { $0.forEveryShape { $0.contextMenu { MenuItem("Inspect") { _ in } } } },
+                             Contributor(id: "b") { $0.forEveryShape { $0.contextMenu { MenuItem("Inspect") { _ in } } } }])
+        }
+        expectThrows(RegistryError.conflict(point: "ShapeContextMenus", key: "lamp Inspect", plugins: ["a", "b"])) {
+            _ = try harness([Contributor(id: "a") { $0.forEveryShape { $0.contextMenu { MenuItem("Inspect") { _ in } } } },
+                             Contributor(id: "b") { $0.forShapes(adopting: LampDefinition.self) { $0.contextMenu { MenuItem("Inspect") { _ in } } } }])
         }
         expectThrows(RegistryError.conflict(point: "ShapeContextMenus", key: "box Sort ▸ By Name", plugins: ["dup", "dup"])) {
             _ = try harness([Contributor(id: "dup") { r in
                 r.contextMenu(Box.self) { Submenu("Sort") { MenuItem("By Name") { _ in }; MenuItem("By Name") { _ in } } }
             }])
         }
-        // Another group's item of that name is another item, and every shape's may share a kind's.
+        // Another group's item of that name is another item, and a scope's may share a kind's.
         _ = try harness([Contributor(id: "more") { r in
             r.contextMenu(Lamp.self) { MenuItem("Turn On", in: PowerMenuGroup.self) { _ in } }
-            r.contextMenuForEveryShape { MenuItem("Turn On") { _ in } }
+            r.forEveryShape { $0.contextMenu { MenuItem("Turn On") { _ in } } }
         }])
+    },
+    test("a scope's items for the canvas are in a menu whose every shape it reaches, in plugin order among the rest; never on empty canvas") {
+        let log = PerformLog()
+        let h = try harness([
+            Contributor(id: "first") { r in r.contextMenuForCanvas { MenuItem("First", in: PowerMenuGroup.self, when: { !$0.shapes.isEmpty }) { _, _ in } } },
+            Contributor(id: "lit") { r in
+                r.forShapes(adopting: LampDefinition.self) {
+                    $0.contextMenuForCanvas {
+                        MenuItem("Dim All", in: PowerMenuGroup.self) { ids, _ in log.runs.append("dim \(ids.count)") }
+                    }
+                }
+            },
+            Contributor(id: "last") { r in r.contextMenuForCanvas { MenuItem("Last", in: PowerMenuGroup.self, when: { !$0.shapes.isEmpty }) { _, _ in } } },
+        ])
+        let a = h.add(Lamp(slot(0)))
+        let b = h.add(Lamp(slot(1)))
+        let box = h.add(Box(slot(2)))
+        let lamp = try require(h.secondaryClick(at: middle(0)))
+        expectEqual(lamp.outline.filter { ["First", "Dim All", "Last"].contains($0) }, ["First", "Dim All", "Last"])
+        h.editor.selectedShapeIDs = [a, b]
+        let lamps = try require(h.secondaryClick(at: middle(1)))
+        expectEqual(lamps.outline.filter { ["First", "Dim All", "Last"].contains($0) }, ["First", "Dim All", "Last"])
+        try lamps.choose("Dim All")
+        expectEqual(log.runs, ["dim 2"], "once, with the menu's shapes")
+        h.editor.selectedShapeIDs = [a, box]
+        expectEqual(try require(h.secondaryClick(at: middle(2))).outline, ["First", "Last", "—", "Delete"], "a box it doesn't reach")
+        h.editor.selectedShapeIDs = []
+        expectEqual(try require(h.secondaryClick(at: middle(2))).outline, ["First", "Last", "—", "Delete"])
+        expectEqual(try require(h.secondaryClick(at: emptyCanvas)).outline, ["Select All"], "no shapes, so no scope's")
+    },
+    test("a scope's item for the canvas claims its group and id on each kind it reaches, as every menu's does") {
+        expectThrows(RegistryError.conflict(point: "CanvasContextMenu", key: "lamp Dim All", plugins: ["every", "lit"])) {
+            _ = try harness([Contributor(id: "every") { r in r.contextMenuForCanvas { MenuItem("Dim All") { _, _ in } } },
+                             Contributor(id: "lit") { r in r.forShapes(adopting: LampDefinition.self) { $0.contextMenuForCanvas { MenuItem("Dim All") { _, _ in } } } }])
+        }
+        let report = try harness([Contributor(id: "lit") { r in
+            r.forShapes(adopting: LampDefinition.self) { $0.contextMenuForCanvas { MenuItem("Dim All") { _, _ in } } }
+        }]).editor.registry.report
+        expectEqual(report.split(separator: "\n").first { $0.hasPrefix("lit") }.map(String.init), "lit            CanvasContextMenu → every shape adopting LampDefinition")
     },
     test("the report: the plugin claims the secondary click, and each kind's items are one line") {
         let report = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), AppliancesPlugin()]).report

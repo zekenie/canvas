@@ -20,7 +20,7 @@ import TestKit
         expectThrows(RegistryError.conflict(point: "ShapeAdornments", key: "sign AdornmentsTests.Flag", plugins: ["signs", "b"])) {
             _ = try Registry(plugins: base + [Contributor(id: "b") { $0.adornment(Flag.self, on: Sign.self) { _ in flagLabel } }])
         }
-        expectThrows(RegistryError.conflict(point: "ShapeAdornments", key: "* AdornmentsTests.Flag", plugins: ["a", "b"])) {
+        expectThrows(RegistryError.conflict(point: "ShapeAdornments", key: "every shape AdornmentsTests.Flag", plugins: ["a", "b"])) {
             _ = try Registry(plugins: base + [everyShape(Flag.self, id: "a") { _ in flagLabel }, everyShape(Flag.self, id: "b") { _ in flagLabel }])
         }
     },
@@ -43,7 +43,9 @@ import TestKit
     test("the report names each adornment and what it's on") {
         let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), AdornmentsPlugin(), Contributor(id: "flags") { r in
             r.adornment(Flag.self, on: Box.self) { _ in flagLabel }
-            r.adornmentForEveryShape(Pin.self) { _, _ in pinLabel }
+            r.forEveryShape { scope in
+                scope.adornment(Pin.self) { _, _ in pinLabel }
+            }
         }])
         expectEqual(registry.report, """
         core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View

@@ -23,7 +23,9 @@ extension Pins: EditorService {}
 @MainActor func pinsPlugin() -> Contributor {
     Contributor(id: "pins") { r in
         r.service { _ in Pins() }
-        r.adornmentForEveryShape(Pin.self) { shape, context in context.service(Pins.self)?.pinned.contains(shape.id) == true ? pinLabel : nil }
+        r.forEveryShape { scope in
+            scope.adornment(Pin.self) { shape, context in context.service(Pins.self)?.pinned.contains(shape.id) == true ? pinLabel : nil }
+        }
     }
 }
 

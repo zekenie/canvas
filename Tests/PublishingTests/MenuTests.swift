@@ -14,7 +14,7 @@ private let spot = CGPoint(x: 150, y: 150)
 @MainActor let menuTests = Suite("Publishing from the context menu", [
     test("a shape's menu offers Make Public, then Make Private, after every other group and before Delete; a public shape is `public: true`, and going private takes it away") {
         let h = try publishingHarness([Contributor(id: "widening") { r in
-            r.contextMenuForEveryShape { MenuItem("Widen") { $0.box?.size.width += 10 } }
+            r.forEveryShape { $0.contextMenu { MenuItem("Widen") { $0.box?.size.width += 10 } } }
         }])
         let plaque = h.add(Plaque(plaqueFrame))
         let menu = try require(h.secondaryClick(at: spot))

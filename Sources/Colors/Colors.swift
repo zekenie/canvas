@@ -143,7 +143,10 @@ public struct ColorsPlugin: ListedPlugin {
             return book
         }
         registerColorTints(into: &registrar)
-        registerColorCommand(into: &registrar)
-        registerColorMenu(into: &registrar)
+        // `/color` and Color ▸ go on the kinds that have colors, and no other.
+        registrar.forShapes(holding: ColorProperty.self) { colored in
+            registerColorCommand(into: &colored)
+            registerColorMenu(into: &colored)
+        }
     }
 }

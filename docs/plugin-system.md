@@ -268,9 +268,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Let a box kind's shapes be resized: eight handles, ⇧ for proportions, ⌥ from the center, a minimum size | Selection's `x.resizable(minimumSize:)` | [Resizing](#resizing) |
 | Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [Types](#the-full-showcase-a-types-schema-tab) |
 | Add items to a kind's right-click menu | `x.contextMenu { MenuItem(...) }` | [Boards](#contributing) |
-| Add a right-click item to every shape, or every kind with a capability | `registrar.contextMenuForEveryShape(where:)` | [Reordering](#every-shape-reordering) |
+| Add a right-click item to the kinds a scope reaches: those that hold a property, or have a capability | `registrar.forShapes(adopting: .restackable) { $0.contextMenu { … } }`, `forShapes(holding:)` | [Reordering](#many-kinds-reordering), [Scopes](#scopes) |
 | Let a shape offer a command typed on a line of its text (`/lock`), conditionally, as menu items are | `x.slashCommands { SlashCommand("turn-on", when: { !$0.isOn }) { lamp, _ in … } }`; `registrar.slashCommands(K.self)` or `slashCommands(of: P.self)` for another plugin's kind | [Registering commands](#registering-commands) |
-| Offer a command to every shape that holds an added property, and only those | `registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) { … }` | [Registering commands](#registering-commands), [Locking](#locking) |
+| Offer a command to every shape that holds an added property, and only those | `registrar.forShapes(holding: LockedProperty.self) { $0.slashCommands { … } }` | [Registering commands](#registering-commands), [Locking](#locking) |
 | Ask what a shape offers as slash commands, or run one without typing it | `editor.slashCommands?.commands(for:)`, `run(_:on:with:)` | [What a shape offers](#what-a-shape-offers-and-running-a-command) |
 | Type slash commands in a text view of your own | Make a `SlashCommandTyping(over:owner:commands:)` and call `didType`, `didChange(isEdit:)` and `takesKey`; return its `window` as the view's `caretListWindow` | [Hosting in a text view](#hosting-in-a-text-view-slashcommandtyping) |
 | Say how a kind's shapes appear in the table of contents | `x.contentsRow { ContentsLabel(...) }` | [StickyNotes](#the-table-of-contents) |
@@ -279,16 +279,17 @@ Once one plugin works, the question is which piece the next feature needs.
 | Rename a shape in the detail panel's header | `x.details(header: { $x in TitleHeader($x) }) {}` | [StickyNotes](#renaming-in-the-header-titleheader) |
 | Name a kind's rows in the table of contents from another plugin | `x.contentsTitle { ... }` | [Titles](#a-horizontal-plugin) |
 | Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
-| Warn about something on a shape, without running again on every drag event | A validation rule, `x.validate(ignoringMoves: true) { … }` (or `validateEveryShape`), for one that reads what shapes are, never where | [Validation](#a-horizontal-plugin), [Mentions' warnings](#warnings-mentions-that-cant-work) |
+| Warn about something on a shape, without running again on every drag event | A validation rule, `x.validate(ignoringMoves: true) { … }` (or `scope.validate`, in `registrar.forShapes(holding: P.self)` for the kinds that opted in), for one that reads what shapes are, never where | [Validation](#a-horizontal-plugin), [Mentions' warnings](#warnings-mentions-that-cant-work) |
 | Give the shapes of the kinds that opt in something to hold (a title) | A `ShapeProperty`, `registrar.declare`, and `optIn(to:)` from the concern's sugar | [Titles](#added-properties) |
 | Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, with `details(of: P.self)` over the concern's added property | [Types](#types-shapes-that-hold-a-schema) |
 | Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Boards](#a-feature-that-comes-with-menu-items-boards) |
 | Edit an added property in the panel, or from the menu | `details(of: P.self) { DetailSection ... }`, `contextMenu(of: P.self) { MenuItem ... }` | [Added properties](#added-properties), [a flag](#something-the-user-turns-on) |
+| Put what a concern shows on the shapes of the kinds that opted into it (a chip, a row's mark, a panel section, a rule, found text, edges), whoever defines the kinds | `registrar.forShapes(holding: P.self) { scope in … }`; `forShapes(adopting:)` for the kinds a capability picks; `forEveryShape` only for what every shape has by its nature | [Scopes](#scopes), [Locking](#locking) |
 | Show a section in the panel only while a service says so (what mentions the shape) | `DetailSection(…).shownWhile { shape, context in … }`, at order 300 for a tab that comes and goes | [Contributing](#contributing-two-points-and-their-sugar), [Mentions](#what-mentions-a-shape) |
 | Edit text that isn't a string in the panel, with a text view of your own | An `EditingTextView` subclass adopting `DetailTextContent`, in a `DetailTextBox` | [Text of a plugin's own](#text-of-a-plugins-own-detailtextbox) |
 | Opt another plugin's kind into a concern | From a plugin whose module imports both (a kind's own plugin opts in with the concern's sugar, `patch.title()`): `registrar.optIn(Kind.self, to:)` for an added property, `registrar.title(Kind.self)` and the like for the sugar | [Titles](#a-horizontal-plugin) |
 | Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine`, [TableOfContents](../Sources/TableOfContents/ContentsState.swift)' `ContentsState` |
-| Show something small on shapes, just outside them or on a corner (a pill, a tally, a lock), on kinds you define or not | An `Adornment` type; `x.adornment`, `registrar.adornment(_:on:)` or `registrar.adornmentForEveryShape(_:where:)`, returning an `AdornmentLabel` | [Adornments](#adornments), [Titles](#a-horizontal-plugin) |
+| Show something small on shapes, just outside them or on a corner (a pill, a tally, a lock), on kinds you define or not | An `Adornment` type; `x.adornment`, `registrar.adornment(_:on:)` or `scope.adornment` in `registrar.forShapes(holding: P.self)` for the kinds that opted in, returning an `AdornmentLabel` | [Adornments](#adornments), [Titles](#a-horizontal-plugin) |
 | Let the user put a flag on a shape, and show it | An added property, a menu item that sets it, and an adornment whose label reads it | [Something the user turns on](#something-the-user-turns-on) |
 | Keep a service's state for going back to a board | `EditorService.boardWillChange` and `boardDidChange`, with a `BoardStash` (by default a switch is nothing to a service) | [Showing a board](#showing-a-board) |
 | Write to a shape on a board that isn't shown (an answer that lands late), as an undo step made there | `editor.transact(on: board, "Name") { … }`; services hear it in `ChangeSet.boardsChanged` and `elsewhere` | [Boards that aren't shown](#boards-that-arent-shown) |
@@ -342,11 +343,11 @@ Once one plugin works, the question is which piece the next feature needs.
 | Restrict what a text may mention to some kinds | `ScopedMentionText<Only<Kind>>`, or a declared scope: `registrar.mentionScope(S.self)` and `x.mentionable(in: S.self)` | [Scopes](#scopes-what-a-text-may-mention) |
 | Hold names of shapes that may outlive them (a mention), renamed when copied with them | A value that adopts `ShapeNaming`; `registry.namingKinds` and `record.forEachNamingValue(in:)` to read them | [Values that name shapes](#values-that-name-shapes) |
 | Ask what's connected to a shape, and how (arrows, mentions), anywhere in the file | `editor.topology?.neighbors(of:)`, `edges(of:_:types:)` with an `EdgeTypeFilter` | [Topology](#the-index-topologyindex) |
-| Say that a kind's shapes connect others: a new kind of edge | An `EdgeType`, `registrar.edgeType(T.self)`, and a source: `x.edges { … }`, `registrar.edges(K.self)`, or `registrar.edges(in: P.self, as: T.self)` over an added property that names shapes | [Topology](#sources) |
+| Say that a kind's shapes connect others: a new kind of edge | An `EdgeType`, `registrar.edgeType(T.self)`, and a source: `x.edges { … }`, `registrar.edges(K.self)`, `scope.edges { … }` in a `forShapes` for the kinds a scope reaches, or `registrar.edges(in: P.self, as: T.self)` over an added property that names shapes | [Topology](#sources) |
 | Ask which shape a shape is inside (its container, else the owner of its board, at any depth) | `editor.topology?.parent(of:)`, `ancestors(of:)`, `isInside(_:_:)` | [Containment](#containment) |
 | Read edges and containment off the main actor, as they were at one instant | `topology.snapshot()`, a Sendable `TopologySnapshot` | [A snapshot for other threads](#a-snapshot-for-other-threads) |
 | Find the shapes of a file a query matches (by kind, title, attribute, what's inside what, what connects to what), from a plugin or an agent | `editor.queries?.run(QueryRequest(#"sticky-note:mentions("Auth")"#))`, answered off the main actor; `canvas query` | [Queries](#queries) |
-| Make text a kind draws findable with ⌘F, highlighted where it's drawn | `registrar.findableTexts(_:where:…)` (Find), or `x.findableTexts(_:…)` for a kind's own: its texts and where each range is drawn | [Find](#find) |
+| Make text a kind draws findable with ⌘F, highlighted where it's drawn | `scope.findableTexts(_:…)` (Find) in a `forShapes` for the kinds a scope reaches, or `x.findableTexts(_:…)` for a kind's own: its texts and where each range is drawn | [Find](#find) |
 | Keep the shapes some queries match (what a plugin that stores answers asks, many at once, ids only), or check a query's titles before keeping it | `await editor.queries?.matches([QueryMatchRequest(text, edges: .recorded, limit: 50) { admit($0) }])`, `checkNames(plan)` | [Many at once](#many-at-once-edge-views-and-waiting) |
 | Outline what's connected to the hovered shape, at a glance, in a color for each way (a light: a title, a color and a query), on the canvas and in the minimap | `NeighborsPlugin()`, and a light from each plugin that owns a kind of edge, `registrar.neighborLight(_:color:query:between:caption:)`: Neighbors asks the engine, places what's on another board on its card, and hands the core tinted outlines | [Neighbors](#neighbors) |
 | List what's connected to the selected shape, by the same ways, in its panel (each list folding and searchable, a light's caption under its rows), with what the shape is inside and what it holds | `NeighborDetailsPlugin()`: the Connections tab (`NeighborsTab`), on every shape, always; `NeighborList` (`editor.neighborList`) | [Neighbors](#neighbors) |
@@ -359,8 +360,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Keep something about any shape beside its props (where it came from) | A `ShapeMetaKey`, and `record.meta[Key.self]` | [Metadata](#metadata) |
 | Keep a value on the file itself, no shape's and no board's (the colors a file names) | A `FileProperty`, `registrar.declare(file:)`; read `editor.file[P.self]`, write `transaction.setFileValue(P.self, to:)` | [File values](#file-values) |
 | Add a right-click item that isn't one shape's, in every menu and on empty canvas | `registrar.contextMenuForCanvas { ... }` | [The clipboard](#the-clipboard) |
-| Show a shape's state in the panel: at its foot, or in a tab that shows while there's something to say | `registrar.detailStatusForEveryShape`, with `in: SomeTab.self` for a tab | [Validation's Issues tab](#a-tab-of-status-lines-validations-issues-tab) |
-| Show a shape's state at a glance in the table of contents: a dot or a symbol on its row | `registrar.contentsMarkForEveryShape` | [Validation's dots](#marks-validations-dots) |
+| Show a shape's state in the panel: at its foot, or in a tab that shows while there's something to say | `scope.detailStatus { … }`, with `in: SomeTab.self` for a tab, in `registrar.forEveryShape` (or a `forShapes` for the kinds a scope reaches) | [Validation's Issues tab](#a-tab-of-status-lines-validations-issues-tab) |
+| Show a shape's state at a glance in the table of contents: a dot or a symbol on its row | `scope.contentsMark { … }`, in `registrar.forEveryShape`, or `forShapes(holding: P.self)` for the kinds that opted in | [Validation's dots](#marks-validations-dots) |
 | Change a shipped kind's props | A migration in its `static let migrations`, and a fixture for the new version | [Boards on disk](#boards-on-disk) |
 | Move a kind's own member onto an added property | `PropsMigration.handOver("title", to: TitleProperty.self)` in the kind's migrations | [StickyNotes](#boards-on-disk) |
 | Change how an added property's value encodes | A `PropertyMigration` in the property's `migrations`, and a fixture in `Fixtures/added` | [Boards on disk](#boards-on-disk) |
@@ -425,7 +426,7 @@ holds three more groups, which are not interfaces a kind plugs into but are stil
 - **Things you do**: a palette, a command or a gesture the person uses, that no kind opts into and
   nothing builds on. Jump To (⌘K) is a palette over every titled shape, Moving is two slash commands
   and the table of contents' drops, Snapping is what a drag lines up with, the clipboard is cut, copy
-  and paste, and [Reordering](#every-shape-reordering) is every kind's Arrange menu: each works on the
+  and paste, and [Reordering](#many-kinds-reordering) is the Arrange menu of the kinds painted in document order: each works on the
   shapes its rule covers (Snapping: those with a frame) and no kind opts in. Jump To reaches into
   Titles and Boards itself; it isn't an interface, and a point for it would have one contributor,
   Titles: a point made only to change a module's place is the wrong fix.
@@ -1267,7 +1268,7 @@ extension PluginRegistrar {     // for a kind another plugin registers
                                               contents: Bool = true, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) { ... }
 }
 
-/// ④ The consumers: lookups, and the pill, an adornment Titles places on every titled shape.
+/// ④ The consumers: lookups, and the pill, an adornment Titles places on the shapes of the kinds that show one.
 extension Registry {
     public func title(of shape: AnyShapeRecord) -> String? { ... }     // on one line; nil if there's none, or it's blank
     public func titleIsDerived(_ kind: ShapeKind) -> Bool { ... }      // worked out by `title { … }`, not only named
@@ -1279,21 +1280,31 @@ extension TitlePill: Adornment {
     public static var order: Int { 50 }                                // a horizontal's feature
 }
 
+/// A fact about kinds, stated once by the module that owns it: the phrase names it, and the report
+/// shows it. The kinds whose title shows a pill (not `pill: false`).
+extension ShapeCapability {
+    public static let titlePill = ShapeCapability("with a title pill") { $0.registry.showsTitlePill($0.kind) }
+}
+
 public struct TitlesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .titles }
     public func register(into registrar: inout PluginRegistrar) {
         registrar.declare(TitleProperty.self)
-        // On every shape whose kind's title shows a pill (not `pill: false`): its title, after the
+        // On the shapes of the kinds whose title shows a pill (not `pill: false`): its title, after the
         // kind's symbol if it asks (`symbolInPill`); untitled, the kind's placeholder, dimmed, if it
         // gives one (`placeholderInPill`: `AdornmentLabel(placeholder:)`); or none.
-        registrar.adornmentForEveryShape(TitlePill.self, where: { $0.registry.showsTitlePill($0.kind) }) { shape, context in
-            context.registry.titlePill(of: shape)
+        registrar.forShapes(adopting: .titlePill) { pilled in
+            pilled.adornment(TitlePill.self) { shape, context in
+                context.registry.titlePill(of: shape)
+            }
         }
         // `/title Groceries` on a line of a shape's text, on the kinds that can be named (a derived
         // title is renamed where it's derived from).
-        registrar.slashCommandsForEveryShape(where: { $0.holds(TitleProperty.self) }) {
-            SlashCommand("title", argument: "title") { shape, arguments in shape[TitleProperty.self] = arguments.text }
+        registrar.forShapes(holding: TitleProperty.self) { named in
+            named.slashCommands {
+                SlashCommand("title", argument: "title") { shape, arguments in shape[TitleProperty.self] = arguments.text }
+            }
         }
     }
 }
@@ -1338,7 +1349,8 @@ splits and joins none of them. What a title brings:
   "…". The row is the shape's width, less what's at its right end (a [lock](#locking)) and 4 points
   before it, so locking a note with a long title shortens its pill by 22 points, until the lock has
   gone; with under 30 points left (44 with a symbol before the title), there's no pill. The pill is `TitlePill`, an
-  [adornment](#adornments): Titles places it on every shape whose kind's title shows one, though it
+  [adornment](#adornments): Titles places it on every shape whose kind's title shows one
+  (`forShapes(adopting: .titlePill)`: a fact about kinds Titles states, [Scopes](#scopes)), though it
   defines no kind, and Adornments lays it out with whatever else the shape shows, so it never meets
   the lock. It keeps its size on screen, shrinking with the shapes below 25% zoom (a shape's
   [skeleton](#skeletons) never has one: below 35% no adornment is shown, and the title is
@@ -1394,10 +1406,11 @@ splits and joins none of them. What a title brings:
   row is the kind's own, and a name takes its place. A kind that doesn't ask shows no pill on an
   untitled shape, and a blank placeholder is none.
 - **A look for the pill of some shapes**, from a plugin that is not the kind's (`TitlePillLooks`, an
-  extension point in Titles, so Titles knows no type): `registrar.titlePillLook(forShapesHolding:
-  TypeSchemaProperty.self) { shape, title in TitlePillLook(symbol: "curlybraces", tint: …,
-  placeholder: "Untitled") }`, asked of the shapes of every kind that holds the property (opted
-  into it) and of no other kind, and `x.titlePillLook { shape, title in … }` on a kind's own
+  extension point in Titles, so Titles knows no type): `registrar.forShapes(holding:
+  TypeSchemaProperty.self) { $0.titlePillLook { shape, title in TitlePillLook(symbol: "curlybraces",
+  tint: …, placeholder: "Untitled") } }`, asked of the shapes of every kind that holds the property
+  (opted into it) and of no other kind (`TitlePillLooks` takes scopes), and
+  `x.titlePillLook { shape, title in … }` on a kind's own
   registrar. A `TitlePillLook` has a `symbol` (first in the pill, in place of the kind's), a `tint`
   (an `AdornmentTint`), a `placeholder` (what an untitled shape's pill says, dimmed; the pill then
   shows where the kind gave none), a `coverSurface` (what the shape's skeleton is drawn on, for its
@@ -1409,8 +1422,8 @@ splits and joins none of them. What a title brings:
   takes a third argument, `{ shape, title, context in … }`, and asks `context.service(S.self)`: the
   editor's services where an editor is asking, none for a cover (which a frame asks for every titled
   skeleton in view), so it answers from the shape alone there, and the cover stays for a hidden pill. The registry report
-  shows it as `title pill look → every shape` or `→ note`; a list with a look and no `TitlesPlugin`
-  is refused.
+  shows it as `title pill look → every shape holding schema` or `→ note`; a list with a look and no
+  `TitlesPlugin` is refused.
 - **Its row's name** in [the table of contents](#the-table-of-contents), through TableOfContents'
   `ContentsTitles`, which names a kind's rows without replacing them: a titled note is listed by
   its title; an untitled one by its text, as before. `contents: false`
@@ -1439,10 +1452,12 @@ The mechanics:
   owner isn't installed is `RegistryError.ownerNotInstalled` at startup, so installing StickyNotes
   without Validation fails loudly instead of silently dropping its rules. Plugins never list their
   dependencies a second time.
-- **Targets.** A contribution is for one kind (`.kind(k)`, stamped for you inside `shape { }`) or
-  for every kind (`.any`, the `"*"` wildcard). `contributions(to:for:)` returns the kind's own
-  first, then the wildcards, each in plugin order. A contribution for a kind nobody registers is
-  `RegistryError.unknownKind`.
+- **Targets.** A contribution is for one kind (`.kind(k)`, stamped for you inside `shape { }`), for
+  the kinds a scope names (`.holding(key)`, those that hold an added property; `.adopting(capability)`,
+  those a capability picks: [Scopes](#scopes)), or for every kind (`.any`, the `"*"` wildcard).
+  `contributions(to:for:)` returns exactly what reaches the kind: its own first, then those for
+  every kind and those whose scope reaches it, each in plugin order. A contribution for a kind
+  nobody registers is `RegistryError.unknownKind`.
 - **List or keyed.** A plain `ExtensionPoint` collects a list: validation rules, overlays. A
   `KeyedExtensionPoint` says which keys each contribution claims. Two claims to the same key are
   `RegistryError.conflict`, so plugin order never picks a winner. `[target]` means one per kind.
@@ -1476,7 +1491,8 @@ The mechanics:
   naming what each commit changes there (below). Design your contexts the same way.
 
 [Validation](../Sources/Validation/Validation.swift) is the full-size version of the same pattern:
-per-kind rules, rules for another plugin's kind, rules for every kind, an engine, and an overlay.
+per-kind rules, rules for another plugin's kind, rules for the kinds that opted into a feature, rules
+for every kind, an engine, and an overlay.
 Its model is ESLint's: a rule finds issues on a shape, each an error or a warning, two channels of
 one thing (`.error("A schema must be a JSON object.")`, `.warning("“age” is required, but isn’t a
 property.")`). An error makes the shape invalid; a warning only flags it. A third level under a
@@ -1484,7 +1500,7 @@ warning, `.incomplete("…")`, says the shape still needs something; the engine 
 the shape stays valid, and it shows nowhere on the board (no ring, no dot, no line of the Issues tab:
 `ValidationResult.worst` and `worstFirst` are of the issues that show, `Severity.shows`). It is for
 whoever asks: a query's `:incomplete`, a run's warning of a shape it did not write (not of one the run restated whose row's `problems` say it). Its words may be one rename of a name they mention behind in `results` (`recheckWords`); `result(for:)` has them current. Validation has one rule
-of its own, for every kind: each place a shape breaks its kind's schema is a warning, about the
+of its own, for every kind (`forEveryShape`: every shape has a schema): each place a shape breaks its kind's schema is a warning, about the
 property it's in ([Checking shapes](#checking-shapes-against-their-schemas)). The overlay outlines
 a shape with issues in its worst one's color, red for an error and orange for warnings alone, and
 a shape without issues not at all, nor one being edited, whose text is still being written. In
@@ -1545,8 +1561,13 @@ A drag commits every shape it drags, on every event, so a rule whose issues foll
 shapes are, never where, says so, and a drag doesn't run it:
 
 ```swift
-registrar.validateEveryShape(ignoringMoves: true) { shape, context in ... }   // x.validate(ignoringMoves:), registrar.validate(P.self, ignoringMoves:)
+registrar.forShapes(holding: P.self) { $0.validate(ignoringMoves: true) { shape, context in ... } }   // or x.validate(ignoringMoves:), registrar.validate(K.self, ignoringMoves:)
 ```
+
+A rule for the shapes of other kinds says which (`ValidationRules` takes [scopes](#scopes)):
+`forShapes(holding:)` for the kinds that opted into a feature, `forShapes(adopting:)` for the kinds a
+capability picks, `forEveryShape` for what every shape is checked for (its schema). One for every
+kind with no scope is refused.
 
 A commit that only moves shapes (`ChangeSet.moved`: `Transaction.moveBox`, which a drag and
 `translate` use) runs such a rule for none of them, neither the shapes it moved nor those whose
@@ -1561,9 +1582,11 @@ service of its own (`context.service(S.self)`), names, given each commit, the sh
 the commit may change without changing them or a shape they looked up, on any board:
 
 ```swift
-registrar.validateEveryShape(ignoringMoves: true, affected: { changes, editor in
-    editor.service(TitleIndex.self)?.affected(by: changes) ?? []
-}) { shape, context in ... }
+registrar.forShapes(adopting: .titled) { titled in
+    titled.validate(ignoringMoves: true, affected: { changes, editor in
+        editor.service(TitleIndex.self)?.affected(by: changes) ?? []
+    }) { shape, context in ... }
+}
 ```
 
 The engine asks it as it hears each commit (looking the service up has it hear the commit first, if
@@ -1581,11 +1604,13 @@ none: `canvas draw`'s checks), `service` is nil, and such a rule answers from th
 [`canvas draw`](#what-draw-takes-from-other-plugins), a dry run), are asked the same with `touches`:
 
 ```swift
-registrar.validateEveryShape(ignoringMoves: true, affected: { changes, editor in ... }, touches: { changes, shapes in
-    // changes: transaction.pending (added, changed, moved, removed; elsewhere for other boards).
-    // shapes: transaction.shapes (shapes.reading is the file mid-way; shapes.service(S.self) the committed service).
-    shapes.reading.map { FieldChecks.touched(by: changes, reading: $0) } ?? []
-}) { shape, context in ... }
+registrar.forShapes(holding: IsAProperty.self) { typeable in
+    typeable.validate(ignoringMoves: true, affected: { changes, editor in ... }, touches: { changes, shapes in
+        // changes: transaction.pending (added, changed, moved, removed; elsewhere for other boards).
+        // shapes: transaction.shapes (shapes.reading is the file mid-way; shapes.service(S.self) the committed service).
+        shapes.reading.map { FieldChecks.touched(by: changes, reading: $0) } ?? []
+    }) { shape, context in ... }
+}
 ```
 
 It answers the other shapes, on any board of the file, whose issues the rule may now find
@@ -1607,7 +1632,8 @@ that imports Validation (a list with Titles and no Validation leaves it out), wa
 whose title another shape in the file has:
 “Checkout” is another shape’s title too., about `title` where Titles keeps it (no field for a
 derived title). Titles as Titles reads them (`registry.title(of:)`: named or
-derived, folded), compared exactly, whatever the kinds; an untitled note's first line is no title.
+derived, folded), compared exactly, whatever the kinds that took a title (the rule is
+`forShapes(adopting: .titled)`); an untitled note's first line is no title.
 On every board the editor can show, but shapes kept aside. A warning: each shape is fine alone.
 
 - **The titles are the file's**, in a service of the plugin's (`TitleIndex`): read whole as the
@@ -1775,7 +1801,8 @@ A kind opts into a property once: its own opt-in and an every-shape one can't bo
 calls `optIn(to:)` itself: the horizontal's sugar does, and brings the rest. `note.title()` opts
 the note in, then contributes to Titles' point, which brings the pill and names the note's row
 ([Titles](#a-horizontal-plugin)); Locking opts every kind into `locked` with `optInEveryShape`
-([Locking](#locking)).
+([Locking](#locking)), and puts its chip and its mark only on the kinds that hold it:
+`registrar.forShapes(holding: LockedProperty.self)` ([Scopes](#scopes)).
 
 **Reading and writing.** A shape's value is `record[TitleProperty.self]`, on an
 `AnyShapeRecord` or a typed `ShapeRecord<StickyNote>`, beside its props; nil if it has none. It
@@ -1835,7 +1862,7 @@ property's value:
 | Sugar | For |
 |---|---|
 | `x.details(of: P.self) { sections }` | Sections over the value, on this kind's shapes that have one: what a horizontal's sugar contributes for the property it opts the kind into. |
-| `registrar.details(of: P.self) { sections }` | The same, on every shape that has one, whatever its kind. |
+| `registrar.details(of: P.self) { sections }` | The same, on every shape that has one, whatever its kind: the kinds that hold the property, a [scope](#scopes) (the report's `ShapeDetails → every shape holding schema`). |
 | `x.contextMenu(of: P.self) { items }`, `registrar.contextMenu(of: P.self) { items }` | Items over the value, on this kind's shapes, or every shape, that have one (a flag's Flagged, [below](#something-the-user-turns-on)). |
 
 A section gets a `ShapeBinding` of the value (`$flagged`, a `ShapeBinding<Bool>`), and
@@ -1977,7 +2004,7 @@ caller that keeps validators drops one on when a schema under one of them change
 resolver (`SchemaValidator(schema)`) a `$ref` outside the schema is "isn't in the schema", as it was.
 
 **Validation turns each violation into a warning.** The rule is Validation's own, for every kind
-(`ValidationRules` on its line of the report), after the kind's own rules: the violation's message,
+(`ValidationRules → every shape` on its line of the report), after the kind's own rules: the violation's message,
 about the property it's in (`ValidationIssue.field`). So a bound is a guideline a shape can
 break and still work: it's outlined orange, listed in its Issues tab, and dotted in the table of
 contents, and it saves as it is. A rule that should refuse a shape is the kind's, as an error. The
@@ -2063,8 +2090,8 @@ that both binds and names.)
 
   It can't look inside a type coded by hand, as it can't check its list.
 - **Reading them.** `registry.namingKinds` are the kinds whose props, or the added properties they
-  opt into, can hold names; no other shape holds one, so a plugin that follows names (Mentions' edges)
-  walks only those. `record.forEachNamingValue(in: registry) { property, value in
+  opt into, can hold names (the capability `.namingShapes`); no other shape holds one, so a plugin that
+  follows names (Mentions' edges) walks only those. `record.forEachNamingValue(in: registry) { property, value in
   value.forEachNamedShape { id in … } }` is each value in a shape that names shapes, with the
   property it's in: the kind's own in list order, then its added ones. A shape kept aside has none,
   and neither has an added value kept aside (a newer version's), which a copy doesn't rename either:
@@ -3507,7 +3534,7 @@ or status lines name them.
 
 | Point | Kind | Holds |
 |---|---|---|
-| `ShapeDetails` | keyed | A header and sections, one contribution per `details` call. Each section claims (target, tab, id), and a header claims its target, so two plugins adding a Color section to a kind's Style tab, or two headers for one kind, are a `conflict`. A kind's own section and an every-box one may share an id; both show. |
+| `ShapeDetails` | keyed | A header and sections, one contribution per `details` call. Each section claims (target, tab, id), and a header claims its target, so two plugins adding a Color section to a kind's Style tab, or two headers for one kind, are a `conflict`. A kind's own section and a scoped one (an every-box one, say) may share an id; both show. |
 | `DetailStatuses` | list | Status lines, the shape's state rather than its settings, as a `DetailStatusContribution`: where they go (the footer, or a tab) and `@MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]`. |
 
 Plugins write the sugar, not the points:
@@ -3516,11 +3543,14 @@ Plugins write the sugar, not the points:
 |---|---|
 | `x.details(header:) { sections }` | This kind's header and sections, inside `registrar.shape { x in ... }`. The header is a view made from the shape's binding ([the header](#the-header)). |
 | `registrar.details(P.self, header:) { sections }` | Another plugin's kind, typed as its own. |
-| `registrar.detailsForEveryBox { sections }` | Every shape with a frame, editing the frame. Arrows have none, so they don't get these. |
-| `registrar.detailsForEveryShape(where: { record in ... }) { sections }` | Every shape the `where` picks (asked as the panel is laid out, so it reads cached state), over the whole record (`DetailSection<AnyShapeRecord>`); its writes change the record, in a step named for the section. For what a feature shows about any shape that no property or box says (Neighbors' Connections does). |
-| `x.details(of: P.self) { sections }`, `registrar.details(of: P.self) { sections }` | An [added property](#added-properties), editing its value: on this kind's shapes that have one, or on every shape that has one. |
-| `registrar.detailStatusForEveryShape { shape, context in ... }` | Footer lines for every shape. Return `[]` when there's nothing to say. |
-| `registrar.detailStatusForEveryShape(in: SomeTab.self) { shape, context in ... }` | Lines in a tab for every shape. The tab shows while the shape has lines there, above its sections if it has any. |
+| `registrar.detailsForEveryBox { sections }` | Every shape with a frame (the kinds with the `.box` capability), editing the frame. Arrows have none, so they don't get these. |
+| `scope.details { sections }`, in `registrar.forShapes(holding: P.self)`, `forShapes(adopting:)` or `forEveryShape` | The shapes of the kinds the scope reaches, over the whole record (`DetailSection<AnyShapeRecord>`); its writes change the record, in a step named for the section. For what a feature shows about the kinds that opted into it that no property or box says (Colors' row, on the kinds that hold a color), or, in `forEveryShape`, what every shape has (Neighbors' Connections does). A section that shows only in some state says so with `shownWhile`. |
+| `x.details(of: P.self) { sections }`, `registrar.details(of: P.self) { sections }` | An [added property](#added-properties), editing its value: on this kind's shapes that have one, or on every shape that has one (the kinds that hold it: scoped `.holding(P)`). |
+| `scope.detailStatus { shape, context in ... }` | Footer lines for the shapes of the kinds the scope reaches. Return `[]` when there's nothing to say. |
+| `scope.detailStatus(in: SomeTab.self) { shape, context in ... }` | Lines in a tab for those shapes. The tab shows while the shape has lines there, above its sections if it has any. Validation's Issues tab is one, in `forEveryShape`. |
+
+Both points take [scopes](#scopes): a section or a line for the shapes of other kinds says which, and
+one for every kind with no scope is refused (`invalid`).
 
 `details` always takes its trailing builder, so a header alone is `details(header: ...) {}`. A
 section is a `DetailSection` naming its tab, with an optional title, an `id` (the title by
@@ -3561,12 +3591,19 @@ Escape, as anywhere in the panel, gives the keyboard back to the canvas. All fou
 
 `when` reads only the value. A section of the shape's state that a service knows (whether its types
 give it a field) says when it shows with `shownWhile`, over the record and a `DetailContext`, as
-Types' Fields does:
+Types' Fields does. A scope picks kinds, never shapes, so a section for only some of a scope's
+shapes says which the same way:
 
 ```swift
-DetailSection(TypesStyle.fieldsTitle, in: TypesTab.self, id: "fields") { $record in FieldsList(record: $record) }
-    .enabledWhileReadOnly()
-    .shownWhile { shape, context in context.service(FieldBook.self)?.givesFieldsOrValues(shape) == true }
+registrar.forShapes(holding: IsAProperty.self) { typeable in
+    typeable.details {
+        DetailSection(TypesStyle.fieldsTitle, in: TypesTab.self, id: "fields") { $record in FieldsList(record: $record) }
+            .enabledWhileReadOnly()
+            .shownWhile { shape, context in
+                shape[TypeSchemaProperty.self] == nil && context.service(FieldBook.self)?.givesFieldsOrValues(shape) == true
+            }
+    }
+}
 ```
 
 It's asked on every commit, whatever the commit changed (a drag of another shape), as status
@@ -3580,9 +3617,9 @@ How it resolves, per shape:
 
 | What | Order |
 |---|---|
-| Sections in a tab | The kind's own (from its vertical, a horizontal it opts into, or another plugin that imports it), in plugin order and builder order; then every kind's (every-box sections, and those over an added property on every shape that has it), in plugin order. |
+| Sections in a tab | The kind's own (from its vertical, a horizontal it opts into, or another plugin that imports it), in plugin order and builder order; then those whose scope reaches the kind (every-box sections, those over an added property on every shape that has it, a scope's `details`), in plugin order. |
 | Tabs | By `order`, then first appearance over the same sequence, then status lines'. A tab with no shown section (by `when` and `shownWhile`) and no status line is dropped. |
-| Status lines, the footer's and each tab's | The kind's, then every kind's, each in plugin order. |
+| Status lines, the footer's and each tab's | The kind's, then those whose scope reaches it, each in plugin order. |
 | Header | The kind's own; else the kind's label and symbol (`registry.label(of:)`: what the kind declares, else its placing tool's, else its id). A header without a symbol takes the kind's. |
 
 `DetailPanelState` (`editor.detailPanel`) gathers each kind's contributions once, since the
@@ -3663,6 +3700,7 @@ public enum BoardKinds {}
 extension BoardKinds: KeyedExtensionPoint {
     public typealias Contribution = BoardKind                  // a placeholder and a symbol
     public static var owner: PluginID { .boards }
+    public static var scope: PointScope { .kinds }             // a kind's boards open one kind at a time: no scope, no every kind
     public static func uniqueKeys(of _: BoardKind, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
@@ -3719,9 +3757,12 @@ public struct ValidationDetailsPlugin: ListedPlugin {
     public var id: PluginID { "validation-details" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.detailStatusForEveryShape(in: IssuesTab.self) { shape, context in
-            (context.service(ValidationEngine.self)?.result(for: shape.id)?.worstFirst ?? [])
-                .map { DetailStatus($0.message, tone: DetailStatus.Tone($0.severity)) }
+        // Every shape is checked (its schema, at least), so any may have issues.
+        registrar.forEveryShape { every in
+            every.detailStatus(in: IssuesTab.self) { shape, context in
+                (context.service(ValidationEngine.self)?.result(for: shape.id)?.worstFirst ?? [])
+                    .map { DetailStatus($0.message, tone: DetailStatus.Tone($0.severity)) }
+            }
         }
     }
 }
@@ -4026,9 +4067,9 @@ right-click on a subboard:
 │ Copy                    │
 │ Paste                   │
 ├─────────────────────────┤
-│ Arrange               ▸ │  every shape's (Reordering): Bring to Front, Bring Forward,
-├─────────────────────────┤    Send Backward, Send to Back
-│ Lock                    │  the canvas's (Locking): Unlock once every shape it's for is locked
+│ Arrange               ▸ │  a scope's (Reordering, the kinds painted in document order):
+├─────────────────────────┤    Bring to Front, Bring Forward, Send Backward, Send to Back
+│ Lock                    │  the canvas's, in Locking's scope: Unlock once every shape it's for is locked
 ├─────────────────────────┤
 │ Delete                  │  the canvas's (ContextMenus' own): Selection's `.delete`, last
 └─────────────────────────┘
@@ -4057,9 +4098,9 @@ right-click does nothing.
 |---|---|
 | `x.contextMenu { items }` | This kind's items, inside `registrar.shape { x in ... }`. A horizontal's opt-in sugar calls it too. |
 | `registrar.contextMenu(P.self) { items }` | Another plugin's kind, typed as its own. |
-| `x.contextMenu(of: P.self) { items }`, `registrar.contextMenu(of: P.self) { items }` | An [added property](#added-properties), over its value: on this kind's shapes that have one, or on every shape that has one. |
-| `registrar.contextMenuForEveryShape(where:) { items }` | Every shape, over `AnyShapeRecord`. `where:` picks kinds by their definition, and so by capability (`{ !($0 is any PaintOrderAnchored) }`); `when:` picks shapes (`{ $0.box != nil }` for those with a frame). |
-| `registrar.contextMenuForCanvas { items }` | Items that aren't one shape's (Cut, Copy, Paste; Show What Mentions, since whether a shape is mentioned is what a service knows; Turn into …, since what a shape can turn into is what the registry knows; Create Frame, since it's for the menu's shapes together, whatever their kinds; Delete and Select All), over the menu's `MenuSubject`: its shapes (none on empty canvas), where it was asked for (`point`, world units; nil in [the selection's menu](#the-selections-menu)) and the editor. In every menu, after the shapes' own in their groups' order, and alone on empty canvas. Each is asked once per menu, not per shape. |
+| `x.contextMenu(of: P.self) { items }`, `registrar.contextMenu(of: P.self) { items }` | An [added property](#added-properties), over its value: on this kind's shapes that have one, or on the shapes of every kind that holds it (its scope, "every shape holding <key>"). |
+| `registrar.forShapes(holding: P.self) { $0.contextMenu { items } }`, `forShapes(adopting:)`, `forEveryShape` | The kinds a [scope](#scopes) reaches, over `AnyShapeRecord`: those that hold a property, or have a capability (Reordering's `.restackable`, the kinds painted in document order); `when:` picks shapes (`{ $0.box != nil }` for those with a frame). An item for every kind with no scope is refused. |
+| `registrar.contextMenuForCanvas { items }` | Items that aren't one shape's (Cut, Copy, Paste; Show What Mentions, since whether a shape is mentioned is what a service knows; Turn into …, since what a shape can turn into is what the registry knows; Create Frame, since it's for the menu's shapes together, whatever their kinds; Delete and Select All), over the menu's `MenuSubject`: its shapes (none on empty canvas), where it was asked for (`point`, world units; nil in [the selection's menu](#the-selections-menu)) and the editor. In every menu, after the shapes' own in their groups' order, and alone on empty canvas. Each is asked once per menu, not per shape. A scope's (`registrar.forShapes(holding: P.self) { $0.contextMenuForCanvas { items } }`) is only in a menu whose every shape it reaches, so never on empty canvas, in its place in plugin order: Locking's Lock and Unlock, Types' Is a ▸, Colors' Color ▸. |
 
 Boards' Open, which a board-owning kind's opt-in brings it ([OpensBoard.swift](../Sources/Boards/OpensBoard.swift)):
 
@@ -4139,8 +4180,8 @@ contextMenu {
 
 - **Keyed.** Each item claims its target, group and `id` (the title by default), and an item in a
   submenu its path, so two plugins adding one item to a kind are a `conflict`
-  ("subboard Open"), and so are two for every shape. A kind's own item replaces an
-  every-shape one with the same group and id.
+  ("subboard Open"), and so are two in one scope, or in two scopes that reach one kind. A kind's own
+  item replaces a scope's with the same group and id.
 
 ### A feature that comes with menu items: Boards
 
@@ -4158,13 +4199,14 @@ ContextMenus, so a list with a kind that opens boards needs `ContextMenusPlugin`
 whose menu items should be optional puts them in a plugin value of its own, as Validation puts its
 Issues tab in `ValidationDetailsPlugin`.
 
-### Every shape: Reordering
+### Many kinds: Reordering
 
-[`Examples/Reordering`](../Examples/Reordering/Reordering.swift) gives every shape an Arrange
+[`Examples/Reordering`](../Examples/Reordering/Reordering.swift) gives the shapes of many kinds an Arrange
 submenu, as in Keynote and tldraw, in a group of its own after the rest. It's a thing you do: no kind opts into
 it and nothing imports it. It picks kinds by
-capability: one painted by anchor (an arrow, drawn just above the shapes it joins) is left out,
-since document order doesn't decide where it's drawn. A line, which has no frame, is in.
+capability, a [scope](#scopes) it states once (`.restackable`, "painted in document order"): one painted
+by anchor (an arrow, drawn just above the shapes it joins) is left out, since document order doesn't
+decide where it's drawn. A line, which has no frame, is in.
 
 ```swift
 extension CanvasCommand { public static let bringToFront: CanvasCommand = "bringToFront" }   // and the other three
@@ -4173,19 +4215,25 @@ registrar.command(.bringToFront, title: "Bring to Front", menu: "Arrange", order
                   isEnabled: { $0.restackable }) { subject in
     subject.editor.transact("Bring to Front") { $0.bringToFront(subject.shapes) }
 }                                                              // and Bring Forward ⌥], Send Backward ⌥[, Send to Back [
-registrar.contextMenuForEveryShape(where: { !($0 is any PaintOrderAnchored) }) {
-    Submenu("Arrange", in: ReorderMenuGroup.self) {
-        MenuItem(command: .bringToFront)                       // titled, keyed and run by the command
-        MenuItem(command: .bringForward)
-        MenuItem(command: .sendBackward)
-        MenuItem(command: .sendToBack)
+registrar.forShapes(adopting: .restackable) { restackable in
+    restackable.contextMenu {
+        Submenu("Arrange", in: ReorderMenuGroup.self) {
+            MenuItem(command: .bringToFront)                   // titled, keyed and run by the command
+            MenuItem(command: .bringForward)
+            MenuItem(command: .sendBackward)
+            MenuItem(command: .sendToBack)
+        }
     }
+}
+
+extension ShapeCapability {                                    // the kinds restacking means something for
+    static let restackable = ShapeCapability("painted in document order") { !$0.adopts((any PaintOrderAnchored).self) }
 }
 ```
 
 Each of the four is a [command](#commands) of its own, declared once with its title, its key and
 its item in the menu bar's Arrange, after Group and Ungroup: `]` brings the selection to the front,
-⌥] forward, ⌥[ backward and `[` to the back. They act on shapes none of which is painted by anchor,
+⌥] forward, ⌥[ backward and `[` to the back. They act on shapes all of kinds the scope reaches,
 with nothing under way or being edited (`.whenIdle`); they type, so in a note or a field they're the
 text's ([keyboard](#keyboard-shortcuts)). The Arrange submenu stays in the context menu, its items
 running the same commands on the menu's shapes, and the selection's menu leaves it out, since Arrange
@@ -4220,9 +4268,9 @@ selected together, share Flagged. It's enabled when it is for any of them, and r
 kind's own `edit`, all in one transaction, then each contribution's `perform` once, with its shapes.
 It's checked (✓) when every shape checks it and mixed (–) when some do; a kind whose item has no
 `isChecked` counts as unchecked. A submenu holds what its items resolve to. In a group, a kind's own
-items come first, then every shape's, each in plugin and builder order, then the canvas's. A shape's
+items come first, then the scopes', each in plugin and builder order, then the canvas's. A shape's
 own item with a canvas item's group and id takes its place, shown or not, as a kind's own item takes
-an every-shape one's.
+a scope's.
 
 ### The selection's menu
 
@@ -4469,12 +4517,13 @@ the list for dots, and click a row to select its shape and bring it into view, w
 shows its Issues tab.
 
 ```swift
-registrar.contentsMarkForEveryShape(affected: { changes, context in
-    context.service(ValidationEngine.self)?.affected(by: changes) ?? []
-}) { shape, context in
-    guard let result = context.service(ValidationEngine.self)?.result(for: shape.id), let worst = result.worst else { return nil }
-    return ContentsMark(color: Color(nsColor: worst.color), help: result.worstFirst.map(\.message).joined(separator: "\
-"))
+registrar.forEveryShape { every in   // every shape is checked (its schema, at least), so any may have issues
+    every.contentsMark(affected: { changes, context in
+        context.service(ValidationEngine.self)?.affected(by: changes) ?? []
+    }) { shape, context in
+        guard let result = context.service(ValidationEngine.self)?.result(for: shape.id), let worst = result.worst else { return nil }
+        return ContentsMark(color: Color(nsColor: worst.color), help: result.worstFirst.map(\.message).joined(separator: "\n"))
+    }
 }
 ```
 
@@ -4502,16 +4551,18 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   again: on the board shown at the next read, with the ring redrawn, on a board the engine keeps
   when it is taken back. It tells the table of contents to make their rows again itself, since
   the table of contents has asked `affected(by:)` by the time a later service can name them.
-- **Several marks** on one row stand side by side: the kind's, then every kind's, each in plugin
-  order (`ContentsMarkContribution`, contributed for a kind, is a kind's own).
-- **`where`** keeps a mark for every shape to the kinds that opted into what it marks, as an
-  adornment's does: a `ContentsKind`, asked once per kind, with `holds(P.self)` for the added
-  properties it holds. Locking marks a locked shape's row with a lock, on the kinds that can be
-  locked, reading only the record:
+- **Several marks** on one row stand side by side: the kind's, then those whose scope reaches it,
+  each in plugin order (`ContentsMarkContribution`, contributed for a kind, is a kind's own).
+- **A scope** says which kinds a mark is for, so it goes only on those that opted into what it marks,
+  as an adornment's does: `ContentsMarks` takes [scopes](#scopes), so a mark for every kind with no
+  scope is refused, and `forEveryShape` is for what every shape has, as the dots above. Locking
+  marks a locked shape's row with a lock, on the kinds that can be locked, reading only the record:
 
   ```swift
-  registrar.contentsMarkForEveryShape(where: { $0.holds(LockedProperty.self) }) { shape, _ in
-      shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
+  registrar.forShapes(holding: LockedProperty.self) { lock in
+      lock.contentsMark { shape, _ in
+          shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
+      }
   }
   ```
 - **Headless**, `entry.marks` is a row's marks.
@@ -4817,9 +4868,11 @@ extension LockChip: ClickableAdornment {
 
 // In LockingPlugin.register: on the kinds that can be locked, a lock while a shape is locked, and
 // for a moment after, the lock open, fading; on the rest, nothing.
-registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty.self) }) { shape, context in
-    if shape.isLocked { return AdornmentLabel(systemImage: "lock.fill") }
-    return context.service(LockState.self)?.openLockOpacity(of: shape.id).map { AdornmentLabel(systemImage: "lock.open.fill").opacity($0) }
+registrar.forShapes(holding: LockedProperty.self) { lock in
+    lock.adornment(LockChip.self) { shape, context in
+        if shape.isLocked { return AdornmentLabel(systemImage: "lock.fill") }
+        return context.service(LockState.self)?.openLockOpacity(of: shape.id).map { AdornmentLabel(systemImage: "lock.open.fill").opacity($0) }
+    }
 }
 ```
 
@@ -4837,18 +4890,19 @@ registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty
 |---|---|
 | `x.adornment(A.self) { shape in ... }` | This kind's shapes, inside `registrar.shape { x in ... }`, typed as its own (`ShapeRecord<Props>`). A horizontal's opt-in sugar may call it, so opting in brings its adornment. |
 | `registrar.adornment(A.self, on: Kind.self) { shape in ... }` | Another plugin's kind, typed as its own. |
-| `registrar.adornmentForEveryShape(A.self, where:) { shape, context in ... }` | Every shape of the kinds `where` picks (every kind by default), over `AnyShapeRecord`: what a horizontal places on shapes it doesn't define. |
-| `x.adornments(A.self) { shape in [...] }`, `registrar.adornments(A.self, on: Kind.self) { ... }`, `registrar.adornmentsForEveryShape(A.self, where:) { shape, context in [...] }` | The same three, for several labels in order: a [group](#several-labels-a-group), at `aboveTopLeft` only. |
+| `scope.adornment(A.self) { shape, context in ... }`, in `registrar.forShapes(holding: P.self)` or `forShapes(adopting:)` | The shapes of the kinds the scope reaches, over `AnyShapeRecord`: what a horizontal places on shapes it doesn't define, only where its feature is. |
+| `x.adornments(A.self) { shape in [...] }`, `registrar.adornments(A.self, on: Kind.self) { ... }`, `scope.adornments(A.self) { shape, context in [...] }` | The same three, for several labels in order: a [group](#several-labels-a-group), at `aboveTopLeft` only. |
 
-`where` sees each kind once, as an `AdornableKind`: the `kind`, its `definition` (so its
-capabilities: `{ $0.definition is any Editable }`), the `registry` (so what else it takes part in),
-and `holds(P.self)`, whether its shapes hold an added property, so an adornment that shows one goes
-where the property does (Locking's lock: `{ $0.holds(LockedProperty.self) }`, the kinds that can be
-locked). Titles places its pill this way, on the kinds that opted into its own point with a title
-that shows one (`$0.registry.showsTitlePill($0.kind)`, [Titles](#a-horizontal-plugin)). So
+A scope picks the kinds ([Scopes](#scopes)), so an adornment that shows a fact goes where the fact is:
+Locking's lock is `forShapes(holding: LockedProperty.self)`, the kinds that can be locked, and a
+capability picks by what a kind is (`forShapes(adopting: (any Editable).self)`, or a fact a module
+states). Titles places its pill this way, on the kinds that opted into its own point with a title
+that shows one (`forShapes(adopting: .titlePill)`, [Titles](#a-horizontal-plugin)). So
 `note.title()` brings the pill, a kind that draws its own says `pill: false`, and the report says
-Titles, which defines no kind, places the pill (`adornment TitlePill → every shape`). A plugin puts
-one on a kind it doesn't define, typed:
+Titles, which defines no kind, places the pill
+(`adornment TitlePill → every shape with a title pill`). `ShapeAdornments` takes scopes, so an
+adornment for every kind with no scope is refused. A plugin puts one on a kind it doesn't define,
+typed:
 
 ```swift
 public enum SizeBadge {}
@@ -4975,7 +5029,8 @@ what makes two labels equal; a symbol alone has none.
 
 An adornment may show several labels, in order, each its own chip: a type chip per type of a
 shape. The sugar takes a list, `x.adornments(TypeChip.self) { shape in names.map { AdornmentLabel($0.title).tagged($0.tag) } }`.
-Types' `TypeChips` is the shipped one, on every kind that holds `is` (`registrar.adornmentsForEveryShape`), with a
+Types' `TypeChips` is the shipped one, on every kind that holds `is`
+(`registrar.forShapes(holding: IsAProperty.self) { $0.adornments(TypeChips.self) { … } }`), with a
 click (`ClickableAdornment`) that pops a menu up below the chip with `editor.popUpMenu`.
 
 - **Left end only.** A group is for `aboveTopLeft`: at the right end a run is cut where it reaches
@@ -5009,7 +5064,7 @@ is made, kept and dropped as one shape's labels are, and zoomed out below 35% it
 ### Order
 
 In a place, adornments sort by their type's `order`, then by first appearance: the kind's own,
-then every kind's, each in plugin order. The first is nearest where the place starts: the row's
+then those whose scope reaches it, each in plugin order. The first is nearest where the place starts: the row's
 left end, its right end, the corner's outer end. The bands are the tabs' and the menu groups':
 
 | Order | Adornments |
@@ -5099,28 +5154,28 @@ shown.
 
 ### One of each on a shape
 
-`ShapeAdornments` is keyed: a contribution claims its target and its type, so an adornment is
-placed on a kind at most once, and on every shape at most once. Two plugins putting one adornment
-on a kind (a kind's own and another plugin's), or two putting one on every shape, are a `conflict`, and
-a contribution without Adornments is `ownerNotInstalled`:
+`ShapeAdornments` is keyed: a contribution claims its target and its type, and on each kind its scope
+reaches what it would claim for that kind alone, so an adornment is placed on a kind at most once.
+Two plugins putting one adornment on a kind (a kind's own and another plugin's), or on one kind
+through two scopes, are a `conflict`, and a contribution without Adornments is `ownerNotInstalled`:
 
 ```
-titles and captions both claim * Titles.TitlePill in ShapeAdornments
+titles and captions both claim sticky-note Titles.TitlePill in ShapeAdornments
 titles contributes to ShapeAdornments, but adornments, which owns it, isn't installed
 ShapeAdornments: Tags.Flags (from tags) shows several labels, which only aboveTopLeft allows, not aboveTopRight
 ```
 
-A kind's own takes the place of an every-shape one of the same type, as a kind's own menu item
+A kind's own takes the place of a scoped one of the same type, as a kind's own menu item
 does. So a shape shows each adornment once at most, by construction: a contribution names a type,
 never an instance, and there's no second one to attach. Its one `check` refuses a group anywhere but `aboveTopLeft`: places are a closed
 set, and orders needn't be unique. Adornments builds on Selection (a clickable adornment is its
 canvas button), so a list with `AdornmentsPlugin` needs `SelectionPlugin` and `KeyboardPlugin` too.
-The report shows each on its placer's line: `adornment TitlePill → every shape`, or `adornment Flag
-→ box` for one kind.
+The report shows each on its placer's line: `adornment TitlePill → every shape with a title pill`,
+`adornment LockChip → every shape holding locked`, or `adornment Flag → box` for one kind.
 
 ### What a label reads
 
-A kind's own label, and another plugin's for the kind, reads only its shape. One for every shape also gets an
+A kind's own label, and another plugin's for the kind, reads only its shape. One for the kinds a scope reaches also gets an
 `AdornmentContext`, with what else it may read: the registry (`context.registry`), which never
 changes, and a service's state (`context.service(S.self)`), but only a service that tells
 Adornments when what it keeps changes: `editor.adornmentsDidChange(for: ids)`. `ChipFade` (below)
@@ -5469,13 +5524,6 @@ registrar.declare(LockedProperty.self)                  // `locked: true` on a l
 registrar.optInEveryShape(to: LockedProperty.self)
 registrar.readOnlyShapes { $0.isLocked }                // the core refuses changes to them
 registrar.service { LockState(editor: $0) }             // which shapes are locked, and which just-unlocked shapes show their lock open (a ChipFade)
-registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty.self) }) { shape, context in  // the chip, where a shape can be locked: closed while locked, open a moment after
-    if shape.isLocked { return AdornmentLabel(systemImage: "lock.fill") }
-    return context.service(LockState.self)?.openLockOpacity(of: shape.id).map { AdornmentLabel(systemImage: "lock.open.fill").opacity($0) }  // from Adornments' ChipFade
-}
-registrar.contentsMarkForEveryShape(where: { $0.holds(LockedProperty.self) }) { shape, _ in  // a lock at the end of its row
-    shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
-}
 registrar.command(.lock, title: "Lock", runs: .whenIdle, isEnabled: { !$0.locks.allLocked }) { subject in
     subject.editor.lock(subject.locks.tried)            // the shapes whose own lock can change
 }
@@ -5483,12 +5531,21 @@ registrar.command(.unlock, title: "Unlock", runs: .whenIdle, isEnabled: { $0.loc
     subject.editor.unlock(subject.locks.tried)
 }
 registrar.shortcut(KeyChord("l", .shift), "Lock or Unlock", forCommands: [.lock, .unlock])   // ⇧L: whichever can run
-registrar.contextMenuForCanvas {                        // shown by the commands' rules: one of the two
-    MenuItem(command: .lock, in: StateMenuGroup.self)
-    MenuItem(command: .unlock, in: StateMenuGroup.self)
-}
-registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) {    // `/lock`, where a shape can be locked, while it isn't
-    SlashCommand("lock", command: .lock)
+registrar.forShapes(holding: LockedProperty.self) { lock in  // everything Locking puts on shapes goes on the kinds that can be locked, and no other
+    lock.adornment(LockChip.self) { shape, context in  // the chip: closed while locked, open a moment after
+        if shape.isLocked { return AdornmentLabel(systemImage: "lock.fill") }
+        return context.service(LockState.self)?.openLockOpacity(of: shape.id).map { AdornmentLabel(systemImage: "lock.open.fill").opacity($0) }  // from Adornments' ChipFade
+    }
+    lock.contentsMark { shape, _ in  // a lock at the end of its row
+        shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
+    }
+    lock.contextMenuForCanvas {                         // shown by the commands' rules: one of the two
+        MenuItem(command: .lock, in: StateMenuGroup.self)
+        MenuItem(command: .unlock, in: StateMenuGroup.self)
+    }
+    lock.slashCommands {                                // `/lock`, while the shape isn't locked
+        SlashCommand("lock", command: .lock)
+    }
 }
 
 extension LockChip: ClickableAdornment {                // a click on the chip: a try of Unlock or Lock
@@ -5503,8 +5560,8 @@ extension LockChip: ClickableAdornment {                // a click on the chip: 
   `editor.lock(ids)` and `editor.unlock(ids)`, each one transaction.
 - **The menu** has one of two items, in `StateMenuGroup` (ContextMenus', order 300, after every other group; Types' Is a ▸ is in it too, right after), as
   tldraw's toggle: Unlock when every shape the menu is for is locked, and otherwise Lock, which locks
-  the rest. They're items for the canvas, so a mix of locked and unlocked shapes gets one; on empty
-  canvas, neither. They run Locking's two [commands](#commands), `.lock` and `.unlock`, whose rules
+  the rest. They're items for the canvas in Locking's scope (a menu whose every shape holds `locked`,
+  as every kind does), so a mix of locked and unlocked shapes gets one; on empty canvas, neither. They run Locking's two [commands](#commands), `.lock` and `.unlock`, whose rules
   are the items' (Lock while some shape whose lock can change isn't locked, Unlock while all are);
   ⇧L runs whichever can, and both items show it ([context menus](#context-menus)); `/lock` is the
   other way in, and the chip's click is a try of one (`editor.attempt`), so a shape whose lock can't
@@ -5514,7 +5571,7 @@ extension LockChip: ClickableAdornment {                // a click on the chip: 
   of them and others locks or unlocks the others, trying none of them (so none shakes).
 - **`/lock` is a [slash command](#slash-commands)**: typed on a line of its own in a shape's text (a
   note's), it locks the shape, as the menu's Lock does. It's offered
-  on every kind that holds `LockedProperty` (`slashCommandsForEveryShape(where:)`, so by what a
+  on every kind that holds `LockedProperty` (`lock.slashCommands` in its scope, so by what a
   kind opted into), `when` the shape isn't locked, and takes no arguments (`/lock now` stays
   text). Return takes the line out of the text first, then locks, which ends the editing a
   read-only shape can't be in: the text keeps its other lines, the lock is a step named "Lock", and
@@ -6194,11 +6251,13 @@ registrar.declare(PublicProperty.self)                  // `public: true` on a p
 registrar.optInEveryShape(to: PublicProperty.self, where: { !($0 is any NeverPublic) && !($0 is any AlwaysPublic) })
 registrar.contribute(true, to: PublishingDials.self)    // so the registry checks no definition adopts both
 registrar.service { PublishingState(editor: $0) }       // which shapes are public, what stands for them, the chips showing Private, `admitting`
-registrar.adornmentForEveryShape(PublicChip.self, where: { $0.holds(PublicProperty.self) }) { shape, context in … }
 registrar.command(.makePublic, title: "Make Public", isEnabled: { … }) { … }   // and .makePrivate: the menu, `/public` and the chip run them
-registrar.contextMenuForCanvas { MenuItem(command: .makePublic, in: PublishMenuGroup.self, when: { … }, dims: true); MenuItem(command: .makePrivate, …) }
-registrar.slashCommandsForEveryShape(where: { $0.holds(PublicProperty.self) }) { SlashCommand("public", command: .makePublic); SlashCommand("private", command: .makePrivate, when: { … }, tries: true) }
-registrar.contentsMarkForEveryShape(where: { $0.holds(PublicProperty.self) }) { shape, context in … }   // a globe on a public shape's row
+registrar.contextMenuForCanvas { MenuItem(command: .makePublic, in: PublishMenuGroup.self, when: { … }, dims: true); MenuItem(command: .makePrivate, …) }   // every menu's: on a mix, what can be
+registrar.forShapes(holding: PublicProperty.self) { publishable in   // what Publishing puts on shapes goes on the kinds that can be public, and no other
+    publishable.adornment(PublicChip.self) { shape, context in … }
+    publishable.contentsMark { shape, context in … }                   // a globe on a public shape's row
+    publishable.slashCommands { SlashCommand("public", command: .makePublic); SlashCommand("private", command: .makePrivate, when: { … }, tries: true) }
+}
 ```
 
 - **Public is something the shape knows**, as locked is: an [added property](#added-properties),
@@ -6869,9 +6928,10 @@ out). Mentions finds the problems (`registry.mentionProblems(of:lookup:)`, each 
 about that property:
 
 ```swift
-registrar.validateEveryShape(ignoringMoves: true) { shape, context in
-    guard context.registry.namingKinds.contains(shape.kind) else { return [] }   // no mention text: one set lookup
-    return context.registry.mentionProblems(of: shape, lookup: context.shape).map { .warning($0.message, field: $0.property) }
+registrar.forShapes(adopting: .namingShapes) { naming in   // the kinds that can hold names: no other has mention text
+    naming.validate(ignoringMoves: true) { shape, context in
+        context.registry.mentionProblems(of: shape, lookup: context.shape).map { .warning($0.message, field: $0.property) }
+    }
 }
 ```
 
@@ -6993,9 +7053,9 @@ mention: a command's arguments are runs of text and shapes, and a pill is a shap
 text view that reads the line says so. Titles' `/title`, Locking's `/lock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, [Types](#types-shapes-that-hold-a-schema)' `/is-a` (the choice form: `/is-a Person` or `/is-a type`, in a note's text or an arrow's label), and [Moving](#moving)'s `/move-to` and `/move-near` are the commands that ship.
 
 ```swift
-// In LockingPlugin.register:
-registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) {   // on the kinds that can be locked
-    SlashCommand("lock", command: .lock)                                            // offered while Lock can act on the shape
+// In LockingPlugin.register, in its one scope:
+registrar.forShapes(holding: LockedProperty.self) { lock in                        // on the kinds that can be locked
+    lock.slashCommands { SlashCommand("lock", command: .lock) }                     // offered while Lock can act on the shape
 }
 ```
 
@@ -7019,8 +7079,8 @@ builder (`SlashCommandBuilder`, as `MenuBuilder` is: `if`, `if`/`else` and `for`
 | `x.slashCommands { commands }` | This kind's commands, over its props, inside `registrar.shape { x in ... }`. A horizontal's opt-in sugar may call it too, so opting into its feature brings its commands. |
 | `x.slashCommands(of: P.self) { commands }` | An [added property](#added-properties), over its value: this kind's shapes that hold one offer them, and the rest don't. |
 | `registrar.slashCommands(K.self) { commands }` | Another plugin's kind, typed as its own props. |
-| `registrar.slashCommands(of: P.self) { commands }` | An added property, over its value, on every shape that has one. |
-| `registrar.slashCommandsForEveryShape(where:) { commands }` | Every shape, over `AnyShapeRecord`. `where:` picks kinds by their definition and by what else they take part in, asked once per kind: it gets a `SlashCommandKind` (`kind`, `definition`, `registry`, and `holds(P.self)`, whether the kind opted into an added property), so a feature's every-shape command goes only on the kinds that opted into the feature (`$0.holds(LockedProperty.self)`); `when:` picks shapes. |
+| `registrar.slashCommands(of: P.self) { commands }` | An added property, over its value, on the shapes of every kind that holds it (its scope, "every shape holding <key>"). |
+| `registrar.forShapes(holding: P.self) { $0.slashCommands { commands } }`, `forShapes(adopting:)`, `forEveryShape` | The kinds a [scope](#scopes) reaches, over `AnyShapeRecord`: those that hold an added property, so a feature's command goes only on the kinds that opted into the feature, or have a capability (Moving's `.box`); `when:` picks shapes. A command for every kind with no scope is refused. |
 
 A lamp, a kind of SlashCommandsTests' own, offers commands in two of those ways
 ([Lamps.swift](../Tests/SlashCommandsTests/Lamps.swift)):
@@ -7108,11 +7168,11 @@ registrar.shape(LampDefinition()) { lamp in
   holds for it as it is, so `/turn-on` is offered to a lamp that's off and `/turn-off` once it's on,
   with no upkeep, and one over an added property only while the shape holds a value.
 - **Keyed.** Each contribution claims its target and name, so two plugins offering one name to a
-  kind, or to every shape (`registrar.slashCommands(of:)`'s are every shape's too), are a
-  `conflict` ("box /flip", "* /rename"), and so is one builder repeating a name; a kind's own
-  command takes the place of an every-shape one of the same name, offered or not. The report shows
-  each call of the sugar as one entry, its commands, then the kind they're for or "every shape"
-  (`/turn-on /turn-off /level → lamp`, `/lock → every shape`).
+  kind, or in one scope, or in two scopes that reach one kind, are a `conflict` ("box /flip",
+  "every shape /rename", "chore /rename"), and so is one builder repeating a name; a kind's own
+  command takes the place of a scope's of the same name, offered or not. The report shows
+  each call of the sugar as one entry, its commands, then the kind or the scope they're for
+  (`/turn-on /turn-off /level → lamp`, `/lock → every shape holding locked`).
 - **`SlashCommandsPlugin()` is the owner.** It registers the service and nothing else: it
   contributes no command and claims no key. A plugin that contributes a command needs it in the
   list (`ownerNotInstalled` otherwise), and a contribution for another plugin's kind needs that plugin (`unknownKind`).
@@ -7131,8 +7191,8 @@ state.command(named: "TURN-ON", for: lamp)         // folded to lowercase; nil i
 state.run("level", on: lamp, with: "3")            // true: one undo step, "Level"
 ```
 
-- **`commands(for:)`** is the shape's kind's contributions, then every shape's, each in plugin and
-  builder order, those whose `when` holds, as `OfferedSlashCommand`s (`name`, `argument`, `title`,
+- **`commands(for:)`** is the shape's kind's contributions, then those of the scopes that reach its
+  kind, each in plugin and builder order, those whose `when` holds, as `OfferedSlashCommand`s (`name`, `argument`, `title`,
   `stepName`, `accepts(_:)`, `takesShape`, `admittedKinds`, `admits(_:)`). None for a shape that isn't
   on the board shown, is kept aside or is read-only (its text can't be edited, so nothing could be
   typed there, and a command would change it). A command is found for one shape, the one the line
@@ -7363,8 +7423,8 @@ override func keyDown(with event: NSEvent) {                                    
   or own boards (with `CorralsPlugin()` and `PocketsPlugin()`) and whose rule admits all but the
   card, so it's the kinds that refuse a box; `slashHarness` is an `EditorHarness` over them and
   `SlashCommandsPlugin()`, and `PickedShapes` stands for a mention text view's reader, giving the
-  line's pills once something is typed after a name. They hold registration (every form of the sugar and the report's line for each, `where` with `holds`, a kind's own command over an
-  every-shape one, conflicts, names refused, `ownerNotInstalled`, `unknownKind`), resolution
+  line's pills once something is typed after a name. They hold registration (every form of the sugar and the report's line for each, a scope's by a property and by a capability, a kind's own command over a
+  scope's, conflicts, names refused, `ownerNotInstalled`, `unknownKind`), resolution
   (`commands(for:)`'s order, `when`, a shape that's gone, off the board shown, kept aside or
   read-only offering none, `step:` naming the step, `accepts` by default and given, an edit command in one transaction and one step
   named for it, a command's title in title case (`move-to-back` is "Move to Back"), a `perform` command, `run`'s false,
@@ -7437,8 +7497,9 @@ override func keyDown(with event: NSEvent) {                                    
   followed by the typing, and `/lock now` stays text; `/title Groceries` names the note and
   editing goes on, "Undo Title" is followed by the typing, and `/title ` alone is a new line. The
   registry's report (ShippedTests, and the guide's copy of it) holds `slash-commands`, Titles'
-  `/title → every shape`, Locking's `/lock → every shape`, Publishing's `/public /private → every shape`, Subboards'
-  `/turn-into-subboard → every shape` and Moving's `/move-to /move-near → every shape`.
+  `/title → every shape holding title`, Locking's `/lock → every shape holding locked`, Publishing's
+  `/public /private → every shape holding public`, Subboards' `/turn-into-subboard → every shape that
+  can turn into subboard` and Moving's `/move-to /move-near → every shape with a box`.
 
 ## Find
 
@@ -7457,13 +7518,14 @@ draws it, the plugins that draw it say. Its plugin is `FindPlugin()`, id `find-i
 A contribution says, for the kinds it's for, what a shape shows as text and where:
 
 ```swift
-registrar.findableTexts("title", where: { $0.holds(TitleProperty.self) || $0.registry.titleIsDerived($0.kind) },
-                        look: .ring, followsZoom: true,
-                        zoomedOut: { record, _, context in context.editor.titleCover(of: record.id)?.rect },
-                        texts: { record, context in
-                            context.registry.title(of: record).map { [FindableText(field: "title", text: $0)] } ?? []
-                        },
-                        rects: { record, _, ranges, context in … })   // the pill's frame, from the shape's bounds' top-left
+registrar.forShapes(adopting: .titled) { titled in   // the kinds that took a title, named or derived
+    titled.findableTexts("title", look: .ring, followsZoom: true,
+                         zoomedOut: { record, _, context in context.editor.titleCover(of: record.id)?.rect },
+                         texts: { record, context in
+                             context.registry.title(of: record).map { [FindableText(field: "title", text: $0)] } ?? []
+                         },
+                         rects: { record, _, ranges, context in … })   // the pill's frame, from the shape's bounds' top-left
+}
 ```
 
 - **`texts`**: the shape's texts as it shows them, plain (`FindableText(field:text:)`: `field` is
@@ -7484,12 +7546,12 @@ registrar.findableTexts("title", where: { $0.holds(TitleProperty.self) || $0.reg
   text over the canvas, whose color follows the appearance (an arrow's label); `.ring`, round a dark
   badge a mark would hide (a title's pill).
 
-`registrar.findableTexts(_:where:…)` is for every shape of the kinds `where` picks (a
-`FindableKind`, asked once per kind: keep it to the kinds that opted into what's drawn, never `{ _ in
-true }`), `registrar.findableTexts(_:of:…)` for a kind another plugin registers, `x.findableTexts(_:…)`
-for a kind's own. The point (`FindableTexts`) is keyed by kind and name (two "title"s on one kind
-conflict; a blank name is refused) and its owner is Find's, so a contribution needs `FindPlugin()`
-installed. Shipped, each a plugin value of its owner's own, after Find and its owner in the list, so
+`scope.findableTexts(_:…)` is for the shapes of the kinds a scope reaches (keep it to the kinds that
+opted into what's drawn: `FindableTexts` takes [scopes](#scopes), so texts for every kind with no
+scope are refused), `registrar.findableTexts(_:of:…)` for a kind another plugin registers,
+`x.findableTexts(_:…)` for a kind's own. The point (`FindableTexts`) is keyed by kind and name (two
+"title"s that reach one kind conflict; a blank name is refused) and its owner is Find's, so a
+contribution needs `FindPlugin()` installed. Shipped, each a plugin value of its owner's own, after Find and its owner in the list, so
 a list without Find leaves them out:
 
 | Contributor | Texts | Where |
@@ -7606,7 +7668,7 @@ them (Find's suite, `.claude/rules/benchmarks.md`).
 ### Testing Find
 
 FindTests hold Find on fixtures of their own (memos, text in a monospaced grid, whose hits' rects are
-known; badges, an every-shape contribution that rings and follows the zoom; pockets two deep): the
+known; badges, a scoped contribution that rings and follows the zoom; pockets two deep): the
 point, the index and its upkeep, scope and order, typing, stepping and its one step back, edits,
 the highlights' pixels in full and zoomed out, the frame's budget, and the panel in an unshown
 window beside the canvas. Each contributor's tests hold its texts and rects to its render's ink
@@ -7721,8 +7783,10 @@ carry what each of its sources emits, in plugin order, with no precedence.
 x.edges { shape, registry, sink in … }
 // A kind another plugin registers (from a plugin that imports it, or a horizontal's over a kind it's given):
 registrar.edges(K.self) { record, registry, sink in … }
-// Every kind `where` picks, asked once per kind:
-registrar.edgesForEveryShape(where: { kind, registry in registry.namingKinds.contains(kind) }) { record, registry, sink in … }
+// The kinds a scope reaches (here the kinds that can hold names, `.namingShapes`, the core's):
+registrar.forShapes(adopting: .namingShapes) { naming in
+    naming.edges { record, registry, sink in … }
+}
 // Every shape a value of an added property names, from the shape that holds it:
 registrar.edges(in: BlockedByProperty.self, as: BlockedByEdge.self)
 ```
@@ -7742,8 +7806,8 @@ registrar.edges(in: BlockedByProperty.self, as: BlockedByEdge.self)
 - **The property rule**, `registrar.edges(in: P.self, as: T.self)` for an added property whose
   value names shapes (`P.Value: ShapeNaming`), is for a relation nobody draws or writes in text
   (what a task is blocked by): every shape a value of `P` names is an edge of type `T` from the
-  shape that holds it, in the slot `P`'s key names, on every kind that opts into `P`. It doesn't
-  declare `T`: `edgeType` does. Types uses it for `is`: `registrar.edgeType(IsAEdge.self)` and
+  shape that holds it, in the slot `P`'s key names, on every kind that opts into `P`
+  (`forShapes(holding: P.self)`, inside). It doesn't declare `T`: `edgeType` does. Types uses it for `is`: `registrar.edgeType(IsAEdge.self)` and
   `registrar.edges(in: IsAProperty.self, as: IsAEdge.self)`, so every note and arrow that is a type's
   instance has an `is-a` edge to it, in the slot `is`.
 - **`registry.edges(of: record)`** is what one record carries, as its kind's sources say, pure: for
@@ -7753,9 +7817,10 @@ registrar.edges(in: BlockedByProperty.self, as: BlockedByEdge.self)
   of that type (`StandingEdge`, below), has it dropped (in debug builds, `reservedEdgesDropped` counts
   them), so a standing edge is only ever a stand-in's.
 
-The registry's report shows `edge type mention` on the declarer's line, and `edges → every shape`
-or `edges → arrow` on the line of the plugin that contributes the source ([The
-registry](#the-registry)).
+`EdgeSources` takes [scopes](#scopes), so a source for every kind with no scope is refused. The
+registry's report shows `edge type mention` on the declarer's line, and
+`edges → every shape naming shapes` or `edges → arrow` on the line of the plugin that contributes the
+source ([The registry](#the-registry)).
 
 ### Stand-ins: forwarding
 
@@ -8746,7 +8811,8 @@ contributes to Boards' `BoardKinds` point (at most one per kind; its report line
   selected it opens the first, in selection order.
 
 `BoardKinds.check` refuses a kind whose definition isn't `BoardOwning` (the form for another plugin's kind can't say so
-in its types), and a contribution for every kind: only a kind that owns boards has one to open. So
+in its types), and the point takes one kind at a time (`PointScope.kinds`), so the registry refuses
+a contribution for every kind or for a scope: only a kind that owns boards has one to open. So
 a plugin list with `opensBoard` in it needs Selection and ContextMenus installed.
 
 `BoardsPlugin` itself ([Boards.swift](../Sources/Boards/Boards.swift)) is small:
@@ -9278,7 +9344,8 @@ registrar.turnable(into: Subboard.self, through: ContainerChannel.self) { contai
 A channel is a type conforming to `TransformChannel`
 ([Transform.swift](../Sources/Transform/Transform.swift)): the `Source` a shape coming through it hands the
 target, a `name` (what the registry's report calls it), `admits(_:)`, which kinds may offer it (given a
-`TransformKind`: the kind, its definition, so its capabilities, and the registry; every kind by default),
+`RegisteredKind`, the core's: the kind, its definition, so its capabilities, the registry, `holds` and
+`adopts`; every kind by default),
 and `source(of:in:)`, which reads what the shape hands over in the transaction that turns it, before the
 target changes anything. A channel that has nothing to hand over for a shape returns nil: the target's turn
 doesn't run, and the shape stays as it is. Conform in an extension, as with every protocol that has a
@@ -9292,8 +9359,9 @@ default (`admits` is the one that could be misspelled). The sugar:
 
 - **Offering is keyed by kind and channel** (`TransformSources`): a kind offers a channel once, and two
   claims are a `conflict` ("corral offering container"). The point's `check` refuses a kind the channel
-  doesn't admit (`invalid`: "bad offers the container channel on box, which can't offer it"), and a
-  channel offered by every kind. Only a kind offers one, so there's no sugar for every shape.
+  doesn't admit (`invalid`: "bad offers the container channel on box, which can't offer it"). Only a
+  kind offers one, so there's no sugar for every shape, and the point says so (`scope` `.kinds`: the
+  registry refuses a scope or every kind, as it does for the targets).
 - **Taking is keyed by the kind turned into** (`TransformTargets`): a shape turns into a kind one way, so a
   kind takes one channel, and a second claim is a `conflict` ("disc"): a second channel into one kind would
   share its menu item and its command. If one is ever needed, that's where it's decided.
@@ -9304,7 +9372,8 @@ default (`admits` is the one that could be misspelled). The sugar:
   command, so it needs `ContextMenusPlugin()` and `SlashCommandsPlugin()` too, and a kind whose id can't be
   typed as a command's name ("odd_one") is refused (`invalid`, from the commands' point).
 - **The report** shows each contribution: `offers channel container → frame` on Frames' line and `takes
-  channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape` on Subboards',
+  channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape that can turn
+  into subboard` on Subboards',
   and `service TransformState` on its own ([The registry](#the-registry)).
 
 ### What a target brings
@@ -9318,10 +9387,11 @@ opt-in does for a horizontal.
   can turn into the kind, so a menu for a frame and a note has none. The label is what the target kind's
   schema is titled (a subboard's is "Subboard"), else its id, unless the call gives one.
 - **`/turn-into-<kind id>`** on the kinds that offer the channel, the target's own kind apart (it has
-  nothing to turn into): a command for every shape (`slashCommandsForEveryShape`), taking no arguments.
+  nothing to turn into): a scope's command, by a capability the call makes ("that can turn into
+  subboard", whose test reads which kinds offer the channel), taking no arguments.
   Typed on a line of a shape's text, it turns the shape; a frame has no text, so nothing ships that types
   it yet, though it's offered (`commands(for:)`) and runs (`run(_:on:with:)`). Where a kind that offers
-  the channel does have text, it lists before `title` and `lock`: every shape's commands are offered in the
+  the channel does have text, it lists before `title` and `lock`: the scopes' commands are offered in the
   order of the plugins that contribute them, and Subboards is before Titles and Locking.
 - **One undo step**, "Turn into Subboard", named as the item is. Slash commands name their steps in title
   case for this: "Turn Into Subboard" beside the menu's item would read as a mistake
@@ -9439,7 +9509,7 @@ Jump To ([`Sources/JumpTo`](../Sources/JumpTo)) is ⌘K, and Go › Jump To…: 
 shape by what it's called and where it is, as VS Code's file switcher goes to a file. Name a
 subboard, skip one, name another two levels down, then the shape, and the list narrows. It looks at
 titles and the containment tree and never at contents (that's Find's). It's a thing you do (no kind opts into
-it and nothing imports it, as with [Reordering](#every-shape-reordering)): a shape is listed
+it and nothing imports it, as with [Reordering](#many-kinds-reordering)): a shape is listed
 when its kind has a title ([Titles](#a-horizontal-plugin), named or derived), and that's all a kind
 does for it. It builds on Boards (a pick is `editor.follow`, below), Titles, Topology (the tree),
 Keyboard, TextEditing (its field and its list), FuzzyMatching and Geometry. It doesn't import
@@ -9511,7 +9581,7 @@ none free, on the side that frees up nearest. Both reach every board of the file
 not only the one shown, and the shape each takes is a pill picked with `@` on its line, where the
 picker lists only what it takes (for `/move-to`, with nothing typed, every frame and subboard it
 takes, on every board, nearest first). It's a thing you do (no kind opts into it and nothing imports it, as with
-[Jump To](#jump-to) and [Reordering](#every-shape-reordering)): on [slash
+[Jump To](#jump-to) and [Reordering](#many-kinds-reordering)): on [slash
 commands](#slash-commands) for the commands, on the [table of contents](#dragging-rows) for its
 drops that move shapes (`ContentsMoves`), and on Draw for where a shape
 lands, since it places a shape as [`canvas draw`](#draw) places one (the same solver, the same
@@ -9540,26 +9610,28 @@ the middle of the two on the nearer side across the line between them, clear of 
 
 ```swift
 // In MovingPlugin.register: on every kind whose shapes have a box, the kinds a drag moves.
-registrar.slashCommandsForEveryShape(where: { hasBox($0.definition) }) {
-    SlashCommand("move-to", argument: "@frame or subboard", kinds: { $0.containingKinds.union($0.boardOwningKinds) },
-                 shapes: { target, owner, editor in Destination(of: owner, into: target, in: editor) != nil },
-                 step: "Move") { id, arguments, editor in
-        guard let target = arguments.shapes.first else { return }
-        Move(id, in: editor)?.into(target)      // asks its rule again, places, commits
-    }
-    SlashCommand("move-near", shapes: { target, owner, editor in admitsNear(target, for: owner, in: editor) },
-                 step: "Move") { id, arguments, editor in
-        guard let target = arguments.shapes.first else { return }
-        Move(id, in: editor)?.near(target)
+registrar.forShapes(adopting: .box) { boxes in
+    boxes.slashCommands {
+        SlashCommand("move-to", argument: "@frame or subboard", kinds: { $0.containingKinds.union($0.boardOwningKinds) },
+                     shapes: { target, owner, editor in Destination(of: owner, into: target, in: editor) != nil },
+                     step: "Move") { id, arguments, editor in
+            guard let target = arguments.shapes.first else { return }
+            Move(id, in: editor)?.into(target)      // asks its rule again, places, commits
+        }
+        SlashCommand("move-near", shapes: { target, owner, editor in admitsNear(target, for: owner, in: editor) },
+                     step: "Move") { id, arguments, editor in
+            guard let target = arguments.shapes.first else { return }
+            Move(id, in: editor)?.near(target)
+        }
     }
 }
 ```
 
 - **`MovingPlugin`** (id `moving`, the module's one public type) puts both commands on every kind
-  whose props are `BoxShapeProps`, read from the kind's definition, so a link, a tag or an arrow
+  whose props are `BoxShapeProps` (the core's capability `.box`, "with a box"), so a link, a tag or an arrow
   offers neither, and fills the table of contents' `ContentsMoves`; the report's line is
-  `moving /move-to /move-near → every shape · ContentsMoves`. It's right before
-  Reordering in the shipped list, after every plugin with a command for every shape, so a note's `/`
+  `moving /move-to /move-near → every shape with a box · ContentsMoves`. It's right before
+  Reordering in the shipped list, after every plugin with a command for many kinds, so a note's `/`
   list ends `title, lock, public, move-to, move-near`. Both steps are "Move", a drag's name ("Undo
   Move To" would read badly). A list with it needs `SlashCommandsPlugin()` and
   `TableOfContentsPlugin()`.
@@ -9852,7 +9924,7 @@ registrar.neighborLight(TypesStyle.instances, color: TypesStyle.instancesLight, 
   after Neighbors and the detail panel in the shipped list, so a list without the panel leaves it out
   and keeps the lights, and one with it and no panel is refused (`ownerNotInstalled`); it needs no
   light and no `NeighborsPlugin()` (the lists are then Inside and Contains). It registers the service
-  and one headerless section on every shape (`detailsForEveryShape(where: { _ in true })`,
+  and one headerless section on every shape (`forEveryShape { $0.details { … } }`,
   `enabledWhileReadOnly`: going to a shape changes nothing of this one) in `NeighborsTab`
   ("Connections", order 60: after a horizontal's feature tabs, before Style). It's always there: a
   tab that came with its lists would come a turn late, so with nothing connected it says "No
@@ -9932,7 +10004,7 @@ registrar.overlay(ReferenceButtonOverlay())               // the leading symbol'
 registrar.canvasButtons(at: { editor, point in … }, click: { button, editor in … })   // the leading symbol goes to the original
 registrar.command(.goToOriginal, title: ReferenceStyle.goToOriginal, isEnabled: { … }) { … }  // the panel's button, the menu's item
 registrar.command(.interpretReference, title: ReferenceStyle.interpret, isEnabled: { … }) { … }   // the panel's Interpret
-registrar.detailStatusForEveryShape { shape, context in … }   // a warning line where an attached arrow's channel isn't taken
+registrar.contribute(DetailStatusContribution { shape, context in … }, to: DetailStatuses.self, for: .kind(Reference.kind))   // a warning line where an attached arrow's channel isn't taken
 registrar.contextMenuForCanvas { … }                      // Go to Original (direct), Show Matches (dynamic)
 registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition: NeverPublic, Editable, CustomSkeleton, DerivedProps
     let place = reference.editingPlacement(size: Reference.defaultSize) { Reference() }
@@ -11414,13 +11486,13 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   nothing. The model is never sent it (`stripped`), and a color change alone asks it nothing. It is the
   type's own: a type built on it keeps its own color, and no note of the type holds anything for it.
 - **A type's pill**: a type's note shows a
-  pill, Titles' own (`registrar.titlePillLook(forShapesHolding: TypeSchemaProperty.self)`): its
+  pill, Titles' own (`registrar.forShapes(holding: TypeSchemaProperty.self) { $0.titlePillLook { … } }`): its
   title after `curlybraces` (`arrow.right` for a relationship type), solid in the type's color; untitled, a dimmed gray `Untitled`.
 - **A title from a field**: a type's `"$title": {"x-canvas-from": "name"}` titles a note that is one,
   written once into its real title when that field is written (never read live). A note whose title is
   that field's value as shown has **no title pill**: its type's chip is above it and the name is in its
-  row. Types registers a second `titlePillLook(forShapesHolding: IsAProperty.self)` with the context
-  form, which hides the pill (`hidesPill`) when the kind draws rows (`RowBook.kinds`; a folded name
+  row. Types registers a second look, `forShapes(holding: IsAProperty.self) { $0.titlePillLook { … } }`,
+  with the context form, which hides the pill (`hidesPill`) when the kind draws rows (`RowBook.kinds`; a folded name
   counts, the fold is where rows show) and `FieldBook.fieldTitled` says the title is the field's value.
   A title by hand shows its pill; a cover (no context) still says the name.
 - **Chips**: `TypeChips` (an `Adornment`, aboveTopLeft, a [group](#adornments)) shows one chip for
@@ -11475,7 +11547,7 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   `FieldSummary` (what a row with more in it reads), `FieldCheck` (the check's answer, a value), and
   `RowList` (one row a field, folding past nine). `editor.fieldWriter` is the one writer of
   `fieldValues`, `editor.fieldChecks` the check and `editor.fieldCards` the card a row opens.
-- **Rules** (`TypeValidationPlugin`, `validateEveryShape`): text that isn't JSON is an error at its
+- **Rules** (`TypeValidationPlugin`, `forShapes(holding: TypeSchemaProperty.self)`): text that isn't JSON is an error at its
   line and column ("Invalid JSON: expected a property name at line 6, column 34."), as is a root
   that isn't an object; `required` naming a property its object doesn't have, a `type` that isn't
   one of JSON Schema's ("“ninteger” in birthYear isn’t a JSON Schema type."), and anything else
@@ -11850,7 +11922,8 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
   the file's), `swatch(of: record)`, `swatch(for: color)`, `color(\.solid, of: record)` (one role as
   a color that follows the appearance, for a view) and `onChange`, called when the file's colors
   change. `editor.setColor(_:of:)` gives shapes a color, or takes theirs away, in one step.
-- **Where a color is picked.** The panel's Color row, one line in the Style tab: a dot and the
+- **Where a color is picked.** The panel's Color row, one line in the Style tab, on the kinds that
+  hold a color (`forShapes(holding: ColorProperty.self)`, over the record): a dot and the
   color's name, which opens a grid of the named colors, None and Other… (the system color panel); a
   value picked there can be named, which adds it to the file, and a color of the file's is renamed,
   changed and removed from its dot's menu. `/color` in a shape's text lists the named colors, each a
@@ -12155,7 +12228,8 @@ it, the core or a horizontal.
 The rule of thumb: behavior intrinsic to a kind is a capability; behavior anyone can add, to any
 kind, from any plugin, is an extension point. What a kind shows in the detail panel is an extension
 point, not a capability: the kind's own plugin, a horizontal it opts into, and any other plugin that imports it can all add
-to it.
+to it. A capability can also pick the kinds a contribution is for: `registrar.forShapes(adopting:
+(any BoardOwning).self)`, or a `ShapeCapability` a module states ([Scopes](#scopes)).
 
 An editing view's `EditContext` is its way back into the editor: `update` changes the shape in a
 transaction, and `end()` ends editing. `shape` is the shape as it is now, observed as the document
@@ -13526,8 +13600,8 @@ hand tool). It then checks everything and throws on:
 | `duplicatePlugin` | The same plugin id twice. |
 | `ownerNotInstalled` | A contribution to a point whose owner isn't in the list. |
 | `unknownKind` | A contribution for a kind no plugin registers. |
-| `conflict` | Two claims to the same key: a kind, a tool id, a service type, a command, the default tool, the secondary click, key strokes, an added property's key (two declarations), a file property's key (two declarations), one kind's opt-in to a property (from two plugins, or twice from one), or a key in any `KeyedExtensionPoint` (a keyboard shortcut's chord, one kind's double-click claim, one adornment on a kind). |
-| `invalid` | A property list that doesn't hold up, two types under one definition name, or a struct that holds itself with no name ([Properties](#a-kinds-own-properties)); an opt-in to a property no installed plugin declares, a plugin opting a kind into one both by itself and through `optInEveryShape`, or a kind opting into a property named like one of its own ([added properties](#added-properties)); or a point's own `check` refused the list (the default tool must be a registered one). |
+| `conflict` | Two claims to the same key: a kind, a tool id, a service type, a command, the default tool, the secondary click, key strokes, an added property's key (two declarations), a file property's key (two declarations), one kind's opt-in to a property (from two plugins, or twice from one), or a key in any `KeyedExtensionPoint` (a keyboard shortcut's chord, one kind's double-click claim, one adornment on a kind), and the same key claimed on one kind by two contributions that reach it by a scope or for every kind (a kind's own may share it: where a point keeps the first, it takes the place of the rest, [Scopes](#scopes)). |
+| `invalid` | A property list that doesn't hold up, two types under one definition name, or a struct that holds itself with no name ([Properties](#a-kinds-own-properties)); an opt-in to a property no installed plugin declares, a plugin opting a kind into one both by itself and through `optInEveryShape`, or a kind opting into a property named like one of its own ([added properties](#added-properties)); a scope by a property no installed plugin declares; a contribution for every kind with no scope to a point that takes scopes ("say which shapes it's for"), or a scope or every kind to a point of one kind each ([Scopes](#scopes)); or a point's own `check` refused the list (the default tool must be a registered one). |
 
 Some rules span contributions in a way keys can't express. For those, a point implements `check`,
 which the registry calls once it's built, after the checks above, so a point may assume its owner
@@ -13537,11 +13611,13 @@ is installed and its keys are unique:
 public protocol ExtensionPoint {
     associatedtype Contribution
     static var owner: PluginID { get }
+    /// Which shapes its contributions may be for (`PointScope`).
+    static var scope: PointScope { get }                // default: .anything
     /// Rules that span contributions: runs once the registry is built, for each point that has
     /// at least one contribution. Throwing refuses the plugin list.
     static func check(_ registry: Registry) throws      // default: checks nothing
     /// How the registry's report shows a contribution.
-    static func summary(of contribution: Contribution, for target: ShapeTarget) -> String   // default: the point, and its kind
+    static func summary(of contribution: Contribution, for target: ShapeTarget) -> String   // default: the point, and the shapes it's for
 }
 ```
 
@@ -13551,8 +13627,9 @@ which the registry reports as `invalid` for your point. The requirement is untyp
 (`public enum ShapeDetails {}`, then `extension ShapeDetails: KeyedExtensionPoint { ... }`), so a
 misspelled `check` fails the build instead of leaving the default in place. The same goes for
 `summary`, which says how [the report](#the-registry) shows a contribution: by default the point's
-name and the kind it's for (`ValidationRules → sticky-note`); Keyboard's shows the key and what it
-does (`shortcut V → tool select`).
+name and the shapes it's for (`ValidationRules → sticky-note`,
+`ValidationRules → every shape holding color`); Keyboard's shows the key and what it does
+(`shortcut V → tool select`).
 
 It runs once per point that has contributions, in the order of each point's first contribution,
 and may read any point's contributions. `ShapeDetails` uses it to refuse two tab types with one
@@ -13577,42 +13654,42 @@ selection            service SelectionState · service RefusalShake · tool sele
 topology             service TopologyIndex · edge type stands-for
 arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property endRule → arrow · ShapeOpening → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
-subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape
+subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape that can turn into subboard
 framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title cover surface → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu
-references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
-validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules
+references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
+validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape
 adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState · host inspector
 context-menus        service ContextMenuState · secondary-click menu · selection menu · CanvasContextMenu
 slash-commands       service SlashCommandState · key hint / at a Line's Start Run a Command
 table-of-contents    service ContentsState
 contents-overview    detail overview
-titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
-mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
+titles               property title · adornment TitlePill → every shape with a title pill · /title → every shape holding title · overlay TitleCoverOverlay
+mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu
 board-navigation     service BoardCrumbs · command enclosingBoard in Go · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · host overlay · window subtitle
 board-contents       contents heading
 find-in-boards       service FindState · overlay FindOverlay · command find in Edit › Find · shortcut ⌘F → command find · command findNext in Edit › Find · shortcut ⌘G → command findNext · command findPrevious in Edit › Find · shortcut ⇧⌘G → command findPrevious
 find-panel           detail takeover
 board-find           find heading
-title-find           findable title → every shape
-mention-find         findable mention text → every shape · findable mention text over the canvas → every shape
+title-find           findable title → every shape with a title
+mention-find         findable mention text → every shape with mention text · findable mention text over the canvas → every shape with mention text
 jump-to              service JumpToState · command jumpTo in Go · shortcut ⌘K → command jumpTo · host overlay
 transform            service TransformState
-validation-details   DetailStatuses in Issues
-validation-contents  ContentsMarks
-mention-validation   ValidationRules
-title-validation     service TitleIndex · ValidationRules
+validation-details   DetailStatuses in Issues → every shape
+validation-contents  ContentsMarks → every shape
+mention-validation   ValidationRules → every shape naming shapes
+title-validation     service TitleIndex · ValidationRules → every shape with a title
 grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in Arrange · shortcut ⌥⌘G → command group · command ungroup in Arrange · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer in Edit · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate in Edit · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
-locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · command lock · command unlock · shortcut ⇧L → command lock or unlock · CanvasContextMenu · /lock → every shape
-publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · command makePublic · command makePrivate · CanvasContextMenu · /public /private → every shape · ContentsMarks
-types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property relationship · property endRule · edge type is-a · edges → every shape · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu · DecorationHits · outlines · ShapeFaces · ShapeFaces · ShapeFaces · willDelete · ShapePopovers · /is-a → every shape · CanvasContextMenu · CanvasContextMenu · CanvasContextMenu · adornment TypeChips → every shape · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape · adornment RelationshipOfferPill → every shape · title pill look → every shape · title pill look → every shape
-type-validation      ValidationRules · ValidationRules · ValidationRules
-type-details         ShapeDetails · ShapeDetails · ShapeDetails · ShapeDetails
-field-find           findable field value → every shape · findable relationship type name → every shape
-colors               property color · file property colors · service ColorBook · shape tints · /color → every shape · CanvasContextMenu
-color-validation     service ColorWarnings · ValidationRules
-color-details        ShapeDetails
+locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu → every shape holding locked · /lock → every shape holding locked
+publishing           property public · property public → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu · adornment PublicChip → every shape holding public · ContentsMarks → every shape holding public · /public /private → every shape holding public
+types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu · DecorationHits · outlines · ShapeFaces · ShapeFaces · ShapeFaces · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu · CanvasContextMenu → every shape holding is · CanvasContextMenu · adornment TypeChips → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · adornment RelationshipOfferPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
+type-validation      ValidationRules → every shape holding schema · ValidationRules → every shape holding is · ValidationRules → every shape holding schema
+type-details         ShapeDetails → every shape holding schema · ShapeDetails → every shape holding is · ShapeDetails → every shape holding is · ShapeDetails → every shape holding endRule
+field-find           findable field value → every shape showing field values · findable relationship type name → every shape holding relationship
+colors               property color · file property colors · service ColorBook · shape tints · /color → every shape holding color · CanvasContextMenu → every shape holding color
+color-validation     service ColorWarnings · ValidationRules → every shape holding color
+color-details        ShapeDetails → every shape holding color
 snapping             service SnapState · translation adjuster · key hint ⌘ or ⌃ Drag Move Without Snapping
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect
 connect-menu         CanvasContextMenu
@@ -13644,9 +13721,9 @@ neighbors            service NeighborState · outlines
 arrow-lights         neighbor light · neighbor light
 mention-lights       neighbor light · neighbor light
 type-lights          neighbor light
-neighbor-details     service NeighborList · ShapeDetails
-moving               /move-to /move-near → every shape · ContentsMoves
-reordering           command bringToFront in Arrange · shortcut ] → command bringToFront · command bringForward in Arrange · shortcut ⌥] → command bringForward · command sendBackward in Arrange · shortcut ⌥[ → command sendBackward · command sendToBack in Arrange · shortcut [ → command sendToBack · ShapeContextMenus
+neighbor-details     service NeighborList · ShapeDetails → every shape
+moving               /move-to /move-near → every shape with a box · ContentsMoves
+reordering           command bringToFront in Arrange · shortcut ] → command bringToFront · command bringForward in Arrange · shortcut ⌥] → command bringForward · command sendBackward in Arrange · shortcut ⌥[ → command sendBackward · command sendToBack in Arrange · shortcut [ → command sendToBack · ShapeContextMenus → every shape painted in document order
 ```
 
 A horizontal's opt-in shows as what it contributes: `note.title()` is the opt-in to the property
@@ -13655,14 +13732,14 @@ entry (the title naming the row); the `ShapeDetails` entry after them is the not
 it's renamed. `sub.opensBoard(…)` is Boards' entry (`board → subboard "Untitled Subboard"`), then
 the `ShapeOpening` and `ShapeContextMenus` entries it brings: opening and Open. `v3` on sticky-note is the version of its props: its steps drop a `checklist`
 member it kept, hand its title over, and make its text mention text ("text may mention shapes",
-which escapes what would now read as a mention). Validation's `ValidationRules`, for every kind,
+which escapes what would now read as a mention). Validation's `ValidationRules → every shape`
 is its schema rule ([Checking shapes](#checking-shapes-against-their-schemas)). Locking opts every
 kind in itself (`property locked → every shape`), and `read-only shapes` is its rule for the core.
 `publishing` is the same for `public` (`property public → every shape`, but for the kinds that
 adopt `NeverPublic` or `AlwaysPublic`), with `public dials`, its check that no definition adopts
-both, the state (`PublishingState`), the chip (`adornment PublicChip → every shape`), its menu
-items, `/public` and `/private`, and a globe at the end of
-a public shape's row (`ContentsMarks`). `references` is the Reference kind: its state
+both, the state (`PublishingState`), the chip (`adornment PublicChip → every shape holding public`),
+its menu items, `/public` and `/private`, and a globe at the end of
+a public shape's row (`ContentsMarks → every shape holding public`). `references` is the Reference kind: its state
 (`ReferenceState`), the hover and pressed looks of its leading symbol
 (`overlay ReferenceButtonOverlay`, with `CanvasButtons` for the click and `command goToOriginal`
 and `command interpretReference`, the panel's Interpret), the popover a pill that stands for
@@ -13677,14 +13754,17 @@ index of them all (`TopologyIndex`), right after Selection, so it hears each com
 shows pills (`note.mentionText`), and text may mention a note (`note.mentionable`). A subboard is mentionable
 too (`mentionable → subboard`: called by its title, and following a mention of one enters it).
 `mentions` declares the `mention` edge type and says what mention text carries
-(`edge type mention`, `edges → every shape`: every kind it picks, the ones that can hold names),
+(`edge type mention`, `edges → every shape naming shapes`: the kinds that can hold names),
 keeps how each mentioned shape shows (`MentionState`), tells the text it keeps drawn
 (`MentionTextMemo`) where each frame ends (`MentionFrames`, an overlay that draws nothing), makes
 pills answer clicks (`ShapeFaces`), and puts Show What Mentions in the context menu
-(`CanvasContextMenu`); `mention-validation`'s `ValidationRules`, for every kind, is its warnings
-about mentions that can't work, and `title-validation`'s, over the file's titles it keeps
-(`TitleIndex`), its warnings about titles two shapes share. Titles places its pill on every shape
-whose kind's title shows one (`adornment TitlePill → every shape`), and Locking its lock;
+(`CanvasContextMenu`); `mention-validation`'s `ValidationRules → every shape naming shapes` is its
+warnings about mentions that can't work, and `title-validation`'s, over the file's titles it keeps
+(`TitleIndex`), its warnings about titles two shapes share (`ValidationRules → every shape with a title`).
+Titles places its pill on every shape whose kind's title shows one
+(`adornment TitlePill → every shape with a title pill`), and Locking its lock, on the kinds that can be
+locked (`adornment LockChip → every shape holding locked`, with its mark on the row, `ContentsMarks → every shape holding locked`,
+its menu's items, `CanvasContextMenu → every shape holding locked`, and `/lock`, all in its one scope);
 `adornments` lends them their layout and drawing, a canvas button (`CanvasButtons`) and their hits
 (`DecorationHits`), and places none of its own. `draw-engine` is the draw engine's mark
 (`draw engine`), whose seven points the horizontals' plugins fill. The automation line is its commands
@@ -13697,16 +13777,57 @@ words and a text format, each by what it adds), and `query-commands` is `canvas 
 `query-vocabulary`. `slash-commands` is the service that says what a shape offers
 (`SlashCommandState`, which hears no commit) and contributes no command; the ones that ship are
 Titles', Locking's, Publishing's and Transform's, which Subboards brings, the last entry on their
-lines (`/title → every shape`, `/lock → every shape`, `/public /private → every shape`,
-`/turn-into-subboard → every shape`: each call of the sugar is one entry, its commands as `/name`,
-then the kind they're for or "every shape": [Registering commands](#registering-commands)), and
-Moving's, its line's one entry (`moving /move-to /move-near → every shape`, [Moving](#moving)).
+lines (`/title → every shape holding title`, `/lock → every shape holding locked`, `/public /private →
+every shape holding public`, `/turn-into-subboard → every shape that can turn into subboard`: each call
+of the sugar is one entry, its commands as `/name`, then the kind or the scope they're for:
+[Registering commands](#registering-commands)), and Moving's, its line's one entry
+(`moving /move-to /move-near → every shape with a box`, [Moving](#moving)).
 `transform` is the service that says what a shape can turn into (`TransformState`, which hears no
 commit) and contributes nothing else: what offers and takes a channel is on their lines, last but
 its Create Frame item on Frames' (`offers channel container → frame`) and on Subboards'
 (`takes channel container → subboard`, then what taking it brings: the canvas's menu item,
-`CanvasContextMenu`, and the command, `/turn-into-subboard → every shape`;
+`CanvasContextMenu`, and the command, `/turn-into-subboard → every shape that can turn into subboard`;
 [Transform](#transform)).
+
+### Scopes
+
+A contribution for the shapes of many kinds says which, as data the registry resolves when it's built.
+`registrar.forShapes(holding: P.self)` is for the kinds that hold an added property,
+`forShapes(adopting:)` for the kinds that have a capability, and `forEveryShape` for what every shape
+has by its nature (Validation's schema rule, Neighbors' Connections tab), never a feature kinds opt
+into. Each hands a `ScopedRegistrar`, which a horizontal extends with its face for other kinds' shapes,
+so a feature says once where it is:
+
+```swift
+registrar.forShapes(holding: LockedProperty.self) { lock in   // Locking: the kinds that can be locked, and no other
+    lock.adornment(LockChip.self) { shape, context in … }
+    lock.contentsMark { shape, _ in … }
+    lock.contextMenuForCanvas { MenuItem(command: .lock, in: StateMenuGroup.self); MenuItem(command: .unlock, in: StateMenuGroup.self) }
+    lock.slashCommands { SlashCommand("lock", command: .lock) }
+}
+```
+
+A scope's items for the canvas (`contextMenuForCanvas`) are over the menu's subject, as every menu's are,
+and are only in a menu whose every shape is of a kind the scope reaches: a feature's items for a
+selection, which run its commands or are made as the menu opens (Locking's, Types' Is a ▸, Colors'
+Color ▸). The menu asks `registry.reaches(target, kind)`, which says whether a contribution's target is
+for a kind, for a reader that keeps contributions for many kinds together and picks among them for a
+set of shapes.
+
+A capability is a protocol a definition adopts, `forShapes(adopting: (any BoardOwning).self)`, or a fact
+about kinds that the module owning it states once, by a phrase that names it and that the report shows:
+the core's `.box` ("with a box") and `.namingShapes`, Titles' `.titled` and `.titlePill`, Mentions'
+`.mentionText`, Types' `.showingFieldValues`, Reordering's `.restackable` ("painted in document order"),
+and the one Transform's sugar makes for each kind a channel turns into ("that can turn into subboard"). Its test is asked of each kind once, as the registry is
+built, with a `RegisteredKind` (`kind`, `definition`, `registry`, `holds(_:)`, `adopts(_:)`), and must not
+ask for the contributions to a point that has scoped ones (a precondition: those are what's being worked out).
+
+A point says what it takes, `static var scope` (a `PointScope`): `.scoped` refuses a contribution for
+every kind with no scope, `.kinds` (one kind each, as Boards' and Transform's) refuses a scope and every kind, and
+`.anything` is the default. `registry.contributions(to:for:)` is then exactly what reaches a kind: its own
+first, then those for every kind and those whose scope reaches it, each in plugin order, so a horizontal
+filters nothing. The report names each scope (`adornment LockChip → every shape holding locked`,
+`/lock → every shape holding locked`, `findable title → every shape with a title`, `ValidationRules → every shape`).
 
 ## Testing plugins
 
@@ -14358,12 +14479,12 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 | Static capabilities on the util (`layoutHostCapability`) | Capability protocols found by `as?` (`Editable`, `HandleProviding`, ...). |
 | Slot key + `plugin-slot.ts` + `installArraySlot` | An `ExtensionPoint` type declared by the plugin that owns the concern. No strings, no replay. |
 | `validate:` on `defineShape` | Sugar on `ShapeRegistrar` published by the horizontal's own module (`schema.validate { }`); the core has no such field. |
-| `"*"` validators, a validator for another plugin's type | `ShapeTarget.any`; `registrar.validate(OtherKind.self) { }` from any plugin. |
+| `"*"` validators, a validator for another plugin's type | A scope: `registrar.forEveryShape { $0.validate { } }` for what every shape has, `forShapes(holding:)` for the kinds that opted in (`ShapeTarget.any` is refused where a point takes scopes); `registrar.validate(OtherKind.self) { }` from any plugin. |
 | Keyed / list registries, last write wins | `KeyedExtensionPoint` / `ExtensionPoint`; every collision is an error. |
 | `ValidationIndicatorLayer` | `ValidationOverlay`, through the core's overlay point. |
 | `toc: { component, filter, getParentShapeId }` on `defineShape`, `TocRegistry` | `x.contentsRow(when:nestedUnder:) { ContentsLabel(...) }`, sugar from the TableOfContents horizontal ([the table of contents](#the-table-of-contents)). |
 | `DetailsPanel`'s `emptyView` and `multiSelectView` (the TOC, whole or filtered to the selection) | `DetailPanelView`'s overview (its `DetailOverviews` point), which the table of contents' `ContentsOverviewPlugin` gives `TableOfContentsView`. |
-| `adornments:` on `definePlugin` (`AdornmentShapeUtil`, the `adornment-attachment` binding with its anchor, offset, gap and slot; `singletonPerHost`, `isEligibleHost`; `attachAdornment` and `toggleAdornment`) | An `Adornment` type (its place and its order band) and a label made from the shape's data, placed with `x.adornment`, `registrar.adornment(_:on:)` or `registrar.adornmentForEveryShape(_:where:)`, whose `where` can read another plugin's point (as the sticker read its referenceable registry). Never a record: nothing to attach, sync, cascade on delete, copy or migrate; one per type per shape by construction; laid out by [Adornments](#adornments), so none overlap. A fact one shows (locked, public) is an [added property](#something-the-user-turns-on) of the shape. |
+| `adornments:` on `definePlugin` (`AdornmentShapeUtil`, the `adornment-attachment` binding with its anchor, offset, gap and slot; `singletonPerHost`, `isEligibleHost`; `attachAdornment` and `toggleAdornment`) | An `Adornment` type (its place and its order band) and a label made from the shape's data, placed with `x.adornment`, `registrar.adornment(_:on:)` or `scope.adornment` in `registrar.forShapes(adopting:)`, whose capability's test reads the kind and the registry, another plugin's point included (as the sticker read its referenceable registry). Never a record: nothing to attach, sync, cascade on delete, copy or migrate; one per type per shape by construction; laid out by [Adornments](#adornments), so none overlap. A fact one shows (locked, public) is an [added property](#something-the-user-turns-on) of the shape. |
 | `ToolIdle` / `ToolPointing` click-to-create | `Placement` (follow the pointer, or edit), used by place tools and the double-click claim. |
 | `toolbarItems` with a decorative `kbd` | A key registered with the Keyboard horizontal (`shortcut:`), collision-checked, that the canvas answers and the tooltip names. |
 | `defineChannel({ id, color, ... })`, `registerHostChannel(type, channel)` | A `Channel` type (`id`, `color`) declared by the plugin that owns its meaning, `registrar.channel(C.self)`, and `x.ports(C.self, sides:role:)` on each kind that takes it (`role:` is a port's `end`), collision-checked; an arrow keeps its channel as an added property, `ChannelProperty` ([Ports](#ports)). |
@@ -14611,8 +14732,6 @@ Each of these adds to the design without changing what plugins are written again
   typed (it takes the words as done when editing ends or 3 s after the last change, and a
   half-typed `/lock` is not words to rewrite the schema from).
 - **More of the detail panel**: editing several selected shapes at once (it shows "N Shapes"
-  today); every-shape sections over the record (there are every-box ones over the frame, and those
-  over an added property), and every-box
-  overrides such as an aspect lock;
+  today); every-box overrides such as an aspect lock;
   remembering the chosen tab and collapsed sections across launches (`DetailTabID.name` is stable
   for that); and marking the row a validation issue is about (`ValidationIssue.field`).

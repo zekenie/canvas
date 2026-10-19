@@ -18,12 +18,15 @@ public struct NeighborDetailsPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { NeighborList(editor: $0, lights: $0.registry.neighborLights) }
-        registrar.detailsForEveryShape(where: { _ in true }) {
-            DetailSection<AnyShapeRecord>(in: NeighborsTab.self, id: "neighbors") { shape in
-                NeighborListView(subject: shape.shapeID, list: shape.service(NeighborList.self))
+        // Every shape is inside something, holds something or is connected: the tab is on every shape.
+        registrar.forEveryShape { every in
+            every.details {
+                DetailSection<AnyShapeRecord>(in: NeighborsTab.self, id: "neighbors") { shape in
+                    NeighborListView(subject: shape.shapeID, list: shape.service(NeighborList.self))
+                }
+                // Going to what's connected changes nothing of the shape.
+                .enabledWhileReadOnly()
             }
-            // Going to what's connected changes nothing of the shape.
-            .enabledWhileReadOnly()
         }
     }
 }

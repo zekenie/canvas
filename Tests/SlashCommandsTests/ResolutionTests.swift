@@ -45,9 +45,11 @@ private let twice = Contributor(id: "twice") { registrar in
 @MainActor let slashResolutionTests = Suite("Slash command resolution", [
     test("a shape offers its kind's commands in builder order, then those over a property it holds, then every shape's, each only while its `when` holds") {
         let h = try slashHarness([LampsPlugin(), Contributor(id: "every") { registrar in
-            registrar.slashCommandsForEveryShape {
-                SlashCommand("hello") { _, _, _ in }
-                SlashCommand("bye", when: { $0[Flagged.self] == true }) { _, _, _ in }
+            registrar.forEveryShape {
+                $0.slashCommands {
+                    SlashCommand("hello") { _, _, _ in }
+                    SlashCommand("bye", when: { $0[Flagged.self] == true }) { _, _, _ in }
+                }
             }
         }])
         let state = h.editor.slashCommands

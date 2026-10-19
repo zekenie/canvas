@@ -13,26 +13,28 @@ import TableOfContents
 /// contents' drops that take shapes into a frame, onto a subboard's board, or out of frames
 /// (`ContentsMoves`), placed the same way, several at once as one block. A feature no kind opts into and
 /// nothing imports, as Jump To and Reordering are: the commands go on every kind a drag moves, the kinds
-/// whose shapes have a box.
+/// whose shapes have a box (`forShapes(adopting: .box)`).
 public struct MovingPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "moving" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.slashCommandsForEveryShape(where: { hasBox($0.definition) }) {
-            // Asked only of the shapes that hold shapes or own boards (frames, subboards), so its rule
-            // may look further than move-near's.
-            SlashCommand("move-to", argument: "@frame or subboard", kinds: { $0.containingKinds.union($0.boardOwningKinds) },
-                         shapes: { target, owner, editor in Destination(of: owner, into: target, in: editor) != nil },
-                         step: MovingStyle.stepName) { id, arguments, editor in
-                guard let target = arguments.shapes.first else { return }
-                Move(id, in: editor)?.into(target)
-            }
-            // Asked of every shape the `@` picker ranks, as the person types.
-            SlashCommand("move-near", shapes: { target, owner, editor in admitsNear(target, for: owner, in: editor) },
-                         step: MovingStyle.stepName) { id, arguments, editor in
-                guard let target = arguments.shapes.first else { return }
-                Move(id, in: editor)?.near(target)
+        registrar.forShapes(adopting: .box) { boxes in
+            boxes.slashCommands {
+                // Asked only of the shapes that hold shapes or own boards (frames, subboards), so its rule
+                // may look further than move-near's.
+                SlashCommand("move-to", argument: "@frame or subboard", kinds: { $0.containingKinds.union($0.boardOwningKinds) },
+                             shapes: { target, owner, editor in Destination(of: owner, into: target, in: editor) != nil },
+                             step: MovingStyle.stepName) { id, arguments, editor in
+                    guard let target = arguments.shapes.first else { return }
+                    Move(id, in: editor)?.into(target)
+                }
+                // Asked of every shape the `@` picker ranks, as the person types.
+                SlashCommand("move-near", shapes: { target, owner, editor in admitsNear(target, for: owner, in: editor) },
+                             step: MovingStyle.stepName) { id, arguments, editor in
+                    guard let target = arguments.shapes.first else { return }
+                    Move(id, in: editor)?.near(target)
+                }
             }
         }
         registrar.contentsMoves(admits: { shapes, place, editor in Drop(shapes, to: place, in: editor) != nil },
@@ -46,10 +48,6 @@ enum MovingStyle {
     /// The undo step either command makes: a drag's name, so Edit › Undo Move takes it back.
     static let stepName = "Move"
 }
-
-/// Whether a kind's shapes have a box (`BoxShapeProps`): the kinds a drag moves, which the commands go on.
-@MainActor
-private func hasBox<Definition: ShapeDefinition>(_: Definition) -> Bool { Definition.Props.self is any BoxShapeProps.Type }
 
 // MARK: What each command takes
 

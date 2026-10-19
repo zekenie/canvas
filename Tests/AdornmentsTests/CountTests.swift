@@ -77,7 +77,9 @@ private func numberPlace(_ chip: CGRect) -> CGRect { CGRect(x: chip.maxX - 7 - 7
     test("a plain line is drawn with no capsule, in its ink, the secondary softer than the primary, in both appearances") {
         let (primary, _, frame) = try tintedBoard(.line("from"))
         let (secondary, _, _) = try tintedBoard(.line("from", ink: .secondary))
-        let plain = try adornedHarness([Contributor(id: "none") { $0.adornmentsForEveryShape(Chips.self) { _, _ in [] } }])
+        let plain = try adornedHarness([Contributor(id: "none") { $0.forEveryShape { scope in
+            scope.adornments(Chips.self) { _, _ in [] }
+        } }])
         plain.add(Box(boxFrame))
         for dark in [false, true] {
             let canvas = render(plain, dark: dark), strong = render(primary, dark: dark), soft = render(secondary, dark: dark)

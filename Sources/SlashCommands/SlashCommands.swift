@@ -4,7 +4,8 @@ import Canvas
 /// commands that shape offers; a line that is `/name` and what the command takes, entered with
 /// Return, runs the command and goes, leaving only what the command did. Contributed the way
 /// context menu items are: by a kind, by horizontals it opts into, by other plugins for that kind,
-/// and by any plugin for every shape, each command offered when its `when` says so. The core never
+/// and by any plugin for the kinds a scope reaches (`registrar.forShapes(holding:)`), each command
+/// offered when its `when` says so. The core never
 /// learns what a command is. A text view takes part by hosting `SlashCommandTyping` (Mentions' does,
 /// for every text where mentions are typed). Where a shape offers no command, a slash is a slash.
 extension PluginID {
@@ -13,24 +14,26 @@ extension PluginID {
 
 // MARK: The extension point
 
-/// Slash commands: what each kind's shapes offer, and what every shape does (`.any`). Keyed by
-/// name: each command claims its target and name, so two plugins offering one name to a kind, or to
-/// every shape, are `RegistryError.conflict` at startup. A kind's own command replaces an every-shape
-/// one of the same name. A name that can't be typed as one (`SlashCommandLine.isName`) refuses the
-/// plugin list.
+/// Slash commands: what each kind's shapes offer, and what the shapes of the kinds a scope reaches
+/// offer (`registrar.forShapes(holding:)`, `forShapes(adopting:)`, `forEveryShape`: a command for
+/// every kind with no scope is refused). Keyed by name: each command claims its target and name, so
+/// two plugins offering one name to a kind, or two scopes that reach one kind, are
+/// `RegistryError.conflict` at startup. A kind's own command replaces a scope's of the same name. A
+/// name that can't be typed as one (`SlashCommandLine.isName`) refuses the plugin list.
 public enum ShapeSlashCommands {}
 
 extension ShapeSlashCommands: KeyedExtensionPoint {
     public typealias Contribution = SlashCommandContribution
     public static var owner: PluginID { .slashCommands }
+    public static var scope: PointScope { .scoped }
 
     public static func uniqueKeys(of contribution: SlashCommandContribution, for target: ShapeTarget) -> [AnyHashable] {
         contribution.commands.map { SlashCommandKey(target: target, name: $0.name) }
     }
 
-    /// "/flip /grow → box", "/rename → every shape".
+    /// "/flip /grow → box", "/lock → every shape holding locked".
     public static func summary(of contribution: SlashCommandContribution, for target: ShapeTarget) -> String {
-        contribution.commands.map { "/\($0.name)" }.joined(separator: " ") + " → " + (target == .any ? "every shape" : "\(target)")
+        contribution.commands.map { "/\($0.name)" }.joined(separator: " ") + " → \(target)"
     }
 
     public static func check(_ registry: Registry) throws(RegistryError) {
@@ -43,7 +46,7 @@ extension ShapeSlashCommands: KeyedExtensionPoint {
     }
 }
 
-/// What a contribution claims: "box /flip", "* /rename".
+/// What a contribution claims: "box /flip", "every shape holding locked /lock".
 struct SlashCommandKey: Hashable, CustomStringConvertible {
     let target: ShapeTarget
     let name: String
@@ -55,9 +58,6 @@ struct SlashCommandKey: Hashable, CustomStringConvertible {
 @MainActor
 public struct SlashCommandContribution {
     let commands: [ErasedSlashCommand]
-    /// Which kinds, by their definition and what else they take part in: every shape's commands may
-    /// leave some out.
-    var appliesTo: @MainActor (SlashCommandKind) -> Bool = { _ in true }
 }
 
 extension SlashCommandContribution {
@@ -83,26 +83,12 @@ extension SlashCommandContribution {
         }
     }
 
-    /// Every shape's commands, over the record.
-    init(everyShape commands: [SlashCommand<AnyShapeRecord>], where appliesTo: @escaping @MainActor (SlashCommandKind) -> Bool) {
+    /// Commands over the record, for the kinds a scope reaches.
+    init(everyShape commands: [SlashCommand<AnyShapeRecord>]) {
         self.commands = commands.map {
             ErasedSlashCommand($0, read: { $0 }, write: { id, transaction, edit in transaction.update(id) { edit(&$0) } })
         }
-        self.appliesTo = appliesTo
     }
-}
-
-/// A kind, as an every-shape command's `where` sees it: its definition (so its capabilities) and the
-/// registry (so what else it takes part in).
-@MainActor
-public struct SlashCommandKind {
-    public let kind: ShapeKind
-    public let definition: any ShapeDefinition
-    public let registry: Registry
-
-    /// Whether this kind's shapes hold an added property: opted into it, however. A feature's
-    /// every-shape commands go only on the kinds that opted into the feature (`$0.holds(LockedProperty.self)`).
-    public func holds<P: ShapeProperty>(_: P.Type) -> Bool { registry.properties(for: kind).contains(P.key) }
 }
 
 // MARK: Sugar (what verticals and horizontals write)
@@ -133,17 +119,22 @@ extension PluginRegistrar {
         contribute(SlashCommandContribution(P.self, commands()), to: ShapeSlashCommands.self, for: .kind(P.kind))
     }
 
-    /// Commands over an added property's value, on every shape that has one, whatever its kind.
+    /// Commands over an added property's value, on the shapes of every kind that holds it, whatever
+    /// its kind: the report says "every shape holding <key>".
     public mutating func slashCommands<P: ShapeProperty>(of _: P.Type, @SlashCommandBuilder<P.Value> _ commands: () -> [SlashCommand<P.Value>]) {
-        contribute(SlashCommandContribution(property: P.self, commands()), to: ShapeSlashCommands.self, for: .any)
+        contribute(SlashCommandContribution(property: P.self, commands()), to: ShapeSlashCommands.self, for: .holding(P.key))
     }
+}
 
-    /// Commands for every shape, over the record. `where` picks kinds by their definition and what
-    /// else they take part in (`where: { $0.holds(LockedProperty.self) }`); `when` picks shapes. They
-    /// come after a kind's own.
-    public mutating func slashCommandsForEveryShape(where offersOn: @escaping @MainActor (SlashCommandKind) -> Bool = { _ in true },
-                                                    @SlashCommandBuilder<AnyShapeRecord> _ commands: () -> [SlashCommand<AnyShapeRecord>]) {
-        contribute(SlashCommandContribution(everyShape: commands(), where: offersOn), to: ShapeSlashCommands.self, for: .any)
+extension ScopedRegistrar {
+    /// Commands over the record, on the shapes of the kinds the scope reaches; `when` picks shapes.
+    /// They come after a kind's own, in plugin order:
+    ///
+    ///     registrar.forShapes(holding: LockedProperty.self) { lock in
+    ///         lock.slashCommands { SlashCommand("lock", command: .lock) }
+    ///     }
+    public mutating func slashCommands(@SlashCommandBuilder<AnyShapeRecord> _ commands: () -> [SlashCommand<AnyShapeRecord>]) {
+        contribute(SlashCommandContribution(everyShape: commands()), to: ShapeSlashCommands.self)
     }
 }
 

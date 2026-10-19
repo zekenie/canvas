@@ -38,7 +38,7 @@ struct MenuGroupID: Hashable {
 // MARK: Items
 
 /// One command in a context menu, over `Value`: the kind's props for a kind's own items
-/// (`x.contextMenu { }`), or `AnyShapeRecord` for every shape's (`contextMenuForEveryShape { }`).
+/// (`x.contextMenu { }`), or `AnyShapeRecord` for a scope's (`forShapes(holding: P.self) { $0.contextMenu { } }`).
 ///
 ///     MenuItem("Mark Done", when: { $0.status != .done }) { $0.status = .done }
 ///

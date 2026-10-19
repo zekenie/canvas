@@ -43,7 +43,9 @@ extension CornerDisc: Adornment {
         expectEqual(changedPixels(untitled, long, in: CGRect(x: 181, y: 65, width: 100, height: 30)), 0, "and no further")
     },
     test("a long title's pill stops 4 points short of what the row's right end holds, whoever put it there") {
-        let discs = Contributor(id: "corner-discs") { $0.adornmentForEveryShape(CornerDisc.self) { _, _ in AdornmentLabel(systemImage: "circle.fill") } }
+        let discs = Contributor(id: "corner-discs") { $0.forEveryShape { scope in
+            scope.adornment(CornerDisc.self) { _, _ in AdornmentLabel(systemImage: "circle.fill") }
+        } }
         let editor = try titleEditor([discs])
         let empty = render(editor)
         let id = editor.add(Plaque(CGRect(x: 60, y: 100, width: 120, height: 80)))   // its right edge at 180, the disc from 162

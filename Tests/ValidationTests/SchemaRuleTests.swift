@@ -143,7 +143,7 @@ extension CountedDefinition: ShapeDefinition {
     test("the schema's rule is Validation's own, one for every kind, in the report") {
         let registry = try Registry(plugins: [FixturesPlugin(), ValidationPlugin()])
         expectEqual(registry.report.split(separator: "\n").last.map(String.init),
-                    "validation    service ValidationEngine · overlay ValidationOverlay · ValidationRules")
+                    "validation    service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape")
     },
 ])
 

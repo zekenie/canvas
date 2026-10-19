@@ -12,7 +12,7 @@ import TestKit
     test("the report: two commands for every shape, and the table of contents' drops that move shapes, and nothing else") {
         let lines = try Registry(plugins: movingPlugins()).report.split(separator: "\n").map(String.init)
         let line = try require(lines.first { $0.hasPrefix("moving ") })
-        expectEqual(line.dropFirst("moving".count).drop { $0 == " " }, "/move-to /move-near → every shape · ContentsMoves")
+        expectEqual(line.dropFirst("moving".count).drop { $0 == " " }, "/move-to /move-near → every shape with a box · ContentsMoves")
     },
 
     test("every kind with a box offers both, in that order; a link and a tag, which have none, offer neither") {

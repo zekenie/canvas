@@ -9,10 +9,19 @@ public struct Registry {
     let pluginIDs: [PluginID]
     private let byPoint: [ObjectIdentifier: [RawContribution]]
     /// What `contributions(to:for:)` returns, worked out once, since plugins ask per shape (every
-    /// shape in a frame, some of them): each kind with contributions of its own to a point, then
-    /// every kind's (`forAnyKind`, which is also the answer for a kind with none of its own).
-    private let forKind: [ObjectIdentifier: [ShapeKind: [RawContribution]]]
+    /// shape in a frame, some of them): for each kind with contributions of its own to a point, or
+    /// that a scoped contribution reaches, its own, then those for every kind and those whose scope
+    /// reaches it, each in plugin order; every kind's alone (`forAnyKind`) for a kind with neither.
+    /// Scopes are resolved last (`resolveScopes`), once everything they read is built.
+    private var forKind: [ObjectIdentifier: [ShapeKind: [RawContribution]]]
     private let forAnyKind: [ObjectIdentifier: [RawContribution]]
+    /// While capabilities' tests run (`resolveScopes`), on the registry they're handed: the points that
+    /// have scoped contributions, which a test may not ask about, since their answer is what's being
+    /// worked out.
+    private var resolvingScopes = false
+    private var scopedPoints: Set<ObjectIdentifier> = []
+    /// The kinds each capability a scope names picks, worked out as scopes are resolved.
+    private var capabilityKinds: [ShapeCapability: Set<ShapeKind>] = [:]
     private let all: [RawContribution]
     private let definitions: [ShapeKind: any ShapeDefinition]
     /// Kinds whose props are bound to other shapes (`ShapeReferencing`): what a deletion asks to
@@ -82,7 +91,7 @@ public struct Registry {
         forAnyKind = byPoint.mapValues { $0.filter { $0.target == .any } }
         forKind = byPoint.mapValues { point in
             let anyKind = point.filter { $0.target == .any }
-            return Dictionary(grouping: point.filter { $0.target != .any }, by: \.target).reduce(into: [:]) { kinds, own in
+            return Dictionary(grouping: point.filter { if case .kind = $0.target { true } else { false } }, by: \.target).reduce(into: [:]) { kinds, own in
                 if case .kind(let kind) = own.key { kinds[kind] = own.value + anyKind }
             }
         }
@@ -159,7 +168,9 @@ public struct Registry {
         }
         self.schemas = schemas
         schemaValidators = validators
-        // Owners are installed and keys unique by now, so a point's own rules can rely on both.
+        try resolveScopes()
+        // Owners are installed, keys unique and scopes resolved by now, so a point's own rules can
+        // rely on all three.
         var checked: Set<ObjectIdentifier> = []
         for c in all where checked.insert(c.point).inserted {
             do { try c.pointType.check(self) }
@@ -170,6 +181,7 @@ public struct Registry {
 
     private static func check(_ contributions: [RawContribution], installed: [PluginID]) throws(RegistryError) {
         let kinds = Set(contributions.filter { $0.point == ObjectIdentifier(CorePoints.Shapes.self) }.map(\.target))
+        let declared = Set(contributions.compactMap { ($0.value as? PropertyDeclaration)?.codec.key })
         var claimed: [ObjectIdentifier: [AnyHashable: PluginID]] = [:]
         for c in contributions {
             guard installed.contains(c.owner) else {
@@ -177,6 +189,18 @@ public struct Registry {
             }
             if case .kind(let kind) = c.target, !kinds.contains(c.target) {
                 throw .unknownKind(kind, point: c.pointName, contributor: c.pluginID)
+            }
+            if case .holding(let key) = c.target, !declared.contains(key) {
+                throw .invalid(point: c.pointName, reason: "\(c.pluginID) contributes for \(c.target), which no installed plugin declares")
+            }
+            switch (c.pointType.scope, c.target) {
+            case (.scoped, .any):
+                throw .invalid(point: c.pointName, reason: "\(c.pluginID) contributes for every shape with no scope; say which shapes it's for: "
+                               + "forShapes(holding:), forShapes(adopting:), or forEveryShape for what every shape has")
+            case (.kinds, .any), (.kinds, .holding), (.kinds, .adopting):
+                throw .invalid(point: c.pointName, reason: "\(c.pluginID) contributes for \(c.target == .any ? "every shape" : "\(c.target)"); "
+                               + "it takes one kind at a time")
+            default: break
             }
             for key in c.keys {
                 if let first = claimed[c.point]?[key] {
@@ -194,12 +218,95 @@ public struct Registry {
         (byPoint[ObjectIdentifier(P.self)] ?? []).map { Contributed(value: $0.value as! P.Contribution, target: $0.target, pluginID: $0.pluginID) }
     }
 
-    /// The contributions that apply to a kind: those for that kind, then those for every kind,
-    /// each in plugin order.
+    /// The contributions that apply to a kind: those for that kind, then those for every kind and those
+    /// whose scope reaches it (`forShapes(holding:)`, `forShapes(adopting:)`, `forEveryShape`), each in
+    /// plugin order. A scoped contribution reaches no other kind, so a horizontal filters nothing.
     public func contributions<P: ExtensionPoint>(to point: P.Type, for kind: ShapeKind) -> [P.Contribution] {
-        let point = ObjectIdentifier(P.self)
         // A closure, not `\.value`: a key path in a generic function is built again on every call.
-        return (forKind[point]?[kind] ?? forAnyKind[point] ?? []).map { $0.value as! P.Contribution }
+        reaching(ObjectIdentifier(P.self), kind, from: P.self).map { $0.value as! P.Contribution }
+    }
+
+    /// The same, with where each came from: for a reader that tells a kind's own from the rest.
+    public func contributions<P: ExtensionPoint>(to point: P.Type, reaching kind: ShapeKind) -> [Contributed<P.Contribution>] {
+        reaching(ObjectIdentifier(P.self), kind, from: P.self).map {
+            Contributed(value: $0.value as! P.Contribution, target: $0.target, pluginID: $0.pluginID)
+        }
+    }
+
+    private func reaching<P: ExtensionPoint>(_ point: ObjectIdentifier, _ kind: ShapeKind, from _: P.Type) -> [RawContribution] {
+        if resolvingScopes {
+            precondition(!scopedPoints.contains(point), "a capability's test asked for the contributions to \(P.self), which scopes reach")
+        }
+        return forKind[point]?[kind] ?? forAnyKind[point] ?? []
+    }
+
+    /// Works out which kinds each scoped contribution reaches, as the last of what the registry builds:
+    /// `.holding` the kinds that opt into the property, `.adopting` those a capability's test picks
+    /// (asked once a kind, of the registry with no scope resolved, which its test may read but for the
+    /// points that have scoped contributions). Then, for each point a scope reaches, every kind's list is its
+    /// own, then every kind's and the scoped ones that reach it, in plugin order; and two of those that
+    /// claim one key on a kind are a conflict, as two for every kind always were (a kind's own may: it
+    /// takes the place of the rest, wherever a point keeps the first).
+    private mutating func resolveScopes() throws(RegistryError) {
+        let scoped = all.filter(\.target.isScoped)
+        guard !scoped.isEmpty else { return }
+        let kinds = self.kinds
+        var holders: [PropertyKey: Set<ShapeKind>] = [:]
+        for (kind, keys) in propertyTable.byKind {
+            for key in keys { holders[key, default: []].insert(kind) }
+        }
+        var asked = self
+        asked.resolvingScopes = true
+        asked.scopedPoints = Set(scoped.map(\.point))
+        var picked: [ShapeCapability: Set<ShapeKind>] = [:]
+        for c in scoped {
+            guard case .adopting(let capability) = c.target, picked[capability] == nil else { continue }
+            picked[capability] = Set(kinds.filter { kind in
+                asked.registeredKind(kind).map(capability.test) ?? false
+            })
+        }
+        for point in Set(scoped.map(\.point)) {
+            let contributions = byPoint[point] ?? []
+            var table: [ShapeKind: [RawContribution]] = [:]
+            for kind in kinds {
+                let reaching = contributions.filter {
+                    switch $0.target {
+                    case .kind: false
+                    case .any: true
+                    case .holding(let key): holders[key]?.contains(kind) == true
+                    case .adopting(let capability): picked[capability]?.contains(kind) == true
+                    }
+                }
+                let own = contributions.filter { $0.target == .kind(kind) }
+                // A kind no scope reaches, with none of its own, reads every kind's (`forAnyKind`).
+                guard !own.isEmpty || reaching.contains(where: \.target.isScoped) else { continue }
+                table[kind] = own + reaching
+                var claimed: [AnyHashable: PluginID] = [:]
+                for c in reaching {
+                    for key in c.keys(for: .kind(kind)) {
+                        if let first = claimed[key] { throw .conflict(point: c.pointName, key: "\(key.base)", plugins: [first, c.pluginID]) }
+                        claimed[key] = c.pluginID
+                    }
+                }
+            }
+            forKind[point] = table
+        }
+        capabilityKinds = picked
+    }
+
+    /// Whether a contribution for `target` is for a kind: its own, every kind's, or a scope's that
+    /// reaches it. For a reader that keeps contributions for many kinds together and picks among
+    /// them for a set of shapes (the items for the canvas a menu over shapes shows).
+    public func reaches(_ target: ShapeTarget, _ kind: ShapeKind) -> Bool {
+        switch target {
+        case .kind(let own): own == kind
+        case .any: true
+        case .holding(let key): properties(for: kind).contains(key)
+        case .adopting(let capability):
+            capabilityKinds[capability]?.contains(kind) ?? memo(CapabilityKindKey(capability: capability, kind: kind)) {
+                registeredKind(kind).map(capability.test) ?? false
+            }
+        }
     }
 
     /// A value a plugin works out of this registry once, per key, since the registry never changes:
@@ -491,6 +598,11 @@ struct RawContribution {
         }
     }
 
+    /// The keys it would claim for `target` (a kind a scope reaches), on a keyed point; none on another.
+    func keys(for target: ShapeTarget) -> [AnyHashable] {
+        (pointType as? any KeyedExtensionPoint.Type).map { Self.keys(of: value, for: target, claimedIn: $0) } ?? []
+    }
+
     private static func keys<K: KeyedExtensionPoint>(of value: Any, for target: ShapeTarget, claimedIn _: K.Type) -> [AnyHashable] {
         K.uniqueKeys(of: value as! K.Contribution, for: target)
     }
@@ -498,6 +610,7 @@ struct RawContribution {
 
 private struct KindTintMemo: Hashable { let kind: ShapeKind }
 private struct StepRulesMemo: Hashable { let kind: ShapeKind }
+private struct CapabilityKindKey: Hashable { let capability: ShapeCapability; let kind: ShapeKind }
 
 /// The values `Registry.memo(_:_:)` keeps: a class, so the registry's copies share them.
 @MainActor

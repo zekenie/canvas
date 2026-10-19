@@ -8,12 +8,13 @@ import Selection
 final class ContextMenuState {
     private unowned let editor: CanvasEditor
     private var candidates: [ShapeKind: [ErasedEntry]] = [:]
-    /// The items for the canvas (`CanvasContextMenu`), in plugin and builder order.
-    private let canvasEntries: [MenuEntry<MenuSubject>]
+    /// The items for the canvas (`CanvasContextMenu`), in plugin order, each with the shapes it's for:
+    /// every menu (`.any`), or a scope's.
+    private let canvasItems: [Contributed<CanvasMenuContribution>]
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        canvasEntries = editor.registry.contributions(to: CanvasContextMenu.self).flatMap(\.value.entries)
+        canvasItems = editor.registry.contributions(to: CanvasContextMenu.self)
     }
 
     /// A secondary click: the context menu for what it's on, as the select tool sees it. That's the
@@ -62,25 +63,33 @@ final class ContextMenuState {
     }
 
     /// What the menu asked for at `point` (world units; none for the selection's menu) holds for these
-    /// shapes: the items that apply to every one of them, then the canvas's items, less any whose place
-    /// a shape's own item takes (shown or not, as a kind's own item takes an every-shape one's), and
-    /// less the items that run a command in `omitting`.
+    /// shapes: the items that apply to every one of them, then the canvas's items (a scope's only where
+    /// it reaches every shape's kind), less any whose place a shape's own item takes (shown or not, as
+    /// a kind's own item takes a scope's), and less the items that run a command in `omitting`.
     func entries(for ids: [ShapeID], at point: CGPoint?, omitting: Set<CanvasCommand> = []) -> [ResolvedEntry] {
         let records = ids.compactMap { editor.document[$0] }
         let subject = MenuSubject(editor: editor, shapes: records.map(\.id), point: point)
         let own = ContextMenuItems.resolve(records.map { ($0, ContextMenuItems.shown(candidates(for: $0.kind), for: $0, in: editor)) },
                                            for: subject, omitting: omitting)
-        let taken = Set(Set(records.map(\.kind)).flatMap { candidates(for: $0).map(\.key) })
-        let canvas = ContextMenuItems.resolve(canvasEntries, for: subject, omitting: omitting)
+        let kinds = Set(records.map(\.kind))
+        let taken = Set(kinds.flatMap { candidates(for: $0).map(\.key) })
+        let canvas = ContextMenuItems.resolve(canvasEntries(for: kinds), for: subject, omitting: omitting)
         return own + canvas.filter { !taken.contains($0.key) }
     }
 
-    /// The kind's own entries, then every shape's that apply to it, each in plugin and builder order.
+    /// The items for the canvas a menu over shapes of these kinds holds, in plugin and builder order:
+    /// every menu's, and a scope's where it reaches every one of the kinds (so none on empty canvas).
+    private func canvasEntries(for kinds: Set<ShapeKind>) -> [MenuEntry<MenuSubject>] {
+        let registry = editor.registry
+        return canvasItems.filter { item in
+            item.target == .any || (!kinds.isEmpty && kinds.allSatisfy { registry.reaches(item.target, $0) })
+        }.flatMap(\.value.entries)
+    }
+
+    /// The kind's own entries, then those of the scopes that reach it, each in plugin and builder order.
     private func candidates(for kind: ShapeKind) -> [ErasedEntry] {
         if let known = candidates[kind] { return known }
-        guard let definition = editor.registry.definition(for: kind) else { return [] }
-        let found = editor.registry.contributions(to: ShapeContextMenus.self, for: kind)
-            .filter { $0.appliesTo(definition) }.flatMap(\.entries)
+        let found = editor.registry.contributions(to: ShapeContextMenus.self, for: kind).flatMap(\.entries)
         candidates[kind] = found
         return found
     }
@@ -124,8 +133,8 @@ struct ResolvedEntry {
 
 @MainActor
 enum ContextMenuItems {
-    /// What shows for one shape at one level: the first entry with each key (a kind's own before
-    /// every shape's), then only those whose `when` holds, and whose command, if it names one, a plugin
+    /// What shows for one shape at one level: the first entry with each key (a kind's own before a
+    /// scope's), then only those whose `when` holds, and whose command, if it names one, a plugin
     /// claims.
     static func shown(_ entries: [ErasedEntry], for record: AnyShapeRecord, in editor: CanvasEditor) -> [ErasedEntry] {
         var seen = Set<EntryKey>()

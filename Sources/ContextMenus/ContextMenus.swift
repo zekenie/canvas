@@ -4,7 +4,8 @@ import Selection
 
 /// Context menus, as a plugin: a right-click (or Control-click) on a shape opens the items that
 /// apply to it, contributed by its kind, by horizontals it opts into, by other plugins for its kind,
-/// and by any plugin for every shape. Nothing applies, and the click does nothing. The core only
+/// and by any plugin for the kinds a scope reaches (`registrar.forShapes(holding:)`). Nothing
+/// applies, and the click does nothing. The core only
 /// passes the click along (`registrar.menuForSecondaryClick`); it never learns what's in a menu.
 extension PluginID {
     public static let contextMenus: PluginID = "context-menus"
@@ -12,22 +13,25 @@ extension PluginID {
 
 // MARK: The extension point
 
-/// Context menu items: what each kind's shapes offer, and what every shape does (`.any`). Keyed by
-/// item: each item (and each submenu, and each item in one) claims its target, group and id, so two
-/// plugins adding one item to a kind, or to every shape, are `RegistryError.conflict` at startup. A
-/// kind's own item replaces an every-shape one with the same group and id.
+/// Context menu items: what each kind's shapes offer, and what the shapes of the kinds a scope
+/// reaches offer (`registrar.forShapes(holding:)`, `forShapes(adopting:)`, `forEveryShape`: an item
+/// for every kind with no scope is refused). Keyed by item: each item (and each submenu, and each item
+/// in one) claims its target, group and id, so two plugins adding one item to a kind, or two scopes
+/// that reach one kind, are `RegistryError.conflict` at startup. A kind's own item replaces a scope's
+/// with the same group and id.
 public enum ShapeContextMenus {}
 
 extension ShapeContextMenus: KeyedExtensionPoint {
     public typealias Contribution = ContextMenuContribution
     public static var owner: PluginID { .contextMenus }
+    public static var scope: PointScope { .scoped }
 
     public static func uniqueKeys(of contribution: ContextMenuContribution, for target: ShapeTarget) -> [AnyHashable] {
         contribution.entries.flatMap { $0.paths(under: []) }.map { MenuItemKey(target: target, path: $0) }
     }
 }
 
-/// Where an item is: which shapes, and its group and id at each level ("* Arrange ▸ Send to Back").
+/// Where an item is: which shapes, and its group and id at each level ("box Arrange ▸ Send to Back").
 struct MenuItemKey: Hashable, CustomStringConvertible {
     let target: ShapeTarget
     let path: [EntryKey]
@@ -45,8 +49,6 @@ struct EntryKey: Hashable {
 @MainActor
 public struct ContextMenuContribution {
     let entries: [ErasedEntry]
-    /// Which kinds, by their definition: every shape's items may leave some out.
-    var appliesTo: @MainActor (any ShapeDefinition) -> Bool = { _ in true }
 }
 
 /// An item or submenu over any record: hidden for a record it can't read. A class, so the items one
@@ -143,12 +145,11 @@ extension ContextMenuContribution {
         }
     }
 
-    /// Every shape's items, over the record.
-    init(everyShape entries: [MenuEntry<AnyShapeRecord>], where appliesTo: @escaping @MainActor (any ShapeDefinition) -> Bool) {
+    /// Items over the record, for the kinds a scope reaches.
+    init(everyShape entries: [MenuEntry<AnyShapeRecord>]) {
         self.entries = entries.map {
             ErasedEntry($0, read: { $0 }, write: { id, transaction, edit in transaction.update(id) { edit(&$0) } })
         }
-        self.appliesTo = appliesTo
     }
 }
 
@@ -181,17 +182,32 @@ extension PluginRegistrar {
         contribute(ContextMenuContribution(P.self, items()), to: ShapeContextMenus.self, for: .kind(P.kind))
     }
 
-    /// Items over an added property's value, on every shape that has one, whatever its kind.
+    /// Items over an added property's value, on the shapes of every kind that holds it, whatever its
+    /// kind: the report says "every shape holding <key>".
     public mutating func contextMenu<P: ShapeProperty>(of _: P.Type, @MenuBuilder<P.Value> _ items: () -> [MenuEntry<P.Value>]) {
-        contribute(ContextMenuContribution(property: P.self, items()), to: ShapeContextMenus.self, for: .any)
+        contribute(ContextMenuContribution(property: P.self, items()), to: ShapeContextMenus.self, for: .holding(P.key))
+    }
+}
+
+extension ScopedRegistrar {
+    /// Items over the record, on the shapes of the kinds the scope reaches; `when` picks shapes
+    /// (`{ $0.box != nil }` for those with a frame). They come after a kind's own in their group.
+    public mutating func contextMenu(@MenuBuilder<AnyShapeRecord> _ items: () -> [MenuEntry<AnyShapeRecord>]) {
+        contribute(ContextMenuContribution(everyShape: items()), to: ShapeContextMenus.self)
     }
 
-    /// Items for every shape, over the record. `where` picks kinds by their definition, and so by
-    /// capability (`where: { !($0 is any PaintOrderAnchored) }`); `when` picks shapes
-    /// (`{ $0.box != nil }` for those with a frame). They come after a kind's own in their group.
-    public mutating func contextMenuForEveryShape(where appliesTo: @escaping @MainActor (any ShapeDefinition) -> Bool = { _ in true },
-                                                  @MenuBuilder<AnyShapeRecord> _ items: () -> [MenuEntry<AnyShapeRecord>]) {
-        contribute(ContextMenuContribution(everyShape: items(), where: appliesTo), to: ShapeContextMenus.self, for: .any)
+    /// Items for the canvas (`registrar.contextMenuForCanvas`), over the menu's `MenuSubject`, shown
+    /// only in a menu whose every shape is of a kind the scope reaches, so never on empty canvas: a
+    /// feature's items for a selection, which run its commands or are made when the menu opens.
+    ///
+    ///     registrar.forShapes(holding: LockedProperty.self) { lock in
+    ///         lock.contextMenuForCanvas {
+    ///             MenuItem(command: .lock, in: StateMenuGroup.self)
+    ///             MenuItem(command: .unlock, in: StateMenuGroup.self)
+    ///         }
+    ///     }
+    public mutating func contextMenuForCanvas(@MenuBuilder<MenuSubject> _ items: () -> [MenuEntry<MenuSubject>]) {
+        contribute(CanvasMenuContribution(entries: items()), to: CanvasContextMenu.self)
     }
 }
 
@@ -199,7 +215,9 @@ extension PluginRegistrar {
 
 /// Items that aren't any one shape's (Cut, Copy and Paste; Delete and Select All, this plugin's
 /// own). They're in every context menu: on shapes, after the shapes' own items in their groups'
-/// order, and on empty canvas, where they're the menu. Keyed by group and id, as a shape's are: two plugins adding one item are a
+/// order, and on empty canvas, where they're the menu. Those a scope gives
+/// (`forShapes(holding:) { $0.contextMenuForCanvas { … } }`) are only in a menu whose every shape
+/// the scope reaches. Keyed by group and id, as a shape's are: two plugins adding one item are a
 /// `conflict`, and a shape's own item with the same group and id takes its place, shown or not.
 public enum CanvasContextMenu {}
 

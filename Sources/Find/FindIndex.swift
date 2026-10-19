@@ -163,13 +163,12 @@ final class FindIndex {
         entries[record.id] = texts.isEmpty ? nil : IndexedShape(board: board, texts: texts)
     }
 
-    /// A kind's contributions, its own and every kind's that `where` lets in, found once.
+    /// A kind's contributions, its own and those whose scope reaches it, found once.
     func contributions(for kind: ShapeKind) -> [(source: Int, value: FindableTextsContribution)] {
         if let known = contributions[kind] { return known }
         let registry = editor.registry
-        guard let definition = registry.definition(for: kind) else { return [] }
-        let findable = FindableKind(kind: kind, definition: definition, registry: registry)
-        let found = registry.contributions(to: FindableTexts.self, for: kind).filter { $0.appliesTo(findable) }
+        guard registry.definition(for: kind) != nil else { return [] }
+        let found = registry.contributions(to: FindableTexts.self, for: kind)
             .enumerated().map { (source: $0.offset, value: $0.element) }
         contributions[kind] = found
         return found

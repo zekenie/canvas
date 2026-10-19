@@ -12,13 +12,14 @@ public struct ColorDetailsPlugin: ListedPlugin {
     public var id: PluginID { "color-details" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        // On every shape, shown while its kind has colors: a shape with no color of its own holds
-        // no value, so a section over the property would leave it out.
-        registrar.detailsForEveryShape(where: { _ in true }) {
-            // No header: the row's own label says what it is, so the color costs the panel one line.
-            DetailSection(in: StyleTab.self, id: ColorsStyle.color) { $record in ColorRow(record: $record) }
-                .named(ColorsStyle.color)
-                .shownWhile { shape, context in context.service(ColorBook.self)?.hasColors(shape.kind) == true }
+        // On the kinds that have colors, over the whole record: a shape with no color of its own holds no
+        // value, so a section over the property's value would leave it out.
+        registrar.forShapes(holding: ColorProperty.self) { colorable in
+            colorable.details {
+                // No header: the row's own label says what it is, so the color costs the panel one line.
+                DetailSection(in: StyleTab.self, id: ColorsStyle.color) { $record in ColorRow(record: $record) }
+                    .named(ColorsStyle.color)
+            }
         }
     }
 }

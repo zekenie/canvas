@@ -54,8 +54,9 @@ extension ContentsTitles: KeyedExtensionPoint {
 
 /// Marks at the trailing end of a shape's row, from any plugin: a state worth seeing at a glance down
 /// the list (Validation marks a shape with issues with a red or orange dot, Locking a locked
-/// one with a lock). A list: the kind's contributions, then every kind's that apply to it, each in
-/// plugin order, and a row shows every mark it gets. A
+/// one with a lock). A list: the kind's contributions, then those whose scope reaches it (a lock on the
+/// kinds that can be locked, an issue's dot on every shape), each in plugin order, and a row shows
+/// every mark it gets. A
 /// mark is part of the row, made with it, and made again with it when a commit changes the shape.
 /// A mark read from other shapes (validation's rules may look at other shapes) also names, with
 /// `affected`, the shapes a commit may change the marks of without changing them: their marks are
@@ -64,6 +65,8 @@ extension ContentsTitles: KeyedExtensionPoint {
 public enum ContentsMarks: ExtensionPoint {
     public typealias Contribution = ContentsMarkContribution
     public static var owner: PluginID { .tableOfContents }
+    /// A mark on other kinds' rows says which: the kinds that hold a property, or have a capability.
+    public static var scope: PointScope { .scoped }
 }
 
 /// What `ContentsMarks` stores: how to mark a shape's row, and, for a mark that reads more than the
@@ -72,31 +75,15 @@ public enum ContentsMarks: ExtensionPoint {
 public struct ContentsMarkContribution {
     let mark: @MainActor (AnyShapeRecord, ContentsContext) -> ContentsMark?
     let affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)?
-    /// Which kinds an every-shape mark is for, asked once per kind.
-    let appliesTo: @MainActor (ContentsKind) -> Bool
 
     /// `mark` gives the shape's mark, nil for none. `affected`, given each commit's change set,
     /// names the shapes it doesn't change whose marks it may; leave it out for a mark that reads
-    /// only its shape. `appliesTo` picks the kinds a mark for every shape goes on.
+    /// only its shape.
     public init(affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)? = nil,
-                where appliesTo: @escaping @MainActor (ContentsKind) -> Bool = { _ in true },
                 _ mark: @escaping @MainActor (AnyShapeRecord, ContentsContext) -> ContentsMark?) {
         self.mark = mark
         self.affected = affected
-        self.appliesTo = appliesTo
     }
-}
-
-/// A kind, as the `where` of a mark for every shape sees it (`contentsMarkForEveryShape(where:)`):
-/// asked once per kind, so a mark goes only on the kinds that opted into what it marks.
-@MainActor
-public struct ContentsKind {
-    public let kind: ShapeKind
-    public let registry: Registry
-
-    /// Whether this kind's shapes hold an added property: opted into it, however (Locking's lock
-    /// goes on the kinds that can be locked, `$0.holds(LockedProperty.self)`).
-    public func holds<P: ShapeProperty>(_: P.Type) -> Bool { registry.properties(for: kind).contains(P.key) }
 }
 
 /// A mark at a row's trailing end: a small dot in `color`, or, with `symbol`, that SF Symbol in it
@@ -392,27 +379,29 @@ extension PluginRegistrar {
     public mutating func contentsHeading(_ heading: @escaping @MainActor (CanvasEditor) -> ContentsHeading?) {
         contribute(heading, to: ContentsHeadings.self)
     }
+}
 
-    /// A mark on every shape's row, where `make` gives one (nil for none), from the shape and the
-    /// editor's services; `where` (a `ContentsKind`, asked once per kind) keeps it to the kinds
-    /// that opted into what it marks, as Locking's lock goes only on kinds that can be locked:
+extension ScopedRegistrar {
+    /// A mark on the row of every shape the scope reaches, where `make` gives one (nil for none), from
+    /// the shape and the editor's services: Locking's lock goes only on the kinds that can be locked.
     ///
-    ///     registrar.contentsMarkForEveryShape(where: { $0.holds(LockedProperty.self) }) { shape, _ in
-    ///         shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
+    ///     registrar.forShapes(holding: LockedProperty.self) { lock in
+    ///         lock.contentsMark { shape, _ in
+    ///             shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
+    ///         }
     ///     }
     ///
     /// A mark read from more than the shape (a horizontal's engine, which looks at other shapes)
     /// names, with `affected`, the shapes whose marks a commit may change besides those it changes:
     ///
-    ///     registrar.contentsMarkForEveryShape(affected: { changes, context in
-    ///         context.service(ValidationEngine.self)?.affected(by: changes) ?? []
-    ///     }) { shape, context in ... }
-    public mutating func contentsMarkForEveryShape(
-        where appliesTo: @escaping @MainActor (ContentsKind) -> Bool = { _ in true },
-        affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)? = nil,
-        _ make: @escaping @MainActor (AnyShapeRecord, ContentsContext) -> ContentsMark?
-    ) {
-        contribute(ContentsMarkContribution(affected: affected, where: appliesTo, make), to: ContentsMarks.self, for: .any)
+    ///     registrar.forEveryShape { every in
+    ///         every.contentsMark(affected: { changes, context in
+    ///             context.service(ValidationEngine.self)?.affected(by: changes) ?? []
+    ///         }) { shape, context in ... }
+    ///     }
+    public mutating func contentsMark(affected: (@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>)? = nil,
+                                      _ make: @escaping @MainActor (AnyShapeRecord, ContentsContext) -> ContentsMark?) {
+        contribute(ContentsMarkContribution(affected: affected, make), to: ContentsMarks.self)
     }
 }
 

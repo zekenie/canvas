@@ -33,7 +33,7 @@ public protocol TransformChannel {
     static var name: String { get }
     /// Whether a kind may offer it; the registry refuses a plugin list where one that may not does. Every
     /// kind may, by default.
-    static func admits(_ kind: TransformKind) -> Bool
+    static func admits(_ kind: RegisteredKind) -> Bool
     /// What a shape of a kind that offers it hands the target, read in the transaction that turns it, before
     /// the target changes anything. Nil if it has nothing to hand over: the target's turn doesn't run, and the
     /// shape stays as it is.
@@ -41,44 +41,32 @@ public protocol TransformChannel {
 }
 
 extension TransformChannel {
-    public static func admits(_ kind: TransformKind) -> Bool { true }
-}
-
-/// A kind, as a channel's `admits` sees it: its definition (so its capabilities) and the registry (so what
-/// else it takes part in).
-@MainActor
-public struct TransformKind {
-    public let kind: ShapeKind
-    public let definition: any ShapeDefinition
-    public let registry: Registry
+    public static func admits(_ kind: RegisteredKind) -> Bool { true }
 }
 
 // MARK: The extension points
 
 /// The extension point: which kinds' shapes offer a channel. Keyed by kind and channel: a kind offers a
 /// channel once, so two plugins offering one to a kind are `RegistryError.conflict` at startup. Only a kind
-/// the channel admits (`TransformChannel.admits`) may offer it, and only a kind, not every shape: a plugin
-/// list where one doesn't is `RegistryError.invalid`.
+/// the channel admits (`TransformChannel.admits`) may offer it, and only a kind, not every shape or a
+/// scope's (the point's `scope`): a plugin list where one doesn't is `RegistryError.invalid`.
 public enum TransformSources {}
 
 extension TransformSources: KeyedExtensionPoint {
     public typealias Contribution = TransformSource
     public static var owner: PluginID { .transform }
+    public static var scope: PointScope { .kinds }
 
     public static func uniqueKeys(of source: TransformSource, for target: ShapeTarget) -> [AnyHashable] {
         [TransformSourceKey(target: target, channel: source.channel, name: source.name)]
     }
 
-    /// A channel offered by a kind it doesn't admit, or by every kind.
+    /// A channel offered by a kind it doesn't admit.
     public static func check(_ registry: Registry) throws(RegistryError) {
         for contributed in registry.contributions(to: TransformSources.self) {
+            guard case .kind(let kind) = contributed.target else { continue }
             let source = contributed.value
-            guard case .kind(let kind) = contributed.target else {
-                throw .invalid(point: "TransformSources", reason: "\(contributed.pluginID) offers the \(source.name) channel on every kind; "
-                               + "only a kind the channel admits offers it")
-            }
-            guard let definition = registry.definition(for: kind),
-                  source.admits(TransformKind(kind: kind, definition: definition, registry: registry)) else {
+            guard registry.registeredKind(kind).map(source.admits) == true else {
                 throw .invalid(point: "TransformSources",
                                reason: "\(contributed.pluginID) offers the \(source.name) channel on \(kind), which can't offer it")
             }
@@ -87,7 +75,7 @@ extension TransformSources: KeyedExtensionPoint {
 
     /// "offers channel container → frame".
     public static func summary(of source: TransformSource, for target: ShapeTarget) -> String {
-        "offers channel \(source.name) → \(target == .any ? "every shape" : "\(target)")"
+        "offers channel \(source.name) → \(target)"
     }
 }
 
@@ -105,7 +93,7 @@ struct TransformSourceKey: Hashable, CustomStringConvertible {
 public struct TransformSource {
     let channel: ObjectIdentifier
     let name: String
-    let admits: @MainActor (TransformKind) -> Bool
+    let admits: @MainActor (RegisteredKind) -> Bool
 
     init<C: TransformChannel>(_: C.Type) {
         channel = ObjectIdentifier(C.self)
@@ -118,26 +106,19 @@ public struct TransformSource {
 /// kind: a shape turns into a kind one way, so a kind takes one channel (two claims to it are
 /// `RegistryError.conflict` at startup), as a second channel into one kind would share its menu item and its
 /// command, Turn into … and `/turn-into-…`, if one is ever needed. Only a kind takes a channel, not every
-/// shape (`RegistryError.invalid`).
+/// shape or a scope's (the point's `scope`: `RegistryError.invalid`).
 public enum TransformTargets {}
 
 extension TransformTargets: KeyedExtensionPoint {
     public typealias Contribution = TransformTarget
     public static var owner: PluginID { .transform }
+    public static var scope: PointScope { .kinds }
 
     public static func uniqueKeys(of _: TransformTarget, for target: ShapeTarget) -> [AnyHashable] { [target] }
 
-    /// A channel taken into every kind.
-    public static func check(_ registry: Registry) throws(RegistryError) {
-        for contributed in registry.contributions(to: TransformTargets.self) where contributed.target == .any {
-            throw .invalid(point: "TransformTargets", reason: "\(contributed.pluginID) takes the \(contributed.value.channelName) channel "
-                           + "into every kind; a shape turns into one kind")
-        }
-    }
-
     /// "takes channel container → subboard".
     public static func summary(of target: TransformTarget, for kind: ShapeTarget) -> String {
-        "takes channel \(target.channelName) → \(kind == .any ? "every shape" : "\(kind)")"
+        "takes channel \(target.channelName) → \(kind)"
     }
 }
 
@@ -204,7 +185,9 @@ extension PluginRegistrar {
     ///
     /// It brings Turn into `label` to the context menu of any shapes that can all turn into `P` (`label` is what
     /// `P`'s schema is titled, else its id, unless given), and `/turn-into-` followed by `P`'s id to the commands
-    /// of the kinds that offer the channel, `P` apart. The undo step is named as the item is. The registry
+    /// of the kinds that offer the channel, `P` apart (a capability of its own, "that can turn into" `P`'s id,
+    /// so the report says `/turn-into-subboard → every shape that can turn into subboard`). The undo step is
+    /// named as the item is. The registry
     /// refuses a plugin list without `TransformPlugin()`, or without `ContextMenusPlugin()` or
     /// `SlashCommandsPlugin()`, which the item and the command belong to, and one where `P`'s id can't be typed
     /// as a command's name.
@@ -223,9 +206,12 @@ extension PluginRegistrar {
             }
         }
         // On the kinds that offer the channel, but `P`: it has nothing to turn into.
-        slashCommandsForEveryShape(where: { $0.registry.offers($0.kind, C.self) && $0.kind != kind }) {
-            SlashCommand("turn-into-\(kind.rawValue)") { id, _, editor in
-                editor.transforms?.turn([id], into: kind)
+        let turning = ShapeCapability("that can turn into \(kind)") { $0.kind != kind && $0.registry.offers($0.kind, C.self) }
+        forShapes(adopting: turning) { turnable in
+            turnable.slashCommands {
+                SlashCommand("turn-into-\(kind.rawValue)") { id, _, editor in
+                    editor.transforms?.turn([id], into: kind)
+                }
             }
         }
     }

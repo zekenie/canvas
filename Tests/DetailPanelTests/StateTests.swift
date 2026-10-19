@@ -33,7 +33,7 @@ import TestKit
         state.setCollapsed(gadgetSize, true)
         expect(state.isCollapsed(boxSize))
         let counts = gadget.sections(in: .of(GadgetTab.self)).filter { $0.section == "Count" }
-        expectEqual(counts.map(\.description), ["gadget Gadget/Count", "* Gadget/Count"])
+        expectEqual(counts.map(\.description), ["gadget Gadget/Count", "every shape with a box Gadget/Count"])
         state.setCollapsed(counts[0], true)
         expect(!state.isCollapsed(counts[1]))
         expect(!state.isCollapsed(try require(box.sections(in: .of(GadgetTab.self)).first)))

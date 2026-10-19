@@ -149,11 +149,13 @@ extension RelationshipOffers: EditorService {}
 func registerRelationshipPills(into registrar: inout PluginRegistrar) {
     registrar.service { RelationshipOffers(editor: $0) }
     registrar.selectionChanged { editor, _, _ in editor.service(RelationshipOffers.self)?.selectionChanged() }
-    registrar.adornmentForEveryShape(RelationshipPill.self, where: { $0.holds(IsAProperty.self) }) { shape, context in
-        RelationshipPill.label(of: shape, in: context)
-    }
-    registrar.adornmentForEveryShape(RelationshipOfferPill.self, where: { $0.holds(IsAProperty.self) }) { shape, context in
-        guard let offers = context.service(RelationshipOffers.self), offers.offers(shape.id) else { return nil }
-        return AdornmentLabel.mark(.ghost).tagged(AdornmentTag(shape.id))
+    registrar.forShapes(holding: IsAProperty.self) { typeable in
+        typeable.adornment(RelationshipPill.self) { shape, context in
+            RelationshipPill.label(of: shape, in: context)
+        }
+        typeable.adornment(RelationshipOfferPill.self) { shape, context in
+            guard let offers = context.service(RelationshipOffers.self), offers.offers(shape.id) else { return nil }
+            return AdornmentLabel.mark(.ghost).tagged(AdornmentTag(shape.id))
+        }
     }
 }

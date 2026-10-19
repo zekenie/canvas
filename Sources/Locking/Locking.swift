@@ -89,17 +89,6 @@ public struct LockingPlugin: ListedPlugin {
         registrar.optInEveryShape(to: LockedProperty.self)
         registrar.readOnlyShapes { $0.isLocked }
         registrar.service { LockState(editor: $0) }
-        // The chip, on the kinds that can be locked: on every locked shape, and for a moment on one
-        // just unlocked (LockState's open lock).
-        registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty.self) }) { shape, context in
-            if shape.isLocked { return AdornmentLabel(systemImage: "lock.fill") }
-            return context.service(LockState.self)?.openLockOpacity(of: shape.id).map { AdornmentLabel(systemImage: "lock.open.fill").opacity($0) }
-        }
-        // A lock at the end of a locked shape's row, on the kinds that can be locked, read from the
-        // record alone.
-        registrar.contentsMarkForEveryShape(where: { $0.holds(LockedProperty.self) }) { shape, _ in
-            shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
-        }
         // Lock and Unlock, as tldraw's toggleLock is one: Unlock when every shape is locked, otherwise
         // Lock, which locks the rest, so a mix of locked and unlocked shapes still gets one; with no
         // shapes (empty canvas), neither. Each goes by the shapes' own locks, of those that can take
@@ -114,16 +103,28 @@ public struct LockingPlugin: ListedPlugin {
             subject.editor.unlock(subject.locks.tried)
         }
         registrar.shortcut(KeyChord("l", .shift), "Lock or Unlock", forCommands: [.lock, .unlock])
-        // Items for the canvas, in the state group, beside Group and Is a ▸.
-        registrar.contextMenuForCanvas {
-            MenuItem(command: .lock, in: StateMenuGroup.self)
-            MenuItem(command: .unlock, in: StateMenuGroup.self)
-        }
-        // `/lock` typed on a line of a shape's text (Titles offers `/title`, the other command that
-        // ships): on the kinds that can be locked, while the shape can be locked. There is no `/unlock`:
-        // a locked shape's text can't be edited, so it couldn't be typed.
-        registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) {
-            SlashCommand("lock", command: .lock)
+        // Everything Locking puts on shapes goes on the kinds that can be locked, and no other.
+        registrar.forShapes(holding: LockedProperty.self) { lock in
+            // The chip: on every locked shape, and for a moment on one just unlocked (LockState's open lock).
+            lock.adornment(LockChip.self) { shape, context in
+                if shape.isLocked { return AdornmentLabel(systemImage: "lock.fill") }
+                return context.service(LockState.self)?.openLockOpacity(of: shape.id).map { AdornmentLabel(systemImage: "lock.open.fill").opacity($0) }
+            }
+            // A lock at the end of a locked shape's row, read from the record alone.
+            lock.contentsMark { shape, _ in
+                shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
+            }
+            // Items for the menu's shapes, in the state group, beside Group and Is a ▸.
+            lock.contextMenuForCanvas {
+                MenuItem(command: .lock, in: StateMenuGroup.self)
+                MenuItem(command: .unlock, in: StateMenuGroup.self)
+            }
+            // `/lock` typed on a line of a shape's text (Titles offers `/title`, the other command that
+            // ships), while the shape can be locked. There is no `/unlock`: a locked shape's text can't be
+            // edited, so it couldn't be typed.
+            lock.slashCommands {
+                SlashCommand("lock", command: .lock)
+            }
         }
     }
 }

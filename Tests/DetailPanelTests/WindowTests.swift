@@ -345,7 +345,9 @@ struct OverviewPlugin: CanvasPlugin {
     },
     test("a footer line tints its symbol, not its text") {
         let editor = try gadgetEditor([Contributor(id: "alarm") { r in
-            r.detailStatusForEveryShape { _, _ in [DetailStatus("Something is badly wrong with this box", tone: .error)] }
+            r.forEveryShape { scope in
+                scope.detailStatus { _, _ in [DetailStatus("Something is badly wrong with this box", tone: .error)] }
+            }
         }], scheduler: TaskScheduler())
         let panel = PanelWindow(editor)
         editor.selection = editor.add(Box(gadgetFrame))
@@ -357,7 +359,9 @@ struct OverviewPlugin: CanvasPlugin {
     },
     test("a tab's status lines lead it, each its tone's symbol, and none shows in the footer") {
         let editor = try gadgetEditor([Contributor(id: "alerts") { r in
-            r.detailStatusForEveryShape(in: AlertsTab.self) { _, _ in [DetailStatus("Something is badly wrong with this box", tone: .error)] }
+            r.forEveryShape { scope in
+                scope.detailStatus(in: AlertsTab.self) { _, _ in [DetailStatus("Something is badly wrong with this box", tone: .error)] }
+            }
         }], scheduler: TaskScheduler())
         let panel = PanelWindow(editor)
         editor.selection = editor.add(Box(gadgetFrame))
@@ -374,7 +378,9 @@ struct OverviewPlugin: CanvasPlugin {
         final class Lines { var tone = DetailStatus.Tone.error }
         let lines = Lines()
         let editor = try gadgetEditor([Contributor(id: "alerts") { r in
-            r.detailStatusForEveryShape(in: AlertsTab.self) { _, _ in [DetailStatus("Something is badly wrong with this box", tone: lines.tone)] }
+            r.forEveryShape { scope in
+                scope.detailStatus(in: AlertsTab.self) { _, _ in [DetailStatus("Something is badly wrong with this box", tone: lines.tone)] }
+            }
         }], scheduler: TaskScheduler())
         let panel = PanelWindow(editor)
         let box = editor.add(Box(gadgetFrame))
@@ -395,7 +401,9 @@ struct OverviewPlugin: CanvasPlugin {
     },
     test("a tab's status lines come before its sections") {
         let editor = try gadgetEditor([Contributor(id: "alerts") { r in
-            r.detailStatusForEveryShape(in: RemarksTab.self) { _, _ in [DetailStatus("Something is badly wrong with this gadget", tone: .error)] }
+            r.forEveryShape { scope in
+                scope.detailStatus(in: RemarksTab.self) { _, _ in [DetailStatus("Something is badly wrong with this gadget", tone: .error)] }
+            }
         }], scheduler: TaskScheduler())
         let panel = PanelWindow(editor)
         try require(editor.detailPanel).choose(.of(RemarksTab.self), for: Gadget.kind)

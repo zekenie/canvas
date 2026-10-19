@@ -18,12 +18,14 @@ import TestKit
 
 /// An orange mark on each flagged shape's row, read through a service, as another plugin reads an engine.
 let flags = Contributor(id: "flags") { r in
-    r.contentsMarkForEveryShape(affected: { _, _ in
-        defer { reflagged = [] }
-        return reflagged
-    }) { shape, context in
-        marksMade += 1
-        return context.service(ContentsState.self) != nil && flagged.contains(shape.id) ? ContentsMark(color: .orange, help: "Flagged") : nil
+    r.forEveryShape { scope in
+        scope.contentsMark(affected: { _, _ in
+            defer { reflagged = [] }
+            return reflagged
+        }) { shape, context in
+            marksMade += 1
+            return context.service(ContentsState.self) != nil && flagged.contains(shape.id) ? ContentsMark(color: .orange, help: "Flagged") : nil
+        }
     }
 }
 
@@ -41,31 +43,38 @@ extension Array where Element == ContentsEntry {
 @MainActor let markTests = Suite("Table of contents: marks", [
     test("a row's marks: the kind's, then every kind's, each in plugin order; nil is none") {
         let editor = try contentsEditor([
-            Contributor(id: "a") { r in r.contentsMarkForEveryShape { _, _ in ContentsMark(color: .red, help: "a") } },
+            Contributor(id: "a") { r in r.forEveryShape { scope in
+                scope.contentsMark { _, _ in ContentsMark(color: .red, help: "a") }
+            } },
             Contributor(id: "b") { r in
                 r.contribute(ContentsMarkContribution { _, _ in ContentsMark(color: .blue, help: "widget b") }, to: ContentsMarks.self, for: .kind(Widget.kind))
-                r.contentsMarkForEveryShape { shape, _ in shape.kind == Gizmo.kind ? nil : ContentsMark(color: .green, help: "b") }
+                r.forEveryShape { scope in
+                    scope.contentsMark { shape, _ in shape.kind == Gizmo.kind ? nil : ContentsMark(color: .green, help: "b") }
+                }
             },
         ])
         editor.add(Widget(name: "W"))
         editor.add(Gizmo())
         expectEqual(editor.contents.entries.marks, [["widget b", "a", "b"], ["a"]])
     },
-    test("a mark for every shape goes only on the kinds its where picks, asked once per kind; a mark may be a symbol") {
-        final class Asked { var kinds: [ShapeKind] = [] }
+    test("a scoped mark goes only on the kinds its scope reaches, its capability asked once per kind; a mark may be a symbol") {
+        @MainActor final class Asked { var kinds: [ShapeKind] = [] }
         let asked = Asked()
         let editor = try contentsEditor([Contributor(id: "stars") { r in
-            r.contentsMarkForEveryShape(where: { kind in
+            r.forShapes(adopting: ShapeCapability("that is a widget") { kind in
                 asked.kinds.append(kind.kind)
                 return kind.kind == Widget.kind
-            }) { _, _ in ContentsMark(symbol: "star.fill", color: .secondary, help: "Starred") }
+            }) { scope in
+                scope.contentsMark { _, _ in ContentsMark(symbol: "star.fill", color: .secondary, help: "Starred") }
+            }
         }])
         editor.add(Widget(name: "W"))
         editor.add(Gizmo())
         editor.add(Widget(name: "V"))
         expectEqual(editor.contents.entries.marks, [["Starred"], [], ["Starred"]])
         expectEqual(editor.contents.entries.first?.marks.first?.symbol, "star.fill")
-        expectEqual(asked.kinds.sorted { $0.rawValue < $1.rawValue }, [Gizmo.kind, Widget.kind], "once per kind")
+        expectEqual(asked.kinds.sorted { $0.rawValue < $1.rawValue }, editor.registry.kinds.sorted { $0.rawValue < $1.rawValue },
+                    "once per kind, as the registry is built")
         expectEqual(ContentsMark(color: .red, help: "a").symbol, nil, "a dot, by default")
     },
     test("a mark is made with its row; after a commit, marks are read again only for the shapes it changed and those its contributor says it may") {

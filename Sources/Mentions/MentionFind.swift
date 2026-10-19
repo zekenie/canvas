@@ -22,15 +22,16 @@ public struct MentionFindPlugin: ListedPlugin {
     public var id: PluginID { .mentionFind }
 
     public func register(into registrar: inout PluginRegistrar) {
-        let draws: @MainActor (FindableKind) -> Bool = { !$0.registry.contributions(to: MentionTexts.self, for: $0.kind).isEmpty }
-        // The commit's renames are asked of one of them: both read the same shapes' texts.
-        registrar.findableTexts("mention text", where: draws,
+        registrar.forShapes(adopting: .mentionText) { drawn in
+            // The commit's renames are asked of one of them: both read the same shapes' texts.
+            drawn.findableTexts("mention text",
                                 affected: { changes, context in context.service(MentionState.self)?.rowsAffected(by: changes) ?? [] },
                                 texts: { record, context in MentionFind.texts(of: record, overCanvas: false, in: context.editor) },
                                 rects: { record, field, ranges, context in MentionFind.rects(of: ranges, in: field, of: record, in: context.editor) })
-        registrar.findableTexts("mention text over the canvas", where: draws, look: .wash,
+            drawn.findableTexts("mention text over the canvas", look: .wash,
                                 texts: { record, context in MentionFind.texts(of: record, overCanvas: true, in: context.editor) },
                                 rects: { record, field, ranges, context in MentionFind.rects(of: ranges, in: field, of: record, in: context.editor) })
+        }
     }
 }
 

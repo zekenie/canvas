@@ -7,7 +7,9 @@ import Validation
 @MainActor let keptAsideValidationTests = Suite("Validating kept-aside shapes", [
     test("rules for every shape pass over shapes the board keeps aside") {
         let registry = try Registry(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
-            r.validateEveryShape { _, _ in [.warning("seen")] }
+            r.forEveryShape { scope in
+                scope.validate { _, _ in [.warning("seen")] }
+            }
         }])
         let box = ShapeID(), kept = ShapeID()
         let json = """

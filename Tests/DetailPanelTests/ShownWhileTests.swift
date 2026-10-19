@@ -113,8 +113,10 @@ extension CanvasEditor {
         final class Lines { var count = 2 }
         let lines = Lines()
         let editor = try gadgetEditor([Contributor(id: "lines") { r in
-            r.detailStatusForEveryShape(in: AlertsTab.self) { _, _ in
-                (0..<lines.count).map { DetailStatus($0 == 0 ? "First line." : "Second line.", tone: .warning) }
+            r.forEveryShape { scope in
+                scope.detailStatus(in: AlertsTab.self) { _, _ in
+                    (0..<lines.count).map { DetailStatus($0 == 0 ? "First line." : "Second line.", tone: .warning) }
+                }
             }
             r.details(Gadget.self) {
                 DetailSection("Sync", in: AlertsTab.self) { $gadget in

@@ -672,10 +672,9 @@ public final class ContentsState {
         if let found = kinds[kind] { return found }
         let registry = editor.registry
         let label = registry.label(of: kind)
-        let markable = ContentsKind(kind: kind, registry: registry)
         let found = KindRows(contribution: registry.contributions(to: ContentsRows.self, for: kind).first,
                              title: registry.contributions(to: ContentsTitles.self, for: kind).first,
-                             marks: registry.contributions(to: ContentsMarks.self, for: kind).filter { $0.appliesTo(markable) },
+                             marks: registry.contributions(to: ContentsMarks.self, for: kind),
                              name: label.name, symbol: label.systemImage ?? ContentsSymbolKey.defaultValue)
         kinds[kind] = found
         return found

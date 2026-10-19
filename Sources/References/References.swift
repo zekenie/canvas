@@ -165,10 +165,11 @@ public struct ReferencesPlugin: ListedPlugin {
                           isEnabled: { $0.editor.service(ReferenceState.self)?.canInterpret(Set($0.shapes)) ?? false }) { subject in
             subject.editor.service(ReferenceState.self)?.interpret(only: Set(subject.shapes))
         }
-        registrar.detailStatusForEveryShape { shape, context in
-            guard shape.kind == Reference.kind, let line = context.service(ReferenceState.self)?.mismatchLine(of: shape.id) else { return [] }
+        // A reference's own footer line: an arrow at it whose channel what it stands for doesn't take.
+        registrar.contribute(DetailStatusContribution { shape, context in
+            guard let line = context.service(ReferenceState.self)?.mismatchLine(of: shape.id) else { return [] }
             return [DetailStatus(line, tone: .warning)]
-        }
+        }, to: DetailStatuses.self, for: .kind(Reference.kind))
         registrar.shapePopovers { editor, record, _ in editor.service(ReferenceState.self)?.popover(on: record) }
         registrar.contextMenuForCanvas {
             MenuItem(command: .goToOriginal, in: ReferencesMenuGroup.self,

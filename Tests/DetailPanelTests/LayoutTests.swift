@@ -68,7 +68,7 @@ extension AlertsTab: DetailTab {
         ])
         let layout = try editor.layout(editor.add(Gadget(gadgetFrame)))
         expectEqual(layout.outline, ["Gadget: main, Count", "Remarks: main", "Style: Color, Shade", "Frame: Fit, Size, Position, Grid"])
-        expectEqual(layout.sections(in: .of(FrameTab.self)).map(\.description), ["gadget Frame/Fit", "* Frame/Size", "* Frame/Position", "* Frame/Grid"])
+        expectEqual(layout.sections(in: .of(FrameTab.self)).map(\.description), ["gadget Frame/Fit", "every shape with a box Frame/Size", "every shape with a box Frame/Position", "every shape with a box Frame/Grid"])
         expectEqual(try editor.layout(editor.add(Box(gadgetFrame))).outline, ["Frame: Size, Position, Grid"])
     },
     test("`when` hides a section, and a tab it leaves empty") {
@@ -137,11 +137,15 @@ extension AlertsTab: DetailTab {
     test("statuses: the kind's, then every kind's, each in plugin order; they may read services") {
         let editor = try gadgetEditor([
             Contributor(id: "a") { r in
-                r.detailStatusForEveryShape { _, context in [DetailStatus(context.service(DetailPanelState.self) == nil ? "a" : "a, with state")] }
+                r.forEveryShape { scope in
+                    scope.detailStatus { _, context in [DetailStatus(context.service(DetailPanelState.self) == nil ? "a" : "a, with state")] }
+                }
             },
             Contributor(id: "b") { r in
                 r.contribute(DetailStatusContribution { _, _ in [DetailStatus("gadget b", tone: .warning)] }, to: DetailStatuses.self, for: .kind(Gadget.kind))
-                r.detailStatusForEveryShape { _, _ in [DetailStatus("b", tone: .error)] }
+                r.forEveryShape { scope in
+                    scope.detailStatus { _, _ in [DetailStatus("b", tone: .error)] }
+                }
             },
         ])
         let state = try require(editor.detailPanel)
@@ -152,8 +156,12 @@ extension AlertsTab: DetailTab {
     },
     test("status lines for a tab bring it while the shape has some, in its place by order, and stay out of the footer") {
         let editor = try gadgetEditor([Contributor(id: "alerts") { r in
-            r.detailStatusForEveryShape(in: AlertsTab.self) { shape, _ in shape.box?.width == 0 ? [DetailStatus("No width.", tone: .error)] : [] }
-            r.detailStatusForEveryShape { _, _ in [DetailStatus("Footer.")] }
+            r.forEveryShape { scope in
+                scope.detailStatus(in: AlertsTab.self) { shape, _ in shape.box?.width == 0 ? [DetailStatus("No width.", tone: .error)] : [] }
+            }
+            r.forEveryShape { scope in
+                scope.detailStatus { _, _ in [DetailStatus("Footer.")] }
+            }
         }])
         let state = try require(editor.detailPanel)
         let box = editor.add(Box(gadgetFrame))
@@ -171,7 +179,9 @@ extension AlertsTab: DetailTab {
         final class Lines { var tones: [DetailStatus.Tone] = [] }
         let lines = Lines()
         let editor = try gadgetEditor([Contributor(id: "alerts") { r in
-            r.detailStatusForEveryShape(in: AlertsTab.self) { _, _ in lines.tones.map { DetailStatus("A line.", tone: $0) } }
+            r.forEveryShape { scope in
+                scope.detailStatus(in: AlertsTab.self) { _, _ in lines.tones.map { DetailStatus("A line.", tone: $0) } }
+            }
         }])
         let box = editor.add(Box(gadgetFrame))
         for (tones, alert) in [([.neutral], nil), ([.info, .neutral], nil), ([.info, .warning], .warning),
@@ -183,7 +193,9 @@ extension AlertsTab: DetailTab {
     },
     test("a tab can hold status lines and sections: the kind's lines, then every kind's; its sections as they were") {
         let editor = try gadgetEditor([Contributor(id: "notes") { r in
-            r.detailStatusForEveryShape(in: RemarksTab.self) { _, _ in [DetailStatus("Every kind.")] }
+            r.forEveryShape { scope in
+                scope.detailStatus(in: RemarksTab.self) { _, _ in [DetailStatus("Every kind.")] }
+            }
             r.contribute(DetailStatusContribution(in: RemarksTab.self) { _, _ in [DetailStatus("A gadget.", tone: .info)] },
                          to: DetailStatuses.self, for: .kind(Gadget.kind))
         }])
@@ -195,19 +207,25 @@ extension AlertsTab: DetailTab {
     test("a status tab titled like another tab is refused, as a section's is") {
         expectThrows(RegistryError.invalid(point: "ShapeDetails", reason: "DetailPanel.StyleTab (from gadgets) and "
                                            + "DetailPanelTests.LookalikeStyleTab (from more) are both tabs titled \"Style\"; share one, or retitle one")) {
-            _ = try gadgetEditor([Contributor(id: "more") { r in r.detailStatusForEveryShape(in: LookalikeStyleTab.self) { _, _ in [] } }])
+            _ = try gadgetEditor([Contributor(id: "more") { r in r.forEveryShape { scope in
+                scope.detailStatus(in: LookalikeStyleTab.self) { _, _ in [] }
+            } }])
         }
     },
     test("status lines for a tab name it in the report") {
         let registry = try Registry(plugins: [FixturesPlugin(), DetailPanelPlugin(), Contributor(id: "p") { r in
-            r.detailStatusForEveryShape { _, _ in [] }
-            r.detailStatusForEveryShape(in: AlertsTab.self) { _, _ in [] }
+            r.forEveryShape { scope in
+                scope.detailStatus { _, _ in [] }
+            }
+            r.forEveryShape { scope in
+                scope.detailStatus(in: AlertsTab.self) { _, _ in [] }
+            }
         }])
         expectEqual(registry.report, """
         core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState · host inspector
-        p             DetailStatuses · DetailStatuses in Alerts
+        p             DetailStatuses → every shape · DetailStatuses in Alerts → every shape
         """)
     },
     test("one details call is one line in the report") {

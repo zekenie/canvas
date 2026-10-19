@@ -86,7 +86,9 @@ struct OneAtATime: CanvasOverlay {
     },
     test("a plugin can add a rule for another plugin's kind, and one for every kind; kind rules run first") {
         let h = try EditorHarness(plugins: [FixturesPlugin(), ValidationPlugin(), Rules { r in
-            r.validateEveryShape { _, _ in [.warning("every")] }
+            r.forEveryShape { scope in
+                scope.validate { _, _ in [.warning("every")] }
+            }
             r.validate(Box.self) { box, _ in box.frame.isEmpty ? [.warning("empty box")] : [] }
         }])
         let box = h.add(Box(.zero))
@@ -97,7 +99,9 @@ struct OneAtATime: CanvasOverlay {
     },
     test("a rule for every kind reads the registry, to ask about the kind of what it checks") {
         let h = try EditorHarness(plugins: [FixturesPlugin(), NamingPlugin(), ValidationPlugin(), Rules { r in
-            r.validateEveryShape { shape, context in context.registry.namingKinds.contains(shape.kind) ? [.warning("may name shapes")] : [] }
+            r.forEveryShape { scope in
+                scope.validate { shape, context in context.registry.namingKinds.contains(shape.kind) ? [.warning("may name shapes")] : [] }
+            }
         }])
         let memo = h.add(Memo())
         let box = h.add(Box(.zero))
@@ -251,7 +255,9 @@ struct OneAtATime: CanvasOverlay {
             r.validate(Tag.self) { tag, context in
                 tag.props.target.flatMap { context.shape($0) } == nil ? [.error("dangling")] : []
             }
-            r.validateEveryShape { _, _ in [.warning("every")] }
+            r.forEveryShape { scope in
+                scope.validate { _, _ in [.warning("every")] }
+            }
         }])
         let registry = h.editor.registry, engine = try require(h.editor.validation)
         let box = h.add(Box(.zero))

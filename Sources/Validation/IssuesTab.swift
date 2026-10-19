@@ -10,10 +10,13 @@ public struct ValidationDetailsPlugin: ListedPlugin {
     public var id: PluginID { "validation-details" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.detailStatusForEveryShape(in: IssuesTab.self) { shape, context in
-            // What a shape still needs is no line here: `worstFirst` leaves it out, and so does the tone.
-            (context.service(ValidationEngine.self)?.result(for: shape.id)?.worstFirst ?? [])
-                .compactMap { issue in DetailStatus.Tone(issue.severity).map { DetailStatus(issue.message, tone: $0) } }
+        // Every shape is checked (its schema, at least), so any may have issues.
+        registrar.forEveryShape { every in
+            every.detailStatus(in: IssuesTab.self) { shape, context in
+                // What a shape still needs is no line here: `worstFirst` leaves it out, and so does the tone.
+                (context.service(ValidationEngine.self)?.result(for: shape.id)?.worstFirst ?? [])
+                    .compactMap { issue in DetailStatus.Tone(issue.severity).map { DetailStatus(issue.message, tone: $0) } }
+            }
         }
     }
 }

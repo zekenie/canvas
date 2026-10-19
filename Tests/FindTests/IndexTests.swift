@@ -15,7 +15,7 @@ import TestKit
             return (String(parts[0]), parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : "")
         }, uniquingKeysWith: { first, _ in first })
         expectEqual(lines["memos"], "shape memo · findable body → memo")
-        expectEqual(lines["badges"], "findable badge → every shape")
+        expectEqual(lines["badges"], "findable badge → every shape that is a box")
         expectEqual(lines["find-in-boards"], "service FindState · overlay FindOverlay · command find in Edit › Find · shortcut ⌘F → command find · command findNext in Edit › Find · shortcut ⌘G → command findNext · command findPrevious in Edit › Find · shortcut ⇧⌘G → command findPrevious")
     },
     test("two contributions of one name to one kind conflict; a blank name is refused; a list without Find refuses any") {
@@ -27,7 +27,9 @@ import TestKit
             expect(false, "a second body on memos")
         } catch RegistryError.conflict {}
         let blank = Contributor(id: "blank") { registrar in
-            registrar.findableTexts(" ", where: { _ in true }, texts: { _, _ in [] }, rects: { _, _, ranges, _ in ranges.map { _ in [] } })
+            registrar.forEveryShape { scope in
+                scope.findableTexts(" ", texts: { _, _ in [] }, rects: { _, _, ranges, _ in ranges.map { _ in [] } })
+            }
         }
         do {
             _ = try Registry(plugins: findPlugins(more: [blank]))

@@ -44,6 +44,14 @@ public struct MentionTextPlacement {
 /// (`drawMentionText`), and its pills are found through them (`mentionPills(of:)`, the faces).
 public enum MentionTexts {}
 
+extension ShapeCapability {
+    /// The kinds that draw mention text (`x.mentionText { … }`): where what reads it as it's drawn goes
+    /// (Find's texts).
+    public static let mentionText = ShapeCapability("with mention text") {
+        !$0.registry.contributions(to: MentionTexts.self, for: $0.kind).isEmpty
+    }
+}
+
 extension MentionTexts: KeyedExtensionPoint {
     public typealias Contribution = MentionTextContribution
     public static var owner: PluginID { .mentions }

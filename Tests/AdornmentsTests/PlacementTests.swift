@@ -68,23 +68,21 @@ extension CanvasEditor {
         expectEqual(h.editor.adornmentFrames(of: tag), [], "a tag has no outline")
         expectEqual(h.editor.adornmentFrames(of: ShapeID()), [], "nor has a shape that isn't there")
     },
-    test("`where` picks kinds by their definition, and is asked once per kind: cards, which are editable, and not boxes") {
-        var asked: [ShapeKind] = []
-        let h = try adornedHarness([everyShape(Flag.self, where: { kind in
-            asked.append(kind.kind)
-            return kind.definition is any Editable
-        }) { _ in flagLabel }])
+    test("a capability picks kinds by their definition: cards, which are editable, and not boxes") {
+        let h = try adornedHarness([Contributor(id: "editables") { r in
+            r.forShapes(adopting: (any Editable).self) { $0.adornment(Flag.self) { _, _ in flagLabel } }
+        }])
         let cards = [h.add(Card(boxFrame)), h.add(Card(boxFrame))], box = h.add(Box(boxFrame))
-        for _ in 0..<2 {
-            for id in cards { expectEqual(h.editor.adornments(id), [.of(Flag.self)]) }
-            expectEqual(h.editor.adornments(box), [])
-        }
-        expectEqual(asked, [Card.kind, Box.kind])
+        for id in cards { expectEqual(h.editor.adornments(id), [.of(Flag.self)]) }
+        expectEqual(h.editor.adornments(box), [])
+        expect(h.editor.registry.report.contains("adornment Flag → every shape adopting Editable"), h.editor.registry.report)
     },
-    test("`where` picks kinds by what the registry says of them: another point's contributions, as Titles picks titled kinds") {
+    test("a capability picks kinds by what the registry says of them: another point's contributions, as Titles' picks titled kinds") {
         let h = try adornedHarness([
             Contributor(id: "markers") { r in
-                r.adornmentForEveryShape(Flag.self, where: { $0.registry.contributions(to: Marked.self, for: $0.kind).first == true }) { _, _ in flagLabel }
+                r.forShapes(adopting: ShapeCapability("that is marked") { $0.registry.contributions(to: Marked.self, for: $0.kind).first == true }) { scope in
+                    scope.adornment(Flag.self) { _, _ in flagLabel }
+                }
             },
             Contributor(id: "marking") { r in
                 r.contribute(true, to: Marked.self, for: .kind(Box.kind))
@@ -100,8 +98,10 @@ extension CanvasEditor {
             Contributor(id: "stars") { r in
                 r.declare(Starred.self)
                 r.optIn(Box.self, to: Starred.self)
-                // A label that shows on any shape it's asked of: `where` alone keeps it off the rest.
-                r.adornmentForEveryShape(Flag.self, where: { $0.holds(Starred.self) }) { _, _ in flagLabel }
+                // A label that shows on any shape it's asked of: the scope alone keeps it off the rest.
+                r.forShapes(holding: Starred.self) { scope in
+                    scope.adornment(Flag.self) { _, _ in flagLabel }
+                }
             },
         ])
         expectEqual(h.editor.adornments(h.add(Box(boxFrame))), [.of(Flag.self)])
