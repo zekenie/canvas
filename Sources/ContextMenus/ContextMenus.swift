@@ -159,9 +159,7 @@ extension ShapeRegistrar {
     /// This kind's items in its context menu, in one call (one contribution, one report line):
     ///
     ///     sub.contextMenu {
-    ///         MenuItem("Open", in: BoardsMenuGroup.self) { ids, editor in
-    ///             if let first = ids.first { editor.open(first) }
-    ///         }
+    ///         MenuItem(command: .openSelection, title: "Open", in: BoardsMenuGroup.self)
     ///     }
     ///
     /// A horizontal's opt-in sugar calls this too, so opting into its feature brings its items.

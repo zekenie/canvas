@@ -2,10 +2,10 @@ import Canvas
 import CoreGraphics
 
 /// What opening a shape does, for a kind whose shapes open as something other than editing in place
-/// (a board-owning kind shows its board). A double-click, Return, Enter, ⌘↓ and the `.openSelection`
-/// command open the only selected shape: by its kind's opener, else by editing it if its kind is
-/// `Editable`. At most one opener per kind, plus one for every kind (`.any`), which a kind's own
-/// overrides.
+/// (a board-owning kind shows its board). A double-click opens a shape, and so do Return, Enter, ⌘↓
+/// and the `.openSelection` command a shape alone they're given (the selection, or a context menu's):
+/// by its kind's opener, else by editing it if its kind is `Editable`. At most one opener per kind,
+/// plus one for every kind (`.any`), which a kind's own overrides.
 public enum ShapeOpening: KeyedExtensionPoint {
     public typealias Contribution = ShapeOpener
     public static var owner: PluginID { .selection }
@@ -83,23 +83,24 @@ extension CanvasEditor {
         return true
     }
 
-    /// Whether `openSelection` would do something: the selection is a group selected whole, or the only
-    /// selected shape is a container that is neither opened nor edited (a frame), that holds a shape
-    /// to go into (tldraw's `selectFirstChildShape`), or the only selected shape can be opened (`canOpen`).
-    public var canOpenSelection: Bool {
-        selectionState?.canStepInto == true || (selection.map(canOpen) ?? false)
+    /// `.openSelection`'s rule: whether `openSelection(_:)` would do something with these shapes, the
+    /// selection or a context menu's. They are a group whole, or a container alone that is neither opened
+    /// nor edited (a frame) holding a shape to go into (tldraw's `selectFirstChildShape`), or a shape
+    /// alone that can be opened (`canOpen`); never several that are no group.
+    public func canOpenSelection(_ ids: [ShapeID]) -> Bool {
+        selectionState?.canStepInto(ids) == true || (ids.count == 1 && canOpen(ids[0]))
     }
 
-    /// Return, Enter, ⌘↓ and `.openSelection`: goes into the selection if it is a group selected whole
-    /// (selecting its first part, one level in, in reading order) or the only selected shape is a
-    /// container that is neither opened nor edited (selecting the first shape in it, in reading order),
-    /// bringing it into view if it is not; otherwise opens the only selected shape (`open`).
-    public func openSelection() {
-        if let inside = selectionState?.shapesInside() {
+    /// What `.openSelection` does to these shapes: goes into a group whole (selecting its first part, one
+    /// level in, in reading order) or a container alone that is neither opened nor edited (selecting the
+    /// first shape in it, in reading order), bringing it into view if it is not; otherwise opens a shape
+    /// alone (`open(_:at:clickCount:)`). Several that are no group are left as they are.
+    public func openSelection(_ ids: [ShapeID]) {
+        if let inside = selectionState?.shapesInside(ids) {
             selectedShapeIDs = inside
             revealIfOffscreen(inside)
-        } else if let selection {
-            open(selection)
+        } else if ids.count == 1 {
+            open(ids[0])
         }
     }
 

@@ -1,6 +1,6 @@
 # One declaration per action
 
-Claude Code session `355fc85a-deb9-40d3-adfe-2b2a993ff3ae`, 2026-10-19 12:25 to 2026-10-19 15:31 UTC, on `claude/one-action-a26d9d`.
+Claude Code session `355fc85a-deb9-40d3-adfe-2b2a993ff3ae`, 2026-10-19 12:25 to 2026-10-19 21:15 UTC, on `claude/one-action-a26d9d`.
 
 Condensed: the owner's messages, questions and answers, the assistant's prose, plans, agent briefs and git commands. Tool output is left out.
 
@@ -663,3 +663,279 @@ git log --oneline -1 main; git merge-base HEAD main; git log --oneline main ^HEA
 
 [2026-10-19 15:31] ASSISTANT:
 Main moved by one commit that touches 15 of the same files, so I'll squash my two commits into one, then rebase it onto main. Writing the session record first.
+
+[2026-10-19 15:31] ASSISTANT:
+The record is 665 lines and the secret scan found nothing. Squashing both commits into one with the record and a combined message.
+
+[2026-10-19 15:31] GIT:
+S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad; python3 - "$S" <<'EOF'
+import sys
+S=sys.argv[1]
+p=S+'/commit-msg-squash.txt'
+s=open(p).read()
+old='''After review.
+A review of the one-declaration change (ten finder angles, verifiers, a sweep)
+found nothing broken in what ships, and these, fixed here:'''
+new='''A review (ten finder angles, verifiers, a sweep) found nothing broken in what
+ships, and these, fixed here:'''
+assert s.count(old)==1
+s=s.replace(old,new)
+open(p,'w').write(s)
+EOF
+cd /Users/zekenie/code/native-canvas/.claude/worktrees/one-action-a26d9d && git reset --soft c973f1bc && git add -A && git commit -q -F $S/commit-msg-squash.txt && git log --oneline -2 && git show --stat HEAD | tail -3
+
+[2026-10-19 15:31] GIT:
+git rebase main 2>&1 | tail -20; git status --short | grep -v "^M  \|^A  \|^D  \|^R  " | head -30
+
+[2026-10-19 15:31] ASSISTANT:
+Six conflicts, all in topic files and one test list. Resolving each by keeping both sides' changes.
+
+[2026-10-19 15:32] ASSISTANT:
+These are long one-line paragraphs where main and my change edited different words, so I'll merge them word by word against the common ancestor.
+
+[2026-10-19 15:32] ASSISTANT:
+All six merged with no word-level conflicts. Checking that each file differs from main only by this change's edits.
+
+[2026-10-19 15:32] ASSISTANT:
+No conflict markers remain. Before continuing the rebase, I'm checking main's new commit's edits to the Swift files that auto-merged, to rule out a semantic clash.
+
+[2026-10-19 15:32] ASSISTANT:
+Main's edits there only drop empty `boardDidChange` overrides, disjoint from this change. Checking the merged tree for any new use of names this change removed.
+
+[2026-10-19 15:32] ASSISTANT:
+The only hits are a comment, a local variable and existing tests that use Clipboard's own `.cut` and `.paste`. Finishing the rebase.
+
+[2026-10-19 15:32] GIT:
+git add .claude/rules/boards-in-a-file.md .claude/rules/editor.md .claude/rules/find.md .claude/rules/jump-to.md .claude/rules/table-of-contents.md Tests/CanvasTests/main.swift && GIT_EDITOR=true git rebase --continue 2>&1 | tail -2; git log --oneline -3; git status --short | head -3
+
+[2026-10-19 15:33] ASSISTANT:
+Rebased onto main as one commit. Running only the quick module audit (no tests, per your landing rule), then merging.
+
+[2026-10-19 15:34] WRAP-UP:
+The one-declaration commands change is on main as bf673a0d, with its session record. The follow-up is started here: making the right-click Open on a subboard run Go › Open Selection's command. It's waiting on one question; nothing is built yet.
+Ask:
+
+[2026-10-19 15:34] ASSISTANT:
+It's on main as bf673a0d.
+
+I can't compact this conversation myself; send /compact if you want that before I build anything.
+
+I took "next thing" to mean the follow-up from the review: making the right-click "Open" on a subboard run the same command as Go › Open Selection (⌘↓). It would then show ⌘↓, and the Shape menu would stop listing Open twice. One decision first.
+
+**With several subboards selected, what should right-click › Open do?**
+
+- **Open only for one shape (my pick):** with two subboards selected, the right-click has no Open, as ⌘↓ does nothing then. Right-clicking a subboard that isn't selected still selects just it, so Open is there.
+- **Keep opening the first one:** Open stays in the menu for two selected subboards and shows the first one's board, as it does today. ⌘↓ and Go › Open Selection would learn to do the same.
+
+Either way, with a group of subboards selected the right-click's Open would step into the group first, as ⌘↓ already does, instead of opening a board.
+
+For you: this only changes what happens with several things selected; right-clicking a single subboard opens it as it does now, and gains its ⌘↓.
+
+[2026-10-19 15:41] USER:
+/compact
+
+[2026-10-19 15:42] COMPACTED:
+(the context was summarized here)
+
+[2026-10-19 15:42] USER:
+proceed
+
+[2026-10-19 15:43] ASSISTANT:
+Going with your pick (Open only for one shape). Rereading the opening and stepping code now, then I'll make the change.
+
+[2026-10-19 15:45] ASSISTANT:
+Designing the change now: Open Selection's rule and run will read the shapes they're given (so a right-click, which asks before it selects, gets the right answer), then Boards' Open runs it.
+
+[2026-10-19 15:45] ASSISTANT:
+Still reading the guide's passages on opening so the docs change with the code; edits start next.
+
+[2026-10-19 15:47] ASSISTANT:
+Writing the code now: stepping in and opening take the shapes they're given, then Boards' Open points at the command.
+
+[2026-10-19 15:48] ASSISTANT:
+Code changed in Selection and Boards; now rewriting Boards' tests for the new Open (one shape, a group, several).
+
+[2026-10-19 15:50] ASSISTANT:
+Tests are rewritten; updating the topic files and the guide to match before building.
+
+[2026-10-19 15:51] ASSISTANT:
+Adding one Selection test that Open Selection works on shapes it's handed, not just the selection; then build and run the suites.
+
+[2026-10-19 15:51] ASSISTANT:
+Build and tests are running in the background; meanwhile I'm preparing a check that the Shape menu no longer lists Open twice.
+
+[2026-10-19 15:52] ASSISTANT:
+The app is still compiling; I'll wait for it and the tests to finish.
+
+[2026-10-19 15:53] ASSISTANT:
+The build and tests are still running; once they pass I'll add a check that the Shape menu no longer lists Open, then commit and review.
+
+[2026-10-19 15:53] ASSISTANT:
+My build is running but slowly: the machine is busy (load around 26) with other work. I'll wait for it to finish.
+
+[2026-10-19 16:03] ASSISTANT:
+All suites pass and the app builds clean. Adding the shipped Shape menu check now.
+
+[2026-10-19 16:04] GIT:
+S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad && cat > $S/commit-msg-open.txt <<'EOF'
+A subboard's right-click Open runs Go › Open Selection's command: it shows ⌘↓, does what ⌘↓ does, and isn't listed twice
+
+The one-declaration change (bf673a0d) left Boards' Open as an action of its own: it opened the first of several selected subboards while ⌘↓ opened none, it showed no key, and the Shape menu listed it beside Go › Open Selection, one action in two places. That change's review found it and left it to the owner, who chose, for several selected, to show Open only where ⌘↓ acts. Turned down: keep opening the first, and teach ⌘↓ and Go › Open Selection to do the same.
+
+The command's rule and run now read the shapes they're given, not the selection. A right-click asks about the shapes it is about to select before it selects them, so a rule over the selection was asked about the wrong shapes: Open on a subboard right-clicked while a box was selected would have been left out. `editor.canOpen(_ ids:)` and `editor.open(_ ids:)` replace `canOpenSelection` and `openSelection()`. Whether the shapes are a group whole is worked out from the groups they would be inside once selected, as `select` works out the selection's, so the keys and the menu bar act as they did. One thing changes: a group of subboards selected whole is gone into by Open, as ⌘↓ goes, where Open used to show the first one's board.
+
+Boards' two Open items are `MenuItem(command: .openSelection, title: "Open", in: BoardsMenuGroup.self)`. The tests hold Open showing ⌘↓ and asked of the right-clicked drawer rather than the box selected before, left out for several and going into a group; Selection's command asked of shapes that aren't the selection; and the shipped Shape menu with no Open for a subboard. The guide drops Open for several shapes from what isn't built.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+EOF
+git add -A && git status --short && git commit -q -F $S/commit-msg-open.txt && git log --oneline -2
+
+[2026-10-19 16:05] ASSISTANT:
+Committed on the branch (c29854fb); now running the code review: routing the reviewers to models first.
+
+[2026-10-19 16:05] AGENT Review: line-by-line scan:
+You are one finder in a code review of a small Swift change. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (what changed, why, which files to read, and the rules: read only, no builds or tests, stay in that worktree), then the diffs it names in the same folder.
+
+Your angle — line-by-line diff scan: read every hunk in the diff (sources and tests), line by line. Then read the enclosing function for each hunk in the worktree — bugs in unchanged lines of a touched function are in scope. For every line ask: what input, state, timing or platform makes this line wrong? Look for inverted or wrong conditions, off-by-one, wrong-variable copy-paste, a group/focus computed differently than before for the selection, edge cases (empty ids, duplicate ids, ids not on the board shown, opaque/kept-aside shapes, shapes that aren't selectable, a group with one selectable member, groups nested with identical members, a container that is also in a group), and tests that assert something other than what their names say.
+
+Report up to 8 candidates in your final message, each: file:line, a one-sentence summary, and a concrete failure scenario (inputs/state → wrong result). Fewer or none is fine; do not pad.
+
+[2026-10-19 16:05] AGENT Review: removed behavior:
+You are one finder in a code review of a small Swift change. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (what changed, why, which files to read, and the rules: read only, no builds or tests, stay in that worktree), then the diffs it names in the same folder.
+
+Your angle — removed-behavior auditor: for every line the diff deletes or replaces (Boards' Open item's own action, `canOpenSelection`, `openSelection()`, `shapesInside()` and `canStepInto` over the selection, `isContainerToEnter`, the deleted test "with several shapes that own boards selected, Open opens the first of them", doc sentences), name the invariant or behavior it enforced, then search the new code for where that invariant is re-established. Pay attention to: the stored selection focus (`SelectionState.focus`) versus the focus now computed from the shapes (`focus(of:selected:)`) — find every way the stored focus can differ from the computed one for a non-empty selection (e.g. `leaveFocus`, `escape`, `groupsDidChange`, board switches, `select` filtering unselectable ids, a selection set while groups were unknown) and whether ⌘↓/Return now behaves differently there; the item's undo-step name, enablement and key display; what the Shape menu (menu bar) now shows; anything a removed public API offered that callers or docs still rely on.
+
+Report up to 8 candidates in your final message, eac […135 more chars]
+
+[2026-10-19 16:05] AGENT Review: cross-file callers:
+You are one finder in a code review of a small Swift change. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (what changed, why, which files to read, and the rules: read only, no builds or tests, stay in that worktree), then the diffs it names in the same folder.
+
+Your angle — cross-file tracer: for each function the diff changes or removes (`CanvasEditor.canOpen(_:)` and `open(_:)` overloads for `[ShapeID]`, removed `canOpenSelection` and `openSelection()`, `SelectionState.shapesInside(_:)`, `canStepInto(_:)`, `wholeGroup`, `containerToEnter`, the `.openSelection` declaration, Boards' `opensBoard` sugar), grep the whole worktree (Sources, Examples, Tests, docs, .claude/rules, .claude/skills) for its callers and mentions, and check whether any call site breaks or now resolves to a different overload: a new precondition, a changed meaning, timing/ordering (e.g. a context menu's rule asked before the selection changes, then run after), the Table of Contents, Jump To, Find, Types, Arrows or Mentions opening shapes, benchmarks and composition tests that perform `.openSelection`. Also check callees: does anything the new code calls (`focus(of:selected:)`, `unit(of:within:)`, `stops(in:within:)`, `revealIfOffscreen`) assume it is called with the selection?
+
+Report up to 8 candidates in your final message, each: file:line, a one-sentence summary, and a concrete […83 more chars]
+
+[2026-10-19 16:05] AGENT Review: Swift pitfalls:
+You are one finder in a code review of a small Swift change. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (what changed, why, which files to read, and the rules: read only, no builds or tests, stay in that worktree), then the diffs it names in the same folder.
+
+Your angle — language-pitfall specialist for Swift 6: scan the diff for pitfalls it introduces. In particular: overload resolution between `open(_ id: ShapeID, at:clickCount:) -> Bool` (@discardableResult) and the new `open(_ ids: [ShapeID])`, and between `canOpen(_ id: ShapeID)` and `canOpen(_ ids: [ShapeID])` — any call in the codebase (method references like `map(canOpen)`, closures, trailing default args) that could now be ambiguous or pick the other one; recursion (does `open(_ ids:)` calling `open(ids[0])` resolve to the single-shape form?); an optional tuple compared with `!= nil`; `Set` built from arrays with duplicates; array index `ids[0]` safety; main-actor isolation of the closures in the command declaration; anything in the tests that compiles but checks the wrong thing (e.g. `expect(a != b)` on optionals, `String(Character)` vs a key equivalent string, NSEvent.ModifierFlags equality including device-dependent bits).
+
+Report up to 8 candidates in your final message, each: file:line, a one-sentence summary, and a concrete failure scenario (inputs/state → wrong result). Fewer or none […21 more chars]
+
+[2026-10-19 16:05] AGENT Review: delegation correctness:
+You are one finder in a code review of a small Swift change. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (what changed, why, which files to read, and the rules: read only, no builds or tests, stay in that worktree), then the diffs it names in the same folder.
+
+Your angle — wrapper/delegation correctness: Boards' context-menu item no longer has its own action; it delegates to Selection's `.openSelection` command through ContextMenus' `MenuItem(command:)` machinery (Sources/ContextMenus/Resolution.swift `commandItem`, `resolve`, `menu(for:)`, `menuForSelection(omitting:)`; Sources/Canvas/Plugins/Commands.swift `perform(_:on:at:)`, `canPerform(_:on:at:)`). Check that every path routes to the menu's shapes and not back through the selection or a global: the rule asked at menu-make time with the ids the right-click is about to select; the run after the right-click has changed the selection (and possibly the group focus); the re-resolution when ending editing changed the revision; the item's title, id/key (`BoardsMenuGroup`, "Open") and conflicts with other plugins' items; the undo group named "Open" around a run that may only navigate or select; the key shown (`registry.menuKey(of:)`); the Shape menu's omission; and kinds registered through `registrar.opensBoard(P.self, …)` for another plugin's kind (the `contextMenu(P.self)` form). Also check the `.openS […278 more chars]
+
+[2026-10-19 16:05] AGENT Review: reuse:
+You are one finder in a code review of a small Swift change. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/scratchpad/review2/context.md — correction, the exact path is /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (what changed, why, which files to read, and the rules: read only, no builds or tests, stay in that worktree), then the diffs it names in the same folder.
+
+Your angle — reuse: flag new code in the diff that re-implements something the codebase already has. Grep the Selection module (Sources/Selection: Groups.swift, Stepping.swift, SelectionState.swift, Opening.swift), ContextMenus and Canvas for existing helpers — e.g. whatever already says "these shapes are a group selected whole", "what a click on a shape selects", the selection's focus, a single container check — and name the existing helper the new code should call instead. Only flag real duplication with a concrete cost.
+
+Report up to 8 candidates in your final message, each: file:line, a one-sentence summary, and the concrete cost (what is duplicated and where the existing helper is). Fewer or none is fine; do not pad.
+
+[2026-10-19 16:05] AGENT Review: simplification:
+You are one finder in a code review of a small Swift change. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (what changed, why, which files to read, and the rules: read only, no builds or tests, stay in that worktree), then the diffs it names in the same folder.
+
+Your angle — simplification: flag unnecessary complexity the diff adds: redundant or derivable state (e.g. a tuple carrying both a group's shapes and its focus, a Set recomputed from an array already known equal to another set), copy-paste with slight variation between `shapesInside(_:)` and `canStepInto(_:)`, deep nesting, dead code left behind (anything now unused after `canOpenSelection`/`openSelection()` were removed, e.g. helpers or doc references), and doc comments that say more than the code needs. Name the simpler form that does the same job. Remember the repository's style: terse doc comments that say what and why; match the surrounding code's idiom.
+
+Report up to 8 candidates in your final message, each: file:line, a one-sentence summary, and the concrete cost plus the simpler form. Fewer or none is fine; do not pad.
+
+[2026-10-19 16:05] AGENT Review: efficiency:
+You are one finder in a code review of a small Swift change. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (what changed, why, which files to read, and the rules: read only, no builds or tests, stay in that worktree), then the diffs it names in the same folder.
+
+Your angle — efficiency: `.openSelection`'s rule (`editor.canOpen(_ ids:)` → `SelectionState.canStepInto(_:)` → `wholeGroup(_:)`) is asked on every Return/Enter key press (the shortcut always takes the key but performs the command), on every validation of Go › Open Selection (menu bar validation, key-equivalent matching), and for every context menu opened on board-owning shapes; the selection can hold thousands of shapes (⌘A on a 10,000-shape board; the repo has benchmarks of that size). Before the change, the group check reused the stored selection focus and set; now it builds `Set(ids)` and computes `focus(of: ids, selected:)` (which calls `groups(of:)` per shape lazily and `members(of:)` per shared group) for any ids.count > 1. Quantify the extra work for large selections (in a group, not in a group, a huge group selected whole), compare with what the old code did, and flag real wasted work with a cheaper alternative (e.g. early exits, reusing the stored focus when the ids are the selection). Also flag anything else wasteful in the diff. The repo's bar: no unasked perf passes, only slowdowns […250 more chars]
+
+[2026-10-19 16:06] AGENT Review: altitude:
+You are one finder in a code review of a small Swift change. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (what changed, why, which files to read, and the rules: read only, no builds or tests, stay in that worktree), then the diffs it names in the same folder. Also skim CLAUDE.md in the worktree root and .claude/rules/selection.md, context-menus.md and boards.md for the architecture (one abstraction per concern; commands declared once, run by every surface).
+
+Your angle — altitude: check that the change fixes the root cause at the right depth rather than patching a symptom. Questions: is making `.openSelection` read its subject's shapes the general fix, or are there other commands whose rule/run still read the editor's selection while being reachable from a context menu (`MenuItem(command:)`) — grep `registrar.command(` declarations across Sources and Examples and check each one that is offered in a context menu or as a canvas item for rules/runs that read `editor.selection`, `selectedShapeIDs`, `canX` properties over the selection, instead of `$0.shapes` — those would have the same right-click bug. Is computing the would-be focus in `wholeGroup` the right depth, or should `focus(of:selected:)`/`unit(of:within:)` offer a "these shapes as a selection" form used elsewhere too (e.g. by `menu(for:)`'s `selectionUnit(of:)`)? Is anything special-cased that  […237 more chars]
+
+[2026-10-19 16:06] AGENT Review: conventions:
+You are one finder in a code review of a small change. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (what changed, why, which files to read, and the rules: read only, no builds or tests, stay in that worktree), then the diffs it names in the same folder.
+
+Your angle — conventions: find the CLAUDE.md files that govern the changed code: ~/.claude/CLAUDE.md if it exists, the worktree root's CLAUDE.md (/Users/zekenie/code/native-canvas/.claude/worktrees/one-action-a26d9d/CLAUDE.md), and any CLAUDE.md or CLAUDE.local.md in a directory that is an ancestor of a changed file. Read each that exists, plus the topic files the root CLAUDE.md says a change must update in the same commit (.claude/rules/selection.md, boards.md, context-menus.md for this change). Then check the diff for clear violations of the rules they state: e.g. a subsystem change without its topic file updated, a test that touches the user's pasteboard, the app's socket or the network, a BoardDocument not closed in a test, a test suite not passed to runTests in main.swift, UI constants outside a style enum, a stale reference in a topic file or the guide to a removed API (`canOpenSelection`, `openSelection()`). Only flag a violation when you can quote the exact rule and the exact line that breaks it; no style preferences.
+
+Report up to 8 candidates in your final message, each: file:line, a one-se […119 more chars]
+
+[2026-10-19 16:06] ASSISTANT:
+The ten reviewers are running in the background, along with the on-screen menu test run; I'll collect their findings when they report.
+
+[2026-10-19 16:16] ASSISTANT:
+Three of ten reviewers are back: stale examples of the old Open in two docs, and small speedups for big selections. Waiting on the rest before fixing.
+
+[2026-10-19 16:23] ASSISTANT:
+Nine of ten reviewers are back. No logic bugs so far; the findings are stale examples of the old Open, a naming clash, test gaps, and small cleanups. Waiting on the last one before fixing.
+
+[2026-10-19 16:23] AGENT Verify: doc candidates:
+You verify code-review candidates. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (the change, and the rules: read only, no builds or tests, no git writes, stay in that worktree). Then, for each candidate below, read the named lines and the code they describe, and return exactly one verdict per candidate: CONFIRMED (quote the line and say what is wrong), PLAUSIBLE (mechanism real, trigger uncertain; say what would confirm it) or REFUTED (quote the line that proves it wrong or shows it is handled).
+
+D1. docs/plugin-system.md around lines 4064-4072: under "Boards' Open, which a board-owning kind's opt-in brings it ([OpensBoard.swift]…)" the code block still shows `MenuItem("Open", in: BoardsMenuGroup.self) { ids, editor in if let first = ids.first { editor.open(first) } }`, which Sources/Boards/OpensBoard.swift no longer contains.
+D2. Sources/ContextMenus/ContextMenus.swift around lines 158-165: the doc comment on `ShapeRegistrar.contextMenu` shows the same removed snippet as its example.
+D3. Sources/Selection/Selection.swift around lines 30-31 (the doc on `CanvasCommand.openSelection`) and Sources/Selection/Opening.swift lines 1-8 (the doc on `ShapeOpening`) still describe `.openSelection` as acting on "the only selected shape", while the command now acts on the shapes it is given (the selection, or a context menu's shapes).
+D4. docs/plugin-system.md aro […871 more chars]
+
+[2026-10-19 16:24] AGENT Verify: logic candidates:
+You verify code-review candidates. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (the change, and the rules: read only, no builds or tests, no git writes, stay in that worktree), and the diff review2/src.diff in the same folder. Then, for each candidate below, read the code and return exactly one verdict per candidate: CONFIRMED (name the inputs/state that trigger it and the wrong result; quote the line), PLAUSIBLE (mechanism real, trigger uncertain; say what would confirm it) or REFUTED (quote the line that proves it wrong or shows it is guarded).
+
+L1. Sources/Selection/Stepping.swift `canStepInto(_:)` returns true for any `wholeGroup(ids)`, but `shapesInside(_:)` returns nil when the group's only part one level in is the whole group again (every `unit(inside:within:)` equals the group: e.g. paths a: ["outer","inner"], b: ["outer","inner"] and nothing else in "outer"). Then `.openSelection` is enabled (⌘↓ takes the key; Boards' right-click shows Open) but running it does nothing. Check whether that is reachable in the shipped app: Sources/Grouping (BoardGroups, GroupIndex) — does it drop or keep a group whose only part is another group, and does a kept-aside (opaque, unselectable) member change the count? Also check whether the old code had the same gap (it did the same `return true`), and whether checking only the first member's `unit(inside:within:) […1523 more chars]
+
+[2026-10-19 16:24] AGENT Verify: test candidates:
+You verify code-review candidates. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (the change, and the rules: read only, no builds or tests, no git writes, stay in that worktree), and the diffs review2/src.diff and review2/tests.diff in the same folder. Then, for each candidate below, read the tests and the code and return exactly one verdict per candidate: CONFIRMED (quote the lines; say what regression would pass unnoticed), PLAUSIBLE (say what would confirm it) or REFUTED (quote the line that proves the gap is covered).
+
+T1. Neither new test pins the change's central choice in Sources/Selection/Stepping.swift `wholeGroup(_:)`: computing the group focus from the given shapes (`focus(of: ids, selected:)`) rather than reading the stored selection focus (`SelectionState.focus`). In Tests/SelectionTests/SteppingTests.swift's new test ("Open Selection is asked of the shapes it's given…") the selection is [lone] when `canPerform(.openSelection, on: [west, east])` is asked, so the stored focus is [] and a version reading the stored focus gives the same answer; likewise in Tests/BoardsTests/OpeningTests.swift's new group test. Check by hand: would `unit(of: ids[0], within: self.focus)` pass every new and existing test? Name a state in which the two differ (e.g. selection [west], inside group g, so stored focus ["g"], asking about [west, east]).
+T2. Tests/Comp […959 more chars]
+
+[2026-10-19 16:24] ASSISTANT:
+All ten reviewers are in; three verifiers are now checking the findings that weren't plain from the code. I'll fix once they report.
+
+[2026-10-19 16:25] ASSISTANT:
+The review's ten finders found no logic bug in the new Open. Three verifiers are now checking the rest: stale examples of the old Open in the guide and a doc comment, a naming clash between the two `open` forms, a few test gaps, and one older quirk where ⌘↓ is enabled on a group but does nothing. I'll apply the fixes, rerun the suites, and report back when they finish.
+
+[2026-10-19 16:30] ASSISTANT:
+The doc fixes are in. Two verifiers are still checking the logic and test findings.
+
+[2026-10-19 16:33] ASSISTANT:
+Verifiers confirmed the naming clash and two small cleanups; one older quirk was refuted (it can't happen with the app's real groups), so I'm leaving it. Applying the source fixes now.
+
+[2026-10-19 16:33] ASSISTANT:
+Source and doc fixes are applied; waiting on the last verifier (the test findings) before editing the tests and rerunning everything.
+
+[2026-10-19 16:34] ASSISTANT:
+All verifiers are back. Applying the test fixes: pin the group check to the given shapes, cover a pocket's menu Open, and simplify the group test's setup.
+
+[2026-10-19 16:35] AGENT Review: sweep for gaps:
+You are the last reviewer of a small Swift change, a fresh pair of eyes looking ONLY for defects not already found. First read /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad/review2/context.md (what the change is, why, and the rules: read only, no builds or tests — a test run is using the build — no git writes, stay in that worktree). Note one update to it: after review, the shapes-taking pair was renamed `canOpenSelection(_ ids:)` / `openSelection(_ ids:)` (in Sources/Selection/Opening.swift), apart from the one-shape `canOpen(_:)` / `open(_:at:clickCount:)`.
+
+The change as it stands now (committed work plus the review's fixes, uncommitted) is in the same folder: `src-final.diff`, `tests-final.diff`, `docs-final-worddiff.txt` (or `git diff main` in the worktree). Read them and the enclosing functions in the worktree.
+
+Already found and handled — do NOT re-report these: stale examples of the old Open item in docs/plugin-system.md (Context menus section) and in Sources/ContextMenus/ContextMenus.swift's doc comment; "only selected shape" wording in Selection.swift and Opening.swift; the guide's "Open in its menu and panel"; the unwritten rule that a command's rule and run read the subject's shapes, never the selection; the same-named overloads (now renamed); `wholeGroup` building `Set(ids)` before an early exit; a redundant `box != nil` in `canStepInto`; tests not pinning the focus co […1109 more chars]
+
+[2026-10-19 16:36] ASSISTANT:
+My doc fix landed mid-build, so the app build stopped to be rerun; tests are still going. I'll rebuild once they finish.
+
+[2026-10-19 16:48] ASSISTANT:
+Fixes build clean and every suite passes; the on-screen menu tests are rerunning, and the last reviewer is checking the fixes themselves.
+
+[2026-10-19 17:12] ASSISTANT:
+Everything builds clean and every suite passes. Committing the review fixes on the branch.
+
+[2026-10-19 17:13] GIT:
+S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-one-action-a26d9d/355fc85a-deb9-40d3-adfe-2b2a993ff3ae/scratchpad && cat > $S/commit-msg-open-review.txt <<'EOF'
+Review of the Open change: the shapes form gets a name of its own, and the docs stop teaching the old Open
+
+The code review found no fault in the new Open's logic; what it found was around it. `canOpen(_ ids:)` and `open(_ ids:)` shared names with the one-shape forms but differed in meaning (`open([frame])` steps into a frame, `open(frame)` does nothing), so they are `canOpenSelection(_:)` and `openSelection(_:)`, the command's body, as `deleteShapes(_:)` stands beside `deleteSelection()`. The guide's Context menus section and ContextMenus' own doc comment still showed the removed item that opened the first of several; several docs still called the command's shape "the only selected shape", or listed Open in a subboard's panel, which has none since the Board tab went. The rule the bug came from is now written where commands are declared: a command a context menu runs reads the subject's shapes, never the selection, since a right-click asks before it selects (Boards' ⌘↑ still reads the selection's enclosure; no menu runs it).
+
+Small things besides: `wholeGroup` returns before building a set when the first shape is in no group, as the old check did for ⌘A on an ungrouped board; `canStepInto` drops a box test `contents(of:)` already makes. Tests now pin the group asked of the shapes it's given while the selection sits inside that group (the old stored-focus formula would fail it), a pocket's menu Open (the other-plugin form), and the Shape menu's omission against the selection's own menu; a modifier-mask check that couldn't fail is gone.
+
+Left as they are: a group whose only part is the same group would enable an Open that does nothing, but the app's groups drop a group of one part, so it can't happen; and with a panel's text field holding the keyboard the menu bar has no Open (Go › Open Selection dims so ⌘↓ moves the caret), the cost of not listing Open twice.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+EOF
+git add -A && git status --short && git commit -q -F $S/commit-msg-open-review.txt && git log --oneline -3
+
+[2026-10-19 17:14] WRAP-UP:
+A subboard's right-click Open now runs ⌘↓'s command: it shows ⌘↓, opens one subboard, steps into a group, and isn't offered for several. It's reviewed and committed on the branch (c29854fb, fbcfa4bf) with every test passing, but not on main yet.
+Ask: Land the Open change on main?
+
+[2026-10-19 21:14] USER:
+Land it on main

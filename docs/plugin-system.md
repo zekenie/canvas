@@ -300,7 +300,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Create a kind with a double-click on empty canvas | `x.createOnDoubleClick(place)` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Give each shape of a kind a board of its own, saved, deleted and copied with it | `BoardOwning` on its definition, nothing to implement; `editor.showBoard(BoardID(owner:))` shows one | [Boards in a file](#boards-in-a-file) |
 | Make a double-click, Return or ⌘↓ on a kind's shape do something other than edit it (show its board) | `x.opens("Open") { shape, editor in ... }` (Selection's `ShapeOpening`) | [Selection](#selection) |
-| Make a kind's shapes open onto the boards they own: Open in its menu and panel, ⌘↑ back up, and a name on the path | `x.opensBoard(placeholder:systemImage:)` (Boards), on a `BoardOwning` kind | [Boards](#boards) |
+| Make a kind's shapes open onto the boards they own: Open in its menu, ⌘↑ back up, and a name on the path | `x.opensBoard(placeholder:systemImage:)` (Boards), on a `BoardOwning` kind | [Boards](#boards) |
 | Show where you are in a file's boards, and go up | `BoardPath(editor:)`, over the canvas; `editor.goUp(to:)`, `editor.name(of:)` | [Boards](#boards) |
 | Put a view of yours over the window's canvas, beside it as the inspector, a pane in Settings, or words in the window's subtitle or a tool's tip | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }`, `hostInspector`, `settingsPane`, `windowSubtitle`, `toolTips` | [Host slots](#host-slots) |
 | Show a view of yours in the detail panel where it has no one shape to show, or in its place while something of yours is open | `registrar.detailOverview { editor, onExit in … }`; `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }` | [The detail panel](#the-overview-and-takeovers) |
@@ -2347,7 +2347,8 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   `asOneStep`, in which no selection change or board shown records a step of its own). A shape
   that doesn't open is only gone to; nothing mid-gesture, nor for a shape whose own board is shown
   (a subboard's mention followed from inside it), which is gone into already.
-- `canOpen(_:)`, `open(_:)` and `openSelection()`: opening a shape, below.
+- `canOpen(_:)` and `open(_:)`, opening a shape, and `canOpenSelection(_:)` and `openSelection(_:)`, what
+  `.openSelection` does to the shapes it's given: below.
 - `hoveredHandle`, `brush` (the marquee), `isSelectable(_:)`, and the commands'
   `selectAll()`, `deleteSelection()` (`deleteShapes(_:)`, on any shapes, is what `.delete` runs) and
   `editSelection()` (editing alone, whatever opening would do).
@@ -2407,7 +2408,12 @@ shakes them).
   whether there's anything to do: a shape on the board shown whose kind has an opener or is
   `Editable`; a read-only shape of an `Editable` kind counts, since opening it is refused and the
   refusal shows (a locked note shakes), while an opener runs whatever the shape's lock (entering a
-  board changes nothing). The title names it where it's offered (a menu item).
+  board changes nothing). The title names it where it's offered (a menu item). `.openSelection` acts
+  on the shapes it's given (the selection, or a context menu's: [Boards](#boards)' Open runs it), as
+  `editor.openSelection(ids)`: a group whole, or a container alone that neither opens nor edits, is
+  gone into ([Moving between shapes](#moving-between-shapes)), a shape alone is opened, and several
+  are left as they are; `editor.canOpenSelection(ids)` is its rule. So `canOpenSelection([frame])`
+  can be true where `canOpen(frame)`, which only opens, is false.
 - Arrows (to select an arrow and for its handles) and Connections (for its dots, which are [canvas
   buttons](#canvas-buttons)), DetailPanel (to follow the selection), ContextMenus (the menu is for
   the selection), TableOfContents (to list and select shapes) and Adornments (a clickable adornment
@@ -2784,7 +2790,9 @@ registrar.contextMenuForCanvas { MenuItem(command: .group, in: StateMenuGroup.se
   keeps the selection says so with `registrar.commandShapes { $0.selectedShapeIDs }`, Selection's);
   from a context menu, the menu's shapes and where it was opened; from a line typed in a shape's
   text or a chip, that shape. A plugin may add what its rule reads to the subject in an extension:
-  Locking's `subject.locks`, the shapes' locks read in one pass.
+  Locking's `subject.locks`, the shapes' locks read in one pass. A command a context menu runs reads
+  the subject's shapes in its rule and its run, never the editor's selection: a right-click asks the
+  rule of the shapes it is about to select, before it selects them.
 - **How each surface runs it.** A key and the menu bar ask the moment, then the rule
   (`editor.perform(.group)`, `canPerform`). A surface that brings its own shapes brings its own
   moment and asks the rule alone (`perform(_:on:at:)`, `canPerform(_:on:at:)`): a context menu ends
@@ -3427,7 +3435,7 @@ read-only shape (a [locked](#locking) one, one in a locked frame, at any depth, 
 subboard's board) shows its whole panel, but nothing in it edits the shape: the panel disables its sections' content, and its header
 (a title field), and leaves going back, the tabs and collapsing as they were. A section whose
 controls change nothing of the shape says so, `DetailSection(…) { … }.enabledWhileReadOnly()`, and
-keeps them working (Boards' Open: a locked shape's board is entered like any other's); whatever they
+keeps them working (References' Go to Original: going to a locked reference's shape changes nothing); whatever they
 write is refused there all the same. Whether the shape can change is asked where the panel's root
 reads the shape's record, on every commit (`editor.isReadOnly(id)`: the rules of the shape and
 of the containers it's in, and whether its board can change, O(its depth)), and handed to the shape's
@@ -3720,15 +3728,11 @@ extension BoardKinds: KeyedExtensionPoint {
 
 extension ShapeRegistrar where Definition: BoardOwning {
     /// Opening this kind's shapes shows their boards: a double-click, Return, ⌘↓, and Open first in
-    /// their context menu.
+    /// their context menu, which runs what ⌘↓ does.
     public mutating func opensBoard(placeholder: String, systemImage: String) {
         contribute(BoardKind(placeholder: placeholder, systemImage: systemImage), to: BoardKinds.self)
         opens("Open") { shape, editor in editor.showBoard(BoardID(owner: shape.id)) }
-        contextMenu {
-            MenuItem("Open", in: BoardsMenuGroup.self) { ids, editor in
-                if let first = ids.first { editor.open(first) }
-            }
-        }
+        contextMenu { MenuItem(command: .openSelection, title: "Open", in: BoardsMenuGroup.self) }
     }
 }
 ```
@@ -4119,11 +4123,7 @@ right-click does nothing.
 Boards' Open, which a board-owning kind's opt-in brings it ([OpensBoard.swift](../Sources/Boards/OpensBoard.swift)):
 
 ```swift
-contextMenu {
-    MenuItem("Open", in: BoardsMenuGroup.self) { ids, editor in
-        if let first = ids.first { editor.open(first) }
-    }
-}
+contextMenu { MenuItem(command: .openSelection, title: "Open", in: BoardsMenuGroup.self) }
 ```
 
 - **`MenuItem(title, in:, id:, when:, isEnabled:, isChecked:) { edit }`** edits each shape it's for
@@ -4143,8 +4143,9 @@ contextMenu {
   gives its own, shows the key a menu shows for the command (`registry.menuKey(of:)`, which Keyboard
   fills, so ContextMenus imports no Keyboard), and shows only while a plugin claims the command. A
   command that goes by where the menu was asked for reads the subject's `point`: Clipboard's Paste
-  lands centered on the click. Delete, Select All, Cut, Copy, Paste, Duplicate, Group, Ungroup, Lock,
-  Unlock, Make Public, Make Private, Go to Original, Create Frame, Connect and Arrange ▸ are such items.
+  lands centered on the click. Delete, Select All, Open (Boards'), Cut, Copy, Paste, Duplicate, Group,
+  Ungroup, Lock, Unlock, Make Public, Make Private, Go to Original, Create Frame, Connect and Arrange ▸
+  are such items.
 - **`when` leaves an item out; `isEnabled` dims it.** A context menu shows only what applies, so
   reach for `when`. `isChecked` checks it (✓ for every shape, – for some). An item for the canvas
   asks these of its `MenuSubject`, so it can depend on more than a shape (Mentions' Show What Mentions
@@ -8834,8 +8835,10 @@ contributes to Boards' `BoardKinds` point (at most one per kind; its report line
   once the row is picked (in the app's panel, the canvas's Return, since picking a row shows the
   shape's panel and gives the canvas the keyboard), and a double-click only where the list stays
   put, not in the app's panel ([opening a row](#the-table-of-contents)).
-- **Open** first in its context menu (`BoardsMenuGroup`, order 0, as Finder's Open is). With several
-  selected it opens the first, in selection order.
+- **Open** first in its context menu (`BoardsMenuGroup`, order 0, as Finder's Open is): Selection's
+  `.openSelection`, titled Open, so it shows ⌘↓ and does to the menu's shapes what ⌘↓ does: it opens
+  one, goes into a group of them selected whole, and is left out for several. The Shape menu leaves it
+  out, since Go › Open Selection runs the same command.
 
 `BoardKinds.check` refuses a kind whose definition isn't `BoardOwning` (the form for another plugin's kind can't say so
 in its types), and the point takes one kind at a time (`PointScope.kinds`), so the registry refuses
@@ -12809,8 +12812,8 @@ extension PocketDefinition: BoardOwning {}          // each pocket owns a board
 
 That's all: a pocket deleted takes its board and every board under it, a pocket copied takes what
 it holds, the file saves them, and `editor.showBoard(BoardID(owner: pocket))` shows one. A
-double-click, Return and ⌘↓ opening it, Open in its menu and panel, ⌘↑ back up and a name on the
-path come from one more line, Boards' `x.opensBoard(placeholder:systemImage:)`.
+double-click, Return and ⌘↓ opening it, Open in its menu, ⌘↑ back up and a name on the path come
+from one more line, Boards' `x.opensBoard(placeholder:systemImage:)`.
 
 ### The editor and the file
 
@@ -14723,9 +14726,8 @@ Each of these adds to the design without changing what plugins are written again
   its card) for issues on the boards inside it, and validation across a file's boards (the
   engine checks the board shown: More of validation, above); two windows on different boards of one
   file (one editor holds the file and shows one board, so a window is a file's: a store of boards,
-  each window's editor showing one, would keep every host's `let editor`); Open in a menu for
-  several shapes opening each, or only showing for one (a per-shape `when` can't see the
-  selection's size, so it opens the first); a line in the panel saying what the board holds; a
+  each window's editor showing one, would keep every host's `let editor`); a line in the panel
+  saying what the board holds; a
   preview in another color, or sharp when a card shows more than 1,000 of its board's shapes large; and a board
   addressed from outside the app (the command line's, above).
 - **More of topology**: `canvas draw` matching an edge it restates by its type as well as its ends;

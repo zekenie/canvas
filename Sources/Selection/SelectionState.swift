@@ -592,7 +592,7 @@ extension CanvasEditor {
     }
 
     /// Edits the only selected shape if its kind is editable, whatever else opening it would do
-    /// (Return opens it: `openSelection`).
+    /// (Return opens it: `.openSelection`).
     public func editSelection() {
         if let selection { beginEditing(selection) }
     }

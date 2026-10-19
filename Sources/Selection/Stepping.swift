@@ -184,44 +184,51 @@ extension SelectionState {
 
     // MARK: In and out
 
-    /// What ⌘↓ and Return select in place of opening, if the selection is a group selected whole (its
-    /// first part, one level in: the part a click on a selected group selects, first in reading order) or
-    /// the only selected shape is a container that is neither opened nor edited (the first stop inside it,
-    /// in reading order); nil otherwise.
-    func shapesInside() -> [ShapeID]? {
-        guard let first = selectedIDs.first else { return nil }
-        let unit = unit(of: first, within: focus)
-        if unit.count > 1, Set(unit) == selectedSet {
+    /// What ⌘↓ and Return select in place of opening `ids`, if they are a group whole (its first part,
+    /// one level in: the part a click on the group, selected, selects, first in reading order) or a
+    /// container alone that is neither opened nor edited (the first stop inside it, in reading order);
+    /// nil otherwise.
+    func shapesInside(_ ids: [ShapeID]) -> [ShapeID]? {
+        if let group = wholeGroup(ids) {
             var seen = Set<ShapeID>(), parts: [[ShapeID]] = []
-            for id in unit where !seen.contains(id) {
-                let part = self.unit(inside: id, within: focus)
+            for id in group.shapes where !seen.contains(id) {
+                let part = unit(inside: id, within: group.focus)
                 seen.formUnion(part)
                 parts.append(part)
             }
-            guard let part = StopOrder.reading(parts.compactMap { stop(of: $0) }).first?.shapes ?? parts.first, Set(part) != selectedSet else { return nil }
+            guard let part = StopOrder.reading(parts.compactMap { stop(of: $0) }).first?.shapes ?? parts.first,
+                  Set(part) != Set(group.shapes) else { return nil }
             return part
         }
-        guard isContainerToEnter(first) else { return nil }
+        guard let container = containerToEnter(ids) else { return nil }
         // What a container holds is in none of the groups it is in (a group is its shapes', not their
         // containers'), so inside it the focus is none.
-        return StopOrder.reading(stops(in: .inside(first), within: [])).first?.shapes
+        return StopOrder.reading(stops(in: .inside(container), within: [])).first?.shapes
     }
 
-    /// Whether `shapesInside` would find something to select, without working out which: a group selected
-    /// whole, or a container to go into that holds a shape that can be a stop.
-    var canStepInto: Bool {
-        guard let first = selectedIDs.first else { return false }
-        let unit = unit(of: first, within: focus)
-        if unit.count > 1, Set(unit) == selectedSet { return true }
-        guard isContainerToEnter(first) else { return false }
-        let document = editor.document
-        return editor.shapeContext.contents(of: first).contains { id in document[id].map { $0.box != nil && isSelectable($0) } ?? false }
+    /// Whether `shapesInside` would find something to select, without working out which: a group whole,
+    /// or a container to go into that holds a shape that can be a stop.
+    func canStepInto(_ ids: [ShapeID]) -> Bool {
+        if wholeGroup(ids) != nil { return true }
+        guard let container = containerToEnter(ids) else { return false }
+        return editor.shapeContext.contents(of: container).contains(where: isSelectable(id:))
     }
 
-    /// Whether the only selected shape is `id`, a container whose kind neither opens nor edits (a frame).
-    private func isContainerToEnter(_ id: ShapeID) -> Bool {
-        guard selectedIDs.count == 1, let record = editor.document[id] else { return false }
-        return editor.registry.isContainer(record) && !editor.canOpen(id)
+    /// `ids` as a group whole, if they are one: what a click on the first of them selects once they are
+    /// the selection (its outermost group past the groups they are all inside, as `select` works out the
+    /// selection's focus), when that is more than one shape and every one of them. Its shapes are the
+    /// group's, back to front, and its focus the groups it is inside.
+    private func wholeGroup(_ ids: [ShapeID]) -> (shapes: [ShapeID], focus: [AnyHashable])? {
+        guard ids.count > 1, !groups(of: ids[0]).isEmpty else { return nil }
+        let whole = Set(ids), focus = focus(of: ids, selected: whole)
+        let unit = unit(of: ids[0], within: focus)
+        return unit.count > 1 && Set(unit) == whole ? (unit, focus) : nil
+    }
+
+    /// `ids`' one shape, if it is a container whose kind neither opens nor edits (a frame).
+    private func containerToEnter(_ ids: [ShapeID]) -> ShapeID? {
+        guard ids.count == 1, let record = editor.document[ids[0]], editor.registry.isContainer(record), !editor.canOpen(ids[0]) else { return nil }
+        return ids[0]
     }
 
     /// What ⌘↑ selects before it goes up a board: the innermost group the selection is inside, whole (as

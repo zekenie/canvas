@@ -457,6 +457,30 @@ extension EditorHarness {
         expect(opened.isSet, "a container that opens is opened by its opener")
         expectEqual(opening.editor.selectedShapeIDs, [corral], "and not gone into")
     },
+    test("Open Selection is asked of the shapes it's given, the selection or not (a right-click's): a group whole, a container alone, a shape that opens; never several") {
+        let groups = GroupsFixture()
+        let h = try stepHarness(groups)
+        let west = h.dot(50, 50), east = h.dot(250, 50), lone = h.dot(450, 50)
+        groups.paths = [west: ["g"], east: ["g"]]
+        let corral = h.add(Corral(CGRect(x: 0, y: 200, width: 400, height: 300)))
+        let inner = h.dot(100, 300)
+        h.editor.put([inner], in: corral)
+        let card = h.add(Card(CGRect(x: 600, y: 0, width: 100, height: 60)))
+        h.editor.selectedShapeIDs = [lone]
+        expect(!h.editor.canPerform(.openSelection), "the selection, a lone box, opens nothing")
+        expect(h.editor.canPerform(.openSelection, on: [west, east]), "a group whole")
+        expect(h.editor.canPerform(.openSelection, on: [corral]), "a container alone")
+        expect(h.editor.canPerform(.openSelection, on: [card]), "a shape that opens, by editing")
+        expect(!h.editor.canPerform(.openSelection, on: [west]), "a part of a group, alone, is no group")
+        expect(!h.editor.canPerform(.openSelection, on: [west, lone]), "several that are no group")
+        expect(!h.editor.canPerform(.openSelection, on: [card, corral]), "nor several that would open alone")
+        expect(h.editor.perform(.openSelection, on: [west, east]))
+        expectEqual(h.editor.selectedShapeIDs, [west], "the group's first part")
+        expectEqual(h.editor.selectionFocus, ["g"])
+        expect(h.editor.canPerform(.openSelection, on: [west, east]), "the group whole, though the selection is inside it")
+        expect(h.editor.perform(.openSelection, on: [corral]))
+        expectEqual(h.editor.selectedShapeIDs, [inner])
+    },
     test("going in brings the shape selected into view if it's not, at the zoom the camera has") {
         let view = CGSize(width: 1000, height: 700)
         let h = try stepHarness(view: view)

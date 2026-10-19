@@ -126,7 +126,9 @@ extension PluginRegistrar {
     ///   it's listed.
     /// - `isEnabled`: its rule, whether it can act on its subject (`CommandSubject`: the selection from
     ///   a key or the menu bar, a context menu's shapes and click): one rule, which dims its items and
-    ///   lets its keys pass while it says no. By default, always.
+    ///   lets its keys pass while it says no. By default, always. A command a context menu runs reads
+    ///   the subject's shapes in it and in `run`, never the editor's selection: a right-click asks the
+    ///   rule before it selects them.
     /// - `run`: what it does to its subject, in one undo step, named as what it commits names it.
     ///
     /// Its keys are Keyboard's to give: Keyboard's `command(_:title:…shortcut:…)` declares one with them.

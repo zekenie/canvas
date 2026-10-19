@@ -29,8 +29,8 @@ public struct ReferenceHeader: View {
 }
 
 extension ShapeRegistrar where Definition == ReferenceDefinition {
-    /// The reference's panel: its header; for one that names a shape, a plain Go to Original button
-    /// (as Boards' Open), working on a locked reference too: it changes nothing, and is dimmed while
+    /// The reference's panel: its header; for one that names a shape, a plain Go to Original button,
+    /// working on a locked reference too: it changes nothing, and is dimmed while
     /// there's nothing to go to (the shape is deleted, or not available); for one of words or a query,
     /// the Query section (the query, colored, read-only; a status line when there's something to say;
     /// Match ☐ All) and, while it found shapes, the Matches section.

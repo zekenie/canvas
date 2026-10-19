@@ -27,8 +27,8 @@ extension CanvasCommand {
     public static let selectAll: CanvasCommand = "selectAll"
     /// Go › Back (⌘[): what was selected before, wherever it was, whatever has the keyboard.
     public static let goBack: CanvasCommand = "goBack"
-    /// Go › Open Selection (⌘↓): the only selected shape opened (its board shown, or edited), or the
-    /// group or the container selected gone into.
+    /// Go › Open Selection (⌘↓): a shape alone opened (its board shown, or edited), or a group whole or
+    /// a container alone gone into; the selection, or a context menu's shapes.
     public static let openSelection: CanvasCommand = "openSelection"
     /// View › Zoom to Selection (⇧2): the shapes brought into view.
     public static let zoomToSelection: CanvasCommand = "zoomToSelection"
@@ -229,7 +229,7 @@ public struct SelectionPlugin: ListedPlugin {
         // the Keyboard Shortcuts window lists them in its row.
         let openSelection = "Open Selection"
         registrar.command(.openSelection, title: openSelection, menu: "Go", order: 20, shortcut: KeyChord(KeyChord.downArrow.key, .command),
-                          runs: .whenIdle, isEnabled: { $0.editor.canOpenSelection }) { $0.editor.openSelection() }
+                          runs: .whenIdle, isEnabled: { $0.editor.canOpenSelection($0.shapes) }) { $0.editor.openSelection($0.shapes) }
         registrar.shortcut(.return, openSelection) { $0.perform(.openSelection) }
         registrar.shortcut(.enter, openSelection) { $0.perform(.openSelection) }
         registrar.command(.zoomToSelection, title: "Zoom to Selection", menu: "View", order: 140, shortcut: KeyChord("2", .shift),

@@ -92,6 +92,15 @@ import TextEditing
         expect(w.editor.isLocked(frame))
         expect(try shapeMenu(of: menus).outline.contains("Unlock"), "made afresh each time it opens")
     },
+    test("a subboard's Shape menu has no Open: its right-click's Open runs Go › Open Selection's command, which the menu bar has") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry, editor: { w.editor })
+        w.editor.selection = w.nest.s
+        let titles = try shapeMenu(of: menus).outline
+        expect(!titles.contains("Open") && titles.contains("Lock"), "\(titles)")
+        expect(try require(w.editor.menuForSelection(omitting: [])).outline.contains("Open"), "the selection's own menu has it")
+    },
     test("an item reaches the editor of the window it's for: two windows, each its own selection") {
         let one = try NestedWindow()
         let two = try NestedWindow()

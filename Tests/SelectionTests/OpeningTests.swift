@@ -56,7 +56,7 @@ import TestKit
         h.editor.endEditing()
         claim.yes = true
         h.editor.selection = t.c
-        h.editor.openSelection()
+        expect(h.editor.perform(.openSelection))
         expectEqual(opened, [t.c, t.c], "Return too")
     },
     test("a double-click on empty canvas still places what claims it") {
