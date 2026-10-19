@@ -19,7 +19,7 @@ import TestKit
 
 /// The Edit menu's Copy as Image, pointed at the window's controller.
 @MainActor private func copyAsImageItem(_ w: NestedWindow) throws -> NSMenuItem {
-    let edit = try require(BoardMenus.make(appName: "Infinite Canvas").main.item(withTitle: "Edit")?.submenu)
+    let edit = try require(BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry).main.item(withTitle: "Edit")?.submenu)
     let item = try require(edit.item(withTitle: "Copy as Image"))
     item.target = w.controller
     return item
@@ -96,7 +96,7 @@ import TestKit
         defer { board.close() }
         board.makeWindowControllers()
         let controller = try require(board.windowControllers.first as? BoardWindowController)
-        let edit = try require(BoardMenus.make(appName: "Infinite Canvas").main.item(withTitle: "Edit")?.submenu)
+        let edit = try require(BoardMenus.make(appName: "Infinite Canvas", registry: board.editor.registry).main.item(withTitle: "Edit")?.submenu)
         let item = try require(edit.item(withTitle: "Copy as Image"))
         expectEqual(KeyboardShortcutSection.key(of: item), "⇧⌘C")
         expect(!controller.validateMenuItem(item))

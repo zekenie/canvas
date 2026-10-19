@@ -385,15 +385,6 @@ public struct Registry {
         memo(StepRulesMemo(kind: kind)) { contributions(to: CorePoints.KeepsInStep.self, for: kind) }
     }
     var outlineSources: [@MainActor (CanvasEditor) -> Outlines] { contributions(to: CorePoints.OutlineSources.self).map(\.value) }
-    func command(_ command: CanvasCommand) -> CommandRegistration? {
-        contributions(to: CorePoints.Commands.self).first { $0.value.command == command }?.value
-    }
-
-    /// Whether a plugin (or the core) claims the command, so `editor.perform` can run it.
-    public func claims(_ command: CanvasCommand) -> Bool { self.command(command) != nil }
-
-    /// What the plugin that claims a command calls it ("Delete"); nil for a command none claims.
-    public func title(of command: CanvasCommand) -> String? { self.command(command)?.title }
     var secondaryClickMenu: (@MainActor (CanvasEditor, Pointer) -> NSMenu?)? {
         contributions(to: CorePoints.SecondaryClickMenu.self).first?.value
     }
@@ -472,7 +463,7 @@ struct RawContribution {
         case let tool as ToolRegistration: "tool \(tool.descriptor.id)"
         case let service as ServiceRegistration: "service \(service.name)"
         case let overlay as any CanvasOverlay: "overlay \(type(of: overlay))"
-        case let command as CommandRegistration: "command \(command.command)"
+        case let command as CommandRegistration: "command \(command.command)" + (command.menu.map { " in \($0)" } ?? "")
         case let provider as LayoutProvider: "layout input \(provider.name)"
         case let declaration as PropertyDeclaration:
             "property \(declaration.codec.key)" + (declaration.codec.version > 0 ? " v\(declaration.codec.version)" : "")
@@ -491,6 +482,7 @@ struct RawContribution {
             case is CorePoints.DefaultTool.Type: "default tool \(value)"
             case is CorePoints.SecondaryClickMenu.Type: "secondary-click menu"
             case is CorePoints.SelectionMenu.Type: "selection menu"
+            case is CorePoints.CommandShapes.Type: "command shapes"
             case is CorePoints.KeyStrokes.Type: "key strokes"
             case is CorePoints.KeyReleases.Type: "key releases"
             case is CorePoints.TranslationAdjusters.Type: "translation adjuster"

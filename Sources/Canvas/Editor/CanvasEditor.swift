@@ -1231,29 +1231,7 @@ public final class CanvasEditor {
         setTool(registry.defaultTool)
     }
 
-    /// Runs the command a plugin claimed, if it can run now: from a menu item (the canvas view
-    /// forwards Edit › Delete and Edit › Select All, the board's window Go › Back), a key, or any
-    /// plugin. Returns false if no plugin claims it, or it can't. What it commits is one undo step.
-    @discardableResult
-    public func perform(_ command: CanvasCommand) -> Bool {
-        guard let registration = registry.command(command), registration.isEnabled(self) else { return false }
-        undoHistory.group { registration.run(self) }
-        return true
-    }
-
-    /// Whether `perform` would run the command: a plugin claims it, and says it can now. A menu
-    /// asks, to enable its item.
-    public func canPerform(_ command: CanvasCommand) -> Bool {
-        registry.command(command)?.isEnabled(self) ?? false
-    }
-
-    /// What the menu item that runs the command should be called now, for a command whose title
-    /// follows the editor (`registrar.command(_:_:menuTitle:…)`: Go › Enclosing Group); nil for one
-    /// whose item keeps its own title, or that no plugin claims. The window asks as it validates the
-    /// item.
-    public func menuTitle(of command: CanvasCommand) -> String? {
-        registry.command(command)?.menuTitle?(self)
-    }
+    // Running a command a plugin declared (`perform`, `canPerform`, `attempt`) is in Commands.swift.
 
     // MARK: Input, for tools and sessions
 

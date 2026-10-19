@@ -471,7 +471,7 @@ struct NotePill: Hashable, Sendable {
         let (window, canvas) = windowed(editor)
         window.makeFirstResponder(canvas)
         expect(!window.performKeyEquivalent(with: window.keyEvent("m", modifiers: [.command, .control])))
-        let view = try require(BoardMenus.make(appName: "Infinite Canvas").main.item(withTitle: "View")?.submenu)
+        let view = try require(BoardMenus.make(appName: "Infinite Canvas", registry: editor.registry).main.item(withTitle: "View")?.submenu)
         let item = try require(view.item(withTitle: "Show Minimap"))
         expectEqual(item.keyEquivalent, "m")
         expectEqual(item.keyEquivalentModifierMask, [.command, .control])

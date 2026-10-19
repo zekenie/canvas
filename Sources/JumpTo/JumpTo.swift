@@ -14,6 +14,11 @@ extension PluginID {
     public static let jumpTo: PluginID = "jump-to"
 }
 
+extension CanvasCommand {
+    /// Go › Jump To… (⌘K): the palette opened, whatever has the keyboard, text included.
+    public static let jumpTo: CanvasCommand = "jumpTo"
+}
+
 public struct JumpToPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .jumpTo }
@@ -23,9 +28,9 @@ public struct JumpToPlugin: ListedPlugin {
         // ⌘K and Go › Jump To…: opens the palette, or, open, asks for its keyboard again; ends editing
         // first (its edit committed), and never mid-press. It changes no document, so it leaves no
         // step of undo.
-        registrar.command(.jumpTo, "Jump To…", shortcuts: [KeyChord("k", .command)], isEnabled: { $0.session == nil }) { editor in
-            editor.endEditing()
-            editor.jumpTo?.open()
+        registrar.command(.jumpTo, title: "Jump To…", menu: "Go", order: 100, shortcut: KeyChord("k", .command), runs: .betweenPresses) { subject in
+            subject.editor.endEditing()
+            subject.editor.jumpTo?.open()
         }
         // The palette, over the whole canvas and whatever else is over it (the path): nothing until
         // it's open. After Boards in a list, so it's over the path.

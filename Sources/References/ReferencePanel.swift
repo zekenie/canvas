@@ -37,7 +37,7 @@ extension ShapeRegistrar where Definition == ReferenceDefinition {
     mutating func referencePanel() {
         details(header: { $reference in ReferenceHeader(id: $reference.shapeID, props: reference, state: $reference.service(ReferenceState.self)) }) {
             DetailSection(in: ReferenceTab.self, when: { $0.target != nil }) { _ in
-                DetailCommandButton(ReferenceStyle.goToOriginal, systemImage: "arrow.up.forward.square", command: .goToOriginal)
+                DetailCommandButton(command: .goToOriginal, systemImage: "arrow.up.forward.square")
             }
             .enabledWhileReadOnly()
             DetailSection(ReferenceStyle.querySection, in: ReferenceTab.self, id: "reference.query", when: { $0.mode == .dynamic }) { $reference in
@@ -154,7 +154,7 @@ struct ReferenceQueryView: View {
             if let line = content.status {
                 DetailStatusLine(DetailStatus(line.text, tone: line.isWarning ? .warning : .neutral), isBusy: line.isBusy, actions: actions(of: line))
             } else if content.offersInterpret {
-                DetailCommandButton(ReferenceStyle.interpret, systemImage: ReferenceStyle.interpretSymbol, command: .interpretReference)
+                DetailCommandButton(command: .interpretReference, systemImage: ReferenceStyle.interpretSymbol)
             }
             LabeledContent(ReferenceStyle.matchLabel) {
                 DetailCheckbox(ReferenceStyle.allTitle, isOn: Binding(get: { props.all }, set: { [state, id] in state?.setAll($0, of: id) }))

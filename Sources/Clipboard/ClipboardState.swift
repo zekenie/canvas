@@ -386,29 +386,24 @@ extension CanvasEditor {
         return clipboard.isCopyable(record)
     }
 
-    /// Whether ⌘C would copy anything: some selected shape can be copied.
-    public var canCopy: Bool { clipboard?.canCopy(selectedShapeIDs) ?? false }
-
-    /// Whether ⌘X would cut anything: as `canCopy`, but not mid-gesture.
-    public var canCut: Bool { session == nil && canCopy }
+    /// Whether some of these shapes can be copied: what Copy, Cut and Duplicate act on.
+    public func canCopy(_ ids: [ShapeID]) -> Bool { clipboard?.canCopy(ids) ?? false }
 
     /// Whether ⌘V would paste anything: the pasteboard holds this app's shapes, some of which it
     /// can read, nothing is under way, and the board shown takes shapes (not a locked subboard's,
     /// `isBoardReadOnly`).
     public var canPaste: Bool { session == nil && !isBoardReadOnly && clipboard?.hasShapes == true }
 
-    /// Whether ⌘D would duplicate anything: some selected shape can be copied, nothing is under way and
-    /// the board shown takes shapes.
-    public var canDuplicate: Bool { session == nil && !isBoardReadOnly && canCopy }
+    /// Puts copies of the selected shapes that can be copied beside them, as ⌘D does (`duplicateBeside`).
+    public func duplicateSelection() { duplicateBeside(selectedShapeIDs) }
 
-    /// ⌘D: puts copies of the selected shapes that can be copied beside them (`ClipboardStyle.duplicateOffset`
-    /// view points down and right), selected, in one step, "Duplicate": the pasteboard is not touched. What
-    /// a paste does with the copies, a duplicate does: they keep what the originals hold, are renamed among
-    /// themselves, and settle where they land. Does nothing mid-gesture or on a board that takes no shapes.
-    public func duplicateSelection() {
-        guard canDuplicate else { return }
+    /// Copies the shapes of `ids` that can be copied beside them, `ClipboardStyle.duplicateOffset` view
+    /// points down and right, selected, in one step, "Duplicate": what `.duplicate` does to its shapes.
+    /// Nothing mid-gesture or on a board that takes no shapes.
+    public func duplicateBeside(_ ids: [ShapeID]) {
+        guard session == nil else { return }
         let step = ClipboardStyle.duplicateOffset / camera.zoom
-        duplicate(selectedShapeIDs, offsetBy: CGPoint(x: step, y: step))
+        duplicate(ids, offsetBy: CGPoint(x: step, y: step))
     }
 
     /// Copies the shapes of `ids` that can be copied on the board, selected, `offset` (world units) from

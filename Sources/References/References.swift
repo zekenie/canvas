@@ -155,11 +155,15 @@ public struct ReferencesPlugin: ListedPlugin {
         registrar.overlay(ReferenceButtonOverlay())
         registrar.canvasButtons(at: { editor, point in editor.service(ReferenceState.self)?.goButton(atViewPoint: point) },
                                 click: { button, editor in editor.service(ReferenceState.self)?.goToOriginal(button.reference) })
-        registrar.command(.goToOriginal, ReferenceStyle.goToOriginal, isEnabled: { $0.service(ReferenceState.self)?.canGoToOriginal(of: Set($0.selectedShapeIDs)) ?? false }) { editor in
-            editor.service(ReferenceState.self)?.goToOriginal(of: Set(editor.selectedShapeIDs))
+        // Go to Original: the panel's button, the context menu's first item (dimmed where there's nothing
+        // to go to), on the only reference they're for. Interpret: the panel's, on words no one asked about.
+        registrar.command(.goToOriginal, title: ReferenceStyle.goToOriginal,
+                          isEnabled: { $0.editor.service(ReferenceState.self)?.canGoToOriginal(of: Set($0.shapes)) ?? false }) { subject in
+            subject.editor.service(ReferenceState.self)?.goToOriginal(of: Set(subject.shapes))
         }
-        registrar.command(.interpretReference, ReferenceStyle.interpret, isEnabled: { $0.service(ReferenceState.self)?.canInterpret(Set($0.selectedShapeIDs)) ?? false }) { editor in
-            editor.service(ReferenceState.self)?.interpret(only: Set(editor.selectedShapeIDs))
+        registrar.command(.interpretReference, title: ReferenceStyle.interpret,
+                          isEnabled: { $0.editor.service(ReferenceState.self)?.canInterpret(Set($0.shapes)) ?? false }) { subject in
+            subject.editor.service(ReferenceState.self)?.interpret(only: Set(subject.shapes))
         }
         registrar.detailStatusForEveryShape { shape, context in
             guard shape.kind == Reference.kind, let line = context.service(ReferenceState.self)?.mismatchLine(of: shape.id) else { return [] }
@@ -167,11 +171,8 @@ public struct ReferencesPlugin: ListedPlugin {
         }
         registrar.shapePopovers { editor, record, _ in editor.service(ReferenceState.self)?.popover(on: record) }
         registrar.contextMenuForCanvas {
-            MenuItem(ReferenceStyle.goToOriginal, in: ReferencesMenuGroup.self,
-                     when: { $0.editor.service(ReferenceState.self)?.canOffer(goingTo: $0.shapes) ?? false },
-                     isEnabled: { $0.editor.service(ReferenceState.self)?.canGoToOriginal(of: Set($0.shapes)) ?? false }) { ids, editor in
-                editor.service(ReferenceState.self)?.goToOriginal(of: Set(ids))
-            }
+            MenuItem(command: .goToOriginal, in: ReferencesMenuGroup.self,
+                     when: { $0.editor.service(ReferenceState.self)?.canOffer(goingTo: $0.shapes) ?? false }, dims: true)
             MenuItem(ReferenceStyle.showMatches, in: ReferencesMenuGroup.self,
                      when: { $0.editor.service(ReferenceState.self)?.canOffer(showingMatches: $0.shapes) ?? false },
                      isEnabled: { subject in subject.shapes.count == 1 && subject.editor.service(ReferenceState.self)?.matches(of: subject.shapes[0]) != nil }) { ids, editor in

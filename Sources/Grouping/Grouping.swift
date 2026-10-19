@@ -20,6 +20,13 @@ extension PluginID {
     public static let grouping: PluginID = "grouping"
 }
 
+extension CanvasCommand {
+    /// Arrange › Group (⌥⌘G): the shapes put in a new group.
+    public static let group: CanvasCommand = "group"
+    /// Arrange › Ungroup (⌥⇧⌘G): the groups the shapes hold whole taken apart, a level.
+    public static let ungroup: CanvasCommand = "ungroup"
+}
+
 /// The groups a shape is in, outermost first, each by an id no other group has (a UUID's string):
 /// nothing on a shape in none. The plugin's own: no language lists or writes it (`unlisted()`),
 /// since a group has no name an agent could know it by; draw writes it with `group`.
@@ -94,39 +101,17 @@ public struct GroupingPlugin: ListedPlugin {
         registrar.optInEveryShape(to: GroupsProperty.self)
         registrar.service { GroupIndex(editor: $0) }
         registrar.selectionGroups { $0.service(GroupIndex.self) }
-        // ⌥⌘G and ⇧⌥⌘G, Keynote's and Freeform's (⌘G is Find Next), and Arrange › Group and
-        // Ungroup, on the selection, while nothing is under way or being edited.
-        registrar.command(.group, "Group", shortcuts: [KeyChord("g", [.command, .option])], isEnabled: { $0.canGroupSelection }) {
-            $0.group($0.selectedShapeIDs)
-        }
-        registrar.command(.ungroup, "Ungroup", shortcuts: [KeyChord("g", [.command, .option, .shift])], isEnabled: { $0.canUngroupSelection }) {
-            $0.ungroup($0.selectedShapeIDs)
-        }
-        // Group, for two or more shapes or groups, and Ungroup, for a group held whole, beside Lock
-        // (Keynote's Arrange menu has them together): items for the canvas, on the kinds that can be
-        // grouped.
+        // ⌥⌘G and ⇧⌥⌘G, Keynote's and Freeform's (⌘G is Find Next), Arrange › Group and Ungroup and the
+        // context menu's items, beside Lock (Keynote's Arrange menu has them together): Group for two
+        // or more shapes or groups, Ungroup for a group held whole (every kind can be grouped), while
+        // nothing is under way or being edited.
+        registrar.command(.group, title: "Group", menu: "Arrange", order: 0, shortcut: KeyChord("g", [.command, .option]), runs: .whenIdle,
+                          isEnabled: { $0.editor.canGroup($0.shapes) }) { $0.editor.group($0.shapes) }
+        registrar.command(.ungroup, title: "Ungroup", menu: "Arrange", order: 10, shortcut: KeyChord("g", [.command, .option, .shift]),
+                          runs: .whenIdle, isEnabled: { $0.editor.canUngroup($0.shapes) }) { $0.editor.ungroup($0.shapes) }
         registrar.contextMenuForCanvas {
-            MenuItem(command: .group, in: StateMenuGroup.self, when: { $0.groupable && $0.editor.canGroup($0.shapes) })
-            MenuItem(command: .ungroup, in: StateMenuGroup.self, when: { $0.groupable && $0.editor.canUngroup($0.shapes) })
-        }
-    }
-}
-
-extension CanvasEditor {
-    /// Whether Group would run now: on a selection that can be grouped, with nothing under way or
-    /// being edited.
-    var canGroupSelection: Bool { session == nil && editingShapeID == nil && canGroup(selectedShapeIDs) }
-
-    /// Whether Ungroup would run now: on a selection that holds a group whole, with nothing under way
-    /// or being edited.
-    var canUngroupSelection: Bool { session == nil && editingShapeID == nil && canUngroup(selectedShapeIDs) }
-}
-
-extension MenuSubject {
-    /// Whether every one of the menu's shapes is of a kind that can be grouped (holds `groups`).
-    fileprivate var groupable: Bool {
-        !shapes.isEmpty && shapes.allSatisfy { id in
-            editor.document[id].map { editor.registry.properties(for: $0.kind).contains(GroupsProperty.key) } ?? false
+            MenuItem(command: .group, in: StateMenuGroup.self)
+            MenuItem(command: .ungroup, in: StateMenuGroup.self)
         }
     }
 }

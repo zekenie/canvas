@@ -52,6 +52,9 @@ public struct KeyChord: Hashable, Sendable, CustomStringConvertible, Expressible
 }
 
 extension KeyChord {
+    /// The key as a menu item holds it (`MenuKey`): Delete is Backspace's character to a menu.
+    public var menuKey: MenuKey { MenuKey(key: key == "\u{7f}" ? "\u{8}" : String(key), modifiers: modifiers) }
+
     /// The chord a key stroke makes; nil when it isn't one key (a dead key, which types nothing yet).
     init?(_ stroke: KeyStroke) {
         guard stroke.characters.count == 1, let key = stroke.characters.first else { return nil }

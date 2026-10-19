@@ -78,58 +78,20 @@ public struct ToolID: Hashable, Sendable, ExpressibleByStringLiteral, CustomStri
     public static let hand: ToolID = "hand"
 }
 
-/// Something to do, by name, for a plugin to claim with `registrar.command`: what a menu item sends
-/// (the canvas view forwards AppKit's standard actions as these, and the board's window its own
-/// menu items), and what a key or any plugin can run with `editor.perform`. The core only routes it.
+/// Something to do, by name: a command a plugin declares once with `registrar.command`, saying what
+/// it's called, where its menu bar item is and what it runs, and that any key, menu item, button or
+/// plugin runs with `editor.perform`. Stated once, as a static member in the plugin that declares it
+/// (`extension CanvasCommand { static let group: CanvasCommand = "group" }`): the core knows what a
+/// command is, never which commands exist, as it knows kinds and tools. Its own are undo, redo and
+/// the zooms.
 public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, CustomStringConvertible {
     public let rawValue: String
     public init(_ rawValue: String) { self.rawValue = rawValue }
     public init(stringLiteral value: String) { rawValue = value }
     public var description: String { rawValue }
-    /// Edit › Delete.
-    public static let delete: CanvasCommand = "delete"
-    /// Edit › Select All.
-    public static let selectAll: CanvasCommand = "selectAll"
-    /// Go › Back (⌘[), whatever has the keyboard.
-    public static let goBack: CanvasCommand = "goBack"
-    /// Edit › Cut, Copy and Paste, from the board's window, wherever the keyboard is but in text.
-    public static let cut: CanvasCommand = "cut"
-    public static let copy: CanvasCommand = "copy"
-    public static let paste: CanvasCommand = "paste"
-    /// Edit › Paste at Pointer (⇧⌘V): Paste, landing centered on the pointer while it's over the canvas.
-    public static let pasteAtPointer: CanvasCommand = "pasteAtPointer"
-    /// Edit › Duplicate (⌘D): for the plugin that copies shapes in place (Clipboard's), on the selection.
-    public static let duplicate: CanvasCommand = "duplicate"
     /// Edit › Undo and Redo: the core's own (`editor.undo()`, `editor.redo()`).
     public static let undo: CanvasCommand = "undo"
     public static let redo: CanvasCommand = "redo"
-    /// Go › Open Selection (⌘↓): the only selected shape's board, or whatever opening that shape does.
-    public static let openSelection: CanvasCommand = "openSelection"
-    /// Go › Enclosing Board (⌘↑), named for the step it takes (Enclosing Group, Enclosing Frame): one
-    /// step out of what the selection is in, the group it's inside, else the container its shapes are
-    /// in, else the board holding the shown board's owner.
-    public static let enclosingBoard: CanvasCommand = "enclosingBoard"
-    /// Up to the board above the one shown, whatever is selected: what a list's header button runs
-    /// (the table of contents'), where ⌘↑ may step out of a group or a container first.
-    public static let goUpBoard: CanvasCommand = "goUpBoard"
-    /// Edit › Find… (⌘F), Find Next (⌘G) and Find Previous (⇧⌘G): for the plugin that searches the
-    /// text in shapes (Find's), whatever has the keyboard, text included.
-    public static let find: CanvasCommand = "find"
-    public static let findNext: CanvasCommand = "findNext"
-    public static let findPrevious: CanvasCommand = "findPrevious"
-    /// Go › Jump To… (⌘K): for the plugin that goes to a shape by its title and where it sits in the
-    /// containment tree (JumpTo's), whatever has the keyboard, text included.
-    public static let jumpTo: CanvasCommand = "jumpTo"
-    /// Arrange › Group (⌥⌘G) and Ungroup (⇧⌥⌘G): for the plugin that groups shapes, so they're
-    /// selected as one (Grouping's), on the selection, wherever the keyboard is but in text.
-    public static let group: CanvasCommand = "group"
-    public static let ungroup: CanvasCommand = "ungroup"
-    /// Arrange › Bring to Front (`]`), Bring Forward (⌥]), Send Backward (⌥[) and Send to Back (`[`): for
-    /// the plugin that restacks shapes (Reordering's), on the selection, wherever the keyboard is but in text.
-    public static let bringToFront: CanvasCommand = "bringToFront"
-    public static let bringForward: CanvasCommand = "bringForward"
-    public static let sendBackward: CanvasCommand = "sendBackward"
-    public static let sendToBack: CanvasCommand = "sendToBack"
     /// View › Zoom In, Zoom Out and Actual Size: the core's own, the camera to the next of the zoom
     /// stops (`Camera.zoomStops`) in or out, or to 100%, around the view's center.
     public static let zoomIn: CanvasCommand = "zoomIn"
@@ -137,9 +99,4 @@ public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, Cus
     public static let zoomToActualSize: CanvasCommand = "zoomToActualSize"
     /// View › Zoom to Fit: the core's own, every shape of the board shown in view.
     public static let zoomToFit: CanvasCommand = "zoomToFit"
-    /// View › Zoom to Selection: what's selected in view, for the plugin that keeps the selection.
-    public static let zoomToSelection: CanvasCommand = "zoomToSelection"
-    /// A two-finger double-tap on a trackpad (smart zoom), for a plugin to claim: in the shipped app,
-    /// Selection's, which brings the shape under the pointer into view, and again goes back.
-    public static let smartMagnify: CanvasCommand = "smartMagnify"
 }

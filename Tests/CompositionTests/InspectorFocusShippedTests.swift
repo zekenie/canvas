@@ -78,7 +78,7 @@ extension NestedWindow {
     },
     test("it's in the View menu after Show Inspector, on ⌥⌘I, enabled with an inspector; from a panel field it still runs") {
         let w = try NestedWindow()
-        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry)
         let view = try require(menus.main.item(withTitle: "View")?.submenu)
         let titles = view.items.map(\.title)
         let show = try require(titles.firstIndex(of: "Show Inspector")), focus = try require(view.items.first { $0.title == "Focus Inspector" })

@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import CanvasUI
 import CoreGraphics
+import Find
 import Frames
 import Keyboard
 import Locking
@@ -16,12 +17,12 @@ import TextEditing
 // has, with the keys the shape commands got (⇧L, ⇧⌘F and the four Arrange keys) on the canvas and through
 // the menu bar, which leaves a key that types to the text.
 
-/// What Edit › Find's items would do, in their place.
+/// What the window's controller would do with Edit › Find's items, in its place: the commands they ran.
 @MainActor private final class FindProbe: NSObject {
-    var fired = 0
-    @objc func showFind(_ sender: Any?) { fired += 1 }
-    @objc func findNextMatch(_ sender: Any?) { fired += 1 }
-    @objc func findPreviousMatch(_ sender: Any?) { fired += 1 }
+    var fired: [CanvasCommand] = []
+    @objc func runCommand(_ sender: Any?) {
+        if let item = sender as? NSMenuItem, let command = BoardMenus.command(of: item) { fired.append(command) }
+    }
 }
 
 /// The app's menus for a window's editor, with the Shape menu as it fills now.
@@ -47,7 +48,7 @@ import TextEditing
     test("the Shape menu sits between Edit and Arrange and holds nothing: not at rest, and not with nothing selected") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let menus = BoardMenus.make(appName: "Infinite Canvas", editor: { w.editor })
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry, editor: { w.editor })
         expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "Shape", "Arrange", "View", "Go", "Window", "Help"])
         let shape = try require(menus.main.item(withTitle: "Shape")?.submenu)
         expect(shape.items.isEmpty && !shape.autoenablesItems)
@@ -62,7 +63,7 @@ import TextEditing
     test("a note's Shape menu is its context menu less what the menu bar has: Cut, Copy, Paste, Duplicate, Delete and Group are not in it; Create Frame and Lock are, with their keys") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let menus = BoardMenus.make(appName: "Infinite Canvas", editor: { w.editor })
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry, editor: { w.editor })
         let (a, b) = w.nest.notes(on: 1)
         w.editor.selection = a
         let shape = try shapeMenu(of: menus)
@@ -82,7 +83,7 @@ import TextEditing
     test("a frame's Shape menu has what a frame has: Turn into Subboard; an item chosen runs on the selection of the window it was made for") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let menus = BoardMenus.make(appName: "Infinite Canvas", editor: { w.editor })
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry, editor: { w.editor })
         let frame = w.editor.add(Frame(frame: CGRect(x: 800, y: 80, width: 300, height: 200)))
         w.editor.selection = frame
         let shape = try shapeMenu(of: menus)
@@ -96,7 +97,7 @@ import TextEditing
         let two = try NestedWindow()
         defer { one.board.close(); two.board.close() }
         let current = KeyWindow(one.editor)
-        let menus = BoardMenus.make(appName: "Infinite Canvas", editor: { current.editor })
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: one.editor.registry, editor: { current.editor })
         let (a, _) = one.nest.notes(on: 1)
         one.editor.selection = a
         two.editor.selection = a
@@ -110,7 +111,7 @@ import TextEditing
     test("an item dims as its command does: while a note is edited, Create Frame and Lock can't run, and the menu is still the selection's") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let menus = BoardMenus.make(appName: "Infinite Canvas", editor: { w.editor })
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry, editor: { w.editor })
         let (a, _) = w.nest.notes(on: 1)
         w.editor.selection = a
         expect(try shapeMenu(of: menus).outline.contains("Lock"))
@@ -164,7 +165,7 @@ import TextEditing
     test("Arrange › Bring to Front, Bring Forward, Send Backward and Send to Back (`]`, ⌥], ⌥[, `[`) through the menu bar: after Group and Ungroup, run on the selection, off while text has the keyboard") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let menus = BoardMenus.make(appName: "Infinite Canvas", editor: { w.editor })
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry, editor: { w.editor })
         let arrange = try require(menus.main.item(withTitle: "Arrange")?.submenu)
         for item in arrange.items { item.target = w.controller }
         expectEqual(arrange.items.map(\.title), ["Group", "Ungroup", "", "Bring to Front", "Bring Forward", "Send Backward", "Send to Back"])
@@ -222,7 +223,7 @@ import TextEditing
     test("typing L, ], [ and a quote in a note being edited types them: no shape is locked or restacked, and the menu bar leaves the keys") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let menus = BoardMenus.make(appName: "Infinite Canvas", editor: { w.editor })
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry, editor: { w.editor })
         let arrange = try require(menus.main.item(withTitle: "Arrange")?.submenu)
         for item in arrange.items { item.target = w.controller }
         let (a, b) = w.nest.notes(on: 1)
@@ -244,15 +245,15 @@ import TextEditing
     test("⇧⌘F is not Find's ⌘F: the menu bar leaves it, and ⌘F is still Find's") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let menus = BoardMenus.make(appName: "Infinite Canvas", editor: { w.editor })
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry, editor: { w.editor })
         let probe = FindProbe()
         let find = try require(try require(menus.main.item(withTitle: "Edit")?.submenu).item(withTitle: "Find")?.submenu)
         for item in find.items { item.target = probe }
         expect(!menus.main.performKeyEquivalent(with: w.window.keyEvent("F", ignoringModifiers: "f", code: 3, modifiers: [.command, .shift])))
-        expectEqual(probe.fired, 0, "Find didn't open")
+        expectEqual(probe.fired, [], "Find didn't open")
         expect(menus.main.performKeyEquivalent(with: w.window.keyEvent("f", code: 3, modifiers: .command)))
-        expectEqual(probe.fired, 1)
+        expectEqual(probe.fired, [.find])
         expect(menus.main.performKeyEquivalent(with: w.window.keyEvent("G", ignoringModifiers: "g", code: 5, modifiers: [.command, .shift])), "⇧⌘G is still Find Previous")
-        expectEqual(probe.fired, 2)
+        expectEqual(probe.fired, [.find, .findPrevious])
     },
 ])

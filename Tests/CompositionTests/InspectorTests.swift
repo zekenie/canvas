@@ -336,7 +336,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         expectEqual(heading.title, "Plans")
         expectEqual(heading.systemImage, "rectangle.stack")
         expectEqual(heading.up, .goUpBoard, "the board above, whatever is selected: ⌘↑ steps out of a group or a frame first")
-        expectEqual(heading.upTitle, "Enclosing Board", "as the Go menu calls it")
+        expectEqual(w.editor.registry.title(of: .goUpBoard), "Enclosing Board", "as the Go menu calls it")
         expectEqual(heading.upHelp, nil, "with no key, which is not always up a board")
         expect(w.editor.showBoard(nest.tBoard))
         expectEqual(contents.heading.title, "Untitled Subboard", "the placeholder, as the path has it")

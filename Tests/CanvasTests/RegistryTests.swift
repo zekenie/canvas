@@ -216,22 +216,23 @@ extension ShapeRegistrar {
     test("a command runs what its plugin claimed; an unclaimed one reports false; two claims conflict") {
         let ran = RunLog()
         let editor = CanvasEditor(registry: try Registry(plugins: [Contributor(id: "x") { r in
-            r.command(.delete, "Delete") { _ in ran.commands.append("delete") }
-            r.command("custom", "Custom") { _ in ran.commands.append("custom") }
+            r.command("scrap", title: "Scrap") { _ in ran.commands.append("scrap") }
+            r.command("custom", title: "Custom") { _ in ran.commands.append("custom") }
         }]), scheduler: ManualScheduler())
-        expect(editor.perform(.delete))
+        expect(editor.perform("scrap"))
         expect(editor.perform("custom"))
-        expect(!editor.perform(.selectAll))
-        expectEqual(ran.commands, ["delete", "custom"])
-        expectThrows(RegistryError.conflict(point: "Commands", key: "delete", plugins: ["x", "y"])) {
-            _ = try Registry(plugins: [Contributor(id: "x") { $0.command(.delete, "Delete") { _ in } }, Contributor(id: "y") { $0.command(.delete, "Delete") { _ in } }])
+        expect(!editor.perform("unclaimed"))
+        expectEqual(ran.commands, ["scrap", "custom"])
+        expectThrows(RegistryError.conflict(point: "Commands", key: "scrap", plugins: ["x", "y"])) {
+            _ = try Registry(plugins: [Contributor(id: "x") { $0.command("scrap", title: "Scrap") { _ in } },
+                                       Contributor(id: "y") { $0.command("scrap", title: "Scrap") { _ in } }])
         }
     },
     test("a command named for the step it would take says so with a menu title that follows the editor; its title stays what it is called") {
         let step = RunLog()
         let editor = CanvasEditor(registry: try Registry(plugins: [Contributor(id: "x") { r in
-            r.command("climb", "Climb", menuTitle: { _ in "Climb " + (step.commands.last ?? "nothing") }) { _ in }
-            r.command("plain", "Plain") { _ in }
+            r.command("climb", title: "Climb", menuTitle: { _ in "Climb " + (step.commands.last ?? "nothing") }) { _ in }
+            r.command("plain", title: "Plain") { _ in }
         }]), scheduler: ManualScheduler())
         expectEqual(editor.menuTitle(of: "climb"), "Climb nothing")
         step.commands.append("a rung")
@@ -262,7 +263,7 @@ extension ShapeRegistrar {
             }
         }])
         expectEqual(h.editor.menuForSelection(omitting: [])?.title, "everything")
-        expect(h.editor.menuForSelection(omitting: [.cut, .copy]) == nil)
+        expect(h.editor.menuForSelection(omitting: ["cut", "copy"]) == nil)
         expectEqual(asked.commands, ["", "copy,cut"])
         expect(try EditorHarness(plugins: [FixturesPlugin()]).editor.menuForSelection(omitting: []) == nil)
         expectThrows(RegistryError.conflict(point: "SelectionMenu", key: "the selection's menu", plugins: ["x", "y"])) {
@@ -304,7 +305,7 @@ extension ShapeRegistrar {
                                               Contributor(id: "p") { r in
                                                   r.contribute("x", to: Stamps.self, for: .kind(Card.kind))
                                                   r.outlines { _ in Outlines() }
-                                                  r.command(.delete, "Delete") { _ in }
+                                                  r.command("scrap", title: "Scrap", menu: "Edit") { _ in }
                                                   r.defaultTool(ToolID(placing: Card.kind))
                                                   r.menuForSecondaryClick { _, _ in nil }
                                                   r.menuForSelection { _, _ in nil }
@@ -312,11 +313,11 @@ extension ShapeRegistrar {
                                                   r.contribute("x", to: Described.self)
                                               }])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
+        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
         fixtures      shape box · shape disc · shape tag
         cards         shape card · tool card
         stamps        \("")
-        p             Stamps → card · outlines · command delete · default tool card · secondary-click menu · selection menu · key strokes · described x
+        p             Stamps → card · outlines · command scrap in Edit · default tool card · secondary-click menu · selection menu · key strokes · described x
         """)
     },
     test("a plain point takes any number of contributions for one target, as a list") {

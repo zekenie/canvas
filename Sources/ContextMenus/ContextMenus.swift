@@ -1,5 +1,6 @@
 import Canvas
 import CoreGraphics
+import Selection
 
 /// Context menus, as a plugin: a right-click (or Control-click) on a shape opens the items that
 /// apply to it, contributed by its kind, by horizontals it opts into, by other plugins for its kind,
@@ -57,11 +58,18 @@ final class ErasedEntry {
     let isShown: @MainActor (AnyShapeRecord) -> Bool
     let content: Content
     let stepName: String?
-    let command: CanvasCommand?
 
     enum Content {
         case item(isEnabled: @MainActor (AnyShapeRecord) -> Bool, isChecked: (@MainActor (AnyShapeRecord) -> Bool)?, action: Action)
+        /// A command a plugin declared, asked of the menu's shapes as a whole.
+        case command(CanvasCommand, dims: Bool)
         case submenu([ErasedEntry])
+    }
+
+    /// The command the item runs, if it runs one.
+    var command: CanvasCommand? {
+        if case .command(let command, _) = content { return command }
+        return nil
     }
 
     enum Action {
@@ -75,7 +83,6 @@ final class ErasedEntry {
                 write: @escaping @MainActor (ShapeID, inout Transaction, (inout Value) -> Void) -> Void) {
         title = entry.title
         stepName = entry.stepName
-        command = entry.command
         key = EntryKey(group: entry.group, id: entry.id)
         let shown = entry.isShown
         isShown = { read($0).map(shown) ?? false }
@@ -88,6 +95,8 @@ final class ErasedEntry {
             case .perform(let perform): .perform(perform)
             }
             content = .item(isEnabled: { read($0).map(isEnabled) ?? false }, isChecked: checked, action: erased)
+        case .command(let command, let dims):
+            content = .command(command, dims: dims)
         case .submenu(let entries):
             content = .submenu(entries.map { ErasedEntry($0, read: read, write: write) })
         case .dynamic:
@@ -203,19 +212,14 @@ extension CanvasContextMenu: KeyedExtensionPoint {
     }
 }
 
-/// What a context menu is for, as its items for the canvas see it: asked once per menu.
-@MainActor
-public struct MenuSubject {
-    /// The selection, on a selected shape; the shape right-clicked, which becomes the selection,
-    /// on one that wasn't; none on empty canvas.
-    public let shapes: [ShapeID]
-    /// Where the menu was asked for, in world units: the click. An item that puts something down
-    /// puts it there (the menu's Paste lands centered on it). An item gets it through `MenuItem`'s
-    /// `edit` form, which is handed the subject. Nil in the selection's menu (a menu bar's Shape
-    /// menu), which no click asks for: an item that goes by where the click was leaves itself out.
-    public let point: CGPoint?
-    public let editor: CanvasEditor
-}
+/// What a context menu is for, as its items for the canvas see it, asked once per menu: what its
+/// commands act on (the core's `CommandSubject`). Its `shapes` are the selection, on a selected shape;
+/// the shape right-clicked, which becomes the selection, on one that wasn't; none on empty canvas. Its
+/// `point` is where the menu was asked for, in world units, the click: an item that puts something
+/// down puts it there (Paste lands centered on it), and gets it as the command's subject or through
+/// `MenuItem`'s `edit` form, which is handed the subject. Nil in the selection's menu (a menu bar's
+/// Shape menu), which no click asks for: an item that goes by where the click was leaves itself out.
+public typealias MenuSubject = CommandSubject
 
 /// What `CanvasContextMenu` stores: one plugin's items for the canvas. Only the sugar makes one.
 @MainActor
@@ -232,10 +236,8 @@ extension PluginRegistrar {
     /// document only through `editor.transact`.
     ///
     ///     registrar.contextMenuForCanvas {
-    ///         MenuItem("Copy", when: { !$0.shapes.isEmpty }) { ids, editor in editor.copy(ids) }
-    ///         MenuItem("Paste", command: .paste, when: { $0.editor.canPaste }) { subject in
-    ///             if let point = subject.point { subject.editor.paste(centeredAt: point) } else { subject.editor.paste() }
-    ///         }
+    ///         MenuItem("Flag", when: { !$0.shapes.isEmpty }) { ids, editor in editor.flag(ids) }
+    ///         MenuItem(command: .paste, in: ClipboardMenuGroup.self)      // a command: shown while it can act
     ///     }
     public mutating func contextMenuForCanvas(@MenuBuilder<MenuSubject> _ items: () -> [MenuEntry<MenuSubject>]) {
         contribute(CanvasMenuContribution(entries: items()), to: CanvasContextMenu.self)
@@ -263,9 +265,10 @@ extension SelectionMenuGroup: MenuGroup {
 /// commands, since a menu is for the selection: Delete, in every shape's menu, runs `.delete` on the
 /// menu's shapes (the selection: a right-click on a shape that isn't selected selects it before the
 /// item runs), as the Delete key does, so a locked one shakes; and Select All, on empty canvas while
-/// the board has shapes, runs `.selectAll`. Whether they show is asked of the menu's subject, never of
-/// `canPerform`, which reads the selection as it was before the click. So with Selection
-/// installed, a right-click shows no menu only on an empty board with nothing else to offer there.
+/// the board has shapes, runs `.selectAll`. Whether they show is asked of the menu's subject (the
+/// commands' rules, with the menu's shapes), never of `canPerform`, which reads the selection as it
+/// was before the click. So with Selection installed, a right-click shows no menu only on an empty
+/// board with nothing else to offer there.
 public struct ContextMenusPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .contextMenus }
@@ -275,8 +278,8 @@ public struct ContextMenusPlugin: ListedPlugin {
         registrar.menuForSecondaryClick { editor, pointer in editor.service(ContextMenuState.self)?.menu(for: pointer) }
         registrar.menuForSelection { editor, commands in editor.service(ContextMenuState.self)?.menuForSelection(omitting: commands) }
         registrar.contextMenuForCanvas {
-            MenuItem(command: .delete, in: SelectionMenuGroup.self, when: { !$0.shapes.isEmpty })
-            MenuItem(command: .selectAll, in: SelectionMenuGroup.self, when: { $0.shapes.isEmpty && !$0.editor.document.shapes.isEmpty })
+            MenuItem(command: .delete, in: SelectionMenuGroup.self)
+            MenuItem(command: .selectAll, in: SelectionMenuGroup.self, when: { $0.shapes.isEmpty })
         }
     }
 }

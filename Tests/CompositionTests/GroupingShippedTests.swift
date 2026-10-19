@@ -17,7 +17,7 @@ import TestKit
     test("Arrange › Group (⌥⌘G) and Ungroup (⌥⇧⌘G) run on the selection from the menu bar, not Find Next, and are off while a note is edited") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry)
         let arrange = try require(menus.main.item(withTitle: "Arrange")?.submenu)
         for item in arrange.items { item.target = w.controller }
         let group = try require(arrange.item(withTitle: "Group")), ungroup = try require(arrange.item(withTitle: "Ungroup"))

@@ -56,7 +56,7 @@ import TestKit
     test("a command's keys run it, as the menu item that sends it does") {
         let log = KeyLog()
         let h = try EditorHarness(plugins: [KeyboardPlugin(), Contributor(id: "stamps") { r in
-            r.command("stamp", "Stamp", shortcuts: [KeyChord("s", .command), .deleteForward]) { _ in log.events.append("stamp") }
+            r.command("stamp", title: "Stamp", shortcuts: [KeyChord("s", .command), .deleteForward]) { _ in log.events.append("stamp") }
         }])
         h.hold(.command)
         expect(h.key("s"))
@@ -69,7 +69,7 @@ import TestKit
     test("a command with keys can be named for the step it would take, and is listed by its own title") {
         let log = KeyLog()
         let h = try EditorHarness(plugins: [KeyboardPlugin(), Contributor(id: "stamps") { r in
-            r.command("stamp", "Stamp", shortcuts: ["s"], menuTitle: { _ in log.armed ? "Stamp Twice" : "Stamp Once" }) { _ in log.events.append("stamp") }
+            r.command("stamp", title: "Stamp", shortcuts: ["s"], menuTitle: { _ in log.armed ? "Stamp Twice" : "Stamp Once" }) { _ in log.events.append("stamp") }
         }])
         expectEqual(h.editor.menuTitle(of: "stamp"), "Stamp Once")
         log.armed = true
@@ -81,7 +81,7 @@ import TestKit
     test("a command's keys pass while it can't run, as its menu item is dimmed then") {
         let log = KeyLog()
         let h = try EditorHarness(plugins: [KeyboardPlugin(), Contributor(id: "stamps") { r in
-            r.command("stamp", "Stamp", shortcuts: ["s"], isEnabled: { _ in log.armed }) { _ in log.events.append("stamp") }
+            r.command("stamp", title: "Stamp", shortcuts: ["s"], isEnabled: { _ in log.armed }) { _ in log.events.append("stamp") }
         }])
         expect(!h.key("s"))
         expect(!h.editor.canPerform("stamp"))
@@ -339,10 +339,10 @@ import TestKit
     },
     test("the Keyboard Shortcuts window's rows: a tool's label, a command's title or a shortcut's own, with its keys, in the order registered; keys under one name are one row, filed with the command if one runs it; the four arrows held alike are one key; then the core's hints") {
         let registry = try Registry(plugins: [KeyboardPlugin(), CardsPlugin(), cardKey, Contributor(id: "x") { r in
-            r.command("stamp", "Stamp", shortcuts: [KeyChord("s", .command)]) { _ in }
+            r.command("stamp", title: "Stamp", shortcuts: [KeyChord("s", .command)]) { _ in }
             r.shortcut(.return, "Stamp") { _ in }
             r.shortcut("t", "Tick") { _ in }
-            r.command("tick", "Tick", shortcuts: ["y"]) { _ in }
+            r.command("tick", title: "Tick", shortcuts: ["y"]) { _ in }
             for arrow in [KeyChord.leftArrow, .rightArrow, .upArrow, .downArrow] {
                 r.shortcut(arrow, "Nudge") { _ in }
                 r.shortcut(KeyChord(arrow.key, .shift), "Nudge") { _ in }
@@ -382,7 +382,7 @@ import TestKit
         expectThrows(RegistryError.conflict(point: "KeyboardShortcuts", key: "shortcut ⌘K", plugins: ["a", "b"])) {
             _ = try Registry(plugins: [KeyboardPlugin(),
                                        Contributor(id: "a") { $0.shortcut(KeyChord("k", .command), "A") { _ in } },
-                                       Contributor(id: "b") { $0.command("b", "B", shortcuts: [KeyChord("K", .command)]) { _ in } }])
+                                       Contributor(id: "b") { $0.command("b", title: "B", shortcuts: [KeyChord("K", .command)]) { _ in } }])
         }
     },
     test("a key for a tool no plugin registers, or a command none claims, is invalid; a key registered without Keyboard installed is an error") {
@@ -408,8 +408,8 @@ import TestKit
     },
     test("a button that runs a command names its first key in its tooltip, as a tool's does; one without a key is just its title") {
         let registry = try Registry(plugins: [KeyboardPlugin(), Contributor(id: "stamps") { r in
-            r.command("stamp", "Stamp", shortcuts: [KeyChord(KeyChord.upArrow.key, .command), "s"]) { _ in }
-            r.command("plain", "Plain") { _ in }
+            r.command("stamp", title: "Stamp", shortcuts: [KeyChord(KeyChord.upArrow.key, .command), "s"]) { _ in }
+            r.command("plain", title: "Plain") { _ in }
         }])
         expectEqual(registry.help("Stamp", forCommand: "stamp"), "Stamp (⌘↑)")
         expectEqual(registry.help("Plain", forCommand: "plain"), "Plain")
@@ -421,7 +421,7 @@ import TestKit
                 disc.tool(label: "Disc", systemImage: "circle", shortcut: "d", placing: disc.placement(size: CGSize(width: 40, height: 40)) { Disc(.zero) })
             }
             r.tool(ToolDescriptor(id: "zap", label: "Zap", systemImage: "bolt"), shortcut: "z") { _ in NoTool() }
-            r.command("stamp", "Stamp", shortcuts: [KeyChord("s", .command)]) { _ in }
+            r.command("stamp", title: "Stamp", shortcuts: [KeyChord("s", .command)]) { _ in }
             r.shortcut(.tab, "Next") { _ in }
         }])
         expectEqual(registry.shortcuts.map(\.action), [.tool(.hand), .custom("Pan"), .custom("Cancel"), .custom("Cancel"), .command(.undo), .command(.redo), .custom("Tool Lock"),
@@ -429,10 +429,58 @@ import TestKit
                                                        .command(.zoomToActualSize), .command(.zoomToActualSize), .command(.zoomToFit),
                                                        .tool(ToolID(placing: Disc.kind)), .tool("zap"), .command("stamp"), .custom("Next")])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
-        keyboard      service KeyboardState · tool tips · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
+        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
+        keyboard      service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
         discs         shape disc · tool disc · shortcut D → tool disc · tool zap · shortcut Z → tool zap · command stamp · shortcut ⌘S → command stamp · shortcut ⇥ → Next
         """)
+    },
+    test("a command declared with its key in one call: its title, its menu bar item, when it runs and its rule, and the key, which its items show") {
+        let log = KeyLog()
+        let registry = try Registry(plugins: [KeyboardPlugin(), Contributor(id: "stamps") { r in
+            r.command("stamp", title: "Stamp", menu: "Arrange", order: 100, shortcut: KeyChord("s", [.command, .option]), runs: .whenIdle,
+                      isEnabled: { !$0.shapes.isEmpty }) { _ in log.events.append("stamp") }
+            r.command("wipe", title: "Wipe", answering: .delete, shortcuts: [.delete, .deleteForward]) { _ in }
+        }])
+        let stamp = try require(registry.menuBarCommands.first { $0.command == "stamp" })
+        expectEqual(stamp.title, "Stamp")
+        expectEqual(stamp.menu.titles, ["Arrange"])
+        expectEqual(stamp.order, 100)
+        expectEqual(registry.moment(of: "stamp"), .whenIdle)
+        expectEqual(stamp.key, MenuKey(key: "s", modifiers: [.command, .option]), "the key the menu keys slot gives: Keyboard's first for it")
+        expectEqual(registry.menuKey(of: "wipe"), MenuKey(key: "\u{8}", modifiers: []), "Delete is Backspace's character to a menu")
+        expectEqual(registry.command(answering: .delete), "wipe")
+        expectEqual(registry.menuKey(of: "nobody"), nil)
+        expectEqual(registry.shortcuts.filter { $0.commands == ["wipe"] }.map(\.chord), [.delete, .deleteForward])
+    },
+    test("one key for two commands that are never both possible runs the one that can, passes while neither can, shows on both, and is one row named as said") {
+        let log = KeyLog()
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), Contributor(id: "pins") { r in
+            r.command("pin", title: "Pin", isEnabled: { _ in !log.armed }) { _ in log.events.append("pin"); log.armed = true }
+            r.command("unpin", title: "Unpin", isEnabled: { _ in log.armed }) { _ in log.events.append("unpin"); log.armed = false }
+            r.command("never", title: "Never", isEnabled: { _ in false }) { _ in }
+            r.shortcut(KeyChord("p", .shift), "Pin or Unpin", forCommands: ["pin", "unpin"])
+            r.shortcut(KeyChord("n", .shift), "Never Mind", forCommands: ["never"])
+        }])
+        h.hold(.shift)
+        expect(h.key("P"))
+        expect(h.key("P"))
+        expect(h.key("P"))
+        expectEqual(log.events, ["pin", "unpin", "pin"])
+        expect(!h.key("N"), "neither can run: the key goes on")
+        h.hold([])
+        let registry = h.editor.registry
+        expectEqual(registry.shortcut(forCommand: "pin")?.chord, KeyChord("p", .shift))
+        expectEqual(registry.shortcut(forCommand: "unpin")?.chord, KeyChord("p", .shift))
+        expectEqual(registry.menuKey(of: "unpin"), MenuKey(key: "p", modifiers: .shift), "each command's items show it")
+        expectEqual(registry.keyboardHelpRows.first { $0.keys == ["⇧P"] }, KeyboardHelpRow(keys: ["⇧P"], title: "Pin or Unpin", place: .command("pin")))
+        expectEqual(registry.shortcuts.first { $0.chord == KeyChord("p", .shift) }?.action, .commands(["pin", "unpin"]))
+        expect(registry.report.contains("shortcut ⇧P → command pin or unpin"), registry.report)
+        expectThrows(RegistryError.invalid(point: "KeyboardShortcuts", reason: "⇧Q runs command gone, which no plugin claims")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), Contributor(id: "x") { r in
+                r.command("pin", title: "Pin") { _ in }
+                r.shortcut(KeyChord("q", .shift), "Pin or Gone", forCommands: ["pin", "gone"])
+            }])
+        }
     },
     test("a chord is its key, lowercased, and its modifiers; it describes itself as menus show it") {
         expectEqual(KeyChord("V"), "v")

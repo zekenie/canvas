@@ -14,7 +14,7 @@ import TestKit
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())
-        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: registry)
         let sections = KeyboardShortcutsWindow(registry: registry, menu: { menus.main }, autosaveName: nil).sections
         let listed = sections.flatMap { $0.rows.flatMap(\.keys) }
         expectEqual(listed.count, Set(listed).count, "no key twice: \(listed)")
@@ -38,7 +38,7 @@ import TestKit
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())
-        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: registry)
         let sections = KeyboardShortcutsWindow(registry: registry, menu: { menus.main }, autosaveName: nil).sections
         expectEqual(sections.map(\.title), ["Tools", "Infinite Canvas", "File", "Edit", "Arrange", "View", "Go", "Window", "Help", "Canvas", "Pointer", "Editing Text"])
         @MainActor func row(_ section: String, _ title: String) -> [String]? {

@@ -7,8 +7,8 @@ import SwiftUI
 // no plugin. A plugin can't import the window (CanvasUI) or the app, and neither can import a
 // plugin, so what passes between them is declared here, beneath both: views over the canvas, the
 // inspector beside it, the window's subtitle, the panes of the Settings window, the toolbar's tool
-// tips, the rows of the Keyboard Shortcuts window, what Copy as Image draws and the commands the
-// app's command server runs.
+// tips, the rows of the Keyboard Shortcuts window, the menu bar's commands and the keys menus show,
+// what Copy as Image draws and the commands the app's command server runs.
 // Every point is the core's, so it's always installed: a plugin contributes from its own
 // `register`, and a list without the plugin is a host without its piece.
 //
@@ -194,6 +194,45 @@ public enum KeyHintPlace: Sendable {
     case text
 }
 
+// MARK: The menu bar
+
+/// The key a menu item shows for a command, from the plugin that keeps the keys (Keyboard: the first
+/// key registered to run it): the menu bar's item for a command (`registrar.command(… menu: …)`), and a
+/// context menu's item that runs one. At most one: two are `RegistryError.conflict` at startup.
+/// Without one, no command's item shows a key.
+public enum MenuKeys {}
+
+extension MenuKeys: KeyedExtensionPoint {
+    public typealias Contribution = @MainActor (CanvasCommand, Registry) -> MenuKey?
+    public static var owner: PluginID { .core }
+    public static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["menu keys"] }
+    public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "menu keys" }
+}
+
+/// A key as a menu item holds it: its key equivalent, as `NSMenuItem.keyEquivalent` takes it (`"g"`,
+/// an arrow's function key, Backspace's `"\u{8}"` for Delete), and the modifiers held with it
+/// (`modifierFlags`, as the item takes them).
+public struct MenuKey: Hashable, Sendable {
+    public let key: String
+    public let modifiers: Modifiers
+
+    public init(key: String, modifiers: Modifiers) {
+        self.key = key
+        self.modifiers = modifiers
+    }
+}
+
+/// A command the menu bar has an item for: what it's called, where (its menu and its order there) and
+/// the key the item shows. The window makes the item; choosing it runs the command (`editor.perform`),
+/// and its validation asks the command's moment (`registry.moment(of:)`) and rule.
+public struct MenuBarCommand: Sendable {
+    public let command: CanvasCommand
+    public let title: String
+    public let menu: MenuPath
+    public let order: Int
+    public let key: MenuKey?
+}
+
 // MARK: Copy as Image
 
 /// What Edit › Copy as Image draws: from the plugin that knows what a copy of shapes takes (Clipboard),
@@ -316,6 +355,14 @@ extension PluginRegistrar {
         contribute(KeyboardHelpRow(keys: [keys], title: title, place: place == .pointer ? .pointer : .text), to: KeyHints.self)
     }
 
+    /// The key a menu item shows for each command, given the command and the registry, nil for one with
+    /// none:
+    ///
+    ///     registrar.menuKeys { command, registry in registry.shortcut(forCommand: command)?.chord.menuKey }
+    public mutating func menuKeys(_ key: @escaping @MainActor (CanvasCommand, Registry) -> MenuKey?) {
+        contribute(key, to: MenuKeys.self)
+    }
+
     /// What Edit › Copy as Image draws: `shapes`, those of the board shown a picture of the selection
     /// (or of the board, with nothing selected) shows, none for nothing to draw; `isAvailable` says
     /// whether there are any, and is asked as the item is validated:
@@ -376,6 +423,22 @@ extension Registry {
         let registered = contributions(to: KeyboardHelp.self).first?.value(self) ?? []
         var seen = Set<KeyboardHelpRow>()
         return (registered + contributions(to: KeyHints.self).map(\.value)).filter { seen.insert($0).inserted }
+    }
+
+    /// The key a menu item shows for a command, if the plugin that keeps the keys gives it one.
+    public func menuKey(of command: CanvasCommand) -> MenuKey? {
+        contributions(to: MenuKeys.self).first?.value(command, self)
+    }
+
+    /// Every command with an item in the menu bar (`registrar.command(… menu: …)`), in plugin order: the
+    /// menu bar's part the plugins make, which the window builds in one loop beside its own items.
+    public var menuBarCommands: [MenuBarCommand] {
+        commandTable.inOrder.compactMap { registration in
+            registration.menu.map { menu in
+                MenuBarCommand(command: registration.command, title: registration.title, menu: menu, order: registration.order,
+                               key: menuKey(of: registration.command))
+            }
+        }
     }
 
     /// What Copy as Image draws, if a plugin says.

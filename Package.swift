@@ -256,8 +256,8 @@ let package = Package(
         // Horizontals, in the window: the interfaces verticals plug into that a shape shows up on.
         .target(name: "Keyboard", dependencies: ["Canvas"]),                                  // layer: platform
         .target(name: "Selection", dependencies: ["Canvas", "Geometry", "Keyboard", "Palette"]), // layer: platform
-        .target(name: "DetailPanel", dependencies: ["Canvas", "FuzzyMatching", "Selection", "TextEditing"]), // layer: platform
-        .target(name: "ContextMenus", dependencies: ["Canvas", "Keyboard", "Selection"]),     // layer: platform
+        .target(name: "DetailPanel", dependencies: ["Canvas", "FuzzyMatching", "Keyboard", "Selection", "TextEditing"]), // layer: platform
+        .target(name: "ContextMenus", dependencies: ["Canvas", "Selection"]),                 // layer: platform
         .target(name: "SlashCommands", dependencies: ["Canvas", "FuzzyMatching", "TextEditing"]), // layer: platform
         .target(name: "TableOfContents", dependencies: ["Canvas", "DetailPanel", "Selection"]), // layer: platform
         .target(name: "Adornments", dependencies: ["Canvas", "Geometry", "Palette", "Selection"]),       // layer: platform
@@ -266,7 +266,7 @@ let package = Package(
         .target(name: "Topology", dependencies: ["Canvas"]),                                  // layer: platform
         .target(name: "Validation", dependencies: ["Canvas", "DetailPanel", "Draw", "Queries", "TableOfContents"]), // layer: platform
         .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Queries", "SlashCommands", "TableOfContents", "Validation"]),  // layer: platform
-        .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "Keyboard", "Selection", "SlashCommands", "TableOfContents"]), // layer: platform
+        .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "Keyboard", "SlashCommands", "TableOfContents"]), // layer: platform
         .target(name: "Grouping", dependencies: ["Canvas", "ContextMenus", "Draw", "Keyboard", "Queries", "Selection"]), // layer: platform
         .target(name: "Connections", dependencies: ["Canvas", "ContextMenus", "Draw", "Geometry", "Keyboard", "Selection", "Topology", "Types"]), // layer: platform
         .target(name: "Mentions", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Draw", "Find", "FuzzyMatching", "Neighbors", "Queries", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
@@ -290,7 +290,7 @@ let package = Package(
         // and the table of contents' drops that move shapes into a frame, onto a subboard's board or out of frames (`ContentsMoves`).
         .target(name: "Moving", dependencies: ["Canvas", "Draw", "SlashCommands", "TableOfContents"]), // layer: platform
         // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
-        .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus", "Keyboard", "Selection"], path: "Examples/Reordering"), // layer: platform
+        .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus", "Keyboard"], path: "Examples/Reordering"), // layer: platform
         // Engines: what any plugin may run or ask.
         .target(name: "LanguageModels", dependencies: ["Canvas"]),                            // layer: platform
         .target(name: "ProseMaps", dependencies: ["Canvas", "LanguageModels"]),               // layer: platform

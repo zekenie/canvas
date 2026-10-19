@@ -5,9 +5,9 @@ import AppKit
 /// the keyboard (a note being edited, a panel's field), they're the text's own, through the undo
 /// manager the text uses: this window's (`textUndo`, which every text view that doesn't keep its
 /// own sees, as a note's editor), or the text's own (a SwiftUI field's editor keeps one). Anywhere
-/// else (the canvas, the table of contents' list, a checkbox in the panel), they run the editor's
-/// `.undo` and `.redo` commands, the ones ⌘Z and ⇧⌘Z run on the canvas, and the menu names the step
-/// ("Undo Move").
+/// else (the canvas, the table of contents' list, a checkbox in the panel), they run the commands that
+/// answer them (the core's undo and redo, which ⌘Z and ⇧⌘Z run on the canvas), and the menu names the
+/// step ("Undo Move").
 ///
 /// Text's undo lasts while it has the keyboard: once the keyboard leaves it, what it could undo is
 /// forgotten (a stale action could otherwise write through an editor that's gone, or into another
@@ -67,12 +67,12 @@ public final class BoardWindow: NSWindow {
 
     /// Edit › Undo. (`undo:` is NSWindow's, undeclared: this takes its place.)
     @objc(undo:) public func undo(_ sender: Any?) {
-        if let text = textWithKeyboard { changeText(text) { $0.undo() } } else { editor?.perform(.undo) }
+        if let text = textWithKeyboard { changeText(text) { $0.undo() } } else { editor?.perform(answering: .undo) }
     }
 
     /// Edit › Redo.
     @objc(redo:) public func redo(_ sender: Any?) {
-        if let text = textWithKeyboard { changeText(text) { $0.redo() } } else { editor?.perform(.redo) }
+        if let text = textWithKeyboard { changeText(text) { $0.redo() } } else { editor?.perform(answering: .redo) }
     }
 
     /// Undoes or redoes in `text`, then tells whoever listens that its text changed, as typing does:
@@ -91,14 +91,14 @@ public final class BoardWindow: NSWindow {
                 return text.canUndo
             }
             item.title = editor?.undoHistory.undoName.map(Self.titles.undoMenuTitle(forUndoActionName:)) ?? Self.titles.undoMenuItemTitle
-            return editor?.canPerform(.undo) == true
+            return editor?.canPerform(answering: .undo) == true
         case #selector(redo(_:)):
             if let text = textUndoInUse {
                 item.title = text.redoMenuItemTitle
                 return text.canRedo
             }
             item.title = editor?.undoHistory.redoName.map(Self.titles.redoMenuTitle(forUndoActionName:)) ?? Self.titles.redoMenuItemTitle
-            return editor?.canPerform(.redo) == true
+            return editor?.canPerform(answering: .redo) == true
         default:
             return super.validateMenuItem(item)
         }

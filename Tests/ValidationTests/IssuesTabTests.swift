@@ -95,7 +95,7 @@ extension EditorHarness {
     test("the Issues tab's plugin is one line in the report, and contributes to Validation nothing") {
         let registry = try Registry(plugins: [ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin()])
         expectEqual(registry.report, """
-        core                tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
+        core                tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
         validation          service ValidationEngine · overlay ValidationOverlay · ValidationRules
         detail-panel        service DetailPanelState · host inspector
         validation-details  DetailStatuses in Issues

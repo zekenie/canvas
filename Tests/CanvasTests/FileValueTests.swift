@@ -351,7 +351,7 @@ private let heading = LayoutInputKey<String>("heading")
         }
         let registry = try Registry(plugins: [FixturesPlugin(), LetterheadPlugin()])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
+        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
         fixtures      shape box · shape disc · shape tag
         letterhead    file property letterhead
         """)

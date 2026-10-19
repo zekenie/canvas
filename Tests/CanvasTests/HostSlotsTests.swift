@@ -188,7 +188,7 @@ import TestKit
         }
     },
     test("a command is called what its plugin says, and a command nobody claims has no name") {
-        let registry = try Registry(plugins: [Contributor(id: "stamps") { $0.command("stamp", "Stamp") { _ in } }])
+        let registry = try Registry(plugins: [Contributor(id: "stamps") { $0.command("stamp", title: "Stamp") { _ in } }])
         expectEqual(registry.title(of: "stamp"), "Stamp")
         expectEqual(registry.title(of: .undo), "Undo")
         expectEqual(registry.title(of: .zoomToFit), "Zoom to Fit")

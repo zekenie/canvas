@@ -17,6 +17,14 @@ import TextEditing
 import Titles
 import Types
 
+/// A command's menu bar item, as the app's menus make it (`BoardMenus`): sent to a window's controller, which
+/// runs the command it carries (`runCommand:`).
+@MainActor func commandItem(_ command: CanvasCommand, title: String = "") -> NSMenuItem {
+    let item = NSMenuItem(title: title, action: #selector(BoardWindowController.runCommand(_:)), keyEquivalent: "")
+    item.representedObject = command
+    return item
+}
+
 /// A menu item's target that counts what it's sent.
 @MainActor final class MenuActionLog: NSObject {
     var fired = 0
@@ -85,7 +93,7 @@ final class NestedWindow {
     /// The app's menus, with Go's items sent to this window's controller (an unshown window isn't the
     /// key window, where they'd go).
     func goItems() throws -> (menus: BoardMenus.Menus, up: NSMenuItem, open: NSMenuItem) {
-        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: editor.registry)
         let go = try require(menus.main.item(withTitle: "Go")?.submenu)
         for item in go.items { item.target = controller }
         return (menus, try require(go.item(withTitle: "Enclosing Board")), try require(go.item(withTitle: "Open Selection")))
@@ -141,11 +149,11 @@ final class NestedWindow {
         expect(!w.controller.validateMenuItem(open), "nothing selected")
         w.editor.selection = w.nest.s
         expect(w.controller.validateMenuItem(open))
-        w.controller.openSelection(nil)
+        w.controller.runCommand(open)
         expectEqual(w.editor.board, w.nest.sBoard)
         expect(w.controller.validateMenuItem(up))
         expect(!w.controller.validateMenuItem(open), "nothing selected on arrival")
-        w.controller.enclosingBoard(nil)
+        w.controller.runCommand(up)
         expectEqual(w.editor.board, .root)
         expectEqual(w.editor.selectedShapeIDs, [w.nest.s], "the subboard left")
         w.editor.selection = w.nest.arrow(on: 1)
@@ -252,8 +260,8 @@ final class NestedWindow {
         expect(w.editor.showBoard(w.nest.sBoard))
         expect(w.editor.showBoard(w.nest.tBoard))
         let added = w.editor.add(StickyNote(frame: CGRect(x: 800, y: 80, width: 200, height: 200), text: "Deep"))
-        w.controller.enclosingBoard(nil)
-        w.controller.enclosingBoard(nil)
+        w.controller.runCommand(commandItem(.enclosingBoard))
+        w.controller.runCommand(commandItem(.enclosingBoard))
         expectEqual(w.editor.board, .root)
         w.window.makeFirstResponder(w.canvas)
         let undo = NSMenuItem(title: "Undo", action: NSSelectorFromString("undo:"), keyEquivalent: "z")
@@ -262,7 +270,7 @@ final class NestedWindow {
         expectEqual(w.editor.board, w.nest.tBoard, "shown first")
         expectEqual(w.editor.document[added], nil)
         expect(!w.board.isDocumentEdited)
-        w.controller.enclosingBoard(nil)
+        w.controller.runCommand(commandItem(.enclosingBoard))
         window.redo(nil)
         expectEqual(w.editor.board, w.nest.tBoard)
         expect(w.editor.document[added] != nil)
@@ -389,7 +397,7 @@ final class NestedWindow {
     test("View's zoom items run the zoom commands, each dimmed while it can't run; Edit › Delete and Select All likewise") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry)
         let view = try require(menus.main.item(withTitle: "View")?.submenu)
         @MainActor func enabled(_ title: String) throws -> Bool { w.controller.validateMenuItem(try require(view.item(withTitle: title), title)) }
         w.editor.camera = Camera()
@@ -400,7 +408,7 @@ final class NestedWindow {
         expect(try enabled("Zoom to Selection"))
         w.editor.camera.zoom = 8
         expect(try !enabled("Zoom In"), "the last stop")
-        w.controller.zoomToFit(nil)
+        w.controller.runCommand(commandItem(.zoomToFit))
         expect(w.editor.cameraTarget != w.editor.camera, "on its way")
         let edit = try require(menus.main.item(withTitle: "Edit")?.submenu)
         let delete = try require(edit.item(withTitle: "Delete")), all = try require(edit.item(withTitle: "Select All"))
@@ -414,7 +422,7 @@ final class NestedWindow {
     test("⇧1 at the menu bar zooms to fit by the number row's key, whatever it types; in text it types, and the menu leaves it") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry)
         let view = try require(menus.main.item(withTitle: "View")?.submenu)
         for item in view.items { item.target = w.controller }
         w.editor.camera = Camera(origin: CGPoint(x: 5000, y: 5000))
@@ -439,7 +447,7 @@ final class NestedWindow {
     test("a key held with fn (🌐E, Emoji & Symbols) is the menu bar's while text has the keyboard, as AppKit's items for them answer only there") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry)
         let edit = try require(menus.main.item(withTitle: "Edit")?.submenu)
         let log = MenuActionLog()
         // In the place of the one AppKit adds to the app's Edit menu, hidden, keyed 🌐E: only AppKit
@@ -466,20 +474,17 @@ final class NestedWindow {
         let w = try NestedWindow()
         defer { w.board.close() }
         w.editor.camera = Camera()
-        let actions = [#selector(BoardWindowController.zoomIn(_:)), #selector(BoardWindowController.zoomOut(_:)),
-                       #selector(BoardWindowController.zoomToActualSize(_:)), #selector(BoardWindowController.zoomToFit(_:)),
-                       #selector(BoardWindowController.zoomToSelection(_:))]
-        let items = actions.map { NSMenuItem(title: "", action: $0, keyEquivalent: "") }
+        let items = [CanvasCommand.zoomIn, .zoomOut, .zoomToActualSize, .zoomToFit, .zoomToSelection].map { commandItem($0) }
         expectEqual(items.map { w.controller.validateMenuItem($0) }, [true, true, false, true, false])
         w.editor.camera.zoom = 0.873
         w.editor.camera.pan(by: CGSize(width: 30, height: 0))
-        w.controller.zoomIn(nil)
+        w.controller.runCommand(items[0])
         expectEqual(w.editor.cameraTarget.zoomPercentage, 100, "the next stop past where it is")
     },
     test("Edit › Spelling and Grammar's items are the text's with the keyboard, a note's or a title's, which checks its words as the app does; on the canvas, nothing's") {
         let w = try NestedWindow()
         defer { w.board.close() }
-        let edit = try require(BoardMenus.make(appName: "Infinite Canvas").main.item(withTitle: "Edit")?.submenu)
+        let edit = try require(BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry).main.item(withTitle: "Edit")?.submenu)
         let spelling = try require(edit.item(withTitle: "Spelling and Grammar")?.submenu)
         let items = spelling.items.filter { !$0.isSeparatorItem }
         expectEqual(items.map(\.title), ["Show Spelling and Grammar", "Check Document Now", "Check Spelling While Typing",

@@ -60,13 +60,13 @@ import TestKit
         let h = try harness(pasteboard)
         let ticket = h.add(Ticket(frame: slot(0)))
         h.editor.selection = ticket
-        expect(!h.editor.canDuplicate && !h.editor.canPerform(.duplicate))
+        expect(!h.editor.canPerform(.duplicate))
         expect(!h.command("d"))
         let box = h.add(Box(slot(1)))
         h.editor.selection = box
-        expect(h.editor.canDuplicate && h.editor.canPerform(.duplicate))
+        expect(h.editor.canPerform(.duplicate))
         h.press(at: middle(1))
-        expect(!h.editor.canDuplicate, "a press is under way")
+        expect(!h.editor.canPerform(.duplicate), "a press is under way")
         h.release()
         expectEqual(h.editor.document.shapes.count, 2)
         h.editor.selectedShapeIDs = [ticket, box]

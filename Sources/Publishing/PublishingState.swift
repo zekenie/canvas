@@ -85,13 +85,14 @@ public final class PublishingState {
     /// each frame. Nil for any other shape.
     func privateChipOpacity(of id: ShapeID) -> CGFloat? { fade?.opacity(of: PublicChip.self, on: id) }
 
-    /// A click on a shape's chip: a public shape's makes it private, unless something stands for it
-    /// (refused, as `makePrivate` does), and a just-privatized one's makes it public again.
+    /// A click on a shape's chip, a try of the command its face shows (`attempt`): a public shape's Make
+    /// Private, refused while something stands for it (it shakes, and the panel shows what holds it), and
+    /// a just-privatized one's Make Public.
     func click(_ id: ShapeID) {
         if publicIDs.contains(id) {
-            _ = makePrivate([id])
+            editor.attempt(.makePrivate, on: [id])
         } else if fade?.isShowing(PublicChip.self, on: id) == true {
-            editor.makePublic([id])
+            editor.attempt(.makePublic, on: [id])
         }
     }
 

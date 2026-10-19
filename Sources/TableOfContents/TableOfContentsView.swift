@@ -45,21 +45,19 @@ public struct TableOfContentsView: View {
 
 /// What the table of contents' header calls the board it lists, when it lists every shape: its
 /// title, a symbol before it, and a command that goes up from it, which the header offers as a
-/// button while it can run (`editor.canPerform`), called `upTitle` (what VoiceOver says, and what
-/// the menu item that runs the command is called, say) with `upHelp` its tooltip (the title and
-/// its key, where it has one: "Back (⌘[)"; the title, by default).
+/// button while it can run (`editor.canPerform`), called what the command is (`registry.title(of:)`,
+/// what VoiceOver says, and what a menu item that runs it is called), with `upHelp` its tooltip (the
+/// title and its key, where it has one: "Back (⌘[)"; the title, by default).
 public struct ContentsHeading {
     public var title: String
     public var systemImage: String?
     public var up: CanvasCommand?
-    public var upTitle: String
     public var upHelp: String?
 
-    public init(_ title: String, systemImage: String? = nil, up: CanvasCommand? = nil, upTitle: String = "Up", upHelp: String? = nil) {
+    public init(_ title: String, systemImage: String? = nil, up: CanvasCommand? = nil, upHelp: String? = nil) {
         self.title = title
         self.systemImage = systemImage
         self.up = up
-        self.upTitle = upTitle
         self.upHelp = upHelp
     }
 }
@@ -257,6 +255,7 @@ struct ContentsHeader: View {
             } else {
                 let heading = state.heading
                 if let up = heading.up, editor.canPerform(up) {
+                    let upTitle = editor.registry.title(of: up) ?? up.rawValue
                     Button { editor.perform(up) } label: {
                         // Not a chevron: in a list's disclosure column, one reads as collapsing.
                         Image(systemName: ContentsStyle.upSymbol)
@@ -264,8 +263,8 @@ struct ContentsHeader: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.borderless)
-                    .help(heading.upHelp ?? heading.upTitle)
-                    .accessibilityLabel(heading.upTitle)
+                    .help(heading.upHelp ?? upTitle)
+                    .accessibilityLabel(upTitle)
                 }
                 if let symbol = heading.systemImage {
                     Image(systemName: symbol)

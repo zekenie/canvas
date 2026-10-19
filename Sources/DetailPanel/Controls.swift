@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import CoreGraphics
 import Foundation
+import Keyboard
 import SwiftUI
 
 /// The panel's metrics, after Keynote's inspector. Points.
@@ -292,29 +293,38 @@ extension EnvironmentValues {
     }
 }
 
-/// A button that runs a command (`editor.perform`), dimmed while it can't run
-/// (`editor.canPerform`): the panel's counterpart of a menu item, another way to run what a plugin
-/// registered (`registrar.command`). Borderless, as the panel's other buttons are.
+/// A button that runs a command (`editor.perform`), on what the panel shows (the selection), dimmed
+/// while it can't run (`editor.canPerform`): the panel's counterpart of a menu item, another way to
+/// run what a plugin declared (`registrar.command`), called what the command is
+/// (`registry.title(of:)`) unless `title` says otherwise, its tooltip the title and the command's key
+/// ("Next (⌘G)"; none for a command with no key, whose label says it all). Borderless, as the panel's
+/// other buttons are.
 public struct DetailCommandButton: View {
-    let title: String
-    let systemImage: String?
     let command: CanvasCommand
+    let title: String?
+    let systemImage: String?
     @Environment(\.detailEditor) private var editor
 
-    public init(_ title: String, systemImage: String? = nil, command: CanvasCommand) {
+    public init(command: CanvasCommand, title: String? = nil, systemImage: String? = nil) {
+        self.command = command
         self.title = title
         self.systemImage = systemImage
-        self.command = command
     }
 
     public var body: some View {
-        Button {
+        let title = title ?? editor?.registry.title(of: command) ?? command.rawValue
+        let button = Button {
             editor?.perform(command)
         } label: {
             if let systemImage { Label(title, systemImage: systemImage) } else { Text(title) }
         }
         .buttonStyle(.borderless)
         .disabled(!(editor?.canPerform(command) ?? false))
+        if let editor, editor.registry.shortcut(forCommand: command) != nil {
+            button.help(editor.registry.help(title, forCommand: command))
+        } else {
+            button
+        }
     }
 }
 

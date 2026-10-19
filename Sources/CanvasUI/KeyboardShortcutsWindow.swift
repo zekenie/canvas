@@ -98,8 +98,8 @@ public struct KeyboardShortcutSection: Equatable, Sendable {
             func walk(_ menu: NSMenu) {
                 for item in menu.items where !item.isSeparatorItem {
                     if let submenu = item.submenu { walk(submenu); continue }
-                    let own = MenuKey.written(item).map { [$0] } ?? []
-                    if let command = item.action.flatMap({ BoardWindowController.menuCommands[$0] }), let help = commands[command] {
+                    let own = MenuKeyText.written(item).map { [$0] } ?? []
+                    if let command = BoardMenus.command(of: item), let help = commands[command] {
                         filed.insert(command)
                         found.append(row(own + help.keys, help.title))
                     } else if !own.isEmpty {
@@ -123,13 +123,13 @@ public struct KeyboardShortcutSection: Equatable, Sendable {
     }
 
     /// A menu item's key as the window writes it ("⇧⌘G", "⌥⌘/"); nil for an item with none.
-    @MainActor public static func key(of item: NSMenuItem) -> String? { MenuKey.written(item) }
+    @MainActor public static func key(of item: NSMenuItem) -> String? { MenuKeyText.written(item) }
 }
 
 /// A menu item's key as menus write it: the modifiers in the order ⌃ ⌥ ⇧ ⌘ (fn as 🌐), then the key,
 /// a letter as a capital (a capital key equivalent is held with ⇧, as AppKit reads it).
 @MainActor
-enum MenuKey {
+enum MenuKeyText {
     static func written(_ item: NSMenuItem) -> String? {
         let key = item.keyEquivalent
         guard !key.isEmpty else { return nil }

@@ -21,7 +21,7 @@ public struct BoardContentsPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.contentsHeading { editor in
             guard let crumb = editor.boardCrumbs?.crumbs.last else { return ContentsHeading(editor.name(of: .root)) }
-            return ContentsHeading(crumb.title, systemImage: crumb.systemImage, up: .goUpBoard, upTitle: BoardsStyle.enclosingBoard)
+            return ContentsHeading(crumb.title, systemImage: crumb.systemImage, up: .goUpBoard)
         }
     }
 }

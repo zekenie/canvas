@@ -17,13 +17,13 @@ struct GoButtonPlugin: CanvasPlugin {
     let count: RunCount
     var id: PluginID { "go-button" }
     func register(into registrar: inout PluginRegistrar) {
-        registrar.command(Self.command, "Command") { [count] _ in count.runs += 1 }
+        registrar.command(Self.command, title: "Command") { [count] _ in count.runs += 1 }
         registrar.detailsForEveryBox {
             DetailSection("Run", in: FrameTab.self) { _ in
-                DetailCommandButton("Run", command: Self.command)
+                DetailCommandButton(command: Self.command, title: "Run")
             }
             DetailSection("Go", in: FrameTab.self) { _ in
-                DetailCommandButton("Go", command: Self.command)
+                DetailCommandButton(command: Self.command, title: "Go")
             }
             .enabledWhileReadOnly()
         }

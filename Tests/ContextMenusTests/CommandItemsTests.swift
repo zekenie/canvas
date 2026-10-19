@@ -7,12 +7,14 @@ import Keyboard
 import Selection
 import TestKit
 
-// Items that run a command: titled by it (or by their own title), showing its first key, running it on
-// the selection the right-click made, left out while no plugin claims it; and the selection's menu, the
-// same items with no click, less the commands a menu bar runs.
+// Items that run a command: titled by it (or by their own title), showing its first key, shown while it
+// can act on the menu's shapes and click (its rule), dimmed instead with `dims`, run on them, left out while
+// no plugin claims it; and the selection's menu, the same items with no click, less the commands a menu
+// bar runs.
 
 extension CanvasCommand {
     static let flash: CanvasCommand = "flash"
+    static let flashHere: CanvasCommand = "flash-here"
     static let dim: CanvasCommand = "dim"
     static let brighten: CanvasCommand = "brighten"
 }
@@ -23,14 +25,14 @@ extension CanvasCommand {
     var points: [CGPoint?] = []
 }
 
-/// A command `flash` (⇧⌘F, enabled for any selection) and an item for it in a group of its own, named by the
+/// A command `flash` (⇧⌘F, which can act on any shapes) and an item for it in a group of its own, named by the
 /// command, in every menu of shapes.
-@MainActor private func flashing(_ log: Flashes, when: @escaping @MainActor (MenuSubject) -> Bool = { !$0.shapes.isEmpty }) -> Contributor {
+@MainActor private func flashing(_ log: Flashes, when: @escaping @MainActor (MenuSubject) -> Bool = { _ in true }, dims: Bool = false) -> Contributor {
     Contributor(id: "flashing") { r in
-        r.command(.flash, "Flash Lamps", shortcuts: [KeyChord("f", [.command, .shift]), KeyChord("f", .option)],
-                  isEnabled: { !$0.selectedShapeIDs.isEmpty }) { log.runs.append("flash \($0.selectedShapeIDs.count)") }
+        r.command(.flash, title: "Flash Lamps", shortcuts: [KeyChord("f", [.command, .shift]), KeyChord("f", .option)],
+                  isEnabled: { !$0.shapes.isEmpty }) { log.runs.append("flash \($0.shapes.count)") }
         r.contextMenuForCanvas {
-            MenuItem(command: .flash, in: PowerMenuGroup.self, when: when)
+            MenuItem(command: .flash, in: PowerMenuGroup.self, when: when, dims: dims)
         }
     }
 }
@@ -81,56 +83,79 @@ extension CanvasCommand {
         expectEqual(log.runs, ["flash 1", "flash 2"], "both run the command")
         expect(try require(h.secondaryClick(at: middle(0))).item(withTitle: "Stop Flashing")?.keyEquivalent == "f", "and show its key")
     },
-    test("`when` leaves the item out; the command's own rule is asked once the menu is made, so a command that can't run does nothing") {
+    test("the item shows while its command can act on the menu's shapes, the one rule its key goes by; `when` leaves it out besides") {
         let log = Flashes()
-        let h = try harness([flashing(log, when: { $0.shapes.count > 1 })])
+        let h = try harness([flashing(log)])
         let a = h.add(Lamp(slot(0)))
         let b = h.add(Lamp(slot(1)))
-        expect(!(try require(h.secondaryClick(at: middle(0))).outline.contains("Flash Lamps")), "one shape: hidden by `when`")
-        h.editor.selectedShapeIDs = [a, b]
         expect(try require(h.secondaryClick(at: middle(0))).outline.contains("Flash Lamps"))
+        expectEqual(try require(h.secondaryClick(at: emptyCanvas)).outline, ["Select All"], "no shapes: the command can't act, so no item")
+        let picky = try harness([flashing(log, when: { $0.shapes.count > 1 })])
+        let c = picky.add(Lamp(slot(0)))
+        let d = picky.add(Lamp(slot(1)))
+        expect(!(try require(picky.secondaryClick(at: middle(0))).outline.contains("Flash Lamps")), "one shape: hidden by `when`")
+        picky.editor.selectedShapeIDs = [c, d]
+        expect(try require(picky.secondaryClick(at: middle(0))).outline.contains("Flash Lamps"))
+        _ = (a, b)
+    },
+    test("the item runs its command on what the menu is for, the menu's shapes, whatever the selection is by the time it's chosen") {
+        let log = Flashes()
+        let h = try harness([flashing(log)])
+        let a = h.add(Lamp(slot(0)))
+        let b = h.add(Lamp(slot(1)))
+        h.editor.selectedShapeIDs = [a, b]
         let menu = try require(h.secondaryClick(at: middle(0)))
-        h.editor.selectedShapeIDs = []
+        h.editor.selectedShapeIDs = [a]
         try menu.choose("Flash Lamps")
-        expectEqual(log.runs, [], "the command refuses an empty selection: the menu it was in is stale")
+        expectEqual(log.runs, ["flash 2"])
+    },
+    test("with `dims`, the item shows wherever `when` says, dimmed while its command can't act") {
+        let log = Flashes()
+        let h = try harness([flashing(log, when: { _ in true }, dims: true)])
+        h.add(Lamp(slot(0)))
+        expectEqual(try require(h.secondaryClick(at: emptyCanvas)).outline, ["(Flash Lamps)", "—", "Select All"])
+        expect(try require(h.secondaryClick(at: middle(0))).outline.contains("Flash Lamps"), "enabled on a shape")
     },
     test("an item whose command no plugin claims is left out, in a submenu too, with its submenu if that holds nothing else") {
         let h = try harness([Contributor(id: "orphans") { r in
             r.contextMenuForCanvas {
                 MenuItem(command: "nobody", in: PowerMenuGroup.self)
                 Submenu("Nested", in: PowerMenuGroup.self) { MenuItem(command: "nobody-either") }
-                MenuItem("Hidden", command: "nobody", in: PowerMenuGroup.self) { _, _ in }
+                MenuItem(command: "nobody", title: "Hidden", in: PowerMenuGroup.self, dims: true)
             }
         }])
         h.add(Lamp(slot(0)))
         expectEqual(try require(h.secondaryClick(at: middle(0))).outline,
                     ["Turn On", "Brighter", "Level ▸", "  ✓ 1", "  2", "  3", "—", "Delete"], "none of the three")
     },
-    test("an item with an action of its own can stand for a command: its key, its action, not the command") {
+    test("a command that goes by where the menu was asked for gets the click; the selection's menu, which no click asked for, has no point to give") {
         let log = Flashes()
-        let h = try harness([flashing(log, when: { _ in false }), Contributor(id: "standing") { r in
-            r.contextMenuForCanvas {
-                MenuItem("Flash Here", command: .flash, in: PowerMenuGroup.self) { subject in
-                    log.runs.append("here")
-                    log.points.append(subject.point)
-                }
+        let h = try harness([Contributor(id: "here") { r in
+            r.command(.flashHere, title: "Flash Here", shortcut: KeyChord("h", [.command, .option]),
+                      isEnabled: { $0.point != nil }) { subject in
+                log.runs.append("here \(subject.shapes.count)")
+                log.points.append(subject.point)
             }
+            r.contextMenuForCanvas { MenuItem(command: .flashHere, in: PowerMenuGroup.self) }
         }])
-        h.add(Lamp(slot(0)))
+        let lamp = h.add(Lamp(slot(0)))
         let menu = try require(h.secondaryClick(at: CGPoint(x: 40, y: 30)))
-        expectEqual(menu.item(withTitle: "Flash Here")?.keyEquivalent, "f")
+        expectEqual(menu.item(withTitle: "Flash Here")?.keyEquivalent, "h")
         try menu.choose("Flash Here")
-        expectEqual(log.runs, ["here"])
+        expectEqual(log.runs, ["here 1"])
         expectEqual(log.points, [CGPoint(x: 40, y: 30)], "with the point of the click")
+        h.editor.selection = lamp
+        expect(!(try require(h.editor.menuForSelection(omitting: [])).outline.contains("Flash Here")), "no click, no point: it can't act")
+        expect(!h.editor.perform(.flashHere), "nor from its key")
     },
 ])
 
-/// Dim (⌘D, runs on one shape) and Brighten (any) as commands, and their items: Dim, Adjust ▸ Brighten and Twirl (an
-/// item of its own), and Where, which is made when the menu opens and notes the point it was asked at.
+/// Dim (⌘D, on one shape, when idle) and Brighten (any) as commands, and their items: Dim, Adjust ▸ Brighten and Twirl
+/// (an item of its own), and Where, which is made when the menu opens and notes the point it was asked at.
 @MainActor private func dimming(_ log: Flashes) -> Contributor {
     Contributor(id: "dimming") { r in
-        r.command(.dim, "Dim", shortcuts: [KeyChord("d", .command)], isEnabled: { $0.selectedShapeIDs.count == 1 }) { _ in log.runs.append("dim") }
-        r.command(.brighten, "Brighten", isEnabled: { _ in true }) { _ in log.runs.append("brighten") }
+        r.command(.dim, title: "Dim", shortcut: KeyChord("d", .command), runs: .whenIdle, isEnabled: { $0.shapes.count == 1 }) { _ in log.runs.append("dim") }
+        r.command(.brighten, title: "Brighten", isEnabled: { _ in true }) { _ in log.runs.append("brighten") }
         r.contextMenuForCanvas {
             MenuItem(command: .dim, in: PowerMenuGroup.self)
             Submenu("Adjust", in: PowerMenuGroup.self) {
@@ -195,19 +220,23 @@ extension CanvasCommand {
         expectEqual(try require(h.editor.menuForSelection(omitting: [.dim, .brighten, .delete])).outline,
                     lampItems + ["—", "Adjust ▸", "  Twirl", "Where"], "Adjust keeps its own item; Delete's group leaves no line")
     },
-    test("an item that runs a command is dimmed as the command is, now the selection is the menu's; a right-click's isn't, which can't know") {
+    test("an item that runs a command shows while the command can act on the menu's shapes, in a right-click and the selection's menu alike; in the selection's menu it is dimmed while the command can't run now (a shape being edited)") {
         let log = Flashes()
-        let h = try harness([dimming(log)])
+        let h = try harness([dimming(log), CardsPlugin()])
         let a = h.add(Lamp(slot(0)))
         let b = h.add(Lamp(slot(1)))
         h.editor.selectedShapeIDs = [a, b]
-        expect(try require(h.editor.menuForSelection(omitting: [])).outline.contains("(Dim)"), "two selected: Dim can't run")
-        expect(try require(h.secondaryClick(at: middle(0))).outline.contains("Dim"), "a right-click's items are made before the selection is")
+        expect(!(try require(h.editor.menuForSelection(omitting: [])).outline.contains("Dim")), "two selected: Dim can't act on them")
+        expect(!(try require(h.secondaryClick(at: middle(0))).outline.contains("Dim")), "nor in a right-click, which asks the menu's shapes")
         h.editor.selectedShapeIDs = [a]
         let menu = try require(h.editor.menuForSelection(omitting: []))
         expect(menu.outline.contains("Dim"))
         try menu.choose("Dim")
         expectEqual(log.runs, ["dim"])
+        let card = h.add(Card(slot(2), text: "a"))
+        h.editor.selection = card
+        expect(h.editor.beginEditing(card))
+        expect(try require(h.editor.menuForSelection(omitting: [])).outline.contains("(Dim)"), "a shape being edited: Dim runs when idle")
     },
     test("choosing an item ends editing first, as a right-click does") {
         let h = try harness([CardsPlugin(), Contributor(id: "clear") { r in

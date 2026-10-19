@@ -38,12 +38,14 @@ final class LockState {
     /// each frame. Nil for any other shape.
     func openLockOpacity(of id: ShapeID) -> CGFloat? { fade?.opacity(of: LockChip.self, on: id) }
 
-    /// A click on a shape's chip: a locked shape's unlocks it, and a just-unlocked one's locks it again.
+    /// A click on a shape's chip, a try of the command its face shows (`attempt`): a locked shape's
+    /// Unlock, and a just-unlocked one's Lock. One its board or container holds locked is refused, and
+    /// shakes.
     func click(_ id: ShapeID) {
         if lockedIDs.contains(id) {
-            editor.unlock([id])
+            editor.attempt(.unlock, on: [id])
         } else if fade?.isShowing(LockChip.self, on: id) == true {
-            editor.lock([id])
+            editor.attempt(.lock, on: [id])
         }
     }
 }

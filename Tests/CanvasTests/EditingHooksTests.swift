@@ -152,7 +152,7 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 60)
     },
     test("undo, redo, a command, a draw or a replaced file ending the session never ask, and keep the empty slip") {
         let (h, log) = try slips([Contributor(id: "cmd") { r in
-            r.command("end-editing", "End Editing") { $0.endEditing() }
+            r.command("end-editing", title: "End Editing") { $0.editor.endEditing() }
         }])
         // undo
         let slip = h.add(Slip(frame, text: "x"))

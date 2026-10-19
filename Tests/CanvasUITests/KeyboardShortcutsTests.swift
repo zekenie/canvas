@@ -20,9 +20,12 @@ import TestKit
     return top
 }
 
-@MainActor private func item(_ title: String, _ action: String, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command) -> NSMenuItem {
+/// An item; one that runs a command carries it, as the menu bar's items do (`BoardMenus.command(of:)`).
+@MainActor private func item(_ title: String, _ action: String, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command,
+                             runs command: CanvasCommand? = nil) -> NSMenuItem {
     let item = NSMenuItem(title: title, action: NSSelectorFromString(action), keyEquivalent: key)
     if !key.isEmpty { item.keyEquivalentModifierMask = modifiers }
+    item.representedObject = command
     return item
 }
 
@@ -31,18 +34,18 @@ import TestKit
         let bar = NSMenu(title: "Main Menu")
         bar.addItem(menu("File", [item("New", "newDocument:", "n"), .separator(), item("Revert to Saved", "revertDocumentToSaved:")]))
         bar.addItem(menu("Edit", [
-            item("Undo", "undo:", "z"), item("Delete", "delete:"),
+            item("Undo", "undo:", "z", runs: .undo), item("Delete", "delete:", runs: "scrap"),
             menu("Find", [item("Find Previous", "findPreviousMatch:", "g", [.command, .shift])]),
         ]))
         bar.addItem(menu("Window", [item("Zoom", "performZoom:")]))
-        bar.addItem(menu("Go", [item("Back", "goBack:", "[")]))
+        bar.addItem(menu("Go", [item("Back", "runCommand:", "[", runs: "back")]))
         let rows = [
             KeyboardHelpRow(keys: ["V"], title: "Select", place: .tool),
             KeyboardHelpRow(keys: ["Space"], title: "Pan", place: .canvas),
             KeyboardHelpRow(keys: ["⌘Z"], title: "Undo", place: .command(.undo)),
-            KeyboardHelpRow(keys: ["⌫", "⌦"], title: "Delete", place: .command(.delete)),
-            KeyboardHelpRow(keys: ["⌘["], title: "Back", place: .command(.goBack)),
-            KeyboardHelpRow(keys: ["⌘A"], title: "Select All", place: .command(.selectAll)),
+            KeyboardHelpRow(keys: ["⌫", "⌦"], title: "Delete", place: .command("scrap")),
+            KeyboardHelpRow(keys: ["⌘["], title: "Back", place: .command("back")),
+            KeyboardHelpRow(keys: ["⌘A"], title: "Select All", place: .command("pick-all")),
             KeyboardHelpRow(keys: ["⌘N"], title: "Stamp", place: .canvas),
             KeyboardHelpRow(keys: ["⌥ Drag"], title: "Drag a Copy", place: .pointer),
             KeyboardHelpRow(keys: ["⌘↩"], title: "Finish Editing", place: .text),

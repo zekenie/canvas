@@ -29,7 +29,7 @@ extension NestedWindow {
     }
     /// The app's Edit › Find items, sent to this window's controller.
     func findItems() throws -> (menus: BoardMenus.Menus, find: NSMenuItem, next: NSMenuItem, previous: NSMenuItem) {
-        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: editor.registry)
         let submenu = try require(menus.main.item(withTitle: "Edit")?.submenu?.item(withTitle: "Find")?.submenu)
         for item in submenu.items { item.target = controller }
         return (menus, try require(submenu.item(withTitle: "Find…")), try require(submenu.item(withTitle: "Find Next")),

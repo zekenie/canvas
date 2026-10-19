@@ -443,7 +443,7 @@ public final class CanvasView: NSView {
         editor.camera.zoom(by: 1 + event.magnification, around: convert(event.locationInWindow, from: nil))
     }
 
-    /// A two-finger double-tap (smart zoom) on the canvas: the command a plugin claims (Selection's,
+    /// A two-finger double-tap (smart zoom) on the canvas: the command that answers it (Selection's,
     /// which brings the shape under the pointer into view, and again goes back), with the pointer
     /// where the gesture was, since a gesture reaches a window that isn't key, where no move reached
     /// the canvas. Over the views the canvas hosts, nothing.
@@ -451,7 +451,7 @@ public final class CanvasView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         guard place(of: point) == .canvas else { return }
         editor.pointerLocated(at: point)
-        editor.perform(.smartMagnify)
+        editor.perform(answering: .smartMagnify)
     }
 
     // MARK: Keyboard and menu commands
@@ -512,21 +512,21 @@ public final class CanvasView: NSView {
     }
 
     // Menu items send these to the first responder, which is the canvas when it has the keyboard;
-    // the editor runs the command a plugin claims (the selection's, in the shipped app), the same
-    // one the keys for it run. Unclaimed, they do nothing.
+    // the editor runs the command that answers each (the selection's, in the shipped app), the same
+    // one the keys for it run. With none, they do nothing.
     /// Edit › Select All. Text being edited (a note, a panel field) selects its own text instead.
-    public override func selectAll(_ sender: Any?) { editor.perform(.selectAll) }
+    public override func selectAll(_ sender: Any?) { editor.perform(answering: .selectAll) }
     /// Edit › Delete.
-    @objc public func delete(_ sender: Any?) { editor.perform(.delete) }
+    @objc public func delete(_ sender: Any?) { editor.perform(answering: .delete) }
 }
 
 extension CanvasView: NSMenuItemValidation {
-    /// Edit › Delete and Select All are enabled while their commands can run (`canPerform`): Delete
-    /// while something's selected, Select All while the board has shapes.
+    /// Edit › Delete and Select All are enabled while the commands that answer them can run
+    /// (`canPerform`): Delete while something's selected, Select All while the board has shapes.
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
-        case #selector(delete(_:)): editor.canPerform(.delete)
-        case #selector(selectAll(_:)): editor.canPerform(.selectAll)
+        case #selector(delete(_:)): editor.canPerform(answering: .delete)
+        case #selector(selectAll(_:)): editor.canPerform(answering: .selectAll)
         default: true
         }
     }

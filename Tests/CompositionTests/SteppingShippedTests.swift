@@ -112,7 +112,7 @@ extension NestedWindow {
         expect(!w.controller.validateMenuItem(up), "a is in the frame and b is not: nowhere to step out to")
         expectEqual(up.title, "Enclosing Board")
         // The Keyboard Shortcuts window lists the command as it is called, not as its item is named now.
-        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry)
         let go = try require(menus.main.item(withTitle: "Go")?.submenu)
         go.item(withTitle: "Enclosing Board")?.title = "Enclosing Frame"
         let sections = KeyboardShortcutsWindow(registry: w.editor.registry, menu: { menus.main }, autosaveName: nil).sections

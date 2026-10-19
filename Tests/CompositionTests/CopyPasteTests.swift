@@ -142,7 +142,10 @@ import Types
         expectEqual(board.editor.document.shapes.filter { before[$0.id] == nil }, [], "the pasted copies, selected, are cut")
     },
     test("the menus send cut:, copy: and paste: with ⌘X, ⌘C and ⌘V") {
-        let edit = try require(BoardMenus.make(appName: "Infinite Canvas").main.item(withTitle: "Edit")?.submenu)
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let edit = try require(BoardMenus.make(appName: "Infinite Canvas", registry: registry).main.item(withTitle: "Edit")?.submenu)
         let items = ["Cut", "Copy", "Paste"].compactMap { edit.item(withTitle: $0) }
         expectEqual(items.map { $0.action.map(NSStringFromSelector) }, ["cut:", "copy:", "paste:"])
         expectEqual(items.map(\.keyEquivalent), ["x", "c", "v"])

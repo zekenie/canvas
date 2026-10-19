@@ -25,7 +25,7 @@ extension NestedWindow {
 
     /// Go › Jump To…, in the app's menus with Go's items sent to this window's controller.
     func jumpItem() throws -> (menus: BoardMenus.Menus, item: NSMenuItem) {
-        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: editor.registry)
         let item = try require(menus.main.item(withTitle: "Go")?.submenu?.item(withTitle: "Jump To…"))
         item.target = controller
         return (menus, item)

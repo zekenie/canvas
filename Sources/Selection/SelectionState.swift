@@ -567,10 +567,13 @@ extension CanvasEditor {
         selectedShapeIDs = document.shapes.map(\.id)
     }
 
-    /// Delete: removes every selected shape in one transaction. willDelete handlers see them all,
-    /// so arrows bound to them let go where they are.
-    public func deleteSelection() {
-        let ids = selectedShapeIDs
+    /// Delete: removes every selected shape in one transaction (`deleteShapes`).
+    public func deleteSelection() { deleteShapes(selectedShapeIDs) }
+
+    /// Removes these shapes in one transaction ("Delete"): what `.delete` does to its shapes.
+    /// willDelete handlers see them all, so arrows bound to them let go where they are; a read-only
+    /// one is refused, and shakes.
+    public func deleteShapes(_ ids: [ShapeID]) {
         guard !ids.isEmpty else { return }
         transact("Delete") { $0.delete(Set(ids)) }   // the commit drops them from the selection
         hovered = nil                                   // and this, a hover over a shape that stays

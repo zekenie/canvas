@@ -33,13 +33,13 @@ import TestKit
         expect(w.window.performKeyEquivalent(with: w.window.keyEvent("v", code: 9, modifiers: [.command])))
         pasted = try require(w.editor.document.shapes.first { before[$0.id] == nil })
         expectEqual(pasted.box, w.editor.document[note]?.box, "⌘V: where it was copied from")
-        let edit = try require(BoardMenus.make(appName: "Infinite Canvas").main.item(withTitle: "Edit")?.submenu)
+        let edit = try require(BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry).main.item(withTitle: "Edit")?.submenu)
         let item = try require(edit.item(withTitle: "Paste at Pointer"))
         item.target = w.controller
         expectEqual(KeyboardShortcutSection.key(of: item), "⇧⌘V")
         expect(w.controller.validateMenuItem(item))
         before = w.editor.document
-        w.controller.pasteAtPointer(nil)
+        w.controller.runCommand(item)
         pasted = try require(w.editor.document.shapes.first { before[$0.id] == nil })
         expectEqual(pasted.box?.center, target)
         expectEqual(edit.items.map(\.title).firstIndex(of: "Paste at Pointer"), (edit.items.map(\.title).firstIndex(of: "Paste") ?? 0) + 1, "after Paste")
@@ -55,10 +55,10 @@ import TestKit
         w.move(to: CGPoint(x: 400, y: 330), time: 2)
         w.editor.pointerExited()
         var before = w.editor.document
-        w.controller.pasteAtPointer(nil)
+        w.controller.runCommand(commandItem(.pasteAtPointer))
         let pasted = try require(w.editor.document.shapes.first { before[$0.id] == nil })
         expectEqual(pasted.box, w.editor.document[note]?.box, "off the canvas: in place, as ⌘V")
-        let edit = try require(BoardMenus.make(appName: "Infinite Canvas").main.item(withTitle: "Edit")?.submenu)
+        let edit = try require(BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry).main.item(withTitle: "Edit")?.submenu)
         let item = try require(edit.item(withTitle: "Paste at Pointer"))
         w.window.spin { w.titleField != nil }
         w.window.focus(try require(w.titleField))

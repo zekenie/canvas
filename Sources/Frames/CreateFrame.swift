@@ -22,14 +22,6 @@ extension CanvasCommand {
 }
 
 extension CanvasEditor {
-    /// Whether Create Frame would put one down: some selected shape has a box a frame can hold, with
-    /// nothing under way or being edited.
-    var canCreateFrame: Bool {
-        guard session == nil, editingShapeID == nil else { return false }
-        let document = document
-        return selectedShapeIDs.contains { document[$0]?.box != nil }
-    }
-
     /// Puts a frame down around these shapes (see `createFrameItem`), in one step named "Create Frame".
     func createFrame(around ids: [ShapeID]) {
         undoHistory.group("Create Frame") {
@@ -41,22 +33,21 @@ extension CanvasEditor {
 
 extension PluginRegistrar {
     /// Create Frame, in the menu of any shapes a frame can hold (those with a box: an arrow alone has
-    /// none) and on ⇧⌘F, one command (`.createFrame`) that both run on the selection: a frame around
+    /// none) and on ⇧⌘F, one command (`.createFrame`) that both run on their shapes: a frame around
     /// them, holding them, put down by the core (`place(_:around:)`), reaching
     /// `FrameStyle.padding` past them and never under its placement's `minimumSize` where the frame they're all in
     /// has room, in that frame, just below the lowest of them; what it mostly covers comes in, what it
     /// barely reaches is nudged out. Selected, one step, named as the item is. A locked one among them
     /// leaves it all as it was, and shakes. An item for the canvas, as Turn into Subboard is: it's for
-    /// the menu's shapes together, whatever their kinds.
+    /// the menu's shapes together, whatever their kinds. Never mid-press or while a shape is edited.
     mutating func createFrameItem() {
-        command(.createFrame, "Create Frame", shortcuts: [KeyChord("f", [.command, .shift])], isEnabled: { $0.canCreateFrame }) {
-            $0.createFrame(around: $0.selectedShapeIDs)
-        }
+        command(.createFrame, title: "Create Frame", shortcut: KeyChord("f", [.command, .shift]), runs: .whenIdle,
+                isEnabled: { subject in
+                    let document = subject.editor.document
+                    return subject.shapes.contains { document[$0]?.box != nil }
+                }) { $0.editor.createFrame(around: $0.shapes) }
         contextMenuForCanvas {
-            MenuItem(command: .createFrame, in: FramesMenuGroup.self, when: { subject in
-                let document = subject.editor.document
-                return subject.shapes.contains { document[$0]?.box != nil }
-            })
+            MenuItem(command: .createFrame, in: FramesMenuGroup.self)
         }
     }
 }

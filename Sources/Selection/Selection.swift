@@ -20,6 +20,23 @@ extension ToolID {
     public static let select: ToolID = "select"
 }
 
+extension CanvasCommand {
+    /// Delete (⌫, ⌦; Edit › Delete): the shapes deleted, a locked one refused and shaking.
+    public static let delete: CanvasCommand = "delete"
+    /// Select All (⌘A; Edit › Select All): every shape of the board shown.
+    public static let selectAll: CanvasCommand = "selectAll"
+    /// Go › Back (⌘[): what was selected before, wherever it was, whatever has the keyboard.
+    public static let goBack: CanvasCommand = "goBack"
+    /// Go › Open Selection (⌘↓): the only selected shape opened (its board shown, or edited), or the
+    /// group or the container selected gone into.
+    public static let openSelection: CanvasCommand = "openSelection"
+    /// View › Zoom to Selection (⇧2): the shapes brought into view.
+    public static let zoomToSelection: CanvasCommand = "zoomToSelection"
+    /// A trackpad's smart zoom (a two-finger double-tap): the shape under the pointer brought into
+    /// view, and again back.
+    public static let smartMagnify: CanvasCommand = "smartMagnify"
+}
+
 /// Whether a kind's shapes can be selected. At most one rule per kind, plus one for every kind
 /// (`.any`), which a kind's own overrides; a kind with neither is always selectable.
 public enum ShapeSelectability: KeyedExtensionPoint {
@@ -191,25 +208,33 @@ public struct SelectionPlugin: ListedPlugin {
         registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)
         registrar.keyHint("⇧ Resize", "Keep Proportions", while: .pointer)
         registrar.keyHint("⌥ Resize", "Resize From the Center", while: .pointer)
-        // Delete and Forward Delete, and Edit › Delete, delete the selection, while there is one (a
+        // What a command run from a key or the menu bar acts on: the selection.
+        registrar.commandShapes { $0.selectedShapeIDs }
+        // Delete and Forward Delete, and Edit › Delete, delete the shapes, while there are some (a
         // locked one too, which shakes); ⌘A and Edit › Select All select everything, while the
         // board has shapes; ⌘[ and Go › Back go back to what was selected before, when there's
         // somewhere to go; ⌘↓ opens the only selected shape, when it can be opened and isn't being
         // edited (⌘↓ is then the text's), and Return (and Enter) does too, but always takes the
         // key, as it did when it only edited; a group selected whole, or a container that is neither
         // opened nor edited (a frame), is gone into instead, selecting its first part, or the first
-        // shape in it, in reading order; ⇧2 and View › Zoom to Selection bring the selection
+        // shape in it, in reading order; ⇧2 and View › Zoom to Selection bring the shapes
         // into view (tldraw's key), and a trackpad's smart zoom the shape under the pointer.
-        registrar.command(.delete, "Delete", shortcuts: [.delete, .deleteForward], isEnabled: { !$0.selectedShapeIDs.isEmpty }) { $0.deleteSelection() }
-        registrar.command(.selectAll, "Select All", shortcuts: [KeyChord("a", .command)], isEnabled: { !$0.document.shapes.isEmpty }) { $0.selectAll() }
-        registrar.command(.goBack, "Back", shortcuts: [KeyChord("[", .command)], isEnabled: { $0.canGoBack && $0.session == nil }) { $0.goBack() }
-        registrar.command(.openSelection, "Open Selection", shortcuts: [KeyChord(KeyChord.downArrow.key, .command)],
-                          isEnabled: { $0.session == nil && $0.editingShapeID == nil && $0.canOpenSelection }) { $0.openSelection() }
-        registrar.shortcut(.return, "Open Selection") { $0.perform(.openSelection) }
-        registrar.shortcut(.enter, "Open Selection") { $0.perform(.openSelection) }
-        registrar.command(.zoomToSelection, "Zoom to Selection", shortcuts: [KeyChord("2", .shift)],
-                          isEnabled: { !$0.selectedShapeIDs.isEmpty && !$0.unobscuredViewport.isEmpty }) { $0.reveal($0.selectedShapeIDs) }
-        registrar.command(.smartMagnify, "Smart Zoom") { $0.smartMagnify() }
+        registrar.command(.delete, title: "Delete", answering: .delete, shortcuts: [.delete, .deleteForward],
+                          isEnabled: { !$0.shapes.isEmpty }) { $0.editor.deleteShapes($0.shapes) }
+        registrar.command(.selectAll, title: "Select All", answering: .selectAll, shortcut: KeyChord("a", .command),
+                          isEnabled: { !$0.editor.document.shapes.isEmpty }) { $0.editor.selectAll() }
+        registrar.command(.goBack, title: "Back", menu: "Go", order: 0, shortcut: KeyChord("[", .command), runs: .betweenPresses,
+                          isEnabled: { $0.editor.canGoBack }) { $0.editor.goBack() }
+        // Return and Enter are keys of their own that always take the key, called as the command is, so
+        // the Keyboard Shortcuts window lists them in its row.
+        let openSelection = "Open Selection"
+        registrar.command(.openSelection, title: openSelection, menu: "Go", order: 20, shortcut: KeyChord(KeyChord.downArrow.key, .command),
+                          runs: .whenIdle, isEnabled: { $0.editor.canOpenSelection }) { $0.editor.openSelection() }
+        registrar.shortcut(.return, openSelection) { $0.perform(.openSelection) }
+        registrar.shortcut(.enter, openSelection) { $0.perform(.openSelection) }
+        registrar.command(.zoomToSelection, title: "Zoom to Selection", menu: "View", order: 140, shortcut: KeyChord("2", .shift),
+                          isEnabled: { !$0.shapes.isEmpty && !$0.editor.unobscuredViewport.isEmpty }) { $0.editor.reveal($0.shapes) }
+        registrar.command(.smartMagnify, title: "Smart Zoom", answering: .smartMagnify) { $0.editor.smartMagnify() }
         // ← → ↑ ↓ nudge the selection a world unit, and ten with ⇧, again and again while held (one
         // undo step), while nothing's under way or being edited; with nothing selected they pass.
         for (arrow, direction) in SelectionStyle.nudges {

@@ -2,7 +2,6 @@ import Adornments
 import Canvas
 import ContextMenus
 import Keyboard
-import Selection
 import SlashCommands
 import SwiftUI
 import TableOfContents
@@ -11,11 +10,11 @@ import TableOfContents
 /// editing, the panel or a menu item) until it's unlocked. Every try shakes it, a lock
 /// chip sits just above its top-right corner, and its row in the table of contents ends in a lock,
 /// so the list says which are locked at a glance. Shapes are locked from the context menu or with
-/// ⇧L (one command, which locks the selection, or unlocks it once every shape is locked), and
-/// unlocked there or with a click on the chip, which then shows the lock open for a moment (a click
-/// on it locks the shape again) before it goes; a shape's text can lock it too, with `/lock` on a line
-/// of its own (slash commands). Whether a shape is locked is something it knows
-/// (tldraw's `isLocked`): an added property every kind opts into, `locked`. What makes it hold is
+/// ⇧L, and unlocked there or with a click on the chip, which then shows the lock open for a moment (a
+/// click on it locks the shape again) before it goes; a shape's text can lock it too, with `/lock` on
+/// a line of its own (slash commands). Each of them runs one of two commands, Lock or Unlock (⇧L
+/// whichever can). Whether a shape is locked is something it knows (tldraw's `isLocked`): an added
+/// property every kind opts into, `locked`. What makes it hold is
 /// the core's: this plugin says locked shapes are read-only (`registrar.readOnlyShapes`), and the
 /// core refuses changes to them.
 extension PluginID {
@@ -27,8 +26,12 @@ extension PluginID {
 public enum LockedProperty {}
 
 extension CanvasCommand {
-    /// Lock or Unlock, ⇧L: locks the selection, or unlocks it once every shape whose lock can change is locked.
-    public static let toggleLock: CanvasCommand = "toggleLock"
+    /// Lock: the shapes whose own lock can change locked, while some aren't (the context menu's Lock,
+    /// `/lock`, a just-unlocked shape's chip; ⇧L).
+    public static let lock: CanvasCommand = "lock"
+    /// Unlock: the shapes whose own lock can change unlocked, once every one is locked (the context
+    /// menu's Unlock, a locked shape's chip; ⇧L).
+    public static let unlock: CanvasCommand = "unlock"
 }
 
 extension LockedProperty: ShapeProperty {
@@ -59,19 +62,6 @@ extension CanvasEditor {
             for id in ids { transaction.update(id) { $0[LockedProperty.self] = nil } }
         }
     }
-
-    /// Unlocks these shapes if every one whose own lock can change is locked, else locks them: the
-    /// shapes in a locked frame or on a locked subboard's board are left be (`isLockedByContainer`).
-    /// Nothing when none can change.
-    public func toggleLock(_ ids: [ShapeID]) {
-        let lockable = ids.filter { !isLockedByContainer($0) }
-        guard !lockable.isEmpty else { return }
-        if lockable.allSatisfy(isLocked) { unlock(lockable) } else { lock(lockable) }
-    }
-
-    /// Whether ⇧L would lock or unlock anything: some selected shape's lock can change, with nothing
-    /// under way or being edited.
-    var canToggleLock: Bool { session == nil && editingShapeID == nil && selectedShapeIDs.contains { !isLockedByContainer($0) } }
 }
 
 /// A shape's lock chip: a lock in a disc at the right end of the row just above a locked shape,
@@ -110,26 +100,30 @@ public struct LockingPlugin: ListedPlugin {
         registrar.contentsMarkForEveryShape(where: { $0.holds(LockedProperty.self) }) { shape, _ in
             shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
         }
-        // One item for the menu's shapes, as tldraw's toggleLock: Unlock when every one is locked,
-        // otherwise Lock, which locks the rest. Items for the canvas, so a mix of locked and
-        // unlocked shapes still gets one; with no shapes (empty canvas), neither. Each goes by the
-        // shapes' own locks, of those that can take one: a shape in a locked frame is locked with
-        // it, and its own lock can't change, so a menu for only such shapes has neither, and one
-        // for some leaves them be.
-        // Both run the one command, which toggles the selection's lock as these two items read it, and
-        // which ⇧L runs.
-        registrar.command(.toggleLock, "Lock or Unlock", shortcuts: [KeyChord("l", .shift)], isEnabled: { $0.canToggleLock }) {
-            $0.toggleLock($0.selectedShapeIDs)
+        // Lock and Unlock, as tldraw's toggleLock is one: Unlock when every shape is locked, otherwise
+        // Lock, which locks the rest, so a mix of locked and unlocked shapes still gets one; with no
+        // shapes (empty canvas), neither. Each goes by the shapes' own locks, of those that can take
+        // one: a shape in a locked frame is locked with it, and its own lock can't change, so neither is
+        // for only such shapes, and one for some leaves them be. Run as a try on such shapes alone (a
+        // chip's click), each tries them, and the refusal shakes them. ⇧L runs whichever can run, while
+        // nothing is under way or being edited; both items show it.
+        registrar.command(.lock, title: "Lock", runs: .whenIdle, isEnabled: { !$0.locks.allLocked }) { subject in
+            subject.editor.lock(subject.locks.tried)
         }
+        registrar.command(.unlock, title: "Unlock", runs: .whenIdle, isEnabled: { $0.locks.canUnlock }) { subject in
+            subject.editor.unlock(subject.locks.tried)
+        }
+        registrar.shortcut(KeyChord("l", .shift), "Lock or Unlock", forCommands: [.lock, .unlock])
+        // Items for the canvas, in the state group, beside Group and Is a ▸.
         registrar.contextMenuForCanvas {
-            MenuItem(command: .toggleLock, title: "Lock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && !$0.allLocked })
-            MenuItem(command: .toggleLock, title: "Unlock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked })
+            MenuItem(command: .lock, in: StateMenuGroup.self)
+            MenuItem(command: .unlock, in: StateMenuGroup.self)
         }
         // `/lock` typed on a line of a shape's text (Titles offers `/title`, the other command that
-        // ships): on the kinds that can be locked, while the shape isn't. There is no `/unlock`: a
-        // locked shape's text can't be edited, so it couldn't be typed.
+        // ships): on the kinds that can be locked, while the shape can be locked. There is no `/unlock`:
+        // a locked shape's text can't be edited, so it couldn't be typed.
         registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) {
-            SlashCommand("lock", when: { !$0.isLocked }) { id, _, editor in editor.lock([id]) }
+            SlashCommand("lock", command: .lock)
         }
     }
 }
@@ -147,11 +141,27 @@ extension CanvasEditor {
     }
 }
 
-extension MenuSubject {
-    /// The menu's shapes whose own lock can change: all but those in a locked frame or on a locked
-    /// subboard's board.
-    fileprivate var lockable: [ShapeID] { shapes.filter { !editor.isLockedByContainer($0) } }
+extension CommandSubject {
+    /// The shapes' locks, read in one pass: what Lock's and Unlock's rules and runs go by.
+    fileprivate var locks: Locks {
+        let lockable = shapes.filter { !editor.isLockedByContainer($0) }
+        return Locks(lockable: lockable, allLocked: lockable.allSatisfy { editor.isLocked($0) }, shapes: shapes)
+    }
+}
 
-    /// Whether every one of them is locked.
-    fileprivate var allLocked: Bool { lockable.allSatisfy { editor.isLocked($0) } }
+/// The shapes a lock command is given, by their own locks.
+private struct Locks {
+    /// The shapes whose own lock can change: all but those in a locked frame or on a locked subboard's
+    /// board.
+    let lockable: [ShapeID]
+    /// Whether every one of them is locked (so with none, too: Lock is for some that aren't).
+    let allLocked: Bool
+    let shapes: [ShapeID]
+
+    /// Unlock is for shapes whose locks can change, every one of them locked.
+    var canUnlock: Bool { !lockable.isEmpty && allLocked }
+
+    /// What a run tries: the lockable shapes; with none (a try, as a chip's click, of shapes whose locks
+    /// can't change), all of them, which the core refuses, so they shake.
+    var tried: [ShapeID] { lockable.isEmpty ? shapes : lockable }
 }

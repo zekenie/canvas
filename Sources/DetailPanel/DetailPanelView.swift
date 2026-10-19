@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Keyboard
 import Selection
 import SwiftUI
 import TextEditing
@@ -373,21 +374,24 @@ extension EnvironmentValues {
     }
 }
 
-/// Back to the previous selection (Selection's `goBack`), as data-canvas's details panel has, while
-/// there is one. Its own view, so a new step back redraws only it, not the panel it's in.
+/// Back to the previous selection, as data-canvas's details panel has: Selection's `.goBack`, Go › Back,
+/// called and keyed as the command is ("Back (⌘[)"), shown while its rule says there's a step back (the
+/// rule alone, `canPerform(_:on:)`: a press on the canvas doesn't take the button away, and the command
+/// waits for it). Its own view, so a new step back redraws only it, not the panel it's in.
 struct BackButton: View {
     let editor: CanvasEditor
     var body: some View {
-        if editor.canGoBack {
-            Button { editor.goBack() } label: {
+        if editor.canPerform(.goBack, on: []) {
+            let title = editor.registry.title(of: .goBack) ?? CanvasCommand.goBack.rawValue
+            Button { editor.perform(.goBack, on: []) } label: {
                 Image(systemName: "chevron.backward")
                     .font(DetailStyle.backSymbol)
                     .frame(width: DetailStyle.backWidth, height: DetailStyle.backWidth)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            .help("Back (⌘[)")
-            .accessibilityLabel("Back")
+            .help(editor.registry.help(title, forCommand: .goBack))
+            .accessibilityLabel(title)
         }
     }
 }

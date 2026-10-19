@@ -113,7 +113,7 @@ import TestKit
         h.editor.selection = box
         h.editor.copySelection()
         h.editor.selection = nil
-        expect(!h.editor.canCopy)
+        expect(!h.editor.canPerform(.copy))
         expect(!h.command("c"))
         expect(!h.command("x"))
         expectEqual(h.editor.document.shapes.count, 1)
@@ -127,8 +127,8 @@ import TestKit
         h.press(at: middle(0))
         h.drag(to: CGPoint(x: 80, y: 60))
         expect(h.editor.session != nil)
-        expect(h.editor.canCopy)
-        expect(!h.editor.canCut)
+        expect(h.editor.canPerform(.copy))
+        expect(!h.editor.canPerform(.cut))
         expect(!h.command("x"))
         expect(h.command("c"))
         expect(!h.editor.canPaste)
@@ -174,7 +174,7 @@ import TestKit
         let h = try harness(pasteboard)
         let ticket = h.add(Ticket(frame: slot(0)))
         h.editor.selection = ticket
-        expect(!h.editor.canCopy)
+        expect(!h.editor.canPerform(.copy))
         expect(!h.command("c"))
         expect(!h.command("x"))
         expect(!h.editor.canPaste)
@@ -195,7 +195,7 @@ import TestKit
         let box = h.add(Box(slot(0)))
         h.editor.selection = box
         expect(!h.editor.isCopyable(box))
-        expect(!h.editor.canCopy)
+        expect(!h.editor.canPerform(.copy))
         expectEqual(h.editor.copy([box]), [])
         expect(!h.command("c"))
     },

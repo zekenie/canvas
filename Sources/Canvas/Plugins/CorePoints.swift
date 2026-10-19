@@ -70,10 +70,21 @@ enum CorePoints {
         static var owner: PluginID { .core }
     }
 
+    /// Each command once, and each standard action answered by one command at most.
     enum Commands: KeyedExtensionPoint {
         typealias Contribution = CommandRegistration
         static var owner: PluginID { .core }
-        static func uniqueKeys(of c: CommandRegistration, for _: ShapeTarget) -> [AnyHashable] { [c.command] }
+        static func uniqueKeys(of c: CommandRegistration, for _: ShapeTarget) -> [AnyHashable] {
+            [AnyHashable(c.command)] + (c.answering.map { [AnyHashable(StandardActionKey(action: $0))] } ?? [])
+        }
+    }
+
+    /// What a command run from a key or the menu bar acts on (`registrar.commandShapes`): the
+    /// selection. One plugin may claim it; otherwise such a command acts on no shapes.
+    enum CommandShapes: KeyedExtensionPoint {
+        typealias Contribution = @MainActor (CanvasEditor) -> [ShapeID]
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the shapes commands act on"] }
     }
 
     /// What provides a layout input (`PluginRegistrar.layoutInput`). One provider a key.
@@ -175,16 +186,10 @@ struct ShapeRegistration {
     let definition: any ShapeDefinition
 }
 
-struct CommandRegistration {
-    let command: CanvasCommand
-    /// What it's called, as its menu item is ("Delete", "Zoom to Fit"): the name the Keyboard
-    /// Shortcuts window lists its keys under.
-    let title: String
-    /// What its menu item is called now, for a command that is named for the step it would take
-    /// (`editor.menuTitle(of:)`); `title` otherwise.
-    let menuTitle: (@MainActor (CanvasEditor) -> String)?
-    let isEnabled: @MainActor (CanvasEditor) -> Bool
-    let run: @MainActor (CanvasEditor) -> Void
+/// A standard action as a key a command claims: "the standard action cut" in a conflict.
+struct StandardActionKey: Hashable, CustomStringConvertible {
+    let action: StandardAction
+    var description: String { "the standard action \(action)" }
 }
 
 struct ToolRegistration {
@@ -215,22 +220,23 @@ struct ServiceRegistration {
     }
 }
 
-/// Installed ahead of every plugin list: the Hand, undo and redo, and zooming (whose keys Keyboard
-/// gives). Zoom In and Zoom Out are dimmed at the last stop, Actual Size at 100%, and Zoom to Fit
-/// with nothing to fit.
+/// Installed ahead of every plugin list: the Hand, undo and redo (Edit › Undo and Redo, AppKit's own
+/// items, which text answers first), and zooming, in View (their keys Keyboard gives). Zoom In and
+/// Zoom Out are dimmed at the last stop, Actual Size at 100%, and Zoom to Fit with nothing to fit.
 struct CorePlugin: CanvasPlugin {
     var id: PluginID { .core }
     func register(into registrar: inout PluginRegistrar) {
         registrar.tool(ToolDescriptor(id: .hand, label: "Hand", systemImage: "hand.raised")) { _ in HandTool() }
-        registrar.command(.undo, "Undo", isEnabled: { $0.canUndo }) { $0.undo() }
-        registrar.command(.redo, "Redo", isEnabled: { $0.canRedo }) { $0.redo() }
-        registrar.command(.zoomIn, "Zoom In", isEnabled: { $0.zoomInStop != nil }) { editor in
-            if let stop = editor.zoomInStop { editor.zoom(toPercent: stop) }
+        registrar.command(.undo, title: "Undo", answering: .undo, isEnabled: { $0.editor.canUndo }) { $0.editor.undo() }
+        registrar.command(.redo, title: "Redo", answering: .redo, isEnabled: { $0.editor.canRedo }) { $0.editor.redo() }
+        registrar.command(.zoomIn, title: "Zoom In", menu: "View", order: 100, isEnabled: { $0.editor.zoomInStop != nil }) { subject in
+            if let stop = subject.editor.zoomInStop { subject.editor.zoom(toPercent: stop) }
         }
-        registrar.command(.zoomOut, "Zoom Out", isEnabled: { $0.zoomOutStop != nil }) { editor in
-            if let stop = editor.zoomOutStop { editor.zoom(toPercent: stop) }
+        registrar.command(.zoomOut, title: "Zoom Out", menu: "View", order: 110, isEnabled: { $0.editor.zoomOutStop != nil }) { subject in
+            if let stop = subject.editor.zoomOutStop { subject.editor.zoom(toPercent: stop) }
         }
-        registrar.command(.zoomToActualSize, "Actual Size", isEnabled: { $0.zoomPercentage != 100 }) { $0.zoom(toPercent: 100) }
-        registrar.command(.zoomToFit, "Zoom to Fit", isEnabled: { $0.canZoomToFit }) { $0.zoomToFit() }
+        registrar.command(.zoomToActualSize, title: "Actual Size", menu: "View", order: 120,
+                          isEnabled: { $0.editor.zoomPercentage != 100 }) { $0.editor.zoom(toPercent: 100) }
+        registrar.command(.zoomToFit, title: "Zoom to Fit", menu: "View", order: 130, isEnabled: { $0.editor.canZoomToFit }) { $0.editor.zoomToFit() }
     }
 }

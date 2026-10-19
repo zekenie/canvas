@@ -90,7 +90,7 @@ final class ChildPanel: NSPanel {
     },
     test("the menu bar's ⇧⌘Z runs Redo, and ⌘Z Undo, whatever else shares their letter") {
         let f = try BoardWindowFixture()
-        let menus = BoardMenus.make(appName: "Infinite Canvas")
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: f.h.editor.registry)
         let edit = try require(menus.main.item(withTitle: "Edit")?.submenu)
         for item in edit.items where item.action == NSSelectorFromString("undo:") || item.action == NSSelectorFromString("redo:") { item.target = f.window }
         let box = f.addBox()

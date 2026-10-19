@@ -25,6 +25,7 @@ maps one onto the other.
 - [Properties](#properties)
 - [File values](#file-values)
 - [Selection](#selection)
+- [Commands](#commands)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [TextEditing](#textediting)
 - [FuzzyMatching](#fuzzymatching)
@@ -260,7 +261,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Edit a shape in place, as text | `Editable`, and an `editingPlacement` | [StickyNotes](../Sources/StickyNotes/StickyNotes.swift) |
 | Add a tool that handles its own press and drag | `registrar.tool` (or a kind's `x.tool(...)`), a `Tool` and a `Session` | [The Frame tool](#tools-and-sessions) |
 | Give a tool its key | `shortcut:` on the call that registers the tool (Keyboard's) | [Patches](#your-first-plugin) |
-| Make a key do something, or give a menu's command its key | `registrar.shortcut(chord, "Title") { ... }`, `registrar.command(_:_:shortcuts:)` | [Keyboard shortcuts](#keyboard-shortcuts) |
+| Add something to do, once, which keys, the menu bar, a context menu, a line of a shape's text, a chip and a button all run | `registrar.command(.x, title:, menu:, order:, shortcut:, runs:, isEnabled:) { subject in … }` | [Commands](#commands) |
+| Run a declared command from a right-click, a line of a shape's text, a chip or a panel button | `MenuItem(command: .lock, in: StateMenuGroup.self)`, `SlashCommand("lock", command: .lock)`, `editor.attempt(.unlock, on: [id])`, `DetailCommandButton(command:)` | [Commands](#commands) |
+| Make a key do something | `registrar.shortcut(chord, "Title") { ... }`, or `shortcut:` on a command's declaration | [Keyboard shortcuts](#keyboard-shortcuts) |
 | Give a shape handles to drag | Selection's `HandleProviding` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Let a box kind's shapes be resized: eight handles, ⇧ for proportions, ⌥ from the center, a minimum size | Selection's `x.resizable(minimumSize:)` | [Resizing](#resizing) |
 | Edit a kind's properties beside the canvas | `x.details { DetailSection(...) }` | [Types](#the-full-showcase-a-types-schema-tab) |
@@ -1018,19 +1021,12 @@ The details:
   whose drawn state changes some other way (its own state, a timer) calls `editor.setNeedsDisplay()`,
   as Selection does when the selection or hover changes; a tool whose cursor follows such state
   calls `editor.refreshCursor()`.
-- **Commands** (`CanvasCommand`: `.delete`, `.selectAll`, `.goBack`, `.cut`, `.copy`, `.paste`, `.duplicate`,
-  the zoom commands, …)
-  are what menu items run: the canvas view forwards Edit › Delete and Edit › Select All (AppKit's
-  standard actions) with `editor.perform`, and dims them as `canPerform` says, the board's window Go › Back (⌘[) and View's zoom items whatever has the
-  keyboard, and Edit › Cut, Copy, Paste and Duplicate wherever text doesn't take them first, and a key or any
-  plugin may run one. A plugin claims each with `registrar.command`, or with Keyboard's
-  `registrar.command(_:_:shortcuts:)`, which gives it its keys too, names it as its menu item is
-  ("Delete": `registry.title(of:)`, what the Keyboard Shortcuts window lists its keys under), and may say when it can run
-  (`isEnabled:`), which `editor.canPerform` asks for a menu item to enable it, and a key to take
-  the stroke; unclaimed, or unable to run, `perform` returns false. A view that asks it redraws as
-  what it read changes: `editor.session` is observed as a press starts and as it ends (not as one
-  session hands over to another), so a control enabled only between presses comes back once the
-  press that selected its shape is let go.
+- **Commands** (`CanvasCommand`), each declared once by the plugin it belongs to, are what keys,
+  menu items, a context menu's items, lines typed in a shape's text, chips and buttons run
+  (`editor.perform`): see [Commands](#commands). Unclaimed, or unable to run, `perform` returns false.
+  A view that asks `canPerform` redraws as what it read changes: `editor.session` is observed as a
+  press starts and as it ends (not as one session hands over to another), so a control enabled only
+  between presses comes back once the press that selected its shape is let go.
 - **The secondary click** (a right-click, or a Control-click) opens whatever menu the one plugin
   that claims it makes (`registrar.menuForSecondaryClick`), ContextMenus in the shipped app;
   unclaimed, or nil, the click does nothing. AppKit offers a Control-click to the menu first; with
@@ -2198,7 +2194,8 @@ of a selection: Selection works through the same generic hooks any plugin can us
 |---|---|
 | `registrar.defaultTool(.select)` | The editor starts in Select, Select leads the toolbar, and Escape and placing a shape come back to it. |
 | `registrar.outlines { ... }` | Each selected shape's outline, the box around several, and the hover's faint outline (the shape hovered, else the shape that holds the one hovered elsewhere). The core strokes every plugin's outlines and the hint in one pass, over the faint ones. |
-| `registrar.command(.delete)`, `.selectAll`, `.goBack`, `.openSelection`, `.zoomToSelection` and `.smartMagnify` (with their keys, through Keyboard) | Delete, and Edit › Delete (enabled while something's selected, a locked shape too, which refuses and shakes), deletes the selection; ⌘A, and Edit › Select All (enabled while the board has shapes), selects everything; ⌘[, and Go › Back (enabled while there's a step back), goes back to the previous selection; ⌘↓ (enabled while the only selected shape can be opened, or the selection is a group selected whole, or a container that neither opens nor edits, and nothing is being edited, as ⌘↓ is then the text's) opens it, or goes into the group or the container ([Moving between shapes](#moving-between-shapes)). Return and Enter (shortcuts of their own, which always take the key) run `.openSelection` too. ⇧2, and View › Zoom to Selection (enabled while something's selected), reveals the selection; a trackpad's smart zoom (a two-finger double-tap) reveals the shape under the pointer, and the next goes back. The arrow keys (shortcuts of their own, repeating) nudge the selection a world unit, ten with ⇧ (`nudgeSelection(by:)`: a `translate`, "Move", with no snapping), while `canNudge`. |
+| `registrar.commandShapes { $0.selectedShapeIDs }` | What a command run from a key or the menu bar acts on: the selection ([Commands](#commands)). |
+| `registrar.command(.delete, …)`, `.selectAll`, `.goBack`, `.openSelection`, `.zoomToSelection` and `.smartMagnify`, Selection's own (with their keys, through Keyboard) | Delete, and Edit › Delete (AppKit's own item, which `.delete` answers; enabled while something's selected, a locked shape too, which refuses and shakes), deletes the selection; ⌘A, and Edit › Select All (enabled while the board has shapes), selects everything; ⌘[, and Go › Back (enabled while there's a step back), goes back to the previous selection; ⌘↓ (enabled while the only selected shape can be opened, or the selection is a group selected whole, or a container that neither opens nor edits, and nothing is being edited, as ⌘↓ is then the text's) opens it, or goes into the group or the container ([Moving between shapes](#moving-between-shapes)). Return and Enter (shortcuts of their own, which always take the key) run `.openSelection` too. ⇧2, and View › Zoom to Selection (enabled while something's selected), reveals the selection; a trackpad's smart zoom (a two-finger double-tap) reveals the shape under the pointer, and the next goes back. The arrow keys (shortcuts of their own, repeating) nudge the selection a world unit, ten with ⇧ (`nudgeSelection(by:)`: a `translate`, "Move", with no snapping), while `canNudge`. |
 | `Tool.cancel` | Escape in Select, with nothing under way, deselects. |
 | `Tool.ignoresPress` | The rest of a double-click whose first click, on a face, went somewhere (changed the selection or moved the camera) is ignored, so the camera goes on and nothing is placed or edited where it's brought. |
 | `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects a shape just placed. |
@@ -2319,8 +2316,8 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   (a subboard's mention followed from inside it), which is gone into already.
 - `canOpen(_:)`, `open(_:)` and `openSelection()`: opening a shape, below.
 - `hoveredHandle`, `brush` (the marquee), `isSelectable(_:)`, and the commands'
-  `selectAll()`, `deleteSelection()` and `editSelection()` (editing alone, whatever opening would
-  do).
+  `selectAll()`, `deleteSelection()` (`deleteShapes(_:)`, on any shapes, is what `.delete` runs) and
+  `editSelection()` (editing alone, whatever opening would do).
 - `selectionBounds`, the union of the selected shapes' geometry bounds, is kept from one read to
   the next while the selection, the board's shapes (`editor.revision`: every commit, undo and redo,
   another board shown) and the camera stay as they were, so the box around ⌘A's thousands is worked
@@ -2721,6 +2718,67 @@ registrar.shortcut(KeyChord(arrow.key, [.option, .command]), "Select Nearest Sha
 Each step is a selection change, a step back like any other. `canStepSelection` is false while a
 gesture runs or a shape is edited, and then the keys pass.
 
+## Commands
+
+Something a person can ask for in more than one way (a key, the menu bar, a right-click, a line typed
+in a shape's text, a chip, a button in the panel) is a command, declared once by the plugin it
+belongs to, and every way in runs that declaration
+([`Sources/Canvas/Plugins/Commands.swift`](../Sources/Canvas/Plugins/Commands.swift)). The core
+knows what a command is and never which exist, as it knows kinds and tools: its own are undo, redo
+and the four zooms, and the window and the app name no plugin's command.
+
+```swift
+extension CanvasCommand { public static let group: CanvasCommand = "group" }
+
+registrar.command(.group, title: "Group", menu: "Arrange", order: 0, shortcut: KeyChord("g", [.command, .option]),
+                  runs: .whenIdle, isEnabled: { $0.editor.canGroup($0.shapes) }) { $0.editor.group($0.shapes) }
+registrar.contextMenuForCanvas { MenuItem(command: .group, in: StateMenuGroup.self) }
+```
+
+| Part | What it says |
+|---|---|
+| `title` | What it's called wherever it's listed: its menu bar item, a context menu's item that runs it, a panel's button, the Keyboard Shortcuts window (`registry.title(of:)`). |
+| `menu`, `order` | Its item in the menu bar, if it has one: a menu by its title, or a submenu (`"Edit › Find"`, a `MenuPath`), sorted among that menu's items by `order`, a line between two whose orders are in different hundreds. |
+| `answering` | The item of AppKit's Edit menu it is on the board (`.cut`, a `StandardAction`), for a command that has no item of its own: text answers the item first, and the window runs the command when nothing nearer took it. A trackpad's smart zoom is one too. |
+| `shortcut:` / `shortcuts:` | Its keys, Keyboard's to give: Keyboard's `command(…)` is the core's with them ([Keyboard shortcuts](#keyboard-shortcuts)). |
+| `runs` | When a key or the menu bar may run it, besides its rule (`CommandMoment`): `.anytime`; `.betweenPresses`, with no press under way; `.whenIdle`, with no press and no shape being edited, whose menu bar item is dimmed while text has the keyboard, so a key it shares with text is the text's. |
+| `menuTitle` | What its menu bar item is called now, for a command named for the step it would take (Go › Enclosing Group, Enclosing Frame, Enclosing Board). |
+| `isEnabled` | Its rule: whether it can act on its subject. One rule dims its items and lets its keys pass. |
+| the closure | What it does to its subject, in one undo step, named as what it commits names it. |
+
+- **The subject** (`CommandSubject`: `editor`, `shapes`, `point`) is what a command acts on. From a
+  key or the menu bar it's the selection, with no point (`editor.commandSubject`: the plugin that
+  keeps the selection says so with `registrar.commandShapes { $0.selectedShapeIDs }`, Selection's);
+  from a context menu, the menu's shapes and where it was opened; from a line typed in a shape's
+  text or a chip, that shape. A plugin may add what its rule reads to the subject in an extension:
+  Locking's `subject.locks`, the shapes' locks read in one pass.
+- **How each surface runs it.** A key and the menu bar ask the moment, then the rule
+  (`editor.perform(.group)`, `canPerform`). A surface that brings its own shapes brings its own
+  moment and asks the rule alone (`perform(_:on:at:)`, `canPerform(_:on:at:)`): a context menu ends
+  editing as it opens and is never asked mid-press. A try asks neither (`attempt(_:on:at:)`): a
+  chip's click and a line typed in a shape's text are offered by what they show, so what the command
+  can't do it refuses, and the core's refusal shakes the shape (`/private` on a held shape, a click
+  on a locked shape's chip).
+- **The surfaces point at it**: `MenuItem(command: .lock, in: StateMenuGroup.self)` in a context menu
+  (titled as the command is, with its key; [Context menus](#context-menus)), `SlashCommand("lock",
+  command: .lock)` ([Slash commands](#slash-commands)), `DetailCommandButton(command: .goToOriginal,
+  systemImage: …)` in the panel ([The detail panel](#the-detail-panel)), a chip's click as
+  `editor.attempt(.unlock, on: [id])`, and the table of contents' way up as a heading's `up:`
+  ([The table of contents](#the-table-of-contents)). So a command's title, key and rule are said
+  once, and a twin predicate for a menu, a slash command or a button has nowhere to live.
+- **One key for two commands** never both possible: `registrar.shortcut(KeyChord("l", .shift), "Lock
+  or Unlock", forCommands: [.lock, .unlock])` runs the first that can, and each command's items show
+  the key.
+- **The menu bar is made from the declarations** (CanvasUI's `BoardMenus.make(appName:registry:)`,
+  one loop): the window's own items and the commands placed in it ([Keyboard shortcuts](#keyboard-shortcuts),
+  The menu bar), so a list without Grouping and Reordering has no Arrange. Each item carries its
+  command and runs it through one action, `editor.perform`, dimmed as `canPerform` says.
+- **At most one plugin claims a command**, and one command answers each standard action
+  (`RegistryError.conflict`); the registry's report says each command and where its item is
+  (`command group in Arrange`). CanvasTests' `commandTests` hold the subject, the moments, the
+  surfaces' forms, the standard actions and the menu bar's commands; CanvasUITests' `menuBarTests` the
+  making of the bar.
+
 ## Keyboard shortcuts
 
 What each key does on the canvas is a horizontal too ([`Sources/Keyboard`](../Sources/Keyboard)).
@@ -2731,11 +2789,13 @@ hands each key pressed on the canvas to the one plugin that claims key strokes, 
 ```swift
 sub.tool(label: "Subboard", systemImage: "rectangle.stack", shortcut: "b", placing: place)               // Subboards
 registrar.tool(ToolDescriptor(id: .select, label: "Select", systemImage: "cursorarrow"), shortcut: "v") { _ in SelectTool() }
-registrar.command(.delete, "Delete", shortcuts: [.delete, .deleteForward]) { $0.deleteSelection() }      // Selection
+registrar.command(.delete, title: "Delete", answering: .delete, shortcuts: [.delete, .deleteForward],   // Selection
+                  isEnabled: { !$0.shapes.isEmpty }) { $0.editor.deleteShapes($0.shapes) }
 registrar.shortcut(.return, "Open Selection") { $0.perform(.openSelection) }
 registrar.shortcut("h", forTool: .hand)                                                                 // Keyboard itself
 registrar.shortcut(.escape, "Cancel") { $0.cancel() }
 registrar.shortcut(KeyChord("z", .command), forCommand: .undo, repeats: true)
+registrar.shortcut(KeyChord("l", .shift), "Lock or Unlock", forCommands: [.lock, .unlock])           // Locking
 ```
 
 | Sugar | For |
@@ -2743,8 +2803,9 @@ registrar.shortcut(KeyChord("z", .command), forCommand: .undo, repeats: true)
 | `x.tool(label:systemImage:shortcut:placing:)` | A place tool, and the key that switches to it. |
 | `registrar.tool(descriptor, shortcut:) { ... }` | Any tool, and its key. |
 | `registrar.shortcut(chord, forTool:)` | A key for a tool registered elsewhere: Keyboard gives the core's Hand its H this way. |
-| `registrar.command(command, "Title", shortcuts: [...]) { ... }` | A command (what a menu item runs), what it's called, and the keys that run it, so the menu and the keys do one thing (`menuTitle:` names its item for what it would do now). |
+| `registrar.command(command, title:, menu:, order:, shortcut:, runs:, isEnabled:) { subject in ... }` | A [command](#commands), declared once with its keys (`shortcuts: [...]` for several), so the key, its menu items and its other surfaces do one thing. |
 | `registrar.shortcut(chord, forCommand:, repeats:)` | A key for a command claimed elsewhere: Keyboard gives the core's undo and redo ⌘Z and ⇧⌘Z this way. |
+| `registrar.shortcut(chord, "Title", forCommands: [...])` | One key for several commands, never both possible: it runs the first that can (Locking's ⇧L, Lock or Unlock). |
 | `registrar.shortcut(chord, "Title", when:, repeats:) { editor in ... }` | A key that does something of its own. |
 
 What the shipped app's keys do:
@@ -2766,9 +2827,9 @@ What the shipped app's keys do:
 | Q | Turns the tool lock on and off ([the tool lock](#the-editor-the-document-and-drawing)) | Keyboard, for the core's `editor.isToolLocked` |
 | ⌘D | Duplicates the selection beside itself, as Edit › Duplicate does, without the pasteboard | Clipboard |
 | ⌥⌘G, ⌥⇧⌘G | Groups the selection, and takes apart the groups it holds whole, as Arrange › Group and Ungroup do (⌘G is Find Next) | Grouping |
-| ⇧L | Locks the selection, or unlocks it once every shape whose lock can change is locked: the one command the context menu's Lock and Unlock run (no menu bar item; the key is the canvas's, and typing in text) | Locking |
+| ⇧L | Locks the selection, or unlocks it once every shape whose lock can change is locked: whichever of `.lock` and `.unlock` can run, the commands the context menu's Lock and Unlock run (no menu bar item; the key is the canvas's, and typing in text) | Locking |
 | ⇧⌘F | Puts a frame down around the selection, as the context menu's Create Frame does (tldraw's ⌥⌘G is Group's here; not Find's ⌘F) | Frames |
-| `]`, ⌥], ⌥[, `[` | Brings the selection to the front, forward, backward and to the back, as Arrange's items do (they type, so they are the text's in a note or a field) | Reordering, for the core's `.bringToFront`, `.bringForward`, `.sendBackward` and `.sendToBack` |
+| `]`, ⌥], ⌥[, `[` | Brings the selection to the front, forward, backward and to the back, as Arrange's items do (they type, so they are the text's in a note or a field) | Reordering, its `.bringToFront`, `.bringForward`, `.sendBackward` and `.sendToBack` |
 | ⌘Z, ⇧⌘Z | Undoes and redoes, as Edit › Undo and Redo do (held, again and again) | Keyboard, for the core's `.undo` and `.redo` |
 | ⌘= and =, ⌘- and -, ⌘0 and ⇧0, ⇧1 | Zooms in and out to the next stop (held, again and again), to 100%, and to fit the board (again, back to where the camera was), as View's items do | Keyboard, for the core's `.zoomIn`, `.zoomOut`, `.zoomToActualSize` and `.zoomToFit` |
 | ⇧2 | Brings the selection into view, as View › Zoom to Selection does | Selection |
@@ -2808,22 +2869,34 @@ What the shipped app's keys do:
   beep), and run it again only with `repeats: true`, for a key meant to be held, and only while
   the canvas has seen it go down: a key held down elsewhere (↓ in the table of contents, whose
   pick gives the canvas the keyboard) repeats on the canvas as nothing, until it's pressed again.
-- **Commands and menus.** A command (`CanvasCommand`) is what a menu item runs: the canvas forwards
-  Edit › Delete and Edit › Select All with `editor.perform`. `registrar.command(.selectAll,
-  "Select All", shortcuts: [KeyChord("a", .command)]) { ... }` claims the command, names it as its
-  menu item is, and gives it its key in one call, so ⌘A and the menu item do one thing. While a command can't run (its `isEnabled:`, which
-  dims its menu item), its keys go on as if there were no shortcut: ⌘[ with nowhere to go back to.
-  A command named for the step it would take now says so with `menuTitle:` (Boards' `.enclosingBoard`:
-  Enclosing Group, Enclosing Frame, Enclosing Board), which the window controller reads as it
-  validates the item that runs it (`editor.menuTitle(of:)`, nil for a command whose item keeps its
-  own title); `registry.title(of:)` stays what the command is called, which the Keyboard Shortcuts
-  window lists.
-  The core also names the commands of two features, for plugins to claim: `.find`, `.findNext` and
-  `.findPrevious` (Edit › Find › Find…, Find Next and Find Previous: ⌘F, ⌘G, ⇧⌘G; [Find](#find)'s
-  plugin claims them) and `.jumpTo` (Go › Jump To…, ⌘K; JumpTo's, to come). Their items are in the menus, sent to
-  the window controller's own selectors (never AppKit's find actions, which a text view takes),
-  dimmed while nothing claims the command, and not among the items that leave their keys to text,
-  so they work from a note being edited or a panel's field too.
+- **Commands and menus.** A [command](#commands) is declared once with its keys:
+  `registrar.command(.selectAll, title: "Select All", answering: .selectAll, shortcut: KeyChord("a",
+  .command), isEnabled: { … }) { … }` claims it, names it, says it is Edit › Select All on the board
+  and gives it ⌘A, so the key and the item do one thing. While a command can't run (its moment or
+  its rule, which dim its menu items), its keys go on as if there were no shortcut: ⌘[ with nowhere
+  to go back to. A command named for the step it would take now says so with `menuTitle:` (Boards'
+  `.enclosingBoard`: Enclosing Group, Enclosing Frame, Enclosing Board), which the window controller
+  reads as it validates the item that runs it (`editor.menuTitle(of:)`); `registry.title(of:)` stays
+  what the command is called, which the Keyboard Shortcuts window lists. Find's `.find`, `.findNext`
+  and `.findPrevious` (`menu: "Edit › Find"`: Find…, Find Next and Find Previous, ⌘F, ⌘G, ⇧⌘G) and
+  JumpTo's `.jumpTo` (Go › Jump To…, ⌘K) don't run `.whenIdle`, so they work from a note being
+  edited or a panel's field too, through the controller's one action (never AppKit's find actions,
+  which a text view takes).
+- **The menu bar** (CanvasUI's `BoardMenus.make(appName:registry:)`, installed by the app with the
+  shipped registry) is the window's own items and the commands placed in it, made in one loop. The
+  window's own items have orders too (Edit: Undo 0, Redo 10, Cut 100, Copy 110, Copy as Image 120,
+  Paste 130, Delete 160, Select All 170, Spelling and Grammar 290; View: Show Toolbar 0 to Show
+  Minimap 30, Enter Full Screen 900), the commands go among them by theirs, a line between two whose
+  orders are in different hundreds, and a submenu is made at its first item's order. The menus come
+  in the Mac's order by title (File, Edit, Shape, Format, Arrange, View, Go), then any only commands
+  name, then Window and Help; a menu with nothing in it isn't there. Edit's Undo, Redo, Cut, Copy,
+  Paste, Delete and Select All stay AppKit's own items, which text answers first, so every field has
+  them whatever is installed; each carries the command that answers it, which the window runs on the
+  board when nothing nearer took it (`editor.perform(answering:)`). Every other command's item sends
+  the window controller's one action (`runCommand:`), which runs `editor.perform`, and its one
+  validation dims the item while `canPerform` says no, and while text has the keyboard for a command
+  that runs `.whenIdle`. CanvasUITests' `menuBarTests` hold the making over fixtures, CompositionTests'
+  BoardDocumentTests the shipped bar, item by item.
 - **A ⌘ key a menu item also has** is the shortcut's while the canvas has the keyboard. AppKit asks
   the key window's views for a key equivalent before the menu bar, and the canvas asks the
   shortcuts (`CanvasView.performKeyEquivalent`), so ⌘A goes through Keyboard like any other key, and
@@ -2849,7 +2922,7 @@ What the shipped app's keys do:
 - **The Shape menu** (between Edit and Arrange) is the selected shapes' context menu in the menu
   bar, so what it offers (Lock, Create Frame, Turn into …, Is a ▸, Color ▸) is reachable without a
   right-click, and what is a command has a key. It's [generated](#context-menus): an item of a context
-  menu can run a command (`MenuItem(command: .createFrame, in: FramesMenuGroup.self, when: { … })`),
+  menu can run a command (`MenuItem(command: .createFrame, in: FramesMenuGroup.self)`),
   which gives it the command's title and shows its first key, and the plugin that makes context
   menus (ContextMenus) answers the core's point for the selection's menu (`registrar.menuForSelection`),
   told which commands to leave out: every one a menu bar item already runs, so Cut, Copy, Paste,
@@ -2858,9 +2931,9 @@ What the shipped app's keys do:
   from the key window's board, and empties as it closes, so it holds nothing at rest (the Keyboard
   Shortcuts window drops it) and its keys are shown, not live. Its items dim as their commands do,
   and reach the window they were made for.
-- **Arrange's restacking** (`]`, ⌥], ⌥[, `[`) are fixed items after Group and Ungroup, through the
-  window controller's `bringToFront:` and the rest, dimmed as their commands say and while text has the
-  keyboard.
+- **Arrange's restacking** (`]`, ⌥], ⌥[, `[`) are Reordering's own commands, placed after Group and
+  Ungroup by their declarations (`menu: "Arrange"`, orders 100 to 130) and `.whenIdle`, so dimmed as
+  their rule says and while text has the keyboard.
 - **Keys that type stay out of text.** The menu bar never takes a key held without ⌘ from
   text: ⇧1, `]` and `[`, ⌥] (a quote on a US layout), ⌃ keys (emacs bindings). Elsewhere the item that
   names the key takes it (a digit by its number-row key), and leaves it while it's dimmed (AppKit's
@@ -3179,12 +3252,14 @@ the treatment a named one does.
 
 A board's window puts things around its canvas that are plugins': the path of crumbs over its top,
 a palette, the inspector beside it, the window's subtitle, the panes of the Settings window, the
-toolbar's tips. And the app takes three more things from them: the rows of its Keyboard Shortcuts
+toolbar's tips, the keys its menu items show. And the app takes three more things from them: the rows of its Keyboard Shortcuts
 window, what its Copy as Image draws, and the commands its command server runs. A plugin can't import the window (CanvasUI) or the
 app, and neither can import a plugin (the app and CanvasUI may use only the core and the app's
 own modules). So what passes between them is declared beneath both, in the core,
-[`Sources/Canvas/Plugins/HostSlots.swift`](../Sources/Canvas/Plugins/HostSlots.swift): nine
-extension points a plugin contributes to and the host reads. The core imports SwiftUI for them,
+[`Sources/Canvas/Plugins/HostSlots.swift`](../Sources/Canvas/Plugins/HostSlots.swift): ten
+extension points a plugin contributes to and the host reads. The menu bar's commands are no slot:
+they're the [commands](#commands) plugins declare with a `menu:`, which the window reads as
+`registry.menuBarCommands`. The core imports SwiftUI for them,
 since its slots hold views, and the wire (CanvasRPC), for the types the commands are said in; it
 knows no plugin and no window.
 
@@ -3200,6 +3275,7 @@ plugins ([What ships](#what-ships)).
 | The window's subtitle (`WindowSubtitles`, at most one) | `registrar.windowSubtitle { editor in … }` | `registry.windowSubtitle(for:)` | Boards: the board shown's name, none on the root |
 | Settings panes (`SettingsPanes`, in plugin order, a title once) | `registrar.settingsPane("Anthropic") { … }` | `registry.settingsPanes` | the Anthropic key's, when the model is Anthropic's |
 | Tool tips (`ToolTips`, at most one) | `registrar.toolTips { tool, registry in … }` | `registry.toolTip(for:)`, the tool's label without one | Keyboard: "Note (N)" |
+| The key a menu item shows for a command (`MenuKeys`, at most one) | `registrar.menuKeys { command, registry in … }`: a `MenuKey`, a menu's key equivalent and modifiers | `registry.menuKey(of:)`, read by the menu bar's items and a context menu's that run a command; none without one | Keyboard: the first key that runs the command (Delete as Backspace's character) |
 | The Keyboard Shortcuts window's rows (`KeyboardHelp`, at most one) and key hints (`KeyHints`, any number) | `registrar.keyboardHelp { registry in … }`; `registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)` | `registry.keyboardHelp`: the one list's rows, then the hints, each row once | Keyboard: every key it registers; the hints of each plugin that reads a key no shortcut has |
 | What Copy as Image draws (`ImageSources`, at most one) | `registrar.imageSource(isAvailable:) { editor in … }`: whether there is anything to draw, and the shapes of the board shown a picture of the selection (or the board, with nothing selected) shows | `registry.imageSource` | Clipboard: the shapes a copy would take (`editor.imageShapes()`) |
 | The commands (`HostCommands`, at most one) | `registrar.hostCommands(specs:run:)`, both handed the built registry | `registry.hostCommands`: the specs, and how to run one by name | Automation: every plugin's command |
@@ -3294,7 +3370,7 @@ The panel owns all of the chrome, and plugins fill it in:
 
 | The panel decides | Plugins provide |
 |---|---|
-| The header's frame, and its back button (Selection's `goBack`, shown while there's a step back) | The header: a `DetailHeader` (title, subtitle, symbol), or a view built on `DetailHeaderLabel` (Titles' `TitleHeader`) |
+| The header's frame, and its back button (Selection's `.goBack`, Go › Back, called and keyed as the command is, shown while its rule says there's a step back) | The header: a `DetailHeader` (title, subtitle, symbol), or a view built on `DetailHeaderLabel` (Titles' `TitleHeader`) |
 | The tab strip, the tab order, and the tab remembered per kind | Which tab each section goes in |
 | Section chrome: the header, chevron, insets, dividers, collapsing, and remembered collapse | Section titles, ids and order |
 | Scrolling, the footer, and the empty states | The rows in a section, and status lines: the footer's, or a tab's (the Issues tab above, while the card has any) |
@@ -3354,8 +3430,10 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   of shapes) goes in a box as a text area's, over a text view of the plugin's own
   ([`DetailTextBox`](#text-of-a-plugins-own-detailtextbox)): Mentions' `MentionTextArea` is one.
   `DetailNumberText` formats and parses numbers with units ("240 pt"), in the user's locale ("2,5 h" in German), as the number field does. A
-  `DetailCommandButton("Go to Original", systemImage: "arrow.up.forward.square", command: .goToOriginal)`
-  runs a command a plugin registered (`editor.perform`), dimmed while it can't run
+  `DetailCommandButton(command: .goToOriginal, systemImage: "arrow.up.forward.square")`
+  runs a [command](#commands) a plugin declared (`editor.perform`), titled as the command is
+  (`registry.title(of:)`, unless `title:` says otherwise), its tooltip the title and the command's key
+  ("Next (⌘G)", Keyboard's `registry.help(_:forCommand:)`; none for a command with no key), and dimmed while it can't run
   (`editor.canPerform`): the panel's counterpart of a menu item, borderless like the panel's other
   buttons. It finds the editor in the environment the panel sets, so a section still never sees it.
 - **Code's colors and completions.** A `DetailCodeEditor`'s language is its plugin's; the panel
@@ -3999,26 +4077,27 @@ contextMenu {
   the shapes, in selection order, and the editor, and changes the document with `editor.transact`.
   Whatever an item does, over however many shapes and transactions, is one undo step, named by its
   title ("Undo Bring to Front").
-- **`MenuItem(command: .x, title:, in:, id:, when:, isEnabled:, isChecked:)`** runs a command, so the item has a
-  key. It's titled by the command (`registry.title(of:)`) unless `title:` gives its own (Lock and Unlock
-  are two items and one command), shows the command's first key (`registry.shortcut(forCommand:)`) as its
-  key equivalent, for display, and runs `editor.perform(command)` on the selection, which a right-click
-  has made the menu's shapes before the item runs (`perform` asks the command's own rule, which reads
-  the selection; `when` and `isEnabled` still go by the subject, since the menu is made before the
-  selection is). It shows only while a plugin claims the command. The other forms take `command:` too,
-  for an item whose action isn't just the command's but stands for it: `MenuItem("Paste", command:
-  .paste, …) { subject in … }` keeps its action (centered on the click), shows ⌘V, and is left out of
-  the selection's menu as the menu bar has Paste. Delete, Select All, Cut, Copy, Duplicate, Group,
-  Ungroup, Lock, Unlock, Create Frame and Arrange ▸ are such items.
+- **`MenuItem(command: .x, title:, in:, id:, when:, dims:)`** runs a [command](#commands), so the item
+  has the command's one rule, title and key. It shows while the command can act on the menu's shapes
+  and click (its rule, asked of the subject: `editor.canPerform(_:on:at:)`, never the command's
+  moment, since the menu ends editing as it opens), `when` leaving it out besides (Select All, on
+  empty canvas only); with `dims: true` it shows wherever `when` says, dimmed while the command can't
+  act (Go to Original, for a reference whose original is gone; Make Public on a locked shape).
+  Chosen, it runs the command on the menu's shapes and click (`editor.perform(_:on:at:)`), whatever
+  the selection is by then. It's titled as the command is (`registry.title(of:)`) unless `title:`
+  gives its own, shows the key a menu shows for the command (`registry.menuKey(of:)`, which Keyboard
+  fills, so ContextMenus imports no Keyboard), and shows only while a plugin claims the command. A
+  command that goes by where the menu was asked for reads the subject's `point`: Clipboard's Paste
+  lands centered on the click. Delete, Select All, Cut, Copy, Paste, Duplicate, Group, Ungroup, Lock,
+  Unlock, Make Public, Make Private, Go to Original, Create Frame, Connect and Arrange ▸ are such items.
 - **`when` leaves an item out; `isEnabled` dims it.** A context menu shows only what applies, so
   reach for `when`. `isChecked` checks it (✓ for every shape, – for some). An item for the canvas
-  asks these of its `MenuSubject`, so it can depend on more than a shape (Clipboard's Paste is
-  `when: { $0.editor.canPaste }`, Mentions' Show What Mentions `when: { subject in
-  subject.shapes.contains(where: mentions.isMentioned) }`), and takes the `perform` form, which
+  asks these of its `MenuSubject`, so it can depend on more than a shape (Mentions' Show What Mentions
+  is `when: { subject in subject.shapes.contains(where: mentions.isMentioned) }`), and takes the `perform` form, which
   gets the subject's shapes, or the `edit` form, which is handed the subject itself, for an item
-  that needs where the menu was asked for (Clipboard's Paste: `{ subject in
-  if let point = subject.point { subject.editor.paste(centeredAt: point) } else { subject.editor.paste() } }`). Ask whether an item shows of the subject,
-  not of `editor.canPerform`: the selection is the menu's shapes only once the menu is made.
+  that needs where the menu was asked for (a command reads it as `subject.point`, as Clipboard's
+  Paste does). Ask whether an item shows of the subject, not of `editor.canPerform`: the selection
+  is the menu's shapes only once the menu is made.
 - **`Submenu(title) { items }`** shows when any of its items does.
 - **`MenuItems(in:, id:) { subject in … }`** is an item for the canvas that is made when the menu
   opens, for what the registry can't know because it's in the file. It's registered like an item, by
@@ -4088,8 +4167,11 @@ capability: one painted by anchor (an arrow, drawn just above the shapes it join
 since document order doesn't decide where it's drawn. A line, which has no frame, is in.
 
 ```swift
-registrar.command(.bringToFront, "Bring to Front", shortcuts: [KeyChord("]")], isEnabled: { $0.canReorder }) { editor in
-    editor.transact("Bring to Front") { $0.bringToFront(editor.selectedShapeIDs) }
+extension CanvasCommand { public static let bringToFront: CanvasCommand = "bringToFront" }   // and the other three
+
+registrar.command(.bringToFront, title: "Bring to Front", menu: "Arrange", order: 100, shortcut: KeyChord("]"), runs: .whenIdle,
+                  isEnabled: { $0.restackable }) { subject in
+    subject.editor.transact("Bring to Front") { $0.bringToFront(subject.shapes) }
 }                                                              // and Bring Forward ⌥], Send Backward ⌥[, Send to Back [
 registrar.contextMenuForEveryShape(where: { !($0 is any PaintOrderAnchored) }) {
     Submenu("Arrange", in: ReorderMenuGroup.self) {
@@ -4101,12 +4183,13 @@ registrar.contextMenuForEveryShape(where: { !($0 is any PaintOrderAnchored) }) {
 }
 ```
 
-Each of the four is a command the core names (the menu bar's Arrange carries them as fixed items,
-after Group and Ungroup), with a key: `]` brings the selection to the front, ⌥] forward, ⌥[ backward
-and `[` to the back. They run while shapes are selected and none is painted by anchor, with nothing
-under way or being edited; they type, so in a note or a field they're the text's
-([keyboard](#keyboard-shortcuts)). The Arrange submenu stays in the context menu, its items running
-the same commands, and the selection's menu leaves it out, since Arrange has them.
+Each of the four is a [command](#commands) of its own, declared once with its title, its key and
+its item in the menu bar's Arrange, after Group and Ungroup: `]` brings the selection to the front,
+⌥] forward, ⌥[ backward and `[` to the back. They act on shapes none of which is painted by anchor,
+with nothing under way or being edited (`.whenIdle`); they type, so in a note or a field they're the
+text's ([keyboard](#keyboard-shortcuts)). The Arrange submenu stays in the context menu, its items
+running the same commands on the menu's shapes, and the selection's menu leaves it out, since Arrange
+has them. A list without Reordering (and Grouping) has no Arrange menu at all.
 
 The restacking is the core's: `bringToFront`, `sendToBack`, `bringForward` and `sendBackward` each
 take a list of shapes, which keep their order among themselves, and refuse read-only ones, as
@@ -4146,14 +4229,15 @@ an every-shape one's.
 The same items, over the selection and with no click, are the menu bar's Shape menu (between Edit and
 Arrange; [Keyboard shortcuts](#keyboard-shortcuts)). `registrar.menuForSelection` is the core's point for
 it, told the commands to leave out: the window passes every one a menu bar item runs
-(`BoardWindowController.menuCommands`), and the plugin drops each item that runs one of them,
+(`BoardMenus.commands(in:)`, found as the bar is made), and the plugin drops each item that runs one of them,
 a submenu left with nothing, and a group's line when it has no items. What's left is made as a
 right-click on the selection would make it, with `MenuSubject.point` nil, so an item that goes by where
-the click was (Types' `Relate to <Type>`) leaves itself out; an item that runs a command is dimmed as the
-command is (`canPerform`, asked now that the selection is the menu's), and a pick ends editing first. With
+the click was (Types' `Relate to <Type>`) leaves itself out, and an omitted command's rule isn't asked;
+an item that runs a command is dimmed as the command is (its rule over the selection, which is the menu's,
+and its moment: a shape being edited dims what runs `.whenIdle`), and a pick ends editing first. With
 nothing selected there is no menu, not even the canvas's items. Lock or Unlock, Create Frame, Turn into
 …, Is a ▸ and Color ▸ are in it for a note, and Turn into Subboard for a frame, beside the keys the menu
-shows (⇧L, ⇧⌘F). ContextMenusTests' `selectionMenuForBarTests` hold the plugin's side,
+shows (⇧L on Lock or Unlock, ⇧⌘F). ContextMenusTests' `selectionMenuForBarTests` hold the plugin's side,
 CompositionTests' `shapeMenuShippedTests` the shipped menu.
 
 ### The core's part
@@ -4507,8 +4591,9 @@ registrar.contentsMarkForEveryShape(affected: { changes, context in
   conflict): `registrar.contentsHeading { editor in … }` returns a `ContentsHeading`, or nil for
   the list's own: a title, a symbol before it, and `up`, a command
   the header offers as a button while it can run (`editor.canPerform`): an arrow turning up, not a
-  chevron, which in a list's disclosure column reads as collapsing; `upTitle` names it to VoiceOver
-  ("Up" by default) and `upHelp` is its tooltip, the title and its key, if the command has one, as a tool's is. It's read in
+  chevron, which in a list's disclosure column reads as collapsing, named to VoiceOver as the command
+  is (`registry.title(of:)`), and `upHelp` is its tooltip, the title and its key, if the command has
+  one, as a tool's is. It's read in
   the header's body (`ContentsState.heading`), so it reads observable state and the header alone
   redraws as that changes. The table of contents doesn't know what a board is called; the
   heading's maker does (Boards' `BoardContentsPlugin`: [Boards](#boards)). Filtered, the header is
@@ -5200,8 +5285,8 @@ one line, `note.flaggable()`, as `note.title()` does. What that gives:
 Cut, copy and paste are a horizontal ([`Sources/Clipboard`](../Sources/Clipboard)) built on three
 others: Selection (what's copied, and what's selected after a paste), Keyboard (⌘X, ⌘C and ⌘V) and
 ContextMenus (Cut, Copy and Paste in every context menu). The core has never heard of a clipboard. It
-lends four generic things: commands (`.cut`, `.copy` and `.paste`, which Edit › Cut, Copy and
-Paste send), shape [metadata](#metadata), the `ShapeReferencing` [capability](#capabilities), and
+lends four generic things: [commands](#commands), which may answer AppKit's Edit › Cut, Copy and Paste
+(`answering:`; the commands themselves, `.cut`, `.copy`, `.paste` and the rest, are Clipboard's), shape [metadata](#metadata), the `ShapeReferencing` [capability](#capabilities), and
 `CanvasFile.isUnused(_:)`, whether anything in the file goes by an id, which a paste asks before
 giving a shape back the id it had.
 
@@ -5391,18 +5476,22 @@ registrar.adornmentForEveryShape(LockChip.self, where: { $0.holds(LockedProperty
 registrar.contentsMarkForEveryShape(where: { $0.holds(LockedProperty.self) }) { shape, _ in  // a lock at the end of its row
     shape.isLocked ? ContentsMark(symbol: "lock.fill", color: .secondary, help: "Locked") : nil
 }
-registrar.command(.toggleLock, "Lock or Unlock", shortcuts: [KeyChord("l", .shift)], isEnabled: { $0.canToggleLock }) {
-    $0.toggleLock($0.selectedShapeIDs)                  // ⇧L: unlock the selection if all of it is locked, else lock it
+registrar.command(.lock, title: "Lock", runs: .whenIdle, isEnabled: { !$0.locks.allLocked }) { subject in
+    subject.editor.lock(subject.locks.tried)            // the shapes whose own lock can change
 }
-registrar.contextMenuForCanvas {                        // of the shapes whose own lock can change; both run the command
-    MenuItem(command: .toggleLock, title: "Lock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && !$0.allLocked })
-    MenuItem(command: .toggleLock, title: "Unlock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked })
+registrar.command(.unlock, title: "Unlock", runs: .whenIdle, isEnabled: { $0.locks.canUnlock }) { subject in
+    subject.editor.unlock(subject.locks.tried)
+}
+registrar.shortcut(KeyChord("l", .shift), "Lock or Unlock", forCommands: [.lock, .unlock])   // ⇧L: whichever can run
+registrar.contextMenuForCanvas {                        // shown by the commands' rules: one of the two
+    MenuItem(command: .lock, in: StateMenuGroup.self)
+    MenuItem(command: .unlock, in: StateMenuGroup.self)
 }
 registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) {    // `/lock`, where a shape can be locked, while it isn't
-    SlashCommand("lock", when: { !$0.isLocked }) { id, _, editor in editor.lock([id]) }
+    SlashCommand("lock", command: .lock)
 }
 
-extension LockChip: ClickableAdornment {                // a click on the chip
+extension LockChip: ClickableAdornment {                // a click on the chip: a try of Unlock or Lock
     public static func click(_ click: AdornmentClick, in editor: CanvasEditor) { editor.service(LockState.self)?.click(click.shape) }
 }
 ```
@@ -5415,10 +5504,11 @@ extension LockChip: ClickableAdornment {                // a click on the chip
 - **The menu** has one of two items, in `StateMenuGroup` (ContextMenus', order 300, after every other group; Types' Is a ▸ is in it too, right after), as
   tldraw's toggle: Unlock when every shape the menu is for is locked, and otherwise Lock, which locks
   the rest. They're items for the canvas, so a mix of locked and unlocked shapes gets one; on empty
-  canvas, neither. Both run one command, `.toggleLock` ("Lock or Unlock", ⇧L, Locking's own
-  `CanvasCommand`), which locks the selection, or unlocks it once every shape is locked, and the items show
-  its key ([context menus](#context-menus)); `/lock` is the other way in. Both go by the shapes'
-  own locks, of those whose lock can change: a shape in a locked frame, or on a locked subboard's
+  canvas, neither. They run Locking's two [commands](#commands), `.lock` and `.unlock`, whose rules
+  are the items' (Lock while some shape whose lock can change isn't locked, Unlock while all are);
+  ⇧L runs whichever can, and both items show it ([context menus](#context-menus)); `/lock` is the
+  other way in, and the chip's click is a try of one (`editor.attempt`), so a shape whose lock can't
+  change shakes. Both go by the shapes' own locks, of those whose lock can change: a shape in a locked frame, or on a locked subboard's
   board (below), can't change, its own lock included, so neither item is for it
   (`isLockedByContainer`, O(its depth)): a menu for only such shapes has neither, and one for some
   of them and others locks or unlocks the others, trying none of them (so none shakes).
@@ -5596,15 +5686,13 @@ registrar.declare(GroupsProperty.self)                  // the groups a shape is
 registrar.optInEveryShape(to: GroupsProperty.self)
 registrar.service { GroupIndex(editor: $0) }            // the board shown's groups, kept as commits write paths
 registrar.selectionGroups { $0.service(GroupIndex.self) }
-registrar.command(.group, "Group", shortcuts: [KeyChord("g", [.command, .option])], isEnabled: { $0.canGroupSelection }) {
-    $0.group($0.selectedShapeIDs)
-}
-registrar.command(.ungroup, "Ungroup", shortcuts: [KeyChord("g", [.command, .option, .shift])], isEnabled: { $0.canUngroupSelection }) {
-    $0.ungroup($0.selectedShapeIDs)
-}
-registrar.contextMenuForCanvas {
-    MenuItem(command: .group, in: StateMenuGroup.self, when: { $0.groupable && $0.editor.canGroup($0.shapes) })
-    MenuItem(command: .ungroup, in: StateMenuGroup.self, when: { $0.groupable && $0.editor.canUngroup($0.shapes) })
+registrar.command(.group, title: "Group", menu: "Arrange", order: 0, shortcut: KeyChord("g", [.command, .option]), runs: .whenIdle,
+                  isEnabled: { $0.editor.canGroup($0.shapes) }) { $0.editor.group($0.shapes) }
+registrar.command(.ungroup, title: "Ungroup", menu: "Arrange", order: 10, shortcut: KeyChord("g", [.command, .option, .shift]),
+                  runs: .whenIdle, isEnabled: { $0.editor.canUngroup($0.shapes) }) { $0.editor.ungroup($0.shapes) }
+registrar.contextMenuForCanvas {                        // shown by the commands' rules, over the menu's shapes
+    MenuItem(command: .group, in: StateMenuGroup.self)
+    MenuItem(command: .ungroup, in: StateMenuGroup.self)
 }
 ```
 
@@ -6077,7 +6165,7 @@ moved and kept to its channel as the rest are.
 
 **Connect** (⌘L, `.connect`, `PortsPlugin`'s; [Connect.swift](../Sources/Connections/Connect.swift)) is a
 connection by name from the keyboard: with two shapes selected and nothing under way or edited,
-`editor.connectSelection()` connects the one selected first to the other, through
+`editor.connect(_:)` connects the one selected first to the other, through
 `registry.drawConnection(from:to:in:)`, the maker `canvas draw` makes an edge with, on the channel it
 picks, one step, Connect, the selection kept (a second between a pair is bent apart from the first,
 as a script's is). A reference pill is an end as what it stands for, as a drag reads its dots, and
@@ -6107,8 +6195,9 @@ registrar.optInEveryShape(to: PublicProperty.self, where: { !($0 is any NeverPub
 registrar.contribute(true, to: PublishingDials.self)    // so the registry checks no definition adopts both
 registrar.service { PublishingState(editor: $0) }       // which shapes are public, what stands for them, the chips showing Private, `admitting`
 registrar.adornmentForEveryShape(PublicChip.self, where: { $0.holds(PublicProperty.self) }) { shape, context in … }
-registrar.contextMenuForCanvas { MenuItem("Make Public", in: PublishMenuGroup.self, …) …; MenuItem("Make Private", …) }
-registrar.slashCommandsForEveryShape(where: { $0.holds(PublicProperty.self) }) { SlashCommand("public", …); SlashCommand("private", …) }
+registrar.command(.makePublic, title: "Make Public", isEnabled: { … }) { … }   // and .makePrivate: the menu, `/public` and the chip run them
+registrar.contextMenuForCanvas { MenuItem(command: .makePublic, in: PublishMenuGroup.self, when: { … }, dims: true); MenuItem(command: .makePrivate, …) }
+registrar.slashCommandsForEveryShape(where: { $0.holds(PublicProperty.self) }) { SlashCommand("public", command: .makePublic); SlashCommand("private", command: .makePrivate, when: { … }, tries: true) }
 registrar.contentsMarkForEveryShape(where: { $0.holds(PublicProperty.self) }) { shape, context in … }   // a globe on a public shape's row
 ```
 
@@ -6156,15 +6245,18 @@ registrar.contentsMarkForEveryShape(where: { $0.holds(PublicProperty.self) }) { 
   `canvas draw`), is written: the stand-ins let go of it in that commit (admission), the count drops, the
   chip reads Private; making it public again heals them. A locked shape is refused by the core,
   held or not.
-- **The menu** has one item, in `PublishMenuGroup` (order 310, between Lock's 300 and Delete's 400), a
-  toggle as Lock's: Make Public while any shape the menu is for that can be public isn't, which makes
-  the rest public, else Make Private. Each is dimmed when it could do nothing: every shape it would
-  change is read-only, and, for Make Private, every public shape is held. On a mix, the free shapes go
-  private in one step and the held ones shake. A shape that can't be public (a seal, a draft) has
-  neither. `/public` (while a shape is private) and `/private` (while it's public, refusing like
-  the chip) are [slash commands](#slash-commands) on the kinds that hold the property, and, as
-  commands are, only on a shape that isn't read-only; their steps are named as the menu's
-  (`step:`).
+- **Make Public and Make Private are two [commands](#commands)** (`.makePublic`, `.makePrivate`,
+  no key), which the menu, `/public` and `/private` and the chip run. The menu has one item, in
+  `PublishMenuGroup` (order 310, between Lock's 300 and Delete's 400), a toggle as Lock's: Make
+  Public while any shape the menu is for that can be public isn't, which makes the rest public, else
+  Make Private (`MenuItem(command:… dims: true)`). Each is dimmed while its command can do nothing:
+  every shape it would change is read-only, and, for Make Private, every public shape is held. On a
+  mix, the free shapes go private in one step and the held ones shake. A shape that can't be public
+  (a seal, a draft) has neither. `/public` (while a shape is private: the command's rule) and
+  `/private` (while it's public, `tries: true`, so a held one is tried and shakes, as at the chip)
+  are [slash commands](#slash-commands) on the kinds that hold the property, and, as commands are,
+  only on a shape that isn't read-only; their steps are named as the commands are. The chip's click
+  is a try of the one its face shows (`editor.attempt`).
 - **The table of contents** marks a public shape's row with a globe (`ContentsMark`, "Public" or
   "Public · 3 references"), on the kinds that hold the property.
 - **What stands for a shape** is listed by [Neighbors](#neighbors)' Connections tab, to which Publishing adds
@@ -6903,7 +6995,7 @@ text view that reads the line says so. Titles' `/title`, Locking's `/lock`, Publ
 ```swift
 // In LockingPlugin.register:
 registrar.slashCommandsForEveryShape(where: { $0.holds(LockedProperty.self) }) {   // on the kinds that can be locked
-    SlashCommand("lock", when: { !$0.isLocked }) { id, _, editor in editor.lock([id]) }
+    SlashCommand("lock", command: .lock)                                            // offered while Lock can act on the shape
 }
 ```
 
@@ -6956,6 +7048,15 @@ registrar.shape(LampDefinition()) { lamp in
   editor in ... }` is for what editing the shape can't do (locking it, moving it, putting it
   somewhere), which changes the document only through `editor.transact`. Whatever either commits is
   one undo step ([Undoing a command](#undoing-a-command)).
+- **`SlashCommand(name, command:, when:, tries:)` types a [command](#commands)** a plugin declared:
+  it takes no arguments, is offered while the command can act on the shape (its rule, asked with the
+  shape alone, `editor.canPerform(_:on:)`; the line is in the shape's own text, so its moment isn't
+  asked) and `when` holds, runs it on the shape as a try (`editor.attempt`: the line is gone by
+  then, and the offer isn't asked again), and names its step as the command is called
+  (`registry.title(of:)`: `/public` is "Make Public"). `tries: true` offers it by `when` alone, so
+  where the command can't act it runs all the same, which refuses, and the shape shakes: Publishing's
+  `/private` on a shape something stands for, as the chip does. SlashCommandsTests'
+  `slashDeclaredCommandTests` hold it.
 - **A name** is lowercase ASCII letters and digits, words joined by single hyphens (`set-title`,
   `h2`: `SlashCommandLine.isName`), since it's what can be typed and completed. Any other refuses
   the plugin list (`invalid`: "lamps offers /Turn On, which can't be typed as a command's name:
@@ -7450,7 +7551,8 @@ a list without Find leaves them out:
 
 ### ⌘F, and closing
 
-`.find` (⌘F, Edit › Find › Find…) opens Find, or, open, focuses its field with its text selected;
+`.find` (⌘F, Edit › Find › Find…: one of Find's three [commands](#commands), which `menu: "Edit ›
+Find"` puts in a submenu of Edit) opens Find, or, open, focuses its field with its text selected;
 it ends editing first, and what's selected in the text being edited (`editor.editingSelectedText`),
 one line of it, is what's typed (an attachment in it that adopts `ReadsAsText`, a mention's pill,
 reads as its text, any other attachment is dropped, so a selection across a pill is searched for by
@@ -8651,14 +8753,11 @@ a plugin list with `opensBoard` in it needs Selection and ContextMenus installed
 
 ```swift
 registrar.service { BoardCrumbs(editor: $0) }                   // the path, kept for BoardPath
-registrar.command(.enclosingBoard, BoardsStyle.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .command)],
-                  menuTitle: { $0.enclosingTitle },
-                  isEnabled: { ($0.selectionEnclosure != nil || !$0.board.isRoot) && $0.session == nil && $0.editingShapeID == nil }) {
-    $0.goToEnclosing()
-}
-registrar.command(.goUpBoard, BoardsStyle.enclosingBoard, isEnabled: { !$0.board.isRoot && $0.session == nil && $0.editingShapeID == nil }) {
-    $0.goToEnclosingBoard()
-}
+registrar.command(.enclosingBoard, title: BoardsStyle.enclosingBoard, menu: "Go", order: 10,
+                  shortcut: KeyChord(KeyChord.upArrow.key, .command), runs: .whenIdle, menuTitle: { $0.enclosingTitle },
+                  isEnabled: { $0.editor.selectionEnclosure != nil || !$0.editor.board.isRoot }) { $0.editor.goToEnclosing() }
+registrar.command(.goUpBoard, title: BoardsStyle.enclosingBoard, runs: .whenIdle,      // the table of contents' way up
+                  isEnabled: { !$0.editor.board.isRoot }) { $0.editor.goToEnclosingBoard() }
 ```
 
 - **Going up.** ⌘↑ (and Go › Enclosing Board) runs `editor.goToEnclosing()`, one step out: if the
@@ -9359,7 +9458,8 @@ untinted.
 ```
 
 - **`JumpToPlugin`** (id `jump-to`) registers a service, `JumpToState` (`editor.jumpTo`), and
-  `registrar.command(.jumpTo, "Jump To…", shortcuts: [⌘K], isEnabled:)`: it ends editing, then opens the palette,
+  `registrar.command(.jumpTo, title: "Jump To…", menu: "Go", order: 100, shortcut: ⌘K, runs: .betweenPresses)`
+  (Go › Jump To…, after Open Selection): it ends editing, then opens the palette,
   or, open, asks its field for the keyboard again with its text selected; never mid-gesture. It
   changes no document, so it leaves no step of undo. The menu item is the same command, so ⌘K
   works from a note being edited and a panel's field too, where it's the menu bar's key.
@@ -9830,8 +9930,8 @@ Its registration ([References.swift](../Sources/References/References.swift)):
 registrar.service { ReferenceState(editor: $0) }          // which references name which shape; what each stands for now
 registrar.overlay(ReferenceButtonOverlay())               // the leading symbol's hover and pressed looks
 registrar.canvasButtons(at: { editor, point in … }, click: { button, editor in … })   // the leading symbol goes to the original
-registrar.command(.goToOriginal, ReferenceStyle.goToOriginal, isEnabled: { … }) { … }  // the panel's button, the menu's item
-registrar.command(.interpretReference, ReferenceStyle.interpret, isEnabled: { … }) { … }   // the panel's Interpret
+registrar.command(.goToOriginal, title: ReferenceStyle.goToOriginal, isEnabled: { … }) { … }  // the panel's button, the menu's item
+registrar.command(.interpretReference, title: ReferenceStyle.interpret, isEnabled: { … }) { … }   // the panel's Interpret
 registrar.detailStatusForEveryShape { shape, context in … }   // a warning line where an attached arrow's channel isn't taken
 registrar.contextMenuForCanvas { … }                      // Go to Original (direct), Show Matches (dynamic)
 registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition: NeverPublic, Editable, CustomSkeleton, DerivedProps
@@ -9955,8 +10055,9 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   query and isn't read-only (a locked one is let be: no step, no shake, not interpreted, and Interpret
   is offered once it's unlocked); words committed before they rested are asked about when editing ends.
   Nothing asks on undo, redo, paste, `canvas draw` or open; undoing "Interpret" leaves the words,
-  not interpreted, with Interpret offered in the panel (a borderless `DetailCommandButton("Interpret",
-  systemImage: "sparkles")` in the status line's place, dimmed while it's locked). Editing the pill again,
+  not interpreted, with Interpret offered in the panel (a borderless `DetailCommandButton(command:
+  .interpretReference, systemImage: "sparkles")`, titled as the command is, in the status line's place,
+  dimmed while it's locked). Editing the pill again,
   a keystroke, deleting it, undoing past its words, or the file closing cancels the call (`ReferenceState`
   goes with its editor and cancels what it has out, the model's call, the draft's request, the batch and every
   timer, as an `isolated deinit`; the editor goes while a call is out because `QueryTranslator` holds it only
@@ -12806,11 +12907,9 @@ alone, so geometry and hit tests never depend on another board. A render may als
 editor's services, `context.service(_:)` (as `EditContext.service(_:)` lends an editing view's), the
 lender made once per frame; nothing observes a render, so a lending service calls
 `editor.setNeedsDisplay()` when what it lends changes, or what's drawn goes stale (a shape out of
-view, or drawn as a skeleton, doesn't read it). The core names the commands
-`.openSelection`, `.enclosingBoard` and `.goUpBoard` for plugins to claim: Selection claims `.openSelection` (⌘↓;
-[opening a shape](#selection)), [Boards](#boards) claims `.enclosingBoard` (⌘↑) and `.goUpBoard`, and going back
-crosses boards. `.find`, `.findNext`, `.findPrevious` and `.jumpTo` are named the same way, for
-[Find](#find)'s plugin (which claims the first three) and JumpTo's, which doesn't exist yet.
+view, or drawn as a skeleton, doesn't read it). Going into and out of boards are [commands](#commands)
+their plugins declare: Selection's `.openSelection` (⌘↓; [opening a shape](#selection)) and
+[Boards](#boards)' `.enclosingBoard` (⌘↑) and `.goUpBoard`; and going back crosses boards.
 
 ### Boards that aren't shown
 
@@ -13472,9 +13571,9 @@ and a test checks it loads and registers.
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core                 tool hand · command undo · command redo · command zoomIn · command zoomOut · command zoomToActualSize · command zoomToFit
-keyboard             service KeyboardState · tool tips · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
-selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack · shortcut ⌘[ → command goBack · command openSelection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
+core                 tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
+keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
+selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in Go · shortcut ⌘[ → command goBack · command openSelection in Go · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection in View · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
 topology             service TopologyIndex · edge type stands-for
 arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property endRule → arrow · ShapeOpening → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
@@ -13490,23 +13589,23 @@ table-of-contents    service ContentsState
 contents-overview    detail overview
 titles               property title · adornment TitlePill → every shape · /title → every shape · overlay TitleCoverOverlay
 mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape · overlay MentionFrames · ShapeFaces · CanvasContextMenu
-board-navigation     service BoardCrumbs · command enclosingBoard · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · host overlay · window subtitle
+board-navigation     service BoardCrumbs · command enclosingBoard in Go · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · host overlay · window subtitle
 board-contents       contents heading
-find-in-boards       service FindState · overlay FindOverlay · command find · shortcut ⌘F → command find · command findNext · shortcut ⌘G → command findNext · command findPrevious · shortcut ⇧⌘G → command findPrevious
+find-in-boards       service FindState · overlay FindOverlay · command find in Edit › Find · shortcut ⌘F → command find · command findNext in Edit › Find · shortcut ⌘G → command findNext · command findPrevious in Edit › Find · shortcut ⇧⌘G → command findPrevious
 find-panel           detail takeover
 board-find           find heading
 title-find           findable title → every shape
 mention-find         findable mention text → every shape · findable mention text over the canvas → every shape
-jump-to              service JumpToState · command jumpTo · shortcut ⌘K → command jumpTo · host overlay
+jump-to              service JumpToState · command jumpTo in Go · shortcut ⌘K → command jumpTo · host overlay
 transform            service TransformState
 validation-details   DetailStatuses in Issues
 validation-contents  ContentsMarks
 mention-validation   ValidationRules
 title-validation     service TitleIndex · ValidationRules
-grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group · shortcut ⌥⌘G → command group · command ungroup · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu
-clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
-locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · command toggleLock · shortcut ⇧L → command toggleLock · CanvasContextMenu · /lock → every shape
-publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · CanvasContextMenu · /public /private → every shape · ContentsMarks
+grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in Arrange · shortcut ⌥⌘G → command group · command ungroup in Arrange · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu
+clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer in Edit · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate in Edit · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
+locking              property locked · property locked → every shape · read-only shapes · service LockState · adornment LockChip → every shape · ContentsMarks · command lock · command unlock · shortcut ⇧L → command lock or unlock · CanvasContextMenu · /lock → every shape
+publishing           property public · property public → every shape · public dials · service PublishingState · adornment PublicChip → every shape · command makePublic · command makePrivate · CanvasContextMenu · /public /private → every shape · ContentsMarks
 types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property relationship · property endRule · edge type is-a · edges → every shape · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu · DecorationHits · outlines · ShapeFaces · ShapeFaces · ShapeFaces · willDelete · ShapePopovers · /is-a → every shape · CanvasContextMenu · CanvasContextMenu · CanvasContextMenu · adornment TypeChips → every shape · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape · adornment RelationshipOfferPill → every shape · title pill look → every shape · title pill look → every shape
 type-validation      ValidationRules · ValidationRules · ValidationRules
 type-details         ShapeDetails · ShapeDetails · ShapeDetails · ShapeDetails
@@ -13547,7 +13646,7 @@ mention-lights       neighbor light · neighbor light
 type-lights          neighbor light
 neighbor-details     service NeighborList · ShapeDetails
 moving               /move-to /move-near → every shape · ContentsMoves
-reordering           command bringToFront · shortcut ] → command bringToFront · command bringForward · shortcut ⌥] → command bringForward · command sendBackward · shortcut ⌥[ → command sendBackward · command sendToBack · shortcut [ → command sendToBack · ShapeContextMenus
+reordering           command bringToFront in Arrange · shortcut ] → command bringToFront · command bringForward in Arrange · shortcut ⌥] → command bringForward · command sendBackward in Arrange · shortcut ⌥[ → command sendBackward · command sendToBack in Arrange · shortcut [ → command sendToBack · ShapeContextMenus
 ```
 
 A horizontal's opt-in shows as what it contributes: `note.title()` is the opt-in to the property

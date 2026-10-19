@@ -56,20 +56,6 @@ public struct PluginRegistrar {
         contribute(outlines, to: CorePoints.OutlineSources.self)
     }
 
-    /// What a command does (`editor.perform`): what a menu item runs (Edit › Delete, Go › Back), and
-    /// what any key or plugin may run by name; what it's called, as its menu item is ("Delete"),
-    /// which the Keyboard Shortcuts window lists its keys under (`registry.title(of:)`); and whether
-    /// it can now (`editor.canPerform`, which a menu asks to enable its item): by default, always.
-    /// A command that is named for the step it would take now (Go › Enclosing Group, Enclosing Frame,
-    /// Enclosing Board) says so with `menuTitle`, which the window reads to retitle the item that runs
-    /// it (`editor.menuTitle(of:)`); `title` stays what the command is called wherever it is listed
-    /// (the Keyboard Shortcuts window). At most one plugin may claim each.
-    public mutating func command(_ command: CanvasCommand, _ title: String, menuTitle: (@MainActor (CanvasEditor) -> String)? = nil,
-                                 isEnabled: @escaping @MainActor (CanvasEditor) -> Bool = { _ in true },
-                                 _ run: @escaping @MainActor (CanvasEditor) -> Void) {
-        contribute(CommandRegistration(command: command, title: title, menuTitle: menuTitle, isEnabled: isEnabled, run: run), to: CorePoints.Commands.self)
-    }
-
     /// What a key pressed on the canvas does: return true if it did something with it (or keeps
     /// it); false, and it goes on to AppKit's key bindings, as any view's key would. At most one
     /// plugin may claim it (Keyboard, in the shipped app, whose shortcuts say what every key does);

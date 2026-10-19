@@ -16,6 +16,16 @@ extension PluginID {
     public static let boards: PluginID = "board-navigation"
 }
 
+extension CanvasCommand {
+    /// Go › Enclosing Board (⌘↑), named for the step it takes (Enclosing Group, Enclosing Frame): one
+    /// step out of what the selection is in, the group it's inside, else the container its shapes are
+    /// in, else the board holding the shown board's owner.
+    public static let enclosingBoard: CanvasCommand = "enclosingBoard"
+    /// Up to the board above the one shown, whatever is selected: what a list's header button runs
+    /// (the table of contents'), where ⌘↑ may step out of a group or a container first.
+    public static let goUpBoard: CanvasCommand = "goUpBoard"
+}
+
 /// The extension point: which kinds' shapes open onto their boards, and what a board is called
 /// before its owner is named. At most one per kind. Only a `BoardOwning` kind can open one: a plugin
 /// naming another (`registrar.opensBoard(P.self, …)`) is `RegistryError.invalid` at startup.
@@ -66,14 +76,12 @@ public struct BoardsPlugin: ListedPlugin {
         // (⌘↑ is then the text's): of the group the selection is inside, else of the container its
         // shapes are in (selecting it, Selection's), else up to the board above, off the root. The item
         // is named for the step it takes (Enclosing Group, Enclosing Frame, Enclosing Board).
-        registrar.command(.enclosingBoard, BoardsStyle.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .command)],
-                          menuTitle: { $0.enclosingTitle },
-                          isEnabled: { ($0.selectionEnclosure != nil || !$0.board.isRoot) && $0.session == nil && $0.editingShapeID == nil }) {
-            $0.goToEnclosing()
-        }
+        registrar.command(.enclosingBoard, title: BoardsStyle.enclosingBoard, menu: "Go", order: 10,
+                          shortcut: KeyChord(KeyChord.upArrow.key, .command), runs: .whenIdle, menuTitle: { $0.enclosingTitle },
+                          isEnabled: { $0.editor.selectionEnclosure != nil || !$0.editor.board.isRoot }) { $0.editor.goToEnclosing() }
         // Up to the board above whatever is selected: the table of contents' header button.
-        registrar.command(.goUpBoard, BoardsStyle.enclosingBoard,
-                          isEnabled: { !$0.board.isRoot && $0.session == nil && $0.editingShapeID == nil }) { $0.goToEnclosingBoard() }
+        registrar.command(.goUpBoard, title: BoardsStyle.enclosingBoard, runs: .whenIdle,
+                          isEnabled: { !$0.editor.board.isRoot }) { $0.editor.goToEnclosingBoard() }
         // What the window hosts of it: the path over the top of the canvas, which a fit leaves clear
         // of as far down as its pill reaches, and the board shown's name as the window's subtitle
         // (its crumb's title; none on the root, which the window's title, the file's name, names).

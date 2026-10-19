@@ -47,6 +47,11 @@ public struct SlashCommand<Value> {
     let otherwise: (@MainActor (_ typed: String, _ owner: ShapeID, CanvasEditor) -> SlashChoice?)?
     let step: String?
     let action: Action
+    /// The command a plugin declared that it runs, for one typed for a command (`init(_:command:when:tries:)`);
+    /// nil for the other forms, which set neither of these.
+    private(set) var command: CanvasCommand?
+    /// Whether it's offered by `when` alone, and run as a try where the command can't act.
+    private(set) var tries = false
 
     enum Action {
         case edit(@MainActor (inout Value, SlashArguments) -> Void)
@@ -165,6 +170,31 @@ public struct SlashCommand<Value> {
         action = .choose(perform)
     }
 
+    /// A command a plugin declared (`registrar.command`), typed on a line of the shape's text: offered
+    /// while it can act on the shape (its rule, asked with the shape alone, `editor.canPerform(_:on:)`)
+    /// and `when` holds of its value, and run on it, as a try (`editor.attempt`: the line is gone by then,
+    /// and what was offered isn't asked again), in one undo step named as the command is
+    /// (`registry.title(of:)`: `/public` is "Make Public"). It takes no arguments. `tries: true` offers it
+    /// by `when` alone, so where the command can't act it runs all the same, which refuses, and the shape
+    /// shakes, as a chip's click does (`/private` on a shape something stands for).
+    ///
+    ///     SlashCommand("lock", command: .lock)
+    ///     SlashCommand("private", command: .makePrivate, when: { $0[PublicProperty.self] == true }, tries: true)
+    public init(_ name: String, command: CanvasCommand, when isOffered: @escaping @MainActor (Value) -> Bool = { _ in true }, tries: Bool = false) {
+        self.name = name
+        argument = nil
+        self.isOffered = isOffered
+        accepts = Self.defaultAccepts(takesArgument: false)
+        shapes = nil
+        kinds = nil
+        choices = nil
+        otherwise = nil
+        step = nil
+        action = .perform { id, _, editor in editor.attempt(command, on: [id]) }
+        self.command = command
+        self.tries = tries
+    }
+
     private static func defaultAccepts(takesArgument: Bool) -> @MainActor (SlashArguments) -> Bool {
         if takesArgument { return { !$0.isEmpty } }
         return { $0.isEmpty }
@@ -204,6 +234,10 @@ final class ErasedSlashCommand {
     let choices: (@MainActor (_ owner: ShapeID, CanvasEditor) -> [SlashChoice])?
     let otherwise: (@MainActor (_ typed: String, _ owner: ShapeID, CanvasEditor) -> SlashChoice?)?
     let runChoice: (@MainActor (ShapeID, SlashChoice, CanvasEditor) -> Void)?
+    /// The command a plugin declared that it runs, if it was typed for one, and whether it's offered by
+    /// its `when` alone (a try).
+    let command: CanvasCommand?
+    let tries: Bool
 
     /// `read` gets the command's value from a record; `write` runs an edit on one shape's live
     /// value, in a transaction.
@@ -217,6 +251,8 @@ final class ErasedSlashCommand {
         shapes = command.shapes
         kindsOf = command.kinds
         step = command.step
+        self.command = command.command
+        tries = command.tries
         choices = command.choices
         otherwise = command.otherwise
         switch command.action {

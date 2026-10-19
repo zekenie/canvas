@@ -29,6 +29,7 @@ public struct OfferedSlashCommand {
         self.command = command
         name = command.name
         argument = command.argument
+        declaredTitle = command.command.flatMap { editor.registry.title(of: $0) }
         if let choices = command.choices {
             choiceRows = { [weak editor] in editor.map { choices(owner, $0) } ?? [] }
             let otherwise = command.otherwise
@@ -78,8 +79,12 @@ public struct OfferedSlashCommand {
         "a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "nor", "of", "on", "onto", "or", "the", "to", "with"
     ]
 
-    /// What the undo step it makes is called: the title, unless the command says otherwise (`SlashCommand`'s `step:`).
-    public var stepName: String { command.step ?? title }
+    /// What the undo step it makes is called: the title, unless the command says otherwise (`SlashCommand`'s `step:`), or it
+    /// was typed for a command a plugin declared, which names it (`registry.title(of:)`).
+    public var stepName: String { declaredTitle ?? command.step ?? title }
+
+    /// What the command a plugin declared is called, for one typed for it.
+    private let declaredTitle: String?
 
     /// Whether it takes one shape (`SlashCommand`'s `shapes:` form): what's typed after its name must
     /// be exactly one, which `admits(_:)` says yes to.
@@ -167,7 +172,15 @@ public final class SlashCommandState {
     /// would change it).
     public func commands(for id: ShapeID) -> [OfferedSlashCommand] {
         guard let record = editor.document[id], !record.isOpaque, !editor.isReadOnly(id) else { return [] }
-        return candidates(for: record.kind).filter { $0.isOffered(record) }.map { OfferedSlashCommand($0, owner: id, editor: editor) }
+        return candidates(for: record.kind).filter { $0.isOffered(record) && offersCommand($0, on: id) }
+            .map { OfferedSlashCommand($0, owner: id, editor: editor) }
+    }
+
+    /// For one typed for a command a plugin declared: a plugin claims it, and it can act on the shape
+    /// (its rule), unless it's offered by its `when` alone (a try). Any other, yes.
+    private func offersCommand(_ command: ErasedSlashCommand, on id: ShapeID) -> Bool {
+        guard let declared = command.command else { return true }
+        return command.tries ? editor.registry.claims(declared) : editor.canPerform(declared, on: [id])
     }
 
     /// The command of a name (folded to lowercase) that a shape offers now.

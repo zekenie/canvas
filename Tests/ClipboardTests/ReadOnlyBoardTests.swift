@@ -64,7 +64,7 @@ import TestKit
         let log = RefusalLog(), f = Locked(), h = try f.harness(pasteboard, log)
         expect(h.enter(f.p))
         h.editor.selection = f.b
-        expect(h.editor.canCopy && h.editor.canCut)
+        expect(h.editor.canPerform(.copy) && h.editor.canPerform(.cut))
         let before = h.file
         expect(h.command("c"))
         expectEqual(h.file, before)

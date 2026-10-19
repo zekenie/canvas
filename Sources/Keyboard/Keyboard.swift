@@ -23,18 +23,16 @@ extension KeyboardShortcuts: KeyedExtensionPoint {
 
     public static func summary(of shortcut: Shortcut, for _: ShapeTarget) -> String { "shortcut \(shortcut.chord) → \(shortcut.action)" }
 
-    /// A shortcut's tool must be registered, and its command claimed: a key that would do nothing
+    /// A shortcut's tool must be registered, and its commands claimed: a key that would do nothing
     /// is a mistake.
     public static func check(_ registry: Registry) throws(RegistryError) {
         let tools = Set(registry.tools.map(\.id))
         for shortcut in registry.shortcuts {
-            switch shortcut.action {
-            case .tool(let id) where !tools.contains(id):
+            if case .tool(let id) = shortcut.action, !tools.contains(id) {
                 throw .invalid(point: "KeyboardShortcuts", reason: "\(shortcut.chord) switches to tool \(id), which no plugin registers")
-            case .command(let command) where !registry.claims(command):
+            }
+            if let command = shortcut.commands.first(where: { !registry.claims($0) }) {
                 throw .invalid(point: "KeyboardShortcuts", reason: "\(shortcut.chord) runs command \(command), which no plugin claims")
-            default:
-                break
             }
         }
     }
@@ -53,7 +51,9 @@ public struct Shortcut {
 
     enum Effect {
         case tool(ToolID)
-        case command(CanvasCommand, repeats: Bool)
+        /// The first of the commands that can run (one, but for a key that toggles between two: ⇧L's
+        /// Lock and Unlock), named `title` where it says one, else as the first command is.
+        case commands([CanvasCommand], title: String?, repeats: Bool)
         case custom(title: String, when: @MainActor (CanvasEditor) -> Bool, repeats: Bool, perform: @MainActor (CanvasEditor) -> Void)
         /// Down, `press`; up (or the canvas losing the keyboard), `release`.
         case held(title: String, press: @MainActor (CanvasEditor) -> Void, release: @MainActor (CanvasEditor) -> Void)
@@ -63,9 +63,15 @@ public struct Shortcut {
     public var action: Action {
         switch effect {
         case .tool(let id): .tool(id)
-        case .command(let command, _): .command(command)
+        case .commands(let commands, _, _): commands.count == 1 ? .command(commands[0]) : .commands(commands)
         case .custom(let title, _, _, _), .held(let title, _, _): .custom(title)
         }
+    }
+
+    /// The commands it runs (the first that can), none for a key that runs none.
+    public var commands: [CanvasCommand] {
+        if case .commands(let commands, _, _) = effect { return commands }
+        return []
     }
 
     public enum Action: Hashable, Sendable, CustomStringConvertible {
@@ -73,6 +79,8 @@ public struct Shortcut {
         case tool(ToolID)
         /// Runs the command, as the menu item that sends it does.
         case command(CanvasCommand)
+        /// Runs the first of the commands that can run (⇧L: Lock, else Unlock).
+        case commands([CanvasCommand])
         /// Does what its plugin says; the title names it ("Cancel").
         case custom(String)
 
@@ -80,6 +88,7 @@ public struct Shortcut {
             switch self {
             case .tool(let id): "tool \(id)"
             case .command(let command): "command \(command)"
+            case .commands(let commands): "command " + commands.map(\.rawValue).joined(separator: " or ")
             case .custom(let title): title
             }
         }
@@ -88,13 +97,14 @@ public struct Shortcut {
 
 extension Shortcut {
     /// Whether it takes the key now: a command's while it can run (`editor.canPerform`, as its menu
-    /// item is enabled), a custom shortcut's while its `when` holds, a tool's while the editor takes
-    /// the tool (`editor.isToolEnabled`, as its toolbar segment isn't dimmed), a held key's always.
+    /// item is enabled; of several, while one can), a custom shortcut's while its `when` holds, a
+    /// tool's while the editor takes the tool (`editor.isToolEnabled`, as its toolbar segment isn't
+    /// dimmed), a held key's always.
     @MainActor func applies(in editor: CanvasEditor) -> Bool {
         switch effect {
         case .tool(let id): editor.isToolEnabled(id)
         case .held: true
-        case .command(let command, _): editor.canPerform(command)
+        case .commands(let commands, _, _): commands.contains(where: editor.canPerform)
         case .custom(_, let when, _, _): when(editor)
         }
     }
@@ -104,14 +114,14 @@ extension Shortcut {
     var repeats: Bool {
         switch effect {
         case .tool, .held: false
-        case .command(_, let repeats), .custom(_, _, let repeats, _): repeats
+        case .commands(_, _, let repeats), .custom(_, _, let repeats, _): repeats
         }
     }
 
     @MainActor func run(in editor: CanvasEditor) {
         switch effect {
         case .tool(let id): editor.setTool(id)
-        case .command(let command, _): editor.perform(command)
+        case .commands(let commands, _, _): _ = commands.first(where: editor.perform)
         case .custom(_, _, _, let perform), .held(_, let perform, _): perform(editor)
         }
     }
@@ -147,7 +157,15 @@ extension PluginRegistrar {
     /// core's undo and redo, say. While the command can't run, the key goes on as if there were no
     /// shortcut. A held key's repeats run it again only with `repeats`.
     public mutating func shortcut(_ chord: KeyChord, forCommand command: CanvasCommand, repeats: Bool = false) {
-        contribute(Shortcut(chord: chord, effect: .command(command, repeats: repeats)), to: KeyboardShortcuts.self)
+        contribute(Shortcut(chord: chord, effect: .commands([command], title: nil, repeats: repeats)), to: KeyboardShortcuts.self)
+    }
+
+    /// A key that runs the first of several commands that can run: one key for two commands that are
+    /// never both possible (⇧L: Lock, else Unlock), named `title` in the Keyboard Shortcuts window
+    /// ("Lock or Unlock"). Each command's items show the key. While none can run, the key goes on.
+    public mutating func shortcut(_ chord: KeyChord, _ title: String, forCommands commands: [CanvasCommand]) {
+        precondition(!commands.isEmpty, "a key that runs commands names one")
+        contribute(Shortcut(chord: chord, effect: .commands(commands, title: title, repeats: false)), to: KeyboardShortcuts.self)
     }
 
     /// A toolbar tool (`tool(_:_:)`), and the key that switches to it.
@@ -156,17 +174,32 @@ extension PluginRegistrar {
         self.shortcut(shortcut, forTool: descriptor.id)
     }
 
-    /// A command (`command(_:_:isEnabled:_:)`: what a menu item such as Edit › Delete runs, called
-    /// `title`) and the keys that run it on the canvas, so the menu and the keys do one thing. While
-    /// `isEnabled` doesn't hold, the menu item is dimmed and its keys go on as if there were no shortcut.
-    /// `menuTitle` names the item for the step the command would take now (see the core's `command`).
-    public mutating func command(_ command: CanvasCommand, _ title: String, shortcuts: [KeyChord],
+    /// A command (the core's `command(_:title:…)`: its title, its menu bar item, what it answers, when it
+    /// runs, its rule and what it does), and the key that runs it on the canvas, stated once: its menu
+    /// bar item and a context menu's item that runs it show the key, and while its rule says no, the
+    /// items are dimmed and the key goes on as if there were no shortcut.
+    ///
+    ///     registrar.command(.group, title: "Group", menu: "Arrange", order: 0, shortcut: KeyChord("g", [.command, .option]),
+    ///                       runs: .whenIdle, isEnabled: { $0.editor.canGroup($0.shapes) }) { $0.editor.group($0.shapes) }
+    public mutating func command(_ command: CanvasCommand, title: String, menu: MenuPath? = nil, order: Int = 0,
+                                 answering: StandardAction? = nil, shortcut: KeyChord, runs moment: CommandMoment = .anytime,
                                  menuTitle: (@MainActor (CanvasEditor) -> String)? = nil,
-                                 isEnabled: @escaping @MainActor (CanvasEditor) -> Bool = { _ in true },
-                                 _ run: @escaping @MainActor (CanvasEditor) -> Void) {
-        self.command(command, title, menuTitle: menuTitle, isEnabled: isEnabled, run)
+                                 isEnabled: @escaping @MainActor (CommandSubject) -> Bool = { _ in true },
+                                 _ run: @escaping @MainActor (CommandSubject) -> Void) {
+        self.command(command, title: title, menu: menu, order: order, answering: answering, shortcuts: [shortcut], runs: moment,
+                     menuTitle: menuTitle, isEnabled: isEnabled, run)
+    }
+
+    /// The same, with several keys, the first of which the items show (Delete: ⌫ and ⌦).
+    public mutating func command(_ command: CanvasCommand, title: String, menu: MenuPath? = nil, order: Int = 0,
+                                 answering: StandardAction? = nil, shortcuts: [KeyChord], runs moment: CommandMoment = .anytime,
+                                 menuTitle: (@MainActor (CanvasEditor) -> String)? = nil,
+                                 isEnabled: @escaping @MainActor (CommandSubject) -> Bool = { _ in true },
+                                 _ run: @escaping @MainActor (CommandSubject) -> Void) {
+        self.command(command, title: title, menu: menu, order: order, answering: answering, runs: moment, menuTitle: menuTitle,
+                     isEnabled: isEnabled, run)
         for chord in shortcuts {
-            contribute(Shortcut(chord: chord, effect: .command(command, repeats: false)), to: KeyboardShortcuts.self)
+            contribute(Shortcut(chord: chord, effect: .commands([command], title: nil, repeats: false)), to: KeyboardShortcuts.self)
         }
     }
 }
@@ -202,8 +235,9 @@ extension Registry {
         shortcut(forTool: tool.id).map { "\(tool.label) (\($0.chord))" } ?? tool.label
     }
 
-    /// The shortcut that runs a command (the first, if it has several).
-    public func shortcut(forCommand command: CanvasCommand) -> Shortcut? { shortcuts.first { $0.action == .command(command) } }
+    /// The shortcut that runs a command (the first, if it has several; one that runs it or another,
+    /// ⇧L for Lock and Unlock, counts).
+    public func shortcut(forCommand command: CanvasCommand) -> Shortcut? { shortcuts.first { $0.commands.contains(command) } }
 
     /// The tooltip of a button that runs a command, as a tool's is: what it's called, and the key
     /// that runs it: "Next (⌘G)"; just the title for a command with no key.
@@ -225,10 +259,10 @@ extension Registry {
         var rows: [(title: String, place: KeyboardHelpRow.Place, chords: [KeyChord])] = []
         for shortcut in shortcuts {
             let title: String, place: KeyboardHelpRow.Place
-            switch shortcut.action {
+            switch shortcut.effect {
             case .tool(let id): (title, place) = (tools.first { $0.id == id }?.label ?? id.rawValue, .tool)
-            case .command(let command): (title, place) = (self.title(of: command) ?? command.rawValue, .command(command))
-            case .custom(let name): (title, place) = (name, .canvas)
+            case .commands(let commands, let named, _): (title, place) = (named ?? self.title(of: commands[0]) ?? commands[0].rawValue, .command(commands[0]))
+            case .custom(let name, _, _, _), .held(let name, _, _): (title, place) = (name, .canvas)
             }
             if let index = rows.firstIndex(where: { $0.title == title }) {
                 rows[index].chords.append(shortcut.chord)
@@ -334,6 +368,8 @@ public struct KeyboardPlugin: ListedPlugin {
         registrar.service { KeyboardState(editor: $0) }
         // The toolbar's tips: a tool's label and the key that switches to it ("Note (N)").
         registrar.toolTips { tool, registry in registry.help(for: tool) }
+        // The key a menu item shows for a command, the menu bar's and a context menu's: the first that runs it.
+        registrar.menuKeys { command, registry in registry.menuKeys[command] }
         // The Keyboard Shortcuts window's rows: every key registered here, under what it does.
         registrar.keyboardHelp { $0.keyboardHelpRows }
         registrar.keyStrokes { editor, stroke in editor.service(KeyboardState.self)?.handle(stroke) ?? false }
@@ -358,3 +394,20 @@ public struct KeyboardPlugin: ListedPlugin {
         registrar.keyHint("⌘ Scroll", "Zoom", while: .pointer)
     }
 }
+
+extension Registry {
+    /// The key a menu shows for each command, the first shortcut that runs it (`shortcut(forCommand:)`):
+    /// asked for each command item a menu shows, so worked out once, as the registry never changes.
+    fileprivate var menuKeys: [CanvasCommand: MenuKey] {
+        memo(MenuKeysOfCommands()) {
+            var keys: [CanvasCommand: MenuKey] = [:]
+            for shortcut in shortcuts {
+                for command in shortcut.commands where keys[command] == nil { keys[command] = shortcut.chord.menuKey }
+            }
+            return keys
+        }
+    }
+}
+
+/// The key of the memo that holds every command's menu key.
+private struct MenuKeysOfCommands: Hashable {}

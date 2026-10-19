@@ -8,7 +8,8 @@ import Locking
 import Selection
 import TestKit
 
-// ⇧L: the one command (`.toggleLock`) the context menu's Lock and Unlock run too.
+// ⇧L: one key for two commands, Lock and Unlock, never both possible, which the context menu's items,
+// `/lock` and the chip run too.
 
 @MainActor let lockKeyTests = Suite("Locking from the keyboard", [
     test("⇧L locks the selection, then unlocks it once every shape is locked; with one locked it locks the rest; each is one step, named as the menu's") {
@@ -35,10 +36,10 @@ import TestKit
         h.hold(.shift)
         h.editor.selection = nil
         expect(!h.key("L"), "nothing selected")
-        expect(!h.editor.canPerform(.toggleLock))
+        expect(!h.editor.canPerform(.lock) && !h.editor.canPerform(.unlock))
         h.editor.selection = card
         h.editor.beginEditing(card)
-        expect(!h.editor.canPerform(.toggleLock), "while its text is edited")
+        expect(!h.editor.canPerform(.lock), "while its text is edited")
         expect(!h.key("L"))
         expect(!h.editor.isLocked(card))
     },
@@ -56,7 +57,7 @@ import TestKit
         expect(h.key("L"))
         expect(h.editor.isLocked(outside) && !h.editor.isLocked(inside))
     },
-    test("the menu's Lock and Unlock show its key and run the command: the title and the key are the command's own, ⇧L") {
+    test("the menu's Lock and Unlock are the commands': their titles, and ⇧L, the key that runs whichever can") {
         let h = try lockingHarness()
         let box = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
         let menu = try require(h.secondaryClick(at: CGPoint(x: 150, y: 150)))
@@ -67,15 +68,34 @@ import TestKit
         expect(h.editor.isLocked(box))
         let unlock = try require(try require(h.secondaryClick(at: CGPoint(x: 150, y: 150))).item(withTitle: "Unlock"))
         expectEqual(unlock.keyEquivalent, "l")
-        expectEqual(h.editor.registry.title(of: .toggleLock), "Lock or Unlock")
-        expectEqual(h.editor.registry.shortcut(forCommand: .toggleLock)?.chord, KeyChord("l", .shift))
+        expectEqual(h.editor.registry.title(of: .lock), "Lock")
+        expectEqual(h.editor.registry.title(of: .unlock), "Unlock")
+        expectEqual(h.editor.registry.shortcut(forCommand: .lock)?.chord, KeyChord("l", .shift))
+        expectEqual(h.editor.registry.shortcut(forCommand: .unlock)?.chord, KeyChord("l", .shift))
+        expectEqual(h.editor.registry.keyboardHelpRows.first { $0.keys == ["⇧L"] }?.title, "Lock or Unlock")
+    },
+    test("Lock and Unlock act on the shapes they're given, by one rule each: Lock while some can be locked and aren't, Unlock once every one is") {
+        let h = try lockingHarness()
+        let a = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
+        let b = h.add(Box(CGRect(x: 300, y: 100, width: 100, height: 100)))
+        expect(h.editor.canPerform(.lock, on: [a, b]) && !h.editor.canPerform(.unlock, on: [a, b]))
+        expect(h.editor.perform(.lock, on: [a]))
+        expect(h.editor.isLocked(a) && !h.editor.isLocked(b))
+        expectEqual(h.editor.undoHistory.undoName, "Lock")
+        expect(h.editor.canPerform(.lock, on: [a, b]), "a mix: Lock, which locks the rest")
+        expect(!h.editor.canPerform(.unlock, on: [a, b]))
+        expect(h.editor.canPerform(.unlock, on: [a]) && !h.editor.canPerform(.lock, on: [a]))
+        expect(h.editor.perform(.unlock, on: [a]))
+        expect(!h.editor.isLocked(a))
+        expectEqual(h.editor.undoHistory.undoName, "Unlock")
+        expect(!h.editor.canPerform(.lock, on: []) && !h.editor.canPerform(.unlock, on: []), "no shapes, neither")
     },
     test("the selection's menu has them too, dimmed where the command can't run, and leaves out what the menu bar runs") {
         let h = try lockingHarness()
         let box = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
         h.editor.selection = box
         expectEqual(try require(h.editor.menuForSelection(omitting: [.delete])).outline, ["Lock"])
-        expect(h.editor.menuForSelection(omitting: [.toggleLock, .delete]) == nil, "Lock and Unlock run the command: nothing left")
+        expect(h.editor.menuForSelection(omitting: [.lock, .delete]) == nil, "Lock runs the command: nothing left")
         try require(h.editor.menuForSelection(omitting: [.delete])).choose("Lock")
         expect(h.editor.isLocked(box))
         expectEqual(try require(h.editor.menuForSelection(omitting: [.delete])).outline, ["Unlock"])
