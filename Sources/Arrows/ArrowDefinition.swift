@@ -366,6 +366,10 @@ public struct ArrowsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .arrows }
     public func register(into registrar: inout PluginRegistrar) {
+        // What an end's drag reads of the keys (`ArrowTargeting`), for the Keyboard Shortcuts window.
+        registrar.keyHint("⌥ Drag an Arrow's End", "Bind It Exactly", while: .pointer)
+        registrar.keyHint("⌘ or ⌃ Drag an Arrow's End", "Leave It Unbound", while: .pointer)
+        registrar.keyHint("⇧ Drag an Arrow's End", "Snap Its Angle", while: .pointer)
         registrar.shape(ArrowDefinition()) { arrow in
             // No tool places one (a port's drag draws it, through `ArrowPortsPlugin`), so it names itself.
             arrow.label("Arrow", systemImage: ArrowStyle.symbol)

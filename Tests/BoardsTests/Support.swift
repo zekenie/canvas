@@ -108,6 +108,7 @@ extension EditorHarness {
     }
 
     /// ⌘↑ on the canvas: whether a shortcut took it.
+    @discardableResult
     func commandUp() -> Bool {
         hold(.command)
         defer { hold([]) }
@@ -184,5 +185,22 @@ final class PathWindow {
     func click(_ index: Int) throws {
         try require(buttons.dropFirst(index).first, "no crumb button \(index) of \(buttons.count)").performClick(nil)
         window.settle()
+    }
+}
+
+/// Groups a test says outright (`SelectionGroups`): each shape's groups, outermost first, by name.
+/// Setting `paths` tells the editor, as a source tells it once it has heard a commit.
+@MainActor
+final class GroupsFixture: SelectionGroupSource {
+    weak var editor: CanvasEditor?
+    var paths: [ShapeID: [String]] = [:] {
+        didSet { editor?.selectionGroupsDidChange() }
+    }
+
+    func groups(of id: ShapeID) -> [AnyHashable] { (paths[id] ?? []).map(AnyHashable.init) }
+
+    func shapes(in group: AnyHashable) -> [ShapeID] {
+        guard let name = group.base as? String, let editor else { return [] }
+        return editor.document.shapes.map(\.id).filter { paths[$0]?.contains(name) == true }
     }
 }

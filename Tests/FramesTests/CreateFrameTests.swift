@@ -1,6 +1,9 @@
+import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
+import Frames
+import Keyboard
 import Selection
 import TestKit
 import Titles
@@ -32,6 +35,48 @@ import Titles
         h.editor.undo()
         expect(h.frames.isEmpty)
         expectEqual(h.editor.holder(of: a), nil)
+    },
+
+    test("⇧⌘F is the same command: the frame around the selection, one step named as the item; the item shows the key") {
+        let h = try frameHarness()
+        let a = h.addBox(CGRect(x: 100, y: 100, width: 100, height: 80))
+        let b = h.addBox(CGRect(x: 300, y: 150, width: 100, height: 80))
+        h.editor.selectedShapeIDs = [a, b]
+        let item = try require(try require(h.secondaryClick(at: CGPoint(x: 150, y: 140))).item(withTitle: "Create Frame"))
+        expectEqual(item.keyEquivalent, "f")
+        expectEqual(item.keyEquivalentModifierMask, [.shift, .command])
+        expectEqual(h.editor.registry.shortcut(forCommand: .createFrame)?.chord, KeyChord("f", [.shift, .command]))
+        h.hold([.shift, .command])
+        expect(h.key("F"))
+        let frame = try require(h.frames.first)
+        expectEqual(h.frames.count, 1)
+        expectEqual(frame.box, CGRect(x: 68, y: 68, width: 364, height: 194))
+        expectEqual(h.editor.holder(of: a), frame.id)
+        expectEqual(h.editor.selection, frame.id)
+        expectEqual(h.editor.undoHistory.undoName, "Create Frame")
+        h.editor.undo()
+        expect(h.frames.isEmpty)
+        expectEqual(h.editor.selectedShapeIDs, [a, b])
+    },
+
+    test("⇧⌘F with nothing selected, or a locked box among the shapes: the key goes on, or leaves it all as it was and shakes") {
+        let refusals = RefusalLog()
+        let h = try frameHarness(refusals)
+        let a = h.addBox(CGRect(x: 100, y: 100, width: 100, height: 80))
+        let b = h.addBox(CGRect(x: 300, y: 150, width: 100, height: 80))
+        h.hold([.shift, .command])
+        h.editor.selection = nil
+        expect(!h.key("F"), "nothing selected")
+        expect(!h.editor.canPerform(.createFrame))
+        h.editor.freeze([b])
+        h.editor.selectedShapeIDs = [a, b]
+        let steps = h.editor.undoHistory.undoName
+        expect(h.key("F"))
+        expect(h.frames.isEmpty)
+        expectEqual(refusals.refusals, [[b]])
+        expectEqual(h.editor.undoHistory.undoName, steps, "no step")
+        h.hold(.command)
+        expect(!h.key("F"), "⌘F alone isn't it (it's Find's)")
     },
 
     test("chosen in another tool, the default tool comes back, as after placing a frame") {

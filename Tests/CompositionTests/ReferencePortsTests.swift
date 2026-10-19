@@ -7,6 +7,7 @@ import Colors
 import Connections
 import ContextMenus
 import DetailPanel
+import Draw
 import Geometry
 import Keyboard
 import Mentions
@@ -66,13 +67,14 @@ private let targetNames = Contributor(id: "target-names") { registrar in
 
 /// An empty board of what a reference builds on and shows itself on, as ReferencesTests' `referencePlugins`,
 /// with types, colors, arrows and the channels; its view 1000 × 800 at 100%, where view points are world units.
-@MainActor private func portHarness() throws -> EditorHarness {
+/// With `connecting`, Draw and `PortEdgesPlugin` too, so a connection can be made by name (Connect, ⌘L).
+@MainActor private func portHarness(connecting: Bool = false) throws -> EditorHarness {
     let h = try EditorHarness(plugins: [
         KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), TilesPlugin(), LinksPlugin(), ContextMenusPlugin(),
         DetailPanelPlugin(), AdornmentsPlugin(), PortsPlugin(), SlashCommandsPlugin(), ValidationPlugin(), TitlesPlugin(), MentionsPlugin(),
         PublishingPlugin(), targetsPlugin, QueriesPlugin(), targetNames, ReferencesPlugin(), TableOfContentsPlugin(),
         TypesPlugin(), ColorsPlugin(), ArrowsPlugin(), ArrowPortsPlugin(), channelsPlugin,
-    ])
+    ] + (connecting ? [DrawPlugin(), PortEdgesPlugin()] : []))
     h.editor.viewportDidResize(to: CGSize(width: 1000, height: 800))
     return h
 }
@@ -151,6 +153,25 @@ extension EditorHarness {
 }
 
 @MainActor let referencePortTests = Suite("Ports at a pill", [
+    test("Connect (⌘L) reads a pill as what it stands for, as a drag does: a pill for a box takes the beam; one for a tile, or for nothing, is no end, and both shake") {
+        let h = try portHarness(connecting: true)
+        let box = h.addBox("Box")
+        let other = h.addBox("Other", at: CGRect(x: 600, y: 100, width: 150, height: 100))
+        let tile = h.addTile("Tile", at: CGRect(x: 600, y: 400, width: 150, height: 100))
+        let forBox = h.addReference(to: other, label: "Other", at: CGPoint(x: 300, y: 300))
+        let forTile = h.addReference(to: tile, label: "Tile", at: CGPoint(x: 300, y: 450))
+        let empty = h.addEmptyReference(at: CGPoint(x: 300, y: 600))
+        for pill in [forTile, empty] {
+            h.editor.selectedShapeIDs = [box, pill]
+            h.editor.perform(.connect)
+            expect(h.arrows.isEmpty, "a box's beam to \(pill == empty ? "an empty pill" : "a pill for a tile")")
+        }
+        expect(h.editor.service(RefusalShake.self)?.isShaking == true)
+        h.editor.selectedShapeIDs = [box, forBox]
+        h.editor.perform(.connect)
+        expectEqual(h.arrows.count, 1)
+        expectEqual(h.arrows.first?[ChannelProperty.self], Beam.id)
+    },
     test("an arrow drawn from a box's port ends on a pill standing for a box, and not on one standing for a tile") {
         let h = try portHarness()
         let a = h.addBox("A")

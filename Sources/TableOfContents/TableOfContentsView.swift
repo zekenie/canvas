@@ -47,7 +47,7 @@ public struct TableOfContentsView: View {
 /// title, a symbol before it, and a command that goes up from it, which the header offers as a
 /// button while it can run (`editor.canPerform`), called `upTitle` (what VoiceOver says, and what
 /// the menu item that runs the command is called, say) with `upHelp` its tooltip (the title and
-/// its key: "Enclosing Board (⌘↑)"; the title, by default).
+/// its key, where it has one: "Back (⌘[)"; the title, by default).
 public struct ContentsHeading {
     public var title: String
     public var systemImage: String?

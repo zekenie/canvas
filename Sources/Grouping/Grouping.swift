@@ -96,22 +96,18 @@ public struct GroupingPlugin: ListedPlugin {
         registrar.selectionGroups { $0.service(GroupIndex.self) }
         // ⌥⌘G and ⇧⌥⌘G, Keynote's and Freeform's (⌘G is Find Next), and Arrange › Group and
         // Ungroup, on the selection, while nothing is under way or being edited.
-        registrar.command(.group, shortcuts: [KeyChord("g", [.command, .option])], isEnabled: { $0.canGroupSelection }) {
+        registrar.command(.group, "Group", shortcuts: [KeyChord("g", [.command, .option])], isEnabled: { $0.canGroupSelection }) {
             $0.group($0.selectedShapeIDs)
         }
-        registrar.command(.ungroup, shortcuts: [KeyChord("g", [.command, .option, .shift])], isEnabled: { $0.canUngroupSelection }) {
+        registrar.command(.ungroup, "Ungroup", shortcuts: [KeyChord("g", [.command, .option, .shift])], isEnabled: { $0.canUngroupSelection }) {
             $0.ungroup($0.selectedShapeIDs)
         }
         // Group, for two or more shapes or groups, and Ungroup, for a group held whole, beside Lock
         // (Keynote's Arrange menu has them together): items for the canvas, on the kinds that can be
         // grouped.
         registrar.contextMenuForCanvas {
-            MenuItem("Group", in: StateMenuGroup.self, when: { $0.groupable && $0.editor.canGroup($0.shapes) }) { ids, editor in
-                editor.group(ids)
-            }
-            MenuItem("Ungroup", in: StateMenuGroup.self, when: { $0.groupable && $0.editor.canUngroup($0.shapes) }) { ids, editor in
-                editor.ungroup(ids)
-            }
+            MenuItem(command: .group, in: StateMenuGroup.self, when: { $0.groupable && $0.editor.canGroup($0.shapes) })
+            MenuItem(command: .ungroup, in: StateMenuGroup.self, when: { $0.groupable && $0.editor.canUngroup($0.shapes) })
         }
     }
 }

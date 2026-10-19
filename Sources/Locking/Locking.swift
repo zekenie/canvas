@@ -1,6 +1,8 @@
 import Adornments
 import Canvas
 import ContextMenus
+import Keyboard
+import Selection
 import SlashCommands
 import SwiftUI
 import TableOfContents
@@ -8,7 +10,8 @@ import TableOfContents
 /// Locking, as a plugin: a shape can be locked, and then nothing changes it (not a drag, Delete,
 /// editing, the panel or a menu item) until it's unlocked. Every try shakes it, a lock
 /// chip sits just above its top-right corner, and its row in the table of contents ends in a lock,
-/// so the list says which are locked at a glance. Shapes are locked from the context menu, and
+/// so the list says which are locked at a glance. Shapes are locked from the context menu or with
+/// ⇧L (one command, which locks the selection, or unlocks it once every shape is locked), and
 /// unlocked there or with a click on the chip, which then shows the lock open for a moment (a click
 /// on it locks the shape again) before it goes; a shape's text can lock it too, with `/lock` on a line
 /// of its own (slash commands). Whether a shape is locked is something it knows
@@ -22,6 +25,11 @@ extension PluginID {
 /// Whether a shape is locked: `true` on a locked shape, and nothing on the rest (unlocking takes
 /// it away), so a board holds it only for the shapes that are.
 public enum LockedProperty {}
+
+extension CanvasCommand {
+    /// Lock or Unlock, ⇧L: locks the selection, or unlocks it once every shape whose lock can change is locked.
+    public static let toggleLock: CanvasCommand = "toggleLock"
+}
 
 extension LockedProperty: ShapeProperty {
     public static let key: PropertyKey = "locked"
@@ -51,6 +59,19 @@ extension CanvasEditor {
             for id in ids { transaction.update(id) { $0[LockedProperty.self] = nil } }
         }
     }
+
+    /// Unlocks these shapes if every one whose own lock can change is locked, else locks them: the
+    /// shapes in a locked frame or on a locked subboard's board are left be (`isLockedByContainer`).
+    /// Nothing when none can change.
+    public func toggleLock(_ ids: [ShapeID]) {
+        let lockable = ids.filter { !isLockedByContainer($0) }
+        guard !lockable.isEmpty else { return }
+        if lockable.allSatisfy(isLocked) { unlock(lockable) } else { lock(lockable) }
+    }
+
+    /// Whether ⇧L would lock or unlock anything: some selected shape's lock can change, with nothing
+    /// under way or being edited.
+    var canToggleLock: Bool { session == nil && editingShapeID == nil && selectedShapeIDs.contains { !isLockedByContainer($0) } }
 }
 
 /// A shape's lock chip: a lock in a disc at the right end of the row just above a locked shape,
@@ -95,13 +116,14 @@ public struct LockingPlugin: ListedPlugin {
         // shapes' own locks, of those that can take one: a shape in a locked frame is locked with
         // it, and its own lock can't change, so a menu for only such shapes has neither, and one
         // for some leaves them be.
+        // Both run the one command, which toggles the selection's lock as these two items read it, and
+        // which ⇧L runs.
+        registrar.command(.toggleLock, "Lock or Unlock", shortcuts: [KeyChord("l", .shift)], isEnabled: { $0.canToggleLock }) {
+            $0.toggleLock($0.selectedShapeIDs)
+        }
         registrar.contextMenuForCanvas {
-            MenuItem("Lock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && !$0.allLocked }) { ids, editor in
-                editor.lock(ids.filter { !editor.isLockedByContainer($0) })
-            }
-            MenuItem("Unlock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked }) { ids, editor in
-                editor.unlock(ids.filter { !editor.isLockedByContainer($0) })
-            }
+            MenuItem(command: .toggleLock, title: "Lock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && !$0.allLocked })
+            MenuItem(command: .toggleLock, title: "Unlock", in: StateMenuGroup.self, when: { !$0.lockable.isEmpty && $0.allLocked })
         }
         // `/lock` typed on a line of a shape's text (Titles offers `/title`, the other command that
         // ships): on the kinds that can be locked, while the shape isn't. There is no `/unlock`: a

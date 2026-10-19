@@ -42,7 +42,7 @@ extension CanvasEditor {
 final class ActionLog: NSView {
     var actions: [String] = []
     override func moveRight(_ sender: Any?) { actions.append("moveRight:") }
-    override func insertTab(_ sender: Any?) { actions.append("insertTab:") }
+    override func transpose(_ sender: Any?) { actions.append("transpose:") }
 }
 
 /// A pill in a note's text, as Mentions' will be: a face (Selection's `ShapeFaces`) 60 × 20, 10 in
@@ -508,8 +508,8 @@ struct NotePill: Hashable, Sendable {
         window.makeFirstResponder(canvas)
         window.press("\u{F703}", code: 124, modifiers: [.numericPad, .function])       // →, with nothing to nudge
         window.press("q", code: 12)
-        window.press("\t", code: 48)
-        expectEqual(parent.actions, ["insertTab:"], "→'s moveRight: stops at the canvas, so it doesn't beep")
+        window.sendEvent(window.keyEvent("\u{14}", ignoringModifiers: "t", code: 17, modifiers: .control))       // ⌃T, an emacs binding
+        expectEqual(parent.actions, ["transpose:"], "→'s moveRight: stops at the canvas, so it doesn't beep")
         expectEqual(editor.currentToolID, .select)
         expect(window.firstResponder === canvas)
     },

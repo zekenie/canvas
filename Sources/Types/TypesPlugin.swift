@@ -24,6 +24,8 @@ public struct TypesPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.declare(TypeSchemaProperty.self)
+        // What a note's rows answer (`RowsView`), for the Keyboard Shortcuts window.
+        registrar.keyHint("⇥ or ⇧⇥", "Next or Previous Field", while: .text)
         // What a shape is: the types it names (`typeable()` kinds), and the edge each is; and the values it
         // holds for their fields.
         registrar.declare(IsAProperty.self)

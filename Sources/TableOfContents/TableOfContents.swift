@@ -387,7 +387,7 @@ extension PluginRegistrar {
     /// as that changes:
     ///
     ///     registrar.contentsHeading { editor in
-    ///         editor.board.isRoot ? nil : ContentsHeading("Inside", systemImage: "folder", up: .enclosingBoard)
+    ///         editor.board.isRoot ? nil : ContentsHeading("Inside", systemImage: "folder", up: .goUpBoard)
     ///     }
     public mutating func contentsHeading(_ heading: @escaping @MainActor (CanvasEditor) -> ContentsHeading?) {
         contribute(heading, to: ContentsHeadings.self)

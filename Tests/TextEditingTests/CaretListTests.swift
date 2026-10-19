@@ -477,6 +477,24 @@ private final class ListingTextView: EditingTextView {
         expectEqual(view.string, "apple\n\n banana cherry", "closed: a new line")
     },
 
+    test("onKeyDown has a key before the text and keeps it by answering true; while a list holds the keys it isn't asked") {
+        let (window, view) = ListingTextView.inWindow()
+        var asked: [UInt16] = []
+        view.onKeyDown = { event in
+            asked.append(event.keyCode)
+            return event.keyCode == 48
+        }
+        window.press("\t", code: 48)
+        expectEqual(view.string, "apple banana cherry", "Tab kept: nothing typed")
+        window.pressReturn()
+        expectEqual(view.string, "apple\n banana cherry", "Return let go: the text's")
+        expectEqual(asked, [48, 36])
+        view.open(fruitRows(3))
+        window.press("\t", code: 48)
+        expectEqual(view.picks, [0], "the list's Tab picks")
+        expectEqual(asked, [48, 36], "not asked while the list holds the keys")
+    },
+
     test("⌘↩, where the text commits, closes any caret list and commits, as a key and as a key equivalent; with no commit, it's the list's") {
         let (window, view) = ListingTextView.inWindow()
         var commits = 0

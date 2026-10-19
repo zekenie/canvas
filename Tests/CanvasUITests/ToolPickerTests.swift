@@ -99,4 +99,37 @@ import TestKit
         bar.h.editor.transact(on: .root, "Thaw") { $0.update(bar.plain) { $0[Frozen.self] = nil } }
         bar.window.spin { bar.enabled[bar.tileSegment] }
     },
+    test("while the tool is locked the selected segment's symbol carries a lock and its tooltip says so, on whichever tool is selected; the others stay as they were, and it all follows the lock off") {
+        let bar = try ToolBar()
+        let control = bar.control, tools = bar.tools
+        let plain = (0..<tools.count).map { control.image(forSegment: $0) }
+        let tips = (0..<tools.count).map { control.toolTip(forSegment: $0) }
+        expect(plain.allSatisfy { $0 != nil })
+        let room = control.intrinsicContentSize
+        bar.h.editor.isToolLocked = true
+        bar.window.spin { control.toolTip(forSegment: 0) == "\(tools[0].label) tool, locked" }
+        let locked = control.image(forSegment: 0)
+        expect(locked !== plain[0] && locked?.tiffRepresentation != plain[0]?.tiffRepresentation, "the Hand's symbol has a lock on it")
+        let widest = plain.compactMap { $0?.size.width }.max() ?? 0
+        expectEqual(locked?.size.height, plain[0]?.size.height, "as tall as the symbol")
+        expect((locked?.size.width ?? 0) >= (plain[0]?.size.width ?? 0) && (locked?.size.width ?? .infinity) <= widest,
+               "as wide as the widest symbol at most, the room every segment has: \(String(describing: locked?.size))")
+        expectEqual(control.intrinsicContentSize, room, "so the control is no wider")
+        expectEqual(locked?.isTemplate, true, "tinted as the control tints any segment's")
+        expectEqual(locked?.accessibilityDescription, "\(tools[0].label), locked")
+        for index in 1..<tools.count {
+            expect(control.image(forSegment: index) === plain[index], "segment \(index) is as it was")
+            expectEqual(control.toolTip(forSegment: index), tips[index])
+        }
+        bar.h.editor.setTool(bar.tile)
+        bar.window.spin { control.toolTip(forSegment: bar.tileSegment) == "\(bar.tools[bar.tileSegment].label) tool, locked" }
+        expectEqual(control.toolTip(forSegment: 0), tips[0], "the lock moves with the selection")
+        expect(control.image(forSegment: 0)?.tiffRepresentation == plain[0]?.tiffRepresentation)
+        expect(control.image(forSegment: bar.tileSegment)?.tiffRepresentation != plain[bar.tileSegment]?.tiffRepresentation)
+        expectEqual(control.selectedSegment, bar.tileSegment)
+        bar.h.editor.isToolLocked = false
+        bar.window.spin { control.toolTip(forSegment: bar.tileSegment) == tips[bar.tileSegment] }
+        expectEqual((0..<tools.count).map { control.image(forSegment: $0)?.tiffRepresentation }, plain.map { $0?.tiffRepresentation })
+        expectEqual((0..<tools.count).map { control.image(forSegment: $0)?.accessibilityDescription }, tools.map(\.label))
+    },
 ])

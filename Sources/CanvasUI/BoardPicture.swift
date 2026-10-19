@@ -20,13 +20,27 @@ public final class BoardPicture {
     /// closest, 800%).
     public var maxZoom: CGFloat = 1
     private let editor: CanvasEditor
+    /// The shapes drawn, nil for every one of the board.
+    private let showing: Set<ShapeID>?
 
-    /// A picture of the file's root board, its shapes of `registry`'s kinds. The file is put in place
-    /// as the app opens one (`replaceFile`), so the plugins see what they see there.
-    public init(file: CanvasFile, registry: Registry) {
+    /// A picture of a file's board (the root, unless `board` says another), its shapes of `registry`'s
+    /// kinds: all of them, or, with `showing`, only those, fitted as the board is (Edit › Copy as Image,
+    /// of the selection), the board's others there to be read (a type its notes are of, what a mention
+    /// names) and not drawn. The file is put in place as the app opens one (`replaceFile`), so the
+    /// plugins see what they see there.
+    public init(file: CanvasFile, registry: Registry, board: BoardID = .root, showing: Set<ShapeID>? = nil) {
         editor = CanvasEditor(registry: registry)
         editor.boardPreviews.frameBudget = PictureStyle.previewBudget
-        editor.replaceFile(with: file)
+        editor.replaceFile(with: file, showing: board)
+        editor.drawnShapes = showing
+        self.showing = showing
+    }
+
+    /// What the picture shows, in world units: the board's shapes' bounds, or those of the shapes
+    /// it shows; null for none.
+    private var bounds: CGRect {
+        guard let showing else { return editor.shapeBounds }
+        return editor.shapeContext.bounds(of: Array(showing)) ?? .null
     }
 
     /// A picture of the board a file holds (a `.canvasboard` file's contents), read as the app reads
@@ -37,14 +51,14 @@ public final class BoardPicture {
     }
 
     /// Whether the board has nothing to show: no shape, or none with bounds.
-    public var isEmpty: Bool { editor.shapeBounds.isNull }
+    public var isEmpty: Bool { bounds.isNull }
 
     /// The size of a picture of the whole board, in whole view points: its shapes' bounds at
     /// `maxZoom` with the margin, or, where that's more than `limit`, as close as fits within it; and
     /// no smaller than `minimum` (the board in its middle, with more room around it). An empty
     /// board's is `minimum`.
     public func size(within limit: CGSize, minimum: CGSize = .zero) -> CGSize {
-        let bounds = editor.shapeBounds
+        let bounds = self.bounds
         guard !bounds.isNull else { return minimum }
         let zoom = camera(fitting: bounds, in: limit).zoom
         let width = (bounds.width * zoom + inset).rounded(.up), height = (bounds.height * zoom + inset).rounded(.up)
@@ -55,7 +69,7 @@ public final class BoardPicture {
     /// PDF's as made, Quick Look's), in `appearance`'s colors: the canvas's dark ones in `.darkAqua`.
     public func draw(in context: CGContext, size: CGSize, appearance: NSAppearance) {
         editor.viewportDidResize(to: size)
-        let bounds = editor.shapeBounds
+        let bounds = self.bounds
         editor.camera = bounds.isNull ? Camera() : camera(fitting: bounds, in: size)
         let view = CGRect(origin: .zero, size: size)
         context.saveGState()
@@ -82,6 +96,18 @@ public final class BoardPicture {
         context.scaleBy(x: CGFloat(width) / size.width, y: CGFloat(height) / size.height)
         draw(in: context, size: size, appearance: appearance)
         return context.makeImage()
+    }
+
+    /// The picture as PNG data, `scale` pixels to a point (the PNG says so by its resolution, so a
+    /// 2× picture pastes at its size in points): as big as the board at `maxZoom` with its margin, or
+    /// as close as fits within `limit` (`size(within:)`), in `appearance`'s colors. Nil for a board with
+    /// nothing to show.
+    public func pngData(within limit: CGSize, scale: CGFloat, appearance: NSAppearance) -> Data? {
+        let size = size(within: limit)
+        guard !isEmpty, let image = image(size: size, scale: scale, appearance: appearance) else { return nil }
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        bitmap.size = size
+        return bitmap.representation(using: .png, properties: [:])
     }
 
     private func camera(fitting bounds: CGRect, in size: CGSize) -> Camera {

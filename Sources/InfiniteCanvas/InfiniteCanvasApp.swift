@@ -21,6 +21,7 @@ enum InfiniteCanvasApp {
             registry = try Registry(plugins: ShippedList.plugins())
             BoardDocument.configuration = BoardConfiguration(registry: registry) { AnyView(ContentView(board: $0)) }
             delegate.settings = SettingsWindow(registry: registry)
+            delegate.shortcuts = KeyboardShortcutsWindow(registry: registry)
         } catch {
             fatalError("The shipped plugins don't load or don't register: \(error)")   // CompositionTests catches this first
         }
@@ -44,6 +45,8 @@ enum InfiniteCanvasApp {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The Settings window, its panes the shipped plugins': set once the registry is made.
     var settings: SettingsWindow?
+    /// The Keyboard Shortcuts window, listing the shipped plugins' keys and the menu bar's.
+    var shortcuts: KeyboardShortcutsWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -75,6 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// content made afresh each time it opens.
     @objc func showSettings(_ sender: Any?) {
         settings?.show()
+    }
+
+    /// Help › Keyboard Shortcuts (⌥⌘/; `BoardMenus.showKeyboardShortcuts`): every key the app
+    /// answers, read afresh each time it opens.
+    @objc func showKeyboardShortcuts(_ sender: Any?) {
+        shortcuts?.show()
     }
 }
 

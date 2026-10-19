@@ -185,25 +185,31 @@ public struct SelectionPlugin: ListedPlugin {
         registrar.outlines { $0.selectionOutlines }
         registrar.overlay(GroupFocusOverlay())
         registrar.overlay(HandlesOverlay())
+        // The keys the select tool and resizing read with the pointer, for the Keyboard Shortcuts window.
+        registrar.keyHint("⇧ or ⌘ Click", "Add or Remove From Selection", while: .pointer)
+        registrar.keyHint("⌘ Drag", "Select Shapes Wholly in the Box", while: .pointer)
+        registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)
+        registrar.keyHint("⇧ Resize", "Keep Proportions", while: .pointer)
+        registrar.keyHint("⌥ Resize", "Resize From the Center", while: .pointer)
         // Delete and Forward Delete, and Edit › Delete, delete the selection, while there is one (a
         // locked one too, which shakes); ⌘A and Edit › Select All select everything, while the
         // board has shapes; ⌘[ and Go › Back go back to what was selected before, when there's
         // somewhere to go; ⌘↓ opens the only selected shape, when it can be opened and isn't being
         // edited (⌘↓ is then the text's), and Return (and Enter) does too, but always takes the
-        // key, as it did when it only edited; ⇧2 and View › Zoom to Selection bring the selection
+        // key, as it did when it only edited; a group selected whole, or a container that is neither
+        // opened nor edited (a frame), is gone into instead, selecting its first part, or the first
+        // shape in it, in reading order; ⇧2 and View › Zoom to Selection bring the selection
         // into view (tldraw's key), and a trackpad's smart zoom the shape under the pointer.
-        registrar.command(.delete, shortcuts: [.delete, .deleteForward], isEnabled: { !$0.selectedShapeIDs.isEmpty }) { $0.deleteSelection() }
-        registrar.command(.selectAll, shortcuts: [KeyChord("a", .command)], isEnabled: { !$0.document.shapes.isEmpty }) { $0.selectAll() }
-        registrar.command(.goBack, shortcuts: [KeyChord("[", .command)], isEnabled: { $0.canGoBack && $0.session == nil }) { $0.goBack() }
-        registrar.command(.openSelection, shortcuts: [KeyChord(KeyChord.downArrow.key, .command)],
-                          isEnabled: { editor in
-                              editor.session == nil && editor.editingShapeID == nil && (editor.selection.map(editor.canOpen) ?? false)
-                          }) { $0.openSelection() }
+        registrar.command(.delete, "Delete", shortcuts: [.delete, .deleteForward], isEnabled: { !$0.selectedShapeIDs.isEmpty }) { $0.deleteSelection() }
+        registrar.command(.selectAll, "Select All", shortcuts: [KeyChord("a", .command)], isEnabled: { !$0.document.shapes.isEmpty }) { $0.selectAll() }
+        registrar.command(.goBack, "Back", shortcuts: [KeyChord("[", .command)], isEnabled: { $0.canGoBack && $0.session == nil }) { $0.goBack() }
+        registrar.command(.openSelection, "Open Selection", shortcuts: [KeyChord(KeyChord.downArrow.key, .command)],
+                          isEnabled: { $0.session == nil && $0.editingShapeID == nil && $0.canOpenSelection }) { $0.openSelection() }
         registrar.shortcut(.return, "Open Selection") { $0.perform(.openSelection) }
         registrar.shortcut(.enter, "Open Selection") { $0.perform(.openSelection) }
-        registrar.command(.zoomToSelection, shortcuts: [KeyChord("2", .shift)],
+        registrar.command(.zoomToSelection, "Zoom to Selection", shortcuts: [KeyChord("2", .shift)],
                           isEnabled: { !$0.selectedShapeIDs.isEmpty && !$0.unobscuredViewport.isEmpty }) { $0.reveal($0.selectedShapeIDs) }
-        registrar.command(.smartMagnify) { $0.smartMagnify() }
+        registrar.command(.smartMagnify, "Smart Zoom") { $0.smartMagnify() }
         // ← → ↑ ↓ nudge the selection a world unit, and ten with ⇧, again and again while held (one
         // undo step), while nothing's under way or being edited; with nothing selected they pass.
         for (arrow, direction) in SelectionStyle.nudges {
@@ -211,6 +217,21 @@ public struct SelectionPlugin: ListedPlugin {
             registrar.shortcut(KeyChord(arrow.key, .shift), "Nudge", when: { $0.canNudge }, repeats: true) {
                 $0.nudgeSelection(by: direction * SelectionStyle.shiftNudge)
             }
+        }
+        // Tab and ⇧Tab select the next and previous shape in reading order, ⌥⌘ and an arrow the nearest in
+        // that direction, and with ⇧ add it to the selection, among the selection's siblings (tldraw's);
+        // again and again while held, while nothing's under way or being edited, and with nothing to step
+        // to they take the key.
+        registrar.shortcut(.tab, "Next Shape", when: { $0.canStepSelection }, repeats: true) { $0.selectAdjacentShape(.next) }
+        registrar.shortcut(KeyChord(KeyChord.tab.key, .shift), "Previous Shape", when: { $0.canStepSelection }, repeats: true) {
+            $0.selectAdjacentShape(.previous)
+        }
+        for (arrow, direction) in SelectionStyle.steps {
+            registrar.shortcut(KeyChord(arrow.key, [.option, .command]), "Select Nearest Shape", when: { $0.canStepSelection }, repeats: true) {
+                $0.selectAdjacentShape(direction)
+            }
+            registrar.shortcut(KeyChord(arrow.key, [.option, .shift, .command]), "Add Nearest Shape to Selection", when: { $0.canStepSelection },
+                               repeats: true) { $0.selectAdjacentShape(direction, adding: true) }
         }
     }
 }

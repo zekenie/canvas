@@ -34,9 +34,10 @@ final class NestedWindow {
     let nest = NestedFile()
     var editor: CanvasEditor { board.editor }
 
-    /// `extra`: plugins after the shipped list.
-    init(extra: [any CanvasPlugin] = []) throws {
-        try configureBoards(extra: extra)
+    /// `extra`: plugins after the shipped list. `pasteboard`: the clipboard's and Copy as Image's (a
+    /// test that copies passes its own).
+    init(pasteboard: NSPasteboard = .general, extra: [any CanvasPlugin] = []) throws {
+        try configureBoards(pasteboard: pasteboard, extra: extra)
         board = try nestedDocument()
         board.makeWindowControllers()
         controller = try require(board.windowControllers.first as? BoardWindowController)
@@ -97,6 +98,8 @@ final class NestedWindow {
     }
 
     func isCanvas(_ view: NSView?) -> Bool { view.map { $0 === canvas || $0.isDescendant(of: canvas) } ?? false }
+
+    var canvasHasKeyboard: Bool { window.firstResponder === canvas }
 
     /// A point on the canvas, from its top left.
     func canvasPoint(x: CGFloat, fromTop y: CGFloat) -> CGPoint {

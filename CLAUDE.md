@@ -66,18 +66,18 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [Quick Look](.claude/rules/quick-look.md): a board file's preview and thumbnail in the Finder: `BoardPicture`, the app's extension, how it's built, signed and registered.
 
 **Core libraries**
-- [host slots](.claude/rules/host-slots.md): what a window puts around its canvas, and what the app takes besides, from plugins: views over the canvas, the inspector, the subtitle, settings panes, tool tips, the commands the app's server runs; CanvasUI's chrome that places them, and the app.
+- [host slots](.claude/rules/host-slots.md): what a window puts around its canvas, and what the app takes besides, from plugins: views over the canvas, the inspector, the subtitle, settings panes, tool tips, the Keyboard Shortcuts window's rows and key hints, what Copy as Image draws, the commands the app's server runs; CanvasUI's chrome that places them, and the app.
 - [text editing](.claude/rules/text-editing.md): `EditingTextView`, the app's spelling settings and the one caret list, under every editable text.
 - [fuzzy matching](.claude/rules/fuzzy-matching.md): `FuzzyMatcher`, the matcher every list ranks typed text with; `TextSearch`, Find's, over folded texts; `PathMatcher`, Jump To's, over containment paths.
 - [palette](.claude/rules/palette.md): the color math: a color as sRGB and OKLCH, the seven roles one color is drawn in on the light canvas and the dark (`Swatch`), contrast, the one test for a dark appearance.
 
 **Platform**, horizontals in the window (what a shape shows up on)
-- [keyboard](.claude/rules/keyboard.md): shortcuts and chords, how a key reaches the canvas, the menu bar.
-- [selection](.claude/rules/selection.md): the select tool, handles and resizing, opening, Back, canvas buttons, going to shapes, faces, the shake a refused change gives.
+- [keyboard](.claude/rules/keyboard.md): shortcuts and chords, how a key reaches the canvas, the menu bar and its Shape menu (the selection's context menu), keys that type staying out of text, the Keyboard Shortcuts window (generated from what's registered and the hints).
+- [selection](.claude/rules/selection.md): the select tool, handles and resizing, opening, Back, canvas buttons, going to shapes, faces, the shake a refused change gives, groups selected as one, moving between shapes (Tab, ⌥⌘ arrows, in and out of groups and frames).
 - [detail panel](.claude/rules/detail-panel.md): sections, tabs, status lines, headers, bindings, text boxes, list rows (a row, a group's header, a search field), the code editor and its completions, and its overview and takeovers (what other plugins show in it).
 - [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed (front to back), its heading, hover, another board's outline, dragging rows.
 - [adornments](.claude/rules/adornments.md): pills and chips on shapes: placing them, their places, drawing and pointing.
-- [context menus](.claude/rules/context-menus.md): a shape's items, the canvas's items, right-clicks and Control-clicks.
+- [context menus](.claude/rules/context-menus.md): a shape's items, the canvas's items (an item can run a command, and show its key), right-clicks and Control-clicks, the selection's menu.
 - [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text.
 - [find](.claude/rules/find.md): ⌘F: the `FindableTexts` point and its contributors, the index, the search off the main actor, scope and order, the highlights, the panel in the detail panel's place.
 
@@ -88,7 +88,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [locking](.claude/rules/locking.md): locked shapes, read-only, the chip, `/lock`.
 - [grouping](.claude/rules/grouping.md): shapes grouped, selected as one: the groups a shape is in (`groups`, unlisted), what counts as a group on a board (`BoardGroups`), Group and Ungroup (⌥⌘G, ⌥⇧⌘G, the context menu, Arrange), copies, and agents' `group`, `ungroup` and `:grouped-with`; what a click does with groups is [selection](.claude/rules/selection.md)'s.
 - [publishing](.claude/rules/publishing.md): public shapes (what another shape may stand for), the two dials, the chip and its count, refusing while held (the panel goes to Connections), `/public`.
-- [connections](.claude/rules/connections.md): ports, channels and the connector.
+- [connections](.claude/rules/connections.md): ports, channels and the connector, and Connect (⌘L, two selected shapes joined).
 - [mentions](.claude/rules/mentions.md): mentions in text: pills, the `@` picker (its lines with their board), mention edges, what mentions a shape (its quote, Show What Mentions), layout by names, mentions' warnings.
 - [boards](.claude/rules/boards.md): opening boards, Enclosing Board, what a board is called (the root, as the file is) and where that heads other plugins' lists, the path's crumbs and their menus.
 - [transform](.claude/rules/transform.md): turning a shape into another kind: channels, sources and targets, the menu item and the command, frame into subboard.

@@ -7,7 +7,8 @@ import SwiftUI
 // no plugin. A plugin can't import the window (CanvasUI) or the app, and neither can import a
 // plugin, so what passes between them is declared here, beneath both: views over the canvas, the
 // inspector beside it, the window's subtitle, the panes of the Settings window, the toolbar's tool
-// tips and the commands the app's command server runs.
+// tips, the rows of the Keyboard Shortcuts window, what Copy as Image draws and the commands the
+// app's command server runs.
 // Every point is the core's, so it's always installed: a plugin contributes from its own
 // `register`, and a list without the plugin is a host without its piece.
 //
@@ -130,6 +131,98 @@ extension ToolTips: KeyedExtensionPoint {
     public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "tool tips" }
 }
 
+// MARK: Keyboard help
+
+/// The rows of the app's Keyboard Shortcuts window that come from what's registered: from the plugin
+/// that keeps the keys (Keyboard: every key the canvas answers, each under what it does). At most
+/// one: two are `RegistryError.conflict` at startup. Without one the window lists the menu bar's
+/// keys and the hints alone.
+public enum KeyboardHelp {}
+
+extension KeyboardHelp: KeyedExtensionPoint {
+    public typealias Contribution = @MainActor (Registry) -> [KeyboardHelpRow]
+    public static var owner: PluginID { .core }
+    public static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["keyboard help"] }
+    public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "keyboard help" }
+}
+
+/// Keys no plugin registers, said beside the code that reads them so the Keyboard Shortcuts window
+/// lists them too: a key held through a click or a drag (⌥ drags a copy), or a key text being
+/// edited answers (⌘↩ finishes). Any number, in plugin order; the same row twice is listed once.
+public enum KeyHints {}
+
+extension KeyHints: ExtensionPoint {
+    public typealias Contribution = KeyboardHelpRow
+    public static var owner: PluginID { .core }
+    public static func summary(of row: KeyboardHelpRow, for _: ShapeTarget) -> String { "key hint \(row.keys.joined(separator: " ")) \(row.title)" }
+}
+
+/// A row of the Keyboard Shortcuts window: the keys, as they're written ("⌘A", "←↑→↓"), what they
+/// do, and where they do it, which the window files the row under.
+public struct KeyboardHelpRow: Hashable, Sendable {
+    /// Where the keys do what they do.
+    public enum Place: Hashable, Sendable {
+        /// They switch to a tool.
+        case tool
+        /// They run a command, as a menu item may: the window files them under the menu whose
+        /// item runs it, else with the canvas's.
+        case command(CanvasCommand)
+        /// They do something else on the canvas.
+        case canvas
+        /// Held through a click, a drag or a scroll.
+        case pointer
+        /// While text is being edited.
+        case text
+    }
+
+    public let keys: [String]
+    public let title: String
+    public let place: Place
+
+    public init(keys: [String], title: String, place: Place) {
+        self.keys = keys
+        self.title = title
+        self.place = place
+    }
+}
+
+/// Where a key hint's keys do what they do (`registrar.keyHint`).
+public enum KeyHintPlace: Sendable {
+    /// Held through a click, a drag or a scroll.
+    case pointer
+    /// While text is being edited.
+    case text
+}
+
+// MARK: Copy as Image
+
+/// What Edit › Copy as Image draws: from the plugin that knows what a copy of shapes takes (Clipboard),
+/// the shapes of the board shown a copy of the selection (or of the board, with nothing selected)
+/// would take, which the window draws from the board's own file, as the canvas draws them
+/// (`BoardPicture(file:registry:board:showing:)`: the file's colors, the types and what mentions name,
+/// wherever they are), and puts on the pasteboard as an image. At most one: two are
+/// `RegistryError.conflict` at startup. Without one the item is dimmed.
+public enum ImageSources {}
+
+extension ImageSources: KeyedExtensionPoint {
+    public typealias Contribution = ImageSource
+    public static var owner: PluginID { .core }
+    public static func uniqueKeys(of _: ImageSource, for _: ShapeTarget) -> [AnyHashable] { ["image source"] }
+    public static func summary(of _: ImageSource, for _: ShapeTarget) -> String { "image source" }
+}
+
+/// What `ImageSources` stores: whether there is anything to draw now (asked as the menu item is
+/// validated, so cheap), and the shapes to draw. Only the sugar makes one.
+@MainActor
+public struct ImageSource {
+    /// Whether `shapes(for:)` would give any now.
+    public let isAvailable: @MainActor (CanvasEditor) -> Bool
+    let content: @MainActor (CanvasEditor) -> [ShapeID]
+
+    /// The shapes of a board's editor's board shown to draw, back to front: none for nothing to draw.
+    public func shapes(for editor: CanvasEditor) -> [ShapeID] { content(editor) }
+}
+
 // MARK: The command line
 
 /// The commands the app's command server runs for the command line, beyond its own: from the
@@ -207,6 +300,32 @@ extension PluginRegistrar {
         contribute(tip, to: ToolTips.self)
     }
 
+    /// The rows the Keyboard Shortcuts window lists from what's registered, read off the frozen
+    /// registry when the window opens:
+    ///
+    ///     registrar.keyboardHelp { registry in registry.keyboardHelpRows }
+    public mutating func keyboardHelp(_ rows: @escaping @MainActor (Registry) -> [KeyboardHelpRow]) {
+        contribute(rows, to: KeyboardHelp.self)
+    }
+
+    /// A key no plugin registers, for the Keyboard Shortcuts window: said beside the code that reads
+    /// it, `keys` as they're written and `title` what they do:
+    ///
+    ///     registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)
+    public mutating func keyHint(_ keys: String, _ title: String, while place: KeyHintPlace) {
+        contribute(KeyboardHelpRow(keys: [keys], title: title, place: place == .pointer ? .pointer : .text), to: KeyHints.self)
+    }
+
+    /// What Edit › Copy as Image draws: `shapes`, those of the board shown a picture of the selection
+    /// (or of the board, with nothing selected) shows, none for nothing to draw; `isAvailable` says
+    /// whether there are any, and is asked as the item is validated:
+    ///
+    ///     registrar.imageSource(isAvailable: { $0.canCopyAsImage }) { $0.imageShapes() }
+    public mutating func imageSource(isAvailable: @escaping @MainActor (CanvasEditor) -> Bool,
+                                     _ shapes: @escaping @MainActor (CanvasEditor) -> [ShapeID]) {
+        contribute(ImageSource(isAvailable: isAvailable, content: shapes), to: ImageSources.self)
+    }
+
     /// The commands the app's command server runs: `specs`, what the command line shows of each,
     /// and `run`, one by name with its params, on a board's editor (nil for a command about the app
     /// as a whole), answering when it's done. Both are handed the frozen registry:
@@ -250,6 +369,17 @@ extension Registry {
     public func toolTip(for tool: ToolDescriptor) -> String {
         contributions(to: ToolTips.self).first?.value(tool, self) ?? tool.label
     }
+
+    /// Every row of the Keyboard Shortcuts window that comes from the plugins: what the plugin that
+    /// keeps the keys lists, then the hints, each row once.
+    public var keyboardHelp: [KeyboardHelpRow] {
+        let registered = contributions(to: KeyboardHelp.self).first?.value(self) ?? []
+        var seen = Set<KeyboardHelpRow>()
+        return (registered + contributions(to: KeyHints.self).map(\.value)).filter { seen.insert($0).inserted }
+    }
+
+    /// What Copy as Image draws, if a plugin says.
+    public var imageSource: ImageSource? { contributions(to: ImageSources.self).first?.value }
 
     /// The commands a plugin gives the app's command server: what the command line shows of each,
     /// and how to run one, by name, on a board's editor (nil for a command about the app as a

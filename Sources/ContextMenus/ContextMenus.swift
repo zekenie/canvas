@@ -52,11 +52,12 @@ public struct ContextMenuContribution {
 /// contribution gives several shapes can tell they're the same (a `perform` then runs once).
 @MainActor
 final class ErasedEntry {
-    let title: String
+    let title: String?
     let key: EntryKey
     let isShown: @MainActor (AnyShapeRecord) -> Bool
     let content: Content
     let stepName: String?
+    let command: CanvasCommand?
 
     enum Content {
         case item(isEnabled: @MainActor (AnyShapeRecord) -> Bool, isChecked: (@MainActor (AnyShapeRecord) -> Bool)?, action: Action)
@@ -74,6 +75,7 @@ final class ErasedEntry {
                 write: @escaping @MainActor (ShapeID, inout Transaction, (inout Value) -> Void) -> Void) {
         title = entry.title
         stepName = entry.stepName
+        command = entry.command
         key = EntryKey(group: entry.group, id: entry.id)
         let shown = entry.isShown
         isShown = { read($0).map(shown) ?? false }
@@ -101,6 +103,12 @@ final class ErasedEntry {
         guard case .submenu(let entries) = content else { return [path] }
         return [path] + entries.flatMap { $0.paths(under: path) }
     }
+
+    /// What it's called in this editor's menu: its own title, else its command's.
+    func title(in editor: CanvasEditor) -> String { ContextMenuItems.title(title, command: command, id: key.id, in: editor) }
+
+    /// Whether the editor can have it at all: one that names a command shows only while a plugin claims it.
+    func isClaimed(in editor: CanvasEditor) -> Bool { command.map(editor.registry.claims) ?? true }
 }
 
 extension ContextMenuContribution {
@@ -203,8 +211,9 @@ public struct MenuSubject {
     public let shapes: [ShapeID]
     /// Where the menu was asked for, in world units: the click. An item that puts something down
     /// puts it there (the menu's Paste lands centered on it). An item gets it through `MenuItem`'s
-    /// `edit` form, which is handed the subject.
-    public let point: CGPoint
+    /// `edit` form, which is handed the subject. Nil in the selection's menu (a menu bar's Shape
+    /// menu), which no click asks for: an item that goes by where the click was leaves itself out.
+    public let point: CGPoint?
     public let editor: CanvasEditor
 }
 
@@ -224,7 +233,9 @@ extension PluginRegistrar {
     ///
     ///     registrar.contextMenuForCanvas {
     ///         MenuItem("Copy", when: { !$0.shapes.isEmpty }) { ids, editor in editor.copy(ids) }
-    ///         MenuItem("Paste", when: { $0.editor.canPaste }) { subject in subject.editor.paste(centeredAt: subject.point) }
+    ///         MenuItem("Paste", command: .paste, when: { $0.editor.canPaste }) { subject in
+    ///             if let point = subject.point { subject.editor.paste(centeredAt: point) } else { subject.editor.paste() }
+    ///         }
     ///     }
     public mutating func contextMenuForCanvas(@MenuBuilder<MenuSubject> _ items: () -> [MenuEntry<MenuSubject>]) {
         contribute(CanvasMenuContribution(entries: items()), to: CanvasContextMenu.self)
@@ -247,11 +258,12 @@ extension SelectionMenuGroup: MenuGroup {
     public static var order: Int { 400 }
 }
 
-/// Claims the secondary click, and adds two items that are Selection's commands, since a menu is
-/// for the selection: Delete, in every shape's menu, runs `.delete` on the menu's shapes (the
-/// selection: a right-click on a shape that isn't selected selects it before the item runs), as
-/// the Delete key does, so a locked one shakes; and Select All, on empty canvas while the board has
-/// shapes, runs `.selectAll`. Whether they show is asked of the menu's subject, never of
+/// Claims the secondary click and the selection's menu (a menu bar's Shape menu: the same items over
+/// the selection, less the commands the menu bar runs), and adds two items that are Selection's
+/// commands, since a menu is for the selection: Delete, in every shape's menu, runs `.delete` on the
+/// menu's shapes (the selection: a right-click on a shape that isn't selected selects it before the
+/// item runs), as the Delete key does, so a locked one shakes; and Select All, on empty canvas while
+/// the board has shapes, runs `.selectAll`. Whether they show is asked of the menu's subject, never of
 /// `canPerform`, which reads the selection as it was before the click. So with Selection
 /// installed, a right-click shows no menu only on an empty board with nothing else to offer there.
 public struct ContextMenusPlugin: ListedPlugin {
@@ -261,11 +273,10 @@ public struct ContextMenusPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { ContextMenuState(editor: $0) }
         registrar.menuForSecondaryClick { editor, pointer in editor.service(ContextMenuState.self)?.menu(for: pointer) }
+        registrar.menuForSelection { editor, commands in editor.service(ContextMenuState.self)?.menuForSelection(omitting: commands) }
         registrar.contextMenuForCanvas {
-            MenuItem("Delete", in: SelectionMenuGroup.self, when: { !$0.shapes.isEmpty }) { _, editor in editor.perform(.delete) }
-            MenuItem("Select All", in: SelectionMenuGroup.self, when: { $0.shapes.isEmpty && !$0.editor.document.shapes.isEmpty }) { _, editor in
-                editor.perform(.selectAll)
-            }
+            MenuItem(command: .delete, in: SelectionMenuGroup.self, when: { !$0.shapes.isEmpty })
+            MenuItem(command: .selectAll, in: SelectionMenuGroup.self, when: { $0.shapes.isEmpty && !$0.editor.document.shapes.isEmpty })
         }
     }
 }

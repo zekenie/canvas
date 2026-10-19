@@ -62,9 +62,17 @@ public struct BoardsPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { BoardCrumbs(editor: $0) }
-        // ⌘↑ and Go › Enclosing Board: up to the board above, off the root, and never mid-press or
-        // while a shape is being edited (⌘↑ is then the text's).
-        registrar.command(.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .command)],
+        // ⌘↑ and Go › Enclosing Board: one step out, never mid-press or while a shape is being edited
+        // (⌘↑ is then the text's): of the group the selection is inside, else of the container its
+        // shapes are in (selecting it, Selection's), else up to the board above, off the root. The item
+        // is named for the step it takes (Enclosing Group, Enclosing Frame, Enclosing Board).
+        registrar.command(.enclosingBoard, BoardsStyle.enclosingBoard, shortcuts: [KeyChord(KeyChord.upArrow.key, .command)],
+                          menuTitle: { $0.enclosingTitle },
+                          isEnabled: { ($0.selectionEnclosure != nil || !$0.board.isRoot) && $0.session == nil && $0.editingShapeID == nil }) {
+            $0.goToEnclosing()
+        }
+        // Up to the board above whatever is selected: the table of contents' header button.
+        registrar.command(.goUpBoard, BoardsStyle.enclosingBoard,
                           isEnabled: { !$0.board.isRoot && $0.session == nil && $0.editingShapeID == nil }) { $0.goToEnclosingBoard() }
         // What the window hosts of it: the path over the top of the canvas, which a fit leaves clear
         // of as far down as its pill reaches, and the board shown's name as the window's subtitle
@@ -75,8 +83,27 @@ public struct BoardsPlugin: ListedPlugin {
 }
 
 extension CanvasEditor {
-    /// ⌘↑ and `.enclosingBoard`: the board above the one shown, with the shape whose board this is
-    /// selected there (`goUp(to:)`). Nothing on the root.
+    /// ⌘↑ and `.enclosingBoard`: one step out. The group the selection is inside, selected whole as
+    /// Escape selects it, else the container all the selected shapes are in, selected (Selection's
+    /// `selectEnclosure`, which brings it into view if it is not); else the board above
+    /// (`goToEnclosingBoard`).
+    public func goToEnclosing() {
+        if !selectEnclosure() { goToEnclosingBoard() }
+    }
+
+    /// What the Go item that runs `.enclosingBoard` is called now, for the step ⌘↑ would take: Enclosing
+    /// Group, "Enclosing " and what the container's kind is called (`registry.label(of:)`: Enclosing Frame),
+    /// else Enclosing Board.
+    var enclosingTitle: String {
+        switch selectionEnclosure {
+        case .group?: BoardsStyle.enclosingGroup
+        case .container(let id)?: document[id].map { BoardsStyle.enclosing + registry.label(of: $0.kind).name } ?? BoardsStyle.enclosingBoard
+        case nil: BoardsStyle.enclosingBoard
+        }
+    }
+
+    /// The board above the one shown, with the shape whose board this is selected there
+    /// (`goUp(to:)`), whatever is selected here. Nothing on the root. What `.goUpBoard` does.
     public func goToEnclosingBoard() {
         guard boardPath.count > 1 else { return }
         goUp(to: boardPath[boardPath.count - 2])

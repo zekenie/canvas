@@ -58,6 +58,9 @@ public struct FramesPlugin: ListedPlugin {
     public var id: PluginID { .framing }
 
     public func register(into registrar: inout PluginRegistrar) {
+        // What the Frame tool's drag reads of the keys, for the Keyboard Shortcuts window.
+        registrar.keyHint("⇧ Drag a Frame", "Draw It Square", while: .pointer)
+        registrar.keyHint("⌥ Drag a Frame", "Draw It From the Center", while: .pointer)
         registrar.shape(FrameDefinition()) { frame in
             // What a click places, and what `canvas draw` places; a drag draws its own rect. Never under
             // its minimum, however it's drawn.

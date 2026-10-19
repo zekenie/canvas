@@ -144,6 +144,56 @@ import TestKit
             _ = try Registry(plugins: [tips, again])
         }
     },
+    test("the Keyboard Shortcuts window's rows: the plugin that keeps the keys gives its own off the built registry, then come the hints, in plugin order, each row once; none without either; a second list is a conflict") {
+        let core = try Registry(plugins: [TilesPlugin()])
+        expectEqual(core.keyboardHelp, [], "no list, and no hints")
+        let rows = Contributor(id: "rows") { $0.keyboardHelp { registry in [KeyboardHelpRow(keys: ["⌘K"], title: "\(registry.tools.count) tools", place: .canvas)] } }
+        let hints = Contributor(id: "hints") { registrar in
+            registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)
+            registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)
+            registrar.keyHint("⌘↩", "Finish Editing", while: .text)
+        }
+        let registry = try Registry(plugins: [TilesPlugin(), rows, hints])
+        expectEqual(registry.keyboardHelp.map(\.title), ["\(registry.tools.count) tools", "Drag a Copy", "Finish Editing"])
+        expectEqual(registry.keyboardHelp.map(\.place), [.canvas, .pointer, .text])
+        expectEqual(report(registry, of: "rows"), "keyboard help")
+        expect(report(registry, of: "hints")?.contains("key hint ⌥ Drag Drag a Copy") == true, report(registry, of: "hints") ?? "no report")
+        let again = Contributor(id: "again") { $0.keyboardHelp { _ in [] } }
+        expectThrows(RegistryError.conflict(point: "KeyboardHelp", key: "keyboard help", plugins: ["rows", "again"])) {
+            _ = try Registry(plugins: [rows, again])
+        }
+    },
+    test("what Copy as Image draws is one plugin's: the shapes for a board's editor, and whether there are any, asked apart; none without one, and a second is a conflict") {
+        expect(try Registry(plugins: []).imageSource == nil)
+        let handed = Handed()
+        let pictures = Contributor(id: "pictures") { registrar in
+            registrar.imageSource(isAvailable: { editor in editor.document.shapes.count > 1 }) { editor in
+                handed.editor = editor
+                return editor.document.shapes.map(\.id)
+            }
+        }
+        let h = try EditorHarness(plugins: [FixturesPlugin(), pictures])
+        let source = try require(h.editor.registry.imageSource)
+        h.add(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        expect(!source.isAvailable(h.editor), "asked without working out the shapes")
+        expect(handed.editor == nil)
+        h.add(Box(CGRect(x: 20, y: 0, width: 10, height: 10)))
+        expect(source.isAvailable(h.editor))
+        expectEqual(source.shapes(for: h.editor).count, 2)
+        expect(handed.editor === h.editor, "made for the board's editor it's handed")
+        expectEqual(report(h.editor.registry, of: "pictures"), "image source")
+        let again = Contributor(id: "again") { $0.imageSource(isAvailable: { _ in false }) { _ in [] } }
+        expectThrows(RegistryError.conflict(point: "ImageSources", key: "image source", plugins: ["pictures", "again"])) {
+            _ = try Registry(plugins: [pictures, again])
+        }
+    },
+    test("a command is called what its plugin says, and a command nobody claims has no name") {
+        let registry = try Registry(plugins: [Contributor(id: "stamps") { $0.command("stamp", "Stamp") { _ in } }])
+        expectEqual(registry.title(of: "stamp"), "Stamp")
+        expectEqual(registry.title(of: .undo), "Undo")
+        expectEqual(registry.title(of: .zoomToFit), "Zoom to Fit")
+        expectEqual(registry.title(of: "nobody"), nil)
+    },
     test("the commands the app's server runs are one plugin's, read off the built registry: none without one, and a second is a conflict") {
         let none = try Registry(plugins: []).hostCommands
         expectEqual(none.specs, [])

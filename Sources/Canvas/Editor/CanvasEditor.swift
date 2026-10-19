@@ -179,6 +179,11 @@ public final class CanvasEditor {
     private var hintedID: ShapeID?
     /// Starts as the registry's default tool.
     public private(set) var currentToolID: ToolID
+    /// While true (tool lock, tldraw's `toggle-tool-lock`: Keyboard's Q), putting a shape down keeps the
+    /// tool instead of going back to the default tool (`place`), so the next press puts another down.
+    /// Escape still leaves the tool, and the lock stays on for the next one; nothing else turns it
+    /// off. Observed, so the toolbar shows it on the selected tool.
+    public var isToolLocked = false
     /// While true (Keyboard's Space, held), a press pans as the Hand does, whatever the tool, which
     /// stays the tool (nothing `setTool` resets, an arrow's targeting included): the cursor is the open
     /// hand, and the closed hand while it pans; the tool hears no hover meanwhile. A pan under way when
@@ -309,6 +314,8 @@ public final class CanvasEditor {
     @ObservationIgnored private var isShowingBoard = false
     // Input state, used by CanvasEditor+Host.swift.
     @ObservationIgnored var tracker = PointerTracker()
+    /// Whether the pointer is over the canvas itself (`isPointerOverCanvas`).
+    @ObservationIgnored var pointerIsOverCanvas = false
     @ObservationIgnored var heldModifiers: Modifiers = []
     @ObservationIgnored var recentlyReleased: Modifiers = []
     @ObservationIgnored var releaseTimer: ScheduledTask?
@@ -316,6 +323,9 @@ public final class CanvasEditor {
     // CanvasEditor+Camera.swift.
     @ObservationIgnored var cameraMotion: ScheduledTask?
     @ObservationIgnored var cameraAnimationTarget: Camera?
+    /// The last Zoom to Fit's camera and the camera it left (CanvasEditor+Camera.swift): Zoom to Fit
+    /// again, while the camera is still headed for that fit, goes back to this.
+    @ObservationIgnored var cameraBeforeFit: (before: Camera, fit: Camera)?
     // The popover (Popovers.swift): the one showing, the one waiting its delay and its timer, and
     // while one has just gone, the end of that moment.
     @ObservationIgnored var shownPopover: CanvasPopover?
@@ -959,6 +969,7 @@ public final class CanvasEditor {
         let change = BoardChange(from: board, to: target, leftCamera: left, left: storedDocument, shown: storedFile[target],
                                  isFileReplaced: replacingFile, fileValues: fileValues)
         withMutation(keyPath: \.document) { storedDocument = storedFile[target] }
+        cameraBeforeFit = nil
         board = target
         boardPath = storedFile.path(to: target) ?? [.root]
         // Whether this board takes shapes, before services hear of it.
@@ -1047,7 +1058,8 @@ public final class CanvasEditor {
     }
 
     /// Where place tools (and any plugin with a `Placement`) create shapes: the shape goes in, the
-    /// default tool comes back, services hear `didPlace` (the selection selects it), and, while the
+    /// default tool comes back (unless the tool is locked, `isToolLocked`, when it stays), services hear
+    /// `didPlace` (the selection selects it), and, while the
     /// press that placed it lasts, the shape follows the pointer (`PlacingSession`), whatever the
     /// placement; on the release it settles (into a container, or out, `Transaction.settle`, gliding
     /// there), and an editing placement's shape is edited, and Escape before it takes the shape away
@@ -1068,9 +1080,9 @@ public final class CanvasEditor {
     /// point: what a tool that draws its shape's rect with a drag puts down at the release (the Frame
     /// tool). As `place(_:at:)` with no press under way: it settles at once (into a container, or out,
     /// gliding there), in the step under way, a read-only container or board refusing it (nothing is
-    /// placed, and the container, or the board's owner, is heard refused); the default tool comes back,
-    /// services hear `didPlace`, and an editing placement's shape is edited. It never follows the
-    /// pointer.
+    /// placed, and the container, or the board's owner, is heard refused); the default tool comes back
+    /// (unless the tool is locked), services hear `didPlace`, and an editing placement's shape is edited.
+    /// It never follows the pointer.
     public func place(_ placement: Placement, in frame: CGRect) {
         put(placement.make(frame), placing: placement, from: nil)
     }
@@ -1082,7 +1094,7 @@ public final class CanvasEditor {
     /// below the lowest of them in the stack (`Transaction.enclose`). They stay where they are; what it
     /// lands on beside them is settled as what a container's drawn over is, gliding there. One step,
     /// named as a placement's ("Add Frame", unless a group it's in names it); the default tool comes
-    /// back, and services hear `didPlace` (the selection selects it). All or nothing: if one it would
+    /// back (unless the tool is locked), and services hear `didPlace` (the selection selects it). All or nothing: if one it would
     /// hold is read-only (locked, in a locked container, or on a read-only board), nothing changes, no
     /// step is left, and services hear which were refused (they shake). Returns the new shape's id; nil
     /// when it put nothing down (none of `ids` has a box, one was refused, or `shape` holds nothing).
@@ -1108,7 +1120,7 @@ public final class CanvasEditor {
             return nil
         }
         guard let nudges else { return nil }
-        setTool(registry.defaultTool)
+        if !isToolLocked { setTool(registry.defaultTool) }
         for service in serviceOrder { service.didPlace(shape.id, in: self) }
         glide(nudges)
         return shape.id
@@ -1142,7 +1154,7 @@ public final class CanvasEditor {
                 return
             }
         }
-        setTool(registry.defaultTool)
+        if !isToolLocked { setTool(registry.defaultTool) }
         for service in serviceOrder { service.didPlace(record.id, in: self) }
         let edits = placement.completion == .edit
         if let point, session == nil {
@@ -1190,10 +1202,24 @@ public final class CanvasEditor {
         registry.command(command)?.isEnabled(self) ?? false
     }
 
+    /// What the menu item that runs the command should be called now, for a command whose title
+    /// follows the editor (`registrar.command(_:_:menuTitle:…)`: Go › Enclosing Group); nil for one
+    /// whose item keeps its own title, or that no plugin claims. The window asks as it validates the
+    /// item.
+    public func menuTitle(of command: CanvasCommand) -> String? {
+        registry.command(command)?.menuTitle?(self)
+    }
+
     // MARK: Input, for tools and sessions
 
     /// World units, through the current camera.
     public var pointerWorldLocation: CGPoint { camera.toWorld(tracker.location) }
+    /// Whether the pointer is over the canvas itself, not over the minimap, the editing view or a view the
+    /// host puts over it, nor outside the window: whether `pointerWorldLocation` is a place on the board
+    /// where the person is pointing. The host tells it (a move, a press or a gesture on the canvas says
+    /// yes; the pointer leaving it, no), whatever the tool; false until the pointer has been seen there.
+    /// Not observed.
+    public var isPointerOverCanvas: Bool { pointerIsOverCanvas }
     /// View points per millisecond, smoothed.
     public var pointerSpeed: CGFloat { tracker.speed }
     /// View points per millisecond, per axis, smoothed like `pointerSpeed`; reset on every press.
@@ -1273,14 +1299,25 @@ public final class CanvasEditor {
 
     /// Back to front, the shapes that may show in a world rect: those whose geometry, or box,
     /// meets it, and any with no outline to go by. What drawing goes through, and overlays should
-    /// too, so that a frame costs what's in view rather than what's on the board.
+    /// too, so that a frame costs what's in view rather than what's on the board. Only those of
+    /// `drawnShapes`, when it says some.
     public func paintOrder(in rect: CGRect) -> [AnyShapeRecord] {
-        let list = shapeIndex.paintList(in: shapeContext), shapes = document.shapes
+        let list = shapeIndex.paintList(in: shapeContext), shapes = document.shapes, only = drawnShapes
         var shown: [AnyShapeRecord] = []
         for (position, extent) in list.extents.enumerated() where extent.touches(rect) {
-            shown.append(shapes[list.order[position]])
+            let record = shapes[list.order[position]]
+            if let only, !only.contains(record.id) { continue }
+            shown.append(record)
         }
         return shown
+    }
+
+    /// The shapes of the board shown that are drawn, nil for all of them: a picture of some of a
+    /// board's shapes (Edit › Copy as Image, `BoardPicture(file:registry:board:showing:)`), whose
+    /// other shapes are there to be read (a type its notes are of, what a mention names) and not drawn.
+    /// It goes by `paintOrder(in:)`, and so does everything that draws on the canvas. Not observed.
+    @ObservationIgnored @_spi(Host) public var drawnShapes: Set<ShapeID>? {
+        didSet { setNeedsDisplay() }
     }
 
     /// The front-most shape under a world point, of those `include` accepts. Only shapes near the

@@ -13,10 +13,11 @@ import SwiftUI
 import TestKit
 
 /// Boards as the app configures them, with the app's content less its toolbar, and their clipboard
-/// on `pasteboard` (a test that copies passes its own).
+/// and Copy as Image's pasteboard on `pasteboard` (a test that copies passes its own).
 /// `extra`: plugins after the shipped list.
 @MainActor func configureBoards(pasteboard: NSPasteboard = .general, extra: [any CanvasPlugin] = []) throws {
-    BoardDocument.configuration = BoardConfiguration(registry: try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()) + extra)) { board in
+    BoardDocument.configuration = BoardConfiguration(registry: try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()) + extra),
+                                                     imagePasteboard: pasteboard) { board in
         AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails, showsMinimap: board.view.showsMinimap,
                               view: board.view))
     }
@@ -394,9 +395,16 @@ let boardType = "com.example.InfiniteCanvas.board"
         try check("Go", "Back", "goBack:", "[")
         try check("Go", "Enclosing Board", "enclosingBoard:", "\u{F700}")
         try check("Go", "Open Selection", "openSelection:", "\u{F701}")
-        expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "Arrange", "View", "Go", "Window", "Help"])
+        expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "Shape", "Arrange", "View", "Go", "Window", "Help"])
+        expect(try require(menus.main.item(withTitle: "Shape")?.submenu).items.isEmpty, "Shape fills itself as it opens")
         try check("Arrange", "Group", "groupSelection:", "g", [.command, .option])
         try check("Arrange", "Ungroup", "ungroupSelection:", "g", [.command, .option, .shift])
+        try check("Arrange", "Bring to Front", "bringToFront:", "]", [])
+        try check("Arrange", "Bring Forward", "bringForward:", "]", .option)
+        try check("Arrange", "Send Backward", "sendBackward:", "[", .option)
+        try check("Arrange", "Send to Back", "sendToBack:", "[", [])
+        let arrange = try require(menus.main.item(withTitle: "Arrange")?.submenu)
+        expectEqual(arrange.items.map(\.title), ["Group", "Ungroup", "", "Bring to Front", "Bring Forward", "Send Backward", "Send to Back"], "after a separator")
         try check("Infinite Canvas", "Settings…", "showSettings:", ",")
         let app = try require(menus.main.item(withTitle: "Infinite Canvas")?.submenu)
         expectEqual(app.items.prefix(4).map(\.title), ["About Infinite Canvas", "", "Settings…", ""], "Settings… follows About")

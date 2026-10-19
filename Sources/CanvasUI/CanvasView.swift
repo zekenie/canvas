@@ -583,7 +583,17 @@ extension CanvasView: NSMenuItemValidation {
         host.removeFromSuperview()
         cardHost = nil
         stopWatchingPresses()
-        if pointerPlace == .card { pointerPlace = .canvas }
+        if pointerPlace == .card { pointerBackOnCanvas() }
+    }
+
+    /// The pointer is over the canvas again where a view it hosted was (the editing view, a card), with
+    /// no move to say so: the editor is told where it is (`pointerLocated`, no speed, nothing hovered),
+    /// so what reads `isPointerOverCanvas` (Paste at Pointer) has it; the tool hears it when it moves.
+    private func pointerBackOnCanvas() {
+        pointerPlace = .canvas
+        guard let window else { return }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        if bounds.contains(point), place(of: point) == .canvas { editor.pointerLocated(at: point) }
     }
 
     /// Shows the popover over everything else, in place of the one before, or takes it down.
@@ -645,7 +655,7 @@ extension CanvasView: NSMenuItemValidation {
             old.view.removeFromSuperview()
             editingView = nil
             // Where it was is the canvas again; the tool hears the pointer when it next moves.
-            if pointerPlace == .editingView { pointerPlace = .canvas }
+            if pointerPlace == .editingView { pointerBackOnCanvas() }
         }
         guard let new = editor.makeEditingView() else { return }
         // Under everything else the canvas hosts.
@@ -683,9 +693,17 @@ extension Modifiers {
 
 extension KeyStroke {
     init(_ event: NSEvent) {
-        self.init(event.charactersIgnoringModifiers ?? "", modifiers: Modifiers(event.modifierFlags), isRepeat: event.isARepeat,
-                  numberRowKey: Self.numberRow[event.keyCode])
+        var characters = event.charactersIgnoringModifiers ?? "", modifiers = Modifiers(event.modifierFlags)
+        // ⇧Tab types the back-tab character: the key Tab is, held with ⇧, as a chord names it (⇧⇥).
+        if characters == Self.backTab {
+            characters = "\t"
+            modifiers.insert(.shift)
+        }
+        self.init(characters, modifiers: modifiers, isRepeat: event.isARepeat, numberRowKey: Self.numberRow[event.keyCode])
     }
+
+    /// What ⇧Tab types (`NSBackTabCharacter`).
+    private static let backTab = "\u{19}"
 
     /// The number row's keys, by their key codes (the same key whatever the layout, `kVK_ANSI_1`…),
     /// and the digit each is.

@@ -147,6 +147,24 @@ private func isLightCanvas(_ color: [Int]) -> Bool { color[0...2].allSatisfy { $
         expect(box.gray < 0.8 && canvas.gray > 0.92, "the box at 2× (\(box.gray)) on the canvas (\(canvas.gray))")
         expect(picture.image(size: .zero, scale: 2, appearance: NSAppearance(named: .aqua)!) == nil, "no pixels, no image")
     },
+    test("as PNG data it's the picture's size at the scale asked, which the PNG says by its resolution, in the appearance asked; nil for an empty board") {
+        let picture = BoardPicture(file: boxes([CGRect(x: 100, y: 100, width: 200, height: 100), CGRect(x: 500, y: 300, width: 100, height: 100)]),
+                                   registry: try pictureRegistry())
+        picture.inset = 32
+        let limit = CGSize(width: 2000, height: 2000)
+        let light = try require(picture.pngData(within: limit, scale: 2, appearance: NSAppearance(named: .aqua)!))
+        let decoded = try require(NSBitmapImageRep(data: light))
+        expectEqual([decoded.pixelsWide, decoded.pixelsHigh], [1064, 664], "500 × 300 and a margin of 32, two pixels to a point")
+        expectEqual([decoded.size.width, decoded.size.height], [532, 332], "said in points by its resolution")
+        let dark = try require(NSBitmapImageRep(data: try require(picture.pngData(within: limit, scale: 2, appearance: NSAppearance(named: .darkAqua)!))))
+        let corner = { (rep: NSBitmapImageRep) in rep.colorAt(x: 1, y: 1)?.usingColorSpace(.sRGB)?.brightnessComponent ?? -1 }
+        expect(corner(decoded) > 0.8 && corner(dark) < 0.3, "light \(corner(decoded)), dark \(corner(dark))")
+        expectEqual(try require(NSBitmapImageRep(data: try require(picture.pngData(within: limit, scale: 1, appearance: NSAppearance(named: .aqua)!)))).pixelsWide, 532)
+        let tight = try require(NSBitmapImageRep(data: try require(picture.pngData(within: CGSize(width: 266, height: 2000), scale: 2, appearance: NSAppearance(named: .aqua)!))))
+        expectEqual([tight.pixelsWide, tight.pixelsHigh], [532, 346], "as close as fits the limit: 266 × 173 points, at 46.8%")
+        let empty = BoardPicture(file: CanvasFile(), registry: try pictureRegistry())
+        expectEqual(empty.pngData(within: limit, scale: 2, appearance: NSAppearance(named: .aqua)!), nil)
+    },
     test("it reads a board file as the app saves it, and one that isn't a board throws") {
         let registry = try pictureRegistry()
         let file = boxes([CGRect(x: 0, y: 0, width: 200, height: 100)])

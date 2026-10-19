@@ -94,6 +94,15 @@ enum CorePoints {
         static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the secondary-click menu"] }
     }
 
+    /// What the selection's menu holds (a menu bar's Shape menu): the items a secondary click on the
+    /// selection would open, less the commands the menu bar already runs. One plugin may claim it;
+    /// otherwise there is none.
+    enum SelectionMenu: KeyedExtensionPoint {
+        typealias Contribution = @MainActor (CanvasEditor, Set<CanvasCommand>) -> NSMenu?
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the selection's menu"] }
+    }
+
     /// What a key pressed on the canvas does. One plugin may claim it; otherwise no key does
     /// anything there.
     enum KeyStrokes: KeyedExtensionPoint {
@@ -168,6 +177,12 @@ struct ShapeRegistration {
 
 struct CommandRegistration {
     let command: CanvasCommand
+    /// What it's called, as its menu item is ("Delete", "Zoom to Fit"): the name the Keyboard
+    /// Shortcuts window lists its keys under.
+    let title: String
+    /// What its menu item is called now, for a command that is named for the step it would take
+    /// (`editor.menuTitle(of:)`); `title` otherwise.
+    let menuTitle: (@MainActor (CanvasEditor) -> String)?
     let isEnabled: @MainActor (CanvasEditor) -> Bool
     let run: @MainActor (CanvasEditor) -> Void
 }
@@ -207,15 +222,15 @@ struct CorePlugin: CanvasPlugin {
     var id: PluginID { .core }
     func register(into registrar: inout PluginRegistrar) {
         registrar.tool(ToolDescriptor(id: .hand, label: "Hand", systemImage: "hand.raised")) { _ in HandTool() }
-        registrar.command(.undo, isEnabled: { $0.canUndo }) { $0.undo() }
-        registrar.command(.redo, isEnabled: { $0.canRedo }) { $0.redo() }
-        registrar.command(.zoomIn, isEnabled: { $0.zoomInStop != nil }) { editor in
+        registrar.command(.undo, "Undo", isEnabled: { $0.canUndo }) { $0.undo() }
+        registrar.command(.redo, "Redo", isEnabled: { $0.canRedo }) { $0.redo() }
+        registrar.command(.zoomIn, "Zoom In", isEnabled: { $0.zoomInStop != nil }) { editor in
             if let stop = editor.zoomInStop { editor.zoom(toPercent: stop) }
         }
-        registrar.command(.zoomOut, isEnabled: { $0.zoomOutStop != nil }) { editor in
+        registrar.command(.zoomOut, "Zoom Out", isEnabled: { $0.zoomOutStop != nil }) { editor in
             if let stop = editor.zoomOutStop { editor.zoom(toPercent: stop) }
         }
-        registrar.command(.zoomToActualSize, isEnabled: { $0.zoomPercentage != 100 }) { $0.zoom(toPercent: 100) }
-        registrar.command(.zoomToFit, isEnabled: { $0.canZoomToFit }) { $0.zoomToFit() }
+        registrar.command(.zoomToActualSize, "Actual Size", isEnabled: { $0.zoomPercentage != 100 }) { $0.zoom(toPercent: 100) }
+        registrar.command(.zoomToFit, "Zoom to Fit", isEnabled: { $0.canZoomToFit }) { $0.zoomToFit() }
     }
 }

@@ -54,9 +54,9 @@ import Titles
         let inside = contents.heading
         expectEqual(inside.title, "Untitled Drawer")
         expectEqual(inside.systemImage, "archivebox")
-        expectEqual(inside.up, .enclosingBoard)
+        expectEqual(inside.up, .goUpBoard, "the board above, whatever is selected: ⌘↑ steps out of a group or a container first")
         expectEqual(inside.upTitle, "Enclosing Board")
-        expectEqual(inside.upHelp, "Enclosing Board (⌘↑)", "called as Go › Enclosing Board is, with its key")
+        expectEqual(inside.upHelp, nil, "called as Go › Enclosing Board is, with no key, since ⌘↑ may do something else")
         h.editor.transact(on: .root, "Rename") { $0.update(nest.d) { $0[TitleProperty.self] = "Kitchen" } }
         expectEqual(contents.heading.title, "Kitchen", "as the path names it, renamed from the board above")
     },

@@ -56,6 +56,25 @@ enum SelectionStyle {
     /// How far an arrow key nudges the selection, and with ⇧, in world units (tldraw's 1 and 10).
     static let nudge: CGFloat = 1
     static let shiftNudge: CGFloat = 10
+    // Stepping from shape to shape (`StopOrder`), with tldraw's numbers (`Editor.selectAdjacentShape`).
+    /// Reading order: a shape joins a row when its center is less than this far, in world units, above or
+    /// below the row's last.
+    static let readingRowRange: CGFloat = 100
+    /// Within a row the next two shapes swap when the one after next is closer to the shape, by under
+    /// this fraction of the squared distance, and at most this many degrees off the horizontal.
+    static let readingSwapCloseness: CGFloat = 0.9
+    static let readingSwapAngle: CGFloat = 20
+    /// The nearest shape in a direction is among those across the way no farther than this many times as far
+    /// as along it, and scores the distance plus each of these times its measure: how far off the line it
+    /// is, how much farther than straight ahead, how many degrees off the direction.
+    static let stepWedge: CGFloat = 2
+    static let stepAcrossWeight: CGFloat = 2
+    static let stepDiagonalWeight: CGFloat = 1.5
+    static let stepAngleWeight: CGFloat = 0.5
+    /// The arrow keys, and which way each steps to the nearest shape (with ⌥⌘).
+    static let steps: [(KeyChord, AdjacentDirection)] = [
+        (.leftArrow, .left), (.rightArrow, .right), (.upArrow, .up), (.downArrow, .down),
+    ]
     /// The arrow keys, and which way each nudges.
     static let nudges: [(KeyChord, CGPoint)] = [
         (.leftArrow, CGPoint(x: -1, y: 0)), (.rightArrow, CGPoint(x: 1, y: 0)),

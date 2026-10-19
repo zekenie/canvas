@@ -72,6 +72,15 @@ final class PortState {
         return ports
     }
 
+    /// What a connection made by name (Connect) reads of a shape as an end, as a drag reads its ports:
+    /// none for a shape that stands in for nothing, the kinds a stand-in stands for, and nil for a
+    /// stand-in that stands for nothing now (empty, pending, missing, private), where no connection ends.
+    func standingKinds(of record: AnyShapeRecord) -> [ShapeKind]? {
+        guard let (topology, standingKinds) = standIns, standingKinds.contains(record.kind) else { return [] }
+        let kinds = topology.forwards(of: record.id).compactMap { editor.shape(inFile: $0)?.kind }
+        return kinds.isEmpty ? nil : kinds
+    }
+
     /// Whether `connection`'s end in `role` may be at `shape`, as far as what a stand-in stands for
     /// goes (the static rule, the connector's, lets every channel end at one, since its kind has
     /// ports on all): for a stand-in, the connection's channel must be one it takes now in that

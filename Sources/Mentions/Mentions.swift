@@ -29,6 +29,7 @@ public struct MentionsPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { MentionState(editor: $0) }
+        registrar.keyHint("@", "Mention a Shape", while: .text)
         registerMentionEdges(into: &registrar)
         registrar.overlay(MentionFrames())
         registerMentionFaces(into: &registrar)

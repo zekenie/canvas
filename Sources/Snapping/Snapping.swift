@@ -23,6 +23,7 @@ public struct SnappingPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { _ in SnapState() }
         registrar.translationAdjuster { editor, start in SnapDrag(start, in: editor) }
+        registrar.keyHint("⌘ or ⌃ Drag", "Move Without Snapping", while: .pointer)
     }
 }
 

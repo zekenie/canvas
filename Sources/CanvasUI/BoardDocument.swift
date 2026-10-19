@@ -11,7 +11,8 @@ import SwiftUI
 /// views over it reach on a board (the path over a subboard's canvas), which each board's editor is
 /// told so its fits leave it clear (`CanvasEditor.coveredTop`, from
 /// `registry.hostCoveredTop(on:)`), and what a window's subtitle says of the board shown
-/// (`registry.windowSubtitle(for:)`). `content` places the views themselves (`BoardChrome`).
+/// (`registry.windowSubtitle(for:)`), and what Edit › Copy as Image draws (`registry.imageSource`);
+/// `content` places the views themselves (`BoardChrome`).
 @MainActor
 public struct BoardConfiguration {
     /// The file type boards are saved as: the type the app's Info.plist exports, as `.canvasboard` files (not `.board`, which Apple's Freeform owns).
@@ -20,11 +21,14 @@ public struct BoardConfiguration {
     public static let fileExtension = "canvasboard"
 
     public var registry: Registry
+    /// Where Edit › Copy as Image puts the picture: the system's, in the app; a test's own.
+    public var imagePasteboard: NSPasteboard
     /// A board window's content: the canvas, and whatever goes around it.
     public var content: @MainActor (BoardWindowContent) -> AnyView
 
-    public init(registry: Registry, content: @escaping @MainActor (BoardWindowContent) -> AnyView) {
+    public init(registry: Registry, imagePasteboard: NSPasteboard = .general, content: @escaping @MainActor (BoardWindowContent) -> AnyView) {
         self.registry = registry
+        self.imagePasteboard = imagePasteboard
         self.content = content
     }
 }

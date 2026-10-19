@@ -262,7 +262,7 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 100)
     },
     test("a command, a key stroke and a group are each one step; groups nest, and one that commits nothing is none") {
         let h = try boxes([Contributor(id: "actions") { r in
-            r.command("spread") { editor in
+            r.command("spread", "Spread") { editor in
                 editor.transact("Spread") { $0.translate(Set(editor.document.shapes.map(\.id)), by: CGPoint(x: 1, y: 0)) }
                 editor.transact { $0.translate(Set(editor.document.shapes.map(\.id)), by: CGPoint(x: 1, y: 0)) }
             }

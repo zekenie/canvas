@@ -328,7 +328,7 @@ import TestKit
     test("the report: the plugin claims the secondary click, and each kind's items are one line") {
         let report = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), AppliancesPlugin()]).report
         expectEqual(report.split(separator: "\n").filter { $0.hasPrefix("context-menus") || $0.hasPrefix("appliances") }, [
-            "context-menus  service ContextMenuState · secondary-click menu · CanvasContextMenu",
+            "context-menus  service ContextMenuState · secondary-click menu · selection menu · CanvasContextMenu",
             "appliances     shape lamp · ShapeContextMenus → lamp · shape fan · ShapeContextMenus → fan",
         ])
     },

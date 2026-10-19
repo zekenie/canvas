@@ -194,6 +194,10 @@ final class ClipboardState {
     @discardableResult
     func copy(_ ids: [ShapeID]) -> [ShapeID] { copyReportingWhole(ids, cut: false).copied }
 
+    /// The shapes of the board a copy of `ids` would take, back to front, which Copy as Image draws;
+    /// nil when none of them can be copied. The pasteboard is not touched.
+    func shapes(copying ids: [ShapeID]) -> [ShapeID]? { gather(ids)?.copied }
+
     /// Copies, marked as a cut's, then deletes what it copied whole, in one transaction: what can't
     /// be copied stays, and so does a shape holding a board where something couldn't be (their ids
     /// are in use, so a paste copies them). A container goes with what it holds that was copied;
@@ -459,5 +463,32 @@ extension CanvasEditor {
     public func paste(centeredAt point: CGPoint) {
         guard canPaste else { return }
         clipboard?.paste(centeredAt: point)
+    }
+
+    /// ⇧⌘V: as ⌘V, but what's put down lands centered on the pointer (`pointerWorldLocation`) while it's
+    /// over the canvas (`isPointerOverCanvas`, and inside the view); otherwise as ⌘V pastes.
+    public func pasteAtPointer() {
+        guard canPaste else { return }
+        let view = CGRect(origin: .zero, size: viewportSize)
+        if isPointerOverCanvas, view.contains(camera.toView(pointerWorldLocation)) {
+            paste(centeredAt: pointerWorldLocation)
+        } else {
+            paste()
+        }
+    }
+
+    /// Whether Copy as Image has anything to draw: some selected shape can be copied, or, with nothing
+    /// selected, some shape of the board shown can.
+    public var canCopyAsImage: Bool {
+        guard let clipboard else { return false }
+        return clipboard.canCopy(selectedShapeIDs.isEmpty ? document.shapes.map(\.id) : selectedShapeIDs)
+    }
+
+    /// The shapes Copy as Image draws, back to front: those a copy of the selection would take (what
+    /// the containers among them hold too), or, with nothing selected, every shape of the board shown
+    /// that can be copied (so what the board keeps aside, and a kind that is `uncopyable`, aren't
+    /// drawn). None with none. The pasteboard is not touched.
+    public func imageShapes() -> [ShapeID] {
+        clipboard?.shapes(copying: selectedShapeIDs.isEmpty ? document.shapes.map(\.id) : selectedShapeIDs) ?? []
     }
 }

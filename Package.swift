@@ -171,7 +171,7 @@ let ships = [
     "Snapping.SnappingPlugin",
     // Ports, whose arrows `ArrowPortsPlugin` draws. After Adornments: a shape's dots draw
     // above its adornments (the lock chip among them), and are found before them.
-    "Connections.PortsPlugin", "Arrows.ArrowPortsPlugin",
+    "Connections.PortsPlugin", "Connections.ConnectMenuPlugin", "Arrows.ArrowPortsPlugin",
     "LanguageModels.LanguageModelsPlugin",
     // What words say of what's lower level, asked of the model: a type's highlights.
     "ProseMaps.ProseMapsPlugin",
@@ -256,7 +256,7 @@ let package = Package(
         .target(name: "Keyboard", dependencies: ["Canvas"]),                                  // layer: platform
         .target(name: "Selection", dependencies: ["Canvas", "Geometry", "Keyboard", "Palette"]), // layer: platform
         .target(name: "DetailPanel", dependencies: ["Canvas", "FuzzyMatching", "Selection", "TextEditing"]), // layer: platform
-        .target(name: "ContextMenus", dependencies: ["Canvas", "Selection"]),                 // layer: platform
+        .target(name: "ContextMenus", dependencies: ["Canvas", "Keyboard", "Selection"]),     // layer: platform
         .target(name: "SlashCommands", dependencies: ["Canvas", "FuzzyMatching", "TextEditing"]), // layer: platform
         .target(name: "TableOfContents", dependencies: ["Canvas", "DetailPanel", "Selection"]), // layer: platform
         .target(name: "Adornments", dependencies: ["Canvas", "Geometry", "Palette", "Selection"]),       // layer: platform
@@ -265,9 +265,9 @@ let package = Package(
         .target(name: "Topology", dependencies: ["Canvas"]),                                  // layer: platform
         .target(name: "Validation", dependencies: ["Canvas", "DetailPanel", "Draw", "Queries", "TableOfContents"]), // layer: platform
         .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Queries", "SlashCommands", "TableOfContents", "Validation"]),  // layer: platform
-        .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "SlashCommands", "TableOfContents"]), // layer: platform
+        .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "Keyboard", "Selection", "SlashCommands", "TableOfContents"]), // layer: platform
         .target(name: "Grouping", dependencies: ["Canvas", "ContextMenus", "Draw", "Keyboard", "Queries", "Selection"]), // layer: platform
-        .target(name: "Connections", dependencies: ["Canvas", "Draw", "Geometry", "Selection", "Topology", "Types"]), // layer: platform
+        .target(name: "Connections", dependencies: ["Canvas", "ContextMenus", "Draw", "Geometry", "Keyboard", "Selection", "Topology", "Types"]), // layer: platform
         .target(name: "Mentions", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "Draw", "Find", "FuzzyMatching", "Neighbors", "Queries", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
         .target(name: "Publishing", dependencies: ["Adornments", "Canvas", "ContextMenus", "DetailPanel", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "Titles", "Topology"]), // layer: platform
         .target(name: "Boards", dependencies: ["Canvas", "ContextMenus", "Find", "Keyboard", "Queries", "Selection", "TableOfContents", "Titles"]), // layer: platform
@@ -289,7 +289,7 @@ let package = Package(
         // and the table of contents' drops that move shapes into a frame, onto a subboard's board or out of frames (`ContentsMoves`).
         .target(name: "Moving", dependencies: ["Canvas", "Draw", "SlashCommands", "TableOfContents"]), // layer: platform
         // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
-        .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus"], path: "Examples/Reordering"),             // layer: platform
+        .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus", "Keyboard", "Selection"], path: "Examples/Reordering"), // layer: platform
         // Engines: what any plugin may run or ask.
         .target(name: "LanguageModels", dependencies: ["Canvas"]),                            // layer: platform
         .target(name: "ProseMaps", dependencies: ["Canvas", "LanguageModels"]),               // layer: platform
@@ -311,7 +311,7 @@ let package = Package(
         // PRODUCT: the verticals, shapes that hold something of their own.
         // Arrows: tldraw's arc arrows, a kind like any other, and the connector that makes them what ports draw.
         .target(name: "Arrows", dependencies: ["Adornments", "Canvas", "Colors", "Connections", "Geometry", "Mentions", "Neighbors", "Palette", "Publishing", "Selection", "TableOfContents", "TextEditing", "Topology", "Types"]), // layer: product
-        .target(name: "StickyNotes", dependencies: ["Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: product
+        .target(name: "StickyNotes", dependencies: ["Canvas", "Colors", "Connections", "DetailPanel", "Draw", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: product
         .target(name: "Subboards", dependencies: ["Boards", "Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "TableOfContents", "Titles", "Transform"]), // layer: product
         .target(name: "Frames", dependencies: ["Canvas", "Colors", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "Titles", "Transform"]), // layer: product
 

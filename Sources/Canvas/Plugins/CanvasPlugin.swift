@@ -57,11 +57,17 @@ public struct PluginRegistrar {
     }
 
     /// What a command does (`editor.perform`): what a menu item runs (Edit › Delete, Go › Back), and
-    /// what any key or plugin may run by name; and whether it can now (`editor.canPerform`, which a
-    /// menu asks to enable its item): by default, always. At most one plugin may claim each.
-    public mutating func command(_ command: CanvasCommand, isEnabled: @escaping @MainActor (CanvasEditor) -> Bool = { _ in true },
+    /// what any key or plugin may run by name; what it's called, as its menu item is ("Delete"),
+    /// which the Keyboard Shortcuts window lists its keys under (`registry.title(of:)`); and whether
+    /// it can now (`editor.canPerform`, which a menu asks to enable its item): by default, always.
+    /// A command that is named for the step it would take now (Go › Enclosing Group, Enclosing Frame,
+    /// Enclosing Board) says so with `menuTitle`, which the window reads to retitle the item that runs
+    /// it (`editor.menuTitle(of:)`); `title` stays what the command is called wherever it is listed
+    /// (the Keyboard Shortcuts window). At most one plugin may claim each.
+    public mutating func command(_ command: CanvasCommand, _ title: String, menuTitle: (@MainActor (CanvasEditor) -> String)? = nil,
+                                 isEnabled: @escaping @MainActor (CanvasEditor) -> Bool = { _ in true },
                                  _ run: @escaping @MainActor (CanvasEditor) -> Void) {
-        contribute(CommandRegistration(command: command, isEnabled: isEnabled, run: run), to: CorePoints.Commands.self)
+        contribute(CommandRegistration(command: command, title: title, menuTitle: menuTitle, isEnabled: isEnabled, run: run), to: CorePoints.Commands.self)
     }
 
     /// What a key pressed on the canvas does: return true if it did something with it (or keeps
@@ -92,6 +98,15 @@ public struct PluginRegistrar {
     /// otherwise secondary clicks do nothing. It isn't asked while a press is under way.
     public mutating func menuForSecondaryClick(_ make: @escaping @MainActor (CanvasEditor, Pointer) -> NSMenu?) {
         contribute(make, to: CorePoints.SecondaryClickMenu.self)
+    }
+
+    /// The menu for the selection, with no click to open it: the items a secondary click on the selected
+    /// shapes would open (a menu bar's Shape menu), made when it is asked for, from `omitting`, the
+    /// commands to leave out (the ones a menu bar item already runs). Nil: nothing is selected, or
+    /// nothing is left to show. At most one plugin may claim it (ContextMenus, in the shipped app);
+    /// otherwise the editor has none.
+    public mutating func menuForSelection(_ make: @escaping @MainActor (CanvasEditor, Set<CanvasCommand>) -> NSMenu?) {
+        contribute(make, to: CorePoints.SelectionMenu.self)
     }
 
     /// Where a drag that moves shapes (a `TranslatingSession`: the selection dragged, a shape just

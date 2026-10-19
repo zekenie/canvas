@@ -53,13 +53,18 @@ public struct MenuItem<Value> {
     /// transaction. Setting what a shape already has commits nothing. Over a `MenuSubject` (an item
     /// for the canvas), `edit` is handed the subject instead, once, in the item's undo group and in
     /// no transaction, and changes the document only through `editor.transact`, as `perform` does.
-    public init(_ title: String, in group: any MenuGroup.Type = ShapeMenuGroup.self, id: String? = nil,
+    ///
+    /// `command` says the item stands for a command (a key it has, Cut's ⌘X; the selection's menu
+    /// leaves out an item whose command a menu bar item runs): it shows its first key, and shows only
+    /// while a plugin claims the command. Its action is the item's own, for when the item does the
+    /// command differently (Paste lands centered on the click).
+    public init(_ title: String, command: CanvasCommand? = nil, in group: any MenuGroup.Type = ShapeMenuGroup.self, id: String? = nil,
                 when isShown: @escaping @MainActor (Value) -> Bool = { _ in true },
                 isEnabled: @escaping @MainActor (Value) -> Bool = { _ in true },
                 isChecked: (@MainActor (Value) -> Bool)? = nil,
                 edit: @escaping @MainActor (inout Value) -> Void) {
         entry = MenuEntry(title: title, group: MenuGroupID(group), id: id ?? title, isShown: isShown,
-                          content: .item(isEnabled: isEnabled, isChecked: isChecked, action: .edit(edit)))
+                          content: .item(isEnabled: isEnabled, isChecked: isChecked, action: .edit(edit)), command: command)
     }
 
     /// For what editing each shape can't do (reordering, deleting, selecting): `perform` gets the
@@ -67,14 +72,31 @@ public struct MenuItem<Value> {
     /// `editor.transact`. The undo step is named by the title unless `stepName` says otherwise (an item
     /// in a submenu whose title only makes sense there: "Set Level" ▸ "High" is the step "Set Level
     /// High").
-    public init(_ title: String, in group: any MenuGroup.Type = ShapeMenuGroup.self, id: String? = nil,
+    public init(_ title: String, command: CanvasCommand? = nil, in group: any MenuGroup.Type = ShapeMenuGroup.self, id: String? = nil,
                 when isShown: @escaping @MainActor (Value) -> Bool = { _ in true },
                 isEnabled: @escaping @MainActor (Value) -> Bool = { _ in true },
                 isChecked: (@MainActor (Value) -> Bool)? = nil,
                 stepName: String? = nil,
                 perform: @escaping @MainActor ([ShapeID], CanvasEditor) -> Void) {
         entry = MenuEntry(title: title, group: MenuGroupID(group), id: id ?? title, isShown: isShown,
-                          content: .item(isEnabled: isEnabled, isChecked: isChecked, action: .perform(perform)), stepName: stepName)
+                          content: .item(isEnabled: isEnabled, isChecked: isChecked, action: .perform(perform)), stepName: stepName,
+                          command: command)
+    }
+
+    /// An item that runs a command, as the key and the menu bar's item do: `editor.perform(command)`, on
+    /// the selection (a right-click has made the menu's shapes the selection by the time it runs).
+    /// It is titled as the command is (`registry.title(of:)`) unless `title` says otherwise (Lock and
+    /// Unlock are one command), shows the command's first key, and shows only while a plugin claims the
+    /// command. Its `id` is the title, else the command's name. `when` is asked of the menu's shapes,
+    /// not of the command, which asks the selection (`canPerform`) once the menu is made; in the
+    /// selection's menu it dims the item too.
+    public init(command: CanvasCommand, title: String? = nil, in group: any MenuGroup.Type = ShapeMenuGroup.self, id: String? = nil,
+                when isShown: @escaping @MainActor (Value) -> Bool = { _ in true },
+                isEnabled: @escaping @MainActor (Value) -> Bool = { _ in true },
+                isChecked: (@MainActor (Value) -> Bool)? = nil) {
+        entry = MenuEntry(title: title, group: MenuGroupID(group), id: id ?? title ?? command.rawValue, isShown: isShown,
+                          content: .item(isEnabled: isEnabled, isChecked: isChecked, action: .perform { _, editor in editor.perform(command) }),
+                          command: command)
     }
 }
 
@@ -118,13 +140,16 @@ extension MenuItems where Value == MenuSubject {
 
 /// An item or a submenu, as `MenuBuilder` collects them.
 public struct MenuEntry<Value> {
-    let title: String
+    /// Nil: the command's title (`registry.title(of:)`).
+    let title: String?
     let group: MenuGroupID
     let id: String
     let isShown: @MainActor (Value) -> Bool
     let content: Content
     /// What the undo step is called, if not the title.
     var stepName: String?
+    /// The command the item runs, or stands for.
+    var command: CanvasCommand?
 
     enum Content {
         case item(isEnabled: @MainActor (Value) -> Bool, isChecked: (@MainActor (Value) -> Bool)?, action: Action)

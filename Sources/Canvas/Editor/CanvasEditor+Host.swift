@@ -24,6 +24,7 @@ extension CanvasEditor {
     /// A press begins an undo step: everything it commits, through its release, is one. While the
     /// hand is held (`isHandHeld`), it pans, as the Hand's does.
     @_spi(Host) public func pointerDown(_ event: PointerEvent) {
+        pointerIsOverCanvas = true
         var pointer = sample(event)
         pointer.isControlClick = event.modifiers.contains(.control)
         pointer.activatesWindow = event.activatesWindow
@@ -55,6 +56,7 @@ extension CanvasEditor {
     /// way: then its drags and release are the host's to drop.
     @_spi(Host) public func panPointerDown(_ event: PointerEvent) -> Bool {
         guard session == nil else { return false }
+        pointerIsOverCanvas = true
         beginPan(sample(event))
         return true
     }
@@ -103,6 +105,7 @@ extension CanvasEditor {
     }
 
     @_spi(Host) public func pointerMoved(_ event: PointerEvent) {
+        pointerIsOverCanvas = true
         let pointer = sample(event)
         guard session == nil, !isHandHeld else { return }
         currentTool.pointerMoved(pointer, in: self)
@@ -115,10 +118,12 @@ extension CanvasEditor {
     /// (`pointerWorldLocation`) changes: nothing is hovered, the tool hears nothing, and the jump
     /// makes no speed.
     @_spi(Host) public func pointerLocated(at location: CGPoint) {
+        pointerIsOverCanvas = true
         tracker.relocate(location)
     }
 
     @_spi(Host) public func pointerExited() {
+        pointerIsOverCanvas = false
         if session == nil { currentTool.pointerExited(in: self) }
     }
 
@@ -149,6 +154,15 @@ extension CanvasEditor {
         guard let menu = make(self, pointer) else { return nil }
         stopCameraMotion()
         return menu
+    }
+
+    /// The menu for the selection (a menu bar's Shape menu), made as it is asked for, from the plugin that
+    /// claims it (`registrar.menuForSelection`): the items a secondary click on the selected shapes
+    /// would open, less `commands`, which a menu bar item already runs. Nil: no plugin claims it,
+    /// nothing is selected, or nothing is left to show.
+    @_spi(Host) public func menuForSelection(omitting commands: Set<CanvasCommand>) -> NSMenu? {
+        guard let make = registry.selectionMenu else { return nil }
+        return make(self, commands)
     }
 
     /// A key pressed on the canvas: the plugin that claims key strokes (`registrar.keyStrokes`) says

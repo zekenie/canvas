@@ -73,11 +73,12 @@ struct IsAMenu {
 @MainActor
 func registerTypeMenus(into registrar: inout PluginRegistrar) {
     // The offer on a pill in a type's words (`RelateOffers`), where the menu was asked for: `Relate to Layer`, the same item
-    // the click on the pill opens. Left out at a skeleton's zoom, where no pill is drawn, and off every other point.
+    // the click on the pill opens. Left out at a skeleton's zoom, where no pill is drawn, off every other point, and where
+    // no click asked (the selection's menu, a menu bar's Shape menu).
     registrar.contextMenuForCanvas {
         MenuItems(in: ShapeMenuGroup.self, id: "relate") { subject in
-            if subject.shapes.count == 1, let id = subject.shapes.first, !subject.editor.drawsSkeleton(of: id), let record = subject.editor.document[id],
-               let face = RelateOffers.find(at: subject.point, on: record, in: subject.editor) {
+            if subject.shapes.count == 1, let id = subject.shapes.first, let point = subject.point, !subject.editor.drawsSkeleton(of: id),
+               let record = subject.editor.document[id], let face = RelateOffers.find(at: point, on: record, in: subject.editor) {
                 MenuItem(RelateOffers.title(for: face, in: subject.editor), in: ShapeMenuGroup.self, id: "relate-\(face.target.rawValue.uuidString)",
                          stepName: TypesStyle.newRelationshipType) { _, editor in
                     editor.acceptRelateOffer(face)

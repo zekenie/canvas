@@ -48,6 +48,27 @@ extension DragLog: Session {
         h.move(to: CGPoint(x: 32, y: 0), after: 16)
         expectEqual(h.editor.pointerSpeed, 0)                 // below 0.01 reads as 0
     },
+    test("the pointer is over the canvas once the host has seen it move or press there, whatever the tool, until the host says it left") {
+        let h = try EditorHarness(plugins: [CardsPlugin()])
+        expect(!h.editor.isPointerOverCanvas, "not before it's been seen")
+        h.move(to: CGPoint(x: 100, y: 100))
+        expect(h.editor.isPointerOverCanvas)
+        expectEqual(h.editor.pointerWorldLocation, CGPoint(x: 100, y: 100))
+        h.editor.pointerExited()
+        expect(!h.editor.isPointerOverCanvas, "it left (the minimap, a view over the canvas, the window's edge)")
+        h.editor.setTool(ToolID(placing: Card.kind))
+        h.press(at: CGPoint(x: 200, y: 200))
+        expect(h.editor.isPointerOverCanvas, "a press is on the canvas, in any tool")
+        h.release()
+        h.editor.pointerExited()
+        h.editor.pointerLocated(at: CGPoint(x: 300, y: 300))
+        expect(h.editor.isPointerOverCanvas, "a gesture's location is on it too")
+        expectEqual(h.editor.pointerWorldLocation, CGPoint(x: 300, y: 300))
+        h.editor.pointerExited()
+        h.editor.isHandHeld = true
+        h.move(to: CGPoint(x: 10, y: 10))
+        expect(h.editor.isPointerOverCanvas, "with the hand held too, where the tool hears nothing")
+    },
     test("pointer velocity smooths per axis like speed, zeroes components under 0.01, and resets on press") {
         let h = try EditorHarness(plugins: [])
         h.move(to: CGPoint(x: 0, y: 0))

@@ -335,9 +335,9 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         let heading = contents.heading
         expectEqual(heading.title, "Plans")
         expectEqual(heading.systemImage, "rectangle.stack")
-        expectEqual(heading.up, .enclosingBoard)
+        expectEqual(heading.up, .goUpBoard, "the board above, whatever is selected: ⌘↑ steps out of a group or a frame first")
         expectEqual(heading.upTitle, "Enclosing Board", "as the Go menu calls it")
-        expectEqual(heading.upHelp, "Enclosing Board (⌘↑)", "with its key, as Back's tooltip has its")
+        expectEqual(heading.upHelp, nil, "with no key, which is not always up a board")
         expect(w.editor.showBoard(nest.tBoard))
         expectEqual(contents.heading.title, "Untitled Subboard", "the placeholder, as the path has it")
         w.editor.goToEnclosingBoard()
@@ -381,9 +381,9 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         w.window.makeFirstResponder(w.canvas)
         w.canvas.mouseDown(with: w.window.mouse(.leftMouseDown, at: empty, time: 10))
         w.window.spin { w.contentsRows == 3 }
-        expect(!w.editor.canPerform(.enclosingBoard), "mid-press")
+        expect(!w.editor.canPerform(.goUpBoard), "mid-press")
         w.canvas.mouseUp(with: w.window.mouse(.leftMouseUp, at: empty, time: 10.05))
-        expect(w.editor.canPerform(.enclosingBoard))
+        expect(w.editor.canPerform(.goUpBoard))
         w.window.spin { w.contentsHeaderButtons.count == 1 }
     },
 ])

@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Keyboard
 import Selection
 
 /// Per editor (so per window): each kind's items, gathered once (the registry is frozen), and what
@@ -48,12 +49,24 @@ final class ContextMenuState {
         return entries.isEmpty ? nil : ContextMenuItems.menu(entries)
     }
 
-    /// What the menu asked for at `point` (world units) holds for these shapes: the items that
-    /// apply to every one of them, then the canvas's items, less any whose place a shape's own item
-    /// takes (shown or not, as a kind's own item takes an every-shape one's).
-    func entries(for ids: [ShapeID], at point: CGPoint) -> [ResolvedEntry] {
+    /// The selection's menu (a menu bar's Shape menu): the items a right-click on the selected shapes
+    /// opens, made now, with no point, less the items that run a command in `commands` (the ones a menu
+    /// bar item runs; a submenu left with nothing goes), and a command's item dimmed as the command is
+    /// (`canPerform`, which reads the selection, as the right-click's can't until its menu is made). An
+    /// item chosen ends editing first, as the right-click does. Nil with nothing selected, or nothing left.
+    func menuForSelection(omitting commands: Set<CanvasCommand>) -> NSMenu? {
+        let ids = editor.selectedShapeIDs
+        guard !ids.isEmpty else { return nil }
+        let entries = entries(for: ids, at: nil).compactMap { $0.forSelection(omitting: commands, in: editor) }
+        return entries.isEmpty ? nil : ContextMenuItems.menu(entries)
+    }
+
+    /// What the menu asked for at `point` (world units; none for the selection's menu) holds for these
+    /// shapes: the items that apply to every one of them, then the canvas's items, less any whose place
+    /// a shape's own item takes (shown or not, as a kind's own item takes an every-shape one's).
+    func entries(for ids: [ShapeID], at point: CGPoint?) -> [ResolvedEntry] {
         let records = ids.compactMap { editor.document[$0] }
-        let own = ContextMenuItems.resolve(records.map { ($0, ContextMenuItems.shown(candidates(for: $0.kind), for: $0)) }, in: editor)
+        let own = ContextMenuItems.resolve(records.map { ($0, ContextMenuItems.shown(candidates(for: $0.kind), for: $0, in: editor)) }, in: editor)
         let taken = Set(Set(records.map(\.kind)).flatMap { candidates(for: $0).map(\.key) })
         let canvas = ContextMenuItems.resolve(canvasEntries, for: MenuSubject(shapes: records.map(\.id), point: point, editor: editor))
         return own + canvas.filter { !taken.contains($0.key) }
@@ -81,21 +94,53 @@ struct ResolvedEntry {
     let title: String
     let key: EntryKey
     let content: Content
+    /// The command the item runs or stands for, and the first key that runs it, which the item shows.
+    var command: CanvasCommand?
+    var shortcut: KeyChord?
     var group: MenuGroupID { key.group }
 
     enum Content {
         case item(isEnabled: Bool, state: NSControl.StateValue?, perform: @MainActor () -> Void)
         case submenu([ResolvedEntry])
     }
+
+    /// For the selection's menu: nothing for an item that runs a command in `commands`; an item that runs
+    /// one dimmed while the editor can't perform it; the rest as they are, an item chosen ending editing
+    /// first; a submenu with nothing left, nothing.
+    func forSelection(omitting commands: Set<CanvasCommand>, in editor: CanvasEditor) -> ResolvedEntry? {
+        if let command, commands.contains(command) { return nil }
+        switch content {
+        case .submenu(let entries):
+            let kept = entries.compactMap { $0.forSelection(omitting: commands, in: editor) }
+            return kept.isEmpty ? nil : ResolvedEntry(title: title, key: key, content: .submenu(kept))
+        case .item(let isEnabled, let state, let perform):
+            let content = Content.item(isEnabled: isEnabled && (command.map(editor.canPerform) ?? true), state: state) {
+                editor.endEditing()
+                perform()
+            }
+            return ResolvedEntry(title: title, key: key, content: content, command: command, shortcut: shortcut)
+        }
+    }
 }
 
 @MainActor
 enum ContextMenuItems {
     /// What shows for one shape at one level: the first entry with each key (a kind's own before
-    /// every shape's), then only those whose `when` holds.
-    static func shown(_ entries: [ErasedEntry], for record: AnyShapeRecord) -> [ErasedEntry] {
+    /// every shape's), then only those whose `when` holds, and whose command, if it names one, a plugin
+    /// claims.
+    static func shown(_ entries: [ErasedEntry], for record: AnyShapeRecord, in editor: CanvasEditor) -> [ErasedEntry] {
         var seen = Set<EntryKey>()
-        return entries.filter { seen.insert($0.key).inserted }.filter { $0.isShown(record) }
+        return entries.filter { seen.insert($0.key).inserted }.filter { $0.isShown(record) && $0.isClaimed(in: editor) }
+    }
+
+    /// An item's title: its own, else its command's (`registry.title(of:)`), else the id it's keyed by.
+    static func title(_ title: String?, command: CanvasCommand?, id: String, in editor: CanvasEditor) -> String {
+        title ?? command.flatMap { editor.registry.title(of: $0) ?? $0.rawValue } ?? id
+    }
+
+    /// The first key that runs the command, if the keyboard's plugin has one for it.
+    private static func shortcut(of command: CanvasCommand?, in editor: CanvasEditor) -> KeyChord? {
+        command.flatMap { editor.registry.shortcut(forCommand: $0)?.chord }
     }
 
     /// The entries every shape shows, in the first shape's order. An item is enabled if it is for
@@ -114,10 +159,10 @@ enum ContextMenuItems {
                 var levels: [(record: AnyShapeRecord, entries: [ErasedEntry])] = []
                 for (record, match) in matches {
                     guard case .submenu(let entries) = match.content else { return nil }
-                    levels.append((record, shown(entries, for: record)))
+                    levels.append((record, shown(entries, for: record, in: editor)))
                 }
                 let items = resolve(levels, in: editor)
-                return items.isEmpty ? nil : ResolvedEntry(title: entry.title, key: entry.key, content: .submenu(items))
+                return items.isEmpty ? nil : ResolvedEntry(title: entry.title(in: editor), key: entry.key, content: .submenu(items))
             }
         }
     }
@@ -133,18 +178,21 @@ enum ContextMenuItems {
         let state: NSControl.StateValue? = checks.allSatisfy { $0 == nil } ? nil
             : checks.allSatisfy { $0 == true } ? .on : checks.contains(true) ? .mixed : .off
         // Whatever the item does, over every shape, is one undo step, named by the item.
-        return ResolvedEntry(title: entry.title, key: entry.key, content: .item(isEnabled: !enabled.isEmpty, state: state) {
-            editor.undoHistory.group(entry.stepName ?? entry.title) { perform(enabled, in: editor) }
-        })
+        let title = entry.title(in: editor)
+        return ResolvedEntry(title: title, key: entry.key, content: .item(isEnabled: !enabled.isEmpty, state: state) {
+            editor.undoHistory.group(entry.stepName ?? title) { perform(enabled, in: editor) }
+        }, command: entry.command, shortcut: Self.shortcut(of: entry.command, in: editor))
     }
 
     /// The canvas's items for a menu's subject, each asked once: those shown, in order, and
     /// submenus with something in them. What an entry made when the menu opens (`MenuItems`) gives
     /// stands in its place, asked once, and an entry whose key an earlier one at its level has is left out.
     static func resolve(_ entries: [MenuEntry<MenuSubject>], for subject: MenuSubject) -> [ResolvedEntry] {
-        expanded(entries, for: subject).compactMap { entry in
-            guard entry.isShown(subject) else { return nil }
+        let editor = subject.editor
+        return expanded(entries, for: subject).compactMap { entry in
+            guard entry.isShown(subject), entry.command.map(editor.registry.claims) ?? true else { return nil }
             let key = EntryKey(group: entry.group, id: entry.id)
+            let title = Self.title(entry.title, command: entry.command, id: entry.id, in: editor)
             switch entry.content {
             case .item(let isEnabled, let isChecked, let action):
                 let run: @MainActor () -> Void = switch action {
@@ -154,13 +202,14 @@ enum ContextMenuItems {
                     edit(&subject)
                 }
                 }
-                let title = entry.stepName ?? entry.title, editor = subject.editor
-                let step: @MainActor () -> Void = { editor.undoHistory.group(title, run) }
+                let stepName = entry.stepName ?? title
+                let step: @MainActor () -> Void = { editor.undoHistory.group(stepName, run) }
                 let state: NSControl.StateValue? = isChecked.map { $0(subject) ? .on : .off }
-                return ResolvedEntry(title: entry.title, key: key, content: .item(isEnabled: isEnabled(subject), state: state, perform: step))
+                return ResolvedEntry(title: title, key: key, content: .item(isEnabled: isEnabled(subject), state: state, perform: step),
+                                     command: entry.command, shortcut: Self.shortcut(of: entry.command, in: editor))
             case .submenu(let entries):
                 let items = resolve(entries, for: subject)
-                return items.isEmpty ? nil : ResolvedEntry(title: entry.title, key: key, content: .submenu(items))
+                return items.isEmpty ? nil : ResolvedEntry(title: title, key: key, content: .submenu(items))
             case .dynamic:
                 return nil
             }
@@ -218,6 +267,10 @@ enum ContextMenuItems {
                     item.representedObject = action          // the item holds its target weakly
                     item.isEnabled = isEnabled
                     if let state { item.state = state }
+                    if let chord = entry.shortcut {                  // shown, not run: the menu bar and the canvas run the key
+                        item.keyEquivalent = chord.menuKey
+                        item.keyEquivalentModifierMask = chord.menuModifiers
+                    }
                     menu.addItem(item)
                 case .submenu(let children):
                     let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
@@ -239,4 +292,19 @@ final class MenuAction: NSObject {
 
     /// AppKit sends menu actions on the main thread.
     @MainActor @objc func fire() { run() }
+}
+
+extension KeyChord {
+    /// The key as a menu item's key equivalent: Delete is Backspace's character to a menu.
+    var menuKey: String { key == "\u{7f}" ? "\u{8}" : String(key) }
+
+    /// The modifiers as a menu item holds them.
+    var menuModifiers: NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if modifiers.contains(.shift) { flags.insert(.shift) }
+        if modifiers.contains(.option) { flags.insert(.option) }
+        if modifiers.contains(.command) { flags.insert(.command) }
+        if modifiers.contains(.control) { flags.insert(.control) }
+        return flags
+    }
 }

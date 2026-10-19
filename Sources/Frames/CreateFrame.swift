@@ -1,6 +1,8 @@
 import Canvas
 import ContextMenus
 import CoreGraphics
+import Keyboard
+import Selection
 
 /// Create Frame's band in a context menu: after a transform's (60), before Cut, Copy and Paste (100).
 public enum FramesMenuGroup {}
@@ -14,23 +16,47 @@ extension FrameStyle {
     static let padding: CGFloat = 32
 }
 
+extension CanvasCommand {
+    /// Create Frame, ⇧⌘F: a frame around the selection (tldraw's ⌥⌘G is Group's here).
+    public static let createFrame: CanvasCommand = "createFrame"
+}
+
+extension CanvasEditor {
+    /// Whether Create Frame would put one down: some selected shape has a box a frame can hold, with
+    /// nothing under way or being edited.
+    var canCreateFrame: Bool {
+        guard session == nil, editingShapeID == nil else { return false }
+        let document = document
+        return selectedShapeIDs.contains { document[$0]?.box != nil }
+    }
+
+    /// Puts a frame down around these shapes (see `createFrameItem`), in one step named "Create Frame".
+    func createFrame(around ids: [ShapeID]) {
+        undoHistory.group("Create Frame") {
+            place(ShapeRecord(Frame()), around: ids, padding: FrameStyle.padding,
+                  minimumSize: registry.placement(for: Frame.kind)?.minimumSize ?? .zero)
+        }
+    }
+}
+
 extension PluginRegistrar {
     /// Create Frame, in the menu of any shapes a frame can hold (those with a box: an arrow alone has
-    /// none): a frame around them, holding them, put down by the core (`place(_:around:)`), reaching
+    /// none) and on ⇧⌘F, one command (`.createFrame`) that both run on the selection: a frame around
+    /// them, holding them, put down by the core (`place(_:around:)`), reaching
     /// `FrameStyle.padding` past them and never under its placement's `minimumSize` where the frame they're all in
     /// has room, in that frame, just below the lowest of them; what it mostly covers comes in, what it
     /// barely reaches is nudged out. Selected, one step, named as the item is. A locked one among them
     /// leaves it all as it was, and shakes. An item for the canvas, as Turn into Subboard is: it's for
     /// the menu's shapes together, whatever their kinds.
     mutating func createFrameItem() {
+        command(.createFrame, "Create Frame", shortcuts: [KeyChord("f", [.command, .shift])], isEnabled: { $0.canCreateFrame }) {
+            $0.createFrame(around: $0.selectedShapeIDs)
+        }
         contextMenuForCanvas {
-            MenuItem("Create Frame", in: FramesMenuGroup.self, when: { subject in
+            MenuItem(command: .createFrame, in: FramesMenuGroup.self, when: { subject in
                 let document = subject.editor.document
                 return subject.shapes.contains { document[$0]?.box != nil }
-            }) { ids, editor in
-                editor.place(ShapeRecord(Frame()), around: ids, padding: FrameStyle.padding,
-                             minimumSize: editor.registry.placement(for: Frame.kind)?.minimumSize ?? .zero)
-            }
+            })
         }
     }
 }

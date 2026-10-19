@@ -83,9 +83,24 @@ extension CanvasEditor {
         return true
     }
 
-    /// Return, Enter, ⌘↓ and `.openSelection`: opens the only selected shape (`open`).
+    /// Whether `openSelection` would do something: the selection is a group selected whole, or the only
+    /// selected shape is a container that is neither opened nor edited (a frame), that holds a shape
+    /// to go into (tldraw's `selectFirstChildShape`), or the only selected shape can be opened (`canOpen`).
+    public var canOpenSelection: Bool {
+        selectionState?.canStepInto == true || (selection.map(canOpen) ?? false)
+    }
+
+    /// Return, Enter, ⌘↓ and `.openSelection`: goes into the selection if it is a group selected whole
+    /// (selecting its first part, one level in, in reading order) or the only selected shape is a
+    /// container that is neither opened nor edited (selecting the first shape in it, in reading order),
+    /// bringing it into view if it is not; otherwise opens the only selected shape (`open`).
     public func openSelection() {
-        if let selection { open(selection) }
+        if let inside = selectionState?.shapesInside() {
+            selectedShapeIDs = inside
+            revealIfOffscreen(inside)
+        } else if let selection {
+            open(selection)
+        }
     }
 
     /// Shows `board`, as `showBoard` does, and selects `ids` there, as one step back: going back

@@ -381,5 +381,7 @@ public struct PortsPlugin: ListedPlugin {
         registrar.overlay(PortOverlay())
         registrar.canvasButtons(at: { editor, point in editor.service(PortState.self)?.dot(atViewPoint: point) },
                                 drag: { dot, origin, editor in editor.service(PortState.self)?.connect(from: dot, at: origin) })
+        // ⌘L connects two selected shapes, the port's drag from the keyboard (its item: `ConnectMenuPlugin`).
+        registrar.connectCommand()
     }
 }

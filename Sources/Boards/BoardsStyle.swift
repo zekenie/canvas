@@ -14,8 +14,12 @@ enum BoardsStyle {
     /// What the root is called when the host names it nothing (`editor.rootName`): its crumb, and
     /// wherever else it's named.
     static let rootFallback = "Board"
-    /// What going up is called in the table of contents' heading, as the Go menu calls it.
+    /// What going up is called in the table of contents' heading, as the Go menu calls it when there is
+    /// no group or container to step out of first. The Go item (`.enclosingBoard`) is named for the
+    /// step it takes: Enclosing Group, or "Enclosing " and what the container's kind is called.
     static let enclosingBoard = "Enclosing Board"
+    static let enclosingGroup = "Enclosing Group"
+    static let enclosing = "Enclosing "
     /// The lock after the name of the crumb where the read-only part of the path starts: its symbol,
     /// how far it is from the name, and what it's called (its tooltip, and to assistive apps).
     static let readOnlySymbol = "lock.fill"

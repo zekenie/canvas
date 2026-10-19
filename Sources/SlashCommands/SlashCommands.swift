@@ -158,5 +158,6 @@ public struct SlashCommandsPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { SlashCommandState(editor: $0) }
+        registrar.keyHint("/ at a Line's Start", "Run a Command", while: .text)
     }
 }

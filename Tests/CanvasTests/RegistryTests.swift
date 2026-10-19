@@ -216,16 +216,29 @@ extension ShapeRegistrar {
     test("a command runs what its plugin claimed; an unclaimed one reports false; two claims conflict") {
         let ran = RunLog()
         let editor = CanvasEditor(registry: try Registry(plugins: [Contributor(id: "x") { r in
-            r.command(.delete) { _ in ran.commands.append("delete") }
-            r.command("custom") { _ in ran.commands.append("custom") }
+            r.command(.delete, "Delete") { _ in ran.commands.append("delete") }
+            r.command("custom", "Custom") { _ in ran.commands.append("custom") }
         }]), scheduler: ManualScheduler())
         expect(editor.perform(.delete))
         expect(editor.perform("custom"))
         expect(!editor.perform(.selectAll))
         expectEqual(ran.commands, ["delete", "custom"])
         expectThrows(RegistryError.conflict(point: "Commands", key: "delete", plugins: ["x", "y"])) {
-            _ = try Registry(plugins: [Contributor(id: "x") { $0.command(.delete) { _ in } }, Contributor(id: "y") { $0.command(.delete) { _ in } }])
+            _ = try Registry(plugins: [Contributor(id: "x") { $0.command(.delete, "Delete") { _ in } }, Contributor(id: "y") { $0.command(.delete, "Delete") { _ in } }])
         }
+    },
+    test("a command named for the step it would take says so with a menu title that follows the editor; its title stays what it is called") {
+        let step = RunLog()
+        let editor = CanvasEditor(registry: try Registry(plugins: [Contributor(id: "x") { r in
+            r.command("climb", "Climb", menuTitle: { _ in "Climb " + (step.commands.last ?? "nothing") }) { _ in }
+            r.command("plain", "Plain") { _ in }
+        }]), scheduler: ManualScheduler())
+        expectEqual(editor.menuTitle(of: "climb"), "Climb nothing")
+        step.commands.append("a rung")
+        expectEqual(editor.menuTitle(of: "climb"), "Climb a rung", "asked afresh each time")
+        expectEqual(editor.registry.title(of: "climb"), "Climb", "what it is called wherever it is listed")
+        expectEqual(editor.menuTitle(of: "plain"), nil, "a command whose item keeps its own title")
+        expectEqual(editor.menuTitle(of: "unclaimed"), nil)
     },
     test("a secondary click opens what its plugin makes, asked in world units; unclaimed or nil, nothing opens; two claims conflict") {
         let h = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "x") { r in
@@ -238,6 +251,23 @@ extension ShapeRegistrar {
         expectThrows(RegistryError.conflict(point: "SecondaryClickMenu", key: "the secondary-click menu", plugins: ["x", "y"])) {
             _ = try Registry(plugins: [Contributor(id: "x") { $0.menuForSecondaryClick { _, _ in nil } },
                                        Contributor(id: "y") { $0.menuForSecondaryClick { _, _ in nil } }])
+        }
+    },
+    test("the selection's menu is what its plugin makes, told the commands to leave out; unclaimed, the editor has none; two claims conflict") {
+        let asked = RunLog()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "x") { r in
+            r.menuForSelection { _, commands in
+                asked.commands.append(commands.map(\.rawValue).sorted().joined(separator: ","))
+                return commands.isEmpty ? NSMenu(title: "everything") : nil
+            }
+        }])
+        expectEqual(h.editor.menuForSelection(omitting: [])?.title, "everything")
+        expect(h.editor.menuForSelection(omitting: [.cut, .copy]) == nil)
+        expectEqual(asked.commands, ["", "copy,cut"])
+        expect(try EditorHarness(plugins: [FixturesPlugin()]).editor.menuForSelection(omitting: []) == nil)
+        expectThrows(RegistryError.conflict(point: "SelectionMenu", key: "the selection's menu", plugins: ["x", "y"])) {
+            _ = try Registry(plugins: [Contributor(id: "x") { $0.menuForSelection { _, _ in nil } },
+                                       Contributor(id: "y") { $0.menuForSelection { _, _ in nil } }])
         }
     },
     test("a key stroke goes to the one plugin that claims key strokes, as it came; unclaimed, no key does anything; two claims conflict") {
@@ -274,9 +304,10 @@ extension ShapeRegistrar {
                                               Contributor(id: "p") { r in
                                                   r.contribute("x", to: Stamps.self, for: .kind(Card.kind))
                                                   r.outlines { _ in Outlines() }
-                                                  r.command(.delete) { _ in }
+                                                  r.command(.delete, "Delete") { _ in }
                                                   r.defaultTool(ToolID(placing: Card.kind))
                                                   r.menuForSecondaryClick { _, _ in nil }
+                                                  r.menuForSelection { _, _ in nil }
                                                   r.keyStrokes { _, _ in false }
                                                   r.contribute("x", to: Described.self)
                                               }])
@@ -285,7 +316,7 @@ extension ShapeRegistrar {
         fixtures      shape box · shape disc · shape tag
         cards         shape card · tool card
         stamps        \("")
-        p             Stamps → card · outlines · command delete · default tool card · secondary-click menu · key strokes · described x
+        p             Stamps → card · outlines · command delete · default tool card · secondary-click menu · selection menu · key strokes · described x
         """)
     },
     test("a plain point takes any number of contributions for one target, as a list") {

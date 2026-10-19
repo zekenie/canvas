@@ -59,6 +59,10 @@ open class EditingTextView: NSTextView {
     public var onLeave: (@MainActor () -> Void)?
     /// Escape, when set: the panel's hand-back to the canvas.
     public var onExit: (@MainActor () -> Void)?
+    /// A key the host answers before the text does, true if it took it (a note's ⇧↩, which goes on to
+    /// a new note): asked first of every key down, but never while a list at the caret holds keys or
+    /// text is being composed.
+    public var onKeyDown: (@MainActor (NSEvent) -> Bool)?
     /// Drawn where the text starts while there's none, in the text's font, dimmed.
     public var placeholder: String? {
         didSet { if placeholder != oldValue { needsDisplay = true } }
@@ -111,6 +115,7 @@ open class EditingTextView: NSTextView {
     // MARK: Keys
 
     open override func keyDown(with event: NSEvent) {
+        if let onKeyDown, !holdsKeys, !hasMarkedText(), onKeyDown(event) { return }
         // ⌘↩ says the text's done, list or not: a list at the caret closes first.
         if commandCommit != nil, Self.isCommandReturn(event), !hasMarkedText() { caretListWindow?.closeList() }
         if !holdsKeys, Self.isReturn(event), !hasMarkedText() {

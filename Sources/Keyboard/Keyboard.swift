@@ -156,12 +156,15 @@ extension PluginRegistrar {
         self.shortcut(shortcut, forTool: descriptor.id)
     }
 
-    /// A command (`command(_:isEnabled:_:)`: what a menu item such as Edit › Delete runs) and the
-    /// keys that run it on the canvas, so the menu and the keys do one thing. While `isEnabled`
-    /// doesn't hold, the menu item is dimmed and its keys go on as if there were no shortcut.
-    public mutating func command(_ command: CanvasCommand, shortcuts: [KeyChord], isEnabled: @escaping @MainActor (CanvasEditor) -> Bool = { _ in true },
+    /// A command (`command(_:_:isEnabled:_:)`: what a menu item such as Edit › Delete runs, called
+    /// `title`) and the keys that run it on the canvas, so the menu and the keys do one thing. While
+    /// `isEnabled` doesn't hold, the menu item is dimmed and its keys go on as if there were no shortcut.
+    /// `menuTitle` names the item for the step the command would take now (see the core's `command`).
+    public mutating func command(_ command: CanvasCommand, _ title: String, shortcuts: [KeyChord],
+                                 menuTitle: (@MainActor (CanvasEditor) -> String)? = nil,
+                                 isEnabled: @escaping @MainActor (CanvasEditor) -> Bool = { _ in true },
                                  _ run: @escaping @MainActor (CanvasEditor) -> Void) {
-        self.command(command, isEnabled: isEnabled, run)
+        self.command(command, title, menuTitle: menuTitle, isEnabled: isEnabled, run)
         for chord in shortcuts {
             contribute(Shortcut(chord: chord, effect: .command(command, repeats: false)), to: KeyboardShortcuts.self)
         }
@@ -203,9 +206,60 @@ extension Registry {
     public func shortcut(forCommand command: CanvasCommand) -> Shortcut? { shortcuts.first { $0.action == .command(command) } }
 
     /// The tooltip of a button that runs a command, as a tool's is: what it's called, and the key
-    /// that runs it: "Enclosing Board (⌘↑)".
+    /// that runs it: "Next (⌘G)"; just the title for a command with no key.
     public func help(_ title: String, forCommand command: CanvasCommand) -> String {
         shortcut(forCommand: command).map { "\(title) (\($0.chord))" } ?? title
+    }
+}
+
+// MARK: The Keyboard Shortcuts window's rows
+
+extension Registry {
+    /// Every key registered here, as the Keyboard Shortcuts window lists them (the host's slot,
+    /// `registrar.keyboardHelp`): a row for each thing the keys do, named as a tool's label, a
+    /// command's title (`title(of:)`) or a shortcut's own title says, in the order they were
+    /// registered. Keys under one name are one row (⌘↓, Return and Enter all open the selection),
+    /// filed with the command if one of them runs it, and the four arrows held with the same
+    /// modifiers are written as one ("←↑→↓", "⇧←↑→↓").
+    public var keyboardHelpRows: [KeyboardHelpRow] {
+        var rows: [(title: String, place: KeyboardHelpRow.Place, chords: [KeyChord])] = []
+        for shortcut in shortcuts {
+            let title: String, place: KeyboardHelpRow.Place
+            switch shortcut.action {
+            case .tool(let id): (title, place) = (tools.first { $0.id == id }?.label ?? id.rawValue, .tool)
+            case .command(let command): (title, place) = (self.title(of: command) ?? command.rawValue, .command(command))
+            case .custom(let name): (title, place) = (name, .canvas)
+            }
+            if let index = rows.firstIndex(where: { $0.title == title }) {
+                rows[index].chords.append(shortcut.chord)
+                if case .command = place, rows[index].place == .canvas { rows[index].place = place }
+            } else {
+                rows.append((title, place, [shortcut.chord]))
+            }
+        }
+        return rows.map { KeyboardHelpRow(keys: KeyChord.written($0.chords), title: $0.title, place: $0.place) }
+    }
+}
+
+extension KeyChord {
+    static let arrows: [KeyChord] = [.leftArrow, .upArrow, .rightArrow, .downArrow]
+
+    /// Chords as a list of keys shows them, in order: each as menus write it, but the four arrows
+    /// held with the same modifiers, which are one entry where the first of them was ("←↑→↓").
+    static func written(_ chords: [KeyChord]) -> [String] {
+        var written: [String] = []
+        var folded: [Modifiers] = []
+        for chord in chords {
+            let arrows = arrows.map { KeyChord($0.key, chord.modifiers) }
+            guard arrows.contains(chord), arrows.allSatisfy(chords.contains) else {
+                written.append(chord.description)
+                continue
+            }
+            if folded.contains(chord.modifiers) { continue }
+            folded.append(chord.modifiers)
+            written.append(String(chord.description.dropLast()) + "←↑→↓")
+        }
+        return written
     }
 }
 
@@ -270,9 +324,11 @@ extension KeyboardState: EditorService {
 
 /// Claims key strokes and their releases, and gives the core's own actions their keys: H for the
 /// Hand, and Space held to pan as it does whatever the tool (`editor.isHandHeld`, Figma's and
-/// tldraw's), Escape (⌘. too, as anywhere on the Mac) to cancel, ⌘Z and ⇧⌘Z to undo and redo (held,
-/// again and again), and the View menu's zoom keys: ⌘= and ⌘- (held, again and again), ⌘0, and ⇧1
-/// for Zoom to Fit (tldraw's), the number row's 1 whatever the layout types with it.
+/// tldraw's), Escape (⌘. too, as anywhere on the Mac) to cancel, Q for the tool lock
+/// (`editor.isToolLocked`, tldraw's), ⌘Z and ⇧⌘Z to undo and redo (held, again and again), and the
+/// View menu's zoom keys: ⌘= and ⌘- (held, again and again), = and - alone the same, ⌘0 and ⇧0 for
+/// Actual Size, and ⇧1 for Zoom to Fit (tldraw's, and again to go back), the number row's digits
+/// whatever the layout types with them.
 public struct KeyboardPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .keyboard }
@@ -281,6 +337,8 @@ public struct KeyboardPlugin: ListedPlugin {
         registrar.service { KeyboardState(editor: $0) }
         // The toolbar's tips: a tool's label and the key that switches to it ("Note (N)").
         registrar.toolTips { tool, registry in registry.help(for: tool) }
+        // The Keyboard Shortcuts window's rows: every key registered here, under what it does.
+        registrar.keyboardHelp { $0.keyboardHelpRows }
         registrar.keyStrokes { editor, stroke in editor.service(KeyboardState.self)?.handle(stroke) ?? false }
         registrar.keyReleases { editor, stroke in editor.service(KeyboardState.self)?.release(stroke) }
         registrar.shortcut("h", forTool: .hand)
@@ -289,9 +347,17 @@ public struct KeyboardPlugin: ListedPlugin {
         registrar.shortcut(KeyChord(".", .command), "Cancel") { $0.cancel() }
         registrar.shortcut(KeyChord("z", .command), forCommand: .undo, repeats: true)
         registrar.shortcut(KeyChord("z", [.command, .shift]), forCommand: .redo, repeats: true)
+        registrar.shortcut("q", "Tool Lock") { $0.isToolLocked.toggle() }
         registrar.shortcut(KeyChord("=", .command), forCommand: .zoomIn, repeats: true)
         registrar.shortcut(KeyChord("-", .command), forCommand: .zoomOut, repeats: true)
+        registrar.shortcut("=", forCommand: .zoomIn, repeats: true)
+        registrar.shortcut("-", forCommand: .zoomOut, repeats: true)
         registrar.shortcut(KeyChord("0", .command), forCommand: .zoomToActualSize)
+        registrar.shortcut(KeyChord("0", .shift), forCommand: .zoomToActualSize)
         registrar.shortcut(KeyChord("1", .shift), forCommand: .zoomToFit)
+        // What the core reads of keys held with the pointer, for the Keyboard Shortcuts window: ⇧
+        // keeps a drag to one axis (`TranslatingSession`), and ⌘ makes a scroll zoom (`CanvasView`).
+        registrar.keyHint("⇧ Drag", "Move Along One Axis", while: .pointer)
+        registrar.keyHint("⌘ Scroll", "Zoom", while: .pointer)
     }
 }

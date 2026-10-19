@@ -23,7 +23,7 @@ public struct JumpToPlugin: ListedPlugin {
         // ⌘K and Go › Jump To…: opens the palette, or, open, asks for its keyboard again; ends editing
         // first (its edit committed), and never mid-press. It changes no document, so it leaves no
         // step of undo.
-        registrar.command(.jumpTo, shortcuts: [KeyChord("k", .command)], isEnabled: { $0.session == nil }) { editor in
+        registrar.command(.jumpTo, "Jump To…", shortcuts: [KeyChord("k", .command)], isEnabled: { $0.session == nil }) { editor in
             editor.endEditing()
             editor.jumpTo?.open()
         }

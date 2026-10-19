@@ -13,7 +13,10 @@ import Selection
 /// what a cut took puts the shapes themselves back, on whatever board, under the ids they had
 /// (those the file doesn't use), so what names them (a mention) names them again. Every kind is
 /// copyable unless it opts out (`shape.uncopyable()`). Only this app's shapes paste: anything else
-/// on the pasteboard (text, an image) is left alone, for now.
+/// on the pasteboard (text, an image) is left alone, for now. ⇧⌘V (Edit › Paste at Pointer) pastes
+/// centered on the pointer while it's over the canvas. Edit › Copy as Image (⇧⌘C) is the window's:
+/// this plugin says what it draws, the file a copy of the selection (or the board) would be
+/// (`registrar.imageSource`).
 extension PluginID {
     public static let clipboard: PluginID = "clipboard"
 }
@@ -105,31 +108,32 @@ public struct ClipboardPlugin: OutwardPlugin {
         registrar.service { ClipboardState(editor: $0, pasteboard: pasteboard) }
         // ⌘X, ⌘C and ⌘V on the canvas, and Edit › Cut, Copy and Paste (the board's window runs these
         // commands wherever the keyboard is, but in text), do one thing.
-        registrar.command(.cut, shortcuts: [KeyChord("x", .command)], isEnabled: { $0.canCut }) { $0.cutSelection() }
-        registrar.command(.copy, shortcuts: [KeyChord("c", .command)], isEnabled: { $0.canCopy }) { $0.copySelection() }
-        registrar.command(.paste, shortcuts: [KeyChord("v", .command)], isEnabled: { $0.canPaste }) { $0.paste() }
+        registrar.command(.cut, "Cut", shortcuts: [KeyChord("x", .command)], isEnabled: { $0.canCut }) { $0.cutSelection() }
+        registrar.command(.copy, "Copy", shortcuts: [KeyChord("c", .command)], isEnabled: { $0.canCopy }) { $0.copySelection() }
+        registrar.command(.paste, "Paste", shortcuts: [KeyChord("v", .command)], isEnabled: { $0.canPaste }) { $0.paste() }
+        // ⇧⌘V pastes as ⌘V does, but centered on the pointer while it's over the canvas.
+        registrar.command(.pasteAtPointer, "Paste at Pointer", shortcuts: [KeyChord("v", [.command, .shift])], isEnabled: { $0.canPaste }) {
+            $0.pasteAtPointer()
+        }
+        // What Edit › Copy as Image draws (the window's item, ⇧⌘C): the file a copy would be.
+        registrar.imageSource(isAvailable: { $0.canCopyAsImage }) { $0.imageShapes() }
         // ⌘D and Edit › Duplicate copy the selection beside itself without the pasteboard; ⌥ held on a drag
         // of the selection (Selection's `copiesOnDrag`) carries copies in place of the shapes.
-        registrar.command(.duplicate, shortcuts: [KeyChord("d", .command)], isEnabled: { $0.canDuplicate }) { $0.duplicateSelection() }
+        registrar.command(.duplicate, "Duplicate", shortcuts: [KeyChord("d", .command)], isEnabled: { $0.canDuplicate }) { $0.duplicateSelection() }
         registrar.copiesOnDrag { editor, ids in editor.duplicate(ids) }
-        // In every context menu, on shapes and on empty canvas. Cut and Copy show when some of the
-        // shapes the menu is for can be copied, and act on those; Paste, when there's something
-        // to paste, which lands centered where the menu was asked for (⌘V keeps its rule: where it
-        // was copied from, if that's in view).
+        // In every context menu, on shapes and on empty canvas. Cut, Copy and Duplicate show when some
+        // of the shapes the menu is for can be copied, and run their commands on the selection, which
+        // the menu's shapes are by then; Paste, when there's something to paste, which lands centered
+        // where the menu was asked for (⌘V keeps its rule: where it was copied from, if that's in
+        // view), so the item has an action of its own and stands for the command (its key; the
+        // selection's menu leaves it out, as the menu bar has Paste).
         registrar.contextMenuForCanvas {
-            MenuItem("Cut", in: ClipboardMenuGroup.self, when: { $0.shapes.contains(where: $0.editor.isCopyable) }) { ids, editor in
-                editor.cut(ids)
-            }
-            MenuItem("Copy", in: ClipboardMenuGroup.self, when: { $0.shapes.contains(where: $0.editor.isCopyable) }) { ids, editor in
-                editor.copy(ids)
-            }
-            MenuItem("Duplicate", in: ClipboardMenuGroup.self,
-                     when: { !$0.editor.isBoardReadOnly && $0.shapes.contains(where: $0.editor.isCopyable) }) { ids, editor in
-                let step = ClipboardStyle.duplicateOffset / editor.camera.zoom
-                editor.duplicate(ids, offsetBy: CGPoint(x: step, y: step))
-            }
-            MenuItem("Paste", in: ClipboardMenuGroup.self, when: { $0.editor.canPaste }) { subject in   // handed the subject: its point
-                subject.editor.paste(centeredAt: subject.point)
+            MenuItem(command: .cut, in: ClipboardMenuGroup.self, when: { $0.shapes.contains(where: $0.editor.isCopyable) })
+            MenuItem(command: .copy, in: ClipboardMenuGroup.self, when: { $0.shapes.contains(where: $0.editor.isCopyable) })
+            MenuItem(command: .duplicate, in: ClipboardMenuGroup.self,
+                     when: { !$0.editor.isBoardReadOnly && $0.shapes.contains(where: $0.editor.isCopyable) })
+            MenuItem("Paste", command: .paste, in: ClipboardMenuGroup.self, when: { $0.editor.canPaste }) { subject in   // handed the subject: its point
+                if let point = subject.point { subject.editor.paste(centeredAt: point) } else { subject.editor.paste() }
             }
         }
     }

@@ -52,8 +52,8 @@ private final class Stop: NSView {
             $0.tool(ToolDescriptor(id: "card-probe", label: "Probe", systemImage: "circle")) { _ in CardTool(log: log) }
             $0.defaultTool("card-probe")
             $0.keyStrokes { _, stroke in log.keys.append(stroke.characters); return true }
-            $0.command(.delete) { _ in log.commands.append("delete") }
-            $0.command(.selectAll) { _ in log.commands.append("selectAll") }
+            $0.command(.delete, "Delete") { _ in log.commands.append("delete") }
+            $0.command(.selectAll, "Select All") { _ in log.commands.append("selectAll") }
         }])
         window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         canvas = CanvasView(editor: h.editor)

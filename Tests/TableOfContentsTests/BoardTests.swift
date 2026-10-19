@@ -29,7 +29,7 @@ struct UpPlugin: CanvasPlugin {
     static let up: CanvasCommand = "test-up"
     var id: PluginID { "up" }
     func register(into registrar: inout PluginRegistrar) {
-        registrar.command(Self.up, isEnabled: { !$0.board.isRoot }) { $0.showBoard(.root) }
+        registrar.command(Self.up, "Up", isEnabled: { !$0.board.isRoot }) { $0.showBoard(.root) }
     }
 }
 

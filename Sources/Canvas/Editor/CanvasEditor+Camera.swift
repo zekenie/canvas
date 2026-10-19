@@ -117,7 +117,7 @@ extension CanvasEditor {
 // The core's zoom commands (View › Zoom In, Zoom Out, Actual Size and Zoom to Fit; Keyboard gives
 // them their keys, CorePoints.swift claims them): each eases the camera there over
 // `Style.zoomDuration` (tldraw's animationMediumMs), from where it's headed, so pressing one again
-// before it lands goes on from there.
+// before it lands goes on from there. Zoom to Fit pressed again goes back to where it left.
 extension CanvasEditor {
     /// The stop Zoom In goes to: the first of `Camera.zoomStops` past `zoomPercentage`; nil at the
     /// last, where it's dimmed.
@@ -145,8 +145,24 @@ extension CanvasEditor {
     /// Every shape of the board shown in view: fitted into what the host leaves clear of the view
     /// (`unobscuredViewport`) with a board's first visit's margin, as close as the zoom goes
     /// (tldraw's zoomToFit). Does nothing on an empty board, or before the view has a size.
+    ///
+    /// Again, while the camera is still where the fit left it (at it, or headed for it, so pressing
+    /// twice in a row goes back at once) and a fit now would be the same (the view and the board's
+    /// shapes as they were), it goes back to the camera from before the fit (Terminal Graph's). Any other camera change forgets it: a pan, a zoom, a drag of the hand or a slide
+    /// leaves the camera elsewhere, and showing another board clears it (`show`), so the next fit
+    /// remembers the camera it leaves.
     func zoomToFit() {
         guard canZoomToFit else { return }
-        animateCamera(to: Camera(fitting: shapeBounds, in: unobscuredViewport, inset: Style.firstVisitInset), duration: Style.zoomDuration)
+        let fit = Camera(fitting: shapeBounds, in: unobscuredViewport, inset: Style.firstVisitInset)
+        // Back only while a fit now would be that fit: a resized view (the inspector shown) or shapes
+        // added or taken away since make it a fit again.
+        if let memory = cameraBeforeFit, cameraTarget == memory.fit, fit == memory.fit {
+            cameraBeforeFit = nil
+            animateCamera(to: memory.before, duration: Style.zoomDuration)
+            return
+        }
+        // Nothing to go back to when the camera is already there.
+        cameraBeforeFit = cameraTarget == fit ? nil : (cameraTarget, fit)
+        animateCamera(to: fit, duration: Style.zoomDuration)
     }
 }

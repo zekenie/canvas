@@ -71,6 +71,19 @@ extension CanvasEditor {
         animateCamera(to: target, duration: SelectionStyle.revealDuration)
     }
 
+    /// Brings the shapes into view only if they are not all in it (tldraw's `zoomToSelectionIfOffscreen`,
+    /// what stepping from shape to shape does): in what the host leaves clear of the view, where the
+    /// camera is headed, the camera stays. Otherwise it moves over 200 ms to center their bounds with 100
+    /// points of margin, at the zoom it has, or farther out where they do not fit (never closer, which
+    /// `reveal` brings small shapes to). Does nothing before the view has a size, or when none of the
+    /// shapes has bounds.
+    public func revealIfOffscreen(_ ids: [ShapeID]) {
+        let view = unobscuredViewport, camera = cameraTarget
+        guard !view.isEmpty, let bounds = shapeContext.bounds(of: ids), !camera.toWorld(view).contains(bounds) else { return }
+        animateCamera(to: Camera(fitting: bounds, in: view, inset: SelectionStyle.revealInset, maxZoom: camera.zoom),
+                      duration: SelectionStyle.revealDuration)
+    }
+
     /// Goes to the shapes, as following a link to them does: ends editing, selects those that can
     /// be selected, and brings them into view (`reveal`) unless they're all in view already at a
     /// readable zoom. Selecting them is a step back (`goBack`, ⌘[ returns, camera and all) when it

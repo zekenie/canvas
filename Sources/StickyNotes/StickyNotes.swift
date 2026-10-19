@@ -61,6 +61,11 @@ public struct StickyNotesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .stickyNotes }
     public func register(into registrar: inout PluginRegistrar) {
+        // What a note's editor answers (`NoteEditor`), for the Keyboard Shortcuts window.
+        registrar.keyHint("⌘↩ or ⎋", "Finish Editing", while: .text)
+        registrar.keyHint("⇧↩ in a Note", "New Note Beside It", while: .text)
+        registrar.keyHint("⇥ or ⇧⇥ in a Note", "Next or Previous Note", while: .text)
+        registrar.service { NoteHops(editor: $0) }
         registrar.shape(StickyNoteDefinition()) { note in
             let place = note.editingPlacement(size: NoteStyle.size) { StickyNote() }
             note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
@@ -284,6 +289,7 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         // ⌘↩ ends editing while the model writes the text too.
         textView.commitsWhileReadOnly = true
         textView.onCommit = { [weak self] in self?.context.end() }
+        textView.onKeyDown = { [weak self] event in self?.hop(on: event) ?? false }
         textView.onPointer = { [weak self] point in self?.hover(at: point) }
         clipsToBounds = true
         addSubview(textView)
@@ -376,6 +382,28 @@ final class NoteEditor: NSView, NSTextViewDelegate {
     private func focusWords() {
         window?.makeFirstResponder(textView)
         textView.setSelectedRange(NSRange(location: textView.textStorage?.length ?? 0, length: 0))
+    }
+
+    /// ⇧↩ goes on to a new note beside this one, as tldraw's adjacent notes do (↩ alone is a new line),
+    /// and Tab and ⇧Tab to the next and previous note: editing ends here and begins on that note
+    /// (`NoteHops`). A list open at the caret (@'s, /'s) holds the keys first (`holdsKeys`).
+    private func hop(on event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.shift, .command, .option, .control])
+        guard modifiers.isSubset(of: .shift), let hops = context.service(NoteHops.self) else { return false }
+        let id = context.shapeID
+        switch event.keyCode {
+        case 36, 76:
+            guard modifiers == .shift else { return false }
+            // Held, ⇧↩ makes one note: its repeats reach the new note's editor and are kept from it.
+            if event.isARepeat { return true }
+            context.end()
+            hops.addNote(beside: id)
+        case 48:
+            hops.editNote(modifiers == .shift ? .previous : .next, from: id)
+        default:
+            return false
+        }
+        return true
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {

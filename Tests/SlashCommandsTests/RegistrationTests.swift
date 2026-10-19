@@ -142,6 +142,6 @@ private func offering(_ name: String, id: PluginID) -> Contributor {
         expect(h.editor.slashCommands != nil)
         expectEqual(h.editor.slashCommands?.commands(for: box).count, 0)
         expectEqual(try Registry(plugins: [SlashCommandsPlugin()]).report.split(separator: "\n").last.map(String.init),
-                    "slash-commands  service SlashCommandState")
+                    "slash-commands  service SlashCommandState · key hint / at a Line\'s Start Run a Command")
     },
 ])

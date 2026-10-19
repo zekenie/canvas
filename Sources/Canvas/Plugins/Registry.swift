@@ -391,8 +391,14 @@ public struct Registry {
 
     /// Whether a plugin (or the core) claims the command, so `editor.perform` can run it.
     public func claims(_ command: CanvasCommand) -> Bool { self.command(command) != nil }
+
+    /// What the plugin that claims a command calls it ("Delete"); nil for a command none claims.
+    public func title(of command: CanvasCommand) -> String? { self.command(command)?.title }
     var secondaryClickMenu: (@MainActor (CanvasEditor, Pointer) -> NSMenu?)? {
         contributions(to: CorePoints.SecondaryClickMenu.self).first?.value
+    }
+    var selectionMenu: (@MainActor (CanvasEditor, Set<CanvasCommand>) -> NSMenu?)? {
+        contributions(to: CorePoints.SelectionMenu.self).first?.value
     }
     var keyStrokeHandler: (@MainActor (CanvasEditor, KeyStroke) -> Bool)? {
         contributions(to: CorePoints.KeyStrokes.self).first?.value
@@ -484,6 +490,7 @@ struct RawContribution {
             case is CorePoints.OutlineSources.Type: "outlines"
             case is CorePoints.DefaultTool.Type: "default tool \(value)"
             case is CorePoints.SecondaryClickMenu.Type: "secondary-click menu"
+            case is CorePoints.SelectionMenu.Type: "selection menu"
             case is CorePoints.KeyStrokes.Type: "key strokes"
             case is CorePoints.KeyReleases.Type: "key releases"
             case is CorePoints.TranslationAdjusters.Type: "translation adjuster"

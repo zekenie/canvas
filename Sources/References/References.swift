@@ -155,10 +155,10 @@ public struct ReferencesPlugin: ListedPlugin {
         registrar.overlay(ReferenceButtonOverlay())
         registrar.canvasButtons(at: { editor, point in editor.service(ReferenceState.self)?.goButton(atViewPoint: point) },
                                 click: { button, editor in editor.service(ReferenceState.self)?.goToOriginal(button.reference) })
-        registrar.command(.goToOriginal, isEnabled: { $0.service(ReferenceState.self)?.canGoToOriginal(of: Set($0.selectedShapeIDs)) ?? false }) { editor in
+        registrar.command(.goToOriginal, ReferenceStyle.goToOriginal, isEnabled: { $0.service(ReferenceState.self)?.canGoToOriginal(of: Set($0.selectedShapeIDs)) ?? false }) { editor in
             editor.service(ReferenceState.self)?.goToOriginal(of: Set(editor.selectedShapeIDs))
         }
-        registrar.command(.interpretReference, isEnabled: { $0.service(ReferenceState.self)?.canInterpret(Set($0.selectedShapeIDs)) ?? false }) { editor in
+        registrar.command(.interpretReference, ReferenceStyle.interpret, isEnabled: { $0.service(ReferenceState.self)?.canInterpret(Set($0.selectedShapeIDs)) ?? false }) { editor in
             editor.service(ReferenceState.self)?.interpret(only: Set(editor.selectedShapeIDs))
         }
         registrar.detailStatusForEveryShape { shape, context in

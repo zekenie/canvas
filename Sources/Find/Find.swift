@@ -254,11 +254,11 @@ public struct FindPlugin: ListedPlugin {
         registrar.overlay(FindOverlay())
         // Never mid-gesture. ⌘G and ⇧⌘G while there's something to step to: hits, or, with Find
         // closed, a query to open it on again.
-        registrar.command(.find, shortcuts: [KeyChord("f", .command)], isEnabled: { $0.session == nil }) { $0.find?.open() }
-        registrar.command(.findNext, shortcuts: [KeyChord("g", .command)], isEnabled: { $0.find?.canStep(in: $0) ?? false }) {
+        registrar.command(.find, "Find…", shortcuts: [KeyChord("f", .command)], isEnabled: { $0.session == nil }) { $0.find?.open() }
+        registrar.command(.findNext, "Find Next", shortcuts: [KeyChord("g", .command)], isEnabled: { $0.find?.canStep(in: $0) ?? false }) {
             $0.find?.step(forward: true)
         }
-        registrar.command(.findPrevious, shortcuts: [KeyChord("g", [.command, .shift])], isEnabled: { $0.find?.canStep(in: $0) ?? false }) {
+        registrar.command(.findPrevious, "Find Previous", shortcuts: [KeyChord("g", [.command, .shift])], isEnabled: { $0.find?.canStep(in: $0) ?? false }) {
             $0.find?.step(forward: false)
         }
     }

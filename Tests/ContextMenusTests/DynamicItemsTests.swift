@@ -12,7 +12,7 @@ import TestKit
 /// What the generating entries were asked, and the names they generate: a test changes `names` between menus.
 @MainActor private final class Generator {
     var names: [String]
-    var asked: [(shapes: Int, point: CGPoint)] = []
+    var asked: [(shapes: Int, point: CGPoint?)] = []
     var ran: [String] = []
 
     init(_ names: [String]) { self.names = names }
