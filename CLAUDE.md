@@ -56,7 +56,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [plugins and kinds](.claude/rules/plugins-and-kinds.md): plugin values and the frozen registry; kinds, their definitions and capabilities; translating and placing sessions.
 - [properties and schemas](.claude/rules/properties-and-schemas.md): property lists (`SchemaDefined`), kinds' JSON Schemas, `KindSchema`, added properties and the rules that keep two of a shape's values in step as it's written (`keepsInStep`), file values (what a plugin keeps on the file as a whole).
 - [shape references](.claude/rules/shape-references.md): values that bind or name other shapes, and what deletes, copies, cuts and draws do to them.
-- [editor](.claude/rules/editor.md): what `CanvasEditor` lends every plugin: layout inputs and laid-out frames, outlines and their standoff, read-only shapes, drawing offsets, the glide, skeleton levels, cards, commands and zoom, keys, the hand, the translation adjuster, service hooks, edge scrolling.
+- [editor](.claude/rules/editor.md): what `CanvasEditor` lends every plugin: layout inputs and laid-out frames, outlines and their standoff, read-only shapes, drawing offsets, the glide, skeleton levels, cards, commands and zoom, keys, the hand, the translation adjuster, service hooks and the order services hear a change in, edge scrolling.
 - [editing](.claude/rules/editing.md): editing in place (`Editable`, the editing view, `EditContext`), and an editor's text held to its shape's render.
 - [undo](.claude/rules/undo.md): steps, groups and coalescing, `DocumentDelta`, one history across boards.
 - [boards in a file](.claude/rules/boards-in-a-file.md): `CanvasFile`, board revisions, the delete cascade, `transact(on:)`, and showing a board.

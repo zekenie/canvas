@@ -427,9 +427,7 @@ extension NeighborList: EditorService {
     /// every event costs a look at its change set.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         guard subject != nil else { return }
-        let onlyMoves = !changes.replacedDocument && changes.added.isEmpty && changes.removed.isEmpty && changes.elsewhere.isEmpty
-            && changes.boardsReached.isEmpty && changes.changed.isSubset(of: changes.moved)
-        if !onlyMoves { askSoon(after: NeighborStyle.settle) }
+        if !changes.onlyMoves { askSoon(after: NeighborStyle.settle) }
     }
 
     /// The file's colors changed: every row is drawn again, as an answer drawn again does, since a
@@ -437,10 +435,6 @@ extension NeighborList: EditorService {
     public func shapeTintsDidChange(in editor: CanvasEditor) {
         listing?.stamp += 1
     }
-
-    /// Keeps nothing per board: the panel's shape says what's listed, and a row says which board it's
-    /// on as it's drawn. The switch's change set is never worked out.
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
 }
 
 extension CanvasEditor {

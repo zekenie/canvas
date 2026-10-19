@@ -54,7 +54,7 @@ extension GroupIndex: EditorService {
         if changes.added.isEmpty, changes.removed.isEmpty, changes.changed.count == changes.moved.count, !changes.reordered { return }
         var changed = false
         for id in changes.removed where stored.removeValue(forKey: id) != nil { changed = true }
-        for id in changes.added.union(changes.changed.subtracting(changes.moved)) {
+        for id in changes.edited {
             let path = editor.document[id]?[GroupsProperty.self] ?? []
             guard path != stored[id] ?? [] else { continue }
             stored[id] = path.isEmpty ? nil : path

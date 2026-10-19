@@ -57,34 +57,6 @@ struct Tally: Codable, Equatable, Sendable, SchemaDescribed {
     }
 }
 
-/// Moves a shape a point whenever a commit changes it other than by moving it: a service that
-/// commits while hearing a commit.
-final class Nudger {}
-
-extension Nudger: EditorService {
-    func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        let changed = changes.changed.subtracting(changes.moved)
-        guard !changed.isEmpty else { return }
-        editor.transact { $0.translate(changed, by: CGPoint(x: 1, y: 0)) }
-    }
-}
-
-/// What validation says of each shape a commit touched, as a service hears the commit.
-@MainActor final class IssueLog {
-    var issues: [[ValidationIssue]] = []
-}
-
-final class IssueReader {
-    let log: IssueLog
-    init(log: IssueLog) { self.log = log }
-}
-
-extension IssueReader: EditorService {
-    func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        for id in changes.shapeIDs { log.issues.append(editor.validation?.result(for: id)?.issues ?? []) }
-    }
-}
-
 struct CountedDefinition {}
 
 extension CountedDefinition: ShapeDefinition {
@@ -167,22 +139,6 @@ extension CountedDefinition: ShapeDefinition {
         h.editor.transact { $0.translate([id], by: CGPoint(x: -5, y: 0)) }
         expectEqual(engine.result(for: id), nil, "and what it found kept")
         expectEqual(Tally.encodings, checked + 2)
-    },
-    test("a commit heard out of turn, after one a service made while hearing it, keeps no schema verdict it may have made stale") {
-        let log = IssueLog()
-        let h = try EditorHarness(plugins: [FixturesPlugin(), Rules("nudges") { r in
-            r.shape(CountedDefinition())
-            r.service { _ in Nudger() }
-        }, ValidationPlugin(), Rules("reads") { $0.service { _ in IssueReader(log: log) } }])
-        let id = h.add(Counted(label: "ok"))
-        let engine = try require(h.editor.validation)
-        expectEqual(engine.result(for: id), nil)
-        log.issues = []
-        // The nudger hears the rename first, and moves the shape: that commit, only a move, reaches
-        // Validation and the reader before the rename does.
-        h.editor.transact { $0.update(id, as: Counted.self) { $0.props.label = "long" } }
-        let tooLong = ValidationIssue.warning("Label is 4 characters long, and should be at most 3.", field: "label")
-        expectEqual(log.issues, [[tooLong], [tooLong]], "the move's, then the rename's")
     },
     test("the schema's rule is Validation's own, one for every kind, in the report") {
         let registry = try Registry(plugins: [FixturesPlugin(), ValidationPlugin()])

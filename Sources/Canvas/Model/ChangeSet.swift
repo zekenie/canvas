@@ -66,6 +66,18 @@ public struct ChangeSet: Equatable, Sendable {
     /// Every shape the commit touched.
     public var shapeIDs: Set<ShapeID> { added.union(changed).union(removed) }
 
+    /// The shapes it added, or changed other than by moving them (`moved`, which are never added ones): those
+    /// whose records say something they didn't.
+    public var edited: Set<ShapeID> { added.union(changed.subtracting(moved)) }
+
+    /// Whether it did nothing to shapes but move them on its board (a drag's every event, its undo): it added,
+    /// removed and changed nothing else, reached no other board and put no document in place, so what follows
+    /// from what shapes are, never where, is as it was. True of a commit that touched no shape (the file's values
+    /// alone).
+    public var onlyMoves: Bool {
+        added.isEmpty && removed.isEmpty && changed == moved && elsewhere.isEmpty && boardsReached.isEmpty && !replacedDocument
+    }
+
     /// From one document to another, compared record by record (`replaceDocument`).
     init(from old: CanvasDocument, to new: CanvasDocument) {
         for record in new.shapes {

@@ -343,10 +343,7 @@ public final class QueryTranslator {
     }
 }
 
-extension QueryTranslator: EditorService {
-    /// Nothing kept per board.
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension QueryTranslator: EditorService {}
 
 extension CanvasEditor {
     /// The editor's translator of English into queries; nil without `QueryTranslationPlugin`.

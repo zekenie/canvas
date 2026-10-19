@@ -235,11 +235,7 @@ public struct UnnamedMember: Sendable, Equatable {
     }
 }
 
-extension FieldBook: EditorService {
-    /// It keeps nothing per shape or per board, so a switch needs no change set (the default works one out): a file put
-    /// in place moves the index's stamp.
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension FieldBook: EditorService {}
 
 extension CanvasEditor {
     /// The fields of a shape's types (`FieldBook`); nil without TypesPlugin.

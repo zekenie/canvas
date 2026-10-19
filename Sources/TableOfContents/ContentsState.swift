@@ -860,11 +860,3 @@ extension CanvasEditor {
         tableOfContents?.forget(ids)
     }
 }
-
-extension ChangeSet {
-    /// Whether the commit only moved shapes on its board (a drag's every event, its undo): it named
-    /// nothing anew, so what a row reads of other shapes is as it was.
-    var onlyMoves: Bool {
-        added.isEmpty && removed.isEmpty && changed == moved && elsewhere.isEmpty && boardsReached.isEmpty && !replacedDocument
-    }
-}

@@ -3,7 +3,7 @@ import CanvasTesting
 import CoreGraphics
 import TestKit
 
-/// Every change set the editor hands services.
+/// Every change set the editor hands services, a switch's as a commit's.
 @MainActor final class ChangeLog {
     var changes: [ChangeSet] = []
 }
@@ -15,6 +15,8 @@ final class ChangeRecorder {
 
 extension ChangeRecorder: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) { log.changes.append(changes) }
+    /// Another board shown, as a commit: every shape of one board taken away, every shape of the other brought.
+    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) { documentDidChange(change.changes, in: editor) }
 }
 
 @MainActor func recordingChanges(_ log: ChangeLog) -> Contributor {

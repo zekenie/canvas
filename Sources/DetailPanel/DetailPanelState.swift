@@ -199,9 +199,6 @@ extension DetailPanelState: EditorService {
     /// A number being typed for a shape of the board left is written to it while it's still there
     /// to write to.
     public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) { drafts?.commit() }
-
-    /// Nothing kept per shape.
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
 }
 
 extension CanvasEditor {

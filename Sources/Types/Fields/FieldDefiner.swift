@@ -120,10 +120,7 @@ public final class FieldDefiner {
     }
 }
 
-extension FieldDefiner: EditorService {
-    /// It keeps nothing per shape or per board, so a switch needs no change set (the default works one out).
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension FieldDefiner: EditorService {}
 
 extension CanvasEditor {
     /// The one writer of a type's field definitions (`FieldDefiner`); nil without TypesPlugin.

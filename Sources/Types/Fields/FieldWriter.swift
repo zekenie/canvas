@@ -128,10 +128,7 @@ public final class FieldWriter {
     }
 }
 
-extension FieldWriter: EditorService {
-    /// It keeps nothing per shape or per board, so a switch needs no change set (the default works one out).
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension FieldWriter: EditorService {}
 
 extension CanvasEditor {
     /// The one writer of a shape's field values (`FieldWriter`); nil without TypesPlugin.

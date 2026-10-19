@@ -79,6 +79,8 @@ final class RefIndex {
 
 extension RefIndex: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) { index(changes.shapeIDs) }
+    /// It keeps the refs of the board shown: a switch is a commit to it.
+    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) { documentDidChange(change.changes, in: editor) }
 }
 
 /// How often a ref's row has been made.

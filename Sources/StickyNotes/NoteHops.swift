@@ -56,7 +56,4 @@ final class NoteHops {
     }
 }
 
-extension NoteHops: EditorService {
-    /// Nothing kept per shape, so nothing to follow to another board.
-    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension NoteHops: EditorService {}

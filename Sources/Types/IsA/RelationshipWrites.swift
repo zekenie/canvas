@@ -46,11 +46,7 @@ public final class RelationshipHooks {
     }
 }
 
-extension RelationshipHooks: EditorService {
-    /// Nothing: showing another board changes nothing here, and a service that follows a switch by working out its
-    /// change set costs every switch both boards' shapes.
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension RelationshipHooks: EditorService {}
 
 extension CanvasEditor {
     /// A relationship type put between two types, with an arrow to it from the first and another from it to the

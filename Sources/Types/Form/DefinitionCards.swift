@@ -80,9 +80,6 @@ public final class DefinitionCards {
 }
 
 extension DefinitionCards: EditorService {
-    /// It keeps nothing per shape or per board, so a switch needs no change set (the default works one out).
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         hear(changes, in: editor)
     }

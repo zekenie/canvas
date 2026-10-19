@@ -149,9 +149,6 @@ extension ArrowTargeting: EditorService {
     func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
         resetTargeting()
     }
-
-    /// Nothing kept per shape: `boardWillChange` reset it all.
-    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
 }
 
 /// Where `point` lies in `bounds`, as a binding's anchor: (0, 0) at its min corner, (1, 1) at its max.

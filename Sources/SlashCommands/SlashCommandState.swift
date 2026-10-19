@@ -228,10 +228,7 @@ public final class SlashCommandState {
     }
 }
 
-extension SlashCommandState: EditorService {
-    /// Nothing kept per shape, so nothing to follow to another board.
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension SlashCommandState: EditorService {}
 
 extension CanvasEditor {
     /// What this editor's shapes offer as slash commands; nil without `SlashCommandsPlugin`.

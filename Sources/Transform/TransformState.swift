@@ -113,10 +113,7 @@ public final class TransformState {
     }
 }
 
-extension TransformState: EditorService {
-    /// Nothing kept per shape, so nothing to follow to another board.
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension TransformState: EditorService {}
 
 extension CanvasEditor {
     /// What this editor's shapes can be turned into, and turning them; nil without `TransformPlugin`.

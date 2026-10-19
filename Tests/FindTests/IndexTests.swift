@@ -6,21 +6,6 @@ import Find
 import Keyboard
 import Selection
 import TestKit
-import Topology
-
-/// A service before Find's that, once armed, commits again while hearing a commit: Find hears that
-/// second commit before the first (out of turn).
-@MainActor final class Interrupter {
-    var armed: ShapeID?
-}
-
-extension Interrupter: EditorService {
-    func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        guard let id = armed else { return }
-        armed = nil
-        editor.transact { $0.update(id, as: Memo.self) { $0.props.body = "interrupted" } }
-    }
-}
 
 @MainActor let pointTests = Suite("Findable texts", [
     test("the report shows each contribution by its name and kinds") {
@@ -130,20 +115,5 @@ extension Interrupter: EditorService {
         h.editor.transact { $0.update(target, as: Memo.self) { $0.props.body = "zebra" } }
         try settle(find, h)
         expectEqual(find.found, [target, echo], "the echo shows the target's new text")
-    },
-    test("a commit heard out of turn reads everything again") {
-        let interrupter = Interrupter()
-        let ids = (0..<2).map { _ in ShapeID() }
-        let first = Contributor(id: "interrupter") { $0.service { _ in interrupter } }
-        let plugins: [any CanvasPlugin] = [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), first, FindPlugin(), FixturesPlugin(), PocketsPlugin(), MemosPlugin()]
-        let h = try EditorHarness(plugins: plugins, file: CanvasFile(root: CanvasDocument(shapes: memos(["one", "two"], ids: ids))))
-        let find = try search("interrupted", in: h)
-        expect(find.results.isEmpty)
-        let before = find.recordsRead
-        interrupter.armed = ids[1]
-        h.editor.transact { $0.update(ids[0], as: Memo.self) { $0.props.body = "interrupted too" } }
-        try settle(find, h)
-        expectEqual(Set(find.found), Set(ids), "both, though the second commit came first")
-        expect(find.recordsRead >= before + 2)
     },
 ])

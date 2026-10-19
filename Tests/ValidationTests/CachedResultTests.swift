@@ -4,7 +4,8 @@ import CoreGraphics
 import TestKit
 import Validation
 
-/// Asks the engine for verdicts as it hears each commit, before the engine does (made before it).
+/// Asks the engine for verdicts as it hears each commit: made before the engine, so it hears of each commit first,
+/// and its asking has the engine hear it then.
 @MainActor
 private final class EarlyAsker {
     var asked: [ShapeID] = []
@@ -103,13 +104,13 @@ private let emptyTarget = CachedVerdict.current(ValidationResult(issues: [.error
         expectEqual(c.verdicts(), [emptyBox, .current(nil), .current(nil)], "taken back as it was left, checking nothing")
         expectEqual(calls, checked)
     },
-    test("unknown to a service that hears a commit before the engine does") {
+    test("asked by a service that hears a commit before the engine would, as the engine has heard it") {
         calls = 0
         let c = try Checked()
         _ = c.engine.results
         c.asker.asked = [c.empty, c.sized]
         c.resize(c.empty, to: CGSize(width: 3, height: 3))
-        expectEqual(c.asker.heard, [.unknown, .unknown], "the engine hasn't heard it yet")
-        expectEqual(c.engine.cachedResult(for: c.sized), .current(nil), "once it has, the shape the commit didn't touch is current")
+        expectEqual(c.asker.heard, [.unknown, .current(nil)], "the engine heard the commit as it was asked: the shape it changed waits to be checked, the other is current")
+        expectEqual(c.engine.cachedResult(for: c.sized), .current(nil))
     },
 ])

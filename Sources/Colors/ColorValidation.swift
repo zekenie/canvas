@@ -56,6 +56,4 @@ final class ColorWarnings {
     }
 }
 
-extension ColorWarnings: EditorService {
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension ColorWarnings: EditorService {}

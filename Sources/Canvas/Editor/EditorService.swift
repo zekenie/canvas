@@ -1,14 +1,19 @@
 /// Per-editor plugin state (an engine, a timer, a selection), made when the editor is and found by
 /// type with `editor.service(S.self)`. The editor tells every service what it may need to follow,
 /// in the order the services were made: plugin order, except that a service another one's `make`
-/// looks up comes first.
+/// looks up comes first. A commit and another board shown are delivered: a service asked for while
+/// services hear one (`editor.service`, a layout reading's or a context's `service`) hears it first, if
+/// it hasn't yet, so a service read as another hears a change has heard it, whatever the order; one
+/// asked for while it hears it is as it is. Each hears each change once, in the order they came, and
+/// nothing may change the file while they hear one (a transaction then is a precondition failure).
 @MainActor
 public protocol EditorService: AnyObject {
     /// Called on every tool switch, including in the middle of a drag.
     func toolDidChange(from old: ToolID, to new: ToolID, in editor: CanvasEditor)
     /// Called after every transaction that changed the document, before anything redraws, with
     /// what it changed: drop what no longer names a shape here, and redo what's kept per shape
-    /// for the shapes in `changes` only.
+    /// for the shapes in `changes` only. Never transact here: a write in answer waits a turn
+    /// (`editor.scheduler`).
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor)
     /// A place tool (or any `editor.place`) just put this shape down, and the default tool is
     /// current again. Called before the shape starts following the pointer or being edited.
@@ -25,12 +30,11 @@ public protocol EditorService: AnyObject {
     /// file is replaced (`replaceFile`), when `new` is the board shown after, which may be `old`.
     func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor)
     /// Another board is shown: its document, its camera, what the editor keeps of it and the default
-    /// tool are in place. Take back what's kept for it, or start over. Don't read another service
-    /// here: services hear it one by one, and one read before it's heard is out of date. By default,
-    /// the shown board's change as a commit's (`change.changes`, every shape of one board gone and
-    /// every shape of the other come): right for state kept per shape, which then follows the switch
-    /// like any commit, but it costs both boards' shapes, so a service that keeps less, or keeps it
-    /// per board, says what it does instead.
+    /// tool are in place. Take back what's kept for it, or start over. Delivered as a commit is: a
+    /// service read here has heard it. By default nothing: a service that keeps state per shape of the
+    /// board shown follows it as a commit (`documentDidChange(change.changes, in:)`, every shape of one
+    /// board gone and every shape of the other come), which costs both boards' shapes, so one that
+    /// keeps it per board says what it does instead (a `BoardStash`).
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor)
     /// The canvas started or stopped drawing shapes as skeletons (`editor.drawsSkeletons`): the
     /// camera's zoom went past the editor's `skeletonZoom` (a pinch, a zoom command, a board shown
@@ -61,7 +65,7 @@ extension EditorService {
     public func didPlace(_ id: ShapeID, in editor: CanvasEditor) {}
     public func didRefuseChanges(to ids: Set<ShapeID>, in editor: CanvasEditor) {}
     public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {}
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) { documentDidChange(change.changes, in: editor) }
+    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
     public func drawsSkeletonsDidChange(in editor: CanvasEditor) {}
     public func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) {}
     public func shapeTintsDidChange(in editor: CanvasEditor) {}

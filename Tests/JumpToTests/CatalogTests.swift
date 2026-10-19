@@ -17,26 +17,6 @@ private let storyTitled = 12
     CanvasFile(root: CanvasDocument(shapes: (0..<count).map { shape(1000 + $0, Box(frame(CGFloat($0 % 50) * 120, CGFloat($0 / 50) * 80)), titled: "Box \($0)") }))
 }
 
-/// Moves a shape a point whenever a commit changes it other than by moving it: a service that commits
-/// while hearing a commit, ahead of Jump To, so Jump To hears the move before the commit it answers.
-final class JumpNudger {}
-
-extension JumpNudger: EditorService {
-    func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        let changed = changes.changed.subtracting(changes.moved)
-        guard !changed.isEmpty else { return }
-        editor.transact { $0.translate(changed, by: CGPoint(x: 1, y: 0)) }
-    }
-}
-
-/// The story's plugins with a nudger ahead of Jump To.
-@MainActor private func nudgedPlugins() -> [any CanvasPlugin] {
-    var plugins = jumpPlugins()
-    let at = plugins.firstIndex { $0.id == .jumpTo }!
-    plugins.insert(Contributor(id: "jump-nudges") { $0.service { _ in JumpNudger() } }, at: at)
-    return plugins
-}
-
 @MainActor let catalogTests = Suite("Jump To's catalog", [
     test("nothing is read before the first ⌘K: commits cost a note of their revision, whatever they change") {
         let h = try storyHarness()
@@ -133,23 +113,23 @@ extension JumpNudger: EditorService {
         h.editor.undo()
         expectEqual(path(31), "Alpha › Beta › Epsilon")
     },
-    test("a commit heard out of turn, after one a service made while hearing it, reads the file again") {
-        let h = try storyHarness()
+    test("shapes moved onto a pocket's board are still listed, and so are they when undo brings them back as it takes the board") {
+        // More shapes move than the catalog holds: undo hands every one of them over as on a board taken
+        // (`elsewhere`) and as back on the root (`added`), and none of them is gone. A turn's undo is such a
+        // commit.
+        let file = CanvasFile(root: CanvasDocument(shapes: [shape(1, Pocket(frame(0, 0))), shape(2, Box(frame(200, 0)), titled: "Moved"),
+                                                            shape(3, Box(frame(400, 0))), shape(4, Box(frame(600, 0))), shape(5, Box(frame(800, 0)))]))
+        let h = try storyHarness(file: file)
         h.openJumpTo()
-        var read = h.jump.entriesRead
-        h.editor.rename(id(1), "Omega", on: .root)
-        expectEqual(h.jump.entriesRead - read, 1, "heard in turn: the one shape")
-        let nudged = try EditorHarness(plugins: nudgedPlugins(), file: storyFile())
-        nudged.editor.viewportDidResize(to: viewSize)
-        nudged.openJumpTo()
-        read = nudged.jump.entriesRead
-        // The nudger hears the rename first and moves the shape: that commit reaches Jump To before
-        // the rename does, a revision ahead of what it has heard.
-        nudged.editor.rename(id(1), "Omega", on: .root)
-        expect(nudged.jump.entriesRead - read >= storyTitled, "read again: \(nudged.jump.entriesRead - read)")
-        expectEqual(nudged.listing("omega checkout"), ["12", "22", "31"])
-        expectEqual(nudged.listing("alpha"), ["(No matches)"])
-        expectEqual(nudged.jump.catalogCount, storyTitled)
+        expectEqual(h.jump.catalogCount, 1)
+        h.editor.transact("Move In") { $0.move(Set([id(2), id(3), id(4), id(5)]), toBoardOwnedBy: id(1)) }
+        expectEqual(h.listing("moved"), ["2"], "on the pocket's board")
+        h.editor.undo()
+        expectEqual(h.editor.file.children[id(1)], nil, "the undo took the pocket's board")
+        expectEqual(h.listing("moved"), ["2"], "back on the root")
+        expectEqual(h.jump.catalogCount, 1)
+        h.editor.redo()
+        expectEqual(h.listing("moved"), ["2"], "on the pocket's board again")
     },
     test("a commit that reaches a shape on a board the app can't show doesn't list it; a pick of a shape that's not in the file is nothing") {
         let h = try storyHarness()

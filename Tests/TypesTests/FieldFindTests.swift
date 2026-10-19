@@ -36,7 +36,6 @@ private final class ProbeService {
 
 extension ProbeService: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) { probe.last = changes }
-    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
 }
 
 /// An editor over the type plugins with Find ahead of Types, where the shipped list has it, then slips and

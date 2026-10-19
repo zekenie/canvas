@@ -143,11 +143,7 @@ final class RelationshipOffers {
     func offers(_ id: ShapeID) -> Bool { subject == id && fitting(id) != nil }
 }
 
-extension RelationshipOffers: EditorService {
-    /// Nothing: showing another board clears the selection, which Selection tells (`selectionChanged`), and a service that follows
-    /// a switch by working out its change set costs every switch both boards' shapes.
-    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension RelationshipOffers: EditorService {}
 
 @MainActor
 func registerRelationshipPills(into registrar: inout PluginRegistrar) {

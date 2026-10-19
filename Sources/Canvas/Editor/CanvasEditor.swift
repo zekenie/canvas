@@ -108,7 +108,7 @@ public final class CanvasEditor {
         defer { unobservedReads -= 1 }
         return try body()
     }
-    /// +1 per transaction that changed something.
+    /// +1 per change services hear: a transaction that changed something, another board shown.
     public private(set) var revision = 0
     /// Setting it stops the camera's slide or animation (CanvasEditor+Camera.swift), and a session
     /// that scrolls at the canvas's edges hears a drag where the pointer is (EdgeScrolling.swift). A
@@ -230,8 +230,14 @@ public final class CanvasEditor {
 
     @ObservationIgnored private var tools: [ToolID: any Tool] = [:]
     @ObservationIgnored private let serviceRegistrations: [ObjectIdentifier: ServiceRegistration]
-    @ObservationIgnored private var services: [ObjectIdentifier: any EditorService] = [:]
+    /// Each service, by its type: its place in `serviceOrder`.
+    @ObservationIgnored private var services: [ObjectIdentifier: Int] = [:]
     @ObservationIgnored private var serviceOrder: [any EditorService] = []
+    /// The revision each service, by its place in `serviceOrder`, has heard (`deliver`).
+    @ObservationIgnored private var heardRevisions: [Int] = []
+    /// While services hear a change (`deliver`): its revision, and the change.
+    @ObservationIgnored private var deliveringRevision: Int?
+    @ObservationIgnored private var delivered: ServiceChange?
     @ObservationIgnored private var resolvingServices: Set<ObjectIdentifier> = []
     @ObservationIgnored private(set) var isTransacting = false
     /// Undo or redo is putting a step's records back: nothing may transact.
@@ -394,18 +400,52 @@ public final class CanvasEditor {
         }
     }
 
+    /// The service of this type; nil if no plugin registers one. Asked while services hear a commit or another
+    /// board shown, it hears that first, if it hasn't yet (`deliver`), so it answers as of the change; one asked
+    /// while it hears it is as it is.
     public func service<S: EditorService>(_ type: S.Type) -> S? { resolveService(ObjectIdentifier(S.self)) as? S }
 
     func resolveService(_ id: ObjectIdentifier) -> (any EditorService)? {
-        if let service = services[id] { return service }
+        if let index = services[id] {
+            if let deliveringRevision, heardRevisions[index] != deliveringRevision { tell(index) }
+            return serviceOrder[index]
+        }
         guard let registration = serviceRegistrations[id] else { return nil }
         precondition(!resolvingServices.contains(id), "service \(registration.name) needs itself to be made")
         resolvingServices.insert(id)
         defer { resolvingServices.remove(id) }
         let service = registration.make(self)
-        services[id] = service
+        services[id] = serviceOrder.count
         serviceOrder.append(service)
+        heardRevisions.append(revision)
         return service
+    }
+
+    /// Tells every service `change`, the change that brought `revision` (a commit, or another board shown), in
+    /// the order they were made: each that hasn't heard it yet, as one asked for while another heard it has
+    /// (`resolveService`). So a service read as services hear a change has heard it, whatever the order, and each
+    /// hears each change once, in the order they came. Nothing may change the file meanwhile: a transaction, a
+    /// board shown or a file put in place then is a precondition failure.
+    private func deliver(_ change: ServiceChange) {
+        precondition(deliveringRevision == nil, "nothing may change the file while services hear a change (a service's documentDidChange, say)")
+        deliveringRevision = revision
+        delivered = change
+        defer {
+            deliveringRevision = nil
+            delivered = nil
+        }
+        for index in serviceOrder.indices where heardRevisions[index] != revision { tell(index) }
+    }
+
+    /// Tells the service at `index` in `serviceOrder` the change being delivered, noting first that it has heard
+    /// it, so it isn't told again by what it reads as it hears it.
+    private func tell(_ index: Int) {
+        guard let deliveringRevision, let delivered else { return }
+        heardRevisions[index] = deliveringRevision
+        switch delivered {
+        case .commit(let changes): serviceOrder[index].documentDidChange(changes, in: self)
+        case .board(let change): serviceOrder[index].boardDidChange(change, in: self)
+        }
     }
 
     var currentTool: any Tool { tools[currentToolID]! }
@@ -446,6 +486,7 @@ public final class CanvasEditor {
     func transact<T>(_ name: String?, coalescing key: AnyHashable?, origin: UndoHistory.Origin,
                      _ body: (inout Transaction) throws -> T) rethrows -> T {
         precondition(!isApplying, "nothing may transact while undo or redo puts a step back (a service's documentDidChange, say)")
+        precondition(deliveringRevision == nil, "nothing may transact while services hear a change (a service's documentDidChange, say)")
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
         isTransacting = true
         var transaction = Transaction(document: document, board: board, isBoardReadOnly: isBoardReadOnly, registry: registry, camera: camera,
@@ -489,6 +530,7 @@ public final class CanvasEditor {
         guard target != board else { return try transact(name, coalescing: nil, origin: .ordinary, body) }
         guard canShow(target) else { return nil }
         precondition(!isApplying, "nothing may transact while undo or redo puts a step back (a service's documentDidChange, say)")
+        precondition(deliveringRevision == nil, "nothing may transact while services hear a change (a service's documentDidChange, say)")
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
         isTransacting = true
         var transaction = Transaction(document: storedFile[target], board: target, isBoardReadOnly: registry.isReadOnly(board: target, in: storedFile),
@@ -662,6 +704,7 @@ public final class CanvasEditor {
     /// hear which differ (`ChangeSet.fileValues`, `BoardChange.fileValues`).
     @_spi(Host) public func replaceFile(with newFile: CanvasFile, showing requested: BoardID? = nil) {
         precondition(!isTransacting, "a file can't be replaced inside a transaction")
+        precondition(deliveringRevision == nil, "a file can't be replaced while services hear a change")
         Self.expectAccepted(newFile, by: registry)
         isReplacingFile = true
         defer { isReplacingFile = false }
@@ -718,6 +761,7 @@ public final class CanvasEditor {
     @discardableResult
     @_spi(Host) public func discardKeptAside(shapes ids: Set<ShapeID>, boards keys: Set<String>) -> Bool {
         precondition(!isTransacting, "a file can't be replaced inside a transaction")
+        precondition(deliveringRevision == nil, "a file can't be changed while services hear a change")
         let old = storedFile
         var newFile = old, removed: Set<BoardID> = [], changed: Set<BoardID> = [], added: Set<BoardID> = []
         var fileValues: Set<PropertyKey> = []
@@ -874,7 +918,7 @@ public final class CanvasEditor {
         if !glides.isEmpty { endGlides(changes.shapeIDs.filter { glides[$0] != nil }) }
         if let shape = shownCard?.shape, changes.removed.contains(shape) { closeCard(.shapeGone) }
         // Services drop what no longer names a shape, as the hint's setter does.
-        for service in serviceOrder { service.documentDidChange(changes, in: self) }
+        deliver(.commit(changes))
         hintedShapeID = hintedID
         // A shape that's gone, can no longer change (it, a container it's in, or its board), or is of
         // another kind now (turned, `Transaction.turn`), isn't edited.
@@ -931,6 +975,7 @@ public final class CanvasEditor {
     @discardableResult
     public func showBoard(_ target: BoardID) -> Bool {
         precondition(!isTransacting, "a board can't be shown inside a transaction")
+        precondition(deliveringRevision == nil, "a board can't be shown while services hear a change")
         guard session == nil else { return false }
         guard target != board else { return true }
         guard canShow(target) else { return false }
@@ -986,7 +1031,7 @@ public final class CanvasEditor {
         isShowingBoard = true
         camera = arrivalCamera(for: target)
         isShowingBoard = false
-        for service in serviceOrder { service.boardDidChange(change, in: self) }
+        deliver(.board(change))
         tellSkeletonLevel()
         delegate?.editorBoardDidChange(self)
         setNeedsDisplay()
@@ -1334,4 +1379,11 @@ public final class CanvasEditor {
         }
         return nil
     }
+}
+
+/// A change every service hears, as the editor delivers it (`deliver`): a commit's change set, or another
+/// board shown.
+private enum ServiceChange {
+    case commit(ChangeSet)
+    case board(BoardChange)
 }

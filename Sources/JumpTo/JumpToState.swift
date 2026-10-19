@@ -281,10 +281,13 @@ public final class JumpToState {
         for id in changes.changed where !changes.moved.contains(id) { refresh(id) }
         guard !changes.elsewhere.isEmpty else { return }
         // A commit that only took boards (a subboard's deletion) hands over every shape they held,
-        // all gone: whichever is fewer to go through.
+        // all gone: whichever is fewer to go through. Not one that brought some of them to the board
+        // shown as it took their board (undoing a turn, whose move put them there): those aren't gone,
+        // and only an entry no longer on a board the app can show is.
         let onlyTook = !changes.replacedDocument && changes.boardsAdded.isEmpty && changes.boardsChanged.isEmpty
+            && changes.added.isDisjoint(with: changes.elsewhere)
         if onlyTook, catalog.count < changes.elsewhere.count {
-            for id in catalog.entries.map(\.id) where changes.elsewhere.contains(id) { catalog.remove(id) }
+            for id in catalog.entries.map(\.id) where changes.elsewhere.contains(id) && !isOnShowableBoard(id) { catalog.remove(id) }
         } else {
             for id in changes.elsewhere { refresh(id) }
         }

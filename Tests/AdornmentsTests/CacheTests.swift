@@ -25,7 +25,8 @@ import TestKit
 }
 
 /// A service that reads the adornments of the shapes each commit changes as it hears of it: made
-/// before Adornments' own (its plugin is earlier in the list), so it hears first.
+/// before Adornments' own (its plugin is earlier in the list), so it hears of a commit first, and its read
+/// has Adornments hear it then.
 @MainActor final class EarlyReader {
     var read: [String?] = []
 }
@@ -106,7 +107,7 @@ final class DisplayCounter: CanvasEditorDelegate {
         h.editor.transact { $0.delete([b]) }
         expectEqual(h.editor.adornmentsKept, 1)
     },
-    test("a service that hears of a commit before Adornments reads the shape's new labels, and nothing kept is lost by it") {
+    test("a service that hears of a commit before Adornments reads the shape's new labels: Adornments hears it as it's asked, and keeps them") {
         let calls = Calls()
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(),
                                             Contributor(id: "early") { $0.service { _ in EarlyReader() } },
@@ -117,7 +118,7 @@ final class DisplayCounter: CanvasEditorDelegate {
         expectEqual(try require(h.editor.service(EarlyReader.self)).read, ["150 wide"])
         _ = render(h)
         expectEqual(h.editor.adornmentFrames(of: a).first?.label.text, "150 wide")
-        expectEqual(calls.counts, [a: 3, b: 1], "once more for the early read, which isn't kept, and once for the frame")
+        expectEqual(calls.counts, [a: 2, b: 1], "once more, for the early read, which the frame then reads")
     },
     test("a narrow shape just right of the view, whose row runs leftward into it, is drawn") {
         let h = try adornedHarness([everyShape(Flag.self) { _ in flagLabel }])

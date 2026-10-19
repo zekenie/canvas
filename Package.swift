@@ -117,8 +117,9 @@ let ships = [
     // First: every key is registered with Keyboard; the others build on Selection, and its
     // handles draw below their view overlays.
     "Keyboard.KeyboardPlugin", "Selection.SelectionPlugin",
-    // What connects to what (arrows, mentions), for the whole file: its index hears each
-    // commit before the services that read it (the table of contents', Mentions').
+    // What connects to what (arrows, mentions), for the whole file. A service that reads its
+    // index as it hears a commit finds it up to date wherever it sits: looking it up has the index
+    // hear the commit first.
     "Topology.TopologyPlugin",
     // The kinds. Frames beside subboards, the two ways of grouping shapes (a region of this
     // board, a board of its own), after notes: the toolbar's Note, Subboard, Frame, Reference.

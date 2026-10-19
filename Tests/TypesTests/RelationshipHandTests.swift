@@ -13,7 +13,7 @@ import Topology
 import Types
 import Validation
 
-// The mark and the lists by hand, read-only shapes, and a commit heard out of turn.
+// The mark and the lists by hand, and read-only shapes.
 
 @MainActor private struct MenuBench {
     let h: EditorHarness
@@ -167,72 +167,5 @@ import Validation
         b.editor.undo()
         expectEqual(b.editor.undoHistory.undoName, "Marker", "one step")
         expectEqual([first, second].map { b.editor.document[$0] }, before)
-    },
-])
-
-/// A service installed before Types': when a memo's words become "go", it writes another memo while hearing that
-/// commit, so Types hears the second commit before the first.
-private struct ChaserPlugin: CanvasPlugin {
-    let target: ShapeID
-    var id: PluginID { "chaser" }
-    func register(into registrar: inout PluginRegistrar) {
-        let target = target
-        registrar.service { _ in Chaser(target: target) }
-    }
-}
-
-@MainActor private final class Chaser {
-    let target: ShapeID
-    var done = false
-    init(target: ShapeID) { self.target = target }
-}
-
-extension Chaser: EditorService {
-    func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        guard !done, editor.document.shapes.contains(where: { $0.typed(as: Memo.self)?.props.text.stored == "go" }) else { return }
-        done = true
-        editor.transact("Chase") { $0.update(target, as: Memo.self) { $0.props.text = "chased" } }
-    }
-}
-
-@MainActor let relationChecksOutOfTurnTests = Suite("Relation checks heard out of turn", [
-    test("a commit heard out of turn that took the mark off: the loose end's line, the free end's and the misfit's all clear in what Validation holds") {
-        let person = ShapeID(), company = ShapeID(), layer = ShapeID(), employment = ShapeID(), watcher = ShapeID(), other = ShapeID()
-        let acme = ShapeID(), ann = ShapeID(), foundation = ShapeID(), misfit = ShapeID(), loose = ShapeID(), free = ShapeID()
-        var related = slipTypeRecord(TypeSchemaProperty.starter, title: "Employment", at: CGPoint(x: 400, y: 40), id: employment)
-        related[RelationshipProperty.self] = true
-        var wrong = AnyShapeRecord(ShapeRecord(id: misfit, Bond(from: ann, to: foundation)))
-        wrong[IsAProperty.self] = [TypeLink(employment)]
-        var half = AnyShapeRecord(ShapeRecord(id: free, Bond(from: ann, to: nil)))
-        half[IsAProperty.self] = [TypeLink(employment)]
-        let document = CanvasDocument(shapes: [typeRecord(TypeSchemaProperty.starter, title: "Person", id: person),
-                                               typeRecord(TypeSchemaProperty.starter, title: "Company", at: CGPoint(x: 40, y: 200), id: company),
-                                               typeRecord(TypeSchemaProperty.starter, title: "Layer", at: CGPoint(x: 40, y: 360), id: layer), related,
-                                               AnyShapeRecord(ShapeRecord(id: watcher, memo("quiet", at: CGPoint(x: 700, y: 40)))),
-                                               AnyShapeRecord(ShapeRecord(id: other, memo("still", at: CGPoint(x: 1000, y: 40)))),
-                                               instanceRecord("Acme", of: [company], at: CGPoint(x: 400, y: 400), id: acme),
-                                               instanceRecord("Ann", of: [person], at: CGPoint(x: 700, y: 400), id: ann),
-                                               instanceRecord("foundation", of: [layer], at: CGPoint(x: 700, y: 700), id: foundation),
-                                               AnyShapeRecord(ShapeRecord(id: ShapeID(), Bond(from: person, to: employment))),
-                                               AnyShapeRecord(ShapeRecord(id: ShapeID(), Bond(from: employment, to: company))),
-                                               wrong, half, AnyShapeRecord(ShapeRecord(id: loose, Bond(from: employment, to: nil)))])
-        let registry = try Registry(plugins: [ChaserPlugin(target: other)] + typePlugins() + [RowSlipsPlugin(), BondsPlugin(), RelaysPlugin(), PocketsPlugin()])
-        let editor = CanvasEditor(registry: registry, file: CanvasFile(root: document), scheduler: ManualScheduler())
-        let line = "Employment isn’t attached at both ends."
-        expectEqual(editor.issues(loose).map(\.message), [line], "as opened: loose")
-        expectEqual(editor.issues(free).map(\.message), [line], "as opened: free")
-        expectEqual(editor.issues(misfit).map(\.message), ["Employment runs to a Company. “foundation” is a Layer."], "as opened: misfit")
-        let before = editor.revision
-        editor.transact("Go") { transaction in
-            transaction.update(watcher, as: Memo.self) { $0.props.text = "go" }
-            transaction.update(employment) { $0[RelationshipProperty.self] = nil }
-        }
-        expectEqual(editor.revision, before + 2, "two commits: the person's, and the service's while hearing it")
-        expect(editor.relationships?.isActive == false, "no relationship type is left")
-        expectEqual(editor.issues(misfit).map(\.message), [], "misfit")
-        expectEqual(editor.issues(free).map(\.message), [], "free")
-        expectEqual(editor.issues(loose).map(\.message), [], "loose")
-        let fresh = try bondEditor(file: editor.file)
-        expectEqual(try require(fresh.fieldChecks).fullCheck(of: try require(fresh.document[loose])), .clean, "a fresh read says nothing of the loose end")
     },
 ])

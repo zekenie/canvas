@@ -374,10 +374,7 @@ final class ClipboardState {
     }
 }
 
-extension ClipboardState: EditorService {
-    /// Nothing kept per shape, so nothing to follow to another board.
-    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension ClipboardState: EditorService {}
 
 extension CanvasEditor {
     var clipboard: ClipboardState? { service(ClipboardState.self) }

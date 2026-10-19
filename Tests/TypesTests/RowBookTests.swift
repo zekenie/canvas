@@ -30,7 +30,6 @@ private final class FrameProbe: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         if let watching { frames.append(editor.frame(inFile: watching)) }
     }
-    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
 }
 
 private struct FrameProbePlugin: CanvasPlugin {

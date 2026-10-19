@@ -417,10 +417,7 @@ private final class QueryRun {
     var cancel: (@Sendable () -> Void)?
 }
 
-extension QueryState: EditorService {
-    /// Nothing: it keeps nothing per board (the default would work out the switch's change set).
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension QueryState: EditorService {}
 
 extension CanvasEditor {
     /// The editor's queries; nil without `QueriesPlugin`.

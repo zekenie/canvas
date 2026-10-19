@@ -52,8 +52,6 @@ final class EndArrows: EditorService {
         }
     }
 
-    /// Showing another board changes nothing here: what an arrow is told is the file's.
-    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
 
     /// The index named these connections: those whose answer is another now, ends that came, went or whose partner changed,
     /// are laid out again; and nothing else is. Each end of a type whose ends changed is named by the index, so a side that

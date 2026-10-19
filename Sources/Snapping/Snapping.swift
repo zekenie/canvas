@@ -53,9 +53,6 @@ extension SnapState: EditorService {
             drag.framesChanged(in: editor)
         }
     }
-
-    /// Nothing is kept of a board: no drag outlasts one.
-    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
 }
 
 /// One drag's snapping: what it moves, as one rect (the frames it moves, together, where they were

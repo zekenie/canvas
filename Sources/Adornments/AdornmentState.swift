@@ -383,7 +383,7 @@ extension AdornmentState: EditorService {
         // A shape the commit changed has its geometry worked out again, with an answer of its own: what was answered before this
         // commit (not what a service that heard before this one asked for during it) is void.
         if !leadAnswered.isEmpty {
-            for id in changes.added.union(changes.changed.subtracting(changes.moved)) where leadAnswered[id].map({ $0.revision < editor.revision }) == true {
+            for id in changes.edited where leadAnswered[id].map({ $0.revision < editor.revision }) == true {
                 leadAnswered[id] = nil
             }
         }

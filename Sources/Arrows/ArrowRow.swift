@@ -82,16 +82,9 @@ final class ArrowTypeRows {
     }
 }
 
-extension ArrowTypeRows: EditorService {
-    /// Nothing: showing another board changes no relationship.
-    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension ArrowTypeRows: EditorService {}
 
-extension ArrowRowNesting: EditorService {
-    /// Nothing: showing another board changes no edge, and a service that follows a switch by working
-    /// out its change set costs every switch both boards' shapes.
-    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}
-}
+extension ArrowRowNesting: EditorService {}
 
 extension TopologyIndex {
     /// The shape a row of an arrow starting at `start` nests under: the one shape `start` stands for,

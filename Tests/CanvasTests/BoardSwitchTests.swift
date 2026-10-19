@@ -215,10 +215,12 @@ private func uuid(_ n: Int) -> String { String(format: "00000000-0000-0000-0000-
         expectEqual(log.events, ["will \(tree.p) → \(tree.q), showing \(tree.p)", "did \(tree.p) → \(tree.q), showing \(tree.q)"],
                     "with the default tool already, no tool change")
     },
-    test("by default, a service hears a switch as a commit taking every shape of one board away and bringing every shape of the other") {
-        let tree = BoardTree(), changes = ChangeLog(), log = SwitchLog()
-        let h = try harness(tree.file, [recordingChanges(changes), listening(log)])
+    test("by default a service hears nothing of a switch; one that follows it as a commit hears every shape of one board taken away and every shape of the other brought") {
+        let tree = BoardTree(), changes = ChangeLog(), log = SwitchLog(), plain = ServiceLog()
+        let h = try harness(tree.file, [recordingChanges(changes), listening(log),
+                                        Contributor(id: "plain") { $0.service { _ in LoggingService(log: plain) } }])
         h.enter(tree.p)
+        expect(!plain.events.contains("document"), "a service that only follows commits hears no switch")
         let heard = try require(changes.changes.last)
         expectEqual(heard.removed, [tree.a, tree.p, tree.e])
         expectEqual(heard.added, [tree.b, tree.q])
