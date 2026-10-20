@@ -51,6 +51,11 @@ public enum DetailStyle {
     static let codeEditorMaxLines = 500
     /// A line of `codeFont`.
     static let codeLineHeight = NSLayoutManager().defaultLineHeight(for: codeFont)
+    /// How far down a text box its first line's baseline is, from the box's top edge: its padding
+    /// and the font's baseline in its line. A row's label lines up on it (`DetailRowStyle`), since an
+    /// AppKit text view tells SwiftUI no baseline of its own.
+    static let textBaseline = fieldCorner + NSLayoutManager().defaultBaselineOffset(for: textFont)
+    static let codeBaseline = fieldCorner + NSLayoutManager().defaultBaselineOffset(for: codeFont)
     static let fieldCorner: CGFloat = 4
     /// Where a text view's text starts, from its edge (its line fragment padding).
     static let textInset: CGFloat = 5

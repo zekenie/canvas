@@ -64,7 +64,7 @@ public struct DetailCodeEditor: View {
                           view.coloring = coloring
                           view.onCompleting = onCompleting
                           view.completing = completions
-                      })
+                      }, baseline: DetailStyle.codeBaseline)
             .containerRelativeFrame(.vertical, alignment: .top) { visible, _ in
                 min(fitted, max(height, visible - DetailStyle.codeEditorMargin))
             }
@@ -119,12 +119,14 @@ extension View {
     }
 
     /// The panel's text box: inset, `height` tall (or as tall as it's made, nil), on the text
-    /// background, in a hairline border.
-    func detailTextBox(height: CGFloat?) -> some View {
+    /// background, in a hairline border. Its first text baseline is its first line's (`baseline`
+    /// down from its top), so a row's label sits on the text's line and not at the box's edge.
+    func detailTextBox(height: CGFloat?, baseline: CGFloat) -> some View {
         padding(DetailStyle.fieldCorner)
             .frame(height: height)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: DetailStyle.fieldCorner))
             .overlay(RoundedRectangle(cornerRadius: DetailStyle.fieldCorner).strokeBorder(.separator))
+            .alignmentGuide(.firstTextBaseline) { _ in baseline }
     }
 }
 
@@ -228,6 +230,8 @@ public struct DetailTextBox<Content: DetailTextContent>: View {
     let make: @MainActor () -> Content
     let prepare: (@MainActor (Content, NSScrollView) -> Void)?
     let update: (@MainActor (Content) -> Void)?
+    /// Where the first line's baseline is, down from the box's top: the panel's text font's, unless a box is in another.
+    let baseline: CGFloat
     @Environment(\.isEnabled) private var isEnabled
 
     public init(_ value: Binding<Content.Value>, height: CGFloat = DetailStyle.textAreaHeight, placeholder: String? = nil,
@@ -240,7 +244,8 @@ public struct DetailTextBox<Content: DetailTextContent>: View {
     /// the box (before it's shown enabled or not).
     init(_ value: Binding<Content.Value>, height: CGFloat?, placeholder: String? = nil, isEditable: Bool = true, commitsOnReturn: Bool,
          onCommit: (@MainActor () -> Void)?, make: @escaping @MainActor () -> Content,
-         prepare: (@MainActor (Content, NSScrollView) -> Void)? = nil, update: (@MainActor (Content) -> Void)? = nil) {
+         prepare: (@MainActor (Content, NSScrollView) -> Void)? = nil, update: (@MainActor (Content) -> Void)? = nil,
+         baseline: CGFloat = DetailStyle.textBaseline) {
         _value = value
         self.height = height
         self.placeholder = placeholder
@@ -250,6 +255,7 @@ public struct DetailTextBox<Content: DetailTextContent>: View {
         self.make = make
         self.prepare = prepare
         self.update = update
+        self.baseline = baseline
     }
 
     public var body: some View {
@@ -258,7 +264,7 @@ public struct DetailTextBox<Content: DetailTextContent>: View {
         DetailTextHost(value: $value, placeholder: placeholder, isEditable: isEditable, isEnabled: isEnabled,
                        commitsOnReturn: commitsOnReturn, onCommit: onCommit, make: make, prepare: prepare, update: update)
             .environment(\.isEnabled, true)
-            .detailTextBox(height: height)
+            .detailTextBox(height: height, baseline: baseline)
     }
 }
 

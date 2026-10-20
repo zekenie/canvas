@@ -43,6 +43,40 @@ struct CodeBoxesPlugin: CanvasPlugin {
     }
 }
 
+enum LabeledTab {}
+extension LabeledTab: DetailTab { static var title: String { "Labeled" } }
+
+/// Where each label of the Labeled tab is, in the panel (its row's number is the key).
+@MainActor var labelFrames: [Int: CGRect] = [:]
+
+/// A row's label that records where it is, and lines up on the baseline it says: its bottom edge, or, as text, its own.
+struct LabelMark: View {
+    let row: Int
+    var body: some View {
+        Color.clear.frame(width: 6, height: 6)
+            .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
+            .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { labelFrames[row] = $0 }
+    }
+}
+
+/// A Labeled tab for the gadget: a box of words, one typed as keyed, a code editor and a taller box, each in a
+/// `LabeledContent` whose label is a `LabelMark`, and a box with a text label.
+struct LabeledBoxesPlugin: CanvasPlugin {
+    var id: PluginID { "labeled-boxes" }
+    func register(into registrar: inout PluginRegistrar) {
+        registrar.details(Gadget.self) {
+            DetailSection("Labeled", in: LabeledTab.self) { $gadget in
+                LabeledContent { DetailTextArea($gadget.name, height: DetailStyle.textAreaHeight / 2, placeholder: "Name it") } label: { LabelMark(row: 0) }
+                LabeledContent { DetailTextArea($gadget.name, asTyped: true) } label: { LabelMark(row: 1) }
+                LabeledContent { DetailCodeEditor($gadget.remark) } label: { LabelMark(row: 2) }
+                LabeledContent { DetailTextArea($gadget.name, height: DetailStyle.textAreaHeight / 2) } label: {
+                    Text("report").onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { labelFrames[3] = $0 }
+                }
+            }
+        }
+    }
+}
+
 /// A language where digits are numbers and an x doesn't belong.
 func digitsAndXs(_ text: String) -> [DetailCodeSpan] {
     let units = Array(text.utf16)
@@ -283,5 +317,41 @@ extension PanelWindow {
             expect(text.isSelectable, "selectable")
             expect(!text.isEditable, "not editable")
         }
+    },
+    test("a label beside a text box lines up with the first line of its text, not the box's top edge: a box of words, one as typed, a code editor; empty or with text") {
+        let editor = try gadgetEditor([LabeledBoxesPlugin()], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let id = editor.add(Gadget(gadgetFrame))
+        labelFrames = [:]
+        try require(editor.detailPanel).choose(.of(LabeledTab.self), for: Gadget.kind)
+        editor.selection = id
+        @MainActor func boxes() -> [NSTextView] {
+            panel.textViews.filter { !$0.isFieldEditor }.sorted { $0.convert($0.bounds, to: panel.hosting).minY < $1.convert($1.bounds, to: panel.hosting).minY }
+        }
+        panel.window.spin { labelFrames.count == 4 && boxes().count == 4 }
+        /// Where the first line's baseline is in the panel, from the text view's own layout.
+        @MainActor func baseline(of box: NSTextView) throws -> CGFloat {
+            let layout = try require(box.layoutManager)
+            let font = box.font ?? .systemFont(ofSize: NSFont.systemFontSize)
+            let inView = layout.numberOfGlyphs > 0
+                ? layout.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil).minY + layout.location(forGlyphAt: 0).y
+                : layout.defaultBaselineOffset(for: font)
+            return box.convert(NSPoint(x: 0, y: box.textContainerOrigin.y + inView), to: panel.hosting).y
+        }
+        // SwiftUI's global space starts at the top of the window, its title bar included.
+        let titleBar = panel.window.frame.height - panel.window.contentLayoutRect.height
+        @MainActor func expectLabelsOnTheLine(_ when: String) throws {
+            for (row, box) in boxes().enumerated() {
+                let label = try require(labelFrames[row]).offsetBy(dx: 0, dy: -titleBar)
+                let line = try baseline(of: box)
+                // A mark's baseline is its bottom edge; a text's is some way up from its own.
+                let sits = row < 3 ? label.maxY : label.minY + NSFont.systemFont(ofSize: NSFont.systemFontSize).ascender
+                expect(abs(sits - line) < 2, "\(when), row \(row): the label's baseline is at \(sits), the first line's at \(line) (title bar \(titleBar), the box's top at \(box.convert(box.bounds, to: panel.hosting).minY))")
+            }
+        }
+        try expectLabelsOnTheLine("empty")
+        editor.transact { $0.update(id, as: Gadget.self) { $0.props.name = "who was the woodchuck"; $0.props.remark = "{ \"a\": 1 }" } }
+        panel.window.spin { boxes().allSatisfy { !$0.string.isEmpty } }
+        try expectLabelsOnTheLine("with text")
     },
 ])

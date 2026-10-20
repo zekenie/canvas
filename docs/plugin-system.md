@@ -3454,7 +3454,7 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   up in one 72 pt column and hides the control's own label (its placeholder stays). A read-only
   value is `LabeledContent("Fields", value: ...)`. A toggle stands alone, drawn as a checkbox
   with its label after it; in a row, it's a bare box, beside what it governs (a due date's
-  checkbox, beside the date).
+  checkbox, beside the date). A text box in a row lines its label up with its first line of text, not its top edge.
 - **Primitives.** A number is a `DetailNumberField`, and a pair of them (Width and Height) goes in
   `DetailFields`. Multiline text is a `DetailTextArea` (with a `placeholder:` shown while it's
   empty, and an `onCommit:` for text that's acted on once it's done: then Return commits, ⇧↩ is a
