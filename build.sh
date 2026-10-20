@@ -1161,6 +1161,8 @@ app)
     <string>$APP_ID</string>
     <key>CFBundleExecutable</key>
     <string>InfiniteCanvas</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -1224,6 +1226,10 @@ app)
 </plist>
 PLIST
     install_changed $AUDIT/Info.plist $APP/Contents/Info.plist
+    # The icon, made ahead of time from Icon/AppIcon.svg (`python3 Icon/tools/icon.py build`): rendering
+    # an SVG takes a browser, which no build should need.
+    mkdir -p $APP/Contents/Resources
+    install_changed Icon/AppIcon.icns $APP/Contents/Resources/AppIcon.icns
     # The skills for agents (Contents/Resources/agents), put together as `./build.sh agents` does and
     # installed file by file, so what didn't change isn't replaced.
     assemble_agents $AUDIT/agents $BUILD_ID

@@ -48,7 +48,7 @@ Screen capture isn't permitted here: tests draw into bitmaps, and what a drawing
 Each topic file starts with what it covers, the topics it touches, and its sections of the guide.
 
 **Workflow**
-- [build](.claude/rules/build.md): how `build.sh` builds, and which app a build is (a worktree's is a copy, an app of its own); `Package.swift`, the layers and what each may import; what ships (the list, plugins made by name, `+ shipped`, the product's text files); the parts of a module (the table, the check that type-checks each alone); what the audit refuses.
+- [build](.claude/rules/build.md): how `build.sh` builds, and which app a build is (a worktree's is a copy, an app of its own); the app's icon (`Icon/`, rendered ahead of time); `Package.swift`, the layers and what each may import; what ships (the list, plugins made by name, `+ shipped`, the product's text files); the parts of a module (the table, the check that type-checks each alone); what the audit refuses.
 - [benchmarks](.claude/rules/benchmarks.md): what `./build.sh bench` measures, and every budget.
 - [testing](.claude/rules/testing.md): the headless harness, views in unshown windows, the board documents a test closes, and which topic files have test guidance.
 - [history](.claude/skills/history/SKILL.md): each landed session's condensed record in `history/sessions/`, the `Session:` trailer that names it, making one at landing, and the weekly review of main's new commit messages against their sessions, which rebuilds main's history with every tree kept.
