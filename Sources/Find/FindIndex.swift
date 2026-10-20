@@ -20,11 +20,10 @@ struct IndexedShape: Sendable {
 /// Every text every shape shows on every board the editor can show (none kept aside), folded once,
 /// for a search per keystroke to run off the main actor (`entries` is a value, handed over whole).
 /// Built on the first ⌘F, a slice of the main actor at a time (`FindStyle.buildSlice`, on the
-/// editor's scheduler), so opening Find on a big file drops no frame; until then a commit costs a
-/// revision noted. Built, each commit reads again only what it removed, added, changed other than
-/// by moving, touched elsewhere, or a contribution's `affected` names; one heard out of turn, or a
-/// file put in place, reads everything again. Never keeps file order: what's searched is ordered as
-/// it's searched (`FindSearch`).
+/// editor's scheduler), so opening Find on a big file drops no frame; until then a commit costs one
+/// test. Built, each commit reads again only what it removed, added, changed other than
+/// by moving, touched elsewhere, or a contribution's `affected` names; a file put in place reads
+/// everything again. Never keeps file order: what's searched is ordered as it's searched (`FindSearch`).
 @MainActor
 final class FindIndex {
     private unowned let editor: CanvasEditor
@@ -39,8 +38,6 @@ final class FindIndex {
     /// comes (a commit meanwhile reads what it changes as it's heard).
     private var pending: [ShapeID] = []
     private var slice: ScheduledTask?
-    /// The revision it's up to date with.
-    private var heardRevision: Int
     /// Told what changed in the index once it's built (or building): the shapes whose texts it read
     /// again, or dropped; nil for everything (read afresh).
     var didChange: (@MainActor (Set<ShapeID>?) -> Void)?
@@ -61,7 +58,6 @@ final class FindIndex {
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        heardRevision = editor.revision
         affecting = editor.registry.contributions(to: FindableTexts.self).compactMap { $0.value.affected == nil ? nil : $0.value }
     }
 
@@ -80,7 +76,6 @@ final class FindIndex {
         slice?.cancel()
         slice = nil
         entries = [:]
-        heardRevision = editor.revision
         phase = .building
         slices = 0
         longestSlice = 0
@@ -89,24 +84,13 @@ final class FindIndex {
         buildSlice()
     }
 
-    /// Every shape on a board the editor can show, in no particular order: the root's, then, from it
-    /// down, those on the boards whose owners own boards the editor can show (`ownsShowableBoard`,
-    /// `canShow`'s rule for each owner on a path), each board once. Ids only: what's read is read in
-    /// its slice.
+    /// Every shape on a board the editor can show (`editor.showableBoards`), in no particular order. Ids
+    /// only: what's read is read in its slice.
     private func walk() -> [ShapeID] {
-        let registry = editor.registry
-        return editor.withoutObservingDocument {
-            let children = editor.file.children
+        editor.withoutObservingDocument {
             var ids: [ShapeID] = []
-            var boards: [BoardID] = [.root], met: Set<BoardID> = [.root], next = 0
-            while next < boards.count {
-                let board = boards[next]
-                next += 1
-                for record in editor.contents(of: board).shapes where !record.isOpaque {
-                    ids.append(record.id)
-                    let owned = BoardID(owner: record.id)
-                    if children[record.id] != nil, registry.ownsShowableBoard(record), met.insert(owned).inserted { boards.append(owned) }
-                }
+            for board in editor.showableBoards {
+                for record in editor.contents(of: board).shapes where !record.isOpaque { ids.append(record.id) }
             }
             return ids
         }
@@ -182,19 +166,10 @@ final class FindIndex {
 
     // MARK: Upkeep
 
-    /// Follows a commit: nothing before the first ⌘F but the revision; afterwards what it changed.
+    /// Follows a commit, once every service has it (`documentDidSettle`): nothing before the first ⌘F;
+    /// afterwards what it changed, and what the contributions' `affected` say it changed the texts of.
     func hear(_ changes: ChangeSet) {
-        guard heardRevision != editor.revision else { return }
-        let outOfTurn = heardRevision < editor.revision - 1
-        heardRevision = editor.revision
         guard phase != .idle else { return }
-        guard !outOfTurn else {
-            rebuild()
-            didChange?(nil)
-            return
-        }
-        // Asked first: a contribution's `affected` may have its plugin hear the commit, after which
-        // what it reads (live names) is current.
         let context = FindContext(editor: editor)
         var affected = Set<ShapeID>()
         for contribution in affecting { affected.formUnion(contribution.affected?(changes, context) ?? []) }
@@ -236,7 +211,6 @@ final class FindIndex {
     /// Another board is shown: nothing, the index is the file's; but a file put in place is read
     /// again.
     func boardDidChange(_ change: BoardChange) {
-        heardRevision = editor.revision
         guard change.isFileReplaced, phase != .idle else { return }
         rebuild()
         didChange?(nil)

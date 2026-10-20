@@ -271,8 +271,8 @@ final class ClipboardState {
         editor.endEditing()
         let target = editor.file, kinds = editor.registry.containingKinds
         var ids: [ShapeID: ShapeID] = [:]
-        for board in [file.root] + file.children.values {
-            for record in board.shapes { ids[record.id] = isCut && target.isUnused(record.id) ? record.id : ShapeID() }
+        for board in file.everyBoard {
+            for record in file[board].shapes { ids[record.id] = isCut && target.isUnused(record.id) ? record.id : ShapeID() }
         }
         // A read-only container a paste would go in refuses it whole (`transactWhole`): nothing is put
         // down, no step is left, and the container shakes.

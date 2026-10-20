@@ -115,4 +115,29 @@ import Validation
         expect(engine.results.isEmpty, "the root the file put in place is checked, not the one left")
         expectEqual(calls, 3, "the root, the pocket's box, then the root the file put in place")
     },
+    test("a file put in place with a switch of board keeps nothing found on any board, one as it was too: a rule may read what the file changed elsewhere") {
+        calls = 0
+        let a = ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 200, height: 100))), b = ShapeRecord(Pocket(CGRect(x: 300, y: 0, width: 200, height: 100)))
+        let outer = ShapeRecord(Box(.zero))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(outer), AnyShapeRecord(a), AnyShapeRecord(b)]),
+                              children: [a.id: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(Box(.zero)))]),
+                                         b.id: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(Box(.zero)))])])
+        let h = try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin(), ValidationPlugin(), countingRules], file: file)
+        let engine = try require(h.editor.validation)
+        _ = engine.results
+        expect(h.enter(b.id))
+        _ = engine.results
+        expect(h.editor.showBoard(.root))
+        expect(h.enter(a.id))
+        _ = engine.results
+        expectEqual(calls, 3, "the root, b's box, a's box")
+        // The board shown goes from the file, so the root is shown; b's board is as it was.
+        h.editor.replaceFile(with: CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(outer), AnyShapeRecord(b)]),
+                                              children: [b.id: h.file[BoardID(owner: b.id)]]))
+        expectEqual(h.editor.board, .root)
+        _ = engine.results
+        expect(h.enter(b.id))
+        _ = engine.results
+        expectEqual(calls, 5, "the root and b's box are checked again")
+    },
 ])

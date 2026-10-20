@@ -1,6 +1,6 @@
 # Following commits, then ask Topology
 
-Claude Code session `60e4e650-410c-4001-a193-ee9867885301`, 2026-10-19 12:52 to 2026-10-19 20:33 UTC, on `claude/commit-order-47b084`.
+Claude Code session `60e4e650-410c-4001-a193-ee9867885301`, 2026-10-19 12:52 to 2026-10-20 01:12 UTC, on `claude/commit-order-47b084`.
 
 Condensed: the owner's messages, questions and answers, the assistant's prose, plans, agent briefs and git commands. Tool output is left out.
 
@@ -765,3 +765,694 @@ The merged tree builds and the audit passes. Committing the merge on the branch,
 
 [2026-10-19 20:33] GIT:
 git commit -q --no-edit && git log --oneline -3 && python3 .claude/skills/history/condense.py --self 2>&1 | tail -3
+
+[2026-10-19 20:33] ASSISTANT:
+Checking the session record before it goes into the commit: its size, and anything shaped like a key or other secret.
+
+[2026-10-19 20:33] ASSISTANT:
+The record has no secrets; like step 1's record, it holds only local paths. Squashing step 2 into one commit on top of main, with the record and its `Session:` trailer.
+
+[2026-10-19 20:33] GIT:
+S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad && { cat $S/commit-msg-2.txt; printf '\nSession: history/sessions/2026-10-19-following-commits-then-ask-topology-60e4e650.md\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n'; } > $S/commit-msg-2-final.txt && tail -5 $S/commit-msg-2-final.txt && git add history/sessions/2026-10-19-following-commits-then-ask-topology-60e4e650.md && git reset -q --soft main && git commit -q -F $S/commit-msg-2-final.txt && git log --oneline -2 && git diff --stat main HEAD | tail -2 && git status --short | wc -l
+
+[2026-10-19 20:34] ASSISTANT:
+The landing commit changes exactly step 2's files plus the session record. Fast-forwarding main to it.
+
+[2026-10-19 20:39] WRAP-UP:
+Step 2 is on main as 7426adfc, merged over main's three newer commits; the whole suite passes on the new main. 2 of 3 steps are done, nothing is pushed, and step 3 is unblocked but has no plan yet.
+Ask: Start planning step 3 now?
+
+[2026-10-19 21:14] USER:
+we can plan step 3 first but let's compact first?
+
+[2026-10-19 21:15] ASSISTANT:
+Yes, compacting first makes sense. Type `/compact` in the message box; you can add what to keep, for example:
+
+```
+/compact Keep the three-step brief with step 3 in full, your decisions (a service read while it's hearing a commit is returned as it is until a settle phase exists; what a note is follows the boards the app can show), what's on main (step 1 bee13c55, step 2 7426adfc), and how a step lands (squashed, session record, fast-forward main).
+```
+
+Nothing gets lost either way:
+- **The brief:** its full text, step 3 included, is in this session's record on main (`history/sessions/2026-10-19-following-commits-then-ask-topology-60e4e650.md`).
+- **Leftovers for step 3:** they're in the shared notes folder. `commit-order-probe.md` lists the references services keep from their `make` that must become lookups first. `step2-ask-topology.md` covers the per-walk Topology lookup and the deeper follow-ups from the review.
+
+Once you've compacted, say "plan step 3" and I'll research it and show you the plan before changing any code.
+
+[2026-10-19 21:15] USER:
+/compact Keep the three-step brief with step 3 in full, your decisions (a service read while it's hearing a commit is returned as it is until a settle phase exists; what a note is follows the boards the app can show), what's on main (step 1 bee13c55, step 2 7426adfc), and how a step lands (squashed, session record, fast-forward main).
+
+[2026-10-19 21:17] COMPACTED:
+(the context was summarized here)
+
+[2026-10-19 21:17] USER:
+ok proceed with planning the next step
+
+[2026-10-19 21:17] GIT:
+git status --short | head -20; echo "---"; git log --oneline -8 main; echo "---"; git log --oneline -3 HEAD; echo "---"; git merge-base --is-ancestor main HEAD && echo "main is ancestor of HEAD"; git merge-base --is-ancestor HEAD main && echo "HEAD is ancestor of main"
+
+[2026-10-19 21:17] GIT:
+git merge --ff-only main && git log --oneline -2 && git show --stat HEAD | head -40
+
+[2026-10-19 21:17] ASSISTANT:
+Branch is up to date with main (one new commit, a subboard's Open). Now reading step 2's approved plan for its format, then surveying step 3's code.
+
+[2026-10-19 21:18] ASSISTANT:
+Reading the editor's delivery code from step 1; next, the services' leftover guards and catch-ups.
+
+[2026-10-19 21:19] ASSISTANT:
+Still reading: the five copies of "walk the boards the app can show" (Topology, Mentions, Titles, Find, Jump To). Next the every-board walks and the per-board change needs.
+
+[2026-10-19 21:19] ASSISTANT:
+Reading how Locking, Publishing and Grouping keep their own copies of a property just to tell what a commit changed; that's what a "before" lookup on the change set would replace.
+
+[2026-10-19 21:20] ASSISTANT:
+Reading theme 7 ("following commits") in your scan doc for its reasoning on per-board change sets and the small kits.
+
+[2026-10-19 21:23] ASSISTANT:
+Mapping who reads the "other boards" part of a commit's change set (22 files), to see what per-board detail would actually delete.
+
+[2026-10-19 21:26] ASSISTANT:
+Reading Validation's engine: how it names what to re-check as it hears a commit, which is what a settle phase would move.
+
+[2026-10-19 21:28] ASSISTANT:
+Reading where services tell each other things as they hear a commit (chips, the button under the pointer, layout); that's what a settle phase would move until everyone has heard.
+
+[2026-10-19 21:43] WRITE /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad/plan-draft.md:
+**Step 3 of 3: the rest of "following commits".** Steps 1 and 2 are on main (bee13c55, 7426adfc), so 2 of 3 are done. The scope change this step waited for is on main too (5b3fcd01).
+
+Two words used below. A **service** is the part of a plugin that keeps state for a window: Topology's index, Types' index, Validation, the selection. **Taking in a commit** is what a service does when the app hands it a change to the board. Since step 1, a service that's asked for while others take in a commit takes it in first.
+
+What a trial copy showed (whole suite, nothing changed in the worktree): services still ask each other things while they're halfway through taking in a commit, about 60,000 times. Almost all go through three paths:
+- the select tool looking for a button under a still pointer, as it takes in the commit, which drags other services in early;
+- services telling each other "these chips, rows or shapes changed" from the middle of their own update;
+- questions like "which rows did this commit affect?", asked before the services they're about have finished.
+
+What I'd build, as one landing:
+
+1. **A second round after every commit or board shown: settling.** Once every service has taken the change in, each is told it has settled. What moves there: the button look; the "chips, rows, buttons changed" messages and redraws, when they're sent mid-commit; and the "what did this commit affect" questions (Validation's rules, the table of contents' rows and marks, Find). A service others  […2775 more chars]
+
+[2026-10-19 21:47] ASSISTANT:
+**Step 3 of 3: the rest of "following commits".** Steps 1 and 2 are on main, so 2 of 3 are done. The scope change this step waited for is on main too. No code has changed yet; I only brought the worktree up to main.
+
+Two words used below. A **service** is the part of a plugin that keeps state for one window: Topology's index, Types' index, Validation, the selection. A service **takes in a commit** when the app hands it a change to the board.
+
+**What a trial showed.** I ran the whole suite in a scratch copy and logged every time a service was asked something while it was still taking in a commit. Nearly all of it goes through four paths:
+- The select tool looks for a button under a still pointer while it takes in the commit. That pulls other services in early, and they end up asking the select tool back.
+- Services tell each other "these chips, rows or buttons changed" from the middle of their own update.
+- "Which rows did this commit affect?" is asked before the services it's about have finished.
+- Showing a board for the first time fits the camera to its shapes before anyone is told about the switch, so services get asked before they've heard of it.
+
+The details are in the shared notes, in `step3-trial.md`.
+
+**What I'd build, as one landing:**
+1. **A second round after every commit or board switch, called settling.** Once every service has taken the change in, each one is told it has settled. These move into that round:
+   - the button look;
+   - the "this changed" messages sent mid-commit;
+   - redraws;
+   - the "what did this affect" questions from Validation's rules, the table of contents and Find.
+
+   A service others follow (Topology, Types' index, the relationship index, the colors) tells them only once it has taken the commit in. A first visit's camera fit hands the switch first to any service it asks.
+2. **After that, asking a service anything while it's still taking in a commit is an error.** That was your call in step 1. *Decision below.*
+3. **The old guards go.** About a dozen services still guard against hearing a commit out of turn, or hand another service the change early. After step 1 and item 1 they do nothing. Before deleting them, the references services keep to one another from start-up become lookups, so those services hear the commit first too.
+4. **Validation asks its rules what a commit affected once everyone has heard.** Types' and Colors' rules then answer there, instead of pushing "check these again" at it. 4 of the 10 pushes go. The other 6 stay, because they also report things no commit carries: the caret entering or leaving a field, or an arrow's drag being let go.
+5. **One walk over the boards the app can show replaces five copies** (in Topology, Mentions, Titles, Find and Jump To; Jump To's walk can still pause between slices). Services that read every board say so by name and keep reading what they read today, so no answer changes.
+6. **A commit says what each shape was before it.** Locking, Publishing and Grouping can then drop their own copies of which shapes are locked, public or grouped, along with the board scans that keep those copies. Locking also stops re-reading every dragged shape. The brief also asked for per-board change lists, but nothing would use them, so I'd leave them out.
+7. **Small reusable pieces, added only where they delete code.** One capped cache replaces 17 copies, one per-shape change tracker replaces 9, and one two-way index replaces the hand-kept ones in Validation, Types and the rows.
+
+After that come the topic files and the guide, `./build.sh`, `./test.sh`, the benchmarks against main, and a code review. It lands only when you say so.
+
+**The decision: what the app does if a spot the tests don't reach still asks a service mid-commit.** The app is built for release, where a check either stops the app or is skipped.
+- **Recommended:** tests and debug builds stop with an error naming both services. The app itself carries on as it does today, getting the service as it is.
+- **Or:** the app stops there too, as it already does when something changes the board while services are taking a change in.
+
+For you: no board looks or behaves differently. The cost is one large landing that touches most services. The risk is a spot the tests don't reach: with my recommendation it can't crash your app and shows up only in tests and debug builds.
+
+[2026-10-19 21:47] WRAP-UP:
+Step 3's plan is above: a settling round after each commit, then asking a service mid-commit becomes an error, the old guards go, plus four cleanups. A trial in a scratch copy found the paths to move. No code has changed yet.
+Ask: Build step 3 with the error in tests and debug builds only?
+
+[2026-10-19 22:29] USER:
+honestly claude i have no idea what i'm supposed to do with this question
+
+[2026-10-19 22:30] EDIT /Users/zekenie/.claude/projects/-Users-zekenie-code-native-canvas/memory/asking-the-user.md:
+At their yes, I asked all four sessions to explain each option in everyday words and to end every question with a line starting "For you:".
+
+Later on 2026-10-19 (step 3 of "following commits") I asked, in everyday words and with a "For you:" line, whether a check for a programming mistake should stop the shipped app or only tests and debug builds (an `assert` against a `precondition`). The owner: "honestly claude i have no idea what i'm supposed to do with this question". Plain words don't make a question the owner's. How code fails on a bug, like any cheap-to-flip implementation choice, is mine: take the safe default (tests catch it, the app keeps working), say it in one line, and ask only for the plan's go-ahead.
+
+[2026-10-19 22:30] WRAP-UP:
+The question was technical, so I took the safe default: a missed spot fails the tests and never crashes your app. The step 3 plan above still needs your go-ahead; no code has changed.
+Ask: Start building step 3?
+
+[2026-10-19 22:38] USER:
+Yes, build step 3 as planned.
+
+[2026-10-19 22:42] ASSISTANT:
+Building step 3 now. First piece: the core's settling round and the "busy" check in the editor.
+
+[2026-10-19 22:43] ASSISTANT:
+Settling round and busy check are in the editor. Now moving the select tool's look for a button under a still pointer into the settling round.
+
+[2026-10-19 22:44] ASSISTANT:
+Now chips: their re-layout waits for the settling round when it's asked for mid-commit.
+
+[2026-10-19 22:45] ASSISTANT:
+Rows next: the open rows editor re-places itself in the settling round instead of mid-commit.
+
+[2026-10-19 22:45] ASSISTANT:
+Next, the "what did this commit affect" questions. Starting with Validation, which will ask its rules once everyone has the commit.
+
+[2026-10-19 22:46] ASSISTANT:
+Table of contents next: it notes what a commit affected (rows that read other shapes) in the settling round.
+
+[2026-10-19 22:48] ASSISTANT:
+Topology next: it tells its followers right after it has taken a commit in, instead of from the middle, and its `catchUp` goes.
+
+[2026-10-19 22:48] ASSISTANT:
+Types' index next: same treatment (tell its observers once it has the commit), its guards go, and it looks the color book up instead of keeping it.
+
+[2026-10-19 22:50] ASSISTANT:
+Relationship index next: it looks Types' index and Topology up as it starts taking a commit in (so each has it first), tells its observers once it's done, and its catch-up goes.
+
+[2026-10-19 22:51] ASSISTANT:
+Now the old guards and early catch-ups, service by service. Rows first (Find's question to them now comes after everyone has the commit).
+
+[2026-10-19 22:52] ASSISTANT:
+Now Mentions: it looks Topology up as it takes a commit in, and its own catch-up and guards go.
+
+[2026-10-19 22:53] ASSISTANT:
+Titles next: its index of titles drops the guards and catch-ups the same way.
+
+[2026-10-19 22:53] ASSISTANT:
+Jump To next.
+
+[2026-10-19 22:53] ASSISTANT:
+Adornments' "asked before it heard?" check goes too, now that a lookup always hands the change over first.
+
+[2026-10-19 22:55] ASSISTANT:
+Status: the settling round, the busy check, the followers' timing, and the removal of most old guards are written. Building now to catch compile errors.
+
+[2026-10-19 22:57] ASSISTANT:
+Build passes. Running the whole suite now, logging (rather than stopping at) every read of a busy service, to see what's left to move.
+
+[2026-10-19 22:58] ASSISTANT:
+While the suite runs, writing the one walk over the boards the app can show, in the core.
+
+[2026-10-19 22:58] ASSISTANT:
+Now switching the five copies of that walk over to it: Topology, Mentions, Titles, Find and Jump To.
+
+[2026-10-19 22:59] ASSISTANT:
+Now the walks over every board: they say so by name (`file.everyBoard`), each keeping what it reads today.
+
+[2026-10-19 23:00] ASSISTANT:
+FieldCards reloads its open forms while it's still taking the commit in, and the form reads FieldCards back. Moving those reloads into the settling round.
+
+[2026-10-19 23:01] ASSISTANT:
+While the suite runs: Validation now asks Types' and Colors' rules what a commit affected, instead of those pushing re-checks at it.
+
+[2026-10-19 23:02] ASSISTANT:
+The suite run finished. Checking its results and the busy log.
+
+[2026-10-19 23:03] ASSISTANT:
+Only four tests fail, all pinning the old behavior, and the only busy reads left are the cards' (already fixed, not yet rebuilt). Looking at the four tests.
+
+[2026-10-19 23:06] ASSISTANT:
+Rewriting the new delivery tests' last details (a flag box, a direct insert), then rebuilding.
+
+[2026-10-19 23:07] ASSISTANT:
+Build passes. Running the full suite again in the background; meanwhile, writing the "what each shape was before the commit" lookup.
+
+[2026-10-19 23:09] ASSISTANT:
+A commit now carries what its shapes were before. Next: Locking, Publishing and Grouping drop their own copies of the property.
+
+[2026-10-19 23:10] ASSISTANT:
+Grouping next: it keeps which shapes hold a path, not the paths themselves.
+
+[2026-10-19 23:12] ASSISTANT:
+While the suite runs, sizing the small kits to see which would actually delete code.
+
+[2026-10-19 23:12] ASSISTANT:
+Whole suite passed, with no service read while it was busy anywhere. That run predates the "before" lookup and the three dropped copies, so building and checking those now.
+
+[2026-10-19 23:14] ASSISTANT:
+The "before" lookup works: Locking, Publishing, Grouping and core tests all pass. Now the one kit that actually deletes code: a two-way index replacing three hand-kept copies.
+
+[2026-10-19 23:15] ASSISTANT:
+Writing the two-way index in the core, then switching Validation, Types' references and References' paths to it.
+
+[2026-10-19 23:15] ASSISTANT:
+Removing my temporary busy-read logging from the editor, then a full build and run.
+
+[2026-10-19 23:17] ASSISTANT:
+While the full suite runs with the busy check live, updating the topic files and the guide. Finding every passage that describes the old behavior first.
+
+[2026-10-19 23:17] ASSISTANT:
+Updating the editor topic file's description of how services hear a change.
+
+[2026-10-19 23:18] ASSISTANT:
+Updating the remaining topic files: Mentions, relationships, Jump To, Types, Find, table of contents, Adornments, Validation, Locking, Publishing, Grouping, Colors, Selection and References.
+
+[2026-10-19 23:20] COMPACTED:
+(the context was summarized here)
+
+[2026-10-19 23:21] ASSISTANT:
+Still on the docs for step 3: fixing the last topic-file sentences that describe the old order. The full test run is nearly done.
+
+[2026-10-19 23:22] ASSISTANT:
+The full suite with the busy check live finished; checking its result now, then back to the docs.
+
+[2026-10-19 23:22] ASSISTANT:
+Tests all passed with the busy check on. Now going through a list of about 30 stale doc passages, file by file.
+
+[2026-10-19 23:23] ASSISTANT:
+Still on the docs: checking how Validation's recheck works now so its topic file says it right.
+
+[2026-10-19 23:24] ASSISTANT:
+Writing the remaining topic-file fixes in one pass: Validation's recheck, the boards file (the new walks and `before`), Types' check passages, and Find.
+
+[2026-10-19 23:24] ASSISTANT:
+Topic files are done. Now the long guide, `docs/plugin-system.md`: pulling out each passage that describes the old order.
+
+[2026-10-19 23:26] ASSISTANT:
+Still revising the guide: rewriting its "Services hear a change" section and about 15 passages that describe the old order.
+
+[2026-10-19 23:27] ASSISTANT:
+Found a possible hole while writing this up: if something asks Validation what a commit affected during the first round, the type check may not have heard yet. Checking the code path.
+
+[2026-10-19 23:27] ASSISTANT:
+No hole: the type check pulls the type index in as it takes each commit, so it always knows what the commit reached before anyone asks. Back to the guide.
+
+[2026-10-19 23:27] ASSISTANT:
+Now the guide's core section on how services hear a change, rewritten for the two rounds.
+
+[2026-10-19 23:28] ASSISTANT:
+Fixing one stale code comment in References, then building to make sure the doc-comment edits compile.
+
+[2026-10-19 23:29] ASSISTANT:
+Docs pass is done. Next up is the benchmark comparison against main; first updating the scratch clone of main while the test build finishes.
+
+[2026-10-19 23:33] ASSISTANT:
+Touched suites pass after the comment edits. Starting the benchmarks: main's copy first, then this branch, one at a time so they don't skew each other.
+
+[2026-10-19 23:34] AGENT review:line-by-line:
+You are one reviewer of an uncommitted Swift change, looking for real bugs. Work read-only: use git diff/show, grep, sed/cat and file reads only. Do NOT run ./build.sh, ./test.sh or any test or benchmark binary (a benchmark is running on this machine), do not edit, create or delete any file in the repository, and do not look outside the two paths named here.
+
+Worktree: /Users/zekenie/code/native-canvas/.claude/worktrees/commit-order-47b084
+The whole diff (git diff HEAD plus one new file, Sources/Canvas/Model/ReverseIndex.swift): /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad/s3-review.diff
+
+What the change is. The app is a native macOS infinite canvas in Swift 6. `CanvasEditor` (Sources/Canvas/Editor/CanvasEditor.swift) tells each commit (`documentDidChange`) and each switch of board (`boardDidChange`) to every `EditorService` (Sources/Canvas/Editor/EditorService.swift). This change makes that delivery two rounds:
+- Round 1: each service takes the change in, in service order, each once. A service looked up during round 1 (`editor.service(T.self)` → `resolveService`, also a layout reading's or a context's lookup) takes the change in first if it hasn't yet. Looking a service up while its own hook runs ("busy", the `hearing` stack) is a mistake: `busy(_:)` asserts in debug builds (tests can catch it through `busyRead`), and the app carries on. `editor.onceHeard { }` queues a body to  […2280 more chars]
+
+[2026-10-19 23:35] AGENT review:removed-behavior:
+You are one reviewer of an uncommitted Swift change, looking for real bugs. Work read-only: use git diff/show, grep, sed/cat and file reads only. Do NOT run ./build.sh, ./test.sh or any test or benchmark binary (a benchmark is running on this machine), do not edit, create or delete any file in the repository, and do not look outside the two paths named here.
+
+Worktree: /Users/zekenie/code/native-canvas/.claude/worktrees/commit-order-47b084
+The whole diff (git diff HEAD plus one new file, Sources/Canvas/Model/ReverseIndex.swift): /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad/s3-review.diff
+
+What the change is. The app is a native macOS infinite canvas in Swift 6. `CanvasEditor` (Sources/Canvas/Editor/CanvasEditor.swift) tells each commit (`documentDidChange`) and each switch of board (`boardDidChange`) to every `EditorService` (Sources/Canvas/Editor/EditorService.swift). This change makes that delivery two rounds:
+- Round 1: each service takes the change in, in service order, each once. A service looked up during round 1 (`editor.service(T.self)` → `resolveService`, also a layout reading's or a context's lookup) takes the change in first if it hasn't yet. Looking a service up while its own hook runs ("busy", the `hearing` stack) is a mistake: `busy(_:)` asserts in debug builds (tests can catch it through `busyRead`), and the app carries on. `editor.onceHeard { }` queues a body to  […2645 more chars]
+
+[2026-10-19 23:35] AGENT review:cross-file:
+You are one reviewer of an uncommitted Swift change, looking for real bugs. Work read-only: use git diff/show, grep, sed/cat and file reads only. Do NOT run ./build.sh, ./test.sh or any test or benchmark binary (a benchmark is running on this machine), do not edit, create or delete any file in the repository, and do not look outside the two paths named here.
+
+Worktree: /Users/zekenie/code/native-canvas/.claude/worktrees/commit-order-47b084
+The whole diff (git diff HEAD plus one new file, Sources/Canvas/Model/ReverseIndex.swift): /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad/s3-review.diff
+
+What the change is. The app is a native macOS infinite canvas in Swift 6. `CanvasEditor` (Sources/Canvas/Editor/CanvasEditor.swift) tells each commit (`documentDidChange`) and each switch of board (`boardDidChange`) to every `EditorService` (Sources/Canvas/Editor/EditorService.swift). This change makes that delivery two rounds:
+- Round 1: each service takes the change in, in service order, each once. A service looked up during round 1 (`editor.service(T.self)` → `resolveService`, also a layout reading's or a context's lookup) takes the change in first if it hasn't yet. Looking a service up while its own hook runs ("busy", the `hearing` stack) is a mistake: `busy(_:)` asserts in debug builds (tests can catch it through `busyRead`), and the app carries on. `editor.onceHeard { }` queues a body to  […2664 more chars]
+
+[2026-10-19 23:35] AGENT review:swift-pitfalls:
+You are one reviewer of an uncommitted Swift change, looking for real bugs. Work read-only: use git diff/show, grep, sed/cat and file reads only. Do NOT run ./build.sh, ./test.sh or any test or benchmark binary (a benchmark is running on this machine), do not edit, create or delete any file in the repository, and do not look outside the two paths named here.
+
+Worktree: /Users/zekenie/code/native-canvas/.claude/worktrees/commit-order-47b084
+The whole diff (git diff HEAD plus one new file, Sources/Canvas/Model/ReverseIndex.swift): /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad/s3-review.diff
+
+What the change is. The app is a native macOS infinite canvas in Swift 6. `CanvasEditor` (Sources/Canvas/Editor/CanvasEditor.swift) tells each commit (`documentDidChange`) and each switch of board (`boardDidChange`) to every `EditorService` (Sources/Canvas/Editor/EditorService.swift). This change makes that delivery two rounds:
+- Round 1: each service takes the change in, in service order, each once. A service looked up during round 1 (`editor.service(T.self)` → `resolveService`, also a layout reading's or a context's lookup) takes the change in first if it hasn't yet. Looking a service up while its own hook runs ("busy", the `hearing` stack) is a mistake: `busy(_:)` asserts in debug builds (tests can catch it through `busyRead`), and the app carries on. `editor.onceHeard { }` queues a body to  […2573 more chars]
+
+[2026-10-19 23:35] AGENT review:wrapper:
+You are one reviewer of an uncommitted Swift change, looking for real bugs. Work read-only: use git diff/show, grep, sed/cat and file reads only. Do NOT run ./build.sh, ./test.sh or any test or benchmark binary (a benchmark is running on this machine), do not edit, create or delete any file in the repository, and do not look outside the two paths named here.
+
+Worktree: /Users/zekenie/code/native-canvas/.claude/worktrees/commit-order-47b084
+The whole diff (git diff HEAD plus one new file, Sources/Canvas/Model/ReverseIndex.swift): /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad/s3-review.diff
+
+What the change is. The app is a native macOS infinite canvas in Swift 6. `CanvasEditor` (Sources/Canvas/Editor/CanvasEditor.swift) tells each commit (`documentDidChange`) and each switch of board (`boardDidChange`) to every `EditorService`. This change makes that delivery two rounds (round 1: each service takes the change in, a lookup of a service has it take the change in first, a lookup of a busy service is a debug assertion; `onceHeard` runs a body once the hearing service's hook returns; round 2: `documentDidSettle`/`boardDidSettle`). It also adds:
+- `ChangeSet.before(id)` backed by `ChangeSet.Priors` (Sources/Canvas/Model/ChangeSet.swift): the records as the commit found them, built from old board documents or the old file at each place a commit is made (CanvasEditor.swift's `priors(of:re […2128 more chars]
+
+[2026-10-19 23:35] AGENT review:reuse:
+You are one reviewer of an uncommitted Swift change, looking for cleanup. Work read-only: use git diff/show, grep, sed/cat and file reads only. Do NOT run ./build.sh, ./test.sh or any test or benchmark binary (a benchmark is running on this machine), do not edit, create or delete any file in the repository, and do not look outside the two paths named here.
+
+Worktree: /Users/zekenie/code/native-canvas/.claude/worktrees/commit-order-47b084
+The whole diff (git diff HEAD plus one new file, Sources/Canvas/Model/ReverseIndex.swift): /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad/s3-review.diff
+
+What the change is. The app is a native macOS infinite canvas in Swift 6 built from plugins; `CanvasEditor` (Sources/Canvas/Editor/CanvasEditor.swift) delivers each commit and board switch to `EditorService`s, now in two rounds (take the change in, then `documentDidSettle`/`boardDidSettle`), with `onceHeard` for telling observers after a service has the change, `servicesAreHearing` for round 1, `ChangeSet.before(id)` for a shape's record as the commit found it, `editor.showableBoards` / `file.everyBoard` for walks over boards, and a `ReverseIndex<Key, Value>` kit (Sources/Canvas/Model/ReverseIndex.swift).
+
+Your angle: REUSE. Flag code the diff adds that re-implements something the codebase already has, or that the diff itself now provides. Examples to hunt: a service that still walks boards by ha […1209 more chars]
+
+[2026-10-19 23:36] AGENT review:simplification:
+You are one reviewer of an uncommitted Swift change, looking for cleanup. Work read-only: use git diff/show, grep, sed/cat and file reads only. Do NOT run ./build.sh, ./test.sh or any test or benchmark binary (a benchmark is running on this machine), do not edit, create or delete any file in the repository, and do not look outside the two paths named here.
+
+Worktree: /Users/zekenie/code/native-canvas/.claude/worktrees/commit-order-47b084
+The whole diff (git diff HEAD plus one new file, Sources/Canvas/Model/ReverseIndex.swift): /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad/s3-review.diff
+
+What the change is. The app is a native macOS infinite canvas in Swift 6 built from plugins; `CanvasEditor` (Sources/Canvas/Editor/CanvasEditor.swift) delivers each commit and board switch to `EditorService`s, now in two rounds (take the change in, then `documentDidSettle`/`boardDidSettle`), with `onceHeard` for telling observers after a service has the change, `servicesAreHearing` for round 1, deferred `setNeedsDisplay`/`refreshCursor`, `ChangeSet.before(id)` (a `Priors` snapshot) for a shape's record as the commit found it, `editor.showableBoards` / `file.everyBoard`, and a `ReverseIndex<Key, Value>` kit. Services dropped their heard-revision guards, catch-up calls and mirrored copies.
+
+Your angle: SIMPLIFICATION. Flag unnecessary complexity the diff adds or leaves: redundant or derivable state […1075 more chars]
+
+[2026-10-19 23:36] AGENT review:efficiency:
+You are one reviewer of an uncommitted Swift change, looking for wasted work. Work read-only: use git diff/show, grep, sed/cat and file reads only. Do NOT run ./build.sh, ./test.sh or any test or benchmark binary (a benchmark is running on this machine), do not edit, create or delete any file in the repository, and do not look outside the two paths named here.
+
+Worktree: /Users/zekenie/code/native-canvas/.claude/worktrees/commit-order-47b084
+The whole diff (git diff HEAD plus one new file, Sources/Canvas/Model/ReverseIndex.swift): /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad/s3-review.diff
+
+What the change is. The app is a native macOS infinite canvas in Swift 6 built from plugins; a frame must cost what's in view and what changed, never the whole board, and a drag of thousands of shapes is a commit on every pointer event (`ChangeSet.moved`), so per-commit code must be O(changed). `CanvasEditor` (Sources/Canvas/Editor/CanvasEditor.swift) delivers each commit and board switch to `EditorService`s, now in two rounds (take the change in, then `documentDidSettle`/`boardDidSettle` for every service), with `onceHeard` queues per hearing service, a `hearing` stack, deferred `setNeedsDisplay`/`refreshCursor`, and `ChangeSet.before(id)` backed by a `Priors` object built at every commit (from the old board documents, or the old file). `editor.showableBoards` walks the file's boards. `Rever […1534 more chars]
+
+[2026-10-19 23:36] AGENT review:altitude:
+You are one reviewer of an uncommitted Swift change, judging whether its fixes sit at the right depth. Work read-only: use git diff/show, grep, sed/cat and file reads only. Do NOT run ./build.sh, ./test.sh or any test or benchmark binary (a benchmark is running on this machine), do not edit, create or delete any file in the repository, and do not look outside the two paths named here.
+
+Worktree: /Users/zekenie/code/native-canvas/.claude/worktrees/commit-order-47b084
+The whole diff (git diff HEAD plus one new file, Sources/Canvas/Model/ReverseIndex.swift): /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad/s3-review.diff
+
+What the change is, and why. The app is a native macOS infinite canvas in Swift 6 built from compiled-in plugins; the core (`Canvas`) knows no particular concern, and plugins add services (`EditorService`). Before this change, services heard each commit in list order and each defended itself against hearing out of turn: heard-revision guards, `catchUp` calls into another service, copies kept of shape state (which shapes were locked, public, grouped), and "affected" questions asked before the services they read had the commit. This change (the third of three steps the owner approved) moves the ordering into the core: delivery is two rounds in `CanvasEditor` (Sources/Canvas/Editor/CanvasEditor.swift): round 1, each service takes the change in, a lookup during round 1 ha […2363 more chars]
+
+[2026-10-19 23:36] AGENT review:conventions:
+You are one reviewer of an uncommitted Swift change, checking it against the repository's written rules. Work read-only: use git diff/show, grep, sed/cat and file reads only. Do NOT run ./build.sh, ./test.sh or any test or benchmark binary (a benchmark is running on this machine), do not edit, create or delete any file in the repository, and do not look outside the two paths named here (and ~/.claude/CLAUDE.md if it exists).
+
+Worktree: /Users/zekenie/code/native-canvas/.claude/worktrees/commit-order-47b084
+The whole diff (git diff HEAD plus one new file, Sources/Canvas/Model/ReverseIndex.swift): /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad/s3-review.diff
+
+What the change is. The app's editor now delivers each commit and board switch to services in two rounds (take the change in, then `documentDidSettle`/`boardDidSettle`), adds `onceHeard`, `servicesAreHearing`, `ChangeSet.before(id)`, `showableBoards`/`everyBoard` and a `ReverseIndex` kit, and ~30 services dropped their guards, catch-ups and copies. The diff also revises topic files in .claude/rules/ and the guide docs/plugin-system.md.
+
+Your angle: CONVENTIONS. Read the user-level ~/.claude/CLAUDE.md (if it exists), the repo-root CLAUDE.md in the worktree, and any CLAUDE.md in a directory above a changed file. CLAUDE.md says each subsystem has a topic file in .claude/rules/ whose `paths:` frontmatter names its sources, and that […1578 more chars]
+
+[2026-10-19 23:36] ASSISTANT:
+Ten reviewers are running, and the benchmarks too. Meanwhile I'm drafting the commit message from step 2's format.
+
+[2026-10-19 23:37] ASSISTANT:
+While the reviewers work, I'm checking one thing myself: whether the "before" snapshot taken at undo could read a stale copy of the board on show.
+
+[2026-10-19 23:38] COMMIT MESSAGE FILE commit-msg-3.txt:
+Services hear a change in two rounds: each takes it in, then all settle; a service asked for while it takes one in is a mistake, and nothing keeps a copy or a guard to stay in step
+
+The owner's module abstraction scan (the doc "Module abstraction scan", theme 7, following commits;
+step 3 of 3). Step 1 had the editor deliver each commit in one order, a service looked up while
+others heard it hearing it first, and left every service's own guard and catch-up in place, doing
+nothing. It also found shipped code asking for a service still taking a commit in some 2,500 times
+over the suite, and the owner chose to return such a service as it is until a phase after the
+delivery took those notifications, then make it a failure. This is that phase, and the clean-up the
+order made possible.
+
+- Delivery is two rounds. In the first each service takes the change in (`documentDidChange`,
+  `boardDidChange`), in order, a lookup having the service looked up take it in first. In the
+  second every service settles (`documentDidSettle`, `boardDidSettle`, nothing by default), none
+  busy: what asks what a change affected, reads around the file or tells the window happens there.
+  Validation asks its rules' `affected` then (or when someone first asks what a commit affected), the
+  table of contents its rows' and marks', Find's index follows, Selection looks for a button under a
+  still pointer, Adornments lays out the leads it was told of, and Types' cards and rows editor follow.
+  `editor.servicesAreHearing` is the first round, for what's told then to wait.
+- A service is busy while its own hook runs, and asking for it then is a mistake: tests and debug
+  builds stop (`assertionFailure`, naming the services busy; tests that hold the mistake catch it
+  through `busyRead`), and the app carries on with the service as it is (the owner's default when
+  asked; release builds keep `assert` off). The whole suite runs with it on and finds none: what used
+  to read a service half way now tells its followers once it has the change (`editor.onceHeard`:
+  Topology's followers, the type index's and the relationship index's observers, the colors'
+  handlers, Selection's observers) or waits for the settle round.
+- A redraw and a cursor asked for during a delivery reach the host once it is over, and the delivery
+  begins as the revision moves, so a first visit's camera fit laying the board out reads services as
+  of the switch.
+- Every service's out-of-turn guard (its heard revision) and early catch-up (`topology.catchUp`, the
+  type index called from Find's field contribution) is gone. A service that holds another's reference
+  from its `make`, for a frame's sake, looks that one up as its hook begins.
+- `ChangeSet.before(id)` is a shape's record as the commit found it, on whichever board, from the
+  boards it changed as they were (the old file for a file put in place, the step's boards for an undo):
+  Locking and Publishing keep no copy of which shapes are locked or public, and so keep nothing per
+  board (their `BoardStash`es and scan counters go); Grouping compares a path with the one the shape
+  held before and keeps the shapes that hold one.
+- `editor.showableBoards` (`file.showableBoards(boardOwningKinds:)`: the root, then down the tree the
+  boards each one's shapes own, each once, O(the boards)) is the one walk over the boards the app can
+  show, which Topology, Titles, Mentions, Find and Jump To each wrote; `file.everyBoard` is every board,
+  for what reads the file whole (the types' sync, Colors).
+- `ReverseIndex` (the core's, a set of values by key both ways) replaces three hand-kept pairs of
+  dictionaries: Validation's lookups, the field check's type references and References' path sources.
+  The other two kits the brief named (a set of keys a service observes, a bounded memo) would have
+  deleted no code, and weren't made.
+- Validation's `affected` now reads Types' check as the commit left it, so four of the ten
+  `recheck` calls became the rule's `affected` (a type's edit reaching its instances, a note's
+  quoted label, the colors' names); the six left are changes with no commit to say so (the caret, a
+  relationship's verdict, a board switch while typing).
+
+What changes in practice is when: the table of contents' marks, Validation's rings and Find's index
+follow a commit after every service has it, where some read a service a commit behind before.
+
+Cost: COST LINE
+
+Session: history/sessions/SESSION
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+[2026-10-19 23:38] ASSISTANT:
+Waiting on the ten reviewers and the benchmark runs. Meanwhile I'm correcting the draft commit message: four of nine Validation recheck calls became `affected`, not four of ten.
+
+[2026-10-19 23:38] COMMIT MESSAGE FILE commit-msg-3.txt:
+- A rule's `affected` now reads Types' check and the colors as the commit left them, so four of the
+  nine `recheck` calls became rules' `affected` (a type's edit reaching its instances, by a rename or
+  by its fields, a note's quoted label, the file's color names); the five left are changes no commit
+  of the shapes says (the caret leaving a field or a shape's editing, a board switch while typing, a
+  relationship's verdict, which a drag's release moves outside any commit).
+
+[2026-10-19 23:38] ASSISTANT:
+Waiting on the ten reviewers and the two benchmark runs (main first, then this branch). I'll pick up when they report.
+
+[2026-10-19 23:41] NOTICE:
+background task completed: Background command "Run the benchmarks on main, then on the branch" completed (exit code 0)
+
+[2026-10-19 23:41] ASSISTANT:
+Both runs: 125 pass, 2 fail each, mostly different budgets. Lining up every measured line side by side to spot real differences.
+
+[2026-10-19 23:42] ASSISTANT:
+Rerunning six benchmarks that differ or sit on a budget edge, alternating main and this branch three times each. The ten reviewers are still running.
+
+[2026-10-19 23:43] NOTICE:
+background task completed: Background command "Rerun the edge benchmarks alternating main and branch" completed (exit code 0)
+
+[2026-10-19 23:44] ASSISTANT:
+The crumb slowdown isn't in the code it times, so I'm checking whether something now keeps an old copy of the board alive after each commit (the "before" snapshot), which would cost memory and cache.
+
+[2026-10-19 23:46] ASSISTANT:
+Profiling both builds on just that benchmark, to see where the extra time in reading the crumb menu's rows goes.
+
+[2026-10-19 23:47] ASSISTANT:
+The slower lookups are in the registry's shared memo, a dictionary keyed by `AnyHashable`. If something new adds keys to it on every commit, it would grow and leak. Checking what uses it.
+
+[2026-10-19 23:47] ASSISTANT:
+Found it: the new `ReverseIndex.set` builds two temporary sets on every call (`subtracting`), where Validation's old table built none. Rewriting it to compare in place, then re-measuring.
+
+[2026-10-19 23:48] ASSISTANT:
+Rebuilt with the fix; the alternating rerun of Validation and the crumb menu is going. Reviewers are still working.
+
+[2026-10-19 23:49] NOTICE:
+background task completed: Background command "Rebuild the bench and rerun validation and crumb A/B" completed (exit code 0)
+
+[2026-10-19 23:50] ASSISTANT:
+Locking's hook is cheaper than before (main looked up every moved shape), so that's not it. Adding the empty-set shortcut to `ReverseIndex.set` and measuring Validation once more.
+
+[2026-10-19 23:51] ASSISTANT:
+Still about 3.5 ms slower, so `ReverseIndex` isn't the main cause. Reading what the benchmark measures.
+
+[2026-10-19 23:52] ASSISTANT:
+Waiting on the build and the remaining nine reviewers.
+
+[2026-10-19 23:53] ASSISTANT:
+Conventions review is in: mostly topic-file and guide sentences that still describe the old order, plus one rule break (a test service conforms inline). I'll fix after verification. Waiting on eight more reviewers and the build.
+
+[2026-10-19 23:53] NOTICE:
+background task completed: Agent "review:conventions" finished
+
+[2026-10-19 23:54] ASSISTANT:
+Altitude review is in. Two of its points are concrete: the settle round runs in service order, so the select tool can look for a button under the pointer before Adornments re-lays out a pill's room (a stale hover until the pointer moves). Also, services that keep another service's reference from `make` need a hand-written lookup at the start of their hook. I'll weigh fixes once the last seven reviewers report.
+
+[2026-10-19 23:54] NOTICE:
+background task completed: Agent "review:altitude" finished
+
+[2026-10-19 23:54] ASSISTANT:
+Simplification review is in. One point I'll check now because it costs work on every commit: when a service asks for a redraw during delivery, the host may now be told twice. Six reviewers still running.
+
+[2026-10-19 23:54] ASSISTANT:
+Rebuild passed; the ReverseIndex users' suites are running. Waiting on them and the last five reviewers.
+
+[2026-10-19 23:56] ASSISTANT:
+Efficiency review is in. It likely explains Validation's +3.5 ms: `ReverseIndex` is generic across modules, so every call runs unspecialized code, where the old table was concrete and inlined. All three users key it by shape ids, so I'll make it concrete. It also found drags building a throwaway set in Locking and Publishing, and a per-commit closure in Mentions and the type index. Four reviewers left.
+
+[2026-10-19 23:58] ASSISTANT:
+Six of ten reviews are in. A consistent picture is forming: one core way to say "do this once every service has settled", and the editor taking in, first, the services a service looked up when it was made. That would replace four hand-rolled versions and fix the stale-hover bug. I'll wait for the last four correctness reviews before changing anything.
+
+[2026-10-20 00:02] ASSISTANT:
+Swift-pitfalls review is in, with one real regression to check: when a file is put in place together with a board switch, nothing may tell Validation that a type or a file color changed. At HEAD they rechecked at once. Reading Validation's board hooks to confirm.
+
+[2026-10-20 00:03] ASSISTANT:
+Wait for the remaining three reviewers.
+
+[2026-10-20 00:05] ASSISTANT:
+Cross-file review is in. It independently found the same file-replacement regression, plus one more case where the make-time-dependency idea is the cure: the relationship index can be told of a board switch early (by a first visit's camera fit) and read the type index and Topology before they've heard it. Two reviewers left.
+
+[2026-10-20 00:05] NOTICE:
+background task completed: Agent "review:cross-file" finished
+
+[2026-10-20 00:06] ASSISTANT:
+All ten reviews are back except removed-behavior. Four reviewers found the same file-replacement regression independently. Starting the fixes now, core first, while the last one finishes.
+
+[2026-10-20 00:08] AGENT review:sweep:
+You are a fresh reviewer of an uncommitted Swift change, sweeping for gaps the first pass missed. Work read-only: use git diff/show, grep, sed/cat and file reads only. Do NOT run ./build.sh, ./test.sh or any test or benchmark binary, do not edit, create or delete any file, and do not look outside the two paths named here.
+
+Worktree: /Users/zekenie/code/native-canvas/.claude/worktrees/commit-order-47b084
+The diff as it was reviewed (git diff HEAD plus the new Sources/Canvas/Model/ReverseIndex.swift): /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-commit-order-47b084/60e4e650-410c-4001-a193-ee9867885301/scratchpad/s3-review.diff
+(The author is fixing the listed findings in the worktree right now, so files may change under you: read the diff file for the change as reviewed, and the worktree for context.)
+
+What the change is. A native macOS infinite canvas in Swift 6. `CanvasEditor` (Sources/Canvas/Editor/CanvasEditor.swift) now delivers each commit and board switch to `EditorService`s in two rounds: round 1, each service takes the change in (a lookup during round 1 has the service looked up take it in first; a lookup of a busy service, one whose hook is running, is a debug assertion; `onceHeard` runs a body once the hearing service's hook returns); round 2, `documentDidSettle`/`boardDidSettle`. `ChangeSet.before(id)` (a `Priors` snapshot) replaced the copies Locking, Publishing and Grouping kept; `showableBoards`/`everyBoard` replaced per-service wal […3601 more chars]
+
+[2026-10-20 00:08] ASSISTANT:
+Sweep is running. Now the core rewrite in `CanvasEditor.swift`: the delivery state, the lookups, `tell`, `onceHeard`, `onceSettled`, the settle drain and the redraw.
+
+[2026-10-20 00:09] ASSISTANT:
+The core is rewritten, and `servicesAreHearing` is gone in favour of `onceSettled`. Now converting its four users.
+
+[2026-10-20 00:09] ASSISTANT:
+Now applying the four conversions: Selection, Adornments, FieldCards, and the rows editor.
+
+[2026-10-20 00:10] ASSISTANT:
+Selection, Adornments, FieldCards and the rows editor now go through `onceSettled`. Next, checking which services take their kept references in `make`, so their hand-written priming lines can go.
+
+[2026-10-20 00:10] ASSISTANT:
+Locking and Publishing can go back to keeping the fade (and Topology) from `make`, now safe and once again found once rather than per frame. Applying that and removing the four priming lines.
+
+[2026-10-20 00:12] ASSISTANT:
+Still fixing review findings. Now the change set: synthesized equality back (the snapshot compares as equal), `before`'s doc made true, and `edited` made free on a drag.
+
+[2026-10-20 00:12] ASSISTANT:
+Making the snapshot a non-optional value that compares as equal, so the synthesized `==` holds whether a change set carries one or not, with no allocation for change sets that aren't commits.
+
+[2026-10-20 00:13] ASSISTANT:
+Now `ReverseIndex`: concrete over shape ids, which all three users are, so no generic code runs across modules.
+
+[2026-10-20 00:14] ASSISTANT:
+Fixing two compile errors: a missing `import Selection` in Adornments' state file, and the delivery test that read the removed `servicesAreHearing`.
+
+[2026-10-20 00:16] ASSISTANT:
+Building with the review fixes and the new tests, then running the touched suites.
+
+[2026-10-20 00:19] ASSISTANT:
+Docs next. First finding every passage that mentions the pieces I just changed.
+
+[2026-10-20 00:20] ASSISTANT:
+Now the guide's section on delivery, and the topic files that describe the deferrals or the priming lookups.
+
+[2026-10-20 00:22] ASSISTANT:
+While that runs, checking the protocol's own doc and the Types and Colors lines for the last stale bits.
+
+[2026-10-20 00:23] ASSISTANT:
+The suite run built before my last doc-comment edit, so it's testing the current behaviour. Rewriting the draft commit message to cover the review's fixes while it runs.
+
+[2026-10-20 00:23] COMMIT MESSAGE FILE commit-msg-3.txt:
+Services hear a change in two rounds, each taking it in and then all settling, and keep no guard, catch-up or copy to stay in step; a service asked for while it takes one in is a mistake
+
+The owner's module abstraction scan (the doc "Module abstraction scan", theme 7, following commits;
+step 3 of 3). Step 1 had the editor deliver each commit in one order, a service looked up while
+others heard it hearing it first, and left every service's own guard and catch-up in place, doing
+nothing. It also found shipped code asking for a service still taking a commit in some 2,500 times
+over the suite, and the owner chose to return such a service as it is until a phase after the
+delivery took those notifications, then make it a failure. This is that phase, and the clean-up the
+order made possible.
+
+- Delivery is two rounds. In the first each service takes the change in (`documentDidChange`,
+  `boardDidChange`), in order, a lookup having the service looked up take it in first. In the
+  second every service settles (`documentDidSettle`, `boardDidSettle`, nothing by default), none
+  busy, and then what waited for that runs (`editor.onceSettled { … }`). What asks what a change
+  affected, reads around the file or tells the window happens there: Validation asks its rules'
+  `affected` as it settles (or when someone first asks what a commit affected), the table of
+  contents its rows' and marks', and Find's index follows; the select tool's look for a button under
+  a still pointer, Adornments' look at the pills whose room may have changed, the cards following the
+  relationships and the rows' editor following its rows wait with `onceSettled`, which took the place
+  of a flag and a replay of each one's own.
+- A service is busy while its own hook runs, and asking for it then is a mistake: tests and debug
+  builds stop (`assertionFailure`, naming the services busy; a test that holds the mistake catches it
+  through `busyRead`), and the app carries on with the service as it is (the owner's default when
+  asked; release builds keep `assert` off). The whole suite runs with it on and finds none: what used
+  to read a service half way now tells its followers once it has the change (`editor.onceHeard`:
+  Topology's followers, the type index's and the relationship index's observers, the sync's readers
+  of a spot, the colors' handlers, Selection's observers), in the order asked, or waits for the settle
+  round.
+- What a service looked up as it was made takes each change in before it does, so a reference kept
+  from a `make` (for a frame's sake) reads as of the change whenever its holder hears. Every
+  service's out-of-turn guard (its heard revision) and early catch-up (`topology.catchUp`, the type
+  index called from Find's field contribution, the lookups that brought a kept reference up to date)
+  is gone. Before this, the relationship index could be told of a board switch by a first visit's
+  camera fit and compile against a type index and Topology that hadn't heard it.
+- `ChangeSet.before(id)` is a shape's record as the commit found it, wherever it was (from the boards
+  it changed as they were, the old file for a file put in place, the step's boards for an undo;
+  asserted for every commit that touched shapes): Locking and Publishing keep no copy of which shapes
+  are locked or public, and so keep nothing per board (their `BoardStash`es and scan counters go);
+  Grouping compares a path with the one the shape held before and keeps the shapes that hold one.
+- `editor.showableBoards` (`file.showableBoards(boardOwningKinds:)`: the root, then down the tree the
+  boards each one's shapes own, each once, O(the boards)) is the one walk over the boards the app can
+  show, which Topology, Titles, Mentions, Find and Jump To each wrote; `file.everyBoard` is every board,
+  for what reads the file whole (the types' sync, Colors).
+- `ReverseIndex` (the core's, what each shape names both ways) replaces three hand-kept pairs of
+  dictionaries: Validation's lookups, the field check's type references and References' path sources.
+  It is of shapes alone, not generic: a generic one, called from another module with nothing
+  `@inlinable`, ran unspecialized and made Validation's first read of 10,000 shapes some 4 ms slower.
+  The other two kits the brief named (a set of keys a service observes, a bounded memo) would have
+  deleted no code, and weren't made.
+- A rule's `affected` now reads Types' check and the colors as the commit left them, so four of the
+  nine `recheck` calls became rules' `affected` (a type's edit reaching its instances, by a rename or
+  by its fields, a note's quoted label, the file's color names); the five left are changes no commit
+  of the shapes says (the caret leaving a field or a shape's editing, a board switch while typing, a
+  relationship's verdict, which a drag's release moves outside any commit). Since those no longer
+  recheck on a board switch, Validation keeps nothing found on any board when a file put in place comes
+  with the switch, as the table of contents keeps no rows: a board as it was may hold shapes whose
+  rules read what the new file changed elsewhere (a test failed without it).
+- A redraw asked during a delivery is the change's own, so the host hears one per commit, not one a
+  service that asked.
+
+What changes in practice is when: the table of contents' marks, Validation's rings and Find's index
+follow a commit after every service has it, where some read a service a commit behind before; and a
+pill's room is laid out before the select tool looks under the pointer.
+
+Cost: COST LINE
+
+Session: history/sessions/SESSION
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+[2026-10-20 00:23] ASSISTANT:
+Waiting on the sweep reviewer and the suite run. Two small cleanups (Validation's `askRules` duplicating `recheck`'s tail, more maps that could use `ReverseIndex`) I'll leave out of this step and report as skipped.
+
+[2026-10-20 00:31] NOTICE:
+background task completed: Background command "Run the full suite, then the benchmarks" completed (exit code 0)
+
+[2026-10-20 00:39] ASSISTANT:
+Both pass now. Running the whole suite again with the busy check live.
+
+[2026-10-20 00:40] ASSISTANT:
+The suite is running; the sweep reviewer is still out. I'll pick up when either reports.
+
+[2026-10-20 00:40] ASSISTANT:
+Sweep found nothing new. Reporting the review's verified findings.
+
+[2026-10-20 00:40] ASSISTANT:
+Findings reported; nearly all are already fixed in the worktree. Waiting for the full suite before marking their outcomes.
+
+[2026-10-20 00:44] NOTICE:
+background task completed: Background command "Run the whole suite with the busy check" completed (exit code 0)
+
+[2026-10-20 00:44] ASSISTANT:
+All 61 test executables pass with the busy check live, and the audit passes. Building the app itself in release, which the brief requires too.
+
+[2026-10-20 00:46] ASSISTANT:
+All findings fixed, with tests and the app build passing. Finishing up: the cost line in the commit message, the hand-over note for the parent session, then the report.
+
+[2026-10-20 00:46] WRAP-UP:
+Step 3 is built and reviewed: delivery in two rounds, no service guards or copies, and all 15 review findings fixed. Tests, build, audit and benchmarks pass (two budgets main also misses). Nothing is committed or landed yet.
+Ask: Land step 3 on main?
+
+[2026-10-20 01:12] USER:
+Land it.
+
+[2026-10-20 01:12] ASSISTANT:
+Main hasn't moved (3288b390), so no rebase is needed. Writing the session record.

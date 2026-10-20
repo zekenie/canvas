@@ -139,10 +139,11 @@ public struct TypesPlugin: ListedPlugin {
 /// note's values against its types' fields (`FieldChecks`): each wrong value is an error (a needed
 /// field with no value, or a Needed relationship row left empty, an issue of Validation's third level, `.incomplete`:
 /// the shape stays valid and nothing shows on the board), and a type whose JSON refers to a type that is gone, or whose `$title`
-/// titles nothing, carries a warning. Neither has an `affected:`: a type's change reaches the notes through the service
-/// (`TypeIndex.onChange`, then `ValidationEngine.recheck`), since a rule's `affected:` hears a commit
-/// before the index does. The rule over values has a `touches:`, the same reach for writes that have not committed
-/// (`FieldChecks.touched(by:reading:)`), which a run asks to say what it breaks on shapes it did not write.
+/// titles nothing, carries a warning. What a type's change reaches is the rule over values' `affected:`, asked once
+/// every service has the commit (`FieldChecks.affected(by:)`); what moves with no commit of the shapes' own (a
+/// relationship's verdict, the caret) the service tells Validation of (`ValidationEngine.recheck`). The rule over values
+/// has a `touches:`, the same reach for writes that have not committed (`FieldChecks.touched(by:reading:)`), which a
+/// run asks to say what it breaks on shapes it did not write.
 /// After `TypesPlugin` and `ValidationPlugin`.
 public struct TypeValidationPlugin: ListedPlugin {
     public init() {}
@@ -158,9 +159,13 @@ public struct TypeValidationPlugin: ListedPlugin {
         // Without an editor (draw's check, before it commits) it asks the service through the reading its shapes
         // have, so a type the run writes is read as it stands; with none, it says nothing.
         // What writes that have not committed reach (a run's): the instances of a type they change, the notes at the ends
-        // of a relationship they draw or delete, the notes of an end type whose rows they change (`RunTouches`).
+        // of a relationship they draw or delete, the notes of an end type whose rows they change (`RunTouches`). What a
+        // commit reached that it didn't change (a type's instances and the types that refer to it, the arrows that quote a
+        // renamed note) is the check's to say, asked once every service has the commit (`FieldChecks.affected(by:)`).
         registrar.forShapes(holding: IsAProperty.self) { typeable in
-            typeable.validate(ignoringMoves: true, touches: { changes, shapes in
+            typeable.validate(ignoringMoves: true, affected: { changes, editor in
+                editor.fieldChecks?.affected(by: changes) ?? []
+            }, touches: { changes, shapes in
                 shapes.reading.map { FieldChecks.touched(by: changes, reading: $0) } ?? []
             }) { shape, context in
                 let check: FieldCheck

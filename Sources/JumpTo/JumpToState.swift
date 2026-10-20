@@ -14,12 +14,10 @@ import Topology
 /// The catalog (`JumpToCatalog`) is every titled shape on every board the editor can show, named or
 /// derived (`registry.title(of:)`: a note's title), none kept aside. It's built the
 /// first time the palette opens, in slices of a couple of milliseconds on the main actor
-/// (`editor.scheduler`, the first slice at once), so before then a commit costs a note of its
-/// revision; after, each commit costs what it changed: the shapes it removed, added and changed (a
+/// (`editor.scheduler`, the first slice at once), so before then a commit costs one test; after, each commit costs what it changed: the shapes it removed, added and changed (a
 /// move changes no title, and reads nothing), and those it reached on other boards
 /// (`ChangeSet.elsewhere`: a deleted subboard's, a paste's), a rename of a container costing only the
-/// name it's shown by. A commit heard out of turn, or a file put in place, reads the file again, as
-/// Titles' index does, and a commit while the catalog is being built is applied to what's read so far (the shapes on boards not yet read are read when their turn comes), so a stream of commits can't keep it from finishing.
+/// name it's shown by. A file put in place reads the file again, as Titles' index does, and a commit while the catalog is being built is applied to what's read so far (the shapes on boards not yet read are read when their turn comes), so a stream of commits can't keep it from finishing.
 ///
 /// A query is ranked by what it names: with one piece (a word), by the titles of shapes alone
 /// (`FuzzyMatcher.rank`, the `@` picker's workload); with several, by the containment tree too, as
@@ -57,8 +55,6 @@ public final class JumpToState {
     /// What each container on a path is called and directly in, found once and kept until a commit
     /// changes that shape.
     @ObservationIgnored var nodes: [ShapeID: Node] = [:]
-    /// The revision the catalog is up to date with.
-    @ObservationIgnored private var heardRevision: Int
     /// Called as the palette closes, so its window goes at once, not when its view does.
     @ObservationIgnored var onClose: (@MainActor () -> Void)?
 
@@ -81,11 +77,11 @@ public final class JumpToState {
         case ready
     }
 
-    /// Where a build has got to: the boards found so far, each once, the one being read (its shapes
-    /// as they were when its turn came) and how far.
+    /// Where a build has got to: the boards the editor could show as it began (`editor.showableBoards`:
+    /// what a commit since brings arrives through it), the one being read (its shapes as they were when its
+    /// turn came) and how far.
     struct Build {
-        var boards: [BoardID] = [.root]
-        var met: Set<BoardID> = [.root]
+        var boards: [BoardID]
         var board = 0
         var index = 0
         var shapes: [AnyShapeRecord]?
@@ -104,7 +100,6 @@ public final class JumpToState {
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        heardRevision = editor.revision
     }
 
     /// Whether the catalog is read: before, a query lists what's been read so far.
@@ -191,7 +186,7 @@ public final class JumpToState {
         buildTask = nil
         catalog = JumpToCatalog()
         nodes = [:]
-        phase = .building(Build())
+        phase = .building(Build(boards: editor.withoutObservingDocument { editor.showableBoards }))
         buildSlices = 0
         longestBuildSlice = .zero
         buildTime = .zero
@@ -209,15 +204,13 @@ public final class JumpToState {
         buildTask = editor.scheduler.schedule(after: .zero) { [weak self] in self?.continueBuild() }
     }
 
-    /// Reads shapes, board by board in the order boards are found, until `JumpToStyle.buildSlice` of
-    /// this thread's CPU has gone (the clock read every few shapes), at least one read.
+    /// Reads shapes, board by board, until `JumpToStyle.buildSlice` of this thread's CPU has gone (the
+    /// clock read every few shapes), at least one read.
     private func runSlice() {
         guard case .building(var build) = phase else { return }
         let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
         let budget = UInt64(JumpToStyle.buildSlice.components.attoseconds / 1_000_000_000)
-        let registry = registry
         editor.withoutObservingDocument {
-            let children = editor.file.children
             var sinceClock = 0
             slice: while build.board < build.boards.count {
                 if build.shapes == nil {
@@ -235,10 +228,6 @@ public final class JumpToState {
                     }
                     guard !record.isOpaque else { continue }
                     read(record)
-                    let owned = BoardID(owner: record.id)
-                    if children[record.id] != nil, registry.ownsShowableBoard(record), build.met.insert(owned).inserted {
-                        build.boards.append(owned)
-                    }
                     sinceClock += 1
                     if sinceClock >= JumpToStyle.clockStride {
                         sinceClock = 0
@@ -340,14 +329,10 @@ public final class JumpToState {
     }
 
     func hear(_ changes: ChangeSet) {
-        // A commit heard out of turn: what the ones before changed isn't known.
-        let outOfTurn = heardRevision < editor.revision - 1
-        heardRevision = editor.revision
         switch phase {
         case .unbuilt:
             return
         case .building(var build):
-            guard !outOfTurn else { return readAgain() }
             guard isTouching(changes) else { return }
             // What the commit changed is read now, as it is; the shapes on boards not read yet are
             // read when their turn comes (setting a shape twice is the same as once), and what's on
@@ -361,7 +346,6 @@ public final class JumpToState {
             apply(changes)
             if isOpen { refreshRows() }
         case .ready:
-            guard !outOfTurn else { return readAgain() }
             guard isTouching(changes) else { return }
             apply(changes)
             if isOpen { refreshRows() }
@@ -369,7 +353,6 @@ public final class JumpToState {
     }
 
     func heardBoardChange(_ change: BoardChange) {
-        heardRevision = editor.revision
         if change.isFileReplaced {
             readAgain()
         } else if isOpen, query.isEmpty {

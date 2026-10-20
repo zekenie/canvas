@@ -30,7 +30,7 @@ public struct TypeChange: Sendable {
     public let lineage: Set<ShapeID>
     /// Every shape whose `is` list changed (a type, a note, an arrow), and removed shapes that held one.
     public let lists: Set<ShapeID>
-    /// The whole file was read afresh (put in place, or a commit heard out of turn): nothing above is a
+    /// The whole file was read afresh (put in place): nothing above is a
     /// complete account of what moved, and every reader reads everything again.
     public let everything: Bool
 
@@ -56,9 +56,8 @@ public struct TypeChange: Sendable {
 /// a value in the graph, in the order of its list, for a query and a run to read), the instances of each
 /// type (`instances(of:)`, asked of Topology) and the chain a shape's types make (`lineage(of:)`). Read
 /// when the file opens, a scan of every board, then kept by each commit's `ChangeSet` alone (what it
-/// added, removed and changed, on the board shown and elsewhere, the kind checked first), a commit heard
-/// out of turn and a file put in place read again. Nothing per frame, and nothing for a shape that only
-/// moved. It never transacts; it tells Adornments to make the chips of the instances of a type again
+/// added, removed and changed, on the board shown and elsewhere, the kind checked first), a file put in
+/// place read again. Nothing per frame, and nothing for a shape that only moved. It never transacts; it tells Adornments to make the chips of the instances of a type again
 /// when the type is renamed, recolored (its shape's `color`, or the file's colors it names), deleted or
 /// comes back.
 @MainActor
@@ -91,9 +90,6 @@ public final class TypeIndex {
     @ObservationIgnored private let kinds: Set<ShapeKind>
     /// The kinds that can be instances of types.
     @ObservationIgnored private let typeableKinds: Set<ShapeKind>
-    /// The book of colors, if the plugin list has one: what a type's own color is drawn in. Asked for as
-    /// the index is made, so it is made first.
-    @ObservationIgnored private let colors: ColorBook?
     /// The kinds that stand in for other shapes (pills): never a type, whatever they stand for.
     @ObservationIgnored private let standInKinds: Set<ShapeKind>
     @ObservationIgnored private var observers: [@MainActor (TypeChange) -> Void] = []
@@ -107,8 +103,6 @@ public final class TypeIndex {
     /// How often a type's name, or whether it's there, has changed: what a reader of `name(of:)`
     /// observes.
     @ObservationIgnored private var nameVersions: [ShapeID: Int] = [:]
-    /// The revision of the editor it's up to date with.
-    @ObservationIgnored private var heardRevision: Int
     /// Moves whenever what a list of types resolves to may: a type comes, goes, its schema's text
     /// changes, or its own `is` list does. Not for a rename, and not for another shape's list.
     @ObservationIgnored internal private(set) var chainRevision = 0
@@ -125,10 +119,9 @@ public final class TypeIndex {
         kinds = Set(registry.kinds.filter { registry.canBeType($0) })
         typeableKinds = Set(registry.kinds.filter { registry.isTypeable($0) })
         standInKinds = registry.standIns.kinds
-        heardRevision = editor.revision
-        colors = editor.colors
         readEveryShape(in: editor)
-        colors?.onChange { [weak self] in self?.fileColorsDidChange() }
+        // The book of colors (what a type's own color is drawn in), made first: asked for as the index is.
+        editor.colors?.onChange { [weak self] in self?.fileColorsDidChange() }
     }
 
     /// Whether the shape is a type: it holds a schema.
@@ -152,7 +145,7 @@ public final class TypeIndex {
     /// eight by its id (`TypeColors`). Asked of any id, a type that is gone included; it keeps nothing
     /// per type, so it is the color of the commit last heard.
     public func look(of id: ShapeID) -> TypeLook {
-        TypeColors.look(of: id, own: entries[id]?.color, book: colors)
+        TypeColors.look(of: id, own: entries[id]?.color, book: editor?.colors)
     }
 
     /// A type's schema text, as the shape holds it; nil for a shape that isn't one.
@@ -430,8 +423,9 @@ public final class TypeIndex {
                 if let topology, typeableKinds.contains(record.kind) { readLinks(of: record.id, in: topology) }
             }
         }
-        read(file.root.shapes)
-        for board in file.children.values { read(board.shapes) }
+        // Every board the file has, shown or not: what is a type is read off its record, and what a note is
+        // follows Topology (`readLinks`), which reads only the boards the app can show.
+        for board in file.everyBoard { read(file[board].shapes) }
     }
 
     private func tell(_ change: TypeChange) {
@@ -466,40 +460,37 @@ public final class TypeIndex {
         told(renamed: named, in: editor)
     }
 
-    /// Everything read again. A file put in place forgets what its types were called (they are
-    /// another file's); a commit heard out of turn is the same file, so a type it deleted is still
-    /// known by the title it had.
-    private func readAfresh(in editor: CanvasEditor, sameFile: Bool) {
+    /// Everything read again, for a file put in place, which forgets what its types were called (they
+    /// are another file's). Those told hear once the index has it (`editor.onceHeard`).
+    private func readAfresh(in editor: CanvasEditor) {
         let before = Set(entries.keys), instances = Set(kept.links.keys)
         let marksBefore = kept.relationshipTypes
         chainRevision &+= 1
         entries = [:]
         kept = TypeGraph()
-        if !sameFile { lastNames = [:] }
+        lastNames = [:]
         readEveryShape(in: editor)
         let now = Set(entries.keys)
         let moved = before.union(now)
         let own = Set(kept.links.keys.filter { entries[$0] != nil }).union(instances.filter { before.contains($0) })
-        tell(TypeChange(types: moved, marks: marksBefore.union(kept.relationshipTypes), membership: moved, lineage: own,
-                        lists: instances.union(kept.links.keys), everything: true))
-        // Every chip may name another type.
-        for type in moved { withMutation(keyPath: \.[nameVersion: type]) { nameVersions[type, default: 0] += 1 } }
+        let change = TypeChange(types: moved, marks: marksBefore.union(kept.relationshipTypes), membership: moved, lineage: own,
+                                lists: instances.union(kept.links.keys), everything: true)
         let chips = instances.union(kept.links.keys)
-        if !chips.isEmpty { editor.adornmentsDidChange(for: chips) }
+        editor.onceHeard { [weak self, unowned editor] in
+            guard let self else { return }
+            tell(change)
+            // Every chip may name another type.
+            for type in moved { withMutation(keyPath: \.[nameVersion: type]) { nameVersions[type, default: 0] += 1 } }
+            if !chips.isEmpty { editor.adornmentsDidChange(for: chips) }
+        }
     }
 }
 
 extension TypeIndex: EditorService {
+    /// Follows the commit; those told (`onChange`, the readers of a name, the chips of its instances) hear
+    /// once the index has it (`editor.onceHeard`), so they may read it then.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        // Up to date already: a service committed while hearing an earlier commit, which this one
-        // heard the later one of first.
-        guard heardRevision != editor.revision else { return }
-        let outOfTurn = heardRevision < editor.revision - 1
-        heardRevision = editor.revision
-        if changes.replacedDocument || outOfTurn {
-            readAfresh(in: editor, sameFile: outOfTurn && !changes.replacedDocument)
-            return
-        }
+        if changes.replacedDocument { return readAfresh(in: editor) }
         let registry = editor.registry, file = editor.file, topology = editor.topology
         var heard = Heard()
         for id in changes.removed where file.record(id) == nil {
@@ -526,16 +517,19 @@ extension TypeIndex: EditorService {
             if kinds.contains(record.kind) { read(record, registry: registry, heard: &heard) }
             if let topology, typeableKinds.contains(record.kind) { readLinks(of: id, in: topology, heard: &heard) }
         }
-        tell(heard.change)
-        told(renamed: heard.renamed, in: editor)
+        let change = heard.change, renamed = heard.renamed
+        guard !change.isEmpty || !renamed.isEmpty else { return }
+        editor.onceHeard { [weak self, unowned editor] in
+            self?.tell(change)
+            self?.told(renamed: renamed, in: editor)
+        }
     }
 
     /// A whole file put in place with the board switch is read again; a switch alone changes no type
     /// (the index is the file's, whatever board is shown).
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
-        heardRevision = editor.revision
         guard change.isFileReplaced else { return }
-        readAfresh(in: editor, sameFile: false)
+        readAfresh(in: editor)
     }
 }
 

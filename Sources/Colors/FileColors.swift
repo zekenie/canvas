@@ -216,9 +216,8 @@ extension CanvasEditor {
     /// one pass over the file, only kinds with colors.
     private func shapes(holdingColor name: String) -> [ShapeID] {
         let key = ShapeColor.key(of: name)
-        let boards = [BoardID.root] + file.children.keys.map { BoardID(owner: $0) }
         var holders: [ShapeID] = []
-        for board in boards {
+        for board in file.everyBoard {
             for shape in contents(of: board).shapes where registry.isColorable(shape.kind) {
                 if let held = shape.ownColor?.name, ShapeColor.key(of: held) == key { holders.append(shape.id) }
             }

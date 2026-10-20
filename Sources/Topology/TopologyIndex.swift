@@ -14,7 +14,8 @@ import Observation
 /// the index is the file's. A carrier on a board the editor can't show carries nothing.
 ///
 /// Queries cost what they return: a shape's edges read its own, a type's its own, never a board's.
-/// Services that read it as they hear a commit may hear it first: `catchUp` brings it up to date.
+/// A service that reads it as services take a commit in has it take the commit in first (looking it up
+/// does), and its followers hear once it has (`editor.onceHeard`).
 ///
 /// Stand-ins (`EdgeForwarding`) forward: every read gives the edges as they resolve through them
 /// unless it asks for another view (`EdgeView`), each a mapping of the same tables. A commit
@@ -76,8 +77,6 @@ public final class TopologyIndex {
     /// deleted) tells only the shapes someone may be watching.
     @ObservationIgnored private var revisions: [ShapeID: Int] = [:]
     @ObservationIgnored private var watched: Set<ShapeID> = []
-    /// The revision the index is up to date with.
-    @ObservationIgnored private var heardRevision: Int
 
     /// The shapes whose edges (at either end, and at either literal end) the last change to the
     /// edges changed: a commit's (none for one that changed none, as a move), or a provide's that
@@ -107,7 +106,6 @@ public final class TopologyIndex {
         types = editor.registry.edgeTypes
         standInRules = editor.registry.standInRules()
         standInKinds = Set(standInRules.keys)
-        heardRevision = editor.revision
         for kind in editor.registry.kinds {
             let found = editor.registry.edgeEmitters(for: kind)
             if !found.isEmpty || standInRules[kind] != nil { upkeep[kind] = KindUpkeep(emitters: found, rule: standInRules[kind]) }
@@ -259,14 +257,6 @@ public final class TopologyIndex {
         return found
     }
 
-    /// Brings the index up to date with a commit it hasn't heard yet, which `changes` must be (the
-    /// one a service is hearing): for a service that reads the index as it hears a commit, and may
-    /// hear it before this one does. Nothing if it has heard it already.
-    public func catchUp(_ changes: ChangeSet) {
-        guard heardRevision != editor.revision else { return }
-        hear(changes)
-    }
-
     // MARK: Provided answers, and following the edges
 
     /// Answers for stand-ins whose record says they stand for what's provided
@@ -323,18 +313,21 @@ public final class TopologyIndex {
     func stopFollowing(_ key: Int) { followers[key] = nil }
 
     /// Tells followers the change just made, if it changed any edge, then wakes those waiting to
-    /// settle that may stop.
+    /// settle that may stop. A commit's or a file's, once the index has taken it in (`editor.onceHeard`:
+    /// as its hook returns, so a follower may read it); a provide's at once.
     private func deliver(_ cause: TopologyChange.Cause) {
-        if !touched.isEmpty, !followers.isEmpty {
-            let change = TopologyChange(touched: touched, touchedByType: touchedByType, cause: cause)
+        guard !touched.isEmpty, !followers.isEmpty else { return wakeWaiters() }
+        let change = TopologyChange(touched: touched, touchedByType: touchedByType, cause: cause)
+        editor.onceHeard { [weak self] in
+            guard let self else { return }
             delivering = true
-            defer { delivering = false }
             for key in followers.keys.sorted() {
                 // One that a follower before it cancelled isn't called.
                 followers[key]?(change)
             }
+            delivering = false
+            wakeWaiters()
         }
-        wakeWaiters()
     }
 
     // MARK: Settling
@@ -425,7 +418,6 @@ public final class TopologyIndex {
     /// have changed and the carriers at those whose shapes changed set again, then the revisions of
     /// the shapes whose edges changed bumped, and the change told to followers.
     private func hear(_ changes: ChangeSet) {
-        heardRevision = editor.revision
         clearTouched()
         if changes.replacedDocument {
             rebuild()
@@ -499,11 +491,8 @@ public final class TopologyIndex {
         var seen: Set<ShapeID> = []
         let before = Array(tables.forwards.keys)
         for id in Array(standing.keys) { declare(id, nil) }
-        let children = editor.file.children
-        var boards: [BoardID] = [.root], met: Set<BoardID> = [.root], next = 0, found: [ShapeID] = []
-        while next < boards.count {
-            let board = boards[next]
-            next += 1
+        var found: [ShapeID] = []
+        for board in editor.showableBoards {
             for record in editor.contents(of: board).shapes {
                 if let kind = upkeep[record.kind] {
                     if let rule = kind.rule, !record.isOpaque {
@@ -516,8 +505,6 @@ public final class TopologyIndex {
                         set(record.id, emitted: derive(record, kind.emitters))
                     }
                 }
-                let owned = BoardID(owner: record.id)
-                if children[record.id] != nil, registry.ownsShowableBoard(record), met.insert(owned).inserted { boards.append(owned) }
             }
         }
         for carrier in Set(tables.byCarrier.keys).union(tables.resolvedByCarrier.keys) where !seen.contains(carrier) {
@@ -686,17 +673,14 @@ public final class TopologyIndex {
 }
 
 extension TopologyIndex: EditorService {
-    /// Follows the commit, unless a service that reads the index brought it up to date first
-    /// (`catchUp`).
+    /// Follows the commit.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        guard heardRevision != editor.revision else { return }
         hear(changes)
     }
 
     /// Nothing: the index is the file's, and showing another board changes no record. A file put in
     /// place with the switch is read afresh, and the change told to followers.
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
-        heardRevision = editor.revision
         clearTouched()
         guard change.isFileReplaced else { return }
         rebuild()

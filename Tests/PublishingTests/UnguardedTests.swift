@@ -88,25 +88,15 @@ import Topology
 ])
 
 @MainActor let publishingBoardTests = Suite("Publishing across boards", [
-    test("going back to a board takes back what Publishing kept of it; a board that changed is looked through again") {
+    test("going back to a board, a shape there that goes private shows it, as one on the board shown would") {
         let pocket = ShapeRecord(Pocket(CGRect(x: 600, y: 600, width: 100, height: 100)))
         let plaque = ShapeRecord(Plaque(plaqueFrame))
         let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket), AnyShapeRecord(plaque)]),
                               children: [pocket.id: CanvasDocument(shapes: [])])
         let h = try publishingHarness([PocketsPlugin()], file: file)
         h.publish(plaque.id)
-        #if DEBUG
-        let scanned = h.editor.boardsScannedForPublic
-        #endif
         expect(h.enter(pocket.id))
-        #if DEBUG
-        let afterEntering = h.editor.boardsScannedForPublic
-        expectEqual(afterEntering, scanned + 1, "the pocket's board looked through")
-        #endif
         expect(h.editor.showBoard(.root))
-        #if DEBUG
-        expectEqual(h.editor.boardsScannedForPublic, afterEntering, "the root as it was left")
-        #endif
         h.editor.makePrivate([plaque.id])
         expectEqual(h.chipText(of: plaque.id), "Private", "known to be public: it went private")
     },

@@ -7,10 +7,11 @@ import Selection
 import TableOfContents
 import Topology
 
-/// Per editor: which shapes are public, kept as commits change shapes, what stands for each (read
-/// from Topology, which follows every change to the edges, a commit's or a provide's), and the chips
-/// showing "Private" for a moment after a shape went private (a `ChipFade`; the shake a refused
-/// try gives is Selection's `RefusalShake`).
+/// Per editor: what stands for each shape (read from Topology, which follows every change to the
+/// edges, a commit's or a provide's), and the chips showing "Private" for a moment after a shape went
+/// private (a `ChipFade`; the shake a refused try gives is Selection's `RefusalShake`). Which shapes
+/// are public is the records', and what a commit made private it tells from what the shape was
+/// before it (`ChangeSet.before`), so it keeps no copy of them.
 ///
 /// `admitting` is what a query engine, or anything that works off the main actor, asks of a shape
 /// to know whether it may be stood for: built once, when the editor is, from the kinds that are
@@ -19,13 +20,6 @@ import Topology
 @MainActor
 public final class PublishingState {
     unowned let editor: CanvasEditor
-    private let topology: TopologyIndex?
-    /// The public shapes of the board shown that hold the property, as of the last commit: what a
-    /// change is compared with, to tell which went private.
-    private(set) var publicIDs: Set<ShapeID> = []
-    /// The public shapes of boards shown lately, for going back to them without looking through
-    /// their shapes again.
-    private var kept = BoardStash<Set<ShapeID>>()
     /// Following Topology: the chips and rows of what stands for a shape, or stands in, are made
     /// again as the edges change.
     private var following: TopologyFollowing?
@@ -35,15 +29,15 @@ public final class PublishingState {
     public let admitting: @Sendable (AnyShapeRecord) -> Bool
 
     #if DEBUG
-    /// How many times a whole board has been looked through for its public shapes, and how many times
-    /// `admitting` was made (debug builds).
-    private(set) var boardsScanned = 0
+    /// How many times `admitting` was made (debug builds).
     private(set) var admittingMade = 0
     #endif
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        topology = editor.topology
+        let topology = editor.topology
+        self.topology = topology
+        fade = editor.service(ChipFade.self)
         let registry = editor.registry
         let always = Set(registry.kinds.filter { registry.definition(for: $0) is any AlwaysPublic })
         let standIns = topology?.standInKinds ?? []
@@ -53,20 +47,13 @@ public final class PublishingState {
         #if DEBUG
         admittingMade = 1
         #endif
-        publicIDs = publicShapes(in: editor.document)
         following = topology?.follow { [weak self] change in self?.follow(change) }
     }
 
-    private func publicShapes(in document: CanvasDocument) -> Set<ShapeID> {
-        #if DEBUG
-        boardsScanned += 1
-        #endif
-        return Set(document.shapes.lazy.filter { $0[PublicProperty.self] == true }.map(\.id))
-    }
-
-    /// Adornments' fades, found once: a commit asks about every shape it deletes, and a frame about
-    /// every shape in view.
-    private lazy var fade: ChipFade? = editor.service(ChipFade.self)
+    /// Topology and Adornments' fades, found once, as this is made, so they take each change in first: a commit asks
+    /// the fades about every shape it deletes, and a frame about every shape in view.
+    private let topology: TopologyIndex?
+    private let fade: ChipFade?
 
     // MARK: What stands for a shape
 
@@ -89,7 +76,7 @@ public final class PublishingState {
     /// Private, refused while something stands for it (it shakes, and the panel shows what holds it), and
     /// a just-privatized one's Make Public.
     func click(_ id: ShapeID) {
-        if publicIDs.contains(id) {
+        if editor.document[id]?[PublicProperty.self] == true {
             editor.attempt(.makePrivate, on: [id])
         } else if fade?.isShowing(PublicChip.self, on: id) == true {
             editor.attempt(.makePublic, on: [id])
@@ -134,51 +121,29 @@ public final class PublishingState {
 }
 
 extension PublishingState: EditorService {
-    /// Keeps which shapes are public, and shows "Private" on each shape the commit makes private. The
-    /// chips it shows or takes back are told to Adornments once, at the end, since each tell has the
-    /// select tool look again for a button under the pointer. A shape that only moved kept its
-    /// value, so a drag reads none.
+    /// Shows "Private" on each shape the commit makes private (public before it, and not now), and takes it back
+    /// from each it makes public or deletes. The chips it shows or takes back are told to Adornments once, at the
+    /// end, since each tell has the select tool look again for a button under the pointer. A shape that only moved
+    /// kept its value, so a drag reads none; a paste that arrives private was public nowhere before.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         var chipsChanged = Set<ShapeID>()
-        let fade = fade
-        for id in changes.removed {
-            if !publicIDs.isEmpty { publicIDs.remove(id) }
-            if fade?.hide(PublicChip.self, on: id) == true { chipsChanged.insert(id) }
-        }
+        for id in changes.removed where fade?.hide(PublicChip.self, on: id) == true { chipsChanged.insert(id) }
         let document = editor.document
-        func look(at id: ShapeID) {
+        for id in changes.edited {
             if document[id]?[PublicProperty.self] == true {
-                publicIDs.insert(id)
                 if fade?.hide(PublicChip.self, on: id) == true { chipsChanged.insert(id) }
-            } else if !publicIDs.isEmpty, publicIDs.remove(id) != nil {
+            } else if !changes.added.contains(id), changes.before(id)?[PublicProperty.self] == true {
                 fade?.show(PublicChip.self, on: id)
                 chipsChanged.insert(id)
             }
         }
-        for id in changes.added { look(at: id) }
-        for id in changes.changed where !changes.moved.contains(id) { look(at: id) }
         if !chipsChanged.isEmpty { editor.adornmentsDidChange(for: chipsChanged) }
-    }
-
-    /// The board left's public shapes are kept for when it's shown again.
-    public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
-        guard old != new else { return }
-        kept.keep(publicIDs, for: old, in: editor)
-    }
-
-    /// Another board is shown: its public shapes are the ones to tell going private by (as they were
-    /// kept, if the board hasn't changed since it was left, else looked for).
-    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
-        publicIDs = kept.take(for: change.to, in: editor) ?? publicShapes(in: editor.document)
     }
 }
 
 #if DEBUG
 extension CanvasEditor {
-    /// How many times Publishing has looked through a whole board for its public shapes, and how
-    /// many times it made `admitting` (debug builds only), so tests can hold going back to a board to
-    /// taking back what was kept of it, and `admitting` to once per editor.
-    public var boardsScannedForPublic: Int { publishing?.boardsScanned ?? 0 }
+    /// How many times Publishing made `admitting` (debug builds only), so tests can hold it to once per editor.
     public var admittingMade: Int { publishing?.admittingMade ?? 0 }
 }
 #endif

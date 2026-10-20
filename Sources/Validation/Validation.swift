@@ -212,26 +212,6 @@ extension ScopedRegistrar {
 /// meanwhile checked again.
 @MainActor
 public final class ValidationEngine {
-    /// The shapes each shape's rules looked up, and the other way around.
-    private struct LookupTable {
-        private(set) var of: [ShapeID: Set<ShapeID>] = [:]
-        private(set) var by: [ShapeID: Set<ShapeID>] = [:]
-
-        mutating func set(_ ids: Set<ShapeID>, for shape: ShapeID) {
-            if of[shape] != nil { forget(shape) }
-            guard !ids.isEmpty else { return }
-            of[shape] = ids
-            for other in ids { by[other, default: []].insert(shape) }
-        }
-
-        mutating func forget(_ shape: ShapeID) {
-            for other in of.removeValue(forKey: shape) ?? [] {
-                by[other]?.remove(shape)
-                if by[other]?.isEmpty == true { by[other] = nil }
-            }
-        }
-    }
-
     /// What it knows of a board: what it found, what's left to check, and what the rules looked up.
     private struct Board {
         /// Only shapes with at least one issue.
@@ -243,9 +223,10 @@ public final class ValidationEngine {
         /// What the rules that ignore moves found of each shape, by the rule's place among its
         /// kind's: only those that found something.
         var steadyIssues: [ShapeID: [Int: [ValidationIssue]]] = [:]
-        /// What the rules that ignore moves looked up, and what the others did.
-        var steadyLookups = LookupTable()
-        var placedLookups = LookupTable()
+        /// What the rules that ignore moves looked up, and what the others did: the shapes each shape's rules
+        /// looked up, and the other way round.
+        var steadyLookups = ReverseIndex()
+        var placedLookups = ReverseIndex()
         /// The shapes rules' `affected` named while the board was kept, not shown.
         var namedAway: Set<ShapeID> = []
         /// The shapes whose issues of the third level say words that are one change behind (`recheckWords`): kept,
@@ -258,9 +239,8 @@ public final class ValidationEngine {
     private var rules: [ShapeKind: [ValidationRule]] = [:]
     /// What it knows of the board shown; nil to check every shape on the next read.
     private var board: Board?
-    /// The revision `board` is up to date with. Read before this engine has heard of a commit (by a
-    /// service that hears first), it checks every shape.
-    private var heardRevision: Int
+    /// The commit heard whose rules' `affected` hasn't been asked yet (`askRules`).
+    private var toAsk: ChangeSet?
     /// What the schema rule found of each shape, so one that only moved isn't checked again.
     private let schemaVerdicts = SchemaVerdicts()
     /// The boards shown last, as they were left.
@@ -282,7 +262,6 @@ public final class ValidationEngine {
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        heardRevision = editor.revision
     }
 
     /// Only shapes with at least one issue. An issue of the third level may say its words as of one rename of a name
@@ -301,12 +280,13 @@ public final class ValidationEngine {
     /// A shape's issues as the engine last found them, if that still holds, checking nothing: for a
     /// reader that mustn't make the engine read a board (`results` checks what's waiting, and every
     /// shape of a board it hasn't read yet), as a query asking about many shapes does. Current only
-    /// for a shape on the board shown, once the engine has heard every commit and read that board,
-    /// and while the shape isn't waiting to be checked again (it changed or moved, or a shape its
-    /// rules looked up did); unknown otherwise, where only running its rules can say
-    /// (`registry.validationIssues(of:in:)`). It never runs a rule.
+    /// for a shape on the board shown, once the engine has read that board, and while the shape isn't
+    /// waiting to be checked again (it changed or moved, or a shape its rules looked up did, or the rules
+    /// said the last commit affected it: asked now, if they haven't been yet); unknown otherwise, where only
+    /// running its rules can say (`registry.validationIssues(of:in:)`). It never runs a rule's check.
     public func cachedResult(for id: ShapeID) -> CachedVerdict {
-        guard heardRevision == editor.revision, let board, !board.unchecked.contains(id), !board.moved.contains(id), !board.worded.contains(id),
+        askRules()
+        guard let board, !board.unchecked.contains(id), !board.moved.contains(id), !board.worded.contains(id),
               editor.withoutObservingDocument({ editor.document[id] != nil }) else { return .unknown }
         return .current(board.cache[id])
     }
@@ -339,11 +319,12 @@ public final class ValidationEngine {
     /// The shapes whose issues a commit may change though it doesn't change them, for a plugin that
     /// keeps what it shows of each shape's issues and redoes it for what each commit changed
     /// (`ValidationContentsPlugin`'s marks): those whose rules looked up a shape it changed
-    /// (`dependents(of:)`), and those on the board shown that the rules' `affected` named for it,
-    /// once the engine has heard it (so asked by a service that hears commits after Validation's).
+    /// (`dependents(of:)`), and those on the board shown that the rules' `affected` named for it
+    /// (asked of the rules then, if they haven't been yet: so asked once services have settled).
     /// Given what other boards changed while the board shown wasn't (`elsewhere`: the table of
     /// contents' catch-up on going back to it), those the rules named on it meanwhile too.
     public func affected(by changes: ChangeSet) -> Set<ShapeID> {
+        askRules()
         var found = dependents(of: changes.shapeIDs)
         if named.revision == editor.revision { found.formUnion(named.ids) }
         if !changes.elsewhere.isEmpty { found.formUnion(namedAway) }
@@ -357,6 +338,21 @@ public final class ValidationEngine {
         var ids: Set<ShapeID> = []
         for affected in affectedByRules { ids.formUnion(affected(changes, editor)) }
         return mark(ids)
+    }
+
+    /// Asks the rules what the commit heard affected beyond what it changed (their `affected`), once, after every
+    /// service has it (`documentDidSettle`), since a rule's answer reads services; or first, when someone asks what
+    /// it affected (`affected(by:)`). Those named on the board shown are checked again (the table of contents makes
+    /// their rows again, and the canvas redraws), those on a board it keeps once that board is taken back.
+    private func askRules() {
+        guard let changes = toAsk else { return }
+        toAsk = nil
+        let here = name(changes)
+        if named.revision == editor.revision { named.ids.formUnion(here) } else { named = (editor.revision, here) }
+        guard !here.isEmpty else { return }
+        board?.unchecked.formUnion(here)
+        editor.contentsDidChange(for: here)
+        editor.setNeedsDisplay()
     }
 
     /// Of `ids`, those on the board shown, returned, to check again; the ones on a board it keeps are
@@ -378,15 +374,16 @@ public final class ValidationEngine {
     }
 
     /// Checks these shapes again though no commit named them: for a rule that reads something outside
-    /// the shape and the shapes it looks up, which changed: a service's state (a field's caret left, a
-    /// type was edited). On the board shown, they are unchecked now; on a board it keeps, when that
-    /// board is taken back. Redraws, and has the table of contents make their rows again.
+    /// the shape and the shapes it looks up, which changed with no commit to say so: a service's state (a
+    /// field's caret left, a relationship's verdict moved). What a commit reaches is a rule's `affected`.
+    /// On the board shown, they are unchecked now; on a board it keeps, when that board is taken back.
+    /// Redraws, and has the table of contents make their rows again.
     public func recheck(_ ids: Set<ShapeID>) {
         guard !ids.isEmpty else { return }
         let here = mark(ids)
         board?.unchecked.formUnion(here)
-        // What `affected(by:)` names for this revision, so a service that hears the commit after
-        // this engine still sees them.
+        // What `affected(by:)` names for this revision, so what asks it once services have the commit
+        // (the table of contents) sees them.
         if named.revision == editor.revision { named.ids.formUnion(here) } else { named = (editor.revision, here) }
         guard !here.isEmpty else { return }
         editor.contentsDidChange(for: here)
@@ -405,10 +402,7 @@ public final class ValidationEngine {
 
     private func refreshIfNeeded() {
         let document = editor.document
-        if heardRevision != editor.revision {
-            board = nil
-            heardRevision = editor.revision
-        }
+        askRules()
         // Lookups in the document, and nothing else: rules see shapes only through `shape(_:)`.
         let shapes = ShapeContext(document: document, registry: editor.registry)
         guard var board else {
@@ -477,21 +471,14 @@ public final class ValidationEngine {
 }
 
 extension ValidationEngine: EditorService {
+    /// Marks what the commit changed to be checked again; what its rules say it affected beyond that is asked once
+    /// every service has it (`documentDidSettle`).
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        // A commit heard out of turn (a service committed while hearing an earlier one, which this
-        // engine hasn't heard yet): what the earlier one changed isn't known, so no verdict kept
-        // can be trusted to still hold, and a shape this one only moved may have changed in it. The
-        // rest catches up when that one is heard.
-        let outOfTurn = heardRevision < editor.revision - 1
-        if outOfTurn { schemaVerdicts.forgetAll() }
-        heardRevision = editor.revision
         schemaVerdicts.documentDidChange(changes)
-        let named = name(changes)
-        self.named = (editor.revision, named)
+        toAsk = changes
         guard board != nil else { return }                 // every shape is unchecked already
-        board!.unchecked.formUnion(named)
         for id in changes.shapeIDs {
-            if changes.moved.contains(id), !outOfTurn {
+            if changes.moved.contains(id) {
                 // Only moved: what the rules that ignore moves found of it, and of the shapes whose
                 // rules of that sort looked it up, still holds.
                 board!.moved.insert(id)
@@ -504,19 +491,27 @@ extension ValidationEngine: EditorService {
         }
     }
 
+    /// What the commit affected beyond what it changed, asked of the rules now that every service has it.
+    public func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) {
+        askRules()
+    }
+
     /// Keeps what it found on the board left, if it has checked it, for going back to it.
     public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
-        guard old != new, heardRevision == editor.revision, let board else { return }
+        guard old != new, let board else { return }
         kept.keep(board, for: old, in: editor)
     }
 
     /// Checks the board shown: what it found there, if it's as it was left, and the shapes it hadn't
-    /// checked again yet; else every shape, on the next read.
+    /// checked again yet; else every shape, on the next read. A file put in place with the switch keeps
+    /// nothing: a board as it was may hold shapes whose rules read what the new file changed elsewhere (a
+    /// type, a color's name, a title), and the switch names none of it.
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        if change.isFileReplaced { kept.forget(kept.boards) }
         board = kept.take(for: change.to, in: editor)
         namedAway = board?.namedAway ?? []
         board?.namedAway = []
-        heardRevision = editor.revision
+        toAsk = nil
     }
 }
 

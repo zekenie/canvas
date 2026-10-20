@@ -233,12 +233,21 @@ public final class CanvasEditor {
     /// Each service, by its type: its place in `serviceOrder`.
     @ObservationIgnored private var services: [ObjectIdentifier: Int] = [:]
     @ObservationIgnored private var serviceOrder: [any EditorService] = []
-    /// The revision each service, by its place in `serviceOrder`, has heard (`deliver`).
+    /// The revision each service, by its place in `serviceOrder`, has taken in (`tell`).
     @ObservationIgnored private var heardRevisions: [Int] = []
-    /// While services hear a change (`deliver`): its revision, and the change.
-    @ObservationIgnored private var deliveringRevision: Int?
-    @ObservationIgnored private var delivered: ServiceChange?
-    @ObservationIgnored private var resolvingServices: Set<ObjectIdentifier> = []
+    /// What each service, by its place in `serviceOrder`, looked up as it was made: a service reads what it kept
+    /// from its `make` without a lookup, so those take each change in before it does (`tell`).
+    @ObservationIgnored private var madeWith: [[Int]] = []
+    /// The services being made now, the innermost last, each with what it has looked up so far.
+    @ObservationIgnored private var making: [(id: ObjectIdentifier, lookedUp: [Int])] = []
+    /// The change being delivered, from `beginDelivery` to `finishDelivery`.
+    @ObservationIgnored private var delivery: Delivery?
+    /// The services taking the change in now, the innermost last (`tell`).
+    @ObservationIgnored private var hearing: [Hearing] = []
+    /// What waits for every service to have settled the change being delivered (`onceSettled`).
+    @ObservationIgnored private var onceSettledBodies: [@MainActor () -> Void] = []
+    /// A cursor asked for while a change is delivered: asked of the host once it's over.
+    @ObservationIgnored private var cursorAsked = false
     @ObservationIgnored private(set) var isTransacting = false
     /// Undo or redo is putting a step's records back: nothing may transact.
     @ObservationIgnored var isApplying = false
@@ -392,7 +401,7 @@ public final class CanvasEditor {
     }
 
     private static func expectAccepted(_ file: CanvasFile, by registry: Registry) {
-        for document in [file.root] + file.children.values {
+        for document in file.everyBoard.map({ file[$0] }) {
             for record in document.shapes {
                 precondition(record.isOpaque || registry.definition(for: record.kind)?.erasedAccepts(record) == true,
                              "no installed plugin defines \(record.kind) shapes with these props")
@@ -400,64 +409,161 @@ public final class CanvasEditor {
         }
     }
 
-    /// The service of this type; nil if no plugin registers one. Asked while services hear a commit or another
-    /// board shown, it hears that first, if it hasn't yet (`deliver`), so it answers as of the change; one asked
-    /// while it hears it is as it is.
+    /// The service of this type; nil if no plugin registers one. Asked while a commit or another board shown is
+    /// delivered, it takes that in first, if it hasn't yet (`beginDelivery`), so it answers as of the change. One
+    /// asked while it's taking the change in (its hook hasn't returned) is busy: a mistake, which stops tests and
+    /// debug builds (`busy`), while the app goes on with it as it is.
     public func service<S: EditorService>(_ type: S.Type) -> S? { resolveService(ObjectIdentifier(S.self)) as? S }
 
     func resolveService(_ id: ObjectIdentifier) -> (any EditorService)? {
         if let index = services[id] {
-            if let deliveringRevision, heardRevisions[index] != deliveringRevision { tell(index) }
+            if !making.isEmpty { making[making.count - 1].lookedUp.append(index) }
+            if delivery != nil {
+                if heardRevisions[index] != revision { tell(index) } else { noteIfBusy(index) }
+            }
             return serviceOrder[index]
         }
         guard let registration = serviceRegistrations[id] else { return nil }
-        precondition(!resolvingServices.contains(id), "service \(registration.name) needs itself to be made")
-        resolvingServices.insert(id)
-        defer { resolvingServices.remove(id) }
+        precondition(!making.contains { $0.id == id }, "service \(registration.name) needs itself to be made")
+        making.append((id, []))
         let service = registration.make(self)
-        services[id] = serviceOrder.count
+        var once = Set<Int>()
+        let lookedUp = making.removeLast().lookedUp.filter { once.insert($0).inserted }
+        let index = serviceOrder.count
+        services[id] = index
         serviceOrder.append(service)
         heardRevisions.append(revision)
+        madeWith.append(lookedUp)
+        if !making.isEmpty { making[making.count - 1].lookedUp.append(index) }
         return service
     }
 
-    /// Tells every service `change`, the change that brought `revision` (a commit, or another board shown), in
-    /// the order they were made: each that hasn't heard it yet, as one asked for while another heard it has
-    /// (`resolveService`). So a service read as services hear a change has heard it, whatever the order, and each
-    /// hears each change once, in the order they came. Nothing may change the file meanwhile: a transaction, a
-    /// board shown or a file put in place then is a precondition failure.
-    private func deliver(_ change: ServiceChange) {
-        precondition(deliveringRevision == nil, "nothing may change the file while services hear a change (a service's documentDidChange, say)")
-        deliveringRevision = revision
-        delivered = change
-        defer {
-            deliveringRevision = nil
-            delivered = nil
+    /// Starts delivering `change`, the change that brought `revision` (a commit, or another board shown), as
+    /// `revision` moves: from here a service asked for (`resolveService`) takes it in first, so what the editor
+    /// itself asks of services before they're all told (a first visit's camera fit lays the board out) is
+    /// answered as of the change. Nothing may change the file until `finishDelivery`: a transaction, a board
+    /// shown or a file put in place then is a precondition failure.
+    private func beginDelivery(_ change: ServiceChange) {
+        precondition(delivery == nil, "nothing may change the file while services hear a change (a service's documentDidChange, say)")
+        if case .commit(let changes) = change {
+            assert(changes.priors.holdsRecords || (changes.shapeIDs.isEmpty && changes.elsewhere.isEmpty),
+                   "a commit that touched shapes holds the records it found (`ChangeSet.priors`), which `before` reads")
         }
-        for index in serviceOrder.indices where heardRevisions[index] != revision { tell(index) }
+        delivery = Delivery(change: change)
     }
 
-    /// Tells the service at `index` in `serviceOrder` the change being delivered, noting first that it has heard
-    /// it, so it isn't told again by what it reads as it hears it.
+    /// Tells every service the change being delivered, in the order they were made: each that hasn't taken it in
+    /// yet, as one asked for while another took it in has (`resolveService`). So each takes each change in once,
+    /// in the order they came. Then every service settles (`documentDidSettle`, `boardDidSettle`), none busy, and
+    /// what waited for that runs (`onceSettled`); then the host hears of the cursor asked for meanwhile.
+    private func finishDelivery() {
+        guard let change = delivery?.change else { return }
+        defer {
+            delivery = nil
+            if cursorAsked { refreshCursor() }
+        }
+        for index in serviceOrder.indices where heardRevisions[index] != revision { tell(index) }
+        delivery?.isSettling = true
+        switch change {
+        case .commit(let changes): for service in serviceOrder { service.documentDidSettle(changes, in: self) }
+        case .board(let change): for service in serviceOrder { service.boardDidSettle(change, in: self) }
+        }
+        // What runs here may ask for more, which runs after it.
+        var next = 0
+        while next < onceSettledBodies.count {
+            let body = onceSettledBodies[next]
+            next += 1
+            body()
+        }
+        onceSettledBodies = []
+    }
+
+    /// Tells the service at `index` in `serviceOrder` the change being delivered. What it looked up as it was made
+    /// takes the change in first (and what those tell may ask for it, which tells it then, so it's told once); then,
+    /// noting that it has taken the change in, so it isn't told again by what it reads as it does, its hook, busy
+    /// until the hook returns; then what it asked to do once it had the change (`onceHeard`), in the order asked,
+    /// what those ask for after them.
     private func tell(_ index: Int) {
-        guard let deliveringRevision, let delivered else { return }
-        heardRevisions[index] = deliveringRevision
-        switch delivered {
+        guard let change = delivery?.change else { return }
+        for made in madeWith[index] where heardRevisions[made] != revision { tell(made) }
+        guard heardRevisions[index] != revision else { return }
+        heardRevisions[index] = revision
+        hearing.append(Hearing(service: index))
+        switch change {
         case .commit(let changes): serviceOrder[index].documentDidChange(changes, in: self)
         case .board(let change): serviceOrder[index].boardDidChange(change, in: self)
         }
+        let top = hearing.count - 1
+        hearing[top].isBusy = false
+        var next = 0
+        while next < hearing[top].then.count {
+            let body = hearing[top].then[next]
+            next += 1
+            body()
+        }
+        hearing.removeLast()
+    }
+
+    #if DEBUG
+    /// What asking for a busy service does in debug builds instead of stopping (`busy`): a test that holds the
+    /// mistake sets it, and is handed each one's message.
+    @_spi(Host) @ObservationIgnored public var busyRead: (@MainActor (String) -> Void)?
+    #endif
+
+    /// A service was asked for while it's taking in the change being delivered (its `documentDidChange` or
+    /// `boardDidChange` hasn't returned), so it would answer with half of what it's about to know: something it told, or something that asks around, ran too
+    /// early (what tells others belongs in `onceHeard`, what asks around or tells the window in `onceSettled` or
+    /// `documentDidSettle`). Tests and debug builds stop here; the app goes on.
+    private func noteIfBusy(_ index: Int) {
+        #if DEBUG
+        guard hearing.contains(where: { $0.service == index && $0.isBusy }) else { return }
+        let name = { (index: Int) in String(describing: type(of: self.serviceOrder[index])) }
+        let busy = hearing.filter(\.isBusy).map { name($0.service) }.joined(separator: " > ")
+        let message = "\(name(index)) was asked for while it takes a change in (busy: \(busy))"
+        if let busyRead { return busyRead(message) }
+        assertionFailure(message)
+        #endif
+    }
+
+    /// Runs `body` once the service taking a change in now has (as soon as its `documentDidChange` or
+    /// `boardDidChange` returns), after what it asked before; at once if none is: how a service that others follow
+    /// tells them, so they may read it then. Still within the delivery: a follower hears before the services after
+    /// it, and what it reads beyond the one it follows may not have the change yet (`onceSettled` for that).
+    public func onceHeard(_ body: @escaping @MainActor () -> Void) {
+        guard !hearing.isEmpty else { return body() }
+        hearing[hearing.count - 1].then.append(body)
+    }
+
+    /// Runs `body` once every service has settled the change being delivered (after every `documentDidSettle` or
+    /// `boardDidSettle`), after what was asked before; at once outside a delivery. For what a service is told
+    /// while services take a change in and must read around the file, look at what others laid out, or tell the
+    /// window: it runs with every service holding the change and none busy. Nothing may change the file then
+    /// either; a write in answer waits a turn (`scheduler`).
+    public func onceSettled(_ body: @escaping @MainActor () -> Void) {
+        guard delivery != nil else { return body() }
+        onceSettledBodies.append(body)
     }
 
     var currentTool: any Tool { tools[currentToolID]! }
     public var shapeContext: ShapeContext { ShapeContext(document: document, registry: registry, camera: camera, index: shapeIndex, layout: layoutSource) }
 
     /// Redraw. The core redraws for everything it owns (the document, camera, tool, sessions); a
-    /// plugin whose drawn state changes some other way (its own state, a timer) calls this.
-    public func setNeedsDisplay() { delegate?.editorNeedsDisplay(self) }
+    /// plugin whose drawn state changes some other way (its own state, a timer) calls this. Asked while a
+    /// change is delivered, it's the redraw the change ends with: a commit and a board shown redraw once
+    /// services have settled.
+    public func setNeedsDisplay() {
+        guard delivery == nil else { return }
+        delegate?.editorNeedsDisplay(self)
+    }
 
     /// Sets the cursor again. The core does after every pointer event and tool switch; a tool
-    /// whose cursor follows state that changes some other way (a key press) calls this.
-    public func refreshCursor() { delegate?.editorCursorDidChange(self) }
+    /// whose cursor follows state that changes some other way (a key press) calls this. Asked while a
+    /// change is delivered, the host hears it once the services have settled.
+    public func refreshCursor() {
+        cursorAsked = delivery != nil
+        guard !cursorAsked else { return }
+        delegate?.editorCursorDidChange(self)
+    }
 
     // MARK: Document
 
@@ -487,7 +593,7 @@ public final class CanvasEditor {
     func transact<T>(_ name: String?, coalescing key: AnyHashable?, origin: UndoHistory.Origin,
                      _ body: (inout Transaction) throws -> T) rethrows -> T {
         precondition(!isApplying, "nothing may transact while undo or redo puts a step back (a service's documentDidChange, say)")
-        precondition(deliveringRevision == nil, "nothing may transact while services hear a change (a service's documentDidChange, say)")
+        precondition(delivery == nil, "nothing may transact while services hear a change (a service's documentDidChange, say)")
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
         isTransacting = true
         var transaction = Transaction(document: document, board: board, isBoardReadOnly: isBoardReadOnly, registry: registry, camera: camera,
@@ -531,7 +637,7 @@ public final class CanvasEditor {
         guard target != board else { return try transact(name, coalescing: nil, origin: .ordinary, body) }
         guard canShow(target) else { return nil }
         precondition(!isApplying, "nothing may transact while undo or redo puts a step back (a service's documentDidChange, say)")
-        precondition(deliveringRevision == nil, "nothing may transact while services hear a change (a service's documentDidChange, say)")
+        precondition(delivery == nil, "nothing may transact while services hear a change (a service's documentDidChange, say)")
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
         isTransacting = true
         var transaction = Transaction(document: storedFile[target], board: target, isBoardReadOnly: registry.isReadOnly(board: target, in: storedFile),
@@ -684,6 +790,12 @@ public final class CanvasEditor {
         board == self.board ? document : file[board]
     }
 
+    /// The boards the editor can show, the root first, then down the tree, each once
+    /// (`CanvasFile.showableBoards`, with the kinds that own boards): what reads every shape the editor
+    /// can show walks, each board's shapes `contents(of:)`'s. `file.everyBoard` is every board, shown or
+    /// not. Observed through `document`.
+    public var showableBoards: [BoardID] { file.showableBoards(boardOwningKinds: registry.boardOwningKinds) }
+
     /// The shape that owns the board, wherever it is in the file; nil for the root, and for a board
     /// whose owner isn't in the file. Observed through `document`.
     public func owner(of board: BoardID) -> AnyShapeRecord? {
@@ -706,7 +818,7 @@ public final class CanvasEditor {
     /// hear which differ (`ChangeSet.fileValues`, `BoardChange.fileValues`).
     @_spi(Host) public func replaceFile(with newFile: CanvasFile, showing requested: BoardID? = nil) {
         precondition(!isTransacting, "a file can't be replaced inside a transaction")
-        precondition(deliveringRevision == nil, "a file can't be replaced while services hear a change")
+        precondition(delivery == nil, "a file can't be replaced while services hear a change")
         Self.expectAccepted(newFile, by: registry)
         isReplacingFile = true
         defer { isReplacingFile = false }
@@ -733,6 +845,7 @@ public final class CanvasEditor {
             var changes = ChangeSet(from: storedDocument, to: newFile[board])
             changes.elsewhere = newFile.shapesChanged(from: storedFile, except: board)
             changes.fileValues = fileValues
+            changes.priors = ChangeSet.Priors(file: storedFile)
             storedFile = newFile
             boardPath = newFile.path(to: board) ?? [.root]
             documentDidChange(to: newFile[board], changes: changes)
@@ -763,7 +876,7 @@ public final class CanvasEditor {
     @discardableResult
     @_spi(Host) public func discardKeptAside(shapes ids: Set<ShapeID>, boards keys: Set<String>) -> Bool {
         precondition(!isTransacting, "a file can't be replaced inside a transaction")
-        precondition(deliveringRevision == nil, "a file can't be changed while services hear a change")
+        precondition(delivery == nil, "a file can't be changed while services hear a change")
         let old = storedFile
         var newFile = old, removed: Set<BoardID> = [], changed: Set<BoardID> = [], added: Set<BoardID> = []
         var fileValues: Set<PropertyKey> = []
@@ -808,6 +921,7 @@ public final class CanvasEditor {
         guard newFile != old else { return false }
         // An edit, not a board read again: what it deleted is gone as any deletion's is.
         var changes = ChangeSet(from: storedDocument, to: newFile[board])
+        changes.priors = ChangeSet.Priors(file: old)
         changes.replacedDocument = false
         changes.boardsRemoved = removed
         changes.boardsChanged = Set(byBoard.keys).union(changed).subtracting(removed).subtracting([board])
@@ -833,6 +947,7 @@ public final class CanvasEditor {
         writeFileValues(of: transaction)
         // One that only set the file's values wrote no board: none is stamped, and the board shown is as it was.
         guard transaction.didChange else { return documentDidChange(to: storedDocument, changes: changes) }
+        changes.priors = priors(of: board, reaching: changes)
         changes.elsewhere = writeBoards(of: transaction, own: (board, transaction.document, changes))
         documentDidChange(to: transaction.document, changes: changes)
     }
@@ -854,12 +969,21 @@ public final class CanvasEditor {
         writeFileValues(of: transaction)
         // One that only set the file's values changed no board, its own included.
         if transaction.didChange {
+            changes.priors = priors(of: target, reaching: local)
             changes.boardsChanged = local.boardsChanged.union([target])
             changes.boardsAdded = local.boardsAdded
             changes.boardsRemoved = local.boardsRemoved
             changes.elsewhere = writeBoards(of: transaction, own: (target, transaction.document, local)).union(local.shapeIDs)
         }
         documentDidChange(to: storedDocument, changes: changes)
+    }
+
+    /// The boards a commit on `board` changes, as they are before it writes them, for `ChangeSet.before(_:)`:
+    /// that one, and those it changes or takes (`boardsChanged`, `boardsRemoved`). Each a value the file lets go
+    /// of as it writes, so keeping it copies nothing.
+    private func priors(of board: BoardID, reaching changes: ChangeSet) -> ChangeSet.Priors {
+        ChangeSet.Priors(boards: [board == self.board ? storedDocument : storedFile[board]]
+                         + changes.boardsChanged.union(changes.boardsRemoved).map { storedFile[$0] })
     }
 
     /// Writes the board a transaction was on (`own`, with what it changed there), takes out of the file
@@ -910,6 +1034,7 @@ public final class CanvasEditor {
         let editedKind = editingShapeID.flatMap { storedDocument[$0]?.kind }
         withMutation(keyPath: \.document) { storedDocument = newDocument }
         revision += 1
+        beginDelivery(.commit(changes))
         // Before services hear the commit, which may have locked the board's owner (a commit on the
         // board above, `transact(on:)`) or put another file in place.
         let becameReadOnly = noteBoardReadOnly()
@@ -920,7 +1045,7 @@ public final class CanvasEditor {
         if !glides.isEmpty { endGlides(changes.shapeIDs.filter { glides[$0] != nil }) }
         if let shape = shownCard?.shape, changes.removed.contains(shape) { closeCard(.shapeGone) }
         // Services drop what no longer names a shape, as the hint's setter does.
-        deliver(.commit(changes))
+        finishDelivery()
         hintedShapeID = hintedID
         // A shape that's gone, can no longer change (it, a container it's in, or its board), or is of
         // another kind now (turned, `Transaction.turn`), isn't edited.
@@ -977,7 +1102,7 @@ public final class CanvasEditor {
     @discardableResult
     public func showBoard(_ target: BoardID) -> Bool {
         precondition(!isTransacting, "a board can't be shown inside a transaction")
-        precondition(deliveringRevision == nil, "a board can't be shown while services hear a change")
+        precondition(delivery == nil, "a board can't be shown while services hear a change")
         guard session == nil else { return false }
         guard target != board else { return true }
         guard canShow(target) else { return false }
@@ -1030,10 +1155,13 @@ public final class CanvasEditor {
         // What the board left asked for isn't drawn now; what this one draws asks for its own.
         boardPreviews.stopWaiting()
         revision += 1
+        // A first visit's fit lays the board out, asking services for what its shapes are laid out by: each
+        // takes the switch in first.
+        beginDelivery(.board(change))
         isShowingBoard = true
         camera = arrivalCamera(for: target)
         isShowingBoard = false
-        deliver(.board(change))
+        finishDelivery()
         tellSkeletonLevel()
         delegate?.editorBoardDidChange(self)
         setNeedsDisplay()
@@ -1346,9 +1474,23 @@ public final class CanvasEditor {
     }
 }
 
-/// A change every service hears, as the editor delivers it (`deliver`): a commit's change set, or another
-/// board shown.
+/// A change every service hears, as the editor delivers it (`beginDelivery`, `finishDelivery`): a commit's change
+/// set, or another board shown.
 private enum ServiceChange {
     case commit(ChangeSet)
     case board(BoardChange)
+}
+
+/// The change being delivered, and whether every service has it and they're settling.
+private struct Delivery {
+    let change: ServiceChange
+    var isSettling = false
+}
+
+/// A service taking the change being delivered in: busy until its hook returns, and then what it asked to do once
+/// it had the change (`onceHeard`).
+private struct Hearing {
+    let service: Int
+    var isBusy = true
+    var then: [@MainActor () -> Void] = []
 }

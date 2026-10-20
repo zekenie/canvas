@@ -139,9 +139,9 @@ public struct TopologySnapshot: Sendable {
 extension TopologyIndex {
     /// Topology as it is now, for another thread, its edges read in `view` (resolved through every
     /// stand-in by default): the index's tables, the editor's file and the edge types, shared, not
-    /// copied (O(1)). It reads no record, and observes nothing. Taken by a service hearing a commit
-    /// the index may not have heard yet, its edges are the commit before's while its file is the
-    /// commit's, as the index's own answers are then: `catchUp` first.
+    /// copied (O(1)). It reads no record, and observes nothing. Taken as services take a commit in,
+    /// look the index up first (`editor.topology`), so it has taken the commit in: a snapshot of an
+    /// index that hasn't would hold the commit's file with the commit before's edges.
     public func snapshot(_ view: EdgeView = .resolved) -> TopologySnapshot {
         TopologySnapshot(types: types, containerKinds: containerKinds, standInKinds: standInKinds, view: view, tables: tables,
                          containment: containment(observing: false))

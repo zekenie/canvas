@@ -264,9 +264,9 @@ extension ShapeRegistrar {
     /// Those rows are made again on the next read, and replaced (so redrawn) only if their labels
     /// changed; the shapes the commit changes get new rows, as always. `affected` runs on every
     /// commit, listed or not, so it must cost what the commit changed, never the board: a service
-    /// that keeps who reads what answers it. Read before it hears of a commit, the table of contents
-    /// makes every kept row of such a kind again, since only hearing of the commit says which it
-    /// affects. `when` and `nestedUnder` read only the shape, as above. The row reads what other
+    /// that keeps who reads what answers it. It's asked once every service has the commit, or first by a
+    /// read of the list after the table of contents took the commit in, so it may read any service as the
+    /// commit left it. `when` and `nestedUnder` read only the shape, as above. The row reads what other
     /// shapes are (their names, their state), never where they are: another board's outline
     /// (`ContentsState.outline(of:)`, where `affected` can't answer) makes such rows again after a
     /// commit that did more than move shapes, and not after a move.

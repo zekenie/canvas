@@ -227,7 +227,7 @@ public final class ColorBook {
     }
 
     /// Takes the file's colors as they now are, lets go of what was made from the old ones, and
-    /// tells who asked.
+    /// tells who asked, once the book has taken the change in (`editor.onceHeard`), so they may read it.
     func fileColorsDidChange(to colors: [NamedColor]) {
         guard colors != fileColors else { return }
         fileColors = colors
@@ -236,7 +236,8 @@ public final class ColorBook {
         defaults.removeAll(keepingCapacity: true)
         lastColor = nil
         lastKind = nil
-        for handler in handlers { handler() }
+        let handlers = handlers
+        editor.onceHeard { for handler in handlers { handler() } }
         editor.setNeedsDisplay()
     }
 

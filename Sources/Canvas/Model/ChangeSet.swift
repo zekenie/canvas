@@ -1,8 +1,9 @@
 /// What one commit did to the document, record by record: the shapes it added, changed (props,
 /// or place in the stack) and removed. Services get it with `documentDidChange`, so what they keep
-/// per shape can follow the few shapes a commit touched rather than go through every shape. The
-/// records before and after are a `DocumentDelta`'s (what undo keeps, other boards whole). Who made
-/// the change is only whether an agent did (`byAgent`).
+/// per shape can follow the few shapes a commit touched rather than go through every shape. What a
+/// shape was before it is `before(_:)`, so a service that acts on a change of one value (a lock opened)
+/// keeps no copy of it. The records before and after are a `DocumentDelta`'s (what undo keeps, other
+/// boards whole). Who made the change is only whether an agent did (`byAgent`).
 public struct ChangeSet: Equatable, Sendable {
     /// Shapes that weren't in the document before.
     public internal(set) var added: Set<ShapeID> = []
@@ -66,9 +67,54 @@ public struct ChangeSet: Equatable, Sendable {
     /// Every shape the commit touched.
     public var shapeIDs: Set<ShapeID> { added.union(changed).union(removed) }
 
-    /// The shapes it added, or changed other than by moving them (`moved`, which are never added ones): those
-    /// whose records say something they didn't.
-    public var edited: Set<ShapeID> { added.union(changed.subtracting(moved)) }
+    /// The boards it changed as they were before it (the one it was on first), or the file before it, for `before(_:)`:
+    /// none for a change set that isn't a commit's.
+    var priors = Priors.none
+
+    /// A shape's record as the commit found it, wherever in the file it was: a shape moved onto the board from
+    /// another is found as it was there. Nil for a shape the commit brought into the file (one drawn or pasted, a
+    /// board pasted), and for every shape of a change set that isn't a commit's (`init(elsewhere:)`). A service that
+    /// keeps what follows from one value of a shape (whether it is locked) compares the record now with this, rather
+    /// than keep a copy; one that keeps it per board passes over the shapes `added` there.
+    public func before(_ id: ShapeID) -> AnyShapeRecord? { priors.record(id) }
+
+    /// What a commit's shapes were before it: the boards it changed, as they were, or a file it replaced. No part of
+    /// what a change set says, so any two are equal: a change set is compared by what it did.
+    final class Priors: Sendable, Equatable {
+        /// What a change set that isn't a commit's holds: nothing.
+        static let none = Priors(boards: [])
+        static func == (a: Priors, b: Priors) -> Bool { true }
+
+        private let boards: [CanvasDocument]
+        private let file: CanvasFile?
+
+        /// Whether it holds what a commit found.
+        var holdsRecords: Bool { file != nil || !boards.isEmpty }
+
+        init(boards: [CanvasDocument]) {
+            self.boards = boards
+            file = nil
+        }
+
+        init(file: CanvasFile) {
+            boards = []
+            self.file = file
+        }
+
+        func record(_ id: ShapeID) -> AnyShapeRecord? {
+            if let file { return file.record(id) }
+            for board in boards { if let record = board[id] { return record } }
+            return nil
+        }
+    }
+
+    /// The shapes it added, or changed other than by moving them (`moved`, a part of `changed`, never added ones):
+    /// those whose records say something they didn't. Nothing is worked out for a commit that only moved shapes
+    /// (a drag's every event).
+    public var edited: Set<ShapeID> {
+        if added.isEmpty, changed.count == moved.count { return [] }
+        return added.union(changed.subtracting(moved))
+    }
 
     /// Whether it did nothing to shapes but move them on its board (a drag's every event, its undo): it added,
     /// removed and changed nothing else, reached no other board and put no document in place, so what follows
@@ -90,6 +136,7 @@ public struct ChangeSet: Equatable, Sendable {
         for record in old.shapes where new[record.id] == nil { removed.insert(record.id) }
         reordered = old.shapes.map(\.id) != new.shapes.map(\.id)
         replacedDocument = true
+        priors = Priors(boards: [old])
     }
 
     init() {}
@@ -105,6 +152,7 @@ public struct ChangeSet: Equatable, Sendable {
         part.removed = removed.intersection(ids)
         part.elsewhere = elsewhere.intersection(ids)
         part.byAgent = byAgent
+        part.priors = priors
         return part
     }
 

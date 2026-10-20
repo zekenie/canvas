@@ -264,8 +264,12 @@ public final class TypeSync<Schema: SyncedSchema> {
     /// for words never answered).
     public func hasAnswered(_ id: ShapeID) -> Bool { synced[id].map { !Self.trimmed($0.words).isEmpty } ?? false }
 
+    /// Tells the spot's readers, once this has taken the change being delivered in, if it's taking one in
+    /// (`onceHeard`): they read it back.
     private func spotChanged(_ id: ShapeID) {
-        for body in spotObservers { body(id) }
+        let observers = spotObservers
+        guard let editor else { return }
+        editor.onceHeard { for body in observers { body(id) } }
     }
 
     /// The person is done with an edit (the words no longer edited; ⌘↩ or the keyboard leaving in
@@ -799,9 +803,8 @@ extension TypeSync: EditorService {
 
     /// Sees every type on every board of the file.
     private func seeEveryShape(in file: CanvasFile) {
-        for record in file.root.shapes where kinds.contains(record.kind) { see(record) }
-        for board in file.children.values {
-            for record in board.shapes where kinds.contains(record.kind) { see(record) }
+        for board in file.everyBoard {
+            for record in file[board].shapes where kinds.contains(record.kind) { see(record) }
         }
     }
 }

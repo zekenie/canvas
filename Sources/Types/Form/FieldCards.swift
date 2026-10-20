@@ -230,12 +230,11 @@ public final class FieldCards {
         }
     }
 
-    /// Every form for a shape a commit changed is drawn again at once; any commit schedules one pass a turn
-    /// later, in which each live form reloads if a type or the check moved since it last did (a type's change
-    /// is a change to the type's record, so `changes` does not name its instances, and the index, the check and
-    /// the rows may hear the commit after this service does) and the card is hung from its row again.
-    private func hear(_ changes: ChangeSet, in editor: CanvasEditor) {
-        for id in changes.removed { panelOpen[id] = nil }
+    /// Every form for a shape a commit changed is drawn again once services have settled; any commit schedules one
+    /// pass a turn later, in which each live form reloads if a type or the check moved since it last did (a type's
+    /// change is a change to the type's record, so `changes` does not name its instances) and the card is hung from
+    /// its row again.
+    private func reload(after changes: ChangeSet, in editor: CanvasEditor) {
         forms.removeAll { $0.form == nil }
         guard !forms.isEmpty else { return }
         // A row's card also shows the arrows of its lines, on whichever board they are.
@@ -246,8 +245,13 @@ public final class FieldCards {
     }
 
     /// The relationship index told what a commit changed: the card of a row whose note it names, or whose lines' arrows, is made
-    /// again at once (a relationship drawn writes nothing to the note).
+    /// again (a relationship drawn writes nothing to the note), once every service has settled the change being delivered
+    /// (`onceSettled`), since a form reloads by asking this service and the check.
     private func relationsChanged(_ change: RelationshipChange) {
+        editor?.onceSettled { [weak self] in self?.follow(change) }
+    }
+
+    private func follow(_ change: RelationshipChange) {
         forms.removeAll { $0.form == nil }
         for held in forms {
             guard let form = held.form, form.relations != nil else { continue }
@@ -294,7 +298,12 @@ public final class FieldCards {
 
 extension FieldCards: EditorService {
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        hear(changes, in: editor)
+        for id in changes.removed { panelOpen[id] = nil }
+    }
+
+    /// The forms follow the commit now that every service has it.
+    public func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) {
+        reload(after: changes, in: editor)
     }
 }
 

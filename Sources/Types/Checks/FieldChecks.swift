@@ -9,26 +9,10 @@ import Topology
 import Validation
 
 /// The types that refer to each other, by their JSON: a `$ref` to a type's URI, with or without a
-/// fragment. Both ways, so an edit to a type reaches the types that refer to it and a type that is gone
-/// still knows who waits for it.
-struct TypeReferences {
-    /// The types each type's text refers to.
-    private(set) var targets: [ShapeID: Set<ShapeID>] = [:]
-    /// The types whose text refers to each type, gone or not.
-    private(set) var referrers: [ShapeID: Set<ShapeID>] = [:]
-
-    /// What `type`'s text refers to now.
-    mutating func set(_ type: ShapeID, refersTo new: Set<ShapeID>) {
-        let before = targets[type] ?? []
-        guard before != new else { return }
-        for gone in before.subtracting(new) {
-            referrers[gone]?.remove(type)
-            if referrers[gone]?.isEmpty == true { referrers[gone] = nil }
-        }
-        for added in new.subtracting(before) { referrers[added, default: []].insert(type) }
-        targets[type] = new.isEmpty ? nil : new
-    }
-}
+/// fragment. Both ways (`of`, the types each type's text refers to; `by`, those whose text refers to
+/// each type, gone or not), so an edit to a type reaches the types that refer to it and a type that is
+/// gone still knows who waits for it.
+typealias TypeReferences = ReverseIndex
 
 /// What a run says of a shape it wrote (`FieldChecks.drawn`).
 public struct DrawnFields: Sendable {
@@ -95,6 +79,8 @@ public final class FieldChecks {
     @ObservationIgnored private var typingObservers: [@MainActor () -> Void] = []
     /// Moves when any type was renamed: an answer that names a type is made again.
     @ObservationIgnored private var names = 0
+    /// What the commit of a revision reached (`affected(by:)`), worked out as it was heard.
+    @ObservationIgnored private var reachedByCommit: (revision: Int, ids: Set<ShapeID>) = (-1, [])
     /// The shapes whose answer names a type.
     @ObservationIgnored private var named: Set<ShapeID> = []
     @ObservationIgnored private var lastChain: Int
@@ -385,7 +371,7 @@ public final class FieldChecks {
     }
 
     /// The index told what a commit changed in relationships: the arrows and notes it names are checked again,
-    /// after Validation and the index have both heard, never inside a follower.
+    /// once the index has the commit (Validation, looked up, has it too), never inside a follower.
     private func relationshipsChanged(_ change: RelationshipChange) {
         revision &+= 1
         guard let editor else { return }
@@ -428,7 +414,7 @@ public final class FieldChecks {
         guard !stale.isEmpty else { return }
         for arrow in stale { answers[arrow]?.relation?.revision = -1 }
         revision &+= 1
-        editor.validation?.recheck(stale)
+        affect(stale)
     }
 
     // MARK: A run's check
@@ -542,7 +528,7 @@ public final class FieldChecks {
             var next: Set<ShapeID> = []
             for id in frontier {
                 if let topology { TypeIndex.forEachInstance(of: id, in: topology) { instance in if reached.insert(instance).inserted { next.insert(instance) } } }
-                for referrer in references.referrers[id] ?? [] where reached.insert(referrer).inserted { next.insert(referrer) }
+                for referrer in references.by[id] ?? [] where reached.insert(referrer).inserted { next.insert(referrer) }
             }
             frontier = next
         }
@@ -671,7 +657,7 @@ public final class FieldChecks {
             guard seen.insert(next).inserted else { continue }
             found.append(next)
             frontier += index.graph.lineage(of: next)
-            frontier += references.targets[next] ?? []
+            frontier += references.of[next] ?? []
         }
         closures.byList[types] = found
         return found
@@ -738,9 +724,8 @@ public final class FieldChecks {
 
     // MARK: A type changed
 
-    /// A type came, went, or changed its schema, its own types or its name. After the index has taken
-    /// the commit in, so Validation is told what to check again: the rule has no `affected:`, which
-    /// would run before the index heard.
+    /// A type came, went, or changed its schema, its own types or its name, told once the index has the commit:
+    /// what Validation checks again for it is what this reached (`affected(by:)`).
     private func typesChanged(_ changed: Set<ShapeID>) {
         guard let editor, let index = editor.types else { return }
         let before = lastChain
@@ -748,17 +733,14 @@ public final class FieldChecks {
         names &+= 1
         revision &+= 1
         // Only names changed: nothing is reached but the answers that say one.
-        guard index.chainRevision != before else {
-            editor.validation?.recheck(named)
-            return
-        }
+        guard index.chainRevision != before else { return affect(named) }
         let references = knownReferences(index, changing: changed), topology = editor.topology
         var reached = changed, frontier = changed
         while !frontier.isEmpty {
             var next: Set<ShapeID> = []
             for id in frontier {
                 if let topology { TypeIndex.forEachInstance(of: id, in: topology) { instance in if reached.insert(instance).inserted { next.insert(instance) } } }
-                for referrer in references.referrers[id] ?? [] where reached.insert(referrer).inserted { next.insert(referrer) }
+                for referrer in references.by[id] ?? [] where reached.insert(referrer).inserted { next.insert(referrer) }
             }
             frontier = next
         }
@@ -776,8 +758,23 @@ public final class FieldChecks {
         // went, or was renamed in the commit that changed the chain. The arrows that say one are not instances
         // of the type.
         reached.formUnion(named.filter { answers[$0]?.relation?.names != nil })
-        editor.validation?.recheck(reached)
+        affect(reached)
         editor.setNeedsDisplay()
+    }
+
+    /// The shapes whose issues the commit being heard changed without changing them, as this service worked them out
+    /// while it was heard: the instances of the types it changed and the types that refer to them, and the arrows whose
+    /// sentence quotes a note it renamed. What the rule over values answers Validation's `affected` with, once every
+    /// service has the commit; none for a commit that reached nothing.
+    public func affected(by changes: ChangeSet) -> Set<ShapeID> {
+        guard let editor, reachedByCommit.revision == editor.revision else { return [] }
+        return reachedByCommit.ids
+    }
+
+    /// Notes these shapes as reached by the commit being heard (`affected(by:)`).
+    private func affect(_ ids: Set<ShapeID>) {
+        guard let editor, !ids.isEmpty else { return }
+        if reachedByCommit.revision == editor.revision { reachedByCommit.ids.formUnion(ids) } else { reachedByCommit = (editor.revision, ids) }
     }
 
     /// The references, made when first needed from every type, then kept up to date for the types that
@@ -785,7 +782,7 @@ public final class FieldChecks {
     private func knownReferences(_ index: TypeIndex, changing changed: Set<ShapeID> = []) -> TypeReferences {
         var made = references ?? TypeReferences()
         for type in references == nil ? index.types : changed {
-            made.set(type, refersTo: index.isType(type) ? Self.targets(of: type, in: index) : [])
+            made.set(index.isType(type) ? Self.targets(of: type, in: index) : [], for: type)
         }
         references = made
         return made
@@ -800,7 +797,7 @@ public final class FieldChecks {
     /// known by, ordered by it and then by id, each once.
     func goneReferences(of type: ShapeID) -> [TypeLinkName] {
         guard let index = editor?.types else { return [] }
-        let targets = knownReferences(index).targets[type] ?? []
+        let targets = knownReferences(index).of[type] ?? []
         return targets.filter { !index.isType($0) }.map { target -> (name: TypeLinkName, key: String, id: String) in
             let name = index.name(of: TypeLink(target))
             if case .missing(let lastKnown?) = name { return (name, lastKnown.lowercased(), target.rawValue.uuidString) }

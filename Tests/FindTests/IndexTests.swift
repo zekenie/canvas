@@ -51,7 +51,7 @@ import TestKit
 ])
 
 @MainActor let indexTests = Suite("Find's index", [
-    test("before the first ⌘F it reads nothing, a commit costing a revision noted") {
+    test("before the first ⌘F it reads nothing, a commit costing one test") {
         let plugin = MemosPlugin()
         let h = try findHarness(CanvasFile(root: CanvasDocument(shapes: memos(["alpha", "beta"]))), memos: plugin)
         let find = try require(h.editor.find)

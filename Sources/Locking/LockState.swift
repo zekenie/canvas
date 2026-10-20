@@ -3,36 +3,22 @@ import Canvas
 import CoreGraphics
 import Foundation
 
-/// Per editor: which shapes are locked, kept as commits change shapes, and the chips showing their
-/// lock open a moment after their shape was unlocked (a `ChipFade`; the shake a refused try gives
-/// is Selection's `RefusalShake`).
+/// Per editor: the chips showing a lock open a moment after their shape was unlocked (a `ChipFade`;
+/// the shake a refused try gives is Selection's `RefusalShake`). Which shapes are locked is the
+/// records' (`isLocked`), and what a commit unlocked it tells from what the shape was before it
+/// (`ChangeSet.before`), so it keeps no copy of them.
 @MainActor
 final class LockState {
     private unowned let editor: CanvasEditor
-    private(set) var lockedIDs: Set<ShapeID> = []
-    /// The locked shapes of boards shown lately, for going back to them without looking through
-    /// their shapes again.
-    private var kept = BoardStash<Set<ShapeID>>()
-    #if DEBUG
-    /// How many times a whole board has been looked through for its locked shapes (debug builds).
-    private(set) var boardsScanned = 0
-    #endif
+
+    /// Adornments' fades, found once, as this is made, so they take each change in first: a commit asks about every
+    /// shape it deletes, and a frame about every shape in view.
+    private let fade: ChipFade?
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        lockedIDs = locked(in: editor.document)
+        fade = editor.service(ChipFade.self)
     }
-
-    private func locked(in document: CanvasDocument) -> Set<ShapeID> {
-        #if DEBUG
-        boardsScanned += 1
-        #endif
-        return Set(document.shapes.lazy.filter(\.isLocked).map(\.id))
-    }
-
-    /// Adornments' fades, found once: a commit asks about every shape it deletes, and a frame about
-    /// every shape in view.
-    private lazy var fade: ChipFade? = editor.service(ChipFade.self)
 
     /// How opaque a just-unlocked shape's open lock is: fully until it starts to fade, then less
     /// each frame. Nil for any other shape.
@@ -42,7 +28,7 @@ final class LockState {
     /// Unlock, and a just-unlocked one's Lock. One its board or container holds locked is refused, and
     /// shakes.
     func click(_ id: ShapeID) {
-        if lockedIDs.contains(id) {
+        if editor.document[id]?.isLocked == true {
             editor.attempt(.unlock, on: [id])
         } else if fade?.isShowing(LockChip.self, on: id) == true {
             editor.attempt(.lock, on: [id])
@@ -51,46 +37,21 @@ final class LockState {
 }
 
 extension LockState: EditorService {
-    /// Keeps which shapes are locked, and opens the lock of each shape the commit unlocks. The locks
-    /// it opens or closes are told to Adornments once, at the end, since each tell has the select
-    /// tool look again for a button under the pointer: unlocking many shapes costs one look, not one
-    /// a shape.
+    /// Opens the lock of each shape the commit unlocks (locked before it, and not now), and lets go of the open
+    /// lock of each it locks or deletes. The locks it opens or closes are told to Adornments once, at the end,
+    /// since each tell has the select tool look again for a button under the pointer: unlocking many shapes costs
+    /// one look, not one a shape. A shape that only moved kept its lock, so a drag reads nothing.
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         var chipsChanged = Set<ShapeID>()
-        for id in changes.removed {
-            lockedIDs.remove(id)
-            if fade?.hide(LockChip.self, on: id) == true { chipsChanged.insert(id) }
-        }
-        for id in changes.added.union(changes.changed) {
+        for id in changes.removed where fade?.hide(LockChip.self, on: id) == true { chipsChanged.insert(id) }
+        for id in changes.edited {
             if editor.document[id]?.isLocked == true {
-                lockedIDs.insert(id)
                 if fade?.hide(LockChip.self, on: id) == true { chipsChanged.insert(id) }
-            } else if lockedIDs.remove(id) != nil {
+            } else if !changes.added.contains(id), changes.before(id)?.isLocked == true {
                 fade?.show(LockChip.self, on: id)
                 chipsChanged.insert(id)
             }
         }
         if !chipsChanged.isEmpty { editor.adornmentsDidChange(for: chipsChanged) }
     }
-
-    /// The board left's locked shapes are kept for when it's shown again.
-    func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
-        guard old != new else { return }
-        kept.keep(lockedIDs, for: old, in: editor)
-    }
-
-    /// Another board is shown: its locked shapes are the ones with chips (as they were kept, if the
-    /// board hasn't changed since it was left, else looked for). The locks showing open on the board
-    /// left stop there (`ChipFade` drops them).
-    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
-        lockedIDs = kept.take(for: change.to, in: editor) ?? locked(in: editor.document)
-    }
 }
-
-#if DEBUG
-extension CanvasEditor {
-    /// How many times Locking has looked through a whole board for its locked shapes (debug builds
-    /// only), so tests can hold going back to a board to taking back what was kept of it.
-    public var boardsScannedForLocks: Int { service(LockState.self)?.boardsScanned ?? 0 }
-}
-#endif

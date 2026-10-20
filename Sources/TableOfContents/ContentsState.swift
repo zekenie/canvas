@@ -179,12 +179,9 @@ public final class ContentsState {
     /// brought up to date as it's read.
     @ObservationIgnored private var board: ContentsListing?
     @ObservationIgnored private var filtered: ContentsListing?
-    /// The revision the rows and listings are up to date with. Read before this service hears of
-    /// a commit (by a service that hears first), it keeps the rows whose shapes are as they were
-    /// and lists them again, making again the rows of kinds whose rows name what a commit affects,
-    /// and reading their marks again when a mark's contributor does, since only hearing of the
-    /// commit says which.
-    @ObservationIgnored private var heardRevision: Int
+    /// The commit heard whose rows' and marks' `affected` haven't been asked yet: they're asked once every
+    /// service has it (`noteAffectedIfDue`), since what they read is other services'.
+    @ObservationIgnored private var toNote: ChangeSet?
     /// What the rows' and the marks' contributors say a commit affects besides the shapes it
     /// changes (`affected`).
     @ObservationIgnored private let rowAffected: [@MainActor (ChangeSet, ContentsContext) -> Set<ShapeID>]
@@ -251,7 +248,6 @@ public final class ContentsState {
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        heardRevision = editor.revision
         changesHeard = editor.revision
         lastBeyondMoves = editor.revision
         rowAffected = editor.registry.contributions(to: ContentsRows.self).compactMap(\.value.affected)
@@ -288,7 +284,9 @@ public final class ContentsState {
     /// so a read after a commit costs what the commit changed.
     public var entries: [ContentsEntry] {
         _ = outsideChanges
-        catchUp()
+        // Ties whoever reads the list to every commit, as reading the document would.
+        _ = editor.revision
+        noteAffectedIfDue()
         followMoves()
         catchUpAway()
         guard let scope else {
@@ -336,22 +334,12 @@ public final class ContentsState {
         return ids.compactMap { id in document.index(of: id).map { (id, $0) } }.sorted { $0.1 < $1.1 }.map(\.0)
     }
 
-    /// After a commit this service hasn't heard of: keeps the rows whose shapes are as they were,
-    /// and lists them again, making again those that read more than their shapes. Reading the
-    /// revision also ties whoever reads `entries` to every commit, as reading the document would.
-    private func catchUp() {
-        guard heardRevision != editor.revision else { return }
-        heardRevision = editor.revision
-        let document = editor.document
-        // A row whose shape only moved since it was made isn't the shape's now either: made again.
-        movedSinceRead = []
-        rows = rows.filter { document[$0.key] == $0.value.record }
-        remakes = rowAffected.isEmpty ? remakes.filter { rows[$0] != nil }
-            : Set(rows.lazy.filter { self.kindRows($0.value.record.kind).readsOtherShapes }.map(\.key))
-        remarks = markAffected.isEmpty ? remarks.filter { rows[$0] != nil } : Set(rows.keys)
-        if board != nil || filtered != nil { replacements += 1 }       // listed again, its rows anywhere
-        board = nil
-        filtered = nil
+    /// What the last commit heard affected beyond what it touched, as the rows' and marks' contributors say,
+    /// noted once: when every service has it (`documentDidSettle`), or first, when the list is read after.
+    private func noteAffectedIfDue() {
+        guard let changes = toNote else { return }
+        toNote = nil
+        noteAffected(by: changes)
     }
 
     /// After going back to a board: the rows and marks that read what changed on other boards
@@ -717,30 +705,33 @@ extension ContentsState: EditorService {
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         changesHeard = editor.revision
         if !changes.onlyMoves { lastBeyondMoves = editor.revision }
-        if heardRevision != editor.revision {          // else read since, and caught up
-            heardRevision = editor.revision
-            let moved = changes.moved
-            let forgotten: Set<ShapeID>
-            if moved.isEmpty {
-                forgotten = changes.shapeIDs
-            } else {
-                movedSinceRead.formUnion(moved)
-                let onlyMoved = changes.added.isEmpty && changes.removed.isEmpty && changes.changed.count == moved.count
-                forgotten = onlyMoved ? [] : changes.shapeIDs.subtracting(moved)
-            }
-            for id in forgotten {
-                rows[id] = nil
-                remakes.remove(id)
-                remarks.remove(id)
-            }
-            note(forgotten)
+        let moved = changes.moved
+        let forgotten: Set<ShapeID>
+        if moved.isEmpty {
+            forgotten = changes.shapeIDs
+        } else {
+            movedSinceRead.formUnion(moved)
+            let onlyMoved = changes.added.isEmpty && changes.removed.isEmpty && changes.changed.count == moved.count
+            forgotten = onlyMoved ? [] : changes.shapeIDs.subtracting(moved)
         }
+        for id in forgotten {
+            rows[id] = nil
+            remakes.remove(id)
+            remarks.remove(id)
+        }
+        note(forgotten)
         guard readsOtherShapes else { return }
         if !kept.boards.isEmpty {
             for id in changes.shapeIDs { touchedAway[id] = editor.revision }
             for id in changes.elsewhere { touchedAway[id] = editor.revision }
         }
-        noteAffected(by: changes)
+        toNote = changes
+    }
+
+    /// What the commit affected beyond what it touched, asked of the rows' and marks' contributors now that
+    /// every service has it.
+    public func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) {
+        noteAffectedIfDue()
     }
 
     /// Whether some row or mark reads more than its shape (`affected`).
@@ -789,7 +780,7 @@ extension ContentsState: EditorService {
     /// Keeps the board left's rows, and its listing of every row, for going back to it.
     public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {
         guard old != new else { return }            // a file put in place over the board shown
-        catchUp()
+        noteAffectedIfDue()
         followMoves()
         catchUpAway()
         kept.keep(Kept(rows: rows, remakes: remakes, remarks: remarks, board: board, revision: editor.revision), for: old, in: editor)
@@ -817,7 +808,7 @@ extension ContentsState: EditorService {
         rowHoverElsewhere = nil
         if pointedDrop != nil || springing != nil { point(nil) }
         if pin != nil { pin = nil }
-        heardRevision = editor.revision
+        toNote = nil
         missed = []
         if let taken, readsOtherShapes {
             missed = Set(touchedAway.lazy.filter { $0.value > taken.revision }.map(\.key))

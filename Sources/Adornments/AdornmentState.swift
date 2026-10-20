@@ -1,6 +1,7 @@
 import Canvas
 import CoreGraphics
 import Geometry
+import Selection
 
 /// Per editor: which adornments each kind's shapes may show, found once per kind (the registry is
 /// frozen), and what each shape shows, laid out: its labels made once, with their faces (text set
@@ -27,10 +28,6 @@ final class AdornmentState {
     private var kept: [ShapeID: LaidOutAdornments] = [:]
     /// The "+N" faces made, by text and place: the same on every shape.
     private var overflowFacesKept: [OverflowKey: AdornmentStyle.Face] = [:]
-    /// The revision `kept` is up to date with. Read before this service has heard of a commit (by
-    /// a service that hears first: Selection, looking for a button under a still pointer), what's
-    /// asked for is made afresh and not kept, so it's never stale and nothing else is thrown away.
-    private var heardRevision: Int
     /// The kinds' contributions at a label's lead, found once.
     private var leadCandidatesKept: [ShapeKind: [AdornmentContribution]] = [:]
     /// The faces measured for each lead label.
@@ -49,7 +46,6 @@ final class AdornmentState {
         let contributions = editor.registry.contributions(to: ShapeAdornments.self)
         isEmpty = contributions.isEmpty
         hasButtons = contributions.contains { $0.value.click != nil }
-        heardRevision = editor.revision
     }
 
     var keptCount: Int { kept.count }
@@ -65,8 +61,7 @@ final class AdornmentState {
         guard !isEmpty, !record.isOpaque else { return nil }
         let candidates = candidates(for: record.kind)
         guard !candidates.isEmpty else { return nil }
-        let isHeard = keeping && heardRevision == editor.revision
-        if isHeard, let known = kept[record.id] { return known.shown.isEmpty ? nil : known }
+        if keeping, let known = kept[record.id] { return known.shown.isEmpty ? nil : known }
         let context = AdornmentContext(editor: editor)
         // Each contribution's labels that say something, one adornment each, in order; a group's
         // know how many follow them, for the "+N" chip that stands for them.
@@ -78,7 +73,7 @@ final class AdornmentState {
             }
         }
         guard !shown.isEmpty else {
-            if isHeard { kept[record.id] = LaidOutAdornments(shown: [], items: [], faces: [], compactFaces: [], overflowFaces: [], leadLooks: []) }
+            if keeping { kept[record.id] = LaidOutAdornments(shown: [], items: [], faces: [], compactFaces: [], overflowFaces: [], leadLooks: []) }
             return nil
         }
         let faces = shown.map { AdornmentStyle.face(of: $0.label, in: $0.id.placement) }
@@ -100,7 +95,7 @@ final class AdornmentState {
         }
         let laidOut = LaidOutAdornments(shown: shown, items: items, faces: faces, compactFaces: compactFaces, overflowFaces: overflowFaces,
                                         leadLooks: leadLooks)
-        if isHeard { kept[record.id] = laidOut }
+        if keeping { kept[record.id] = laidOut }
         return laidOut
     }
 
@@ -123,12 +118,13 @@ final class AdornmentState {
         let leads = leadCandidates(for: record.kind)
         guard !leads.isEmpty, !isEmpty else { return nil }
         // A shape that only moved (a note it is bound to was dragged) has the answer it had, as its labels are: kept until a commit names it
-        // or `adornmentsDidChange` does, and only once this has heard the commit, so it is never stale.
-        let isHeard = recording && heardRevision == editor.revision
-        if isHeard, let known = leadMemo[record.id] { return known.faces }
+        // or `adornmentsDidChange` does.
+        if recording, let known = leadMemo[record.id] { return known.faces }
         let faces = leadFaces(of: record, among: leads)
-        if recording { leadAnswered[record.id] = LeadAnswer(faces: faces, revision: editor.revision) }
-        if isHeard { leadMemo[record.id] = LeadAnswer(faces: faces, revision: editor.revision) }
+        if recording {
+            leadAnswered[record.id] = LeadAnswer(faces: faces, revision: editor.revision)
+            leadMemo[record.id] = LeadAnswer(faces: faces, revision: editor.revision)
+        }
         return faces
     }
 
@@ -158,16 +154,32 @@ final class AdornmentState {
     }
 
     /// What the pill of these shapes says may have changed with no commit to them (a type renamed, a field added, a
-    /// check that turned): the shapes whose answer is not what geometry last read are laid out again.
+    /// check that turned): the shapes whose answer is not what geometry last read are laid out again, once every
+    /// service has settled the change being delivered, if one is (`onceSettled`: a pill's label asks other plugins'
+    /// services), and the select tool then looks again under the pointer, its buttons where the pills are now.
     func leadsMayHaveChanged(_ ids: Set<ShapeID>) {
-        guard !leadAnswered.isEmpty else { return }
+        guard !leadAnswered.isEmpty, !ids.isEmpty else { return }
+        let asked = !leadsToLookAt.isEmpty
+        leadsToLookAt.formUnion(ids)
+        guard !asked else { return }
+        editor.onceSettled { [weak self] in self?.lookAtLeadsToldOf() }
+    }
+
+    /// The leads told of (`leadsMayHaveChanged`), looked at once every service has settled.
+    private var leadsToLookAt: Set<ShapeID> = []
+
+    private func lookAtLeadsToldOf() {
+        let ids = leadsToLookAt
+        leadsToLookAt = []
         var moved: [ShapeID] = []
         for id in ids {
             guard let known = leadAnswered[id], let record = editor.document[id] ?? editor.shape(inFile: id) else { continue }
             let leads = leadCandidates(for: record.kind)
             if leadFaces(of: record, among: leads) != known.faces { moved.append(id) }
         }
-        if !moved.isEmpty { editor.shapesDidChangeLayout(moved) }
+        guard !moved.isEmpty else { return }
+        editor.shapesDidChangeLayout(moved)
+        editor.canvasButtonsDidChange()
     }
 
     /// What was answered, and as of which commit.
@@ -366,7 +378,6 @@ final class AdornmentState {
 
 extension AdornmentState: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        heardRevision = editor.revision
         // A shape that only moved (a drag) has the labels it had: they are laid out against its bounds when
         // asked, never kept at a place. Everything else a commit touched is made again.
         for id in changes.added {
@@ -398,10 +409,10 @@ extension AdornmentState: EditorService {
     /// (Locking's lock, open and fading) is let go of on a switch without a word to Adornments, so a
     /// label kept would come back stale.
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
-        heardRevision = editor.revision
         kept = [:]
         leadAnswered = [:]
         leadMemo = [:]
+        leadsToLookAt = []
     }
 
     /// The canvas started or stopped drawing skeletons: zoomed out, a skeleton shows no adornments, so

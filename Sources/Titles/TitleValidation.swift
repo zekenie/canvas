@@ -62,9 +62,9 @@ public struct TitleValidationPlugin: ListedPlugin {
 }
 
 /// Every title in the file and the shapes it names, on every board the editor can show, but shapes
-/// kept aside: read whole as the editor opens (and again for a file put in place, or a commit heard
-/// out of turn), as Mentions' catalog is, so no check pays for it (a query's slice), then kept up to
-/// date by each commit, for what it changed on any board, never for a move. It never transacts.
+/// kept aside: read whole as the editor opens (and again for a file put in place), as Mentions' catalog
+/// is, so no check pays for it (a query's slice), then kept up to date by each commit, for what it
+/// changed on any board, never for a move. It never transacts.
 @MainActor
 final class TitleIndex {
     private unowned let editor: CanvasEditor
@@ -72,24 +72,17 @@ final class TitleIndex {
     private var holders: [String: Set<ShapeID>] = [:]
     /// Each titled shape's title.
     private var titles: [ShapeID: String] = [:]
-    /// Whether it holds the file's titles; else it reads them as it's next asked (one asked before
-    /// it heard a commit).
-    private var isRead = false
-    /// The revision it's up to date with.
-    private var heardRevision: Int
     /// The shapes the last commit heard gave a title's first other holder, or took its last from,
     /// and those still in the file whose title it changed: whose warning it may change.
     private var lastAffected: Set<ShapeID> = []
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        heardRevision = editor.revision
         read()
     }
 
     /// Whether a shape other than `id` is called `title`.
     func isShared(_ title: String, by id: ShapeID) -> Bool {
-        readIfNeeded()
         guard let named = holders[title] else { return false }
         return named.count > 1 || !named.contains(id)
     }
@@ -113,7 +106,6 @@ final class TitleIndex {
     /// holders the run has not written, and the shapes it wrote that are called that now.
     func isShared(_ title: String, by id: ShapeID, in reading: LayoutReading) -> Bool {
         guard !reading.isCommitted else { return isShared(title, by: id) }
-        readIfNeeded()
         let run = written(in: reading)
         if run.holders[title]?.contains(where: { $0 != id }) == true { return true }
         // A committed holder counts if the run has not taken it (deleted, or with its board).
@@ -125,7 +117,6 @@ final class TitleIndex {
     /// where one holder of the title it had is left, that one (it shares it no longer). O(the writes).
     func touched(by changes: ChangeSet, reading: LayoutReading) -> Set<ShapeID> {
         guard !reading.isCommitted else { return [] }
-        readIfNeeded()
         let run = written(in: reading)
         var found: Set<ShapeID> = []
         func look(_ id: ShapeID) {
@@ -147,21 +138,15 @@ final class TitleIndex {
 
     /// The shapes a commit may change the warning of: those still in the file whose title it
     /// changed, and those it gave a title's first other holder or took its last from (never what it
-    /// deleted, so a subboard's deletion names none of what its boards held). Asked again for the
-    /// same commit, the same.
+    /// deleted, so a subboard's deletion names none of what its boards held). Asked once every
+    /// service has the commit; asked again for the same commit, the same.
     func affected(by changes: ChangeSet) -> Set<ShapeID> {
-        catchUp(changes)
-        return lastAffected
+        lastAffected
     }
 
-    private func catchUp(_ changes: ChangeSet) {
-        guard heardRevision != editor.revision else { return }
-        // A commit heard out of turn: what the one before changed isn't known.
-        let outOfTurn = heardRevision < editor.revision - 1
-        heardRevision = editor.revision
+    /// Files the titles a commit changed, noting whose warning that changes.
+    private func follow(_ changes: ChangeSet) {
         lastAffected = []
-        guard isRead else { return }                        // read whole as it's next asked
-        guard !outOfTurn else { return readAgain() }
         guard !changes.shapeIDs.isEmpty || !changes.elsewhere.isEmpty else { return }
         // The file read once, each board's showing asked once: a subboard's deletion hands it every
         // shape its boards held (`elsewhere`). A shape seen twice is filed once.
@@ -233,47 +218,17 @@ final class TitleIndex {
         record.isOpaque ? nil : editor.registry.title(of: record)
     }
 
-    private func readIfNeeded() {
-        if heardRevision != editor.revision {
-            // Asked before hearing a commit (by a service that hears first): what changed isn't known.
-            heardRevision = editor.revision
-            lastAffected = []
-            isRead = false
-        }
-        guard !isRead else { return }
-        read()
-    }
-
-    /// Reads every title afresh, noting the shapes whose warning that may change: every shape that
-    /// shared a title before or does now.
-    private func readAgain() {
-        let shared = { (holders: [String: Set<ShapeID>]) in holders.values.lazy.filter { $0.count > 1 }.reduce(into: Set<ShapeID>()) { $0.formUnion($1) } }
-        let before = shared(holders)
-        read()
-        lastAffected = before.union(shared(holders))
-    }
-
-    /// Reads every title: the root's shapes, then, from it down, those on the boards whose owners own
-    /// boards the editor can show (`registry.ownsShowableBoard`, what `canShow` asks of each owner on
-    /// a path), each board once.
+    /// Reads every title on every board the editor can show (`editor.showableBoards`).
     private func read() {
         holders = [:]
         titles = [:]
-        isRead = true
         let registry = editor.registry
         editor.withoutObservingDocument {
-            let children = editor.file.children
-            var boards: [BoardID] = [.root], met: Set<BoardID> = [.root], next = 0
-            while next < boards.count {
-                let board = boards[next]
-                next += 1
+            for board in editor.showableBoards {
                 for record in editor.contents(of: board).shapes where !record.isOpaque {
-                    if let title = registry.title(of: record) {
-                        titles[record.id] = title
-                        holders[title, default: []].insert(record.id)
-                    }
-                    let owned = BoardID(owner: record.id)
-                    if children[record.id] != nil, registry.ownsShowableBoard(record), met.insert(owned).inserted { boards.append(owned) }
+                    guard let title = registry.title(of: record) else { continue }
+                    titles[record.id] = title
+                    holders[title, default: []].insert(record.id)
                 }
             }
         }
@@ -281,15 +236,14 @@ final class TitleIndex {
 }
 
 extension TitleIndex: EditorService {
-    /// Follows the commit, unless Validation's `affected` asked about it first.
+    /// Follows the commit.
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        catchUp(changes)
+        follow(changes)
     }
 
     /// Nothing, but for a file put in place with the switch, whose titles it reads: the titles are
     /// the file's, kept up to date by every commit, whatever board it was on.
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
-        heardRevision = editor.revision
         lastAffected = []
         if change.isFileReplaced { read() }
     }

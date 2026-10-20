@@ -120,6 +120,18 @@ final class SelectionState {
         popoverSources = editor.registry.contributions(to: ShapePopovers.self).map(\.value).reversed()
     }
 
+    /// Looks for the button under the pointer once every service has settled the change being delivered, at
+    /// once outside one (`onceSettled`); asked again before it has, it looks once.
+    func lookForButtonOnceSettled() {
+        guard !buttonLookAsked else { return }
+        buttonLookAsked = true
+        editor.onceSettled { [weak self] in
+            self?.buttonLookAsked = false
+            self?.findHoveredButton()
+        }
+    }
+    private var buttonLookAsked = false
+
     /// The button under the pointer, looked for again: in the select tool, with nothing under way. A
     /// button found takes the hover, as the pointer moving onto it would.
     func findHoveredButton() {
@@ -221,8 +233,13 @@ final class SelectionState {
     }
 
     /// The plugins that follow the selection (`SelectionObservers`) are told it changed.
+    /// Once the selection has taken in the change being delivered, if it is taking one in (`editor.onceHeard`), so
+    /// an observer may read it; else at once.
     private func tellObservers(left: [ShapeID]) {
-        for observer in editor.registry.contributions(to: SelectionObservers.self) { observer.value(editor, left, selectedIDs) }
+        let now = selectedIDs
+        editor.onceHeard { [unowned editor] in
+            for observer in editor.registry.contributions(to: SelectionObservers.self) { observer.value(editor, left, now) }
+        }
     }
 
     // MARK: Going back
@@ -410,7 +427,7 @@ extension SelectionState: EditorService {
         // A shape that became read-only has no handles.
         if hoveredHandle != nil, let id = onlySelectedID, editor.isReadOnly(id) { hoveredHandle = nil }
         // Buttons go with their shapes: one may have come or gone under the pointer.
-        findHoveredButton()
+        lookForButtonOnceSettled()
     }
 
     /// A placed shape is the only one selected.

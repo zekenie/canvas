@@ -29,7 +29,7 @@ extension Budget {
     /// and the shape that crosses it). The whole build is reported.
     static let findIndexSlice = 3.0
     /// What Find costs a commit before the first ⌘F, and a drag event with Find open, over the
-    /// shipped list without it: a revision noted; nothing for a move.
+    /// shipped list without it: one test; nothing for a move.
     static let findUpkeep = 0.01
     /// A frame at 10% with every note a hit, the whole of it.
     static let findFrame = frame

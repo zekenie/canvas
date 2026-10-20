@@ -30,43 +30,46 @@ private final class Flag: @unchecked Sendable {
     return flag
 }
 
-/// Reads a shape's edges as it hears each commit, before and after asking the index to catch up: a
-/// service made before the index's, so it hears of each commit first.
+/// Reads a shape's edges as it hears each commit, looking the index up: a service made before the index's, so it
+/// hears of each commit first.
 @MainActor private final class Probe {
     let watched: ShapeID
-    var before: [[Edge]] = []
-    var after: [[Edge]] = []
+    var seen: [[Edge]] = []
     init(watching id: ShapeID) { watched = id }
 }
 
 extension Probe: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         guard let index = editor.topology else { return }
-        before.append(index.edges(of: watched))
-        index.catchUp(changes)
-        after.append(index.edges(of: watched))
-        index.catchUp(changes)
+        seen.append(index.edges(of: watched))
     }
 }
 
-/// The same, through a reference to the index it holds, which is no lookup (as a service that kept one from its `make`):
-/// hearing a commit first, it reads the index as it was until it asks it to catch up.
+/// The same, through a reference to the index it kept from its `make`, which is no lookup: what a service looked up
+/// as it was made takes each change in before it, so the index is up to date whenever this hears.
 @MainActor private final class KeptProbe {
     let watched: ShapeID
-    weak var index: TopologyIndex?
-    var before: [[Edge]] = []
-    var after: [[Edge]] = []
-    init(watching id: ShapeID) { watched = id }
+    let index: TopologyIndex?
+    var seen: [[Edge]] = []
+    init(watching id: ShapeID, in editor: CanvasEditor) {
+        watched = id
+        index = editor.topology
+    }
 }
 
 extension KeptProbe: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         guard let index else { return }
-        before.append(index.edges(of: watched))
-        index.catchUp(changes)
-        after.append(index.edges(of: watched))
-        index.catchUp(changes)
+        seen.append(index.edges(of: watched))
     }
+}
+
+/// Made before the probe, and so before the index the probe's `make` makes: asks for the probe as it hears a commit, so
+/// the probe hears before the index's turn.
+@MainActor private final class ProbeAsker {}
+
+extension ProbeAsker: EditorService {
+    func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) { _ = editor.service(KeptProbe.self) }
 }
 
 @MainActor let upkeepTests = Suite("Following the file", [
@@ -292,21 +295,20 @@ extension KeptProbe: EditorService {
         let read = h.topology.recordsRead
         h.editor.transact { $0.insert(link(x, tree.c, tree.b)) }
         let lone = edge(WireEdge.id, tree.a, tree.b, by: tree.l), added = edge(WireEdge.id, tree.c, tree.b, by: x)
-        expectEqual(probe.before, [[lone, added]], "the index heard the commit as the probe looked it up")
-        expectEqual(probe.after, [[lone, added]])
-        expectEqual(h.topology.recordsRead, read + 1, "read once: catching up, and the index's own turn, do nothing")
+        expectEqual(probe.seen, [[lone, added]], "the index heard the commit as the probe looked it up")
+        expectEqual(h.topology.recordsRead, read + 1, "read once: the index's own turn finds it heard")
         expectEqual(h.topology.touched, [tree.c, tree.b])
     },
-    test("a service that holds the index and hears a commit before it brings it up to date, once") {
-        let tree = Nest(), x = ShapeID(), probe = KeptProbe(watching: tree.b)
-        let h = try graph(tree.file, first: [Contributor(id: "probe") { $0.service { _ in probe } }])
-        probe.index = h.topology
+    test("a service that keeps the index from its make and hears a commit before the index's turn finds it up to date, read once") {
+        let tree = Nest(), x = ShapeID()
+        let h = try graph(tree.file, first: [Contributor(id: "asker") { $0.service { _ in ProbeAsker() } },
+                                             Contributor(id: "probe") { $0.service { KeptProbe(watching: tree.b, in: $0) } }])
+        let probe = try require(h.editor.service(KeptProbe.self))
         let read = h.topology.recordsRead
         h.editor.transact { $0.insert(link(x, tree.c, tree.b)) }
         let lone = edge(WireEdge.id, tree.a, tree.b, by: tree.l), added = edge(WireEdge.id, tree.c, tree.b, by: x)
-        expectEqual(probe.before, [[lone]], "read through the reference, before the index has heard")
-        expectEqual(probe.after, [[lone, added]])
-        expectEqual(h.topology.recordsRead, read + 1, "read once: the index's own turn is a no-op")
+        expectEqual(probe.seen, [[lone, added]], "read through the reference, the index having taken the commit in first")
+        expectEqual(h.topology.recordsRead, read + 1, "read once: the index's own turn finds it heard")
         expectEqual(h.topology.touched, [tree.c, tree.b])
     },
 ])

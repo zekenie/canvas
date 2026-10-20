@@ -717,8 +717,14 @@ extension RowBook {
         return view
     }
 
-    /// The shape's rows moved or changed: the view over them follows.
+    /// The shape's rows moved or changed: the view over them follows, once every service has settled the change being
+    /// delivered, if one is (`onceSettled`: laying the view out lays the note out, which asks the book and the index).
     func rowsChanged() {
-        rowsView?.reposition()
+        guard rowsView != nil, !repositionAsked else { return }
+        repositionAsked = true
+        editor?.onceSettled { [weak self] in
+            self?.repositionAsked = false
+            self?.rowsView?.reposition()
+        }
     }
 }

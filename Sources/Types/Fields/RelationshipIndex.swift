@@ -93,7 +93,6 @@ public final class RelationshipIndex {
     private var floor = 0
     private var stamps: [ShapeID: Int] = [:]
     private var observers: [@MainActor (RelationshipChange) -> Void] = []
-    private var heardRevision: Int
     private var following: TopologyFollowing?
 
     // What was collected while others heard the commit, until this service does.
@@ -144,7 +143,6 @@ public final class RelationshipIndex {
         relatingKinds = Set(registry.kinds.filter { registry.relates($0) })
         standIns = registry.standIns
         standInKinds = standIns.kinds
-        heardRevision = editor.revision
         // Both only collect: the commit is worked out when this service hears it.
         types.onChange { [weak self] change in self?.collect(change) }
         following = topology.follow { [weak self] change in self?.collect(change) }
@@ -349,7 +347,7 @@ public final class RelationshipIndex {
         var isEmpty: Bool { change.isEmpty && !ended }
     }
 
-    /// Everything compiled from the file as it is: a file put in place, or a commit heard out of turn.
+    /// Everything compiled from the file as it is: a file put in place.
     private func compileEverything() {
         ends = RelationshipEnds()
         endOf = [:]
@@ -359,9 +357,9 @@ public final class RelationshipIndex {
         halvesAt = [:]
         halfOf = [:]
         if let editor, !relatingKinds.isEmpty {
-            let context = editor.shapeContext
-            for document in [editor.file.root] + Array(editor.file.children.values) {
-                for record in document.shapes where relatingKinds.contains(record.kind) { trackHalf(record, context) }
+            let context = editor.shapeContext, file = editor.file
+            for board in file.everyBoard {
+                for record in file[board].shapes where relatingKinds.contains(record.kind) { trackHalf(record, context) }
             }
         }
         rowsMemo = [:]
@@ -676,26 +674,25 @@ public final class RelationshipIndex {
 
     // MARK: Hearing
 
+    /// Tells the observers what changed: once this service has taken the change in, when it is taking one in
+    /// (`editor.onceHeard`), so they may read it then; at once for a release.
     private func deliver(_ announce: Announce) {
         guard !announce.isEmpty else { return }
         let change = announce.change
         guard !change.isEmpty else { return }
-        for observer in observers { observer(change) }
+        let tell: @MainActor () -> Void = { [weak self] in
+            guard let self else { return }
+            for observer in observers { observer(change) }
+        }
+        if let editor { editor.onceHeard(tell) } else { tell() }
     }
 
     func hear(_ changes: ChangeSet, in editor: CanvasEditor) {
-        // Up to date already: this service heard the commit earlier, as a reader that came ahead of its turn
-        // had it do.
-        guard heardRevision != editor.revision else { return }
         // A run's own graph was of the file before this commit.
         runKept = nil
         runRelations = (nil, [:])
-        let outOfTurn = heardRevision < editor.revision - 1
-        heardRevision = editor.revision
-        topology.catchUp(changes)
-        editor.types?.documentDidChange(changes, in: editor)
         defer { clearPending() }
-        if changes.replacedDocument || outOfTurn || pendingTypes.everything || pendingRebuild {
+        if changes.replacedDocument || pendingTypes.everything || pendingRebuild {
             compileEverything()
             deliver(Announce(everything: true))
             return
@@ -1012,16 +1009,9 @@ extension RelationshipIndex: EditorService {
         hear(changes, in: editor)
     }
 
-    /// For a reader that may run before this service's turn (Find's): the type index hears first, then this.
-    public func catchUp(_ changes: ChangeSet) {
-        guard let editor else { return }
-        hear(changes, in: editor)
-    }
-
     /// A switch of board changes no relationship (the index is the file's), and works out no change set; a
     /// file put in place compiles again.
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
-        heardRevision = editor.revision
         guard change.isFileReplaced else { return }
         clearPending()
         compileEverything()

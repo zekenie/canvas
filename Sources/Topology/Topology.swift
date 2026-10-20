@@ -222,8 +222,8 @@ public enum EdgeEnd: Hashable, Sendable, Codable {
 /// keeps the file's edges (`editor.topology`), and it declares the one edge type that's its own,
 /// `stands-for` (`StandingEdge`). Every
 /// plugin list with a plugin that contributes to them (Ports, Mentions) needs it. Put it early (in
-/// the shipped list, right after Selection), so its service hears each commit before those that
-/// read it; one that hears a commit first brings it up to date (`catchUp`).
+/// the shipped list, right after Selection); a service that reads it as it takes a commit in has it
+/// take the commit in first, wherever the two are in the list (looking it up does).
 public struct TopologyPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .topology }

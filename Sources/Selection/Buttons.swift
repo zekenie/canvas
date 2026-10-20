@@ -91,9 +91,12 @@ extension CanvasEditor {
     public var pointerOverCanvas: CGPoint? { selectionState?.lastPointer }
 
     /// A plugin's buttons came, went or moved other than through a change to the document (a chip that
-    /// fades away): the select tool looks again under the pointer, for the hover and the cursor.
-    /// Commits do this by themselves.
-    public func canvasButtonsDidChange() { selectionState?.findHoveredButton() }
+    /// fades away): the select tool looks again under the pointer, for the hover and the cursor, once every
+    /// service has settled the change being delivered, if one is (`onceSettled`: what a button is asks the
+    /// plugins' services, and where it is what they laid out). Commits do this by themselves.
+    public func canvasButtonsDidChange() {
+        selectionState?.lookForButtonOnceSettled()
+    }
 }
 
 /// A button under the pointer, and the plugin's buttons it's one of.

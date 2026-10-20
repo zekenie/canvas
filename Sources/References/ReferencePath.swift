@@ -15,7 +15,7 @@ extension ReferenceState {
     /// its kind is called, which the row shows fainter).
     ///
     /// The path is read from shapes the row isn't of, so which were read is noted, for
-    /// `rowsAffected(by:)` to name the row when a commit changes one (`pathReaders`).
+    /// `rowsAffected(by:)` to name the row when a commit changes one (`pathSources`).
     func rowPath(of reference: ShapeID, to target: ShapeID) -> [ContainerName] {
         #if DEBUG
         pathsRead += 1
@@ -41,20 +41,12 @@ extension ReferenceState {
 
     /// Keeps which shapes the row of `reference` read its path from, in place of those it read before.
     private func notePath(of reference: ShapeID, readFrom shapes: Set<ShapeID>) {
-        guard pathRead[reference] != shapes else { return }
-        forgetPath(of: reference)
-        guard !shapes.isEmpty else { return }
-        pathRead[reference] = shapes
-        for id in shapes { pathReaders[id, default: []].insert(reference) }
+        pathSources.set(shapes, for: reference)
     }
 
     /// Lets go of what the row of `reference` read its path from: the reference changed or went, and
     /// a row made for it again notes what it reads then.
     func forgetPath(of reference: ShapeID) {
-        guard let read = pathRead.removeValue(forKey: reference) else { return }
-        for id in read {
-            pathReaders[id]?.remove(reference)
-            if pathReaders[id]?.isEmpty == true { pathReaders[id] = nil }
-        }
+        pathSources.forget(reference)
     }
 }

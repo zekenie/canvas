@@ -28,7 +28,9 @@ public struct CanvasCard {
     public let adoptsPress: Bool
     /// The size it wants, in view points, no larger than `room`. Asked each time it is laid out.
     public let size: @MainActor (_ room: CGSize) -> CGSize
-    /// Called once, after it is taken down and the keyboard is back where it was.
+    /// Called once, after it is taken down and the keyboard is back where it was. Closed because a commit took
+    /// its shape (`.shapeGone`), it's called as that commit is delivered, so it may not change the file: a
+    /// write in answer waits a turn (`editor.scheduler`).
     public let didClose: @MainActor (CanvasCardClosing) -> Void
 
     public init<ID: Hashable & Sendable>(id: ID, about shape: ShapeID? = nil, anchor: CGRect, view: NSView,

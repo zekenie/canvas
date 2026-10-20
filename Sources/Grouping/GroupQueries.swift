@@ -51,8 +51,8 @@ final class GroupMates: @unchecked Sendable {
         lock.withLock {
             if let read { return read }
             var grouped = Set<ShapeID>(), outermost: [ShapeID: [ShapeID]] = [:]
-            for board in [file.root] + file.children.values {
-                let groups = BoardGroups(board.shapes.compactMap { record in record[GroupsProperty.self].map { (id: record.id, path: $0) } })
+            for board in file.everyBoard {
+                let groups = BoardGroups(file[board].shapes.compactMap { record in record[GroupsProperty.self].map { (id: record.id, path: $0) } })
                 for (id, path) in groups.paths {
                     grouped.insert(id)
                     if let first = path.first { outermost[id] = groups.shapes[first] }

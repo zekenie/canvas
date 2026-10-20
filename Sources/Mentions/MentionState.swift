@@ -62,16 +62,13 @@ public final class MentionState {
     /// This editor's picks, the latest first; never saved.
     @ObservationIgnored private var recent: [ShapeID] = []
 
-    /// The revision the resolutions are up to date with, and the rows its last commit affected: the
-    /// table of contents hears each commit first, and asks (`rowsAffected`) before this service
-    /// hears it.
-    @ObservationIgnored private var heardRevision: Int
+    /// The rows its last commit affected (`rowsAffected`), asked once every service has the commit.
     @ObservationIgnored private var lastAffected: Set<ShapeID> = []
     /// Mentions, as Topology's edges: made once, as a filter's types are a set.
     @ObservationIgnored private let mentionEdges = EdgeTypeFilter.only(MentionEdge.id)
 
-    /// Who mentions whom: Topology's index, made before this service (so it hears each commit
-    /// first), and brought up to date when this one is asked about a commit first (`catchUp`).
+    /// Who mentions whom: Topology's index, looked up as this service is made, so it is made first and takes
+    /// each change in first (`CanvasEditor.tell`).
     @ObservationIgnored private let topology: TopologyIndex?
     /// Following Topology's changes to the edges (`follow`): how the mentions that came and went
     /// are heard, whatever changed them.
@@ -85,7 +82,6 @@ public final class MentionState {
     init(editor: CanvasEditor) {
         self.editor = editor
         topology = editor.topology
-        heardRevision = editor.revision
         trackMentioned()
         readCatalog()
         layOutMentioners()
@@ -305,15 +301,10 @@ public final class MentionState {
     }
 
     /// The mentioners whose rows a commit may change without changing them: those of the targets
-    /// whose resolution it changed. Answers for the commit it's given the first time it's asked
-    /// about a revision, and from then on as it answered; and, asked again with shapes elsewhere
+    /// whose resolution it changed, asked once every service has it; and, asked with shapes elsewhere
     /// (what changed on other boards while the board shown wasn't, which the table of contents
     /// hands its rows on going back to it), the mentioners of those shapes too.
     public func rowsAffected(by changes: ChangeSet) -> Set<ShapeID> {
-        if heardRevision != editor.revision {
-            hear(changes)
-            return lastAffected
-        }
         guard !changes.elsewhere.isEmpty else { return lastAffected }
         var affected = lastAffected
         for id in changes.elsewhere { affected.formUnion(mentionerSet(of: id)) }
@@ -677,13 +668,11 @@ public final class MentionState {
 
     // MARK: Following the document
 
-    /// What a commit changed, applied: what's mentioned (Topology's index, brought up to date with
-    /// it first), the resolutions, the catalog; then the observers of the targets whose resolution
-    /// changed, and the rows it affects.
+    /// What a commit changed, applied: what's mentioned (Topology's index, which takes the commit in first,
+    /// having been looked up as this service was made, and tells its change, `follow`, as it does), the
+    /// resolutions, the catalog; then the observers of the targets whose resolution changed (once this service
+    /// has the commit), and the rows it affects.
     private func hear(_ changes: ChangeSet) {
-        heardRevision = editor.revision
-        // Topology tells its change (`follow`) as it hears the commit, here if not before.
-        topology?.catchUp(changes)
         for id in changes.removed {
             removeEntry(id)
             stale.remove(id)
@@ -709,7 +698,7 @@ public final class MentionState {
         }
         lastAffected = affected
         if changes.replacedDocument { readCatalog() }                   // a board or file put in place: read now, not at the first `@`
-        tell(changedTargets)
+        if !changedTargets.isEmpty { editor.onceHeard { [weak self] in self?.tell(changedTargets) } }
     }
 
     /// A change to the edges, heard from Topology: the shapes whose mentions it changed, at either
@@ -766,23 +755,14 @@ public final class MentionState {
 
     // MARK: The catalog
 
-    /// Reads the catalog afresh: every mentionable shape on every board the editor can show, which
-    /// are the root and, from it down, the boards whose owners own showable boards
-    /// (`registry.ownsShowableBoard`, what `canShow` asks of each owner on a path), each once.
+    /// Reads the catalog afresh: every mentionable shape on every board the editor can show
+    /// (`editor.showableBoards`).
     private func readCatalog() {
         catalog = MentionCatalog()
         memberSets = [:]
         stale = []
-        let children = editor.file.children
-        var boards: [BoardID] = [.root], met: Set<BoardID> = [.root], next = 0
-        while next < boards.count {
-            let board = boards[next]
-            next += 1
-            for record in editor.contents(of: board).shapes {
-                readEntry(record, on: board)
-                let owned = BoardID(owner: record.id)
-                if children[record.id] != nil, registry.ownsShowableBoard(record), met.insert(owned).inserted { boards.append(owned) }
-            }
+        for board in editor.showableBoards {
+            for record in editor.contents(of: board).shapes { readEntry(record, on: board) }
         }
     }
 
@@ -876,9 +856,8 @@ extension MentionState: EditorService {
         tell(changed)
     }
 
-    /// Follows the commit, unless the table of contents asked about it first (`rowsAffected`).
+    /// Follows the commit.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        guard heardRevision != editor.revision else { return }
         hear(changes)
     }
 
@@ -888,7 +867,6 @@ extension MentionState: EditorService {
     /// what it mentions resolved and its catalog read afresh. Recent picks and observations stay
     /// (the views observing pills of the board left go with it).
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
-        heardRevision = editor.revision
         lastAffected = []
         guard change.isFileReplaced else { return }
         resolutions = [:]

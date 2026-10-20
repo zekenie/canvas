@@ -514,16 +514,18 @@ public struct FindPosition: Hashable, Sendable {
 }
 
 extension FindState: EditorService {
-    /// Follows the commit: before the first ⌘F, nothing but the revision. Topology first, whose
-    /// snapshot a search orders by.
+    /// A move changes no tint: a drag's every event is a look at the results it touched, if any.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        editor.topology?.catchUp(changes)
-        index.hear(changes)
-        // A move changes no tint: a drag's every event is a look at the results it touched, if any.
         if !places.isEmpty, changes.changed.contains(where: { places[$0] != nil && !changes.moved.contains($0) })
             || changes.elsewhere.contains(where: { places[$0] != nil }) {
             tintRevision &+= 1
         }
+    }
+
+    /// The index follows the commit once every service has it: the contributions' `affected` ask their
+    /// plugins' services, and a search orders by Topology's snapshot.
+    public func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) {
+        index.hear(changes)
     }
 
     /// A result's symbol in the panel: its kind's, in the tint the shape has (`editor.tint(of:)`: its

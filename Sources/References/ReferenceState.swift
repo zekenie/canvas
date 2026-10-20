@@ -47,8 +47,7 @@ public final class ReferenceState {
     /// changes one (renamed, put in another frame, moved to another board) names those rows
     /// (`rowsAffected(by:)`). Noted as a row is made and kept until its reference changes or goes: a
     /// row the list keeps for a board not shown is still a row to make again.
-    var pathRead: [ShapeID: Set<ShapeID>] = [:]
-    var pathReaders: [ShapeID: Set<ShapeID>] = [:]
+    var pathSources = ReverseIndex()
 
     // What dynamic references found (`ReferenceAnswers.swift`).
     /// Every reference with a query on a board the app can show, and what its query found.
@@ -214,11 +213,11 @@ public final class ReferenceState {
     /// The references a commit may change the rows of without changing them: those that name a shape it
     /// changed (renamed, made private, deleted, brought back by an undo), and those whose row's path
     /// names a shape it changed or was read from one (a frame or a board's owner renamed, or put
-    /// somewhere else: `pathReaders`), moved ones aside. O(what the commit changed).
+    /// somewhere else: `pathSources.by`), moved ones aside. O(what the commit changed).
     func rowsAffected(by changes: ChangeSet) -> Set<ShapeID> {
         var found = references(namingWhatChanged: changes)
-        if !pathReaders.isEmpty {
-            forEachChanged(by: changes) { id in if let readers = pathReaders[id] { found.formUnion(readers) } }
+        if !pathSources.by.isEmpty {
+            forEachChanged(by: changes) { id in if let readers = pathSources.by[id] { found.formUnion(readers) } }
         }
         return found
     }
@@ -255,7 +254,7 @@ public final class ReferenceState {
         drawnBoardOwners = []
         drawnMismatches = [:]
         let topology = editor.topology
-        for id in Array(pathRead.keys) where !(topology.map { Self.isReference(id, in: $0) } ?? false) { forgetPath(of: id) }
+        for id in Array(pathSources.of.keys) where !(topology.map { Self.isReference(id, in: $0) } ?? false) { forgetPath(of: id) }
     }
 
     /// The references a commit touched, each once, as they are now: those it added, changed (moves
@@ -269,12 +268,12 @@ public final class ReferenceState {
     private func referencesTouched(by changes: ChangeSet) -> [ShapeID: AnyShapeRecord?] {
         var touched: [ShapeID: AnyShapeRecord?] = [:]
         guard let topology = editor.topology,
-              topology.hasStandIns || !pathRead.isEmpty || !dynamic.isEmpty || !drawnConditions.isEmpty else { return touched }
+              topology.hasStandIns || !pathSources.of.isEmpty || !dynamic.isEmpty || !drawnConditions.isEmpty else { return touched }
         let file = editor.file
         forEachChanged(by: changes) { id in
             if Self.isReference(id, in: topology) {
                 touched.updateValue(file.record(id), forKey: id)
-            } else if pathRead[id] != nil || dynamic[id] != nil || drawnConditions[id] != nil {
+            } else if pathSources.of[id] != nil || dynamic[id] != nil || drawnConditions[id] != nil {
                 touched.updateValue(nil, forKey: id)
             }
         }

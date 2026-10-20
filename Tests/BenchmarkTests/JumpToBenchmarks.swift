@@ -29,7 +29,7 @@ extension Budget {
     static let jumpToSlice = 3.0
     /// What a commit costs a file with the plugin in its list, over what it costs without it, before
     /// the first ⌘K and, the catalog read, for a drag's event (a move reads nothing) and a rename (a
-    /// title read): a note of its revision.
+    /// title read): one test.
     static let jumpToUpkeep = 0.1
 }
 
@@ -157,7 +157,7 @@ extension Budget {
             }
         }
     },
-    test("with the plugin in the list a commit costs what it did: before the first ⌘K a note of its revision, the catalog read a move reads nothing and a rename a title") {
+    test("with the plugin in the list a commit costs what it did: before the first ⌘K one test, the catalog read a move reads nothing and a rename a title") {
         for size in sizes {
             let file = CanvasFile(root: generatedBoard(shapes: size))
             let with = try ShippedPlugins.registry(model: ScriptedLanguageModel())

@@ -59,6 +59,7 @@ extension CanvasEditor {
         document.apply(delta)
         var changes = ChangeSet(delta)
         changes.restoredStep = true
+        changes.priors = ChangeSet.Priors(boards: [storedDocument] + delta.boards.keys.map { storedFile[$0] })
         commit(document, changes: changes, applying: delta)
         for participant in undoHistory.participants {
             if let snapshot = snapshots[ObjectIdentifier(participant)] { participant.restoreUndoSnapshot(snapshot, in: self) }

@@ -167,21 +167,15 @@ import TestKit
         expectEqual(h.editor.button(atViewPoint: chipCenter), nil, "the open lock went with the board")
         expectEqual(changedPixels(render(plain), render(h), in: wholeView), 0)
     },
-    test("going back to a board takes back its locked shapes as they were kept; one changed since is looked through again") {
+    test("going back to a board shows its locked shapes' chips, and one changed since as it is now") {
         let inner = locked(Box(chipBox))
         let (h, pocket) = try pocketHarness(root: [locked(Box(chipBox))], inside: [inner])
         h.enter(pocket)
         h.editor.showBoard(.root)
-        #if DEBUG
-        let scanned = h.editor.boardsScannedForLocks
-        #endif
         h.enter(pocket)
         expect(h.editor.button(atViewPoint: chipCenter) != nil, "the locked box inside has its chip")
         h.editor.showBoard(.root)
         expect(h.editor.button(atViewPoint: chipCenter) != nil, "and the root's has its own")
-        #if DEBUG
-        expectEqual(h.editor.boardsScannedForLocks, scanned, "neither board looked through again")
-        #endif
         var file = h.file                                // the pocket's box unlocked while the root is shown
         var unlocked = inner
         unlocked[LockedProperty.self] = nil

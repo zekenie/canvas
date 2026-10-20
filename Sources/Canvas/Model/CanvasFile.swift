@@ -134,6 +134,38 @@ public struct CanvasFile: Equatable, Sendable {
         }
     }
 
+    /// The boards the app can show (`canShow`): the root first, then, breadth first down the tree, the
+    /// boards each one's shapes own, in the order their owners are on it (back to front), each once. Only
+    /// boards with shapes. What reads every board the editor can show walks this, each board's shapes
+    /// `self[board]`; `everyBoard` is every board the file has, shown or not. O(the boards): it reads
+    /// no shape but their owners.
+    public func showableBoards(boardOwningKinds: Set<ShapeKind>) -> [BoardID] {
+        // The boards each board's shapes own, with each owner's place on it: an owner kept aside, or of a
+        // kind that owns none, owns no board the app can show.
+        var owned: [BoardID: [(place: Int, board: BoardID)]] = [:]
+        for owner in children.keys {
+            guard let on = locations[owner] else { continue }
+            let holder = self[on]
+            guard let record = holder[owner], !record.isOpaque, boardOwningKinds.contains(record.kind),
+                  let place = holder.index(of: owner) else { continue }
+            owned[on, default: []].append((place, BoardID(owner: owner)))
+        }
+        var boards: [BoardID] = [.root], met: Set<BoardID> = [.root], next = 0
+        while next < boards.count {
+            let board = boards[next]
+            next += 1
+            for (_, child) in (owned[board] ?? []).sorted(by: { $0.place < $1.place }) where met.insert(child).inserted {
+                boards.append(child)
+            }
+        }
+        return boards
+    }
+
+    /// Every board the file has, the root first, then the others in no order, whether the app can
+    /// show them or not: what reads the file whole walks this (`showableBoards` is what the app can
+    /// show).
+    public var everyBoard: [BoardID] { boards }
+
     /// The boards these shapes own, then the boards those boards' shapes own, and so on, breadth
     /// first: everything deleting the shapes takes with it. Only boards the file has (with shapes).
     public func subtree(ownedBy ids: some Sequence<ShapeID>) -> [BoardID] {

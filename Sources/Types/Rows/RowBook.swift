@@ -249,8 +249,10 @@ public final class RowBook {
     /// Makes the list of notes a relation row of `shape` finds one in (`RelationPicker`, in the product); nil makes none,
     /// and a row then opens no list. The rows view hosts the list (`NotePicking`).
     public var makePicker: (@MainActor (_ shape: ShapeID, _ row: RelationshipRow) -> (any NotePicking)?)?
-    /// The one view over the rows of the shape being edited, if any.
+    /// The one view over the rows of the shape being edited, if any, and whether it's asked to follow what the change
+    /// being delivered moved (`rowsChanged`).
     weak var rowsView: RowsView?
+    var repositionAsked = false
     /// The instances the last change to what a list resolves to reached (`reached(by:)`), by the revision of the
     /// commit that made it.
     var chainReached: (revision: Int, ids: Set<ShapeID>)?
@@ -695,18 +697,10 @@ extension RowBook: EditorService {
 
     /// The shapes a commit changes the texts of without changing them, for Find (`FieldFindPlugin`'s `affected`): the
     /// instances of the types it changed, whose rows may show their values otherwise (a date's kind, a choice's
-    /// label, which rows fold). Find asks before it reads the shapes it names, and the types' own index is behind it
-    /// in the services' order, so this has the index hear the commit now (a second hearing returns at its first
-    /// line, so its turn costs nothing more): a shape read against the types as they were would be read again later
-    /// only if it changed. A commit that only moved shapes names nothing and wakes nothing.
+    /// label, which rows fold). Find asks once every service has the commit, so the types' index has told this book
+    /// what the commit reached. A commit that only moved shapes names nothing.
     public func reached(by changes: ChangeSet) -> Set<ShapeID> {
-        guard let editor else { return [] }
-        if !changes.replacedDocument, changes.added.isEmpty, changes.removed.isEmpty, changes.elsewhere.isEmpty,
-           changes.changed.count == changes.moved.count { return [] }
-        letGo(of: changes)
-        editor.types?.documentDidChange(changes, in: editor)
-        editor.relationships?.catchUp(changes)
-        guard let reached = chainReached, reached.revision == editor.revision else { return [] }
+        guard let editor, let reached = chainReached, reached.revision == editor.revision else { return [] }
         return reached.ids
     }
 

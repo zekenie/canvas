@@ -292,6 +292,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Show something small on shapes, just outside them or on a corner (a pill, a tally, a lock), on kinds you define or not | An `Adornment` type; `x.adornment`, `registrar.adornment(_:on:)` or `scope.adornment` in `registrar.forShapes(holding: P.self)` for the kinds that opted in, returning an `AdornmentLabel` | [Adornments](#adornments), [Titles](#a-horizontal-plugin) |
 | Let the user put a flag on a shape, and show it | An added property, a menu item that sets it, and an adornment whose label reads it | [Something the user turns on](#something-the-user-turns-on) |
 | Keep a service's state for going back to a board | `EditorService.boardWillChange` and `boardDidChange`, with a `BoardStash` (by default a switch is nothing to a service) | [Showing a board](#showing-a-board) |
+| Ask what a change affected, or read other services, once every service has it | `EditorService.documentDidSettle` (`boardDidSettle`), or `editor.onceSettled { … }` for what you're told meanwhile; tell your own observers with `editor.onceHeard { … }` | [Services hear a change](#services-hear-a-change) |
+| Tell what a commit changed of one value of a shape (whether it was locked) without keeping a copy | `changes.before(id)`, the record as the commit found it | [Boards that aren't shown](#boards-that-arent-shown) |
+| Read every board the app can show | `editor.showableBoards` (every board the file has: `file.everyBoard`) | [Boards that aren't shown](#boards-that-arent-shown) |
 | Write to a shape on a board that isn't shown (an answer that lands late), as an undo step made there | `editor.transact(on: board, "Name") { … }`; services hear it in `ChangeSet.boardsChanged` and `elsewhere` | [Boards that aren't shown](#boards-that-arent-shown) |
 | Draw above every shape something that isn't one shape's adornment (a status outline, hints) | `registrar.overlay`, a `CanvasOverlay`; `editor.paintOrder(in: context.visibleRect)` | [Validation](../Sources/Validation/Validation.swift), [Arrows](../Sources/Arrows/ArrowDefinition.swift)' binding hints |
 | Outline shapes in a color of your own (a highlight), a ring for each group a shape is in, filled in the minimap too | `registrar.outlines { … Outlines(tinted: [TintedOutlines(color:shapes:ring:)]) }`: stroked under every other outline | [Outlines](#outlines), [Neighbors](#neighbors) |
@@ -1553,8 +1556,9 @@ A rule that answers from what a service keeps of the committed file reads `conte
 
 `editor.validation?.cachedResult(for: id)` is a shape's verdict as the engine holds it, checking
 nothing (`CachedVerdict`): `.current(result)` (nil for no issues) for a shape on the board shown,
-once the engine has heard every commit and read that board, while the shape isn't waiting to be
-checked again (it changed or moved, or a shape its rules looked up did); `.unknown` otherwise, where
+once the engine has read that board, while the shape isn't waiting to be checked again (it changed
+or moved, a shape its rules looked up did, or the rules said the last commit affected it, which is
+asked then if it hasn't been yet); `.unknown` otherwise, where
 only running its rules can say (`validationIssues(of:in:)`). It never runs a rule, so it's for a
 reader that mustn't make the engine read a board (`result(for:)` checks every shape that's waiting,
 or a whole board it hasn't read, in one turn): a query's `:invalid`, `:warned` and `:incomplete`, asked about many
@@ -1595,8 +1599,9 @@ registrar.forShapes(adopting: .titled) { titled in
 }
 ```
 
-The engine asks it as it hears each commit (looking the service up has it hear the commit first, if
-it hasn't yet: [services hear a change](#services-hear-a-change)), checks those on the board shown again, and
+The engine asks it once every service has taken each commit in (`documentDidSettle`:
+[services hear a change](#services-hear-a-change)), so the rule may read any service as the commit left it, or
+first when something asks what the commit affected; it checks those on the board shown again, and
 those on a board it keeps once that board is taken back. It runs on every commit, so it costs what
 the commit changed, never the board. `engine.affected(by: changes)` is what a commit may change the
 issues of beyond what it changed: whose rules looked one up (`dependents(of:)`) and what the rules
@@ -4491,15 +4496,10 @@ ref.contentsRow(affected: { changes, context in
   when it's first listed.
 - **`affected` runs on every commit**, whether the list shows or not, so it must cost what the
   commit changed, never the board: a service that keeps who reads what (an index kept up to date
-  commit by commit, per shape) answers it. It's asked as the table of contents hears the commit,
-  so a service installed before `TableOfContentsPlugin` has heard it already. One installed after
-  hasn't, and answers from the commit before: that names the right rows as long as what a row
-  reads follows from its own shape, since a commit that changes that changes the shape, whose row
-  is made again anyway.
-- **Read as services hear a commit**, the table of contents has heard it: looking it up has it hear
-  the commit first ([services hear a change](#services-hear-a-change)). Read before it has heard one
-  by another way (a reference kept from a `make`), it makes every kept row of a kind with `affected`
-  again, as it reads every mark again, since only hearing of the commit says which it affects.
+  commit by commit, per shape) answers it.
+- **What a commit affects** is asked of the rows and marks once every service has the commit
+  (`documentDidSettle`: [services hear a change](#services-hear-a-change)), so an `affected` may read
+  any service as the commit left it; a read of the list before then asks them first.
 - **Other boards.** A row may read a shape on any board of the file (a mention of a shape inside a
   subboard: `editor.file.record(id)` finds it). What a commit did beyond its board is in
   `changes.elsewhere` (the shapes of the boards a deletion took or a paste brought, and those a
@@ -4557,15 +4557,13 @@ registrar.forEveryShape { every in   // every shape is checked (its schema, at l
   hands both over (`affected(by:)`), with what was named on a board while it wasn't shown when
   it's given that board's `elsewhere` on going back: a rename on the root that gives a title in a
   subboard a second holder marks its row there. A mark
-  read from its shape alone leaves `affected` out. A service that reads the table of contents as
-  it hears of a commit, before the table of contents does, gets every row's marks read again,
-  since only hearing of the commit says which it affects.
+  read from its shape alone leaves `affected` out.
 
-  A rule's state can also change with no commit at all (a caret leaving a row, a type edited
-  after the engine heard the commit). `editor.validation?.recheck(ids)` checks those shapes
+  A rule's state can also change with no commit at all (a caret leaving a row, a relationship's
+  verdict moving far from its arrow). `editor.validation?.recheck(ids)` checks those shapes
   again: on the board shown at the next read, with the ring redrawn, on a board the engine keeps
-  when it is taken back. It tells the table of contents to make their rows again itself, since
-  the table of contents has asked `affected(by:)` by the time a later service can name them.
+  when it is taken back. It tells the table of contents to make their rows again itself, since no
+  commit may come to ask.
 - **Several marks** on one row stand side by side: the kind's, then those whose scope reaches it,
   each in plugin order (`ContentsMarkContribution`, contributed for a kind, is a kind's own).
 - **A scope** says which kinds a mark is for, so it goes only on those that opted into what it marks,
@@ -5220,11 +5218,10 @@ their faces ([Drawing and cost](#drawing-and-cost)); a shape drawn as a skeleton
 shape, the clock, a service that doesn't say) goes stale. `adornmentsDidChange` also redraws the
 canvas, and has the select tool look again for a button under a still pointer
 (`canvasButtonsDidChange`), so a lock that comes or goes under it is hovered, or no longer is. A
-shape's labels read as services hear a commit (Selection looking for a button under a still
-pointer) are read after Adornments has heard it, since looking it up has it hear the commit first
-([services hear a change](#services-hear-a-change)); read before it has heard one by another way (a
-reference kept from a `make`), they're made afresh and not kept, so they're never stale, and nothing
-else is thrown away.
+shape's labels read as services take a commit in are read after Adornments has, since looking it up
+has it take the commit in first ([services hear a change](#services-hear-a-change)); what
+`adornmentsDidChange` is told then has its leads looked at once services have settled, and the select
+tool looks for a button under a still pointer then too.
 
 ### Drawing and cost
 
@@ -5538,7 +5535,7 @@ adornment, so a [canvas button](#canvas-buttons)), and Locking does the rest
 registrar.declare(LockedProperty.self)                  // `locked: true` on a locked shape; nothing on the rest
 registrar.optInEveryShape(to: LockedProperty.self)
 registrar.readOnlyShapes { $0.isLocked }                // the core refuses changes to them
-registrar.service { LockState(editor: $0) }             // which shapes are locked, and which just-unlocked shapes show their lock open (a ChipFade)
+registrar.service { LockState(editor: $0) }             // which just-unlocked shapes show their lock open (a ChipFade); what is locked is the records'
 registrar.command(.lock, title: "Lock", runs: .whenIdle, isEnabled: { !$0.locks.allLocked }) { subject in
     subject.editor.lock(subject.locks.tried)            // the shapes whose own lock can change
 }
@@ -5645,11 +5642,10 @@ extension LockChip: ClickableAdornment {                // a click on the chip: 
   refused shape shakes, locked or not: a shape whose board holds a locked shape isn't deleted
   either, so it's the one that shakes. A container shakes with what it holds, at any depth, as it
   moves with it (a locked frame tried shakes with its notes, not under them).
-- **Another board shown** has its own locks: `LockState` takes back the locked shapes it kept for
-  the board when it was left (a `BoardStash`, while the board's revision is unchanged), else finds
-  them again (one pass, about a millisecond at 10,000, which going back to a board shown lately
-  never pays; `boardsScannedForLocks`, debug builds, counts the passes), and what was under way on
-  the board left, its shakes (`RefusalShake`) and the locks showing open (`ChipFade`), stops there. A locked shape that owns a board is entered like any other:
+- **Another board shown** costs Locking nothing: `LockState` keeps no copy of which shapes are
+  locked (a commit's unlocked shapes are those locked before it, `ChangeSet.before`, and not now),
+  and what was under way on the board left, its shakes (`RefusalShake`) and the locks showing open
+  (`ChipFade`), stops there. A locked shape that owns a board is entered like any other:
   entering isn't a change to it, and what's on its board is read-only (above).
 - **The chip** is an 18-point disc with a lock, the dark of a title's pill, at the right end of the
   row just above the shape, ending at its right edge. Its order is 300, a state that comes and
@@ -6274,7 +6270,7 @@ what Topology says stands for a shape (`topology.standIns(for:)`), and no core k
 registrar.declare(PublicProperty.self)                  // `public: true` on a public shape; nothing on the rest
 registrar.optInEveryShape(to: PublicProperty.self, where: { !($0 is any NeverPublic) && !($0 is any AlwaysPublic) })
 registrar.contribute(true, to: PublishingDials.self)    // so the registry checks no definition adopts both
-registrar.service { PublishingState(editor: $0) }       // which shapes are public, what stands for them, the chips showing Private, `admitting`
+registrar.service { PublishingState(editor: $0) }       // what stands for each shape, the chips showing Private, `admitting`; what is public is the records'
 registrar.command(.makePublic, title: "Make Public", isEnabled: { … }) { … }   // and .makePrivate: the menu, `/public` and the chip run them
 registrar.contextMenuForCanvas { MenuItem(command: .makePublic, in: PublishMenuGroup.self, when: { … }, dims: true); MenuItem(command: .makePrivate, …) }   // every menu's: on a mix, what can be
 registrar.forShapes(holding: PublicProperty.self) { publishable in   // what Publishing puts on shapes goes on the kinds that can be public, and no other
@@ -6298,10 +6294,9 @@ registrar.forShapes(holding: PublicProperty.self) { publishable in   // what Pub
   capabilities because `optInEveryShape`'s `where:` sees only definitions, while the property table
   is built. A definition adopting both is refused when the registry is built
   (`PublishingDials.check`, which runs because Publishing always contributes to it).
-- **`PublishingState`** (`editor.publishing`, a service) keeps which shapes of the board shown are
-  public (so a commit that makes one private is told from one that never was; a `BoardStash` keeps
-  them for boards left, `boardsScannedForPublic`, debug builds, counts the passes) and the chips
-  showing "Private". `admitting` is what the query engine, or anything off the main actor, asks of a
+- **`PublishingState`** (`editor.publishing`, a service) keeps the chips showing "Private", and no
+  copy of which shapes are public: a commit that makes one private is told from one that never was
+  by what the shape was before it (`ChangeSet.before`). `admitting` is what the query engine, or anything off the main actor, asks of a
   shape to know whether it may be stood for: made once, when the editor is, from the always-public
   kinds and `topology.standInKinds`, `@Sendable` (`admittingMade`, debug builds, counts the makings: one).
   It follows Topology (`topology.follow`) for the shapes a change to `stands-for` edges touches, a
@@ -6636,9 +6631,8 @@ follows undo and redo, during which nothing may):
   [`follow`](#provided-answers-the-one-delivery-settling), and what it changed on other boards) are
   resolved again. A commit
   that only moved shapes costs nothing, and showing another board reads no mention text and
-  resolves nothing. It asks Topology to catch up with a commit before reading it
-  (`topology.catchUp`), in case it hears the commit first, and looks Topology's service up as it's
-  made, so that one is made, and hears each commit, before it. Undo and redo are commits too, with
+  resolves nothing. It looks Topology up as it begins to take each commit in, so
+  Topology has the commit before Mentions reads it, and as it's made, so that one is made before it. Undo and redo are commits too, with
   exact change sets (`restoredStep`), so the state follows a step undone as any other: a rename
   undone gives every pill, row and editor its name back, and a deletion undone makes its pills
   live. A file or board put in place (`replaceFile`, `replaceDocument`) is read afresh, with
@@ -7583,12 +7577,12 @@ a list without Find leaves them out:
 |---|---|---|
 | Titles' `TitleFindPlugin` | each title, named or derived (`registry.title(of:)`), on the kinds that hold `TitleProperty` or derive one | the pill's whole capsule, ringed (it may cut the title short); zoomed out, the cover |
 | Mentions' `MentionFindPlugin` | each `MentionTexts` placement's text (a  note's, an arrow's label), each mention its live name | from the render's own layout, which Find's asking keeps with the drawn text (`MentionTextMemo`; drawing keeps none); a hit in a name is the whole pill; `affected`: `rowsAffected(by:)`. Two contributions, one a look: the placements on a shape's surface, marked, and those `overCanvas` (an arrow's label), washed |
-| Types' `FieldFindPlugin` | each value a note that is one holds, as its row shows it (a row with more in it: every text under it, a line each) | the row's value as it hugs it, the fold's words for a folded field; its `affected` has Types' index hear the commit first (`RowBook.reached(by:)`) |
+| Types' `FieldFindPlugin` | each value a note that is one holds, as its row shows it (a row with more in it: every text under it, a line each) | the row's value as it hugs it, the fold's words for a folded field; its `affected` is `RowBook.reached(by:)`, asked once every service has the commit |
 
 ### The index, and the search off the main actor
 
-- **Nothing before the first ⌘F.** Find's index is built then; until then a commit costs a
-  revision noted. Built, it holds every text every shape shows on every board the editor can show
+- **Nothing before the first ⌘F.** Find's index is built then; until then a commit costs one
+  test. Built, it holds every text every shape shows on every board the editor can show
   (none kept aside), folded once, by shape (never in file order). The build reads the boards' ids,
   then shapes a slice of 2 ms of the main actor at a time (`FindStyle.buildSlice`) on the editor's
   scheduler, the field showing a spinner meanwhile, so a first ⌘F on a big file drops no frame.
@@ -7685,7 +7679,7 @@ hiding the inspector while Find is open closes Find: the window's rule for any t
 
 ### What it costs
 
-A commit before the first ⌘F costs a revision noted; a drag with Find open, nothing; an edit, the
+A commit before the first ⌘F costs one test; a drag with Find open, nothing; an edit, the
 shapes it changed. A keystroke costs the main actor a fold and a handover, and the search runs off
 it. A frame costs the shapes in view with hits, their layouts once each. `./build.sh bench` holds
 them (Find's suite, `.claude/rules/benchmarks.md`).
@@ -8072,9 +8066,10 @@ Beside the index's questions, it reads the file whole:
 **Hold one for a task, never past it.** Nothing is copied while it's held until a commit changes a
 table it shares; that commit copies the table, once (a move changes none of the index's; a shape
 added or removed copies the file's `locations`). Kept, a snapshot makes every later commit's first
-change to a table copy it. And one taken through a reference kept from a `make`, as services hear a
-commit and before the index has heard it, is that commit's file with the commit before's edges, as
-the index's own answers are then: `catchUp` first.
+change to a table copy it. And one taken as services take a commit in has the commit: the index is
+looked up (`editor.topology`), or kept from the `make` of a service that is hearing it, and either way
+has taken the commit in first. One taken off an index that hadn't would hold the commit's file with the
+commit before's edges.
 TopologyTests' Snapshots suite holds a snapshot to the index on every question, over a seeded run of
 every kind of commit, switch and undo, and a snapshot taken a step before to its old answers.
 
@@ -8097,10 +8092,10 @@ every kind of commit, switch and undo, and a snapshot taken a step before to its
   other. Showing another board reads nothing: the index is the file's (`boardDidChange` does
   nothing but for a file put in place).
 - **Heard first.** A service that reads the index as it hears a commit finds it up to date,
-  wherever the two are in the list: looking it up (`editor.topology`) has it hear the commit first
-  ([services hear a change](#services-hear-a-change)). One that holds a reference it kept from its
-  `make` calls `topology.catchUp(changes)` with the commit it holds, which does nothing once the
-  index has heard it (MentionState does). The shipped list has `TopologyPlugin()` right after
+  wherever the two are in the list: looking it up (`editor.topology`) has it hear the commit first,
+  and so does a reference kept from a service's `make`, since what a service looked up as it was
+  made takes each change in before it ([services hear a change](#services-hear-a-change)): MentionState
+  and the relationship index keep theirs. The shipped list has `TopologyPlugin()` right after
   `SelectionPlugin()`.
 - **A provide** costs what it changes: the answered stand-ins' rule worked out, and the carriers
   at those whose shapes changed set again, each edge diffed and filed under up to four ends and its
@@ -9567,7 +9562,7 @@ untinted.
   kept aside, each with the container it's directly in (a frame, else the owner of its board), its
   title's folded keys in one buffer, as Mentions' catalog keeps its labels. It's built the first
   time the palette opens, in slices of 2 ms on the main actor (`editor.scheduler`; the first at once),
-  so a commit before then costs a note of its revision; after, a commit costs what it changed (a
+  so a commit before then costs one test; after, a commit costs what it changed (a
   move reads nothing; a rename reads the shape; shapes on other boards a commit reached, a deleted
   subboard's or a paste's, are taken out or read as well), and a file put in place reads it again. A commit while it's being built is applied to what's read so far,
   the shapes on boards not read yet read when their turn comes, so commits that never stop (an
@@ -10206,7 +10201,7 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   as Boards calls a container in a path (`registry.containerName(of:)`, which is why References
   imports Boards), an untitled one by what its kind is called, fainter. The reference's own row is where it is, as any shape's: in a frame, under the
   frame's row. `rowsAffected(by:)` names the rows whose path was read from a shape a commit
-  changed (`pathReaders`, O(what changed); a move names none), and PathTests hold it. An arrow that starts at a reference nests under the
+  changed (`pathSources`, the core's `ReverseIndex`, O(what changed); a move names none), and PathTests hold it. An arrow that starts at a reference nests under the
   shape the reference stands for when that's on the same board ([Arrows' arrow row](#the-table-of-contents),
   generic over stand-ins), else under the reference.
 - **Tests.** ReferencesTests hold it over CanvasTesting's boxes and tiles as what it stands for (its `makes` too, through `registry.standIns`: a reference made for a public shape, fitted, standing for it once inserted, and for nothing where the shape isn't public); CompositionTests'
@@ -11760,8 +11755,8 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
 - **⌘F finds a value.** Types' `FieldFindPlugin` (a plugin value of its own, after Find and Types) gives
   [Find](#find) the texts of a note that is one's values as its rows show them, and a hit marks that row's value
   (a match inside a row with more in it marks the row, a folded one the fold). Its `affected` is
-  `RowBook.reached(by:)`, which has the type index hear the commit before Find reads the instances of a type
-  that changed.
+  `RowBook.reached(by:)`, asked once every service has the commit, so the type index has told the book which
+  instances the commit reached.
 - **For [Neighbors](#neighbors)**, `TypeLightsPlugin` (a plugin value of Types' own, after Neighbors, and after
   mentions' lights in the shipped list) gives one light, Instances (`TypesStyle.instances`): what is of the
   hovered type, in pink (`TypesStyle.instancesLight`), `:edge-to(#id[schema], is-a)` (only while it is a type), so a type's Connections tab lists
@@ -11867,7 +11862,8 @@ and a pattern ICU cannot read is not the note's fault. The formats `email`, `dat
 `date-time`, `time`, `uri` and `uuid` are checked, as `SchemaFormats.standard`. One checker is kept for each
 distinct list of types and one answer for each shape asked; an answer is trusted while its inputs are
 the ones it was made from, so nothing is invalidated when a type changes. A type's edit reaches the
-shapes through `TypeIndex.onChange` and `ValidationEngine.recheck`.
+shapes through `TypeIndex.onChange`, and Validation through the rule's `affected`
+(`FieldChecks.affected(by:)`), asked once every service has the commit.
 
 The caret is `typing`: the path of the field being typed in is left out of `check(of:)`, so a half-typed
 value is never red; it returns when the caret leaves.
@@ -12492,36 +12488,49 @@ nothing, and the view chooses, as it always has. A note too short for its text a
 
 ### Services hear a change
 
-A commit and another board shown are the two changes every service hears (`documentDidChange`,
-`boardDidChange`). The editor tells them in the order the services were made (plugin order, a
-service another one's `make` looks up first), each once, and keeps the revision each has heard. A
-service looked up while services hear a change hears it first, if it hasn't yet, so what reads a
-service as it hears a change reads it as of that change, wherever the two are in the list: the
-table of contents, hearing a commit, reads Mentions' names as the commit left them though Mentions
-comes after it; Validation's rule asks Titles' index, which hears the commit as it's asked; a
-layout provider reads the service it answers from through `reading.service(_:)`. The service then
-isn't told again in its turn.
+A commit and another board shown are the two changes every service hears, in two rounds. In the
+first, each takes the change in (`documentDidChange`, `boardDidChange`), told in the order the
+services were made (plugin order, a service another one's `make` looks up first), each once. A
+service looked up in that round takes the change in first, if it hasn't yet, so what reads a
+service as services take a change in reads it as of that change, wherever the two are in the list:
+Validation's rule asks Titles' index, which takes the commit in as it's asked; a layout provider
+reads the service it answers from through `reading.service(_:)`; a first visit's camera fit lays the
+board out before the switch is told. The service then isn't told again in its turn. What a service
+looked up as it was made takes each change in before it does, so a reference it kept from its `make`
+(for a frame's sake) reads as of the change whenever it hears, with no lookup.
 
 ```swift
 extension NameRows: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        // Wherever NameIndex is in the list, looking it up has it hear this commit first.
+        // Wherever NameIndex is in the list, looking it up has it take this commit in first.
         guard let index = editor.service(NameIndex.self) else { return }
         for id in changes.edited { rows[id] = index.name(of: id) }
     }
 }
 ```
 
-A service looked up while it hears the change itself (it asks for itself, or what it read or told
-asks for it back) is as it is, part way: it noted the revision before it was told, as each
-service's own guard does. A reference kept from `make` is no lookup, and a service read through one
-is as the order left it, so one that holds a reference catches it up itself (Mentions calls
-Topology's `catchUp`). Nothing may change the file while services hear a change: a transaction
-(`transact`, `transact(on:)`), a board shown, a file put in place or Delete Hidden Shapes then is a
-precondition failure, so a service that writes in answer waits a turn (`editor.scheduler`), and no
-commit is heard before the one that came before it. The other hooks (`didRefuseChanges`,
+A service is busy while its own hook runs: asking for it then (it asks for itself, or what it read
+or told asks for it back) is a mistake, which stops a debug build and names the services busy (the
+app carries on, the service as it is, part way). What a service tells others of a change it tells
+once it has taken the change in (`editor.onceHeard { … }`: as its hook returns, at once outside a
+delivery), so they may read it then: Topology's followers, the type index's observers.
+
+In the second round every service settles (`documentDidSettle`, `boardDidSettle`, nothing by
+default), with every service holding the change and none busy, and then what waited for that runs
+(`editor.onceSettled { … }`, in the order asked, at once outside a delivery). What asks what a
+change affected, reads around the file, looks at what others laid out or tells the window waits for
+the second round: Validation asks its rules' `affected` as it settles, the table of contents its
+rows' and marks', Find's index follows; the select tool's look for a button under a still pointer,
+Adornments' look at the pills whose room may have changed, and the cards' following of the
+relationships wait with `onceSettled`. `setNeedsDisplay()` asked during a delivery is the change's
+own redraw, which comes once services have settled; `refreshCursor()` reaches the host then.
+
+Nothing may change the file while services hear or settle: a transaction (`transact`,
+`transact(on:)`), a board shown, a file put in place or Delete Hidden Shapes then is a precondition
+failure, so a service that writes in answer waits a turn (`editor.scheduler`), and no commit is
+heard before the one that came before it. The other hooks (`didRefuseChanges`,
 `shapeTintsDidChange`, `editingDidEnd`, `didPlace`, `toolDidChange`, `drawsSkeletonsDidChange`,
-`boardWillChange`) are told in order, catching nothing up. CanvasTests' DeliveryTests hold it.
+`boardWillChange`) are told in order, in one round. CanvasTests' DeliveryTests hold it.
 
 ### Outlines
 
@@ -13000,9 +13009,9 @@ of both boards' shapes; one that keeps state per board takes it back from a `Boa
 (kept in `boardWillChange`, taken in `boardDidChange`, given back only while the board's revision
 is unchanged, at most 8 boards, the path's longest), and may read another service there, which
 hears the switch first. In the shipped plugins, the table of
-contents, Validation and Locking keep each board's rows, issues and locked shapes in a stash (the
-table of contents drops its stash when a file put in place shows another board and some row reads
-other shapes, since that switch doesn't say what the file changed on the boards kept);
+contents, Validation and Grouping keep each board's rows, issues and grouped shapes in a stash (the
+table of contents and Validation drop theirs when a file put in place shows another board, since that
+switch doesn't say what the file changed on the boards kept, which a row or a rule may read);
 Selection makes the board left a step back and lets go of the press, hover and buttons; Boards
 makes the path again; Adornments drops its labels (made again only for the shapes a frame draws,
 and a label kept would miss an open lock that Locking let go of); Types' index and sync keep
@@ -13039,7 +13048,12 @@ boards it took or brought, and those it changed, or moved onto, on a board it ke
 put in place over the board shown, the shapes its other boards don't have as they were). No shape
 there stays on the board shown (one moved off it is removed from it too), so what a service keeps of
 the board shown needn't follow them; what reads shapes anywhere in the file does (a row showing the
-name of a shape on another board, gone with the board its owner took).
+name of a shape on another board, gone with the board its owner took). `changes.before(id)` is a
+shape's record as the commit found it, wherever it was (a shape moved onto a board is found as it was
+on the other; nil for one the commit brought into the file), so a service that keeps what follows from one value of a shape (whether it's locked, public, grouped)
+compares the record now with it rather than keep a copy. What reads every board the app can show
+walks `editor.showableBoards` (the root, then down the tree the boards each one's shapes own, in
+their owners' order, each once, O(the boards)); what reads the file whole, `file.everyBoard`.
 
 Two things edit a board that isn't shown: Delete Hidden Shapes (`discardKeptAside`, [the editor
 and the file](#the-editor-and-the-file)), which takes shapes kept aside from whatever boards hold
@@ -13796,7 +13810,8 @@ kind and its tool, what it stands in for (`stands in → reference`), its table-
 declares for them, with its edge type (`edge type note-link`); arrow-ports' `connector → arrow`
 makes arrows what ports draw, and brings the opt-in before it (`property channel → arrow`), the
 family's edge type (`edge type arrow`) and the arrows' edges (`edges → arrow`). `topology` is the
-index of them all (`TopologyIndex`), right after Selection, so it hears each commit first.
+index of them all (`TopologyIndex`), right after Selection (a lookup has it take a commit in first
+wherever it is).
 `mention text → sticky-note` and `mentionable → sticky-note` are Mentions' opt-ins: a note's text
 shows pills (`note.mentionText`), and text may mention a note (`note.mentionable`). A subboard is mentionable
 too (`mentionable → subboard`: called by its title, and following a mention of one enters it).
@@ -14153,8 +14168,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   aside), every way a commit comes (an insert, a change, a removal, a move that reads nothing,
   `recordsRead`; `transact(on:)`, a pocket's deletion and its undo, a paste with boards,
   `replaceFile`, `replaceDocument`, Delete Hidden Shapes undone, a switch that reads nothing),
-  `end(_:)`, containment, `revision(of:)` and `touched`, and `catchUp` from a service made before
-  the index's. Their Containers suite holds containers on boards as the tree's second link, with
+  `end(_:)`, containment, `revision(of:)` and `touched`, and a service made before the index's that
+  looks it up as it takes a commit in. Their Containers suite holds containers on boards as the tree's second link, with
   CanvasTesting's corrals (`graph(file, more: [CorralsPlugin()])`, `held(_:in:)` for a record in a
   container, and `Pen`: corrals nested on the root, one holding a pocket whose board holds a corral
   holding a pocket): parent, children, ancestors, file order and its keys, containers the core

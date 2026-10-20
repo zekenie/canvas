@@ -236,8 +236,7 @@ extension ReferenceState {
                 dynamic[record.id] = Finding(key: Self.key(query: query, all: props.all), all: props.all)
             }
         }
-        scan(file.root)
-        for document in file.children.values { scan(document) }
+        for board in file.everyBoard { scan(file[board]) }
         for id in before.union(dynamic.keys) { answered.bump(id) }
         if !dynamic.isEmpty { answerSoon() }
     }

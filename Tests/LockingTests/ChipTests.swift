@@ -222,16 +222,16 @@ let elsewhere = CGPoint(x: 380, y: 280)
         h.move(to: CGPoint(x: 31, y: 132))                                          // on the first box's chip
         searches.count = 0
         h.editor.unlock(boxes)
-        expectEqual(searches.count, 2, "Selection's look after the commit, and Locking's one for all the locks it opened")
+        expectEqual(searches.count, 1, "the select tool's one look once services have settled: Locking's word, as it hears the commit, waits for it")
         expect(boxes.allSatisfy { h.editor.adornmentFrames(of: $0).count == 1 }, "every lock shows open")
         expectEqual(h.editor.hoveredButton, AnyHashable(AdornmentButton(LockChip.self, on: boxes[0])), "the open lock under the pointer, hovered")
         searches.count = 0
         h.editor.lock(boxes)                                                         // while their locks show open
-        expectEqual(searches.count, 2, "locked again")
+        expectEqual(searches.count, 1, "locked again")
         h.editor.unlock(boxes)
         searches.count = 0
         h.editor.transact { $0.delete(Set(boxes)) }
-        expectEqual(searches.count, 2, "deleted with their locks open")
+        expectEqual(searches.count, 1, "deleted with their locks open")
         expectEqual(h.editor.hoveredButton, nil)
     },
     test("in other tools a chip is only drawn: the hand tool pans where it is") {
