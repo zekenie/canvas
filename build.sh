@@ -1317,6 +1317,10 @@ PLIST
     done
     for file in $APP/**/*(.DN); do (( ${bundled[(Ie)$file]} )) || { rm -f -- $file; replaced+=1 }; done
     find $APP/Contents/Resources -type d -empty -delete 2> /dev/null || true
+    # macOS reads a bundle again (its Info.plist, its icon) only when the bundle's own date moves,
+    # and replacing the files in it doesn't move it: a build that changed the bundle touches it, or
+    # the Dock keeps showing what an earlier build was (the generic icon, from before the app had one).
+    if (( replaced )); then touch $APP; fi
     # Copies of the app that are gone. Every checkout's build is a copy of the app, and macOS
     # registers one, with its Quick Look extensions, when it's opened; removing a worktree
     # unregisters nothing. LaunchServices hands Quick Look one copy's extension, whichever it picks,

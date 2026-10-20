@@ -1,6 +1,6 @@
 # App icon design concepts
 
-Claude Code session `a84e52e9-7563-4281-92b5-eed3265c628b`, 2026-10-20 12:48 to 2026-10-20 13:58 UTC, on `claude/app-icon-design-73a1a6`.
+Claude Code session `a84e52e9-7563-4281-92b5-eed3265c628b`, 2026-10-20 12:48 to 2026-10-20 21:12 UTC, on `claude/app-icon-design-73a1a6`, `main`, `bundle-touch`.
 
 Condensed: the owner's messages, questions and answers, the assistant's prose, plans, agent briefs and git commands. Tool output is left out.
 
@@ -559,3 +559,141 @@ git rev-parse --short main HEAD && git merge-base --is-ancestor main HEAD && ech
 
 [2026-10-20 13:58] ASSISTANT:
 Main hasn't moved, so the branch is already on top of it. The main checkout has an untracked `dogfood/model/` folder that isn't mine; the merge won't touch it. Now the session record:
+
+[2026-10-20 13:58] ASSISTANT:
+The record holds your messages, my replies, the briefs and the git commands, and nothing sensitive. Adding it and the `Session:` trailer to the commit.
+
+[2026-10-20 13:58] GIT:
+S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-module-abstraction-scan-a9d036/a84e52e9-7563-4281-92b5-eed3265c628b/scratchpad && git log -1 --format=%B > $S/landing-msg.txt && python3 - "$S/landing-msg.txt" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = "\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+assert s.count(old) == 1
+s = s.replace(old, "\nSession: history/sessions/2026-10-20-app-icon-design-concepts-a84e52e9.md" + old)
+open(p, "w").write(s.rstrip("\n") + "\n")
+PYEOF
+git add history/sessions/2026-10-20-app-icon-design-concepts-a84e52e9.md && git commit -q --amend -F $S/landing-msg.txt && git log -1 --format='%h %s' && git log -1 --format=%B | tail -3 && git show --stat HEAD | tail -4
+
+[2026-10-20 13:59] ASSISTANT:
+Pushed: `origin/main` is at `47c1fe7c`. Cleaning up the worktree and branch now.
+
+[2026-10-20 13:59] WRAP-UP:
+The slate icon is on main as 47c1fe7c and pushed to origin. This session's worktree and branch are removed. Your main checkout's app shows the icon after its next build.
+Ask:
+
+[2026-10-20 13:59] ASSISTANT:
+It's on main as `47c1fe7c` and pushed to `origin/main`. I removed this session's worktree and branch.
+
+Your main checkout's app shows the icon once it's rebuilt:
+```bash
+./build.sh && open build/InfiniteCanvas.app
+```
+
+[2026-10-20 14:02] USER:
+I’m doing it from my phone and can’t run the command I want you to have this merged and pushed I’m unclear if you did that or did not do that
+
+[2026-10-20 14:02] ASSISTANT:
+Yes, both are done, and there's nothing for you to run.
+
+- **Merged:** main is at `47c1fe7c`, the icon commit.
+- **Pushed:** the push to GitHub moved `zekenie/canvas` main from `d8d58de6` to `47c1fe7c`.
+
+The build command I gave was optional. It only rebuilds the app on your Mac so you can see the new icon there, and it can wait until you're back at your computer.
+
+[2026-10-20 20:58] USER:
+[image attached]
+
+[2026-10-20 20:58] USER:
+built main.... no dice
+
+[2026-10-20 20:59] ASSISTANT:
+The Dock is showing the generic icon for the main checkout's build. Checking what the built bundle holds and what macOS has registered for it.
+
+[2026-10-20 20:59] ASSISTANT:
+macOS still has the old record: it returns the generic icon for that bundle. Refreshing the registration:
+
+[2026-10-20 20:59] ASSISTANT:
+Still generic after a fresh registration, so it isn't just the stale date. Checking what LaunchServices has registered under the app's identifier; another copy may be shadowing it.
+
+[2026-10-20 21:01] ASSISTANT:
+Still generic, so the cache isn't keyed on the executable either. Looking at what macOS is actually returning for that path.
+
+[2026-10-20 21:01] ASSISTANT:
+Same blank document without the sandbox, so the sandbox wasn't the cause. Checking the icon macOS hands out for the *running* app, which is closer to what the Dock uses:
+
+[2026-10-20 21:03] ASSISTANT:
+The running app now reports the slate icon to macOS. Your Dock just hasn't redrawn its tile yet, because it fetched the icon at launch, before the registration was refreshed.
+
+[2026-10-20 21:03] WRAP-UP:
+The icon didn't show because macOS kept the bundle's record from before it had one: the build replaces files inside the app but never touches the bundle itself. I refreshed the record, and the running app now reports the slate icon; the Dock updates on relaunch.
+Ask: Fix the build so a new icon or Info.plist shows up without this?
+
+[2026-10-20 21:03] ASSISTANT:
+Your build has the icon; macOS just didn't notice. The build replaces files inside the app bundle but never updates the bundle folder itself. macOS goes by the folder, so it kept its record of the app from before it had an icon.
+
+I refreshed that record, and macOS now reports the slate icon for the running app. Your Dock still shows the tile it drew at launch, so **quit Infinite Canvas (⌘Q) and open it again** to get the new icon.
+
+If it's still generic after that, this rebuilds the bundle from scratch, which drops anything stale:
+```bash
+rm -rf build/InfiniteCanvas.app && ./build.sh && open build/InfiniteCanvas.app
+```
+
+A scratch test confirmed the cause: an icon added inside a bundle didn't show until the bundle itself was touched. The real fix is one line in `build.sh` that touches the bundle whenever the build changes it, so this won't happen again.
+
+[2026-10-20 21:09] USER:
+Fix build.sh so a changed bundle is touched and macOS rereads it.
+
+[2026-10-20 21:09] ASSISTANT:
+Doing it in a fresh worktree off main, then review, then I'll ask before landing.
+
+[2026-10-20 21:10] EDIT .claude/worktrees/bundle-touch/.claude/rules/build.md:
+The app bundle's files change only when they do: macOS checks each new executable the first time it runs (about 0.3 s each, one at a time). A build that changed any of them touches the bundle, since macOS reads a bundle again (its Info.plist, its icon) only when the bundle's own date moves, which replacing the files in it doesn't: the main checkout's build, older than the icon, kept the generic icon in the Dock after a build had added it.
+
+[2026-10-20 21:10] ASSISTANT:
+While that builds, the commit message:
+
+[2026-10-20 21:10] COMMIT MESSAGE FILE touch-msg.txt:
+A build that changes the app's bundle touches it, so macOS reads its Info.plist and its icon again
+
+The owner built main after the icon landed (47c1fe7c) and the Dock still showed the generic app icon. The bundle had AppIcon.icns and CFBundleIconFile, and LaunchServices' record of it, once refreshed, named the icon; but macOS reads a bundle again only when the bundle folder's own date moves, and build.sh replaces the files inside the bundle without ever moving it. The main checkout's InfiniteCanvas.app was still dated Sep 27, so macOS kept the record it made before the app had an icon. A scratch bundle showed the same: an icon added inside it stayed generic until the bundle was touched, and showed at once after.
+
+So a build that replaced or removed any of the bundle's files touches the bundle. One that changed nothing leaves it alone, as it leaves every file in it, so an unchanged app costs macOS nothing on its next launch.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+[2026-10-20 21:10] WRAP-UP:
+The fix is written (build.sh touches the bundle when it changes it, and the build notes say why) in a new worktree, bundle-touch. Its first full build is running; then two rebuilds check the bundle's date moves only when something changed, then the review.
+Ask:
+
+[2026-10-20 21:10] ASSISTANT:
+The fix is written: `build.sh` now touches the app bundle whenever a build replaces or removes anything in it, and the build notes explain why. It's in a fresh worktree, `bundle-touch`, and its first full build is running. Next, two quick rebuilds check that the bundle's date moves only when something actually changed, then the review, and then I'll ask before landing.
+
+[2026-10-20 21:11] NOTICE:
+background task completed: Background command "Build the worktree's app with the fix" completed (exit code 0)
+
+[2026-10-20 21:11] ASSISTANT:
+Both checks pass: a rebuild that changes nothing leaves the bundle's date alone, and one that changes the Info.plist moves it. Committing and reviewing.
+
+[2026-10-20 21:11] GIT:
+git add build.sh .claude/rules/build.md && git commit -q -F /private/tmp/claude-501/-Users-zekenie-code-native-canvas/a84e52e9-7563-4281-92b5-eed3265c628b/scratchpad/touch-msg.txt && git log --oneline -1 && git show --stat HEAD | tail -3
+
+[2026-10-20 21:12] WRAP-UP:
+The build fix is committed on branch bundle-touch (aa32b4c4): a build that changes the bundle touches it, checked both ways. The review found nothing to change; it isn't on main yet.
+Ask: Land it on main and push?
+
+[2026-10-20 21:12] ASSISTANT:
+The fix is done and checked; it's committed on its branch (`aa32b4c4`) and not yet on main. A build that replaces or removes anything in the app bundle now touches the bundle, so macOS rereads its Info.plist and icon. A build that changes nothing leaves it alone.
+
+I checked it both ways in the new worktree: a rebuild with no changes kept the bundle's date, and one that changed the Info.plist moved it. The review raised two possible gaps; I looked into both and neither needs a change.
+
+Your main checkout's app is already sorted from earlier, so quitting and reopening it should show the slate icon even before this lands.
+
+[2026-10-20 21:12] USER:
+Land it on main and push to origin main.
+
+[2026-10-20 21:12] ASSISTANT:
+Landing: rebase check, session record, fast-forward main, push, clean up.
+
+[2026-10-20 21:12] GIT:
+git rebase main 2>&1 | tail -1 && git log --oneline -2 && python3 .claude/skills/history/condense.py --self
