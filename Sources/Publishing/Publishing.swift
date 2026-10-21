@@ -69,13 +69,13 @@ extension CanvasEditor {
     /// Publishing's service for this editor; nil without PublishingPlugin.
     public var publishing: PublishingState? { service(PublishingState.self) }
 
-    /// Makes these shapes public, in one transaction (an undo step "Make Public", unless it's part
-    /// of another). A kind that holds no `public` property takes nothing; a read-only shape is
-    /// refused by the core, and shakes.
+    /// Makes these shapes public, on whichever board of the file each is, in one transaction (an undo
+    /// step "Make Public", unless it's part of another). A kind that holds no `public` property takes
+    /// nothing; a read-only shape is refused by the core, and shakes.
     public func makePublic(_ ids: [ShapeID]) {
         let registry = registry
         transact("Make Public") { transaction in
-            for id in ids { transaction.update(id) { _ = registry.makePublic(&$0) } }
+            for id in ids { transaction.update(inFile: id) { _ = registry.makePublic(&$0) } }
         }
     }
 

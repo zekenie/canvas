@@ -34,7 +34,8 @@ extension ShapeRegistrar where Definition == ReferenceDefinition {
                 ContentsLabel("", placeholder: label, systemImage: ReferenceStyle.missingSymbol)
             case .notPublic(let appearance):
                 ContentsLabel("", placeholder: appearance.label, systemImage: appearance.systemImage, standsIn: true, path: path)
-            case .notInterpreted(let text), .noMatches(let text), .refused(let text, _), .failed(let text, _), .cannotFind(let text):
+            case .notInterpreted(let text), .noMatches(let text), .privateMatches(let text, _), .refused(let text, _), .failed(let text, _),
+                 .cannotFind(let text):
                 ContentsLabel("", placeholder: text, systemImage: ReferenceStyle.dynamicSymbol)
             case .finding(let text), .interpreting(let text):
                 ContentsLabel(text, systemImage: ReferenceStyle.dynamicSymbol)

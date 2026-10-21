@@ -79,6 +79,18 @@ import Topology
         expectEqual(h.editor.admittingMade, 1, "built at install, never again")
         #endif
     },
+    test("`admittable` says what Make Public would admit: a private shape of a kind that can be public; never a public one, a seal, a draft or a stand-in") {
+        let h = try publishingHarness()
+        let admittable = try require(h.editor.publishing).admittable
+        let plaque = h.add(Plaque(plaqueFrame)), seal = h.add(Seal(plaqueFrame)), draft = h.add(Draft(plaqueFrame))
+        let holder = h.hold([plaque])
+        expect(admittable(h.editor.document[plaque]!), "private, of a kind that can be public")
+        h.publish(plaque)
+        expect(!admittable(h.editor.document[plaque]!), "public: admitted already")
+        expect(!admittable(h.editor.document[seal]!), "always public")
+        expect(!admittable(h.editor.document[draft]!), "never public")
+        expect(!admittable(h.editor.document[holder]!), "a stand-in is never stood for")
+    },
     test("only a public shape is stood for: an arrow of one, a private one's, and a seal's, always") {
         let h = try publishingHarness()
         let plaque = h.add(Plaque(plaqueFrame)), seal = h.add(Seal(plaqueFrame))

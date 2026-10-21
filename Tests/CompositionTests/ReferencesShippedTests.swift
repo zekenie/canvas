@@ -349,6 +349,34 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         guard case .found(_, let found)? = h.editor.references?.state(of: pill) else { return expect(false, "found") }
         expectEqual(found.count, 2)
     },
+    test("a query whose notes aren't public stands for none and says how many; Make Public in its panel makes them public in one step, and the arrow into it then reaches each") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let billing = (0..<3).map { note(h, "Billing \($0)", at: CGPoint(x: CGFloat($0) * 300, y: 0)) }
+        let checkout = note(h, "Checkout", at: CGPoint(x: 0, y: 400))
+        var props = Reference(frame: CGRect(origin: CGPoint(x: 400, y: 400), size: Reference.defaultSize), all: true)
+        ReferenceEdits.find(&props, words: "billing notes", query: #"sticky-note:contains("billing")"#)
+        let pill = h.editor.add(props)
+        _ = arrow(h, from: checkout, to: pill)
+        let state = try require(h.editor.references)
+        h.wait(0)
+        _ = spinRunLoop(until: { !state.isFinding })
+        expectEqual(state.state(of: pill), .privateMatches(text: "billing notes", count: 3), "new notes start private")
+        let held = try require(h.editor.document[pill]?.typed(as: Reference.self)?.props)
+        expectEqual(state.header(of: held, id: pill).subtitle, "Not public")
+        expectEqual(state.queryContent(of: held, id: pill).status?.text, "3 not public")
+        expectEqual(h.editor.topology?.forwards(of: pill), [])
+        state.makeMatchesPublic(of: pill)
+        _ = spinRunLoop(until: { billing.allSatisfy { h.editor.document[$0]?[PublicProperty.self] == true } })
+        expectEqual(h.editor.undoHistory.undoName, "Make Public")
+        h.wait(250)
+        _ = spinRunLoop(until: { !state.isFinding })
+        expectEqual(h.editor.topology?.forwards(of: pill), billing)
+        let queries = try require(h.editor.queries)
+        let result = try awaitResult { try await queries.run(QueryRequest(#"sticky-note:edge-to("Billing 2")"#, settle: QueryBudget.settleWait)) }
+        expectEqual(result.rows.map(\.id), [checkout], "the arrow into the pill reads as into each")
+    },
     test("a reference may search notes' text (mention text reads only the file), and not what the person has selected") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

@@ -88,6 +88,21 @@ func tiled(_ count: Int) -> CanvasFile {
         _ = try batched([request], on: h)
         expectEqual(askers.calls, [false, false, false])
     },
+    test("what admission turns away a request may hold back: counted apart and never listed, asked off the main actor of what's turned away alone") {
+        let h = try relay()
+        let askers = Askers()
+        let alphaAlone: @Sendable (AnyShapeRecord) -> Bool = { $0.id == id(1) }
+        let held = QueryMatchRequest("chore", admitting: alphaAlone) { record in
+            askers.note()
+            return record.id == id(2)
+        }
+        let answers = try batched([held, QueryMatchRequest("chore", admitting: alphaAlone)], on: h)
+        expectEqual(found(answers[0])?.ids, [id(1)], "only what's admitted is listed")
+        expectEqual(found(answers[0])?.count, 1)
+        expectEqual(found(answers[0])?.heldBack, 1, "Beta: turned away and held back; Gamma turned away alone")
+        expectEqual(askers.calls, [false, false], "Beta and Gamma, the two turned away, and off the main actor")
+        expectEqual(found(answers[1])?.heldBack, 0, "a request that holds nothing back")
+    },
     test("every answer is stamped with the revision the file was taken up at") {
         let h = try relay()
         let revision = h.editor.revision

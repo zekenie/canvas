@@ -58,13 +58,19 @@ public struct QueryMatchRequest: Sendable {
     /// Whether a match may be listed, asked off the main actor of each before `limit` is applied:
     /// the first match is the first admitted one, and `count` counts the admitted.
     public var admitting: @Sendable (AnyShapeRecord) -> Bool
+    /// Of the matches `admitting` turns away, those a step of the caller's could admit (a shape that
+    /// could be made public), asked off the main actor of each: counted apart (`QueryMatches.heldBack`),
+    /// so the caller can say what it left out. Nil: none is.
+    public var holdingBack: (@Sendable (AnyShapeRecord) -> Bool)?
 
     public init(_ text: String, edges: EdgeView = .resolved, limit: Int = QueryBudget.maxRows,
-                admitting: @escaping @Sendable (AnyShapeRecord) -> Bool = { _ in true }) {
+                admitting: @escaping @Sendable (AnyShapeRecord) -> Bool = { _ in true },
+                holdingBack: (@Sendable (AnyShapeRecord) -> Bool)? = nil) {
         self.text = text
         self.edges = edges
         self.limit = limit
         self.admitting = admitting
+        self.holdingBack = holdingBack
     }
 }
 
@@ -76,13 +82,17 @@ public struct QueryMatches: Sendable, Equatable {
     public var ids: [ShapeID]
     /// How many shapes match and are admitted, listed or not.
     public var count: Int
+    /// How many shapes match and are held back: turned away by `admitting`, taken by the request's
+    /// `holdingBack`. 0 for a request that holds none back.
+    public var heldBack: Int
     /// `editor.revision` as the file was taken up: every request of a batch has the same.
     public var revision: Int
 
-    public init(canonical: String, ids: [ShapeID], count: Int, revision: Int) {
+    public init(canonical: String, ids: [ShapeID], count: Int, heldBack: Int = 0, revision: Int) {
         self.canonical = canonical
         self.ids = ids
         self.count = count
+        self.heldBack = heldBack
         self.revision = revision
     }
 }

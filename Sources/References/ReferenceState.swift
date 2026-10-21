@@ -4,6 +4,8 @@ import Canvas
 import Geometry
 import LanguageModels
 import Mentions
+import Publishing
+import Queries
 import Selection
 import Topology
 
@@ -64,6 +66,10 @@ public final class ReferenceState {
     var debounce: ScheduledTask?
     var hop: ScheduledTask?
     var batch: Task<Void, Never>?
+    /// The questions out for every match of a reference (`everyMatch(of:admitting:then:)`): what Show
+    /// Matches selects (the last asked), and what Make Public writes, per reference.
+    private var showing: Task<Void, Never>?
+    private var makingPublic: [ShapeID: Task<Void, Never>] = [:]
     /// Whether the batch out has been out past `ReferenceStyle.findingDelay`, and the timer that says so.
     var isSlow = false
     var slowTimer: ScheduledTask?
@@ -110,6 +116,8 @@ public final class ReferenceState {
         hop?.cancel()
         slowTimer?.cancel()
         batch?.cancel()
+        showing?.cancel()
+        for task in makingPublic.values { task.cancel() }
         for entry in interpretations.values { entry.cancelWork() }
         settling?.cancel()
         following?.cancel()
@@ -341,10 +349,50 @@ public final class ReferenceState {
         return found.ids
     }
 
-    /// Shows the matches of the only reference among these: their board, selected on it.
+    /// Shows the matches of the only reference among these: their board, every one its header counts
+    /// selected on it. A reference given fewer than it counts (a first-match one is given eight, an
+    /// all-match one fifty) has its query asked for every one first.
     func showMatches(of ids: Set<ShapeID>) {
-        guard ids.count == 1, let id = ids.first, let matches = matches(of: id) else { return }
-        go(to: matches)
+        guard ids.count == 1, let id = ids.first, case .found(_, let found)? = state(of: id) else { return }
+        showing?.cancel()
+        guard found.count > found.ids.count else { return go(to: found.ids) }
+        // Answered in a turn of its own, after the click that asked: gone to at once.
+        showing = everyMatch(of: id, admitting: admission) { [weak self] matches in
+            self?.showing = nil
+            if let matches { self?.editor.goTo(matches) }
+        }
+    }
+
+    /// Makes public every shape the reference's query finds that would be stood for once it is
+    /// (Publishing's `admittable`), wherever it is: one step, "Make Public". Asked of the query first,
+    /// as the reference holds only how many there are; the reference takes them in as it does any
+    /// change, once its wait for quiet ends.
+    public func makeMatchesPublic(of id: ShapeID) {
+        guard let publishing = editor.publishing else { return }
+        makingPublic[id]?.cancel()
+        makingPublic[id] = everyMatch(of: id, admitting: publishing.admittable) { [weak self] matches in
+            guard let self else { return }
+            makingPublic[id] = nil
+            if let matches { editor.makePublic(matches) }
+        }
+    }
+
+    /// Asks the reference's query (its draft's, while it's typed into) for every match `admitting`
+    /// takes, as its own answers are asked (on the recorded view), and hands them to `then` on the main
+    /// actor: nil when the query was refused or isn't the reference's any more (words typed since).
+    /// Nothing is handed over once the task is cancelled (the file closing cancels it); nil, no task,
+    /// when there's no query to ask.
+    private func everyMatch(of id: ShapeID, admitting: @escaping @Sendable (AnyShapeRecord) -> Bool,
+                            then: @escaping @MainActor @Sendable ([ShapeID]?) -> Void) -> Task<Void, Never>? {
+        guard let queries = editor.queries, let props = editor.shape(inFile: id)?.typed(as: Reference.self)?.props,
+              let query = shown(props, id: id).query else { return nil }
+        return Task { @MainActor [weak self, queries] in
+            let results = await queries.matches([QueryMatchRequest(query, edges: .recorded, admitting: admitting)])
+            guard !Task.isCancelled, let self else { return }
+            let asks = editor.shape(inFile: id)?.typed(as: Reference.self).flatMap { shown($0.props, id: id).query }
+            guard asks == query, case .success(let matches)? = results.first else { return then(nil) }
+            then(matches.ids)
+        }
     }
 
     /// What going to the original goes to, while there's something: a direct reference's shape (public
@@ -390,7 +438,7 @@ public final class ReferenceState {
         switch condition {
         case .missing: ReferenceStyle.deletedHelp
         case .unavailable: ReferenceStyle.unavailableHelp
-        case .notPublic: ReferenceStyle.privateHelp
+        case .notPublic, .privateMatches: ReferenceStyle.privateHelp
         default: nil
         }
     }
@@ -398,8 +446,9 @@ public final class ReferenceState {
     // MARK: The panel's header
 
     /// What the panel's header says of a reference: its symbol, what it stands for, and a line under it
-    /// (for a dynamic one, how many it found: "First of 7", "12 matches", "50 of 73", "No matches";
-    /// none while it's being looked for or failed, which the Query section says).
+    /// (for a dynamic one, how many it found: "First of 7", "12 matches", "50 of 73", "No matches",
+    /// or "Not public" when none of what it found is; none while it's being looked for or failed,
+    /// which the Query section says).
     public func header(of props: Reference, id: ShapeID? = nil) -> ReferenceHeaderContent {
         switch state(of: props, id: id) {
         case .empty:
@@ -416,6 +465,8 @@ public final class ReferenceState {
             return ReferenceHeaderContent(symbol: ReferenceStyle.dynamicSymbol, title: text, subtitle: ReferenceStyle.matchesLine(found))
         case .noMatches(let text), .refused(let text, _):
             return ReferenceHeaderContent(symbol: ReferenceStyle.dynamicSymbol, title: text, subtitle: ReferenceStyle.noMatches)
+        case .privateMatches(let text, _):
+            return ReferenceHeaderContent(symbol: ReferenceStyle.dynamicSymbol, title: text, subtitle: ReferenceStyle.privateHelp)
         case .notInterpreted(let text), .interpreting(let text), .finding(let text), .failed(let text, _), .cannotFind(let text):
             return ReferenceHeaderContent(symbol: ReferenceStyle.dynamicSymbol, title: text, subtitle: nil)
         }

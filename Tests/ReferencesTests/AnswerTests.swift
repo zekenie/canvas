@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Mentions
+import Publishing
 import Queries
 import References
 import Selection
@@ -11,7 +12,8 @@ import Topology
 import Validation
 
 // What a dynamic reference finds: its query, asked of the engine in one batch for every reference
-// whose answer may be out of date, on the recorded view, public shapes alone; handed to Topology,
+// whose answer may be out of date, on the recorded view, public shapes alone (those that aren't held
+// back, counted, and made public by Make Public); handed to Topology,
 // which forwards arrows into the pill to what it stands for (the first match, or every one). When
 // it's asked (its own question at once, any other commit after 250 ms of quiet, a move never), what
 // an undo or an All toggled back shows at once (the answer kept for that question), what a landing
@@ -92,7 +94,33 @@ let pickedWord = Contributor(id: "picked") { registrar in
         let appearance = try require(h.editor.shape(inFile: alpha).flatMap { h.editor.registry.mentionAppearance(of: $0) })
         expectEqual(h.state(of: first), .found(text: "box", ReferenceFound(all: false, count: 2, ids: [alpha, beta], first: appearance)))
         expectEqual(h.state(of: all), .found(text: "box", ReferenceFound(all: true, count: 2, ids: [alpha, beta], first: nil)))
+        guard case .answered(let matches)? = h.status(all) else { return expect(false, "answered") }
+        expectEqual(matches.heldBack, 1, "Gamma, a box that isn't public: counted apart, stood for by neither")
         expectEqual(h.editor.topology?.forwarding(of: all), .provided([alpha, beta]))
+    },
+    test("what a query finds that isn't public is held back: with none public it stands for nothing and says how many; made public, it stands for them") {
+        let h = try referenceHarness()
+        let a = h.addBox("A", public: false, at: CGRect(x: 100, y: 100, width: 100, height: 60))
+        let b = h.addBox("B", public: false, at: CGRect(x: 250, y: 100, width: 100, height: 60))
+        let from = h.addTile("From", at: CGRect(x: 100, y: 600, width: 100, height: 60))
+        let id = h.addReference(query: "box", all: true)
+        h.connect(from, id)
+        h.answer()
+        expectEqual(h.state(of: id), .privateMatches(text: "box", count: 2))
+        expect(h.state(of: id)?.standsForNothing == true, "dashed, as a pill for one shape that isn't public")
+        expectEqual(h.standsFor(id), [])
+        expectEqual(h.editor.wired(from: from), [id], "the wire stays at the pill")
+        try require(h.editor.references).makeMatchesPublic(of: id)
+        _ = spinRunLoop(until: { h.editor.document[b]?[PublicProperty.self] == true })
+        expectEqual(h.editor.document[a]?[PublicProperty.self], true)
+        expectEqual(h.editor.undoHistory.undoName, "Make Public", "one step for both")
+        h.answer(after: 250)
+        expectEqual(h.standsFor(id), [a, b])
+        expectEqual(Set(h.editor.wired(from: from)), [a, b])
+        h.editor.undo()
+        h.answer(after: 250)
+        expectEqual(h.state(of: id), .privateMatches(text: "box", count: 2), "private again: held back again")
+        expectEqual(h.standsFor(id), [])
     },
     test("a first-match pill is given eight matches and an All one fifty; the count is all of them") {
         let h = try referenceHarness()

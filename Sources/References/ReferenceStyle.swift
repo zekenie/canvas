@@ -235,6 +235,10 @@ enum ReferenceStyle {
     static let tooSlow = "Too slow"
     static let retry = "Retry"
     static let cantFind = "Unavailable"
+    /// What a query found that isn't public, so the reference doesn't stand for it, and the step that
+    /// makes it public (the words of Publishing's own).
+    static func notPublic(_ count: Int) -> String { "\(count) not public" }
+    static let makePublic = "Make Public"
     /// Turning words into a query: the status while it's under way, the button that starts it, its
     /// symbol, and the undo step it lands as; and what a failure of it says (a model's own failures
     /// say theirs).

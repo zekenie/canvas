@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import DetailPanel
 import LanguageModels
 import QueryTranslation
 import References
@@ -32,6 +33,12 @@ import Topology
 
 @MainActor private func header(_ h: EditorHarness, _ id: ShapeID) throws -> ReferenceHeaderContent {
     try require(h.editor.references).header(of: try require(h.reference(id)), id: id)
+}
+
+/// The sections the panel lays out for the reference, in its tab.
+@MainActor private func sections(_ h: EditorHarness, _ id: ShapeID) throws -> [String] {
+    let shown = try require(h.editor.detailPanel).layout(for: try require(h.editor.document[id]))
+    return shown.sections(in: try require(shown.tabs.first)).map(\.section)
 }
 
 /// Lets the main run loop turn until `done`.
@@ -125,6 +132,7 @@ import Topology
         expect(!shown.offersInterpret, "typing: no Interpret row")
         let rows = try require(h.editor.references).matchRows(of: field.id)
         expectEqual(rows.rows.map(\.name).sorted(), ["Cellar", "Plan B"])
+        expectEqual(try sections(h, field.id), ["reference.query", "reference.matches"], "the panel lists them while the words are typed")
         expect(h.editor.topology?.forwards(of: field.id).isEmpty ?? true, "a draft forwards nothing")
         expectEqual(h.editor.undoHistory.undoName, "Add Reference", "no step of its own")
     },
@@ -160,6 +168,7 @@ import Topology
         spin(isAnswered(h, field.id))
         expectEqual(try content(h, field.id).query, "box")
         expectEqual(try require(h.editor.references).matchRows(of: field.id).rows.count, 2)
+        expectEqual(try sections(h, field.id), ["reference.query", "reference.matches"])
         h.wait(600)
         breathe()
         field.returnKey()

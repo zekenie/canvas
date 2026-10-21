@@ -308,7 +308,6 @@ extension ReferenceState {
             return
         }
         let editing = editor.editingShapeID
-        let admitting = admission
         var asked: [(id: ShapeID, key: ForwardingKey)] = [], requests: [QueryMatchRequest] = []
         var refusals: [ShapeID: Landed] = [:]
         let every = everyDirty
@@ -326,8 +325,7 @@ extension ReferenceState {
             }
             asked.append((id, finding.key))
             dynamic[id]?.asked = finding.key
-            requests.append(QueryMatchRequest(query, edges: .recorded, limit: finding.all ? ReferenceStyle.maxTargets : ReferenceStyle.firstFetched,
-                                              admitting: admitting))
+            requests.append(request(query, all: finding.all))
         }
         if !refusals.isEmpty { land(refusals.compactMap { id, refusal in dynamic[id].map { (id, $0.key, refusal) } }, revision: editor.revision) }
         guard !requests.isEmpty else { return settled() }
@@ -358,6 +356,14 @@ extension ReferenceState {
     var admission: @Sendable (AnyShapeRecord) -> Bool {
         if let publishing = editor.publishing { return publishing.admitting }
         return { _ in false }
+    }
+
+    /// What a reference's query is asked as: on the recorded view, its public matches, first-match ones
+    /// for eight (what All would add, for the panel), all-match ones for fifty, counting apart the
+    /// matches that would be stood for once made public (Publishing's `admittable`).
+    func request(_ query: String, all: Bool) -> QueryMatchRequest {
+        QueryMatchRequest(query, edges: .recorded, limit: all ? ReferenceStyle.maxTargets : ReferenceStyle.firstFetched,
+                          admitting: admission, holdingBack: editor.publishing?.admittable)
     }
 
     /// No batch is out any more: waiters on Topology look again, as nothing may be provided to say so.
@@ -428,11 +434,13 @@ extension ReferenceState {
     }
     #endif
 
-    /// Whether two answers to one question say the same: the same matches and count (the revision
-    /// they were taken at is no part of what a pill, a panel or a row shows).
+    /// Whether two answers to one question say the same: the same matches, count and matches held back
+    /// (the revision they were taken at is no part of what a pill, a panel or a row shows).
     private static func says(_ status: ReferenceStatus, theSameAs other: ReferenceStatus?) -> Bool {
         guard let other else { return false }
-        if case .answered(let now) = status, case .answered(let then) = other { return now.ids == then.ids && now.count == then.count }
+        if case .answered(let now) = status, case .answered(let then) = other {
+            return now.ids == then.ids && now.count == then.count && now.heldBack == then.heldBack
+        }
         return status == other
     }
 

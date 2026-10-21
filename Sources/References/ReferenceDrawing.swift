@@ -78,7 +78,7 @@ struct ReferenceLook {
             italic = true
             strength = missing
             dashed = true
-            trailing = Symbol(name: ReferenceStyle.eyeSymbol, tint: ReferenceStyle.eyeColor, strength: ReferenceStyle.eyeStrength, size: ReferenceStyle.eyeSize, blends: false)
+            trailing = Self.eye
             self.board = board
         case .notInterpreted(let text), .cannotFind(let text):
             leading = Symbol.dynamic
@@ -114,6 +114,16 @@ struct ReferenceLook {
             dashed = true
             reservesBadge = true
             badge = ReferenceStyle.badge(0)
+        case .privateMatches(let text, _):
+            // What it found isn't public: the eye a direct pill trails for a shape that isn't, where
+            // the count would be.
+            leading = Symbol.dynamic(dimmed: true)
+            label = text
+            italic = true
+            strength = missing
+            dashed = true
+            reservesBadge = true
+            trailing = Self.eye
         case .failed(let text, _):
             leading = Symbol.dynamic(dimmed: true)
             label = text
@@ -127,6 +137,11 @@ struct ReferenceLook {
             trailing = Self.warning
             badge = nil
         }
+    }
+
+    /// What trails a pill whose shape isn't public, or whose query found only shapes that aren't.
+    private static var eye: Symbol {
+        Symbol(name: ReferenceStyle.eyeSymbol, tint: ReferenceStyle.eyeColor, strength: ReferenceStyle.eyeStrength, size: ReferenceStyle.eyeSize, blends: false)
     }
 
     /// What trails a pill whose arrows' channel what it stands for doesn't take, or whose answer

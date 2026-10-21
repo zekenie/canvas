@@ -243,10 +243,10 @@ final class Evaluation {
     /// What each request of a batch matches (`QueryState.matches(_:)`), in order, all over this one
     /// snapshot: its names checked, what it matches among every shape, those `admitting` takes (asked
     /// here, off the main actor, of each, before `limit`), the first `limit` in file order and how
-    /// many in all. What the requests read is shared: the shapes walked, the names read (named and
-    /// derived, once for all) and the title index; what each node matched is not, as a plan's nodes
-    /// are its own. A request refused (`unknown_title`) is one answer, not the batch's; a cancellation
-    /// is the batch's.
+    /// many in all, and how many of those it turned away `holdingBack` takes. What the requests read
+    /// is shared: the shapes walked, the names read (named and derived, once for all) and the title
+    /// index; what each node matched is not, as a plan's nodes are its own. A request refused
+    /// (`unknown_title`) is one answer, not the batch's; a cancellation is the batch's.
     func admitted(_ batch: [BatchedQuery]) async throws(QueryError) -> [Result<QueryMatches, QueryError>] {
         var answers: [Result<QueryMatches, QueryError>] = []
         answers.reserveCapacity(batch.count)
@@ -261,12 +261,20 @@ final class Evaluation {
                 let found = try await matches(query.plan.root, among: .all)
                 var kept: Set<ShapeID> = []
                 kept.reserveCapacity(found.count)
+                var heldBack = 0
+                let holdingBack = query.request.holdingBack
                 for id in found {
                     try tick()
-                    if let entry = entry(id), query.request.admitting(entry.record) { kept.insert(id) }
+                    guard let entry = entry(id) else { continue }
+                    if query.request.admitting(entry.record) {
+                        kept.insert(id)
+                    } else if let holdingBack, holdingBack(entry.record) {
+                        heldBack += 1
+                    }
                 }
                 let ids = Array(try inFileOrder(kept).prefix(min(max(query.request.limit, 1), QueryBudget.maxRows)))
-                answers.append(.success(QueryMatches(canonical: query.plan.canonical, ids: ids, count: kept.count, revision: snapshot.revision)))
+                answers.append(.success(QueryMatches(canonical: query.plan.canonical, ids: ids, count: kept.count, heldBack: heldBack,
+                                                     revision: snapshot.revision)))
             } catch {
                 switch error.reason {
                 case .cancelled, .tooSlow, .boardClosed: throw error

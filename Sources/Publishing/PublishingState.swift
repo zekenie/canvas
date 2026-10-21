@@ -27,6 +27,10 @@ public final class PublishingState {
     /// Whether a shape may be stood for: `public: true`, or a kind whose every shape is public, and
     /// not a stand-in (a stand-in is never stood for). Pure, and safe off the main actor.
     public let admitting: @Sendable (AnyShapeRecord) -> Bool
+    /// Whether a shape `admitting` turns away would be admitted once made public: not public, of a
+    /// kind that holds the property, not kept aside, and not a stand-in. What Make Public changes, so
+    /// what a query that stands for public shapes alone holds back. Pure, and safe off the main actor.
+    public let admittable: @Sendable (AnyShapeRecord) -> Bool
 
     #if DEBUG
     /// How many times `admitting` was made (debug builds).
@@ -43,6 +47,10 @@ public final class PublishingState {
         let standIns = topology?.standInKinds ?? []
         admitting = { record in
             !standIns.contains(record.kind) && (always.contains(record.kind) || record[PublicProperty.self] == true)
+        }
+        let holding = Set(registry.kinds.filter { registry.holdsPublic($0) && !standIns.contains($0) })
+        admittable = { record in
+            holding.contains(record.kind) && record[PublicProperty.self] != true && !record.isOpaque
         }
         #if DEBUG
         admittingMade = 1

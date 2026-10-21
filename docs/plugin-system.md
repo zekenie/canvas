@@ -6283,7 +6283,7 @@ registrar.forShapes(holding: PublicProperty.self) { publishable in   // what Pub
 - **Public is something the shape knows**, as locked is: an [added property](#added-properties),
   `public`, a boolean whose default is nil, so private is stored as no value and only public shapes
   carry one (`"added" : { "public" : true }`; a draw that says `public: false` stores `false`, which
-  is private too). `editor.makePublic(ids)` is one transaction, "Make Public", writing each record with `registry.makePublic(&record)` (the one writer of `public` on a record: true when it's public after, false for a kind that can't be). `registry.isPublic(record)` is the
+  is private too). `editor.makePublic(ids)` is one transaction, "Make Public", writing each record, on whichever board of the file it is (`transaction.update(inFile:)`), with `registry.makePublic(&record)` (the one writer of `public` on a record: true when it's public after, false for a kind that can't be). `registry.isPublic(record)` is the
   value, or an always-public kind (one dictionary hit and a cast, for what holds a registry and no
   editor: a stand-in's admission), and `registry.canBePublic(kind)` whether shapes of the kind can be
   (they hold the property, or every one is).
@@ -6299,6 +6299,9 @@ registrar.forShapes(holding: PublicProperty.self) { publishable in   // what Pub
   by what the shape was before it (`ChangeSet.before`). `admitting` is what the query engine, or anything off the main actor, asks of a
   shape to know whether it may be stood for: made once, when the editor is, from the always-public
   kinds and `topology.standInKinds`, `@Sendable` (`admittingMade`, debug builds, counts the makings: one).
+  `admittable`, made with it, is what `admitting` turns away that Make Public would admit (not public,
+  of a kind that holds the property, not kept aside, not a stand-in): what a query that stands for
+  public shapes alone holds back, and counts.
   It follows Topology (`topology.follow`) for the shapes a change to `stands-for` edges touches, a
   commit's or a provide's alike, and tells Adornments and the table of contents to make their
   chips and rows again (`adornmentsDidChange(for:)`, `contentsDidChange(for:)`).
@@ -8410,17 +8413,18 @@ the edges ([stand-ins](#stand-ins-forwarding), Topology's). All are generic: not
   query` writes them member by member (`QueryOutput`), a stand-in untitled, so its end is its id
   alone. An arrow into a stand-in that stands for nothing yet stays at the stand-in, as drawn.
 - **A batch, ids only.** `queries.matches([QueryMatchRequest])` answers many queries
-  (`text`, `edges`, `limit`, `admitting`) in one go and returns, in order, each one's
+  (`text`, `edges`, `limit`, `admitting`, `holdingBack`) in one go and returns, in order, each one's
   `Result<QueryMatches, QueryError>`: `canonical`, `ids` (the admitted matches in file order, at
-  most `limit`), `count` (all admitted) and `revision` (`editor.revision` as the file was taken up,
-  the same for all). The file is taken up once, in one main-actor turn, with one snapshot of
+  most `limit`), `count` (all admitted), `heldBack` (of the matches `admitting` turned away, how many
+  `holdingBack` takes: what a step of the caller's could admit, so it can say what it left out; 0
+  without one) and `revision` (`editor.revision` as the file was taken up, the same for all). The file is taken up once, in one main-actor turn, with one snapshot of
   Topology in each view the requests ask for, and every request is evaluated in one evaluation that
   shares what it reads: the shapes walked, the title index, and the names, so a derived name (asked
   of the main actor in slices) is read **once per batch**, however many requests name titles. Each
   text is checked once however many requests carry it, a query asked in two views among them (debug
   builds count `checks`), over the edge types read once.
   `admitting` is asked of each match off the main actor, before `limit`: the first match is the
-  first one admitted, and `count` counts those. No rows are built. A request the engine refuses
+  first one admitted, and `count` counts those; `holdingBack`, of each it turned away. No rows are built. A request the engine refuses
   (`check`, then the names pass) is that request's `.failure`, with the reason and message `run`
   would give (a hint that waits on titles is left as it is); a cancellation, the deadline or a
   closed file fails every request that wasn't refused. `checkNames(plan)` is the names pass alone
@@ -10086,7 +10090,8 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   show) and asks the engine for them: one `queries.matches` batch, on one
   snapshot, for every one whose answer may be out of date and that isn't being typed into, each on the
   **recorded** view (what direct references forward, never another dynamic one's answer), admitting
-  public shapes alone (`editor.publishing.admitting`), eight matches for a first-match one (what All
+  public shapes alone (`editor.publishing.admitting`) and counting apart those that would be once
+  made public (`holdingBack: editor.publishing.admittable`), eight matches for a first-match one (what All
   would add, for its panel) and fifty for an All one. When: its own question changed (its query or flag,
   a gesture or an undo), at once, on the scheduler's next turn; any other commit but a move, after
   250 ms of quiet (`ReferenceStyle.settle`, each commit waiting again, on `editor.scheduler`); a commit
@@ -10107,7 +10112,8 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   shows only once a batch has been out 250 ms.
 - **The pill** (`ReferenceStyle`): a capsule 32 tall, a leading symbol (the kind's, tinted, or a
   magnifier for every dynamic one, or a dashed square for what's gone), the label (14 medium, one line;
-  a dynamic one's words, never its matches' names), and what trails (the eye of a shape gone private;
+  a dynamic one's words, never its matches' names), and what trails (the eye of a shape gone private,
+  and of a query whose every match isn't public;
   the first match's kind symbol in its tint, an All one's count in a capsule, "50+" past fifty, a "0"
   for none or a refusal, the warning for a failure); filled and bordered, or, when it stands for
   nothing, a dashed border with no fill and the label in italic at two thirds; while it's looked for,
@@ -10181,13 +10187,18 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   arrow; a click goes as following a mention does, one step back, the pill not selected first), and the
   same command is the context menu's first item and the panel's plain "Go to Original" button, which work
   on a locked reference too. A dynamic one's symbol goes to what it stands for, and its menu has Show
-  Matches (them, selected) and Match All or Match First.
+  Matches (every match its header counts, selected: a reference given fewer, eight for a first-match
+  one or fifty, asks its query for every one first) and Match All or Match First.
 - **The panel of a dynamic reference**: the header's line says how many it found ("First of 7", "12
-  matches", "50 of 73", "No matches"; nothing while it's looked for). The Query section has the query,
+  matches", "50 of 73", "No matches", "Not public" when what it found is all not public; nothing while
+  it's looked for). The Query section has the query,
   read-only and colored as code, one line per line, scrolling sideways (`DetailCodeEditor`), a status
   line only when there's something to say ("Interpreting…", "Finding…", a refusal, "Too slow" or a failed
-  interpretation with its action, "Unavailable"), the Interpret button for words nobody has asked about, and `LabeledContent("Match") { DetailCheckbox("All", …) }`, a step of its own. The
-  Matches section, while it found shapes, is a `DetailShapeRow` per match (the board's name where it
+  interpretation with its action, "Unavailable", or what it found that isn't public, "12 not public",
+  with Make Public, which makes every one public, on whichever board, in one step), the Interpret button
+  for words nobody has asked about, and `LabeledContent("Match") { DetailCheckbox("All", …) }`, a step of its own. The
+  Matches section, while it found shapes (its draft's too, while its words are typed), is a
+  `DetailShapeRow` per match (the board's name where it
   isn't the board shown; in first mode the rows after the first dimmed, what All would add) and "and
   42 more" past eight; a click goes to one, the pointer hovers it on the canvas.
 - **Validation**: a query the engine can't read (pasted, or written into a board by hand) is a warning

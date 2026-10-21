@@ -247,8 +247,7 @@ extension ReferenceState {
             return
         }
         let all = editor.shape(inFile: id)?.typed(as: Reference.self)?.props.all ?? false
-        let request = QueryMatchRequest(draft.query, edges: .recorded, limit: all ? ReferenceStyle.maxTargets : ReferenceStyle.firstFetched,
-                                        admitting: admission)
+        let request = self.request(draft.query, all: all)
         let generation = entry.generation, query = draft.query
         entry.evaluation = Task { @MainActor [weak self] in
             let results = await queries.matches([request])

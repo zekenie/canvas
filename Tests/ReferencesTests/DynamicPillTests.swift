@@ -9,7 +9,8 @@ import TestKit
 // A dynamic pill once its query is answered, drawn to bitmaps in light and dark and zoomed out:
 // every dynamic pill leads with the magnifier; a first-match one trails the first match's kind
 // symbol in its tint, an All one its count in a capsule, one that found nothing (or was refused) a
-// "0", dashed, and one whose answer failed the warning, dashed; while it's looked for it's solid with
+// "0", dashed, one that found only shapes that aren't public the eye, dashed, and one whose answer
+// failed the warning, dashed; while it's looked for it's solid with
 // its words dimmed. And a direct pill's width keeps room for what may come to trail it: a short name
 // gone private isn't cut short by its eye.
 
@@ -21,7 +22,7 @@ import TestKit
     let trailing: Trailing
     let make: (EditorHarness) -> ShapeID
 
-    enum Trailing { case nothing, symbol, badge, warning }
+    enum Trailing { case nothing, symbol, badge, eye, warning }
 }
 
 /// Two public boxes ("Alpha", "Beta") far below, out of view.
@@ -35,6 +36,10 @@ import TestKit
     Answered(name: "all matches", dashed: false, trailing: .badge) { h in h.addReference(words: "the boxes", query: "box", all: true) },
     Answered(name: "no matches", dashed: true, trailing: .badge) { h in h.addReference(words: "the tiles", query: "tile") },
     Answered(name: "refused", dashed: true, trailing: .badge) { h in h.addReference(words: "nobody", query: "\"Nobody\"") },
+    Answered(name: "nothing public", dashed: true, trailing: .eye) { h in
+        h.addBox("Hidden", public: false, at: CGRect(x: 500, y: 2_000, width: 100, height: 60))
+        return h.addReference(words: "the hidden", query: "\"Hidden\"")
+    },
     Answered(name: "not interpreted", dashed: true, trailing: .nothing) { h in h.addReference(words: "blocked work") },
 ]
 
@@ -104,6 +109,9 @@ private func trailingBox(of frame: CGRect) -> CGRect {
                 case .badge:
                     expect(inked > 6, "\(what): a count")
                     expectEqual(tinted(drawn, in: trailing, orange: true), 0, "\(what): no symbol, no warning")
+                case .eye:
+                    expect(inked > 6, "\(what): the eye")
+                    expectEqual(tinted(drawn, in: trailing, orange: true), 0, "\(what): in the label's color, not a warning")
                 case .warning:
                     expect(tinted(drawn, in: trailing, orange: true) > 6, "\(what): the warning")
                 }
@@ -123,6 +131,21 @@ private func trailingBox(of frame: CGRect) -> CGRect {
         expect(changedPixels(two, five, in: trailingBox(of: frame)) > 6, "2 then 5")
         expectEqual(changedPixels(two, five, in: CGRect(x: frame.minX, y: frame.minY, width: frame.width - 44, height: 32)), 0,
                     "and nothing else of the pill: no refit")
+    },
+    test("a query whose matches aren't public trails the eye where one that found nothing says 0: the rest of the pill drawn alike") {
+        var drawn: [NSBitmapImageRep] = [], frames: [CGRect] = []
+        for query in ["\"Hidden\"", "tile"] {
+            let h = try referenceHarness()
+            h.addBox("Hidden", public: false, at: CGRect(x: 500, y: 2_000, width: 100, height: 60))
+            let id = h.addReference(words: "the hidden", query: query)
+            h.answer()
+            frames.append(try require(h.editor.document[id]?.box))
+            drawn.append(render(h.editor))
+        }
+        expectEqual(frames[0], frames[1], "one width: the words'")
+        expect(changedPixels(drawn[0], drawn[1], in: trailingBox(of: frames[0])) > 6, "the eye, not the 0")
+        expectEqual(changedPixels(drawn[0], drawn[1], in: CGRect(x: frames[0].minX, y: frames[0].minY, width: frames[0].width - 44, height: 32)), 0,
+                    "the magnifier, the words and the dashes alike")
     },
     test("while it's looked for it's solid, its words dimmer than once answered, and nothing trails") {
         let h = try referenceHarness()

@@ -28,8 +28,11 @@ public enum ReferenceCondition: Equatable {
     case finding(text: String)
     /// A dynamic reference whose query found shapes: what it stands for (the first, or all).
     case found(text: String, ReferenceFound)
-    /// A dynamic reference whose query found nothing public.
+    /// A dynamic reference whose query found nothing, public or not.
     case noMatches(text: String)
+    /// A dynamic reference whose query found shapes, `count` of them, none public: it stands for
+    /// nothing until they are.
+    case privateMatches(text: String, count: Int)
     /// A dynamic reference whose query was refused: it stands for nothing, and this says why.
     case refused(text: String, message: String)
     /// A dynamic reference whose answer didn't come.
@@ -40,7 +43,7 @@ public enum ReferenceCondition: Equatable {
     /// Whether the pill stands for nothing now (drawn dashed, with no fill).
     public var standsForNothing: Bool {
         switch self {
-        case .missing, .unavailable, .notPublic, .notInterpreted, .noMatches, .refused, .failed, .cannotFind: true
+        case .missing, .unavailable, .notPublic, .notInterpreted, .noMatches, .privateMatches, .refused, .failed, .cannotFind: true
         case .empty, .live, .interpreting, .finding, .found: false
         }
     }
@@ -48,8 +51,8 @@ public enum ReferenceCondition: Equatable {
     /// What a dynamic reference is called (its words, else its query); nil for any other.
     public var text: String? {
         switch self {
-        case .notInterpreted(let text), .interpreting(let text), .finding(let text), .found(let text, _), .noMatches(let text), .refused(let text, _),
-             .failed(let text, _), .cannotFind(let text): text
+        case .notInterpreted(let text), .interpreting(let text), .finding(let text), .found(let text, _), .noMatches(let text),
+             .privateMatches(let text, _), .refused(let text, _), .failed(let text, _), .cannotFind(let text): text
         case .empty, .live, .missing, .unavailable, .notPublic: nil
         }
     }
@@ -107,7 +110,9 @@ extension ReferenceCondition {
             case .finding:
                 return .finding(text: text)
             case .answered(let matches):
-                guard matches.count > 0, let first = matches.ids.first else { return .noMatches(text: text) }
+                guard matches.count > 0, let first = matches.ids.first else {
+                    return matches.heldBack > 0 ? .privateMatches(text: text, count: matches.heldBack) : .noMatches(text: text)
+                }
                 let appearance = props.all ? nil : lookup(first).flatMap(appearanceOf)
                 return .found(text: text, ReferenceFound(all: props.all, count: matches.count, ids: matches.ids, first: appearance))
             case .refused(let message):

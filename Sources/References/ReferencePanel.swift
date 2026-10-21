@@ -4,6 +4,7 @@ import Canvas
 import DetailPanel
 import LanguageModels
 import Mentions
+import Queries
 import Selection
 import SwiftUI
 
@@ -43,7 +44,9 @@ extension ShapeRegistrar where Definition == ReferenceDefinition {
             DetailSection(ReferenceStyle.querySection, in: ReferenceTab.self, id: "reference.query", when: { $0.mode == .dynamic }) { $reference in
                 ReferenceQueryView(id: $reference.shapeID, props: reference, state: $reference.service(ReferenceState.self))
             }
-            DetailSection(ReferenceStyle.matchesSection, in: ReferenceTab.self, id: "reference.matches", when: { $0.mode == .dynamic && $0.query != nil }) { $reference in
+            // The record's query is nil while words are typed: the draft's matches show as they arrive,
+            // so whether there are any is `shownWhile`'s to say.
+            DetailSection(ReferenceStyle.matchesSection, in: ReferenceTab.self, id: "reference.matches", when: { $0.mode == .dynamic }) { $reference in
                 ReferenceMatchesView(id: $reference.shapeID, state: $reference.service(ReferenceState.self))
             }
             .shownWhile { shape, context in context.service(ReferenceState.self)?.matches(of: shape.id) != nil }
@@ -74,10 +77,11 @@ public struct ReferenceQueryContent: Equatable {
 }
 
 /// A status line of the Query section: what it says, how (a warning, or neutral with a spinner), and
-/// what it offers (Retry, or Open Settings… for a missing key).
+/// what it offers (Retry, Open Settings… for a missing key, or Make Public for what it found that
+/// isn't).
 public struct ReferenceStatusLine: Equatable {
     public enum Action: Equatable {
-        case retry, openSettings
+        case retry, openSettings, makePublic
     }
 
     public var text: String
@@ -113,6 +117,9 @@ extension ReferenceState {
             line = ReferenceStatusLine(text: failure.message, isWarning: true, isBusy: false, action: failure.action)
         case .unavailable?:
             line = ReferenceStatusLine(text: ReferenceStyle.cantFind, isWarning: true, isBusy: false, action: nil)
+        case .answered(let matches)? where matches.heldBack > 0:
+            // What it found and doesn't stand for, as it isn't public, and the step that makes it so.
+            line = ReferenceStatusLine(text: ReferenceStyle.notPublic(matches.heldBack), isWarning: false, isBusy: false, action: .makePublic)
         default:
             line = nil
         }
@@ -136,11 +143,13 @@ struct ReferenceQueryView: View {
     let props: Reference
     let state: ReferenceState?
 
-    /// What a status line offers: Retry asks again, Open Settings… is where a key is saved.
+    /// What a status line offers: Retry asks again, Open Settings… is where a key is saved, Make Public
+    /// makes public what the query found that isn't.
     private func actions(of line: ReferenceStatusLine) -> [DetailStatusAction] {
         switch line.action {
         case .retry?: [DetailStatusAction(ReferenceStyle.retry) { [state, id] in state?.retry(id) }]
         case .openSettings?: [DetailStatusAction(ReferenceStyle.openSettings) { _ = AnthropicSettingsView.showSettings() }]
+        case .makePublic?: [DetailStatusAction(ReferenceStyle.makePublic) { [state, id] in state?.makeMatchesPublic(of: id) }]
         case nil: []
         }
     }
