@@ -17,4 +17,5 @@ runTests([
     colorQueryTests,
     colorValidationTests,
     colorTintTests,
+    inheritedColorTests,
 ])

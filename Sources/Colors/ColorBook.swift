@@ -38,11 +38,12 @@ public final class SwatchColors {
 /// kind's render (`context.colors(of:)`), another plugin (`swatch(of:)`: a type's pill), the lists
 /// of names (`names`: the panel's grid, `/color`, Color ▸).
 ///
-/// A shape's color is its own (`ColorProperty`) where the file has it, else its kind's default
-/// (`colorable(default:)`), else none: a name the file lacks is drawn as the default, and warned of
-/// (`ColorValidationPlugin`). It keeps nothing per shape: what it keeps is per color, made the first
-/// time one is asked for and let go of when the file's colors change, so a frame costs each shape a
-/// lookup and a commit costs nothing.
+/// A shape's color is its own (`ColorProperty`) where the file has it, else the color another plugin
+/// gives it (`InheritedColors`: a note of a type takes its type's) where the file has that, else its
+/// kind's default (`colorable(default:)`), else none: a name the file lacks is drawn as though the
+/// shape held none, and warned of (`ColorValidationPlugin`). It keeps nothing per shape: what it keeps
+/// is per color, made the first time one is asked for and let go of when the file's colors change, and
+/// per kind, so a frame costs each shape a lookup, and its giver's, and a commit costs nothing.
 @MainActor
 @Observable
 public final class ColorBook {
@@ -80,9 +81,14 @@ public final class ColorBook {
     @ObservationIgnored private var resolved: [ShapeColor: Resolved?] = [:]
     /// Each kind's default, resolved; nil for a kind with none.
     @ObservationIgnored private var defaults: [ShapeKind: Resolved?] = [:]
+    /// The contributions to `InheritedColors` that reach each kind with colors, found once.
+    @ObservationIgnored private var giversByKind: [ShapeKind: [InheritedColor]] = [:]
     /// The color and the kind asked for last: shapes drawn one after another mostly share both.
     @ObservationIgnored private var lastColor: (color: ShapeColor, resolved: Resolved?)?
     @ObservationIgnored private var lastKind: (kind: ShapeKind, resolved: Resolved?)?
+    @ObservationIgnored private var lastGivers: (kind: ShapeKind, givers: [InheritedColor])?
+    /// Moves when what `InheritedColors` gives changes with no commit naming the shapes.
+    @ObservationIgnored private var inheritedRevision = 0
     /// The appearance last drawn in, and whether it's dark: asked once an appearance, not a shape.
     @ObservationIgnored private var appearance: NSAppearance?
     @ObservationIgnored private var appearanceIsDark = false
@@ -135,18 +141,32 @@ public final class ColorBook {
     /// the file's colors change; nil for a name the file lacks. A listed shape's symbol.
     func tint(for color: ShapeColor) -> NSColor? { resolve(color)?.color(\.solid) }
 
-    /// The color a shape is drawn in: its own where the file has it, else its kind's default; nil
-    /// for a shape drawn as its kind looks on its own, and for a kind with no colors.
+    /// The color a shape is drawn in: its own where the file has it, else the one another plugin gives
+    /// it (`InheritedColors`) where the file has that, else its kind's default; nil for a shape drawn as
+    /// its kind looks on its own, and for a kind with no colors. A view that shows it draws again when
+    /// what's given changes (`inheritedColorsDidChange()`).
     public func color(of record: AnyShapeRecord) -> ShapeColor? {
         guard editor.registry.isColorable(record.kind) else { return nil }
         if let own = record.ownColor, resolve(own) != nil { return own }
+        if let given = inheritedColor(of: record.id, kind: record.kind) { return given }
         return editor.registry.defaultColor(of: record.kind)
+    }
+
+    /// The color another plugin gives a shape of `kind` that holds none of its own (`InheritedColors`):
+    /// the first the file has of what the contributions that reach the kind answer, in plugin order; nil
+    /// for none, and for a kind with no colors. Observed as `color(of:)` is.
+    public func inheritedColor(of id: ShapeID, kind: ShapeKind) -> ShapeColor? {
+        access(keyPath: \.inheritedChanges)
+        for giver in givers(of: kind) {
+            if let color = giver.color(id, editor), resolve(color) != nil { return color }
+        }
+        return nil
     }
 
     /// The roles a shape is drawn in, as `color(of:)`.
     public func swatch(of record: AnyShapeRecord) -> Swatch? {
         guard editor.registry.isColorable(record.kind) else { return nil }
-        return resolved(own: record.ownColor, kind: record.kind)?.swatch
+        return resolved(own: record.ownColor, kind: record.kind, id: record.id)?.swatch
     }
 
     /// One role of the color a shape is drawn in, as a color that follows the appearance: what a
@@ -155,18 +175,18 @@ public final class ColorBook {
     /// kind looks on its own.
     public func color(_ role: KeyPath<Swatch, Tone>, of record: AnyShapeRecord) -> NSColor? {
         guard editor.registry.isColorable(record.kind) else { return nil }
-        return color(role, for: record.ownColor, kind: record.kind)
+        return resolved(own: record.ownColor, kind: record.kind, id: record.id)?.color(role)
     }
 
-    /// The same, for a shape of `kind` holding `own`: what a kind asks of its own typed shape.
-    public func color(_ role: KeyPath<Swatch, Tone>, for own: ShapeColor?, kind: ShapeKind) -> NSColor? {
-        resolved(own: own, kind: kind)?.color(role)
+    /// The same, for a kind's own typed shape.
+    public func color<P: ShapeProps>(_ role: KeyPath<Swatch, Tone>, of shape: ShapeRecord<P>) -> NSColor? {
+        resolved(own: shape[ColorProperty.self], kind: P.kind, id: shape.id)?.color(role)
     }
 
-    /// The colors a shape of `kind` holding `own` is drawn in, in the appearance being drawn: what
-    /// `context.colors(of:)` answers. Nil for one drawn as its kind looks on its own.
-    public func colors(for own: ShapeColor?, kind: ShapeKind) -> SwatchColors? {
-        guard let found = resolved(own: own, kind: kind) else { return nil }
+    /// The colors a shape is drawn in, in the appearance being drawn: what `context.colors(of:)`
+    /// answers. Nil for one drawn as its kind looks on its own.
+    public func colors<P: ShapeProps>(of shape: ShapeRecord<P>) -> SwatchColors? {
+        guard let found = resolved(own: shape[ColorProperty.self], kind: P.kind, id: shape.id) else { return nil }
         return drawsDark ? found.dark : found.light
     }
 
@@ -176,8 +196,32 @@ public final class ColorBook {
         return drawsDark ? found.dark : found.light
     }
 
-    private func resolved(own: ShapeColor?, kind: ShapeKind) -> Resolved? {
+    /// A shape's own color where the file has it, else the one it's given, else its kind's default.
+    private func resolved(own: ShapeColor?, kind: ShapeKind, id: ShapeID) -> Resolved? {
         if let own, let found = resolve(own) { return found }
+        for giver in givers(of: kind) {
+            if let color = giver.color(id, editor), let found = resolve(color) { return found }
+        }
+        return resolvedDefault(of: kind)
+    }
+
+    /// The contributions to `InheritedColors` that reach a kind with colors, found once a kind; none for
+    /// a kind with no colors.
+    private func givers(of kind: ShapeKind) -> [InheritedColor] {
+        if let lastGivers, lastGivers.kind == kind { return lastGivers.givers }
+        let found: [InheritedColor]
+        if let known = giversByKind[kind] {
+            found = known
+        } else {
+            let registry = editor.registry
+            found = registry.isColorable(kind) ? registry.contributions(to: InheritedColors.self, for: kind) : []
+            giversByKind[kind] = found
+        }
+        lastGivers = (kind, found)
+        return found
+    }
+
+    private func resolvedDefault(of kind: ShapeKind) -> Resolved? {
         if let lastKind, lastKind.kind == kind { return lastKind.resolved }
         let found: Resolved?
         if let known = defaults[kind] {
@@ -225,6 +269,19 @@ public final class ColorBook {
     public func onChange(_ handler: @escaping @MainActor () -> Void) {
         handlers.append(handler)
     }
+
+    /// What `InheritedColors` gives changed for shapes no commit names (a type given another color: its
+    /// notes'): the canvas draws again, a view that shows a shape's color (the panel's row) reads it
+    /// again, and the lists that show a shape's symbol make its tint again
+    /// (`editor.shapeTintsDidChange()`). The plugin that gives the colors calls it, once it has the change.
+    public func inheritedColorsDidChange() {
+        withMutation(keyPath: \.inheritedChanges) { inheritedRevision &+= 1 }
+        editor.shapeTintsDidChange()
+        editor.setNeedsDisplay()
+    }
+
+    /// A key path to observe.
+    private var inheritedChanges: Int { inheritedRevision }
 
     /// Takes the file's colors as they now are, lets go of what was made from the old ones, and
     /// tells who asked, once the book has taken the change in (`editor.onceHeard`), so they may read it.
@@ -289,9 +346,10 @@ extension CanvasEditor {
 
 extension RenderContext {
     /// The colors this shape's color is drawn in, in the appearance being drawn: its own color's
-    /// where the file has it, else its kind's default's; nil for a shape drawn as its kind looks on
-    /// its own. One lookup a shape: read it in a render and a skeleton alike.
+    /// where the file has it, else the one it's given's (`InheritedColors`), else its kind's default's;
+    /// nil for a shape drawn as its kind looks on its own. One lookup a shape: read it in a render and a
+    /// skeleton alike.
     public func colors<P: ShapeProps>(of shape: ShapeRecord<P>) -> SwatchColors? {
-        service(ColorBook.self)?.colors(for: shape[ColorProperty.self], kind: P.kind)
+        service(ColorBook.self)?.colors(of: shape)
     }
 }

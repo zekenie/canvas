@@ -8,6 +8,7 @@ import Colors
 import CoreGraphics
 import Foundation
 import Frames
+import Geometry
 import LanguageModels
 import Mentions
 import Palette
@@ -20,10 +21,11 @@ import Subboards
 import TestKit
 import TextEditing
 import Titles
+import Types
 
 // Colors as shipped: which kinds have one, `/color` typed in a note's editor in the app's canvas
-// view, Color ▸ in a shape's menu, and a color drawn and queried through `canvas` over a socket of
-// its own.
+// view, Color ▸ in a shape's menu, a color drawn and queried through `canvas` over a socket of
+// its own, and a type's color on the notes and arrows of it.
 
 @MainActor let colorsShippedTests = Suite("Colors, as shipped", [
     test("a note, a subboard, a frame and an arrow have a color, a reference has none; a note is yellow and a subboard indigo without one") {
@@ -143,5 +145,61 @@ import Titles
         let kinds = try JSON(text: canvas(server, ["kinds"]).output)
         let note = kinds.arrayValue?.first { $0["kind"]?.stringValue == "sticky-note" }
         expectEqual(note?["attributes"]?["color"], "text (a color's name or #RRGGBB)")
+    },
+    test("a note of a type is drawn in the color its type was given, its own color winning, and an arrow of a relationship type in its; a type with none set leaves its notes yellow") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let script = ##"""
+        sticky-note "Person" schema: "{\"type\": \"object\"}" text: "A person" color: blue
+        sticky-note "Company" right of "Person" schema: "{\"type\": \"object\"}" text: "A company"
+        sticky-note "Employment" right of "Company" relationship: true schema: "{\"type\": \"object\"}" text: "A job" color: green
+        edge "Person" -> "Employment" text: "jobs"
+        edge "Employment" -> "Company" text: "staff"
+        sticky-note "Ann" below "Person" is: "Person"
+        sticky-note "Bo" right of "Ann" is: "Person" color: red
+        sticky-note "Acme" below "Ann" is: "Company"
+        edge "Ann" -> "Acme" is: "Employment"
+        """##
+        let made = try canvas(server, ["draw", "-"], input: script)
+        expectEqual(made.status, 0, made.error)
+        let editor = board.editor, book = try require(editor.colors)
+        @MainActor func shape(_ title: String) throws -> AnyShapeRecord {
+            try require(editor.document.shapes.first { editor.registry.title(of: $0) == title }, title)
+        }
+        expectEqual(book.color(of: try shape("Ann")), .blue)
+        expectEqual(try shape("Ann").ownColor, nil, "nothing is written to the note")
+        expectEqual(book.color(of: try shape("Bo")), .red, "its own wins")
+        expectEqual(book.color(of: try shape("Acme")), .yellow, "Company holds no color: a note's yellow")
+        let job = try require(editor.document.shapes.first { $0.kind == Arrow.kind && $0[IsAProperty.self]?.isEmpty == false })
+        expectEqual(book.color(of: job), .green, "a relationship's arrow is its relationship type's")
+        // The paper, where the note leaves it bare, under its words and anything over it.
+        @MainActor func paper(_ title: String) throws -> [Int] {
+            let frame = try require(editor.shapeContext.frame(of: try shape(title).id))
+            editor.camera = Camera(origin: CGPoint(x: frame.minX - 20, y: frame.minY - 20))
+            let bitmap = renderBitmap(editor, size: CGSize(width: frame.width + 40, height: frame.height + 40))
+            return pixel(bitmap, at: CGPoint(x: 20 + frame.width / 2, y: 20 + frame.height - 24))
+        }
+        @MainActor func expectPaper(_ title: String, _ color: RGB) throws {
+            let found = try paper(title), wanted = [color.red, color.green, color.blue].map { Int(($0 * 255).rounded()) }
+            let off = zip(found.prefix(3), wanted).map { abs($0 - $1) }.max() ?? 255
+            expect(off <= 2, "\(title): \(Array(found.prefix(3))) isn't \(wanted) (\(color.hexString))")
+        }
+        try expectPaper("Ann", BuiltInColors.blue.swatch.paper.light)
+        try expectPaper("Bo", BuiltInColors.red.swatch.paper.light)
+        try expectPaper("Acme", BuiltInColors.notePaper)
+        try expectPaper("Person", RGB(white: 1))
+        // Zoomed out, the note's skeleton is the same paper.
+        let ann = try require(editor.shapeContext.frame(of: try shape("Ann").id))
+        editor.camera = Camera(origin: CGPoint(x: ann.minX - 20, y: ann.minY - 20), zoom: 0.3)
+        let small = pixel(renderBitmap(editor, size: CGSize(width: 200, height: 150)),
+                          at: CGPoint(x: (20 + ann.width / 2) * 0.3, y: (20 + ann.height - 24) * 0.3))
+        let blue = BuiltInColors.blue.swatch.paper.light
+        let wanted = [blue.red, blue.green, blue.blue].map { Int(($0 * 255).rounded()) }
+        expect(zip(small.prefix(3), wanted).allSatisfy { abs($0 - $1) <= 2 }, "Ann at 30%: \(Array(small.prefix(3))) isn't \(wanted)")
     },
 ])

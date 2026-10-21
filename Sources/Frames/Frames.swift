@@ -70,7 +70,7 @@ public struct FramesPlugin: ListedPlugin {
             frame.tint(FrameStyle.tint)                                     // its gray, wherever it's listed by its kind
             frame.title(placeholderInPill: Frame.pillPlaceholder, coverSurface: FrameStyle.fill)  // Titles keeps its name, in a pill above it
             frame.titleCoverSurface { shape, context in       // a colored frame's cover is drawn over its own surface
-                context.service(ColorBook.self)?.color(\.surface, for: shape[ColorProperty.self], kind: Frame.kind)
+                context.service(ColorBook.self)?.color(\.surface, of: shape)
             }
             frame.mentionable()                                             // by its name; followed, it's gone to
             frame.resizable(minimumSize: place.minimumSize)                 // eight handles, Selection's

@@ -19,7 +19,7 @@ import Types
 
 // Colors: the states of one track, added to `galleryStates` (GalleryTypesLook.swift) as `colorStates`.
 // One small board with every kind that has a color, the panel's row and its grid, `/color`'s list,
-// and a type whose color was chosen.
+// a type whose color was chosen, and the notes of a type in its color.
 
 private let colorSchema = #"{"type": "object", "properties": {"name": {"type": "string"}}}"#
 
@@ -86,6 +86,29 @@ private func colorBoard(_ stage: GalleryStage) {
 
 private let boardSize = CGSize(width: 910, height: 570)
 
+/// A type given blue and the notes of it, one in its blue and one red of its own; a type built on it, holding no
+/// color, and a note of that one; a type that holds no color, and a note of it.
+@MainActor
+private func typeNotes(_ stage: GalleryStage) {
+    let editor = stage.editor
+    let person = editor.addTypeNote(colorSchema, text: MentionText(plain: "A person: their name"), title: "Person",
+                                    frame: CGRect(x: 40, y: 40, width: 320, height: 160))
+    editor.setColor(.blue, of: [person])
+    let employee = editor.addTypeNote(colorSchema, text: MentionText(plain: "Someone who works here"), title: "Employee",
+                                      frame: CGRect(x: 720, y: 40, width: 320, height: 160))
+    editor.addTypeLink(person, to: employee)
+    let company = editor.addTypeNote(colorSchema, text: MentionText(plain: "A company: its name"), title: "Company",
+                                     frame: CGRect(x: 1060, y: 40, width: 320, height: 160))
+    for (name, x, type, color) in [("Ann Lee", 40, person, nil), ("Bo Park", 380, person, ShapeColor.red), ("Cy Ng", 720, employee, nil),
+                                   ("Acme", 1060, company, nil)] as [(String, CGFloat, ShapeID, ShapeColor?)] {
+        let note = stage.coloredNote(name, CGRect(x: x, y: 330, width: 320, height: 160), color)
+        editor.addTypeLink(type, to: note)
+    }
+    editor.selection = nil
+}
+
+private let typeNotesSize = CGSize(width: 1420, height: 560)
+
 @MainActor let colorStates: [GalleryState] = [
     GalleryState("colors-board", "a note in each built-in color; a blue frame holding a teal note and a plain one; a green subboard; a note in a hex value and a red arrow that says blocks", size: boardSize) { stage in
         colorBoard(stage)
@@ -140,7 +163,15 @@ private let boardSize = CGSize(width: 910, height: 570)
         stage.window.settle()
         return .image(try stage.pictureWithList(of: view))
     },
-    GalleryState("colors-type", "a type whose note was given green: its pill solid green, and the chip of a note that is one light green; beside it a type with no color, in its id's", size: CGSize(width: 1000, height: 300)) { stage in
+    GalleryState("colors-type-notes", "a type given blue and its notes: Ann blue, as her type is; Bo red, his own; Cy, an Employee, blue from Person, which Employee is built on, Employee's pill in its id's color; Acme, a Company, which holds no color, yellow", size: typeNotesSize) { stage in
+        typeNotes(stage)
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("colors-type-notes-zoomed-out", "the same at 30%: each note's skeleton in the color it's drawn in, the types white", size: CGSize(width: 426, height: 168)) { stage in
+        typeNotes(stage)
+        return .image(stage.render(at: .zero, zoom: 0.3))
+    },
+    GalleryState("colors-type", "a type whose note was given green: its pill solid green, and a note that is one green paper, its chip light green; beside it a type with no color, in its id's", size: CGSize(width: 1000, height: 300)) { stage in
         let person = stage.editor.addTypeNote(colorSchema, text: MentionText(plain: "A person: their name"), title: "Person",
                                               frame: CGRect(x: 40, y: 60, width: 200, height: 160))
         stage.editor.setColor(.green, of: [person])

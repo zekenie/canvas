@@ -168,6 +168,9 @@ let ships = [
     // color looks like. After every plugin whose every-shape commands a note lists before `/color`
     // (Types' `/is-a` among them); then its warning and its row in the panel.
     "Colors.ColorsPlugin", "Colors.ColorValidationPlugin", "Colors.ColorDetailsPlugin",
+    // A shape of a type takes the color its type was given, where it holds none of its own. After
+    // Colors and Types, its two owners.
+    "Types.TypeColorsPlugin",
     // What a drag moves snaps to the shapes in view: their edges, their middles and the spaces
     // between them.
     "Snapping.SnappingPlugin",

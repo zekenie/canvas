@@ -59,7 +59,8 @@ public struct TypeChange: Sendable {
 /// added, removed and changed, on the board shown and elsewhere, the kind checked first), a file put in
 /// place read again. Nothing per frame, and nothing for a shape that only moved. It never transacts; it tells Adornments to make the chips of the instances of a type again
 /// when the type is renamed, recolored (its shape's `color`, or the file's colors it names), deleted or
-/// comes back.
+/// comes back, and Colors when what a type's shapes are drawn in may have changed with no commit to them
+/// (`color(inheritedBy:)`: a type recolored, come or gone, or a chain changed while a type holds a color).
 @MainActor
 @Observable
 public final class TypeIndex {
@@ -79,6 +80,8 @@ public final class TypeIndex {
     private struct Heard {
         var types: Set<ShapeID> = [], marks: Set<ShapeID> = [], membership: Set<ShapeID> = []
         var lineage: Set<ShapeID> = [], lists: Set<ShapeID> = [], renamed: Set<ShapeID> = []
+        /// Types whose shape holds another color now (or that came or went holding one): what their notes take.
+        var recolored: Set<ShapeID> = []
 
         var change: TypeChange { TypeChange(types: types, marks: marks, membership: membership, lineage: lineage, lists: lists) }
     }
@@ -106,11 +109,22 @@ public final class TypeIndex {
     /// Moves whenever what a list of types resolves to may: a type comes, goes, its schema's text
     /// changes, or its own `is` list does. Not for a rename, and not for another shape's list.
     @ObservationIgnored internal private(set) var chainRevision = 0
+    /// The types whose shape holds a color: what a shape of a type may take (`color(inheritedBy:)`).
+    @ObservationIgnored private var colored: Set<ShapeID> = []
+    /// Moves whenever a type's shape holds another color, or a type comes or goes holding one.
+    @ObservationIgnored private var colorRevision = 0
+    /// The colors the types of each list's chain hold, in its order, as of `heldAt` (`chainRevision`,
+    /// `colorRevision`): asked for every shape of a type in view, each frame.
+    @ObservationIgnored private var heldByList: [[TypeLink]: [ShapeColor]] = [:]
+    @ObservationIgnored private var heldAt = (-1, -1)
 
     #if DEBUG
     /// How many records it has read (debug builds only): a shape that only moved is read by none, a
     /// drag reads nothing.
     @ObservationIgnored public private(set) var recordsRead = 0
+    /// How many times the colors a list's chain holds were worked out (debug builds only): once a list,
+    /// until a chain or a type's color changes, however many shapes hold it.
+    @ObservationIgnored public private(set) var chainColorsRead = 0
     #endif
 
     init(editor: CanvasEditor) {
@@ -146,6 +160,36 @@ public final class TypeIndex {
     /// per type, so it is the color of the commit last heard.
     public func look(of id: ShapeID) -> TypeLook {
         TypeColors.look(of: id, own: entries[id]?.color, book: editor?.colors)
+    }
+
+    /// The color a shape takes from its types where it holds none of its own (`TypeColorsPlugin`): the
+    /// first the file has of the colors its chain's types' shapes hold, in the order its fields resolve
+    /// (`lineage(of:)`: a type before what it builds on, the one added later first). Only a color a type's
+    /// shape holds counts; the one its id says is its pill's and chips', never its notes'. Nil for a type
+    /// (its color is its own), a shape of no type, and one whose chain holds no color. Asked as each
+    /// such shape is drawn, so what a list's chain holds is worked out once and kept until a chain or a
+    /// type's color changes; while no type holds a color, it is a set's emptiness.
+    public func color(inheritedBy id: ShapeID) -> ShapeColor? {
+        guard !colored.isEmpty, entries[id] == nil, let links = kept.links[id] else { return nil }
+        let held = heldColors(of: links, shape: id)
+        guard !held.isEmpty, let book = editor?.colors else { return nil }
+        return held.first(where: book.has)
+    }
+
+    /// The colors the types of `id`'s chain hold, in its order: worked out once for each list, as the
+    /// field book resolves one, and again after a chain or a type's color changes.
+    private func heldColors(of links: [TypeLink], shape id: ShapeID) -> [ShapeColor] {
+        if heldAt != (chainRevision, colorRevision) {
+            heldByList.removeAll(keepingCapacity: true)
+            heldAt = (chainRevision, colorRevision)
+        }
+        if let known = heldByList[links] { return known }
+        #if DEBUG
+        chainColorsRead += 1
+        #endif
+        let found = kept.lineage(of: id).compactMap { entries[$0]?.color }
+        heldByList[links] = found
+        return found
     }
 
     /// A type's schema text, as the shape holds it; nil for a shape that isn't one.
@@ -335,11 +379,15 @@ public final class TypeIndex {
             kept.color = color
             kept.schema = schema.text
             entries[record.id] = kept
-            if recolored { heard.renamed.insert(record.id) }
+            if recolored {
+                heard.renamed.insert(record.id)
+                recolor(record.id, to: color, heard: &heard)
+            }
             return
         }
         if kept == nil { heard.membership.insert(record.id) }
         if kept == nil || kept?.name != name || kept?.color != color { heard.renamed.insert(record.id) }
+        if kept?.color != color { recolor(record.id, to: color, heard: &heard) }
         if let name { lastNames[record.id] = name }
         if !sameSchema { chainRevision &+= 1 }
         if (kept?.isRelationship ?? false) != mark { heard.marks.insert(record.id) }
@@ -394,6 +442,15 @@ public final class TypeIndex {
         heard.membership.insert(id)
         heard.renamed.insert(id)
         if entry.isRelationship { heard.marks.insert(id) }
+        if entry.color != nil { recolor(id, to: nil, heard: &heard) }
+    }
+
+    /// The type's shape holds another color now, or none (it came or went holding one): what the shapes
+    /// of it take is worked out again, and heard.
+    private func recolor(_ id: ShapeID, to color: ShapeColor?, heard: inout Heard) {
+        if color == nil { colored.remove(id) } else { colored.insert(id) }
+        colorRevision &+= 1
+        heard.recolored.insert(id)
     }
 
     /// A list changed: it is told in `lists`. A type's own list changing is told in `types` and `lineage`
@@ -464,12 +521,14 @@ public final class TypeIndex {
     /// are another file's). Those told hear once the index has it (`editor.onceHeard`).
     private func readAfresh(in editor: CanvasEditor) {
         let before = Set(entries.keys), instances = Set(kept.links.keys)
-        let marksBefore = kept.relationshipTypes
+        let marksBefore = kept.relationshipTypes, colorsBefore = !colored.isEmpty
         chainRevision &+= 1
         entries = [:]
         kept = TypeGraph()
         lastNames = [:]
+        colored = []
         readEveryShape(in: editor)
+        let recolors = colorsBefore || !colored.isEmpty
         let now = Set(entries.keys)
         let moved = before.union(now)
         let own = Set(kept.links.keys.filter { entries[$0] != nil }).union(instances.filter { before.contains($0) })
@@ -482,6 +541,7 @@ public final class TypeIndex {
             // Every chip may name another type.
             for type in moved { withMutation(keyPath: \.[nameVersion: type]) { nameVersions[type, default: 0] += 1 } }
             if !chips.isEmpty { editor.adornmentsDidChange(for: chips) }
+            if recolors { editor.colors?.inheritedColorsDidChange() }
         }
     }
 }
@@ -518,10 +578,15 @@ extension TypeIndex: EditorService {
             if let topology, typeableKinds.contains(record.kind) { readLinks(of: id, in: topology, heard: &heard) }
         }
         let change = heard.change, renamed = heard.renamed
+        // What a type's shapes are drawn in follows its color and its chain, which no commit to them says: a type
+        // recolored that has shapes of it (or went), or a chain changed while a type holds a color.
+        let recolors = heard.recolored.contains { entries[$0] == nil || hasInstances($0) }
+            || (!colored.isEmpty && !(heard.lineage.isEmpty && heard.membership.isEmpty))
         guard !change.isEmpty || !renamed.isEmpty else { return }
         editor.onceHeard { [weak self, unowned editor] in
             self?.tell(change)
             self?.told(renamed: renamed, in: editor)
+            if recolors { editor.colors?.inheritedColorsDidChange() }
         }
     }
 

@@ -7,6 +7,7 @@ import Palette
 /// roles that suit a line, a surface, text and a sheet of paper on the light canvas and the dark
 /// (Palette's `Swatch`); a file may add named colors of its own. A color is something the shape
 /// knows, an added property, `color`, on the kinds that opt in (`colorable`); a shape with none set
+/// takes the color another plugin gives it (`InheritedColors`: a note of a type, its type's), else
 /// looks as its kind says (`colorable(default:)`, or the kind's own look with no default).
 ///
 /// What a kind does with its color is the kind's: it reads the roles in its render
@@ -75,6 +76,45 @@ extension PluginRegistrar {
     public mutating func colorable<P: ShapeProps>(_: P.Type, default color: ShapeColor? = nil) {
         optIn(P.self, to: ColorProperty.self)
         contribute(ColorDefault(color: color), to: ColorDefaults.self, for: .kind(P.kind))
+    }
+}
+
+/// The color a shape takes from elsewhere where it holds none of its own (`InheritedColor`): what a
+/// plugin says the shapes of the kinds its scope reaches are drawn in, from what it keeps (Types': a
+/// note of a type takes the color its type was given). Not keyed: asked in plugin order, the first
+/// color the file has wins. A shape's own color comes before any, and its kind's default after them.
+public enum InheritedColors {}
+
+extension InheritedColors: ExtensionPoint {
+    public typealias Contribution = InheritedColor
+    public static var owner: PluginID { .colors }
+    /// A concern's color for other kinds' shapes says which: the kinds that hold its property.
+    public static var scope: PointScope { .scoped }
+
+    /// "inherited color → every shape holding is".
+    public static func summary(of _: InheritedColor, for target: ShapeTarget) -> String {
+        "inherited color → \(target)"
+    }
+}
+
+/// What `InheritedColors` stores: the color a shape is given, by its id, with the editor whose
+/// services keep what it's worked out from; nil for none.
+@MainActor
+public struct InheritedColor {
+    let color: @MainActor (ShapeID, CanvasEditor) -> ShapeColor?
+}
+
+extension ScopedRegistrar {
+    /// The color a shape of the kinds the scope reaches takes where it holds none of its own, and no
+    /// other kind's: Types gives the shapes that hold `is` their type's.
+    ///
+    ///     registrar.forShapes(holding: IsAProperty.self) { $0.inheritedColor { id, editor in editor.types?.color(inheritedBy: id) } }
+    ///
+    /// Asked whenever such a shape is drawn, listed or shown in the panel's row, so it answers from
+    /// what a service keeps. When what it gives changes with no commit naming the shapes (a type given
+    /// another color), the plugin says so: `editor.colors?.inheritedColorsDidChange()`.
+    public mutating func inheritedColor(_ color: @escaping @MainActor (ShapeID, CanvasEditor) -> ShapeColor?) {
+        contribute(InheritedColor(color: color), to: InheritedColors.self)
     }
 }
 

@@ -11517,6 +11517,12 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   the one it replaces unless it says one (`TypeColorDirective.carried`), so a script run again changes
   nothing. The model is never sent it (`stripped`), and a color change alone asks it nothing. It is the
   type's own: a type built on it keeps its own color, and no note of the type holds anything for it.
+- **A type's color on its notes**: a shape of a type that holds no color of its own (a note's paper,
+  a relationship type's arrow) is drawn in the color its type's note holds, never the one its id
+  says (`TypeColorsPlugin`, a plugin value of its own, through Colors' `InheritedColors`:
+  [Colors](#colors)); with several types, or a type built on another, the first its chain holds, in
+  the order its fields resolve (`TypeIndex.color(inheritedBy:)`). Nothing is written to the notes: a
+  type recolored, deleted or taken off a note recolors them with no step of their own.
 - **A type's pill**: a type's note shows a
   pill, Titles' own (`registrar.forShapes(holding: TypeSchemaProperty.self) { $0.titlePillLook { … } }`): its
   title after `curlybraces` (`arrow.right` for a relationship type), solid in the type's color; untitled, a dimmed gray `Untitled`.
@@ -11957,10 +11963,27 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
   a string with `contentMediaType` `text/x-canvas-color`.
 - **`context.colors(of: shape)`** is the seven roles as `CGColor`s (`SwatchColors`), or nil for a
   shape drawn as its kind looks on its own. One lookup a shape, so a skeleton reads it too. A shape
-  whose color is a name the file lacks is drawn as its kind's default, and warned of.
+  whose color is a name the file lacks is drawn as though it held none, and warned of.
+- **A color given.** A shape with no color of its own takes the one another plugin gives it, before
+  its kind's default: `InheritedColors`, a face on the kinds a scope reaches, answered from what a
+  service keeps, since it's asked whenever such a shape is drawn or listed. Types gives the shapes of
+  a type the color its type's shape holds:
+
+  ```swift
+  registrar.forShapes(holding: IsAProperty.self) { typeable in
+      typeable.inheritedColor { id, editor in editor.types?.color(inheritedBy: id) }
+  }
+  ```
+
+  The first answer the file has wins, in plugin order; nothing is written to the shape. When what a
+  plugin gives changes with no commit naming the shapes (a type given another color), it calls
+  `editor.colors?.inheritedColorsDidChange()`, and the canvas, the lists' tints and the panel's row
+  follow.
 - **`editor.colors`** (`ColorBook`) is what another plugin asks: `names` (the built-in ones, then
-  the file's), `swatch(of: record)`, `swatch(for: color)`, `color(\.solid, of: record)` (one role as
-  a color that follows the appearance, for a view) and `onChange`, called when the file's colors
+  the file's), `color(of: record)` (the color a shape is drawn in: its own, else the one it's
+  given, else its kind's default), `swatch(of: record)`, `swatch(for: color)`,
+  `color(\.solid, of: record)` (one role as a color that follows the appearance, for a view; a
+  kind's own typed shape too, for its title's cover) and `onChange`, called when the file's colors
   change. `editor.setColor(_:of:)` gives shapes a color, or takes theirs away, in one step.
 - **Where a color is picked.** The panel's Color row, one line in the Style tab, on the kinds that
   hold a color (`forShapes(holding: ColorProperty.self)`, over the record): a dot and the
@@ -11976,13 +11999,16 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
   one, and on an edge for its arrow; a name the file lacks is refused with the names it has.
   `canvas query` finds `[color="blue"]`, and `[color]` is a shape with a color of its own.
 
-What the shipped kinds do: a note's paper is its color's `paper` (yellow without one; a type's note
-stays white), a frame's surface and border are `surface` and `solid` (none without one), a
-subboard's card and border likewise (indigo without one), an arrow's line is `solid` and its label
-`ink`, and a type's color is the color its note holds, written in its schema as `$color`, else one of
-eight names by its id. A listed
-shape's symbol (Find, Jump To, a mention's pill, the table of contents, the Connections tab) is in
-its own color where it has one, through the core's `registrar.shapeTints`.
+What the shipped kinds do: a note's paper is its color's `paper` (its type's color without one of
+its own, else yellow; a type's note stays white), a frame's surface and border are `surface` and
+`solid` (none without one), a subboard's card and border likewise (indigo without one), an arrow's
+line is `solid` and its label `ink` (its relationship type's color without one of its own), and a
+type's color is the color its note holds, written in its schema as `$color`, else one of eight names
+by its id. Only a color a type's note holds passes to the shapes of it (the first its chain holds, a
+later type first and a type before what it builds on, as fields resolve); the one its id says is its
+pill's and chips' alone. A listed shape's symbol (Find, Jump To, a mention's pill, the table of
+contents, the Connections tab) is in its own color where it has one, else the one it's given,
+through the core's `registrar.shapeTints`.
 
 ## Language models
 
@@ -13751,6 +13777,7 @@ field-find           findable field value → every shape showing field values �
 colors               property color · file property colors · service ColorBook · shape tints · /color → every shape holding color · CanvasContextMenu → every shape holding color
 color-validation     service ColorWarnings · ValidationRules → every shape holding color
 color-details        ShapeDetails → every shape holding color
+type-colors          inherited color → every shape holding is
 snapping             service SnapState · translation adjuster · key hint ⌘ or ⌃ Drag Move Without Snapping
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect
 connect-menu         CanvasContextMenu

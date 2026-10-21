@@ -155,6 +155,7 @@ import Validation
         colors               property color · file property colors · service ColorBook · shape tints · /color → every shape holding color · CanvasContextMenu → every shape holding color
         color-validation     service ColorWarnings · ValidationRules → every shape holding color
         color-details        ShapeDetails → every shape holding color
+        type-colors          inherited color → every shape holding is
         snapping             service SnapState · translation adjuster · key hint ⌘ or ⌃ Drag Move Without Snapping
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect
         connect-menu         CanvasContextMenu

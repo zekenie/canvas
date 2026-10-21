@@ -77,7 +77,7 @@ public struct StickyNotesPlugin: ListedPlugin {
                 shape[TypeSchemaProperty.self] != nil ? TitlePillLook(coverSurface: NoteStyle.typePaper) : nil
             }
             note.titleCoverSurface { shape, context in        // and any other note's is its own paper, its color's
-                context.service(ColorBook.self)?.color(\.paper, for: shape[ColorProperty.self], kind: StickyNote.kind)
+                context.service(ColorBook.self)?.color(\.paper, of: shape)
             }
             note.noteHeader()                                  // renamed in the detail panel's header
             note.noteRow()                                     // and the table of contents
