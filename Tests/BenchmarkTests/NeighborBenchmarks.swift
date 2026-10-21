@@ -10,6 +10,8 @@ import Neighbors
 import Selection
 import StickyNotes
 import TestKit
+import Titles
+import Types
 
 // Neighbors' budgets: hovering a shape with 10,000 neighbors (and one with ten), what the main actor
 // spends from the hover to the lights landing; and what the lights add to a frame, with all 10,000 in
@@ -63,6 +65,26 @@ extension Budget {
     return (CanvasDocument(shapes: shapes), hub)
 }
 
+/// The hub board's grid with a type first and every other note of it: a type with `count - 1` instances, which Types'
+/// lights find through `:is-a` (however far), each tested to be no type. `instance` is one of them.
+@MainActor func typeHubBoard(shapes count: Int) -> (document: CanvasDocument, type: ShapeID, instance: ShapeID) {
+    let type = ShapeID()
+    var shapes: [AnyShapeRecord] = []
+    shapes.reserveCapacity(count)
+    for i in 0..<count {
+        let origin = CGPoint(x: CGFloat(i % 120) * 95, y: CGFloat(i / 120) * 95)
+        var record = AnyShapeRecord(ShapeRecord(id: i == 0 ? type : ShapeID(), StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 80, height: 80)), text: MentionText(plain: "Note \(i)"))))
+        if i == 0 {
+            record[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter)
+            record[TitleProperty.self] = "Kind"
+        } else {
+            record[IsAProperty.self] = [TypeLink(type)]
+        }
+        shapes.append(record)
+    }
+    return (CanvasDocument(shapes: shapes), type, shapes[1].id)
+}
+
 private let viewport = CGSize(width: 1200, height: 800)
 
 @MainActor func hubEditor(shapes count: Int, mentioning: Int, pasteboard: NSPasteboard) throws -> (h: EditorHarness, hub: ShapeID) {
@@ -74,9 +96,9 @@ private let viewport = CGSize(width: 1200, height: 800)
 }
 
 /// The shipped lights, in the order the plugins that own the edges give them: arrows' two
-/// (Arrows'), then mentions' two (Mentions').
+/// (Arrows'), then mentions' two (Mentions'), then types' two (Types', one pink: told apart by place).
 private enum Light: Int {
-    case pointsTo, pointedToBy, mentions, mentionedBy
+    case pointsTo, pointedToBy, mentions, mentionedBy, instances, subtypes
 }
 
 /// How many shapes the canvas outlines in a light's color, whatever the ring.
@@ -87,6 +109,43 @@ private enum Light: Int {
 }
 
 @MainActor let neighborBenchmarks = Suite("Neighbor benchmarks", [
+    test("a hover on a type with 10,000 instances costs the main actor what any hover with that many neighbors does, and a hover on one of them, what matches") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        for size in sizes {
+            let (document, type, instance) = typeHubBoard(shapes: size)
+            let registry = try Registry(plugins: shippedPlugins(pasteboard))
+            let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
+            h.editor.viewportDidResize(to: viewport)
+            let neighbors = try require(h.editor.neighbors)
+            for (what, subject, lights) in [("a type with \(size - 1) instances", type, size - 1), ("one of its instances", instance, 0)] {
+                @MainActor func hover() throws -> (main: Double, offMain: Double) {
+                    let (_, main, offMain) = try cpu {
+                        h.editor.hovered = subject
+                        h.wait(0)
+                        await neighbors.landed()
+                    }
+                    return (main, offMain)
+                }
+                let first = try hover()
+                let tints = h.editor.outlines.tinted.reduce(0) { $0 + $1.shapes.count }
+                expectEqual(tints, lights, "what is of the type, and nothing from an instance: its chips say what it is")
+                var mains: [Double] = [], offs: [Double] = []
+                for _ in 0..<11 {
+                    h.editor.hovered = nil
+                    h.wait(0)
+                    let (main, off) = try hover()
+                    mains.append(main)
+                    offs.append(off)
+                }
+                let main = middle(mains)
+                let budget = lights > 10 ? Budget.neighborHover.at(size) : Budget.neighborHoverFew
+                report(String(format: "%6d shapes, a hover on %@: main %6.3f ms (the first %6.3f; budget %.1f), the engine's answer off the main actor %6.1f ms",
+                              size, what, main, first.main, budget, middle(offs)))
+                if holdsToBudgets { expect(main < budget, "a hover on \(what), among \(size) shapes, took \(main) ms of the main actor") }
+            }
+        }
+    },
     test("a hover on a shape with 10,000 neighbors costs the main actor a few milliseconds from the hover to the lights landing; with ten neighbors, what matches") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

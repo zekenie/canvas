@@ -186,7 +186,7 @@ import Validation
         neighbors            service NeighborState · outlines
         arrow-lights         neighbor light · neighbor light
         mention-lights       neighbor light · neighbor light
-        type-lights          neighbor light
+        type-lights          neighbor light · neighbor light
         neighbor-details     service NeighborList · ShapeDetails → every shape
         moving               /move-to /move-near → every shape with a box · ContentsMoves
         reordering           command bringToFront in Arrange · shortcut ] → command bringToFront · command bringForward in Arrange · shortcut ⌥] → command bringForward · command sendBackward in Arrange · shortcut ⌥[ → command sendBackward · command sendToBack in Arrange · shortcut [ → command sendToBack · ShapeContextMenus → every shape painted in document order

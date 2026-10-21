@@ -234,6 +234,13 @@ public final class TypeIndex {
         topology.forEachEdge(of: type, .incoming, types: isA, view: .literal) { body($0.carrier) }
     }
 
+    /// The shapes that are of the type however far, never a type: its instances and those of every type built
+    /// on it (myCar is a Car through Toyota; Toyota, built on Car, is none), as `:is-a` finds them. Walked
+    /// through Topology (`affected(by:)`).
+    public func allInstances(of type: ShapeID) -> Set<ShapeID> {
+        affected(by: [type]).filter { entries[$0] == nil }
+    }
+
     /// Whether any shape's list names the shape: `instances(of:)` not empty, making nothing.
     public func hasInstances(_ type: ShapeID) -> Bool {
         editor?.topology?.hasEdges(of: type, .incoming, types: Self.isA, view: .literal) ?? false
@@ -248,6 +255,20 @@ public final class TypeIndex {
     /// so the chain of a shape that is its own ancestor stops where it comes back. A name that is
     /// gone is in it, ending its branch; check `isType` before reading one.
     public func lineage(of id: ShapeID) -> [ShapeID] { kept.lineage(of: id) }
+
+    /// The types a shape is through the types its list names, as its chain reads them: what they build on,
+    /// however far, in the chain's order, each with the first of its list's types it comes through (myCar
+    /// is a Car through Toyota). Through types alone, as the chain goes: a name that is gone, or a shape that
+    /// is no type now, ends its branch. What the Types tab lists under a shape's own.
+    public func builtOn(of id: ShapeID) -> [(type: ShapeID, through: ShapeID)] {
+        let own = (kept.links[id] ?? []).map(\.shape)
+        let parents = { (shape: ShapeID) in self.entries[shape] == nil ? [] : self.kept.parents(of: shape) }
+        let reach = own.filter { entries[$0] != nil }.map { (head: $0, reached: kept.chained([$0])) }
+        return TypeOrder.linearized(TypeOrder.heads(of: own), excluding: id, parents: parents).compactMap { type in
+            guard entries[type] != nil, !own.contains(type), let through = reach.first(where: { $0.reached.contains(type) })?.head else { return nil }
+            return (type, through)
+        }
+    }
 
     /// The file's types as a value: every shape's types and the types' names, which a query reads
     /// (`:is-a`, a type's title where `is` is read). Copy on write: held by a query, a commit copies
@@ -294,25 +315,40 @@ public final class TypeIndex {
 
     /// Whether `/is-a` may make `owner` an instance of `target`: `target` is a type (a shape of a kind
     /// that stands in for others, a pill, never is), not `owner` itself, not one `owner` is already,
-    /// and not one that is `owner` in turn, which would make a cycle (`reaches`). A shape on any
-    /// board of the file, asked of every shape the `@` picker ranks, so it costs a few lookups.
-    public func admits(_ target: ShapeID, for owner: ShapeID) -> Bool {
-        guard target != owner, mayBe(target, for: owner), !(kept.links[owner] ?? []).contains(TypeLink(target)) else { return false }
+    /// however far through types (`TypeGraph.chained`: a Toyota is a Car through Toyota, so Car is not
+    /// offered it), and not one that is `owner` in turn, which would make a cycle (`reaches`). `replacing`
+    /// are entries the pick takes the place of (an arrow's relationship type), so what they make `owner`
+    /// is not counted. A few lookups for a shape that is no type and has none.
+    public func admits(_ target: ShapeID, for owner: ShapeID, replacing: Set<ShapeID> = []) -> Bool {
+        guard target != owner, mayBe(target, for: owner) else { return false }
+        return admits(target, for: owner, already: already(owner, replacing: replacing))
+    }
+
+    /// What `owner` is already: each entry of its list, and what those a pick doesn't replace are built on, through types.
+    private func already(_ owner: ShapeID, replacing: Set<ShapeID>) -> Set<ShapeID> {
+        let own = (kept.links[owner] ?? []).map(\.shape)
+        return kept.chained(own.filter { !replacing.contains($0) }).union(own)
+    }
+
+    private func admits(_ target: ShapeID, for owner: ShapeID, already: Set<ShapeID>) -> Bool {
+        guard target != owner, !already.contains(target), mayBe(target, for: owner) else { return false }
         return !kept.reaches(owner, from: target)
     }
 
-    /// The types `owner` may be (`admits`), by name (case aside, the id the tie), an
+    /// The types `owner` may be (`admits`, with what a pick replaces), by name (case aside, the id the tie), an
     /// untitled one last: what `/is-a`'s list shows. O(types) a time it is asked, which is when a
     /// list opens.
-    public func choices(for owner: ShapeID) -> [(type: ShapeID, name: String?)] {
-        Self.sorted(entries.keys.filter { admits($0, for: owner) }.map { ($0, entries[$0]?.name) })
+    public func choices(for owner: ShapeID, replacing: Set<ShapeID> = []) -> [(type: ShapeID, name: String?)] {
+        let already = already(owner, replacing: replacing)
+        return Self.sorted(entries.keys.filter { admits($0, for: owner, already: already) }.map { ($0, entries[$0]?.name) })
     }
 
-    /// The types a menu for `shapes` lists: every type some shape is already or may be (`admits`), in
-    /// the order `choices(for:)` gives. O(types × shapes), once a menu opens.
-    public func menuChoices(for shapes: [ShapeID]) -> [(type: ShapeID, name: String?)] {
-        Self.sorted(entries.keys.filter { type in
-            shapes.contains { admits(type, for: $0) || (kept.links[$0] ?? []).contains(TypeLink(type)) }
+    /// The types a menu for `shapes` lists: every type some shape has or may be (`admits`, with what a pick replaces
+    /// on that shape), in the order `choices(for:)` gives. O(types × shapes), once a menu opens.
+    public func menuChoices(for shapes: [ShapeID], replacing: [ShapeID: Set<ShapeID>] = [:]) -> [(type: ShapeID, name: String?)] {
+        let held = shapes.map { (shape: $0, already: already($0, replacing: replacing[$0] ?? [])) }
+        return Self.sorted(entries.keys.filter { type in
+            held.contains { admits(type, for: $0.shape, already: $0.already) || (kept.links[$0.shape] ?? []).contains(TypeLink(type)) }
         }.map { ($0, entries[$0]?.name) })
     }
 

@@ -59,6 +59,15 @@ enum TypeRole {
         }
     }
 
+    /// What a pick on the shape takes the place of: an arrow's relationship types, since it is of one at a time
+    /// (`setRelationshipType`), so a relationship type its own builds on is offered in its place; nothing for any
+    /// other shape, which a pick adds to.
+    @MainActor
+    func replacing(_ shape: ShapeID, in index: TypeIndex) -> Set<ShapeID> {
+        guard self == .arrow else { return [] }
+        return Set(index.links(of: shape).map(\.shape)).intersection(index.graph.relationshipTypes)
+    }
+
     /// Whether the role is offered the type.
     @MainActor
     func offers(_ type: ShapeID, in index: TypeIndex) -> Bool {
@@ -79,7 +88,7 @@ extension CanvasEditor {
     public func typeChoices(for owner: ShapeID) -> [(type: ShapeID, name: String?, fit: ChoiceFit)] {
         guard let types, let record = shape(inFile: owner) else { return [] }
         let role = TypeRole(of: record, in: self)
-        let offered = types.choices(for: owner).filter { role.offers($0.type, in: types) }
+        let offered = types.choices(for: owner, replacing: role.replacing(owner, in: types)).filter { role.offers($0.type, in: types) }
         guard role == .arrow else { return offered.map { ($0.type, $0.name, .open) } }
         let graph = relationships?.graph
         let fitting = relationships?.subjects(of: owner).flatMap { graph?.fitting(from: $0.from.reading, to: $0.to.reading) }
@@ -98,9 +107,11 @@ extension CanvasEditor {
     func typeMenuChoices(for shapes: [ShapeID]) -> [(type: ShapeID, name: String?)] {
         guard let types else { return [] }
         let roles = shapes.compactMap { id in shape(inFile: id).map { (id: id, role: TypeRole(of: $0, in: self)) } }
-        return types.menuChoices(for: shapes).filter { entry in
+        let replacing = Dictionary(roles.map { ($0.id, $0.role.replacing($0.id, in: types)) }, uniquingKeysWith: { a, _ in a })
+        return types.menuChoices(for: shapes, replacing: replacing).filter { entry in
             roles.contains { shape in
-                types.links(of: shape.id).contains(TypeLink(entry.type)) || (shape.role.offers(entry.type, in: types) && types.admits(entry.type, for: shape.id))
+                types.links(of: shape.id).contains(TypeLink(entry.type))
+                    || (shape.role.offers(entry.type, in: types) && types.admits(entry.type, for: shape.id, replacing: replacing[shape.id] ?? []))
             }
         }
     }

@@ -92,10 +92,12 @@ private enum Schemas {
         let staff = try Staff()
         let editor = staff.editor, list = [staff.employee]
         let note = editor.add(memo("a plain note"))
+        let member = editor.addType(TypeSchemaProperty.starter, title: "Member")
         let resolved = staff.book.fields(types: list)
         let revision = staff.book.revision
         editor.transact("Rename") { $0.update(staff.employee) { $0[TitleProperty.self] = "Staff" } }
-        editor.addTypeLink(staff.person, to: staff.ann)
+        editor.addTypeLink(member, to: staff.ann)
+        expectEqual(editor.document[staff.ann]?[IsAProperty.self], [TypeLink(staff.employee), TypeLink(member)], "Ann's own list changed")
         let beforeMove = try require(editor.types).recordsRead
         editor.transact("Move") { $0.translate([staff.ann, staff.employee], by: CGPoint(x: 5, y: 5)) }
         expectEqual(try require(editor.types).recordsRead, beforeMove, "a move reads no record")

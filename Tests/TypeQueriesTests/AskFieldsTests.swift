@@ -27,9 +27,11 @@ private func typeNote(_ text: FieldFixtures.TypeText, at y: Double, buildingOn p
 @MainActor let askFieldsTests = Suite("--ask's fields", [
     test("the fields fact of a file of Order, Person and Employee: a line for each type, the types the question names first") {
         let employee = FieldFixtures.employee
+        var bo = memo(3, "Bo")
+        bo[IsAProperty.self] = [TypeLink(FieldFixtures.employeeID)]
         let h = try EditorHarness(plugins: typeQueryPlugins(), document: CanvasDocument(shapes: [
             typeNote(FieldFixtures.order, at: 40), typeNote(FieldFixtures.person, at: 140), typeNote(employee, at: 240, buildingOn: [FieldFixtures.personID]),
-            typeNote(FieldFixtures.address, at: 340),
+            typeNote(FieldFixtures.address, at: 340), bo,
         ]))
         let text = try require(try fact(h.editor, "when do people start?"))
         expectEqual(text, """
@@ -37,13 +39,13 @@ private func typeNote(_ text: FieldFixtures.TypeText, at y: Double, buildingOn p
             Person: name (text), email (text)
             Address: street (text), city (text), postcode (text)
             Order: customer (text), shippingAddress (fields of Address), lineItems (list) {product (text), quantity (whole number), price (number)}, status (draft|paid|shipped), tags (list of text), gift (yes/no), giftNote (text)
-            """, "Employee shares a word with the question (start); Person has one note that is one (Employee); then by title")
+            """, "Employee shares a word with the question (start); Person has one note that is one, Bo, through Employee; then by title")
         expectEqual(try fact(h.editor, "orders"), """
             Order: customer (text), shippingAddress (fields of Address), lineItems (list) {product (text), quantity (whole number), price (number)}, status (draft|paid|shipped), tags (list of text), gift (yes/no), giftNote (text)
+            Employee builds on Person: role (text), startDate (date)
             Person: name (text), email (text)
             Address: street (text), city (text), postcode (text)
-            Employee builds on Person: role (text), startDate (date)
-            """)
+            """, "Employee and Person have one note each, Bo, by title; Employee's own note is no Person")
     },
     test("a file with no types has no fields block, and one that holds no values never says any") {
         let none = try EditorHarness(plugins: typeQueryPlugins(), document: CanvasDocument(shapes: [memo(1, "Plain")]))

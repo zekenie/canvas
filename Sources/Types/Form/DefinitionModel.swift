@@ -59,7 +59,8 @@ struct DefinitionModel: Equatable {
         guard let record = editor.shape(inFile: hub), record[TypeSchemaProperty.self] != nil,
               let relationships = editor.relationships, relationships.graph.isRelationshipType(hub), let types = editor.types else { return nil }
         let graph = relationships.graph
-        let sides = graph.sides(of: hub)
+        // Its own ends: those of a type it builds on are that type's to edit.
+        let sides = graph.ownSides(of: hub)
         var ends: [DefinitionEnd] = []
         for side in RelationshipSide.allCases {
             for end in sides[side] {

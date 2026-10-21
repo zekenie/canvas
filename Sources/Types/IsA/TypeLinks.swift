@@ -12,9 +12,9 @@ import Titles
 /// shakes while the rest change in the one step.
 extension CanvasEditor {
     /// Makes `shape` an instance of `type`, in one step ("Add Type"): the type goes at the end of its
-    /// list, where a later one wins. Nothing for a type it is already, one `TypeIndex.admits` refuses
-    /// (itself, what is it in turn, what isn't a type), or a shape that isn't there or can't be an
-    /// instance; a read-only shape is refused by the core, and shakes.
+    /// list, where a later one wins. Nothing for a type it is already, directly or through another, one
+    /// `TypeIndex.admits` refuses (itself, what is it in turn, what isn't a type), or a shape that isn't there
+    /// or can't be an instance; a read-only shape is refused by the core, and shakes.
     public func addTypeLink(_ type: ShapeID, to shape: ShapeID) { addTypeLink(type, to: [shape]) }
 
     /// The same for several shapes, in one step.
@@ -130,12 +130,18 @@ extension CanvasEditor {
     /// Gives each arrow the relationship type, in the place of the one it has, in one step ("Add Type"): the entry
     /// goes and the new one comes, so an arrow is of one relationship type at a time. The writer for outside a
     /// press (a port's release gives its one type by `addTypeLink` alone, inside its own step). Nothing for a
-    /// shape that is no arrow of a relating kind; `addTypeLink` is still the one way a type is given.
+    /// shape that is no arrow of a relating kind, or that the type isn't admitted to in the place of its own
+    /// (`TypeIndex.admits(_:for:replacing:)`), which keeps its own; `addTypeLink` is still the one way a type is given.
     public func setRelationshipType(_ type: ShapeID, of connections: [ShapeID]) {
-        let taking = connections.filter { id in shape(inFile: id).map { registry.relates($0.kind) } ?? false }
+        guard let index = types else { return }
+        let marked = index.graph.relationshipTypes
+        let taking = connections.filter { id in
+            guard let record = shape(inFile: id), registry.relates(record.kind) else { return false }
+            let own = Set((record[IsAProperty.self] ?? []).map(\.shape)).intersection(marked)
+            return own.contains(type) || index.admits(type, for: id, replacing: own)
+        }
         guard !taking.isEmpty else { return }
         undoHistory.group(TypesStyle.addType) {
-            let marked = types?.graph.relationshipTypes ?? []
             for id in taking {
                 for old in shape(inFile: id)?[IsAProperty.self]?.map(\.shape) ?? [] where old != type && marked.contains(old) { removeTypeLink(old, from: id) }
                 addTypeLink(type, to: id)

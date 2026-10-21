@@ -9750,7 +9750,7 @@ the tab, [the detail panel](#the-detail-panel), [FuzzyMatching](#fuzzymatching) 
 it knows no kind, edge type or concern: what counts as connected is a **light**, a title, a color
 and a query, which the plugin that owns the edges contributes to its point
 (`registrar.neighborLight`). Arrows' two are Arrows' own (`ArrowLightsPlugin`), mentions' two are
-Mentions' (`MentionLightsPlugin`) and the one for what is of a type is Types' (`TypeLightsPlugin`),
+Mentions' (`MentionLightsPlugin`) and the two for what is of a type are Types' (`TypeLightsPlugin`),
 each a plugin value of its own, so a list without Neighbors leaves them out.
 
 | Light | Color | What's outlined, for the shape hovered, and listed, for the shape selected |
@@ -9759,7 +9759,8 @@ each a plugin value of its own, so a list without Neighbors leaves them out.
 | Pointed To By | purple | the shapes that have an arrow into it and the references that stand for it; for an arrow, the shape it starts at |
 | Mentions | teal | the shapes its text mentions |
 | Mentioned By | lavender | the shapes whose text mentions it |
-| Instances | pink | the shapes whose `is` list names it: a type built on it, but not what is of that one; a relationship type's arrows |
+| Instances | pink | what is of it, however far, never a type: a note that is it, and what is of a type built on it; a relationship type's arrows |
+| Subtypes | pink | the types built on it, however far: a kind of it, and none of it |
 
 The arrows themselves, between a shape and those, are outlined with them and never listed (a light's
 `between`).
@@ -9803,7 +9804,8 @@ registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedB
 
 // Types (TypeLightsPlugin, id `type-lights`):
 let isA = IsAEdge.id.rawValue, schema = TypeSchemaProperty.key.rawValue
-registrar.neighborLight(TypesStyle.instances, color: TypesStyle.instancesLight, query: { ":edge-to(\($0)[\(schema)], \(isA))" })
+registrar.neighborLight(TypesStyle.instances, color: TypesStyle.instancesLight, query: { ":\(isA)(\($0)[\(schema)]):not([\(schema)])" })
+registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, query: { "[\(schema)]:\(isA)(\($0)[\(schema)])" })
 ```
 
 - **`NeighborsPlugin()`** (id `neighbors`, `PluginID.neighbors`; with `NeighborLight`, the titled,
@@ -11397,7 +11399,9 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   `everything`) so a flip of the mark, a note that becomes a type and a list that changed are told apart.
   `RelationshipGraph` (pure, `Sendable`) holds the ends and the rows they give, and one function, `side`,
   fits a note to a side: a side with no end fits anything, several mean any, a type that builds on one
-  counts, a type's own note never does. `ArrowRole.of(from:to:registry:)` says what an arrow is by its two
+  counts, a type's own note never does. A relationship type may build on another: with no end of its own it
+  takes that one's ends (`sides(of:)`; its rows are its own ends', `ownSides(of:)`), and an arrow of it is
+  that one's relationship too, in its rows and their rules (`counts(_:as:)`). `ArrowRole.of(from:to:registry:)` says what an arrow is by its two
   end records alone. `RelationshipIndex` (`editor.relationships`, right after `TypeIndex`) keeps the
   graph, a revision, a stamp for each shape and `end(_:)`, answers `relations(of:)`, `candidates(for:of:)`,
   `subjects(of:)` and `reading(ofEnd:)` (a pill's every state) from records and the edges as they are, and
@@ -11764,9 +11768,12 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   `RowBook.reached(by:)`, asked once every service has the commit, so the type index has told the book which
   instances the commit reached.
 - **For [Neighbors](#neighbors)**, `TypeLightsPlugin` (a plugin value of Types' own, after Neighbors, and after
-  mentions' lights in the shipped list) gives one light, Instances (`TypesStyle.instances`): what is of the
-  hovered type, in pink (`TypesStyle.instancesLight`), `:edge-to(#id[schema], is-a)` (only while it is a type), so a type's Connections tab lists
-  its instances. Direct, as the chips are: a type built on it is listed, what is of that one isn't.
+  mentions' lights in the shipped list) gives two lights in one pink (`TypesStyle.instancesLight`), only while the
+  hovered shape is a type: Instances (`TypesStyle.instances`), `:is-a(#id[schema]):not([schema])`, what is of it
+  however far and never a type (myCar, a Toyota, under Car), and Subtypes (`TypesStyle.subtypes`),
+  `[schema]:is-a(#id[schema])`, the types built on it however far (Toyota under Car). So a type's Connections tab
+  lists both. They ask Types' own word, `:is-a` (`TypeQueriesPlugin`), so they follow it, through a shape that
+  is no type now, where a shape's Types tab and rows follow the chain, which stops there.
 - **Zoomed out** a kind's skeleton asks `context.showsTypeRowBars` (14% and up) and calls
   `context.fillTypeRowBars(of:in:)`: a bar for each row's name (as wide as its columns, never laid out), three
   dots for a fold, three bars while the model reads, one for `No fields` and a reason (also under a type's rows,
@@ -13808,7 +13815,7 @@ query-commands       command line query · command line query-vocabulary
 neighbors            service NeighborState · outlines
 arrow-lights         neighbor light · neighbor light
 mention-lights       neighbor light · neighbor light
-type-lights          neighbor light
+type-lights          neighbor light · neighbor light
 neighbor-details     service NeighborList · ShapeDetails → every shape
 moving               /move-to /move-near → every shape with a box · ContentsMoves
 reordering           command bringToFront in Arrange · shortcut ] → command bringToFront · command bringForward in Arrange · shortcut ⌥] → command bringForward · command sendBackward in Arrange · shortcut ⌥[ → command sendBackward · command sendToBack in Arrange · shortcut [ → command sendToBack · ShapeContextMenus → every shape painted in document order

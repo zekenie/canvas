@@ -117,7 +117,7 @@ private struct ChitsPlugin: CanvasPlugin {
         let manager = editor.addType(TypeSchemaProperty.starter, title: "Manager")
         editor.addTypeLink(employee, to: manager)
         expect(try !titles(editor, on: person).contains("Manager"), "Manager is an Employee, a Person")
-        expect(try titles(editor, on: manager).contains("Person"), "the other way is only a shorter chain")
+        expect(try !titles(editor, on: manager).contains("Person"), "nor Person, which Manager is already, through Employee")
         expect(try !titles(editor, on: manager).contains("Manager"))
         _ = zed
     },

@@ -126,7 +126,7 @@ private struct TypeInPocket {
         expect(!types.admits(b, for: a), "one it is")
         expect(!types.admits(a, for: b), "one that is it")
         expect(!types.admits(a, for: c), "one that is it, however far: a cycle")
-        expect(types.admits(c, for: a), "one it is through B is no cycle")
+        expect(!types.admits(c, for: a), "one it is through B: A is a C already")
         expect(types.admits(d, for: a) && types.admits(a, for: d), "unrelated types may")
         expect(types.admits(c, for: d))
     },

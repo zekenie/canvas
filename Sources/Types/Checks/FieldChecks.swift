@@ -538,14 +538,14 @@ public final class FieldChecks {
     /// What a run that hasn't committed says of a shape it wrote (draw, a dry run): the check of its values
     /// (`check(of:reading:)`), and the members of `written` no field of its types names, the first of each
     /// object; `typeNames` are its types' titles in its list's order (`Untitled` for one with none).
-    /// `unnamed` is empty while any type is gone (its values are kept and not checked), and for a shape
+    /// `unnamed` is empty while any type of its chain is gone, however far up (its values are kept and not checked), and for a shape
     /// with no types. `written` is nil for a shape whose statement changed nothing.
     public func drawn(_ record: AnyShapeRecord, written: JSONObject?, reading: LayoutReading) -> DrawnFields {
         guard let links = record[IsAProperty.self], !links.isEmpty, record[TypeSchemaProperty.self] == nil,
               let found = checkAndBook(of: record, reading: reading) else { return DrawnFields(check: .clean, unnamed: [], typeNames: []) }
         let types = links.map(\.shape)
         let names = types.map { found.book.name(of: $0) ?? "Untitled" }
-        guard let written, !written.isEmpty, types.allSatisfy({ found.book.schemaText(of: $0) != nil }) else {
+        guard let written, !written.isEmpty, found.book.fields(types: types).gone.isEmpty else {
             return DrawnFields(check: found.check, unnamed: [], typeNames: names)
         }
         return DrawnFields(check: found.check, unnamed: found.book.unnamed(in: written, types: types), typeNames: names)
@@ -574,7 +574,8 @@ public final class FieldChecks {
         #if DEBUG
         scratchMade += 1
         #endif
-        let ids = (made?.resolved.order ?? []) + (made?.referencedTypes ?? [])
+        // What it read, a name gone up the chain among it, so a later run that brings one back is not answered by this.
+        let ids = (made?.resolved.order ?? []) + Array(made?.resolved.gone ?? []) + (made?.referencedTypes ?? [])
         if scratchCount >= Self.scratchCapacity {
             scratch = [:]
             scratchCount = 0
@@ -618,7 +619,7 @@ public final class FieldChecks {
         let relations = relationships.relations(of: record.id, in: reading)
         return RelationChecks.note(rows: rows, count: { row in
             var seen: Set<ShapeID> = []
-            return relations.filter { $0.type == row.key.type && row.sides.contains($0.side) && seen.insert($0.arrow).inserted }.count
+            return relations.filter { graph.counts($0.type, as: row.key.type) && row.sides.contains($0.side) && seen.insert($0.arrow).inserted }.count
         }, graph: graph)
     }
 

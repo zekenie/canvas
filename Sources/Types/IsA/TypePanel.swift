@@ -172,13 +172,42 @@ extension DetailCodeCompletions {
 }
 
 
-/// The types a shape is, one row each.
+/// The types a shape is, one row each: those its list names, in its order, then those they are built on,
+/// however far, each with the type it comes through (myCar: Toyota, then Car through Toyota). Drawn again
+/// when a type's own list changes (`observeChanges`), which changes what this shape is through it.
 struct TypesList: View {
     @ShapeBinding var types: [TypeLink]
 
     var body: some View {
         let index = $types.service(TypeIndex.self), owner = $types.shapeID
+        let _ = index?.observeChanges()
         ForEach(types, id: \.shape) { link in TypesRow(link: link, owner: owner, index: index) }
+        ForEach(index?.builtOn(of: owner) ?? [], id: \.type) { row in BuiltOnRow(type: row.type, through: row.through, index: index) }
+    }
+}
+
+/// A type the shape is through another: its title, live, and the type it comes through; a click on it goes
+/// there. No minus: it goes with the type it comes through, or when that one stops being built on it.
+struct BuiltOnRow: View {
+    let type: ShapeID
+    let through: ShapeID
+    let index: TypeIndex?
+
+    var body: some View {
+        let editor = index?.editor
+        let name = TypesStyle.menuName(index?.name(of: TypeLink(type)) ?? .missing(lastKnown: nil))
+        let via = TypesStyle.menuName(index?.name(of: TypeLink(through)) ?? .missing(lastKnown: nil))
+        HStack(spacing: 2) {
+            Button {
+                _ = editor?.scheduler.schedule(after: .zero) { [weak editor] in editor?.goTo([type]) }
+            } label: {
+                DetailShapeRow(symbol: TypesStyle.typeRowSymbol, name: name, detail: TypesStyle.through(via))
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.primary)
+            // The minus's room, so its row's words end where the others' do.
+            Image(systemName: "minus.circle").hidden()
+        }
     }
 }
 

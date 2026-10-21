@@ -43,8 +43,9 @@ public enum TypesStyle {
     }
     /// `Type` and an untitled type in `/is-a`'s list: no color of their own.
     public static let grayChip = NSColor(white: 0.40, alpha: 1)
-    /// The panel's Types rows.
+    /// The panel's Types rows, and what a type the shape is through another says beside it: `through Toyota`.
     static let typeRowSymbol = "tag"
+    static func through(_ name: String) -> String { "through \(name)" }
     /// Behind the words a highlight links to the schema: a field's pale blue, a rule's pale amber,
     /// light enough on a note's yellow, and on white, that the text stays the text's gray.
     static let fieldHighlight = NSColor(srgbRed: 0.20, green: 0.47, blue: 0.96, alpha: 0.16).cgColor

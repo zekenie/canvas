@@ -149,6 +149,9 @@ public struct Resolved: Equatable, Sendable {
 
     /// The types, most specific first; only those the catalog has.
     public var order: [ShapeID] = []
+    /// The names the chain met that the catalog has nothing for (a type deleted, or a shape no longer one),
+    /// however far up: each ends its branch, so what lies beyond it is unknown.
+    public var gone: Set<ShapeID> = []
     /// Each field once, in row order: the most general type's first, in the order written, a field a
     /// more specific type restates staying where the more general one put it, with the winner's whole
     /// definition.
@@ -186,6 +189,7 @@ public enum Chain {
         var resolved = Resolved()
         // A shape the catalog has nothing for (gone, or not a type) ends its branch and is not listed.
         resolved.order = TypeOrder.linearized(heads, parents: { node($0)?.parents ?? [] }).filter { node($0) != nil }
+        resolved.gone = gone
 
         var winners: [String: (field: ChainField, source: ShapeID)] = [:]
         for type in resolved.order {

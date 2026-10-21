@@ -49,6 +49,21 @@ public struct TypeGraph: Sendable {
         return seen
     }
 
+    /// What `heads` are, as a chain reads them: each head, and what each that is a type builds on however far,
+    /// through types alone (a shape that is no type now ends its branch). What a shape is already (its own list
+    /// as `heads`), for the lists that offer it types and its Types tab; cycle-safe.
+    public func chained(_ heads: [ShapeID]) -> Set<ShapeID> {
+        var seen = Set(heads), level = heads
+        while !level.isEmpty {
+            var next: [ShapeID] = []
+            for shape in level where types.contains(shape) {
+                for parent in parents(of: shape) where seen.insert(parent).inserted { next.append(parent) }
+            }
+            level = next
+        }
+        return seen
+    }
+
     /// Whether `owner` is in what `target` leads to, however far; no order, cycle-safe. What `lineage`
     /// would answer to `contains`, without making the order.
     public func reaches(_ owner: ShapeID, from target: ShapeID) -> Bool {

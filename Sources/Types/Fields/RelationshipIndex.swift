@@ -283,10 +283,12 @@ public final class RelationshipIndex {
         return found
     }
 
-    /// Those of a note's relations that are of the row's type on the row's side or sides, each arrow once.
+    /// Those of a note's relations that are of the row's type, or of one built on it (`counts(_:as:)`), on the row's side or
+    /// sides, each arrow once.
     public func relations(of note: ShapeID, in row: RelationshipRow) -> [Relation] {
+        let graph = graph
         var seen: Set<ShapeID> = []
-        return relations(of: note).filter { $0.type == row.key.type && row.sides.contains($0.side) && seen.insert($0.arrow).inserted }
+        return relations(of: note).filter { graph.counts($0.type, as: row.key.type) && row.sides.contains($0.side) && seen.insert($0.arrow).inserted }
     }
 
     /// The notes that fit the other end of a row, file-wide, whoever asks: any of the other types' instances (through
@@ -552,7 +554,8 @@ public final class RelationshipIndex {
             out.arrows.insert(end.carrier)
             bump(end.carrier)
         }
-        if before.types != after.types { out.arrows.formUnion(types.instances(of: type)) }
+        // Its arrows, and those of the relationship types built on it that read a side from it, are judged by its ends.
+        if before.types != after.types { out.arrows.formUnion(types.allInstances(of: type)) }
         // Every end type's rows are made first: a note reads its type's rows with the ones it builds on and its other types', so
         // the compare of one end's rows is made against the rows of all the others as they are after.
         var rowsBefore: [ShapeID: [RelationshipRow]?] = [:]
@@ -743,6 +746,14 @@ public final class RelationshipIndex {
         // was taken from is a loose end at a type's note, though, and a note that comes or goes as a type moves that).
         if !isActive, pendingTypes.marks.isEmpty, pendingTypes.membership.isEmpty, endOf.isEmpty, pilled.isEmpty { return }
         var out = Announce()
+        // The arrows among shapes whose chain moved (a lineage, or a type in it that came or went): one of a relationship type is
+        // judged by other ends and counts in other rows, so it and the notes at its ends are named.
+        func namingArrows(among reached: Set<ShapeID>) {
+            for arrow in reached where lookup(arrow).map({ relatingKinds.contains($0.kind) }) ?? false {
+                out.arrows.insert(arrow)
+                noteEnds(of: arrow, &out)
+            }
+        }
         for arrow in pilled { out.arrows.insert(arrow); bump(arrow) }
         var carriers: Set<ShapeID> = [], scans: Set<ShapeID> = [], recompile: Set<ShapeID> = [], gone: [ShapeID] = []
         let marked = types.graph.relationshipTypes
@@ -803,7 +814,7 @@ public final class RelationshipIndex {
         // The marks, in both directions.
         for id in pendingTypes.marks {
             scans.insert(id)
-            out.arrows.formUnion(types.instances(of: id))
+            out.arrows.formUnion(types.allInstances(of: id))
             revision &+= 1
             out.ended = true
         }
@@ -829,6 +840,8 @@ public final class RelationshipIndex {
             let reached = types.affected(by: pendingTypes.membership)
             out.notes.formUnion(reached)
             out.layout.formUnion(reached)
+            // An arrow of a relationship type whose chain ran through a shape that came or went as a type.
+            namingArrows(among: reached)
         }
         // A type's own list changed: its instances, near and far, read their rows from another place.
         // So does a list that is no type's (a type taken away that its instances still name): the chain runs
@@ -841,6 +854,7 @@ public final class RelationshipIndex {
             let reached = types.affected(by: chains)
             out.notes.formUnion(reached)
             for type in marked { out.arrows.formUnion(types.instances(of: type)) }
+            namingArrows(among: reached)
             out.layout.formUnion(chains)
             out.layout.formUnion(reached.filter(types.isType))
         }
@@ -897,7 +911,7 @@ public final class RelationshipIndex {
             }
             noteEnds(of: id, &out)
         }
-        for id in pendingTypes.marks { for arrow in types.instances(of: id) { noteEnds(of: arrow, &out) } }
+        for id in pendingTypes.marks { for arrow in types.allInstances(of: id) { noteEnds(of: arrow, &out) } }
         // A shape that left the file keeps no stamp, whatever read it again on the way.
         if !stamps.isEmpty || !noteEndsOf.isEmpty {
             for id in gone {

@@ -275,8 +275,8 @@ extension ConnectionGroup {
             link(from: x, to: b), link(from: c, to: x),
         ], pasteboard)
         let list = try require(h.editor.neighborList)
-        expectEqual(list.groups.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Inside", "Contains"])
-        expectEqual(list.groups.map { $0.color != nil }, [true, true, true, true, true, false, false], "a light's list has its color; the two besides have none")
+        expectEqual(list.groups.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Subtypes", "Inside", "Contains"])
+        expectEqual(list.groups.map { $0.color != nil }, [true, true, true, true, true, true, false, false], "a light's list has its color; the two besides have none")
         let hub = try h.editor.connections(of: x)
         expectEqual(hub.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Inside"])
         expectEqual(hub.map(\.ids), [[b], [c], [d], [e], [o]])
@@ -286,7 +286,7 @@ extension ConnectionGroup {
         expect(list.hasLanded, "the answer is in: nothing to list")
         expectEqual(list.total, 0)
     },
-    test("a type lists what is of it under Instances, after the arrows' lists and before Inside: a note on a subboard's board with that board's name, and a type built on it but not what is of that one; a relationship type lists its arrows") {
+    test("a type lists what is of it under Instances, however far, after the arrows' lists, and the types built on it under Subtypes, before Inside: a note on a subboard's board with that board's name, and what is of a type built on it; a relationship type lists its arrows") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let (o, table, owns, staging, orders, items, stage, users, s, end, owning) = (ShapeID(), ShapeID(), ShapeID(), ShapeID(), ShapeID(), ShapeID(),
@@ -300,12 +300,13 @@ extension ConnectionGroup {
             link(end, from: owns, to: table), link(owning, from: orders, to: items, is: [owns]),
         ], children: [s: [typed(users, "users", 0, 0, is: [table])]], pasteboard)
         let tableLists = try h.editor.connections(of: table)
-        expectEqual(tableLists.map(\.title), ["Pointed To By", "Instances", "Inside"])
+        expectEqual(tableLists.map(\.title), ["Pointed To By", "Instances", "Subtypes", "Inside"])
         expectEqual(tableLists[0].ids, [owns])
         let instances = tableLists[1]
-        expectEqual(Set(instances.ids), [staging, orders, users], "what lists it, never what is of a type built on it")
+        expectEqual(Set(instances.ids), [orders, users, stage], "what lists it, and what is of a type built on it: never a type")
         expectEqual(instances.rows.first { $0.id == users }?.detail, "Commerce", "the board it's on")
         expectEqual(instances.rows.filter { $0.id != users }.map(\.detail), [nil, nil], "the board shown needs no saying")
+        expectEqual(tableLists[2].ids, [staging], "the type built on it is a kind of Table, and no Table")
         let ownsLists = try h.editor.connections(of: owns)
         expectEqual(ownsLists.map(\.title), ["Points To", "Instances", "Inside"])
         expectEqual(ownsLists[1].ids, [owning], "a relationship type's instances are its arrows")
@@ -315,7 +316,11 @@ extension ConnectionGroup {
         h.editor.removeType(table)
         expectEqual(try h.editor.connections(of: table).map(\.title), ["Pointed To By", "Inside"])
         h.editor.undo()
-        expectEqual(try h.editor.connections(of: table).map(\.title), ["Pointed To By", "Instances", "Inside"])
+        expectEqual(try h.editor.connections(of: table).map(\.title), ["Pointed To By", "Instances", "Subtypes", "Inside"])
+        // The type built on it lists what is of it, and nothing it builds on.
+        let stagingLists = try h.editor.connections(of: staging)
+        expectEqual(stagingLists.map(\.title), ["Instances", "Inside"])
+        expectEqual(stagingLists[0].ids, [stage])
     },
     test("a note connected two ways is listed under both; one that points or mentions itself doesn't list itself; a mentioner on another board has that board's name and its text") {
         let pasteboard = NSPasteboard.withUniqueName()

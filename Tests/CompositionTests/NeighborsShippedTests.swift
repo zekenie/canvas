@@ -109,14 +109,14 @@ private extension EditorHarness {
 
 /// The shipped lights' colors, as the registry has them, in the order the plugins give them: arrows'
 /// two (Arrows': what a shape points to, what points to it), then mentions' two (Mentions': what
-/// it mentions, what mentions it), then types' one (Types': what is of it).
+/// it mentions, what mentions it), then types' two (Types': what is of it, and the types built on it).
 private struct Lights {
-    let pointsTo, pointedToBy, mentions, mentionedBy, instances: NSColor
+    let pointsTo, pointedToBy, mentions, mentionedBy, instances, subtypes: NSColor
 
     @MainActor init(_ registry: Registry) throws {
         let lights = registry.neighborLights
-        let colors = try require(lights.count == 5 ? lights.map(\.color) : nil, "five lights, not \(lights.count)")
-        (pointsTo, pointedToBy, mentions, mentionedBy, instances) = (colors[0], colors[1], colors[2], colors[3], colors[4])
+        let colors = try require(lights.count == 6 ? lights.map(\.color) : nil, "six lights, not \(lights.count)")
+        (pointsTo, pointedToBy, mentions, mentionedBy, instances, subtypes) = (colors[0], colors[1], colors[2], colors[3], colors[4], colors[5])
     }
 }
 
@@ -159,7 +159,7 @@ private struct Kinds {
 }
 
 @MainActor let neighborsShippedTests = Suite("Neighbors, as shipped", [
-    test("it follows the query plugins in the shipped list, and the plugins that own the edges give it five titled lights: arrows' green and purple, mentions' teal and lavender, then types' pink, and its panel's tab comes last") {
+    test("it follows the query plugins in the shipped list, and the plugins that own the edges give it six titled lights: arrows' green and purple, mentions' teal and lavender, then types' two in pink, and its panel's tab comes last") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())
@@ -176,20 +176,22 @@ private struct Kinds {
                "Neighbors, then arrows' lights, then mentions', then types', then the tab that lists them")
         expect(registry.report.contains("neighbors"))
         let lights = registry.neighborLights
-        expectEqual(lights.count, 5)
-        expectEqual(lights.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances"])
+        expectEqual(lights.count, 6)
+        expectEqual(lights.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Subtypes"])
         // Each light asks for the shape named by its id, with the edge types' ids the plugins declare.
         let selector = "#\(ShapeID())"
         expectEqual(lights.map { $0.query(selector) }, [":edge-from(\(selector), arrow|stands-for), :end-of(\(selector), arrow)",
                                                        ":edge-to(\(selector), arrow|stands-for), :start-of(\(selector), arrow)",
-                                                       ":edge-from(\(selector), mention)", ":edge-to(\(selector), mention)", ":edge-to(\(selector)[schema], is-a)"])
+                                                       ":edge-from(\(selector), mention)", ":edge-to(\(selector), mention)",
+                                                       ":is-a(\(selector)[schema]):not([schema])", "[schema]:is-a(\(selector)[schema])"])
         // The arrows run between, lit and never listed; mentions and types have none.
-        expectEqual(lights.map { $0.between?(selector) }, [":starts-at(\(selector), arrow)", ":ends-at(\(selector), arrow)", nil, nil, nil])
+        expectEqual(lights.map { $0.between?(selector) }, [":starts-at(\(selector), arrow)", ":ends-at(\(selector), arrow)", nil, nil, nil, nil])
         expectEqual(lights.map { $0.lit(selector) }, [":edge-from(\(selector), arrow|stands-for), :end-of(\(selector), arrow), :starts-at(\(selector), arrow)",
                                                      ":edge-to(\(selector), arrow|stands-for), :start-of(\(selector), arrow), :ends-at(\(selector), arrow)",
-                                                     ":edge-from(\(selector), mention)", ":edge-to(\(selector), mention)", ":edge-to(\(selector)[schema], is-a)"])
+                                                     ":edge-from(\(selector), mention)", ":edge-to(\(selector), mention)",
+                                                     ":is-a(\(selector)[schema]):not([schema])", "[schema]:is-a(\(selector)[schema])"])
         // What mentions a shape has its text around the mention under it; nothing else has a line.
-        expectEqual(lights.map { $0.caption != nil }, [false, false, false, true, false])
+        expectEqual(lights.map { $0.caption != nil }, [false, false, false, true, false, false])
     },
     test("a list without Neighbors leaves the lights out, and one with a light and no Neighbors is refused") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -202,12 +204,12 @@ private struct Kinds {
             _ = try Registry(plugins: all.filter { $0.id != .neighbors })
         }
     },
-    test("the tab that lists what the lights match is a plugin of its own: a list without it keeps the five lights and the hover, and the panels lose the Connections tab") {
+    test("the tab that lists what the lights match is a plugin of its own: a list without it keeps the six lights and the hover, and the panels lose the Connections tab") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let all = ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel())
         let without = try Registry(plugins: all.filter { $0.id != .neighborDetails })
-        expectEqual(without.neighborLights.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances"])
+        expectEqual(without.neighborLights.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Subtypes"])
         let editor = CanvasEditor(registry: without, document: CanvasDocument(), scheduler: ManualScheduler())
         expect(editor.neighbors != nil, "the hover")
         expect(editor.neighborList == nil, "the list")
@@ -238,6 +240,7 @@ private struct Kinds {
             expect(contrast(light.dark, darkCanvas) >= 3, "light \(i) on the dark canvas: \(contrast(light.dark, darkCanvas)):1")
         }
         expectEqual(Set(chosen.map(\.light)).count, 5, "five colors")
+        expectEqual(lights.subtypes, lights.instances, "a type built on it in the pink of what is of it: a shape is one or the other")
         expectEqual(Set(chosen.map(\.dark)).count, 5)
     },
     test("hovering a note outlines what it points to, what points to it, what it mentions and what mentions it, and the arrows between, each in its color") {
@@ -319,7 +322,7 @@ private struct Kinds {
         h.settleLights()
         expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.a]), Lit(lights.pointedToBy, 0, [graph.b])])
     },
-    test("hovering a type outlines what is of it in pink: a note, a type built on it (not what is of that one) and the subboard whose board holds one; an instance hovered lights no type") {
+    test("hovering a type outlines what is of it in pink, however far: a note, what is of a type built on it and the subboard whose board holds one, and apart from them the type built on it; an instance hovered lights no type") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let kinds = Kinds()
@@ -327,14 +330,18 @@ private struct Kinds {
         let lights = try Lights(h.editor.registry)
         h.editor.hovered = kinds.t
         h.settleLights()
-        expectEqual(h.lit, [Lit(lights.instances, 0, [kinds.a, kinds.u, kinds.s])])
+        expectEqual(h.lit, [Lit(lights.instances, 0, [kinds.a, kinds.v, kinds.s]), Lit(lights.subtypes, 0, [kinds.u])])
         // A note given the type while it's hovered is lit, and with the undo, not.
         h.editor.addTypeLink(kinds.t, to: kinds.p)
         h.settleLights()
-        expectEqual(h.lit, [Lit(lights.instances, 0, [kinds.a, kinds.u, kinds.s, kinds.p])])
+        expectEqual(h.lit, [Lit(lights.instances, 0, [kinds.a, kinds.v, kinds.s, kinds.p]), Lit(lights.subtypes, 0, [kinds.u])])
         h.editor.undo()
         h.settleLights()
-        expectEqual(h.lit, [Lit(lights.instances, 0, [kinds.a, kinds.u, kinds.s])])
+        expectEqual(h.lit, [Lit(lights.instances, 0, [kinds.a, kinds.v, kinds.s]), Lit(lights.subtypes, 0, [kinds.u])])
+        // The type built on it lights what is of it alone, and nothing it builds on.
+        h.editor.hovered = kinds.u
+        h.settleLights()
+        expectEqual(h.lit, [Lit(lights.instances, 0, [kinds.v])])
         // What a shape is isn't lit from it: its chips say that.
         h.editor.hovered = kinds.a
         h.settleLights()

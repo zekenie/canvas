@@ -128,8 +128,8 @@ extension FileFields {
     /// What a translator of English into queries is told of the file's types: a line for each titled type (its
     /// title, `builds on` and its parents' titles when it builds on any, then its own fields, each key first, then
     /// in quotes the name a person sees when the field's own `title` says another than the key's words, then its
-    /// kind in parentheses), the types that share a word with `question` first, then by how many notes are one, then
-    /// by title. A relationship type's line says `relates A to B` after its name (`anything` for a side with no end) and
+    /// kind in parentheses), the types that share a word with `question` first, then by how many notes are one, however
+    /// far (`allInstances`), then by title. A relationship type's line says `relates A to B` after its name (`anything` for a side with no end) and
     /// ends with `; rows:` and the rows its ends name or flag; an untitled one is told by `#` and its id. At most 8,000
     /// characters: past them the last types are named on a last line, as many as fit. Empty when no type is titled.
     /// Never a note's text or values.
@@ -137,7 +137,7 @@ extension FileFields {
         let typeLines = lines
         guard !typeLines.isEmpty else { return "" }
         let asked = Self.words(in: question)
-        let instances = editor?.types.map { index in typeLines.map { index.instances(of: $0.id).count } } ?? typeLines.map { _ in 0 }
+        let instances = editor?.types.map { index in typeLines.map { index.allInstances(of: $0.id).count } } ?? typeLines.map { _ in 0 }
         let named = typeLines.map { line in asked.contains { line.words.contains($0) } }
         typealias Rank = (named: Bool, instances: Int, title: String, place: Int)
         let ranks: [Rank] = typeLines.indices.map { (named[$0], instances[$0], typeLines[$0].title, $0) }
@@ -203,7 +203,8 @@ extension FileFields {
                     if let name = index.name(of: end.type) { words.formUnion(Self.words(in: name)) }
                     if let name = end.name { words.formUnion(Self.words(in: name)) }
                 }
-                rows = Self.rows(of: type, sides: sides, index: index)
+                // Its rows are its own ends': one with none takes the other's ends and gives no rows of its own.
+                rows = Self.rows(of: type, sides: relationships.ownSides(of: type), index: index)
             }
             line += ": "
             if own.isEmpty {

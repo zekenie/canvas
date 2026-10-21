@@ -137,7 +137,13 @@ enum RunTouches {
             // Their instances, near and far, read rows from another place, and the arrows at each fit by another lineage.
             let reached = index.affected(by: chains)
             found.formUnion(reached)
-            if live { for note in reached where !index.isType(note) { found.formUnion(relationships.arrows(at: note, in: reading)) } }
+            if live {
+                for note in reached where !index.isType(note) {
+                    found.formUnion(relationships.arrows(at: note, in: reading))
+                    // An arrow of a relationship type whose lineage moved: the notes at its ends count it in other rows.
+                    if let record = reading.shape(inFile: note), registry.relates(record.kind) { found.formUnion(atEnds(of: record, committed: false)) }
+                }
+            }
         }
 
         // The relationship types the run compiled again: where the ruled rows of an end type's notes differ, its notes,
@@ -152,7 +158,8 @@ enum RunTouches {
                 }
                 let flipped = before.types.relationshipTypes.contains(type) != after.types.relationshipTypes.contains(type)
                 guard flipped || places(old) != places(new) else { continue }
-                for arrow in index.instances(of: type) {
+                // Its arrows, and those of the relationship types built on it that read a side from it.
+                for arrow in index.allInstances(of: type) {
                     found.insert(arrow)
                     guard flipped, let record = reading.shape(inFile: arrow) else { continue }
                     found.formUnion(atEnds(of: record, committed: false))

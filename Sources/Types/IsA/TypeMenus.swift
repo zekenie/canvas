@@ -48,9 +48,12 @@ struct IsAMenu {
         canBeRelationshipTypes = applies && records.allSatisfy { editor.registry.canBeRelationshipType($0.kind) }
         allAreRelationshipTypes = canBeRelationshipTypes && records.allSatisfy { $0[TypeSchemaProperty.self] != nil && $0[RelationshipProperty.self] == true }
         types = applies ? editor.typeMenuChoices(for: shapes) : []
+        // What every shape is: an arrow's own list (a pick replaces its relationship type), any other shape's and what
+        // it is through them, so a type a shape is through another is no item that does nothing for it.
         var common: Set<ShapeID>?
         for record in records {
-            let links = Set((record[IsAProperty.self] ?? []).map(\.shape))
+            let own = (record[IsAProperty.self] ?? []).map(\.shape)
+            let links = editor.registry.relates(record.kind) ? Set(own) : (editor.types?.graph.chained(own) ?? Set(own))
             common = common.map { $0.intersection(links) } ?? links
         }
         had = common ?? []

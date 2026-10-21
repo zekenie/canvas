@@ -314,9 +314,31 @@ extension RelationshipGraph {
     /// Whether the shape is a relationship type now: a type that holds the mark.
     public nonisolated func isRelationshipType(_ id: ShapeID) -> Bool { types.relationshipTypes.contains(id) }
 
-    /// A relationship type's ends. Its own alone today; the one place a later union with what it builds on
-    /// goes.
-    public nonisolated func sides(of type: ShapeID) -> RelationshipSides { ends.sides[type] ?? RelationshipSides() }
+    /// A relationship type's ends, as its arrows are judged by them: its own; or, for one with no end of its own, those of
+    /// the first relationship type it builds on that has some, in the order its chain reads them, through types alone (a
+    /// Contract built on Employment, with no ends drawn, runs from a Person to a Company). One that draws any end is its own
+    /// definition, a side it draws none on taking anything, so the rows its ends give (`ownSides`) say what judges it. Its
+    /// arrows count as the other's either way (`counts(_:as:)`).
+    public nonisolated func sides(of type: ShapeID) -> RelationshipSides {
+        let own = ownSides(of: type)
+        // Most relationship types draw ends, or build on none: their own, with nothing made.
+        guard own.isEmpty, types.links[type] != nil else { return own }
+        let parents = { (shape: ShapeID) in types.types.contains(shape) ? types.parents(of: shape) : [] }
+        for built in TypeOrder.linearized(types.parents(of: type), excluding: type, parents: parents) where types.relationshipTypes.contains(built) {
+            if let sides = ends.sides[built], !sides.isEmpty { return sides }
+        }
+        return own
+    }
+
+    /// The ends drawn at the relationship type itself, none it builds on: what gives rows, and what its definition edits.
+    public nonisolated func ownSides(of type: ShapeID) -> RelationshipSides { ends.sides[type] ?? RelationshipSides() }
+
+    /// Whether an arrow of relationship type `type` is a relationship of `rowType`: it is that type, or a relationship type
+    /// built on it, however far through types (a Contract is an Employment, so it is in Ann's `employer` row and counts for
+    /// its Needed and Only one). Where a note's relations are matched to its rows.
+    public nonisolated func counts(_ type: ShapeID, as rowType: ShapeID) -> Bool {
+        type == rowType || (types.links[type] != nil && types.chained([type]).contains(rowType))
+    }
 
     /// THE rule: whether `end` fits `side` of `type`. Everything else calls it.
     ///
@@ -329,11 +351,11 @@ extension RelationshipGraph {
         guard case .note(let note) = end else { return .unjudged(end) }
         // The verdict a file's arrows mostly get, without making the side's list or the note's ancestors: an end with no type
         // among the side's is open, and a note one of whose own types is one of the side's fits (an ancestor, the first step).
-        let ends = sides(of: type)[side]
+        let sides = sides(of: type), ends = sides[side]
         guard ends.contains(where: { types.types.contains($0.type) }) else { return .open }
         if !types.types.contains(note), let own = types.links[note],
            own.contains(where: { link in ends.contains { $0.type == link.shape && types.types.contains($0.type) } }) { return .fits }
-        let allowed = sides(of: type).types(on: side).filter { types.types.contains($0) }
+        let allowed = sides.types(on: side).filter { types.types.contains($0) }
         guard !types.types.contains(note) else { return .misfit(allowed: allowed) }
         let ancestors = types.ancestors(of: note)
         return allowed.contains(where: ancestors.contains) ? .fits : .misfit(allowed: allowed)
