@@ -5,7 +5,8 @@ joined by red string. `AppIcon-small.svg` is the same picture redrawn for 16 poi
 Retina screen: a list, Spotlight), where the cards' text bars turn to noise and a thin string disappears:
 no bars, a heavier string, bigger pins.
 `AppIcon.icns` is made from the two, and the app's build copies it into the bundle
-(`Contents/Resources/AppIcon.icns`, named by `CFBundleIconFile`).
+(`Contents/Resources/AppIcon.icns`, named by `CFBundleIconFile`). It's board files' icon too: the board
+type names it as its badge (`UTTypeIcons`), and macOS draws it on its own document page, BOARD under it.
 
 After changing either SVG, run
 

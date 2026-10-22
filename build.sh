@@ -1203,6 +1203,13 @@ app)
             <array>
                 <string>public.json</string>
             </array>
+            <key>UTTypeIcons</key>
+            <dict>
+                <key>UTTypeIconBadgeName</key>
+                <string>AppIcon</string>
+                <key>UTTypeIconText</key>
+                <string>BOARD</string>
+            </dict>
             <key>UTTypeTagSpecification</key>
             <dict>
                 <key>public.filename-extension</key>
@@ -1227,7 +1234,9 @@ app)
 PLIST
     install_changed $AUDIT/Info.plist $APP/Contents/Info.plist
     # The icon, made ahead of time from Icon/AppIcon.svg (`python3 Icon/tools/icon.py build`): rendering
-    # an SVG takes a browser, which no build should need.
+    # an SVG takes a browser, which no build should need. It's board files' badge too (the board
+    # type's UTTypeIcons): macOS draws its own document page with the icon on it and BOARD under
+    # it. Without one a board took its parent's, public.json's, a plain page.
     mkdir -p $APP/Contents/Resources
     install_changed Icon/AppIcon.icns $APP/Contents/Resources/AppIcon.icns
     # The skills for agents (Contents/Resources/agents), put together as `./build.sh agents` does and
