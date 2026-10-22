@@ -5,6 +5,7 @@ import Boards
 import CanvasTesting
 import CanvasUI
 import CoreGraphics
+import DetailPanel
 import Find
 import Foundation
 import Geometry
@@ -520,8 +521,9 @@ final class NestedWindow {
 
 extension NestedWindow {
     /// A new type note on the root, selected, its JSON in the panel with the keyboard, the caret at
-    /// `caret`.
+    /// `caret`. A type's panel opens on Connections, so the Schema tab is chosen.
     func schemaCode(caret: Int) throws -> EditingTextView {
+        try require(editor.detailPanel).choose(.of(TypeSchemaTab.self), for: StickyNote.kind)
         editor.selection = editor.addTypeNote(TypeSchemaProperty.starter, frame: CGRect(x: 40, y: 400, width: 200, height: 200))
         let content = try require(window.contentView)
         window.spin { content.descendants(NSTextView.self).contains { $0.font?.isFixedPitch == true } }

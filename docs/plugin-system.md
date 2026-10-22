@@ -3547,9 +3547,10 @@ it. Tabs sort by `order`, then by first appearance, in these bands:
 
 | Order | Tabs |
 |---|---|
-| 0 (the default) | A kind's own tabs (Schema) |
+| 0 (the default) | A kind's own tabs (a subboard's Description) |
 | 50 | Feature tabs a horizontal brings to the kinds that opt into it (Types' Types) |
 | 60 | Neighbors' Connections (`NeighborsTab`), on every shape and always: after the feature tabs, before Style |
+| 70 | Types' Schema (`TypeSchemaTab`), on every type: after Connections, so a type's panel opens on what is connected to it |
 | 100 | `StyleTab`: appearance, shared by every kind |
 | 300 | A tab of the shape's state that comes and goes with it (Validation's `IssuesTab`): last, so the others keep their order |
 
@@ -9957,7 +9958,7 @@ registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, q
   light and no `NeighborsPlugin()` (the lists are then Inside and Contains). It registers the service
   and one headerless section on every shape (`forEveryShape { $0.details { … } }`,
   `enabledWhileReadOnly`: going to a shape changes nothing of this one) in `NeighborsTab`
-  ("Connections", order 60: after a horizontal's feature tabs, before Style). It's always there: a
+  ("Connections", order 60: after a horizontal's feature tabs, before a type's Schema and Style). It's always there: a
   tab that came with its lists would come a turn late, so with nothing connected it says "No
   Connections" once the answer is in. The view is a search field once the lists hold 20 shapes in all
   (`NeighborStyle.searchFrom`: more than a panel shows without scrolling), or while something is typed

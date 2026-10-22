@@ -224,12 +224,12 @@ import Validation
         panels.append("\(referenceLayout.headerText): \(referenceLayout.tabs.map(\.title).joined(separator: ", "))")
         // Every header of a kind that can be named renames it: an untitled shape's shows the
         // placeholder. A note placed empty has no issue: its row says Empty Note.
-        // A note that's a type has its schema's tab.
+        // A note that's a type has its schema's tab, after Connections.
         let type = h.editor.addTypeNote(TypeSchemaProperty.starter, frame: CGRect(x: 3400, y: 100, width: 200, height: 200))
         let typeLayout = state.layout(for: try require(h.editor.document[type]))
         panels.append("\(typeLayout.headerText): \(typeLayout.tabs.map(\.title).joined(separator: ", "))")
         expectEqual(panels, ["(Note): Connections, Style", "(Untitled Subboard): Description, Connections, Style", "(Untitled Frame): Connections, Style", "Arrow: Connections, Style", "Reference: Connections",
-                         "(Note): Schema, Connections, Style"])
+                         "(Note): Connections, Schema, Style"])
     },
     test("the table of contents lists the sample board: each note by its text, each arrow under the note it starts from") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())

@@ -39,10 +39,10 @@ extension TypePanelWindow {
         expectEqual(try tabs(bare), ["Types"])
         editor.removeTypeLink(person, from: bare)
         expectEqual(try tabs(bare), [])
-        // A type with a supertype has both.
+        // A type with a supertype has both, its Types before its Schema.
         editor.addTypeLink(person, to: editor.addType(TypeSchemaProperty.starter, title: "Employee"))
         let employee = try require(editor.document.shapes.first { editor.registry.title(of: $0) == "Employee" })
-        expectEqual(try tabs(employee.id), ["Schema", "Types"])
+        expectEqual(try tabs(employee.id), ["Types", "Schema"])
     },
     test("each type is a row in the order of its list: a click goes to it, the minus removes it in one step, Remove Type") {
         let panel = try TypePanelWindow()

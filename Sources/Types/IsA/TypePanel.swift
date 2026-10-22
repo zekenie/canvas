@@ -11,6 +11,9 @@ import Validation
 public enum TypeSchemaTab {}
 extension TypeSchemaTab: DetailTab {
     public static var title: String { "Schema" }
+    /// After Neighbors' Connections (60), before Style (100): a type's panel opens on what is
+    /// connected to it.
+    public static var order: Int { 70 }
 }
 
 /// The Types tab of a shape that is some: each type it is, in the order of its list.
