@@ -3810,6 +3810,11 @@ it's shown. It also remembers, per editor and in memory, the tab last chosen for
 collapsed sections. A collapsed every-box section collapses for every kind; a kind's own, for
 that kind only.
 
+A titled section that few people need starts collapsed: `DetailSection(…).collapsedUntilOpened()`
+keeps it folded until the person opens it, as Finder's Get Info keeps Sharing & Permissions, and
+from then on it is as they leave it, remembered as any collapse is. Types' Advanced, under a
+shape's Fields, holds the box that turns off filling its fields from its words.
+
 ### The header
 
 A kind's header is a view it makes from its shape's binding, as a section's content is:
@@ -12166,11 +12171,13 @@ follow them, and a value typed by hand never rewrites the words.
   eval.
 - **Whether.** `autofill` on the note (its own say), else what its types say (a type's `"$autofill":
   {"const": false}`, kept in step with the type's own `autofill` as `$color` is with its color, and
-  passed down to the types built on it), else on: `TypeIndex.autofills`. The box at the foot of the
-  Types tab (`Fill fields from words`), and of a type's Schema tab (`Notes fill fields from words`),
-  says it; a note holds its own say only where it differs from its types'.
-- **On the board.** While a call is out the note's empty fields show a bar where `add …` was; the panel
-  says `Filling fields…`, or why it failed, with Retry or Open Settings….
+  passed down to the types built on it), else on: `TypeIndex.autofills`. A box says it, kept out of
+  the way in a section called Advanced, collapsed until opened (`collapsedUntilOpened()`), at the foot
+  of the Types tab (`Fill fields from words`) and of a type's Schema tab (`Notes fill fields from
+  words`); a note holds its own say only where it differs from its types'.
+- **On the board.** While a call is out the note's empty fields show a bar where `add …` was; the foot
+  of the panel's Fields says `Filling fields…`, or why it failed, with Retry or Open Settings…, so
+  folding the box away hides nothing that happens.
 
 ## Colors
 

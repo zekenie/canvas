@@ -5,6 +5,7 @@ import Colors
 import DetailPanel
 import Foundation
 import LanguageModels
+import Selection
 import TestKit
 import Types
 import Validation
@@ -124,6 +125,17 @@ extension CanvasEditor {
     },
 ])
 
+extension TypePanelWindow {
+    /// The section called Advanced in the selected shape's tab, opened, as a click on its header opens it.
+    func openAdvanced(in tab: DetailTabID) throws {
+        let id = try require(editor.selection)
+        let state = try require(editor.detailPanel)
+        let advanced = try require(state.layout(for: try require(editor.document[id])).sections(in: tab).first { $0.section.hasSuffix("autofill") })
+        state.setCollapsed(advanced, false)
+        window.settle()
+    }
+}
+
 @MainActor let autofillPanelTests = Suite("The box that says whether a shape fills", [
     test("at the foot of a shape of a type's Types tab while its types give fields, and of a type's Schema tab; never a type's Types tab") {
         let editor = try typeEditor()
@@ -139,11 +151,28 @@ extension CanvasEditor {
         editor.addTypeLink(empty, to: feature)
         expect(try !sections(feature, .of(TypesTab.self)).contains("autofill"), "a type's own note fills nothing")
     },
+    test("it is folded away, in Advanced, until opened, for every shape it reaches; then it stays open") {
+        let editor = try typeEditor()
+        let feature = editor.addType(fillFeatureSchema, title: "Feature")
+        let ann = editor.addInstance(of: [feature]), bo = editor.addInstance(of: [feature], at: CGPoint(x: 40, y: 600))
+        let state = try require(editor.detailPanel)
+        @MainActor func advanced(_ id: ShapeID, _ tab: DetailTabID) throws -> DetailSectionKey {
+            try require(state.layout(for: try require(editor.document[id])).sections(in: tab).first { $0.section.hasSuffix("autofill") })
+        }
+        expect(state.isCollapsed(try advanced(ann, .of(TypesTab.self))))
+        expect(state.isCollapsed(try advanced(feature, .of(TypeSchemaTab.self))), "a type's too")
+        state.setCollapsed(try advanced(ann, .of(TypesTab.self)), false)
+        expect(!state.isCollapsed(try advanced(bo, .of(TypesTab.self))), "opened, for every note")
+        expect(state.isCollapsed(try advanced(feature, .of(TypeSchemaTab.self))), "a type's is a section of its own")
+    },
     // A checkbox's click is not driven in an unshown window: what it calls, `setAutofill`, is held by the tests above.
     test("the box shows what holds, follows its type's say with no commit to the shape, and its own say over it; a read-only shape's is off") {
         let panel = try TypePanelWindow(more: [FreezingPlugin()])
         let feature = panel.editor.addType(#"{"type": "object", "properties": {"purpose": {"type": "string"}}}"#, title: "Feature", at: CGPoint(x: 700, y: 40))
         let note = panel.select(instanceRecord("purpose is to sort the mail", of: [feature]))
+        panel.window.settle()
+        expectEqual(panel.checkboxes.count, 0, "folded away")
+        try panel.openAdvanced(in: .of(TypesTab.self))
         panel.window.spin { panel.checkboxes.count == 1 }
         expectEqual(panel.checkboxes.first?.state, .on)
         let fill = try require(panel.editor.fieldFill)
@@ -154,5 +183,21 @@ extension CanvasEditor {
         expectEqual(panel.editor.document[note]?[AutofillProperty.self], true)
         panel.editor.freeze([note])
         panel.window.spin { panel.checkboxes.first?.isEnabled == false }
+    },
+    test("a fill under way is said at the foot of the Fields, with Advanced still folded; a failure there with its Retry") {
+        let panel = try TypePanelWindow()
+        let feature = panel.editor.addType(#"{"type": "object", "properties": {"purpose": {"type": "string"}}}"#, title: "Feature", at: CGPoint(x: 700, y: 40))
+        let note = panel.select(instanceRecord("purpose is to sort the mail", of: [feature]))
+        let fill = try require(panel.editor.fieldFill)
+        panel.model.holdsAnswers = true
+        panel.model.queue(.overloaded)
+        fill.editingDidEnd(note, in: panel.editor)
+        spinRunLoop(until: { panel.model.waiting == 1 })
+        panel.window.spin { panel.spinners.count == 1 }
+        expectEqual(panel.checkboxes.count, 0, "the box stays folded away")
+        let buttons = panel.buttons.count
+        panel.model.release()
+        panel.window.spin { panel.spinners.isEmpty && panel.buttons.count == buttons + 1 }
+        expectEqual(fill.status(of: note), .failed(FieldFillFailure(LanguageModelError.overloaded.message)))
     },
 ])

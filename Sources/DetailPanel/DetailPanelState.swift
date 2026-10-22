@@ -84,7 +84,11 @@ public final class DetailPanelState {
     @ObservationIgnored private unowned let editor: CanvasEditor
     @ObservationIgnored private var candidates: [ShapeKind: Candidates] = [:]
     private var chosenTabs: [ShapeKind: DetailTabID] = [:]
-    private var collapsed: Set<DetailSectionKey> = []
+    /// What the person collapsed or opened, by key; a section they haven't touched is open, unless it's
+    /// collapsed until opened (`startsCollapsed`).
+    private var folds: [DetailSectionKey: Bool] = [:]
+    /// The sections that are collapsed until opened (`collapsedUntilOpened()`), as each kind's are gathered.
+    @ObservationIgnored private var startsCollapsed: Set<DetailSectionKey> = []
     /// The shown panel's number being typed, if any (`DetailPanelView` sets it).
     @ObservationIgnored weak var drafts: DraftTracker?
     #if DEBUG
@@ -125,6 +129,7 @@ public final class DetailPanelState {
         }
         let resolved = Candidates(headers: ordered.compactMap(\.value.header), sections: sections,
                                   shownWhile: sections.filter { $0.section.isShownWhile != nil })
+        for section in sections where section.section.isCollapsedUntilOpened { startsCollapsed.insert(section.key) }
         candidates[kind] = resolved
         return resolved
     }
@@ -227,11 +232,12 @@ public final class DetailPanelState {
     /// nil when the panel has neither. The panel sets it as it appears (it knows its window).
     @ObservationIgnored public var keyboardEntry: (@MainActor () -> NSView?)?
 
-    /// Remembered by key: an every-box section collapses for every kind, a kind's own for that kind.
-    public func isCollapsed(_ key: DetailSectionKey) -> Bool { collapsed.contains(key) }
+    /// Remembered by key: an every-box section collapses for every kind, a kind's own for that kind. One
+    /// collapsed until opened is collapsed until the person opens it, for every kind its key reaches.
+    public func isCollapsed(_ key: DetailSectionKey) -> Bool { folds[key] ?? startsCollapsed.contains(key) }
 
     public func setCollapsed(_ key: DetailSectionKey, _ isCollapsed: Bool) {
-        if isCollapsed { collapsed.insert(key) } else { collapsed.remove(key) }
+        folds[key] = isCollapsed
     }
 }
 

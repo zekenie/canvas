@@ -12,8 +12,9 @@ import TestKit
 import Types
 
 // The gallery's states for a note's fields filled from its words (`FieldFill`): the owner's Feature note while the
-// model reads it (its empty rows a bar each), once it has (only what the words say filled), its panel's box at the
-// foot of the Types tab, filling and not, and a type whose notes don't fill, its `$autofill` in its JSON.
+// model reads it (its empty rows a bar each), once it has (only what the words say filled), its panel's Types tab with
+// Advanced folded, filling and not, Advanced opened on its box, and a type whose notes don't fill, its `$autofill` in
+// its JSON.
 
 private let single = CGSize(width: 440, height: 340)
 
@@ -57,17 +58,31 @@ let fillStates: [GalleryState] = [
         _ = try featureNote(stage, answer: #"{"purpose": "to be a foobar really good foob"}"#)
         return canvas(stage)
     },
-    GalleryState("Fill-p3-panel", "its Types tab: the type, the Fields, and at the foot `Fill fields from words`, checked") { stage in
+    GalleryState("Fill-p3-panel", "its Types tab as it first shows: the type, the Fields, and at the foot `Advanced`, folded") { stage in
         let id = try featureNote(stage, answer: #"{"purpose": "to be a foobar really good foob"}"#)
         return .image(try stage.panelPicture(of: id))
     },
-    GalleryState("Fill-p4-panel-filling", "the same while the words are read: `Filling fields…` under the box") { stage in
+    GalleryState("Fill-p4-panel-filling", "the same while the words are read: `Filling fields…` at the foot of the Fields, Advanced still folded") { stage in
         let id = try featureNote(stage, answer: nil)
         return .image(try stage.panelPicture(of: id))
     },
-    GalleryState("Fill-p5-type-off", "a type whose notes don't fill: its Schema tab's box unchecked, `$autofill` false in its JSON") { stage in
+    GalleryState("Fill-p5-panel-advanced", "Advanced opened: `Fill fields from words`, checked") { stage in
+        let id = try featureNote(stage, answer: #"{"purpose": "to be a foobar really good foob"}"#)
+        try openAdvanced(stage, id, in: .of(TypesTab.self))
+        return .image(try stage.panelPicture(of: id))
+    },
+    GalleryState("Fill-p6-type-off", "a type whose notes don't fill: its Schema tab's Advanced opened, `Notes fill fields from words` unchecked, `$autofill` false in its JSON") { stage in
         let id = stage.editor.put(feature)
         try require(stage.editor.fieldFill).setAutofill(false, of: id)
+        try openAdvanced(stage, id, in: .of(TypeSchemaTab.self))
         return .image(try stage.panelPicture(of: id, tab: .of(TypeSchemaTab.self)))
     },
 ]
+
+/// Opens the section called Advanced in a shape's tab, as a click on its header does.
+@MainActor
+private func openAdvanced(_ stage: GalleryStage, _ id: ShapeID, in tab: DetailTabID) throws {
+    let state = try require(stage.editor.detailPanel)
+    let layout = state.layout(for: try require(stage.editor.document[id]))
+    state.setCollapsed(try require(layout.sections(in: tab).first { $0.section.hasSuffix("autofill") }), false)
+}

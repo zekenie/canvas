@@ -40,6 +40,31 @@ import TestKit
         state.setCollapsed(gadgetSize, false)
         expect(!state.isCollapsed(boxSize))
     },
+    test("a section collapsed until opened is collapsed for every kind it reaches until the person opens it, then as they left it; a headerless one never is") {
+        let editor = try gadgetEditor([Contributor(id: "more") { r in
+            r.detailsForEveryBox {
+                DetailSection("Advanced", in: GadgetTab.self) { _ in Text("Advanced") }.collapsedUntilOpened()
+                DetailSection(in: GadgetTab.self, id: "bare") { _ in Text("Bare") }.collapsedUntilOpened()
+            }
+        }])
+        let state = try require(editor.detailPanel)
+        let gadget = try editor.layout(editor.add(Gadget(gadgetFrame)))
+        let box = try editor.layout(editor.add(Box(gadgetFrame)))
+        @MainActor func section(_ id: String, in layout: DetailLayout) throws -> DetailSectionKey {
+            try require(layout.sections(in: .of(GadgetTab.self)).first { $0.section == id })
+        }
+        let advanced = try section("Advanced", in: gadget)
+        expect(state.isCollapsed(advanced))
+        expect(state.isCollapsed(try section("Advanced", in: box)), "every kind it reaches")
+        expect(!state.isCollapsed(try section("bare", in: gadget)), "a headerless section never collapses")
+        expect(!state.isCollapsed(try section("Count", in: gadget)), "the rest are open")
+        state.setCollapsed(advanced, false)
+        expect(!state.isCollapsed(try section("Advanced", in: box)))
+        state.setCollapsed(advanced, true)
+        expect(state.isCollapsed(advanced))
+        state.setCollapsed(advanced, false)
+        expect(!state.isCollapsed(advanced), "as they left it")
+    },
     test("selectionSummary is 'N Shapes', with each kind's name once in selection order, and stacked squares") {
         let editor = try gadgetEditor()
         let state = try require(editor.detailPanel)

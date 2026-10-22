@@ -132,6 +132,7 @@ public struct DetailSection<Value> {
     private(set) var isEnabledWhileReadOnly = false
     private(set) var isShownWhile: (@MainActor (AnyShapeRecord, DetailContext) -> Bool)?
     private(set) var stepNoun: String?
+    private(set) var isCollapsedUntilOpened = false
 
     /// `title == nil` is a headerless block that never collapses (the top of a tab). `id` defaults
     /// to the title, or "main"; it keys conflicts and remembered collapse. `when` hides the section
@@ -160,6 +161,19 @@ public struct DetailSection<Value> {
     public func enabledWhileReadOnly() -> Self {
         var section = self
         section.isEnabledWhileReadOnly = true
+        return section
+    }
+
+    /// The section, collapsed until the person opens it: for what most people never change, as Finder's
+    /// Get Info keeps Sharing & Permissions folded (Types' Advanced, under a shape's Fields). Only a
+    /// titled section collapses. Opened, or collapsed again, it stays as the person left it for the
+    /// window's session, as any section's collapse is remembered (`DetailPanelState`, by key).
+    ///
+    ///     DetailSection("Advanced", in: TypesTab.self, id: "advanced") { shape in … }
+    ///         .collapsedUntilOpened()
+    public func collapsedUntilOpened() -> Self {
+        var section = self
+        section.isCollapsedUntilOpened = true
         return section
     }
 
@@ -243,6 +257,8 @@ struct ErasedSection {
     let isEnabledWhileReadOnly: Bool
     /// `shownWhile`'s, asked apart from `isShown`: on every commit, beside the status lines.
     let isShownWhile: (@MainActor (AnyShapeRecord, DetailContext) -> Bool)?
+    /// `collapsedUntilOpened()`'s: collapsed while the person hasn't opened it.
+    let isCollapsedUntilOpened: Bool
 
     init<Value>(_ section: DetailSection<Value>, value: @escaping @MainActor (AnyShapeRecord) -> Value?,
                 binding: @escaping @MainActor (AnyShapeRecord, CanvasEditor) -> ShapeBinding<Value>?) {
@@ -251,6 +267,7 @@ struct ErasedSection {
         title = section.title
         isEnabledWhileReadOnly = section.isEnabledWhileReadOnly
         isShownWhile = section.isShownWhile
+        isCollapsedUntilOpened = section.isCollapsedUntilOpened && section.title != nil
         let shown = section.isShown, content = section.content
         isShown = { value($0).map(shown) ?? false }
         // Its writes are undo steps named for it (its title, or what it says names them); one with

@@ -1,6 +1,6 @@
 # Feature card prompt configuration
 
-Claude Code session `13bafdb2-0138-4191-a93e-f8cb10322f8c`, 2026-10-22 03:07 to 2026-10-22 11:30 UTC, on `claude/feature-card-prompt-config-dce2aa`.
+Claude Code session `13bafdb2-0138-4191-a93e-f8cb10322f8c`, 2026-10-22 03:07 to 2026-10-23 01:29 UTC, on `claude/feature-card-prompt-config-dce2aa`, `main`, `autofill-advanced`.
 
 Condensed: the owner's messages, questions and answers, the assistant's prose, plans, agent briefs and git commands. Tool output is left out.
 
@@ -307,3 +307,172 @@ Rebased. Main's reordering change touched the panel API my box uses, so I'm doin
 
 [2026-10-22 11:30] ASSISTANT:
 The rebased branch compiles and both report tests pass. Writing this session's record.
+
+[2026-10-22 11:30] ASSISTANT:
+No keys or secrets in the record. Adding it to the commit with its `Session:` trailer.
+
+[2026-10-22 11:30] GIT:
+M=/private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-feature-card-prompt-config-dce2aa/13bafdb2-0138-4191-a93e-f8cb10322f8c/scratchpad/commit-message.txt && printf '\nSession: history/sessions/2026-10-22-feature-card-prompt-configuration-13bafdb2/\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n' >> $M && git add history/sessions/2026-10-22-feature-card-prompt-configuration-13bafdb2 && git commit -q --amend -F $M && git log -1 --format='%h%n%B' | tail -4 && git status --short | head -3; git log --oneline main..HEAD
+
+[2026-10-22 11:30] ASSISTANT:
+It's merged. Cleaning up the worktree and branch.
+
+[2026-10-22 11:30] WRAP-UP:
+The note fill and `$autofill` are on main as 1a8e32ec, with this session's record; the worktree and branch are removed.
+Ask:
+
+[2026-10-22 11:30] ASSISTANT:
+It's on main as 1a8e32ec.
+
+[2026-10-22 11:34] USER:
+[image attached]
+
+[2026-10-22 11:34] USER:
+ok follow up task... this is not burried enough
+
+[2026-10-22 11:35] WRAP-UP:
+The box is on main at the foot of the Types tab. I propose moving it into a folded Advanced section, with the filling and failure line moved under Fields. Nothing is built yet.
+Ask: Build it this way?
+
+[2026-10-22 11:35] ASSISTANT:
+That's the plan above. Nothing is built yet. Once you say go, I'll make it in a new worktree, test it, and send renders of the folded and opened panel before landing.
+
+[2026-10-22 11:51] USER:
+Build it this way.
+
+[2026-10-22 11:51] ASSISTANT:
+Building the "starts folded" piece in the detail panel first.
+
+[2026-10-22 11:52] ASSISTANT:
+Now writing the panel change: a section can be collapsed until opened, the state remembering each fold the person makes.
+
+[2026-10-22 11:52] ASSISTANT:
+Panel piece done. Now Types: the box goes into a titled "Advanced" section collapsed until opened, and the filling or failure line moves to the foot of Fields.
+
+[2026-10-22 11:53] ASSISTANT:
+Now the Types side. Moving the box under a folded Advanced section, and the filling and failure line to the foot of Fields.
+
+[2026-10-22 11:53] ASSISTANT:
+Rewriting the panel file: the box under a folded "Advanced" section, the status line moved out.
+
+[2026-10-22 11:53] ASSISTANT:
+The worktree guard refuses inline scripts here, so I'll make edits with the editor tool instead.
+
+[2026-10-22 11:54] ASSISTANT:
+Tests updated. Now the gallery states (folded, opened, filling) and the docs.
+
+[2026-10-22 11:54] ASSISTANT:
+Now the docs: the panel rule for folded sections, the Types rules, and the guide.
+
+[2026-10-22 11:54] EDIT .claude/worktrees/autofill-advanced/docs/plugin-system.md:
+`DetailPanelState` (`editor.detailPanel`) gathers each kind's contributions once, since the
+registry is frozen, and resolves the selected shape's layout (running `when` and the headers) as
+it's shown. It also remembers, per editor and in memory, the tab last chosen for each kind and the
+collapsed sections. A collapsed every-box section collapses for every kind; a kind's own, for
+that kind only.
+
+A titled section that few people need starts collapsed: `DetailSection(…).collapsedUntilOpened()`
+keeps it folded until the person opens it, as Finder's Get Info keeps Sharing & Permissions, and
+from then on it is as they leave it, remembered as any collapse is. Types' Advanced, under a
+shape's Fields, holds the box that turns off filling its fields from its words.
+
+[2026-10-22 11:55] EDIT .claude/worktrees/autofill-advanced/docs/plugin-system.md:
+passed down to the types built on it), else on: `TypeIndex.autofills`. A box says it, kept out of
+  the way in a section called Advanced, collapsed until opened (`collapsedUntilOpened()`), at the foot
+  of the Types tab (`Fill fields from words`) and of a type's Schema tab (`Notes fill fields from
+  words`); a note holds its own say only where it differs from its types'.
+- **On the board.** While a call is out the note's empty fields show a bar where `add …` was; the foot
+  of the panel's Fields says `Filling fields…`, or why it failed, with Retry or Open Settings…, so
+  folding the box away hides nothing that happens.
+
+[2026-10-22 11:55] ASSISTANT:
+Updating the Types rules for the folded section, then building and testing.
+
+[2026-10-22 11:55] EDIT .claude/worktrees/autofill-advanced/.claude/rules/types.md:
+- `FieldsList` reads `TypeIndex.observeChanges()` (an observed count `tell` bumps for each commit that changed a type), so a field added to a selected instance's type shows without a commit to the instance; a form must read it too. It reads `editor.isReadOnly` in its body as `TypesRow` does, so it runs again on every commit while its shape is selected, O(fields); the panel itself draws again for its shape's commits only (`panelsDrawn`).
+- Where the shape's fill is, at the foot of the fields (`FillLine`, observing `FieldFill.status(of:)`, so it comes and goes with no commit): `Filling fields…` with a spinner (`TypesStyle.filling`), or the failure in the warning's tone with Retry, or Open Settings… for a key, or nothing for Claude declining; nothing while there's nothing to say. Here and not by the box that turns filling off, which is folded away ([below](#the-box-that-says-whether-a-shape-fills)), so folding it hides nothing that happens.
+
+## The box that says whether a shape fills
+
+`AutofillPanel.swift` (IsA, `registerAutofillPanel`, registered by `TypeDetailsPlugin` after the Fields): one `DetailCheckbox` in a section called `Advanced` (`TypePanelText.advanced`), collapsed until the person opens it (the panel's `collapsedUntilOpened()`, [detail panel](detail-panel.md); once opened it stays as they leave it for the window's session, for every shape it reaches), at the foot of two tabs. The owner, of the box when it sat open under the Fields: "this is not burried enough".
+
+- A […1341 more chars]
+
+[2026-10-22 11:55] EDIT .claude/worktrees/autofill-advanced/.claude/rules/detail-panel.md:
+and the shape's panel draws again only when its record, whether it can change, its status lines or the sections `shownWhile` hides change (`panelsDrawn`, debug builds, counts it drawn). A titled section few people need is collapsed until the person opens it (`.collapsedUntilOpened()`, as Finder's Get Info keeps Sharing & Permissions folded: Types' Advanced, the box that turns off filling a note's fields from its words), then is as they leave it: `DetailPanelState` remembers what the person collapsed and opened by key (`isCollapsed`, `setCollapsed`), a section they haven't touched as it starts, and a headerless one never collapses (DetailPanelTests' `stateTests`).
+
+[2026-10-22 12:18] ASSISTANT:
+The machine is heavily loaded by other sessions' builds (load average around 50), so the Types run is slow. Waiting for it.
+
+[2026-10-22 12:28] ASSISTANT:
+All the new tests pass; three timing-budget tests failed at load average ~50, all in code this change doesn't touch (relationship landing, far pick, a draw run's cost). Rerunning just those three.
+
+[2026-10-22 12:30] COMPACTED:
+(the context was summarized here)
+
+[2026-10-22 12:31] ASSISTANT:
+Checking whether the three timing failures are machine load (load average ~50 now) by timing the same tests on a clone of main.
+
+[2026-10-22 12:31] ASSISTANT:
+Rendering the panel states (folded, filling, opened) while main's clone builds.
+
+[2026-10-22 12:32] ASSISTANT:
+The renders look right. Sending them, then the review while main's clone builds.
+
+[2026-10-22 12:33] ASSISTANT:
+Review found nothing that needs changing (three small notes, explained at the end). Checking on main's clone build for the timing comparison.
+
+[2026-10-22 12:33] ASSISTANT:
+Waiting on the clone's build to finish before timing the three tests side by side.
+
+[2026-10-22 12:39] ASSISTANT:
+Main fails the same three by the same amounts (landing ~174 ms both, pick ~163 vs ~164, edges ~7.2 s both), so they predate this change. Running the full suite now.
+
+[2026-10-22 12:39] COMMIT MESSAGE FILE commit-msg.txt:
+Fill fields from words moves into Advanced, a section folded until it's opened; the fill's status sits under the Fields
+
+The owner, looking at the box under a note's Fields: "this is not burried enough". Almost no one turns the fill off,
+so the box goes where Finder's Get Info keeps Sharing & Permissions: a titled section, Advanced, folded until the
+person opens it, at the foot of a note's Types tab and of a type's Schema tab. Opened, or folded again, it stays as
+they left it for the window's session, like any section's fold.
+
+The fold is the detail panel's, not Types': `DetailSection.collapsedUntilOpened()`, which any plugin may give a
+titled section (a headerless one never folds). `DetailPanelState` remembers what the person did to a section by
+key, and a section they haven't touched is folded only if it asked to be.
+
+"Filling fields…" and a failure with its Retry or Open Settings… moved out of the box to the foot of the Fields,
+so folding Advanced away hides nothing that happens: the box only switches the fill, and the Fields say what it's
+doing to them.
+
+[2026-10-22 12:39] ASSISTANT:
+Commit message drafted; waiting on the full suite.
+
+[2026-10-22 12:49] ASSISTANT:
+The suite is still running; I'll pick up when it reports.
+
+[2026-10-22 12:56] ASSISTANT:
+Full suite passed (every executable, the timing tests included this run). Committing in the worktree.
+
+[2026-10-22 12:56] GIT:
+git add -A && git commit -q -F /private/tmp/claude-501/-Users-zekenie-code-native-canvas/13bafdb2-0138-4191-a93e-f8cb10322f8c/scratchpad/commit-msg.txt && git log --oneline -2 && git status --short | head
+
+[2026-10-22 12:56] WRAP-UP:
+"Fill fields from words" now sits in an Advanced section that stays folded until it's opened, on a note's Types tab and on a type's Schema tab. The fill's status moved to the foot of Fields. It's committed on autofill-advanced (b8202bcd), not landed. The full suite passes.
+Ask: Land it on main?
+
+[2026-10-22 12:56] ASSISTANT:
+The checkbox is now in a section called **Advanced** at the bottom of the panel, and that section stays folded until someone opens it. That's how Finder's Get Info keeps Sharing & Permissions out of the way. The four renders above show it.
+
+- **A note's Types tab:** Advanced sits below Fields, folded. Opened, it holds "Fill fields from words". Once someone opens or folds it, it stays that way for the rest of the window's session.
+- **A type's Schema tab:** Advanced sits below the JSON and holds "Notes fill fields from words".
+- **While it's filling:** "Filling fields…" and any failure (with Retry or Open Settings…) now show at the bottom of Fields, not under the checkbox. Folding Advanced away hides nothing that's happening.
+- **Folded until opened:** this is now a general option any plugin can use on a section with a title, `DetailSection.collapsedUntilOpened()`.
+
+**Tests:** the full suite passes. An earlier run of the Types tests failed three timing checks while the machine was very busy. I ran the same three on a copy of main, alternating with this branch: main fails them by the same amounts, so this change didn't cause them. They passed in the full run.
+
+**Review:** nothing needed changing. One side effect: if someone folds Fields, a failed fill is hidden along with the fields themselves.
+
+It's committed in the worktree on `autofill-advanced` (b8202bcd) and not landed yet.
+
+[2026-10-23 01:29] USER:
+Land it.

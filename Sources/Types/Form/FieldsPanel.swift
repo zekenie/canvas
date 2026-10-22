@@ -3,6 +3,7 @@ import CanvasRPC
 import DetailPanel
 import Foundation
 import AppKit
+import LanguageModels
 import Selection
 import SwiftUI
 
@@ -13,6 +14,8 @@ import SwiftUI
 
 extension TypesStyle {
     static let fieldsTitle = "Fields"
+    /// Under the fields while the model reads the words for them (`FieldFill`).
+    static let filling = "Filling fields…"
     /// Between a field's name and the form under it.
     static let formSpacing: CGFloat = 2
     /// A number, a date or an either: one line, as the text view lays it out. Public for TypesTests alone
@@ -143,8 +146,41 @@ struct FieldsList: View {
                 }
             }
         }
+        // Where the values' fill from the words is, under them: the box that turns it off is folded away (Advanced).
+        if let fill = $record.service(FieldFill.self) {
+            FillLine(status: fill.status(of: id), fill: fill, id: id)
+        }
     }
 
+}
+
+/// Where a shape's fill is, at the foot of its Fields: filling, with a spinner, or why it failed, with what can be done:
+/// Retry, or for want of a key Open Settings… (saving one tries again by itself); nothing for Claude declining, as it
+/// would again. Nothing while there's nothing to say.
+struct FillLine: View {
+    let status: FieldFillStatus
+    weak var fill: FieldFill?
+    let id: ShapeID
+
+    var body: some View {
+        switch status {
+        case .idle:
+            EmptyView()
+        case .filling:
+            DetailStatusLine(DetailStatus(TypesStyle.filling), isBusy: true)
+        case let .failed(failure):
+            DetailStatusLine(DetailStatus(failure.message, tone: .warning), actions: actions(for: failure.remedy))
+        }
+    }
+
+    private func actions(for remedy: TypeSyncFailure.Remedy) -> [DetailStatusAction] {
+        let id = id
+        switch remedy {
+        case .retry: return [DetailStatusAction(TypePanelText.retry) { [weak fill] in fill?.retry(id) }]
+        case .key: return [DetailStatusAction(TypePanelText.openSettings) { AnthropicSettingsView.showSettings() }]
+        case .editByHand: return []
+        }
+    }
 }
 
 /// One field's label and control: a text box, a one-line box, a checkbox or a menu.
