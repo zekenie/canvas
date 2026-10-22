@@ -36,7 +36,7 @@ public final class SettingsWindow {
     @discardableResult
     public func prepare() -> NSWindow {
         guard let window else {
-            let window = NSWindow(contentViewController: hosting())
+            let window = SecondaryWindow(contentViewController: hosting())
             window.title = "Settings"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false

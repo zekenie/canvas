@@ -162,7 +162,14 @@ extension CanvasEditor {
     /// nothing is selected, or nothing is left to show.
     @_spi(Host) public func menuForSelection(omitting commands: Set<CanvasCommand>) -> NSMenu? {
         guard let make = registry.selectionMenu else { return nil }
-        return make(self, commands)
+        return make(self, commands, false)
+    }
+
+    /// The selection's menu as it is popped under the selection (a key, VoiceOver's Show Menu): the items
+    /// of `menuForSelection(omitting: [])` less the one that pops it.
+    @_spi(Host) public func menuForPoppedSelection() -> NSMenu? {
+        guard let make = registry.selectionMenu else { return nil }
+        return make(self, [], true)
     }
 
     /// A key pressed on the canvas: the plugin that claims key strokes (`registrar.keyStrokes`) says
@@ -181,6 +188,14 @@ extension CanvasEditor {
     @_spi(Host) public func keyUp(_ stroke: KeyStroke) {
         registry.keyReleaseHandler?(self, stroke)
         undoHistory.keyReleased(stroke)
+    }
+
+    /// The canvas view took the keyboard, or gave it up (`hasKeyboard`): a frame is asked for when it
+    /// changes.
+    @_spi(Host) public func keyboardDidChange(hasKeyboard: Bool) {
+        guard hasKeyboard != canvasHasKeyboard else { return }
+        canvasHasKeyboard = hasKeyboard
+        setNeedsDisplay()
     }
 
     /// Every key let go at once, as far as the canvas can tell: it lost the keyboard, or its window

@@ -66,6 +66,11 @@ public struct StickyNotesPlugin: ListedPlugin {
         registrar.keyHint("⇧↩ in a Note", "New Note Beside It", while: .text)
         registrar.keyHint("⇥ or ⇧⇥ in a Note", "Next or Previous Note", while: .text)
         registrar.service { NoteHops(editor: $0) }
+        // ⇧↩ on the canvas, one shape selected and none of its parts focused (⌥Tab): a new note beside it, edited,
+        // as ⇧↩ in a note's words puts one beside that note (any shape's side, the right first).
+        registrar.shortcut(KeyChord(KeyChord.return.key, .shift), "Add Note Beside", when: { $0.canAddNoteBeside }) { editor in
+            if let id = editor.selection { editor.service(NoteHops.self)?.addNote(beside: id) }
+        }
         registrar.shape(StickyNoteDefinition()) { note in
             let place = note.editingPlacement(size: NoteStyle.size) { StickyNote() }
             note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
@@ -86,9 +91,13 @@ public struct StickyNotesPlugin: ListedPlugin {
             note.mentionable(untitled: { $0.props.text.firstLine ?? FieldValues.name(of: $0) })   // called by its title, else its first line, else its values
             note.typeWords(\.text, drawnIn: { $0.mentionTexts(in: $1).first }, fitting: { StickyNoteDefinition().derive(&$0) })   // and types: its text says what one holds,
             note.canBeType()                                   // and `/is-a type` makes it one
-            note.canBeRelationshipType()                       // and a type may be marked as one that relates
+            note.canBeRelationshipType()                       // and a type may be marked as one that relates,
+            note.definitionWalk { editor, id in                 // its pill's card, off its last stop, going on to the next note
+                editor.service(NoteHops.self)?.editNote(.next, from: id) ?? false
+            }
             note.typeable()                                    // and `/is-a` makes it an instance of one
             note.typeRows(drawnIn: { NoteLayout($0, in: $1).block })   // and a type's rows go under its words
+            note.noteAccessibility()                           // VoiceOver reads its words as its value
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
     }
@@ -202,6 +211,9 @@ enum NoteStyle {
     static let text = MentionTextStyle(font: .systemFont(ofSize: 16), color: NSColor(white: 0.12, alpha: 1), lineHeight: lineHeight)
     /// The text's attributes: its font, its color and its fixed lines.
     static var textAttributes: [NSAttributedString.Key: Any] { text.attributes }
+    /// How tall one line of words is, as `linesHeight` measures it: the room an edited note's words keep over its rows
+    /// while they are empty, so the first letter typed moves nothing.
+    static let oneLineHeight = linesHeight(of: NSAttributedString(string: " ", attributes: textAttributes), inner: .greatestFiniteMagnitude)
     /// Where the editor's text starts in the note. At the same line height, TextKit 2 sets a line's
     /// glyphs a point lower in it than string drawing does, so the editor's text starts a point
     /// higher than the render's and its lines fall exactly on the render's.
@@ -300,7 +312,9 @@ final class NoteEditor: NSView, NSTextViewDelegate {
                                 guard let self, let rows = self.rows else { return }
                                 context.keepInView(self.convert(rect, from: rows))
                             },
-                            focusWords: { [weak self] in self?.focusWords() })
+                            focusWords: { [weak self] in self?.focusWords() },
+                            tabbedOut: { [weak self] in self?.tabbedOut() },
+                            addBeside: { [weak self] in self?.addNoteBeside() })
         if let view = context.service(RowBook.self)?.makeRowsView(for: context.shapeID, host: host) {
             rows = view
             addSubview(view)
@@ -319,17 +333,32 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         // and so the text view's, are world units with the note's frame at their origin. Begun
         // without one (Return, placing a note), the text view puts the caret where it always has.
         // A press on a row's value begins in that row (Types' rows view says: a typed value's field, a row with
-        // more in it focused); anywhere else the words take it.
+        // more in it focused); anywhere else the words take it. ⇧Tab from the next note begins at the last row.
         if let start = context.startPoint {
-            let inEditor = CGPoint(x: start.x - frame.minX, y: start.y - frame.minY)
+            var inEditor = CGPoint(x: start.x - frame.minX, y: start.y - frame.minY)
+            if let rows, !rows.isHidden { inEditor.y += movedByEditing(text, width: frame.width, below: inEditor.y, rows: rows) }
             if let rows, !rows.isHidden, rows.frame.contains(inEditor),
                let responder = rows.begin(at: CGPoint(x: inEditor.x - rows.frame.minX, y: inEditor.y - rows.frame.minY), clickCount: context.startClickCount) {
                 first = responder
             } else {
                 textView.placeSelection(at: inEditor, selectingWord: context.startClickCount >= 2)
             }
+        } else if let rows, context.service(NoteHops.self)?.startsAtLastRow(context.shapeID) == true {
+            first = rows.focusLastRow()
         }
         follow()
+    }
+
+    /// How far a press at `y` (this view's coordinates) moved as editing began. The press was on the note as drawn at rest;
+    /// edited, its words keep a line however empty they are and its rows have their lead under them
+    /// (`RowsExtent.wordsLine`), so what was under the words moved down with the rows: how far the rows' top is lower in the
+    /// layout edited than in the layout at rest, both from `NoteLayout`.
+    private func movedByEditing(_ text: MentionText, width: CGFloat, below y: CGFloat, rows: RowsView) -> CGFloat {
+        let p = NoteStyle.padding
+        guard let book = context.service(RowBook.self), let rest = book.extent(ofShape: context.shapeID, edited: false),
+              let edited = book.extent(ofShape: context.shapeID, edited: true) else { return 0 }
+        guard y > p + NoteWords.height(of: text, width: width - p * 2) else { return 0 }
+        return NoteLayout.blockTop(of: text, width: width - p * 2, rows: edited) - NoteLayout.blockTop(of: text, width: width - p * 2, rows: rest)
     }
 
     @available(*, unavailable)
@@ -384,9 +413,24 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         textView.setSelectedRange(NSRange(location: textView.textStorage?.length ?? 0, length: 0))
     }
 
-    /// ⇧↩ goes on to a new note beside this one, as tldraw's adjacent notes do (↩ alone is a new line),
-    /// and Tab and ⇧Tab to the next and previous note: editing ends here and begins on that note
-    /// (`NoteHops`). A list open at the caret (@'s, /'s) holds the keys first (`holdsKeys`).
+    /// Tab off the last row: the next note, as Tab in the words goes on from a note with no rows; with no other note,
+    /// back round to the words.
+    private func tabbedOut() {
+        guard context.service(NoteHops.self)?.editNote(.next, from: context.shapeID) == true else { return focusWords() }
+    }
+
+    /// A new note beside this one, edited; editing ends here (⇧↩ in the words or in a row).
+    private func addNoteBeside() {
+        let id = context.shapeID
+        guard let hops = context.service(NoteHops.self) else { return }
+        context.end()
+        hops.addNote(beside: id)
+    }
+
+    /// ⇧↩ goes on to a new note beside this one, as tldraw's adjacent notes do (↩ alone is a new line).
+    /// Tab goes to the first row, if the note has rows, else on to the next note; ⇧Tab to the previous note,
+    /// starting at its last row, or round to this note's last row when there's no other. Editing ends here
+    /// and begins on that note (`NoteHops`). A list open at the caret (@'s, /'s) holds the keys first (`holdsKeys`).
     private func hop(on event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection([.shift, .command, .option, .control])
         guard modifiers.isSubset(of: .shift), let hops = context.service(NoteHops.self) else { return false }
@@ -396,10 +440,12 @@ final class NoteEditor: NSView, NSTextViewDelegate {
             guard modifiers == .shift else { return false }
             // Held, ⇧↩ makes one note: its repeats reach the new note's editor and are kept from it.
             if event.isARepeat { return true }
-            context.end()
-            hops.addNote(beside: id)
+            addNoteBeside()
+        case 48 where modifiers.isEmpty:
+            if rows?.focusFirstRow() == true { return true }
+            hops.editNote(.next, from: id)
         case 48:
-            hops.editNote(modifiers == .shift ? .previous : .next, from: id)
+            if !hops.editNote(.previous, from: id) { rows?.focusLastRow() }
         default:
             return false
         }

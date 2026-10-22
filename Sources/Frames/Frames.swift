@@ -77,6 +77,9 @@ public struct FramesPlugin: ListedPlugin {
             frame.frameRow()                                                // the table of contents, named by Titles
             frame.frameHeader()                                             // renamed in the panel's header
             frame.turnable(through: ContainerChannel.self)                  // turned through the container channel: into a subboard, where Subboards takes it
+            frame.accessibility { frame, editor in                          // VoiceOver reads what it holds as its value: "3 shapes"
+                editor.document[frame.id] == nil ? nil : AccessibleTraits(value: FrameStyle.accessibleContents(editor.shapeContext.contents(of: frame.id).count))
+            }
         }
         registrar.createFrameItem()                                         // Create Frame, around what the menu's for
     }

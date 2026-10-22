@@ -65,7 +65,7 @@ import TestKit
     },
     test("its registry line") {
         expectEqual(try Registry(plugins: [LanguageModelsPlugin(model: ScriptedLanguageModel())]).report, """
-        core             tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
+        core             tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         language-models  service LanguageModelState
         """)
     },

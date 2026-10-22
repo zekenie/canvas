@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import CanvasTesting
 import CanvasUI
+import SwiftUI
 import TestKit
 
 // The Keyboard Shortcuts window's sections, over a menu bar and rows of the tests' own: what it
@@ -84,5 +85,67 @@ import TestKit
         expect(shortcuts.prepare() === window)
         expectEqual(window.contentView?.frame.size, NSSize(width: 700, height: 500), "the size it was left")
         expectEqual(shortcuts.sections.map(\.title), ["Pointer"])
+    },
+    test("typing in the search leaves the rows whose title or keys it finds, a section with none gone; nothing typed lists all") {
+        let sections = [
+            KeyboardShortcutSection(title: "View", rows: [.init(keys: ["⌘+"], title: "Zoom In"), .init(keys: ["⌘-"], title: "Zoom Out"), .init(keys: ["⌘B"], title: "Toggle Sidebar")]),
+            KeyboardShortcutSection(title: "Edit", rows: [.init(keys: ["⌘Z"], title: "Undo"), .init(keys: ["⌥⌘Z"], title: "Redo")]),
+        ]
+        expectEqual(KeyboardShortcutSection.filtered(sections, by: ""), sections)
+        let zoom = KeyboardShortcutSection.filtered(sections, by: "zoom")
+        expectEqual(zoom.map(\.title), ["View"])
+        expectEqual(zoom[0].rows.map(\.title), ["Zoom In", "Zoom Out"])
+        expectEqual(KeyboardShortcutSection.filtered(sections, by: "⌥⌘").flatMap(\.rows).map(\.title), ["Redo"], "by keys")
+        expectEqual(KeyboardShortcutSection.filtered(sections, by: "qqq"), [])
+    },
+    test("a row reads its title, then its keys") {
+        expectEqual(KeyboardShortcutSection.Row(keys: ["⌫", "⌦"], title: "Delete").spoken, "Delete, ⌫, ⌦")
+    },
+    test("the window opens with the search field focused and named, takes typing, and Escape closes it") {
+        let given = GivenRows()
+        given.rows = [KeyboardHelpRow(keys: ["⌘+"], title: "Zoom In", place: .canvas), KeyboardHelpRow(keys: ["⌘Z"], title: "Undo", place: .canvas)]
+        let help = Contributor(id: "help") { $0.keyboardHelp { _ in given.rows } }
+        let shortcuts = KeyboardShortcutsWindow(registry: try Registry(plugins: [help]), menu: { nil }, autosaveName: nil)
+        let window = shortcuts.prepare()
+        window.orderFront(nil)
+        defer { window.close() }
+        window.spin(until: { (window.firstResponder as? NSTextView)?.isFieldEditor == true })
+        let field = try require(window.contentView?.descendants(NSTextField.self).first)
+        expect((window.firstResponder as? NSTextView)?.delegate === field, "the search field has the keyboard")
+        expectEqual(AccessibilityProbe.label(of: field), "Search")
+        // SwiftUI builds its accessibility tree only for an assistive app, so the rows' and headings'
+        // modifiers are not read here; what a row says is `spoken`, held above.
+        window.type("zoom")
+        window.settle()
+        expectEqual(field.stringValue, "zoom", "typing goes to the search")
+        expect(window.isVisible, "and doesn't close the window")
+        window.pressEscape()
+        window.settle()
+        expect(!window.isVisible, "Escape closes it")
+        // Opened again, it's made afresh: nothing typed, every row, and the search has the keyboard again.
+        expect(shortcuts.prepare() === window)
+        shortcuts.show()
+        window.spin(until: { (window.firstResponder as? NSTextView)?.isFieldEditor == true })
+        let again = try require(window.contentView?.descendants(NSTextField.self).first)
+        expectEqual(again.stringValue, "", "what was typed last time is gone")
+        expect((window.firstResponder as? NSTextView)?.delegate === again, "the search field has the keyboard")
+        window.type("undo")
+        window.settle()
+        expectEqual(again.stringValue, "undo")
+    },
+    test("Settings closes on Escape, with its field focused or not, and ⌘.") {
+        let settings = SettingsWindow(autosaveName: nil) { TextField("Key", text: .constant("")) }
+        let window = settings.prepare()
+        window.orderFront(nil)
+        defer { window.close() }
+        window.settle()
+        window.pressEscape()
+        window.settle()
+        expect(!window.isVisible, "Escape closes it")
+        window.orderFront(nil)
+        window.makeFirstResponder(nil)
+        window.pressCommandPeriod()
+        window.settle()
+        expect(!window.isVisible, "so does ⌘.")
     },
 ])

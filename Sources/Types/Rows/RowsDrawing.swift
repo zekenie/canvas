@@ -222,7 +222,7 @@ extension RowBook {
             guard !template.items.isEmpty else { return RowBars() }
             spot = .rows
         }
-        let geometry = RowGeometry(block: block, hasLead: hasWords(record), template: template)
+        let geometry = RowGeometry(block: block, hasLead: hasLead(record), template: template)
         func bar(_ row: Int, width: CGFloat) -> CGRect {
             let rect = geometry.rect(row)
             return CGRect(x: rect.minX, y: rect.midY - TypesStyle.skeletonRowBarHeight / 2, width: max(1, width), height: TypesStyle.skeletonRowBarHeight)
@@ -281,13 +281,13 @@ extension RowBook {
             spot = .rows
             guard !template.items.isEmpty else { return }
         }
-        let hasWords = hasWords(record)
-        let geometry = RowGeometry(block: block, hasLead: hasWords, template: template)
+        let hasLead = hasLead(record)
+        let geometry = RowGeometry(block: block, hasLead: hasLead, template: template)
         let reach = TypesStyle.tickInset + TypesStyle.tickWidth
         cg.saveGState()
         defer { cg.restoreGState() }
         cg.clip(to: CGRect(x: block.minX - reach, y: block.minY, width: block.width + reach, height: block.height))
-        if hasWords {
+        if hasLead {
             cg.setFillColor(TypesStyle.rowsRule)
             cg.fill(CGRect(x: block.minX, y: block.minY, width: block.width, height: 1))
         }

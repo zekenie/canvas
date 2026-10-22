@@ -56,9 +56,22 @@ extension Order where Subject: Adornment {
 /// An adornment a click does something with: a canvas button (Selection's), which the select tool
 /// clicks before anything else under the pointer. It draws lighter hovered and darker pressed, and
 /// the pointing hand shows over it; a right-click on it is on its shape, as on any adornment. The
-/// lock chip: a click unlocks its shape.
+/// lock chip: a click unlocks its shape. Each one shown is also a part of its shape (Selection's
+/// `ShapeParts`), on the kinds it is on, with no code of its own: ⌥Tab reaches it, and Return and Space
+/// click it, named by its label's text (else `partTitle`) and `partRole`. One showing for a moment
+/// (`ChipFade`: an open lock, "Private") is not one: what its click does has a command.
 public protocol ClickableAdornment: Adornment {
     @MainActor static func click(_ click: AdornmentClick, in editor: CanvasEditor)
+    /// What VoiceOver calls a label of it with no text (a symbol alone): by default its type's name in words,
+    /// "Lock Chip".
+    static var partTitle: String { get }
+    /// What its click is to VoiceOver: `.button` by default, `.menuButton` for one whose click pops a menu.
+    static var partRole: PartRole { get }
+}
+
+extension ClickableAdornment {
+    public static var partTitle: String { AdornmentID.of(Self.self).spokenName }
+    public static var partRole: PartRole { .button }
 }
 
 /// Which of a group's labels a chip is: any plugin's own name for it (a type chip's is its type
@@ -138,6 +151,16 @@ public struct AdornmentID: Hashable, Sendable, CustomStringConvertible {
 
     /// The type's own name, as the report shows it: "TitlePill".
     public var description: String { shortName }
+
+    /// The type's own name in words: "Lock Chip".
+    var spokenName: String {
+        var words = ""
+        for character in shortName {
+            if character.isUppercase, !words.isEmpty, words.last?.isUppercase == false { words.append(" ") }
+            words.append(character)
+        }
+        return words
+    }
 }
 
 /// A clickable adornment on one shape: what `editor.hoveredButton` and `editor.pressedButton` hold
@@ -548,6 +571,7 @@ extension ShapeRegistrar {
     public mutating func adornment<A: Adornment>(_: A.Type, _ label: @escaping @MainActor (ShapeRecord<Definition.Props>) -> AdornmentLabel?) {
         contribute(AdornmentContribution(A.self) { shape, _ in shape.typed(as: Definition.Props.self).flatMap(label) },
                    to: ShapeAdornments.self)
+        if AdornmentParts.isClickable(A.self) { shapeParts(named: "\(A.self)") { editor, shape in AdornmentParts.parts(of: A.self, on: shape.id, in: editor) } }
     }
 }
 
@@ -559,6 +583,7 @@ extension ShapeRegistrar {
     public mutating func adornments<A: Adornment>(_: A.Type, _ labels: @escaping @MainActor (ShapeRecord<Definition.Props>) -> [AdornmentLabel]) {
         contribute(AdornmentContribution(A.self, isGroup: true) { shape, _ in shape.typed(as: Definition.Props.self).map(labels) ?? [] },
                    to: ShapeAdornments.self)
+        if AdornmentParts.isClickable(A.self) { shapeParts(named: "\(A.self)") { editor, shape in AdornmentParts.parts(of: A.self, on: shape.id, in: editor) } }
     }
 }
 
@@ -568,6 +593,7 @@ extension PluginRegistrar {
                                                                  _ labels: @escaping @MainActor (ShapeRecord<P>) -> [AdornmentLabel]) {
         contribute(AdornmentContribution(A.self, isGroup: true) { shape, _ in shape.typed(as: P.self).map(labels) ?? [] },
                    to: ShapeAdornments.self, for: .kind(P.kind))
+        if AdornmentParts.isClickable(A.self) { shapeParts(on: P.self, named: "\(A.self)") { editor, shape in AdornmentParts.parts(of: A.self, on: shape.id, in: editor) } }
     }
 
     /// `A` on the shapes of a kind another plugin registers, as `adornment` does on a
@@ -576,6 +602,7 @@ extension PluginRegistrar {
                                                                 _ label: @escaping @MainActor (ShapeRecord<P>) -> AdornmentLabel?) {
         contribute(AdornmentContribution(A.self) { shape, _ in shape.typed(as: P.self).flatMap(label) },
                    to: ShapeAdornments.self, for: .kind(P.kind))
+        if AdornmentParts.isClickable(A.self) { shapeParts(on: P.self, named: "\(A.self)") { editor, shape in AdornmentParts.parts(of: A.self, on: shape.id, in: editor) } }
     }
 }
 
@@ -589,11 +616,13 @@ extension ScopedRegistrar {
     ///     }
     public mutating func adornment<A: Adornment>(_: A.Type, _ label: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> AdornmentLabel?) {
         contribute(AdornmentContribution(A.self, label: label), to: ShapeAdornments.self)
+        if AdornmentParts.isClickable(A.self) { shapeParts(named: "\(A.self)") { editor, shape in AdornmentParts.parts(of: A.self, on: shape.id, in: editor) } }
     }
 
     /// `adornments` on the shapes of every kind the scope reaches, as `adornment` does for one label.
     public mutating func adornments<A: Adornment>(_: A.Type, _ labels: @escaping @MainActor (AnyShapeRecord, AdornmentContext) -> [AdornmentLabel]) {
         contribute(AdornmentContribution(A.self, isGroup: true, labels: labels), to: ShapeAdornments.self)
+        if AdornmentParts.isClickable(A.self) { shapeParts(named: "\(A.self)") { editor, shape in AdornmentParts.parts(of: A.self, on: shape.id, in: editor) } }
     }
 }
 

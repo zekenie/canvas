@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Mentions
+import TextEditing
 
 // Every key of rows-and-cards. A text cell's editor hands the form its commands (`textView(_:doCommandBy:)`:
 // Tab, ⇧Tab, Return, Esc, Up, Down, Backspace on an empty line); every other stop has the keyboard itself
@@ -18,46 +19,62 @@ extension FieldFormView: NSTextViewDelegate {
     public func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         if textView === jsonEditor {
             // Tab leaves the box; Esc and everything else are the text's own, and the panel's.
-            switch selector {
-            case #selector(NSResponder.insertTab(_:)): tab(forward: true)
-            case #selector(NSResponder.insertBacktab(_:)): tab(forward: false)
+            switch KeyMeaning(command: selector) {
+            case .next: tab(forward: true)
+            case .previous: tab(forward: false)
             default: return false
             }
             return true
         }
         guard textView === cellEditor else { return false }
-        switch selector {
-        case #selector(NSResponder.insertTab(_:)): tab(forward: true)
-        case #selector(NSResponder.insertBacktab(_:)): tab(forward: false)
-        case #selector(NSResponder.insertNewline(_:)): returnKey()
-        case #selector(NSResponder.moveUp(_:)): vertical(-1)
-        case #selector(NSResponder.moveDown(_:)): vertical(1)
-        case #selector(NSResponder.cancelOperation(_:)):
+        // ⌘⌫ in a cell takes its line out where a line can go; elsewhere it is the text's (to the start of the line).
+        if selector == #selector(NSResponder.deleteToBeginningOfLine(_:)) { return removeFocusedLine() }
+        guard let reading = KeyMeaning.Reading(command: selector) else { return false }
+        switch reading.meaning {
+        case .next: tab(forward: true)
+        case .previous: tab(forward: false)
+        case .activate:
+            guard reading.modifiers.isEmpty else { return false }
+            returnKey()
+        case .up: vertical(-1)
+        case .down: vertical(1)
+        case .back:
             // The panel's Esc is the panel's: it hands the keyboard back to the canvas.
             guard presentation == .card else { return false }
             escape()
-        case #selector(NSResponder.deleteBackward(_:)): return backspaceOnEmptyLine()
+        case .delete:
+            guard selector == #selector(NSResponder.deleteBackward(_:)) else { return false }
+            return backspaceOnEmptyLine()
         default: return false
         }
         return true
     }
 
     public override func keyDown(with event: NSEvent) {
-        let shift = event.modifierFlags.contains(.shift)
+        let reading = KeyMeaning.Reading(event: event)
+        // ⌘↩ finishes, from a stop that is no text as from a cell (`cellEditor.onCommit`).
+        if reading?.meaning == .finish { return finish() }
+        // ⌫ and ⌦ on a line that can go, with ⌘ or not.
+        if reading?.meaning == .delete, let modifiers = reading?.modifiers, modifiers.subtracting(.command).isEmpty {
+            if !removeFocusedRelation(repeating: event.isARepeat), !removeFocusedLine(repeating: event.isARepeat) { super.keyDown(with: event) }
+            return
+        }
         guard event.modifierFlags.isDisjoint(with: [.command, .control, .option]) else { return super.keyDown(with: event) }
-        switch event.keyCode {
-        case 48: tab(forward: !shift)
-        case 36, 76: returnKey()
-        case 49: spaceKey()
-        case 53:
-            if presentation == .panel { super.keyDown(with: event) } else { escape() }
-        case 126: vertical(-1)
-        case 125: vertical(1)
-        case 123: horizontal(-1)
-        case 124: horizontal(1)
-        // A line of a row's card, with its note focused: Backspace or Delete takes it out.
-        case 51, 117: if !removeFocusedRelation() { super.keyDown(with: event) }
-        default: if !typeToPickNote(event) { super.keyDown(with: event) }
+        guard let reading else {
+            if !typeToPickNote(event) { super.keyDown(with: event) }
+            return
+        }
+        switch reading.meaning {
+        case .next: tab(forward: !reading.modifiers.contains(.shift))
+        case .previous: tab(forward: false)
+        case .activate: returnKey()
+        case .toggle: spaceKey()
+        case .back: if presentation == .panel { super.keyDown(with: event) } else { escape() }
+        case .up: vertical(-1)
+        case .down: vertical(1)
+        case .left: horizontal(-1)
+        case .right: horizontal(1)
+        case .finish, .delete: super.keyDown(with: event)
         }
     }
 
@@ -105,10 +122,14 @@ extension FieldFormView: NSTextViewDelegate {
         focus(beyond.filter { $0.line == line }.min { abs(max($0.column, 0) - column) < abs(max($1.column, 0) - column) })
     }
 
-    /// Left and right on the branch names pick one.
+    /// Left and right on a stop that is no text go to the stop before and after it on its line, and stay at the ends. On the branch
+    /// names they pick one.
     private func horizontal(_ delta: Int) {
-        guard let current = focus, current.line == -1 else { return }
-        pickBranch(min(max(current.column + delta, 0), sheet.branches.count - 1))
+        guard let current = focus else { return }
+        if current.line == -1 { return pickBranch(min(max(current.column + delta, 0), sheet.branches.count - 1)) }
+        let line = sheet.stops.filter { $0.line == current.line }
+        guard let place = line.firstIndex(of: current), line.indices.contains(place + delta) else { return }
+        focus(line[place + delta])
     }
 
     // MARK: Return, Space, Esc
@@ -154,6 +175,13 @@ extension FieldFormView: NSTextViewDelegate {
 
     func escape() {
         if depth > 0 { return popLevel() }
+        onClose?(.escaped)
+    }
+
+    /// ⌘↩: what Esc does at the top level, from any depth. The panel's form has nothing to finish; its text boxes keep the keyboard.
+    func finish() {
+        guard presentation == .card else { return }
+        while depth > 0 { popLevel() }
         onClose?(.escaped)
     }
 
@@ -239,5 +267,15 @@ extension FieldFormView: NSTextViewDelegate {
     func tryAtReadOnly() {
         guard presentation == .card, mode == .values, isReadOnly else { return }
         editor.refuseChanges(to: [shape])
+    }
+}
+
+/// Whether the key being handled is a held one repeating. A destructive key (a line, a field, a relationship taken out) is one
+/// press however long it is held: the keyboard moves on to the next line, and a repeat would take that out too.
+@MainActor
+enum HeldKey {
+    static var isRepeating: Bool {
+        guard let event = NSApp.currentEvent, event.type == .keyDown else { return false }
+        return event.isARepeat
     }
 }

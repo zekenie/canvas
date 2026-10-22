@@ -20,14 +20,22 @@ import TextEditing
 // Every other key stops here: up the responder chain is the canvas's shortcuts, where Backspace deletes the
 // selection, which is the note being edited.
 //
-// | Key         | Typed row                 | Box, choice, row with more, fold            |
-// | Tab, ⇧Tab   | next row, previous row    | the same                                    |
-// | ↓, ↑        | next row, previous row    | the same                                    |
-// | Return      | editing ends              | a row with more: its card; else editing ends |
-// | Space       | a space                   | a box toggles, a choice pops, more: its card |
-// | Escape, ⌘↩  | editing ends              | editing ends                                |
+// | Key         | Typed row                 | Box, choice, row with more, fold, pills              |
+// | Tab, ⇧Tab   | next row, previous row    | the same                                             |
+// | ↓, ↑        | next row, previous row    | the same                                             |
+// | ← →         | the caret                 | a relation row: between its pills                    |
+// | Return      | editing ends              | a pill focused: its note; a row with more: its card; |
+// |             |                           | a choice: its menu; else editing ends                |
+// | Space       | a space                   | a pill focused: its note; a box toggles, a choice    |
+// |             |                           | pops, more: its card                                 |
+// | ⇧Return     | a new note beside, edited | the same                                             |
+// | Backspace   | the text's                | a relation row: its pills, one at a time             |
+// | Escape, ⌘↩  | editing ends              | editing ends                                         |
 //
-// Off the last row, Tab ends editing; ↑ and ⇧Tab from the first go back to the words; ↓ on the last does nothing.
+// Return, Space and Backspace do once for a press, however long the key is held: what a held key repeats is the moving
+// (Tab, the arrows). The keys are read through `KeyMeaning`, as the field's commands are.
+// Off the last row, Tab goes on past the shape (the host's: the next note); ↑ and ⇧Tab from the first go back to the words;
+// ↓ on the last does nothing. Tab in the words comes to the first row, and ⇧Tab from past the shape to the last.
 
 /// What the kind's editing view lends the rows view of its session.
 @MainActor
@@ -40,13 +48,20 @@ public struct RowsHost {
     public var keepInView: @MainActor (CGRect) -> Void
     /// Puts the caret back in the words, at their end.
     public var focusWords: @MainActor () -> Void
+    /// Tab off the last row: the session goes on past the shape, as Tab in its words would with no rows.
+    public var tabbedOut: @MainActor () -> Void
+    /// ⇧Return in a row: a new note beside the shape, edited, as ⇧Return in its words puts one.
+    public var addBeside: @MainActor () -> Void
 
     public init(origin: @escaping @MainActor () -> CGPoint?, end: @escaping @MainActor () -> Void,
-                keepInView: @escaping @MainActor (CGRect) -> Void, focusWords: @escaping @MainActor () -> Void) {
+                keepInView: @escaping @MainActor (CGRect) -> Void, focusWords: @escaping @MainActor () -> Void,
+                tabbedOut: @escaping @MainActor () -> Void, addBeside: @escaping @MainActor () -> Void) {
         self.origin = origin
         self.end = end
         self.keepInView = keepInView
         self.focusWords = focusWords
+        self.tabbedOut = tabbedOut
+        self.addBeside = addBeside
     }
 }
 
@@ -82,6 +97,8 @@ public final class RowsView: NSView {
     private var pickingRow: RelationshipRow?
     /// The pill of the focused relation row that has the focus (by place among the pills shown): a second Backspace removes it.
     private var pillFocus: Int?
+    /// The elements VoiceOver was given for the rows, with what each was made from.
+    private var rowElements: [(shown: ShownRow, kind: RowClass, look: RowLook, element: NSAccessibilityElement)?] = []
     /// Moving the focus between this view's own parts: the keyboard leaving one is not the person leaving.
     private var switching = false
     /// A card is being asked for: it takes the keyboard as it opens, before the service has it down as open.
@@ -191,11 +208,19 @@ public final class RowsView: NSView {
         }
     }
 
-    /// ↓ from the words' last line: the first row takes the caret. False with no row to take it (a type's
+    /// ↓ from the words' last line, and Tab in them: the first row takes the caret. False with no row to take it (a type's
     /// note, a note with no rows).
     public func focusFirstRow() -> Bool {
         guard let edited = rows(), edited.count > 0 else { return false }
         return focusRow(0) != nil
+    }
+
+    /// ⇧Tab from past the shape (the next note's words): the last row takes the caret or the focus, and is the responder
+    /// that does. Nil with no row to take it.
+    @discardableResult
+    public func focusLastRow() -> NSResponder? {
+        guard let edited = rows(), edited.count > 0 else { return nil }
+        return focusRow(edited.count - 1)
     }
 
     /// Gives a row the caret (a typed one: its field, the caret at `point` if given) or the focus (this view).
@@ -225,12 +250,14 @@ public final class RowsView: NSView {
         needsDisplay = true
         window?.invalidateCursorRects(for: self)
         window?.makeFirstResponder(responder)
+        announceFocus()
         return responder
     }
 
     private func makeField(row: Int, key: String, kinds: [PlainKind], in edited: EditedRows) -> RowField {
         let path = FieldPath(field: key)
         let field = RowField()
+        field.setAccessibilityLabel(edited.shown.rows[row].name)
         let stored = edited.record[FieldValuesProperty.self]?.value(at: path)
         written = stored
         fieldKinds = kinds
@@ -300,6 +327,15 @@ public final class RowsView: NSView {
         if let typingPath { book?.clearTyping(typingPath, of: shape) }
         typingPath = nil
         switching = wasSwitching
+    }
+
+    /// Tab off the last row: the rows let go of the focus, and the host goes on past the shape.
+    private func leaveForward() {
+        focus = nil
+        pillFocus = nil
+        stopField()
+        needsDisplay = true
+        host.tabbedOut()
     }
 
     /// The caret leaves the rows for the words.
@@ -401,7 +437,7 @@ public final class RowsView: NSView {
         guard let edited = rows(), let row = focusedIndex(in: edited) else { return }
         switch key {
         case .next:
-            if row + 1 < edited.count { focusRow(row + 1) } else { host.end() }
+            if row + 1 < edited.count { focusRow(row + 1) } else { leaveForward() }
         case .previous:
             if row > 0 { focusRow(row - 1) } else { leaveToWords() }
         case .down:
@@ -409,7 +445,11 @@ public final class RowsView: NSView {
         case .up:
             if row > 0 { focusRow(row - 1) } else { leaveToWords() }
         case .commit:
-            if edited.opensCard(row) {
+            if followPill(row, in: edited) {
+                return
+            } else if case .choice = edited.classes[row] {
+                popChoice(row, edited)
+            } else if edited.opensCard(row) {
                 openCard(row)
             } else if case .relation = edited.classes[row] {
                 // Its list, where a list can be made; else editing ends.
@@ -425,7 +465,10 @@ public final class RowsView: NSView {
             } else {
                 host.end()
             }
+        case .addBeside:
+            host.addBeside()
         case .space:
+            if followPill(row, in: edited) { return }
             switch edited.classes[row] {
             case .box:
                 if let key = edited.shown.rows[row].path?.field { book?.toggle(key, of: shape) }
@@ -444,21 +487,156 @@ public final class RowsView: NSView {
     public override func keyDown(with event: NSEvent) {
         guard focus != nil else { return }
         let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        switch event.keyCode {
-        case 48 where modifiers.isEmpty: handle(.next)
-        case 48 where modifiers == .shift: handle(.previous)
-        case 125 where modifiers.isEmpty: handle(.down)
-        case 126 where modifiers.isEmpty: handle(.up)
-        case 36 where modifiers.isEmpty, 76 where modifiers.isEmpty: handle(.commit)
-        case 36 where modifiers == .command, 76 where modifiers == .command: host.end()
-        case 49 where modifiers.isEmpty: handle(.space)
-        case 53: handle(.escape)
-        case 123 where modifiers.isEmpty: movePillFocus(by: -1)
-        case 124 where modifiers.isEmpty: movePillFocus(by: 1)
-        case 51 where modifiers.isEmpty, 117 where modifiers.isEmpty: deletePill()
+        guard let reading = KeyMeaning.Reading(event: event) else { return typeToPick(event, modifiers: modifiers) }
+        let plain = reading.modifiers.isEmpty
+        // A held key repeats to move, not to do: Return, Space and Backspace are one press whatever the key is held.
+        if event.isARepeat, [.activate, .toggle, .delete, .finish].contains(reading.meaning) { return }
+        switch reading.meaning {
+        case .next where reading.modifiers == .shift: handle(.previous)
+        case .next where plain: handle(.next)
+        case .previous: handle(.previous)
+        case .down where plain: handle(.down)
+        case .up where plain: handle(.up)
+        case .left where plain: movePillFocus(by: -1)
+        case .right where plain: movePillFocus(by: 1)
+        case .activate where plain: handle(.commit)
+        case .activate where reading.modifiers == .shift: handle(.addBeside)
+        case .finish where reading.modifiers == .command: host.end()
+        case .toggle where plain: handle(.space)
+        case .back: handle(.escape)
+        case .delete where plain: deletePill()
         default: typeToPick(event, modifiers: modifiers)
         }
         // No other key goes on: up the chain is the canvas's shortcuts.
+    }
+
+    /// Return or Space on a focused pill goes to its note, as a click on it does. False with no pill focused.
+    private func followPill(_ row: Int, in edited: EditedRows) -> Bool {
+        guard let pill = pillFocus, case .related(let pills, _) = edited.shown.rows[row].content, pills.indices.contains(pill) else { return false }
+        if let destination = pills[pill].destination { book?.editor?.mentions?.follow(destination) }
+        return true
+    }
+
+    // MARK: VoiceOver
+
+    /// One element per row, in the order of the rows: named for its field, with its value, and by what the row is for a role
+    /// (a box a check box, a choice a pop-up button, a row with more in it and a fold buttons, a typed row a text field, a relation
+    /// row a group of its pills as buttons). A needed or wrong value says so in its help. The row being typed in is its field.
+    public override func isAccessibilityElement() -> Bool { true }
+    public override func accessibilityRole() -> NSAccessibility.Role? { .group }
+    public override func accessibilityLabel() -> String? { TypesStyle.rowsAccessibilityLabel }
+
+    public override func accessibilityChildren() -> [Any]? {
+        guard let edited = rows() else { return [] }
+        return elements(of: edited)
+    }
+
+    /// The element with the keyboard: the field, a focused pill, else the focused row.
+    public override var accessibilityFocusedUIElement: Any? {
+        // AppKit asks on the main thread; the property is declared without the main actor.
+        nonisolated(unsafe) var element: Any?
+        MainActor.assumeIsolated { element = focusedElement() }
+        return element
+    }
+
+    private func focusedElement() -> Any? {
+        guard focus != nil, let edited = rows(), let row = focusedIndex(in: edited) else { return nil }
+        if let field { return field }
+        let element = element(at: row, in: edited, check: book?.check(of: edited.record) ?? .clean)
+        if let pillFocus, let pills = (element as? NSAccessibilityElement)?.accessibilityChildren() as? [NSAccessibilityElement],
+           pills.indices.contains(pillFocus) { return pills[pillFocus] }
+        return element
+    }
+
+    private func elements(of edited: EditedRows) -> [Any] {
+        let check = book?.check(of: edited.record) ?? .clean
+        let all = edited.shown.rows.indices.map { element(at: $0, in: edited, check: check) }
+        if rowElements.count > all.count { rowElements.removeLast(rowElements.count - all.count) }
+        return all
+    }
+
+    /// The element for a row: the field while it is typed in, else the one made for the row as it is now. A row that is as it
+    /// was when its element was made keeps it (the frames made again), so the focused element is one of the children by identity.
+    private func element(at row: Int, in edited: EditedRows, check: FieldCheck) -> Any {
+        let shown = edited.shown.rows[row]
+        if row == focusedIndex(in: edited), let field, picking == nil { return field }
+        let mark = check.problems.isEmpty ? nil : shown.relation.map { check.mark(at: $0) } ?? edited.shown.marks[row].compactMap { check.mark(at: $0) }.max()
+        let look = RowLook.of(content: shown.content, mark: mark)
+        let kind = edited.classes[row]
+        while rowElements.count <= row { rowElements.append(nil) }
+        if let held = rowElements[row], held.shown == shown, held.kind == kind, held.look == look {
+            held.element.setAccessibilityFrame(screen(shown.rect))
+            if case .related(let pills, _) = shown.content, let parts = held.element.accessibilityChildren() as? [NSAccessibilityElement] {
+                for (part, pill) in zip(parts, pills) { part.setAccessibilityFrame(screen(book?.pillRect(pill, in: shown) ?? shown.valueRect)) }
+            }
+            return held.element
+        }
+        let made = element(for: shown, class: kind, look: look)
+        rowElements[row] = (shown, kind, look, made)
+        return made
+    }
+
+    private func element(for shown: ShownRow, class kind: RowClass, look: RowLook) -> NSAccessibilityElement {
+        let element = NSAccessibilityElement()
+        element.setAccessibilityParent(self)
+        element.setAccessibilityFrame(screen(shown.rect))
+        element.setAccessibilityLabel(shown.name)
+        switch look {
+        case .needed, .neededInside: element.setAccessibilityHelp(TypesStyle.neededHelp)
+        case .wrong: element.setAccessibilityHelp(TypesStyle.wrongHelp)
+        case .plain, .empty: break
+        }
+        switch (kind, shown.content) {
+        case (.box, .box(let on)):
+            element.setAccessibilityRole(.checkBox)
+            element.setAccessibilityValue(on ? 1 : 0)
+        case (.choice, .choice(let chosen)):
+            element.setAccessibilityRole(.popUpButton)
+            element.setAccessibilityValue(chosen ?? "")
+        case (.typed, .text(let text)):
+            element.setAccessibilityRole(.textField)
+            element.setAccessibilityValue(text)
+        case (.typed, .empty(let placeholder)):
+            element.setAccessibilityRole(.textField)
+            element.setAccessibilityValue("")
+            element.setAccessibilityPlaceholderValue(placeholder)
+        case (.relation, .related(let pills, let more)):
+            element.setAccessibilityRole(.group)
+            element.setAccessibilityValue(pills.map(\.label).joined(separator: ", ") + (more > 0 ? TypesStyle.moreHelp(more) : ""))
+            element.setAccessibilityChildren(pills.map { pill in
+                let part = NSAccessibilityElement()
+                part.setAccessibilityParent(element)
+                part.setAccessibilityRole(.button)
+                part.setAccessibilityLabel(pill.label)
+                part.setAccessibilityFrame(screen(book?.pillRect(pill, in: shown) ?? shown.valueRect))
+                return part
+            })
+        case (.relation, .empty(let placeholder)):
+            element.setAccessibilityRole(.group)
+            element.setAccessibilityValue("")
+            element.setAccessibilityPlaceholderValue(placeholder)
+        case (_, .summary(let text)), (_, .fold(let text)):
+            element.setAccessibilityRole(.button)
+            element.setAccessibilityValue(text)
+        case (.more, _), (.json, _), (.fold, _):
+            element.setAccessibilityRole(.button)
+            element.setAccessibilityValue("")
+        default:
+            element.setAccessibilityRole(.staticText)
+            element.setAccessibilityValue("")
+        }
+        return element
+    }
+
+    /// A rect of this view, on the screen.
+    private func screen(_ rect: CGRect) -> CGRect {
+        guard let window else { return rect }
+        return window.convertToScreen(convert(rect, to: nil))
+    }
+
+    /// The keyboard went to another row or pill: VoiceOver says where.
+    private func announceFocus() {
+        NSAccessibility.post(element: self, notification: .focusedUIElementChanged)
     }
 
     // MARK: Picking a note
@@ -483,6 +661,7 @@ public final class RowsView: NSView {
         guard count > 0 else { return }
         pillFocus = pillFocus.map { min(max($0 + step, 0), count - 1) } ?? (step < 0 ? count - 1 : 0)
         needsDisplay = true
+        announceFocus()
     }
 
     /// Backspace or Delete on a focused relation row: the first focuses the last pill, so the person sees which relationship
@@ -518,6 +697,7 @@ public final class RowsView: NSView {
         pillFocus = nil
         host.keepInView(edited.shown.rows[row].rect)
         let field = RowField()
+        field.setAccessibilityLabel(edited.shown.rows[row].name)
         field.show(typed)
         field.setSelectedRange(NSRange(location: (field.string as NSString).length, length: 0))
         field.onKey = { [weak self] key in self?.handle(key) }

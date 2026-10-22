@@ -6,6 +6,7 @@ import Mentions
 import Selection
 import StickyNotes
 import TestKit
+import TextEditing
 
 // The keys in a note's editor that go on to another note (tldraw's adjacent notes): ⇧↩ puts a new note
 // down beside the one edited, and Tab and ⇧Tab edit the next and previous note in reading order.
@@ -47,6 +48,25 @@ import TestKit
         expectEqual(h.editor.editingShapeID, d, "⇧Tab, back round from the first")
         expectEqual(text(of: a, in: h), "One")
         expect(!(try editingText(h).string.contains("\t")), "no tab typed")
+    },
+    test("Tab with a mention picker open and nothing to pick closes it and goes on to the next note, as a key through the window") {
+        let h = try EditorHarness(plugins: notePlugins)
+        let a = h.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200)))
+        let b = h.add(StickyNote(frame: CGRect(x: 300, y: 0, width: 200, height: 200)))
+        h.editor.selection = a
+        expect(h.key("\r"))
+        let view = try require(h.editor.makeEditingView())
+        let textView = try require(view.firstResponder as? EditingTextView)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView?.addSubview(view.view)
+        window.makeFirstResponder(textView)
+        for character in "@zzz" { textView.insertText(String(character), replacementRange: textView.selectedRange()) }
+        expect(textView.caretListWindow != nil, "the picker is open")
+        expect(textView.caretListWindow?.list.highlightedItem == nil, "with nothing to pick")
+        _ = KeyDriver(window).send(.tab)
+        expectEqual(h.editor.editingShapeID, b, "Tab went on to the next note")
+        expectEqual(text(of: a, in: h), "@zzz", "what was typed is kept")
     },
     test("Tab with no other note to go to does nothing, in the text too") {
         let h = try EditorHarness(plugins: notePlugins)

@@ -165,6 +165,36 @@ final class NestedWindow {
         expect(menus.main.performKeyEquivalent(with: commandArrow(w.window, up: false)), "the menu bar runs Open")
         expectEqual(w.editor.board, w.nest.sBoard, "⌘↓ from the menu bar, where the canvas doesn't have the keyboard")
     },
+    test("Go › Board Path (⌥⌘P) gives the path in the window the keyboard; Left, Return go up and the canvas has it back; Escape returns it") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let (menus, _, _) = try w.goItems()
+        let item = try require(menus.main.item(withTitle: "Go")?.submenu?.item(withTitle: "Board Path"))
+        expectEqual(item.keyEquivalent, "p")
+        expectEqual(item.keyEquivalentModifierMask, [.command, .option])
+        expect(!w.controller.validateMenuItem(item), "no path on the root")
+        expect(w.editor.showBoard(w.nest.sBoard))
+        expect(w.editor.showBoard(w.nest.tBoard))
+        w.window.settle()
+        expect(w.controller.validateMenuItem(item))
+        w.window.makeFirstResponder(w.canvas)
+        let driver = KeyDriver(w.window, menu: menus.main)
+        expect(!driver.send(Chord("p", [.command, .option])).isUnhandled, "the chord is taken")
+        w.window.settle()
+        expect(!w.canvasHasKeyboard, "the path has it")
+        expectEqual(w.editor.boardCrumbs?.focus, .crumb(w.nest.tBoard))
+        driver.send(.escape)
+        w.window.settle()
+        expect(w.canvasHasKeyboard, "Escape gives it back")
+        expectEqual(w.editor.board, w.nest.tBoard)
+        driver.send(Chord("p", [.command, .option]))
+        driver.send(.left)
+        driver.send(.return)
+        w.window.settle()
+        expectEqual(w.editor.board, w.nest.sBoard, "Return went up")
+        expectEqual(w.editor.selectedShapeIDs, [w.nest.t])
+        expect(w.canvasHasKeyboard, "and the canvas has the keyboard")
+    },
     test("⌘↑ and ⌘↓ in a panel's field move its caret: Go's items leave the keys to the text") {
         let w = try NestedWindow()
         defer { w.board.close() }

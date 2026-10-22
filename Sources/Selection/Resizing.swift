@@ -36,6 +36,7 @@ extension ShapeRegistrar where Definition.Props: BoxShapeProps {
     /// step, "Resize".
     public mutating func resizable(minimumSize: CGSize) {
         contribute(minimumSize, to: ShapeResizing.self)
+        contribute(ResizeHandle.parts, to: ShapeParts.self)
     }
 }
 
@@ -44,6 +45,7 @@ extension PluginRegistrar {
     /// `resizable` on a kind's own registrar.
     public mutating func resizable<P: BoxShapeProps>(_: P.Type, minimumSize: CGSize) {
         contribute(minimumSize, to: ShapeResizing.self, for: .kind(P.kind))
+        contribute(ResizeHandle.parts, to: ShapeParts.self, for: .kind(P.kind))
     }
 }
 
@@ -68,6 +70,27 @@ public enum ResizeHandle: CaseIterable, Hashable, Sendable {
         case .left, .right: 0
         case .bottomLeft, .bottom, .bottomRight: 1
         }
+    }
+
+    /// What VoiceOver calls it, as a part of its shape (⌥Tab).
+    var title: String {
+        switch self {
+        case .topLeft: "Top Left Corner"
+        case .top: "Top Edge"
+        case .topRight: "Top Right Corner"
+        case .right: "Right Edge"
+        case .bottomRight: "Bottom Right Corner"
+        case .bottom: "Bottom Edge"
+        case .bottomLeft: "Bottom Left Corner"
+        case .left: "Left Edge"
+        }
+    }
+
+    /// The resize handles as parts of their shape (`ShapeParts`, contributed for a kind as it opts in): each shown,
+    /// a `.handle` the arrow keys move as its drag does, a unit, ten with ⇧ (`CanvasEditor.resize`); an arrow
+    /// across the way it moves goes on to the nudge. Pressing one does nothing, as a click on one doesn't.
+    @MainActor static var parts: ShapePartSource {
+        ShapePartSource(order: 0, name: "resize handles") { editor, shape in editor.resizeHandleParts(of: shape) }
     }
 
     /// Where it is on a box.
@@ -179,8 +202,14 @@ final class ResizingSession {
         self.origin = origin
         start = box
         self.minimum = minimum
+        room = Self.room(for: record, box: box, in: editor)
+    }
+
+    /// Where a box may reach as it's resized, for a shape in a container: inside its container's edge, or as far as
+    /// `box` already does. Nil on its board directly.
+    static func room(for record: AnyShapeRecord, box: CGRect, in editor: CanvasEditor) -> CGRect? {
         let gap = Settlement.gap
-        room = editor.registry.container(of: record, in: editor.document).flatMap { editor.document[$0]?.box }
+        return editor.registry.container(of: record, in: editor.document).flatMap { editor.document[$0]?.box }
             .map { $0.insetBy(dx: gap, dy: gap).union(box) }
     }
 
@@ -219,5 +248,67 @@ extension ResizingSession: Session {
     func cancel(in editor: CanvasEditor) -> Bool {
         editor.transact("Resize") { $0.update(shapeID) { $0.box = start } }
         return true
+    }
+}
+
+// MARK: By the keys
+
+/// The open step's key resize, settled as it closes.
+private struct KeyResizeSettle: Hashable {}
+
+extension CanvasEditor {
+    /// The shape ⌥ and an arrow resize: the only selected one, of a kind that resizes (`ShapeResizing`), with nothing
+    /// under way or being edited; nil otherwise, and the key goes on. A read-only one counts: the key is its, and refused.
+    var keyResizable: ShapeID? {
+        guard session == nil, editingShapeID == nil, let id = selection, let record = document[id], record.box != nil,
+              selectionState?.minimumSizes[record.kind] != nil else { return nil }
+        return id
+    }
+
+    /// ⌥ and an arrow: the only selected shape resized from its top left, → and ↓ growing it a world unit, ← and ↑
+    /// shrinking it, ten with ⇧ (`resize`), brought into view first if it isn't.
+    func resizeSelection(_ direction: CGPoint, large: Bool) {
+        guard let id = keyResizable else { return }
+        revealIfOffscreen([id])
+        resize(id, moving: direction.x != 0 ? .right : .bottom, by: PartStep(direction: direction, isLarge: large).offset)
+    }
+
+    /// `handle` of shape `id` moved by `delta` (world units) from where it is, as a drag of it that far moves it
+    /// (`ResizeHandle.resizing`): never below the kind's minimum, and a shape in a container never across its edge.
+    /// One "Resize" in the step under way, so a held key's repeats are one step; as that step closes, a container
+    /// settles what it now reaches or lets go of (`settle(container:)`, the drag's release), gliding there. A
+    /// read-only shape is refused, and shakes; at the minimum nothing changes.
+    func resize(_ id: ShapeID, moving handle: ResizeHandle, by delta: CGPoint) {
+        guard let record = document[id], let box = record.box, let minimum = selectionState?.minimumSizes[record.kind] else { return }
+        guard !isReadOnly(id) else { return refuseChanges(to: [id]) }
+        var resized = handle.resizing(box, by: delta, keepingProportions: false, fromCenter: false, minimum: minimum)
+        if let room = ResizingSession.room(for: record, box: box, in: self) { resized = resized.intersection(room) }
+        guard resized != box, !resized.isNull, resized.width > 0, resized.height > 0 else { return }
+        undoHistory.group {
+            transact("Resize") { $0.update(id) { $0.box = resized } }
+            undoHistory.finishing(KeyResizeSettle()) { [weak self] in
+                guard let self, document[id] != nil else { return }
+                glide(transact("Resize") { $0.settle(container: id) })
+            }
+        }
+    }
+
+    /// The only selected shape's resize handles as parts (`ResizeHandle.parts`): those shown on its box, as
+    /// `visibleHandles` shows them; none on a shape not selected alone, a read-only one, or one being edited.
+    func resizeHandleParts(of shape: AnyShapeRecord) -> [ShapePart] {
+        guard selection == shape.id, editingShapeID != shape.id, !isReadOnly(shape.id), let box = shape.box,
+              selectionState?.minimumSizes[shape.kind] != nil else { return [] }
+        let id = shape.id, radius = SelectionStyle.handleRadius / camera.zoom
+        return ResizeHandle.shown(on: camera.toView(box)).map { handle in
+            let point = handle.point(on: box)
+            return ShapePart(id: handle, title: handle.title, role: .handle,
+                             rect: CGRect(x: point.x - radius, y: point.y - radius, width: 2 * radius, height: 2 * radius),
+                             press: { _ in }, adjust: { editor, step in
+                                 // An arrow along a way the handle moves; ⌥⌘ and one across it go on.
+                                 guard !step.toNearest, step.direction.x * handle.x != 0 || step.direction.y * handle.y != 0 else { return false }
+                                 editor.resize(id, moving: handle, by: step.offset)
+                                 return true
+                             })
+        }
     }
 }

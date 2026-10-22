@@ -8,7 +8,9 @@ import Geometry
 /// those, and the editor's popover over everything. Plugins can't import this module.
 public final class CanvasView: NSView {
     public let editor: CanvasEditor
-    private var editingView: EditingView?
+    private(set) var editingView: EditingView?
+    /// Its shapes as VoiceOver sees them (ShapeElements.swift), made when an assistive app first asks.
+    private(set) lazy var shapeElements = ShapeElements(canvas: self)
     /// The editor's popover while one shows (`editor.popover`), over the rest.
     private var popoverBubble: PopoverView?
     /// The view showing the editor's popover while one shows, over everything the canvas hosts.
@@ -194,11 +196,21 @@ public final class CanvasView: NSView {
         }
     }
 
-    /// So is every key held when the canvas loses the keyboard (to a panel's field, say).
+    /// So is every key held when the canvas loses the keyboard (to a panel's field, say). The editor
+    /// hears where the keyboard is either way (`hasKeyboard`): the selection is outlined quieter without it.
     public override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
-        if resigned { editor.keysReleased() }
+        if resigned {
+            editor.keysReleased()
+            editor.keyboardDidChange(hasKeyboard: false)
+        }
         return resigned
+    }
+
+    public override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { editor.keyboardDidChange(hasKeyboard: true) }
+        return became
     }
 
     public override func viewDidChangeEffectiveAppearance() {
@@ -415,10 +427,13 @@ public final class CanvasView: NSView {
 
     /// A right-click or a Control-click (AppKit asks for both, and shows what this returns): the
     /// editor's menu for it, from whichever plugin claims secondary clicks. Nil does nothing.
-    /// AppKit may also ask with some other event (the accessibility Show Menu action), which has no
-    /// location or click count to give: then there's no menu.
+    /// AppKit also asks with some other event (the accessibility Show Menu action, VoiceOver's
+    /// VO-Shift-M), which has no location or click count to give: then it's the selection's menu, as
+    /// Shape › Show Context Menu opens (nil with nothing selected).
     public override func menu(for event: NSEvent) -> NSMenu? {
-        guard [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) else { return nil }
+        guard [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) else {
+            return editor.menuForPoppedSelection()
+        }
         let pointer = pointerEvent(event)
         guard !isOnMinimap(pointer.location) else { return nil }
         return editor.menu(for: pointer)
@@ -524,12 +539,19 @@ extension CanvasView: NSMenuItemValidation {
     /// Edit › Delete and Select All are enabled while the commands that answer them can run
     /// (`canPerform`): Delete while something's selected, Select All while the board has shapes.
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if editor.editingShapeID != nil, !(window?.firstResponder is NSText), Self.editMenuActions.contains(item.action) { return false }
         switch item.action {
-        case #selector(delete(_:)): editor.canPerform(answering: .delete)
-        case #selector(selectAll(_:)): editor.canPerform(answering: .selectAll)
-        default: true
+        case #selector(delete(_:)): return editor.canPerform(answering: .delete)
+        case #selector(selectAll(_:)): return editor.canPerform(answering: .selectAll)
+        default: return true
         }
     }
+
+    /// Edit's items that act on the board's shapes: dimmed while a shape is edited and its text isn't
+    /// what has the keyboard (a note's box row), so their keys do nothing to the note being edited.
+    static let editMenuActions: Set<Selector?> = [
+        #selector(NSText.cut(_:)), #selector(NSText.copy(_:)), #selector(NSText.paste(_:)), #selector(delete(_:)), #selector(selectAll(_:)),
+    ]
 }
 
 @_spi(Host) extension CanvasView: CanvasEditorDelegate {
@@ -559,6 +581,7 @@ extension CanvasView: NSMenuItemValidation {
             // Over the minimap and the zoom, under the popover.
             if let popoverBubble { addSubview(host, positioned: .below, relativeTo: popoverBubble) } else { addSubview(host) }
             cardHost = host
+            host.onEscape = { [weak self] in self?.editor.closeCard(.asked) }
             host.nextResponder = nextResponder
             watchPresses()
             layoutCard()
@@ -641,6 +664,7 @@ extension CanvasView: NSMenuItemValidation {
     }
 
     public func editorBoardDidChange(_ editor: CanvasEditor) {
+        shapeElements.boardDidChange()
         minimap?.boardDidChange()
         minimap?.updateVisibility()
     }
@@ -652,6 +676,7 @@ extension CanvasView: NSMenuItemValidation {
             // The keyboard comes back to the canvas, unless it has gone to a view outside it (the
             // inspector's text, whose click ended editing as it took the keyboard).
             if !keyboardIsElsewhere { window?.makeFirstResponder(self) }
+            shapeElements.editingEnded(old.view)
             old.view.removeFromSuperview()
             editingView = nil
             // Where it was is the canvas again; the tool hears the pointer when it next moves.
@@ -663,6 +688,8 @@ extension CanvasView: NSMenuItemValidation {
         editingView = new
         layoutEditingView()
         window?.makeFirstResponder(new.firstResponder)
+        // VoiceOver hears what's edited by the shape's name, under its element.
+        shapeElements.nameEditingView()
     }
 
     public func editorEditingSelectedText(_ editor: CanvasEditor) -> String? {

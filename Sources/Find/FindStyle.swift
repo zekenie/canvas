@@ -57,6 +57,8 @@ public enum FindStyle {
     /// Rows listed at once, around the current one: a lazy list of thousands still costs each row's
     /// identity on every change.
     static let rowWindow = 200
+    /// Page Up and Page Down in the field move this many results.
+    static let pageRows = 8
     static let rowHeight: CGFloat = 36
     static let rowSpacing: CGFloat = 2
     static let rowSymbolWidth: CGFloat = 16

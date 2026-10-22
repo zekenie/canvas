@@ -166,19 +166,26 @@ extension CanvasEditor {
 
     /// What the canvas outlines now: every plugin's outlines (none while the session hides them),
     /// with the hint among the shapes; a shape outlined in full isn't among the faint ones too, and
-    /// every plugin's tinted groups are kept as they come, in plugin order. A picture of the board
-    /// marks the same shapes.
+    /// every plugin's tinted groups are kept as they come, in plugin order; the color is the one every
+    /// plugin with full outlines names, else none (the accent). A picture of the board marks the same
+    /// shapes.
     @_spi(Host) public var outlines: Outlines {
         var outlines = Outlines()
         if session?.hidesOutlines != true {
+            // The color the full outlines are named in, while every plugin with some names the same.
+            var named: NSColor??
             for source in registry.outlineSources {
                 let more = source(self)
+                if !more.shapes.isEmpty || !more.rects.isEmpty {
+                    if let first = named { if first != more.color { named = .some(nil) } } else { named = .some(more.color) }
+                }
                 // The first list of shapes is taken as it is, not copied (⌘A's is every shape).
                 if outlines.shapes.isEmpty { outlines.shapes = more.shapes } else if !more.shapes.isEmpty { outlines.shapes += more.shapes }
                 if !more.faintShapes.isEmpty { outlines.faintShapes += more.faintShapes }
                 if !more.rects.isEmpty { outlines.rects += more.rects }
                 if !more.tinted.isEmpty { outlines.tinted += more.tinted }
             }
+            outlines.color = named ?? nil
         }
         if let hintedShapeID { outlines.shapes.append(hintedShapeID) }
         if !outlines.faintShapes.isEmpty, !outlines.shapes.isEmpty {
@@ -256,7 +263,7 @@ extension CanvasEditor {
         let faint = outlines.tinted.isEmpty ? Style.faintIndicatorOpacity : Style.tintedFaintIndicatorOpacity
         strokeOutlines(of: outlines.faintShapes, rects: [], in: Style.accent.withAlphaComponent(faint),
                        width: Style.faintIndicatorWidth, around: area, skeletonPixel: skeletonPixel, context: context, shapes: shapes)
-        strokeOutlines(of: outlines.shapes, rects: outlines.rects, in: Style.accent, width: Style.indicatorWidth,
+        strokeOutlines(of: outlines.shapes, rects: outlines.rects, in: outlines.color ?? Style.accent, width: Style.indicatorWidth,
                        around: area, skeletonPixel: skeletonPixel, context: context, shapes: shapes)
     }
 

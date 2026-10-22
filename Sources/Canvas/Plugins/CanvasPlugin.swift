@@ -90,8 +90,10 @@ public struct PluginRegistrar {
     /// shapes would open (a menu bar's Shape menu), made when it is asked for, from `omitting`, the
     /// commands to leave out (the ones a menu bar item already runs). Nil: nothing is selected, or
     /// nothing is left to show. At most one plugin may claim it (ContextMenus, in the shipped app);
-    /// otherwise the editor has none.
-    public mutating func menuForSelection(_ make: @escaping @MainActor (CanvasEditor, Set<CanvasCommand>) -> NSMenu?) {
+    /// otherwise the editor has none. `popped` is true when the menu is popped under the selection by a key
+    /// or by VoiceOver's Show Menu (`editor.menuForPoppedSelection()`), false for a menu bar's: the item
+    /// that pops the menu would only open itself again, so it leaves it out.
+    public mutating func menuForSelection(_ make: @escaping @MainActor (CanvasEditor, Set<CanvasCommand>, _ popped: Bool) -> NSMenu?) {
         contribute(make, to: CorePoints.SelectionMenu.self)
     }
 

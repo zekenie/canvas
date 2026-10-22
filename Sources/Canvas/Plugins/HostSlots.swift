@@ -71,6 +71,11 @@ public struct HostInspector {
     public let isRequested: @MainActor (CanvasEditor) -> Bool
     /// The person hid the inspector while it was wanted: end what wanted it.
     public let onDismiss: @MainActor (CanvasEditor) -> Void
+    /// Where the keyboard goes when the window gives the inspector the keyboard (View ▸ Focus Inspector,
+    /// Focus Next Pane): the view the panel says takes it now, nil when it names none (the window then
+    /// looks for a list, field or control itself, and failing that gives the keyboard to the inspector's
+    /// hosting view, where Tab enters the panel's loop).
+    public let keyboardEntry: (@MainActor (CanvasEditor) -> NSView?)?
     let content: @MainActor (CanvasEditor, @escaping @MainActor () -> Void) -> AnyView
 
     /// The view, for a window's inspector.
@@ -305,7 +310,8 @@ extension PluginRegistrar {
 
     /// The window's inspector. `isRequested` says when it's wanted whether or not it's shown (read
     /// in a view's body: observable state), and `onDismiss` ends what wanted it, when the person
-    /// hides the inspector meanwhile:
+    /// hides the inspector meanwhile, and `keyboardEntry` the view that takes the keyboard when the
+    /// window gives the inspector the keyboard:
     ///
     ///     registrar.hostInspector(isRequested: { $0.registry.activeDetailTakeover(in: $0) != nil },
     ///                             onDismiss: { $0.registry.activeDetailTakeover(in: $0)?.onEscape($0) }) { editor, onExit in
@@ -313,9 +319,10 @@ extension PluginRegistrar {
     ///     }
     public mutating func hostInspector<Content: View>(
         isRequested: @escaping @MainActor (CanvasEditor) -> Bool = { _ in false }, onDismiss: @escaping @MainActor (CanvasEditor) -> Void = { _ in },
+        keyboardEntry: (@MainActor (CanvasEditor) -> NSView?)? = nil,
         @ViewBuilder _ content: @escaping @MainActor (_ editor: CanvasEditor, _ onExit: @escaping @MainActor () -> Void) -> Content
     ) {
-        contribute(HostInspector(isRequested: isRequested, onDismiss: onDismiss, content: { AnyView(content($0, $1)) }), to: HostInspectors.self)
+        contribute(HostInspector(isRequested: isRequested, onDismiss: onDismiss, keyboardEntry: keyboardEntry, content: { AnyView(content($0, $1)) }), to: HostInspectors.self)
     }
 
     /// What the window's subtitle says of the board shown, nil for none:

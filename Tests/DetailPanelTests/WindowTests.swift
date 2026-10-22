@@ -492,15 +492,21 @@ struct OverviewPlugin: CanvasPlugin {
         panel.window.type("g")                                  // a tool shortcut, on the canvas
         expectEqual(editor.currentToolID, ToolID(placing: Gadget.kind))
     },
-    test("Escape drops the draft, leaves the value, and hands the keyboard to the canvas") {
+    test("Escape in a number field drops the draft and leaves the value, and a second Escape hands the keyboard to the canvas") {
         let editor = try gadgetEditor(scheduler: TaskScheduler())
         let panel = PanelWindow(editor)
         let id = editor.add(Box(gadgetFrame))
         editor.selection = id
         panel.window.spin { !panel.fields.isEmpty }
-        panel.window.focus(try panel.field("240 pt"))
+        let field = try panel.field("240 pt")
+        panel.window.focus(field)
         let revision = editor.revision
         panel.window.type("9")
+        panel.window.pressEscape()
+        panel.window.spin { field.stringValue == "240 pt" }
+        expectEqual(field.stringValue, "240 pt", "the draft is dropped")
+        expectEqual(panel.exits, 0, "and the keyboard stays")
+        expect(!panel.canvasHasKeyboard)
         panel.window.pressEscape()
         panel.window.spin { panel.canvasHasKeyboard }
         panel.window.settle()

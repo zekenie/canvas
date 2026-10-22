@@ -509,7 +509,7 @@ final class CaretListRowsView: NSView {
         list.rows.indices.compactMap { index -> NSAccessibilityElement? in
             if case .header = list.rows[index] { return nil }
             let element = NSAccessibilityElement()
-            element.setAccessibilityRole(.staticText)
+            element.setAccessibilityRole(.row)
             element.setAccessibilityLabel(Self.spoken(list, row: index))
             element.setAccessibilityParent(self)
             element.setAccessibilityFrameInParentSpace(rect(ofRow: index))

@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import CanvasRPC
+import ContextMenus
 import CoreGraphics
 import LanguageModels
 import Mentions
@@ -90,7 +91,7 @@ extension RowBook {
         guard let record = editor?.document[id], let subject = subject(of: record), subject.isType, let block = rowsRect(of: record) else { return nil }
         let template = template(subject)
         guard case let (reason, action?, row)? = failure(of: record, template: template) else { return nil }
-        let geometry = RowGeometry(block: block, hasLead: hasWords(record), template: template)
+        let geometry = RowGeometry(block: block, hasLead: hasLead(record), template: template)
         return FailureLayout(reason, action: action, in: geometry.rect(row)).actionRect
     }
 
@@ -148,7 +149,7 @@ extension RowBook {
         guard let subject = subject(of: record), subject.isType else { return nil }
         let template = template(subject)
         guard let spot = spot(of: record, template: template) else { return nil }
-        let geometry = RowGeometry(block: block, hasLead: hasWords(record), template: template)
+        let geometry = RowGeometry(block: block, hasLead: hasLead(record), template: template)
         let id = record.id
         switch spot {
         case .failed(let reason, let action?):
@@ -246,7 +247,7 @@ extension RowBook {
             let template = template(subject)
             guard template.items.indices.contains(face.row), case .field(let field) = template.items[face.row],
                   let block = rowsRect(of: record), let menu = RowMenus.options(of: field.kind) else { return }
-            let geometry = RowGeometry(block: block, hasLead: hasWords(record), template: template)
+            let geometry = RowGeometry(block: block, hasLead: hasLead(record), template: template)
             editor.popUpMenu(menu, below: geometry.valueRect(face.row))
         case .name, .value, .pill, .relationType, .chevron:
             break
@@ -257,7 +258,7 @@ extension RowBook {
     private func cardRequest(for face: RowFace, subject: RowSubject, record: AnyShapeRecord) -> FieldCardRequest? {
         let template = template(subject)
         guard template.items.indices.contains(face.row), let block = rowsRect(of: record) else { return nil }
-        let geometry = RowGeometry(block: block, hasLead: hasWords(record), template: template)
+        let geometry = RowGeometry(block: block, hasLead: hasLead(record), template: template)
         let id = face.shape
         let target: FieldCardRequest.Target, folded: [Resolved.Field], isMore: Bool
         let path: FieldPath?
@@ -292,6 +293,131 @@ extension RowBook {
     }
 }
 
+// MARK: The keys
+
+/// A row's part as ⌥Tab reaches it: the row and what in it a click acts on (`RowFace.Part`).
+struct RowPartID: Hashable, Sendable {
+    let row: Int
+    let part: RowFace.Part
+}
+
+extension RowBook {
+    /// The parts of a shape's rows that a click acts on, as ⌥Tab reaches them (Selection's `ShapeParts`): of a note whose
+    /// rows are never edited into, a type's own note and a read-only note that is one. Each part's press is the click's
+    /// (`perform`), so a row with more in it opens its card to be read, a choice lists its options, a relation row goes to its
+    /// relationship type, a pill to its note, Retry reads again. A note that can be edited lists none: Return edits it and Tab
+    /// walks its rows. None while the shape is edited or drawn as a skeleton, where no row is drawn. Titled by the rows' names.
+    func parts(of record: AnyShapeRecord) -> [ShapePart] {
+        guard let editor, kinds.contains(record.kind), editor.editingShapeID != record.id, !editor.drawsSkeleton(of: record.id),
+              let block = rowsRect(of: record) else { return [] }
+        if record[TypeSchemaProperty.self] != nil { return typeParts(of: record, in: block) }
+        return editor.isReadOnly(record.id) ? readOnlyParts(of: record) : []
+    }
+
+    private func part(_ face: RowFace, _ title: String, _ role: PartRole, _ rect: CGRect) -> ShapePart {
+        ShapePart(id: RowPartID(row: face.row, part: face.part), title: title, role: role, rect: rect) { editor in editor.rowBook?.perform(face) }
+    }
+
+    /// A type's note: each row with `›` and each fold (its card), each choice (its options), each relation row (its type), and the
+    /// failed read's Retry or Settings…, top to bottom.
+    private func typeParts(of record: AnyShapeRecord, in block: CGRect) -> [ShapePart] {
+        guard let subject = subject(of: record), subject.isType else { return [] }
+        let template = template(subject)
+        guard let spot = spot(of: record, template: template) else { return [] }
+        let geometry = RowGeometry(block: block, hasLead: hasLead(record), template: template)
+        let id = record.id
+        func action(_ reason: String, _ action: RowSpot.Action, row: Int) -> ShapePart? {
+            guard let words = FailureLayout(reason, action: action, in: geometry.rect(row)).actionRect else { return nil }
+            let face = RowFace(shape: id, row: row, part: action == .retry ? .retry : .settings, at: CGPoint(x: words.midX, y: words.midY))
+            return part(face, action == .retry ? FieldWords.retry : FieldWords.settings, .button, words)
+        }
+        switch spot {
+        case .failed(let reason, let kind?):
+            return action(reason, kind, row: 0).map { [$0] } ?? []
+        case .rows:
+            var parts: [ShapePart] = []
+            for (row, item) in template.items.enumerated() {
+                let rect = geometry.rect(row), middle = CGPoint(x: rect.midX, y: rect.midY)
+                switch item {
+                case .fold(let fold):
+                    parts.append(part(RowFace(shape: id, row: row, part: .more, at: middle), fold.name, .button, rect))
+                case .field(let field) where field.opensOnType:
+                    parts.append(part(RowFace(shape: id, row: row, part: .more, at: middle), field.name, .button, rect))
+                case .field(let field) where field.kind.hasOptions:
+                    let value = geometry.valueRect(row)
+                    parts.append(part(RowFace(shape: id, row: row, part: .options, at: CGPoint(x: value.midX, y: value.midY)), field.name, .menuButton, value))
+                case .relation(let relation):
+                    parts.append(part(RowFace(shape: id, row: row, part: .relationType(relation.row.key.type), at: middle), relation.name, .link, rect))
+                case .field:
+                    break
+                }
+            }
+            if case .failed(let reason, let kind?)? = footFailure(of: id), let foot = action(reason, kind, row: template.items.count) {
+                parts.append(foot)
+            }
+            return parts
+        default:
+            return []
+        }
+    }
+
+    /// A read-only note that is one: what a click on it does without editing it: a row with more in it, the fold and a row
+    /// edited as JSON open their card to be read, and a relation row's pills go to their notes and its `›` opens its card.
+    private func readOnlyParts(of record: AnyShapeRecord) -> [ShapePart] {
+        guard let edited = editedRows(for: record) else { return [] }
+        let origin = edited.block.origin, id = record.id
+        var parts: [ShapePart] = []
+        for (row, shown) in edited.shown.rows.enumerated() {
+            func world(_ rect: CGRect) -> CGRect { rect.offsetBy(dx: origin.x, dy: origin.y) }
+            func face(_ part: RowFace.Part, _ rect: CGRect) -> RowFace { RowFace(shape: id, row: row, part: part, at: CGPoint(x: rect.midX, y: rect.midY)) }
+            switch edited.classes[row] {
+            case .more, .fold, .json:
+                let rect = world(shown.valueRect.isEmpty ? shown.rect : shown.valueRect)
+                parts.append(part(face(.value, rect), shown.name, .button, rect))
+            case .relation:
+                for pill in shown.pills {
+                    guard let destination = pill.destination else { continue }
+                    let rect = world(pillRect(pill, in: shown))
+                    parts.append(part(face(.pill(destination), rect), pill.label, .link, rect))
+                }
+                if let chevron = chevronRect(of: shown).map(world) {
+                    parts.append(part(face(.chevron, chevron), shown.name, .button, chevron))
+                }
+            case .typed, .box, .choice, .still:
+                break
+            }
+        }
+        return parts
+    }
+}
+
+extension CanvasCommand {
+    /// Retry: a type's last read of its words failed and may go now; read again.
+    public static let retryTypeSync: CanvasCommand = "retryTypeSync"
+}
+
+extension CommandSubject {
+    /// The types the command is for whose last read failed and may be tried again, and can change.
+    fileprivate var retriable: [ShapeID] {
+        shapes.filter { id in
+            guard case .failed(let failure)? = editor.typeSync?.status(of: id), failure.remedy == .retry else { return false }
+            return !editor.isReadOnly(id)
+        }
+    }
+}
+
+/// Retry, the failed read's action: a command, so the selection's menu has it (the Shape menu) beside the row's words and the
+/// panel's button, which run the same retry.
+@MainActor
+func registerRetryCommand(into registrar: inout PluginRegistrar) {
+    registrar.command(.retryTypeSync, title: FieldWords.retry, runs: .betweenPresses, isEnabled: { !$0.retriable.isEmpty }) { subject in
+        for id in subject.retriable { subject.editor.typeSync?.retry(id) }
+    }
+    registrar.forShapes(holding: TypeSchemaProperty.self) { typeKinds in
+        typeKinds.contextMenuForCanvas { MenuItem(command: .retryTypeSync) }
+    }
+}
+
 extension FieldKind {
     /// A `Choice` or `Choices` row: a click on its value lists the options.
     var hasOptions: Bool {
@@ -304,6 +430,17 @@ extension FieldKind {
 
 @MainActor
 func registerRowFaces(into registrar: inout PluginRegistrar) {
+    // The same, by keys: a type's note's rows and a read-only note's are parts of the shape (⌥Tab).
+    registrar.forShapes(holding: TypeSchemaProperty.self) { typeKinds in
+        typeKinds.shapeParts(named: "RowFace") { editor, shape in
+            shape[TypeSchemaProperty.self] == nil ? [] : editor.rowBook?.parts(of: shape) ?? []
+        }
+    }
+    registrar.forShapes(holding: IsAProperty.self) { typeable in
+        typeable.shapeParts(named: "RowFace") { editor, shape in
+            shape[TypeSchemaProperty.self] != nil ? [] : editor.rowBook?.parts(of: shape) ?? []
+        }
+    }
     registrar.shapeFaces(at: { editor, shape, point in editor.rowBook?.face(at: point, on: shape) },
                          click: { face, editor in editor.rowBook?.perform(face) },
                          // Without it the second press of a fast pair would open the note for editing.

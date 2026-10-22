@@ -1,3 +1,4 @@
+import AppKit
 import Canvas
 import CoreGraphics
 import Geometry
@@ -22,6 +23,9 @@ final class SelectionState {
     /// past its box (`LaidOutBox`) is left out: handles on the box it stores would sit under a shape
     /// drawn larger, and a resize would write the stored box under it.
     @ObservationIgnored let minimumSizes: [ShapeKind: CGSize]
+    /// What the open step's nudges moved, how far in all, and the container each was in before the first: settled as
+    /// the step closes (`settleNudge`).
+    @ObservationIgnored var nudged: Nudged?
     private(set) var selectedIDs: [ShapeID] = []
     /// `selectedIDs`, for asking whether a shape is among them.
     @ObservationIgnored private(set) var selectedSet: Set<ShapeID> = []
@@ -46,7 +50,7 @@ final class SelectionState {
     private(set) var history = SelectionHistory()
     /// The select tool's press under way, from the press until the session it starts ends.
     @ObservationIgnored private var press: Press?
-    /// Going back, which records nothing.
+    /// Going back or forward, which records nothing.
     @ObservationIgnored private var isGoingBack = false
     /// Doing what's one step back of its own (`asOneStep`), which records nothing else.
     @ObservationIgnored private var isOneStep = false
@@ -102,6 +106,20 @@ final class SelectionState {
         // What's drawn only while the pointer's over the canvas (a port's dots) comes and goes with it.
         didSet { if (lastPointer == nil) != (oldValue == nil) { editor.setNeedsDisplay() } }
     }
+    /// The part of the only selected shape that has the keyboard (⌥Tab, `ShapeParts`): let go with any
+    /// other change of the selection, a commit that takes the part away, another tool or board, and editing.
+    /// VoiceOver's focus follows it (`accessibilityFocusDidChange`).
+    @ObservationIgnored var partFocus: PartFocus? {
+        didSet { if partFocus != oldValue { editor.accessibilityFocusDidChange() } }
+    }
+    /// Where its ring was last drawn (`focusedPartRect`).
+    @ObservationIgnored var focusedPartRing: PartRing?
+    /// The steps Tab, ⇧Tab and ⌥⌘ with an arrow took to the selection, latest last: the opposite key undoes
+    /// the latest exactly (`step`). Any other change of the selection lets them go.
+    @ObservationIgnored var trail = StepTrail()
+    /// The stops where the selection is, in reading order, as Tab or VoiceOver last asked for them
+    /// (`orderedStops`), and what from.
+    @ObservationIgnored var keptReadingOrder: (key: ReadingOrderKey, stops: [Stop])?
     /// The selection's bounds as last worked out (`selectionBounds`), and what from.
     @ObservationIgnored private var keptBounds: KeptBounds?
     #if DEBUG
@@ -218,6 +236,8 @@ final class SelectionState {
         guard kept != selectedIDs else { return }
         hasJustArrived = false
         if recording { record(leaving: selectedIDs, for: kept) }
+        clearPartFocus()
+        trail = StepTrail()
         let left = selectedIDs
         selectedIDs = kept
         selectedSet = seen
@@ -238,6 +258,8 @@ final class SelectionState {
     private func tellObservers(left: [ShapeID]) {
         let now = selectedIDs
         editor.onceHeard { [unowned editor] in
+            // The selection is VoiceOver's focus.
+            editor.accessibilityFocusDidChange()
             for observer in editor.registry.contributions(to: SelectionObservers.self) { observer.value(editor, left, now) }
         }
     }
@@ -318,13 +340,24 @@ final class SelectionState {
     /// restored.
     var canGoBack: Bool { history.entries.reversed().contains { restoration(of: $0) != nil } }
 
+    /// Whether `goForward` would: some step gone back from would be restored.
+    var canGoForward: Bool { history.ahead.reversed().contains { restoration(of: $0) != nil } }
+
     /// Takes steps off the stack until one would change the selection or the board, and restores
     /// it: on the board shown, its selection and its camera (animated); on another, shows that
     /// board, then selects there, with the camera where it was (set, not animated: gliding from
-    /// another board's camera means nothing).
-    func goBack() {
-        while let entry = history.pop() {
+    /// another board's camera means nothing). Where it was goes on the way forward.
+    func goBack() { travel(back: true) }
+
+    /// The same the other way: takes steps off the way forward until one would change the selection or
+    /// the board, and restores it, where it was going back on the stack.
+    func goForward() { travel(back: false) }
+
+    private func travel(back: Bool) {
+        let current = SelectionHistory.Entry(board: editor.board, selection: selectedIDs, camera: editor.cameraTarget)
+        while let entry = back ? history.pop() : history.popAhead() {
             guard let kept = restoration(of: entry) else { continue }
+            if back { history.wentBack(from: current) } else { history.wentForward(from: current) }
             isGoingBack = true
             defer { isGoingBack = false }
             guard entry.board != editor.board else {
@@ -381,6 +414,7 @@ final class SelectionState {
 extension SelectionState: EditorService {
     func toolDidChange(from old: ToolID, to new: ToolID, in editor: CanvasEditor) {
         clearPointerState()
+        clearPartFocus()
     }
 
     /// Another board is shown: what was selected on the board left is a step back (even nothing
@@ -397,6 +431,8 @@ extension SelectionState: EditorService {
         // Going back arrives at a step of its own, what it selects there.
         hasJustArrived = !isGoingBack
         clearPointerState()
+        clearPartFocus()
+        trail = StepTrail()
         focus = []
         guard !selectedIDs.isEmpty else { return }
         let left = selectedIDs
@@ -430,14 +466,24 @@ extension SelectionState: EditorService {
         lookForButtonOnceSettled()
     }
 
+    /// Every service has the commit: a focused part it took away lets the focus go (`partFocusDidSettle`).
+    func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) { partFocusDidSettle() }
+
+    /// Editing a shape lets its part's focus go: an edited shape lists no parts, and the focus doesn't come back
+    /// as editing ends.
+    func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) { clearPartFocus() }
+
     /// A placed shape is the only one selected.
     func didPlace(_ id: ShapeID, in editor: CanvasEditor) { select([id]) }
 
     /// Shapes are drawn as skeletons now, or in full again, so their faces and adornments went or
-    /// came (a note's pills, a lock chip) under a pointer that may be still: what it hovers is looked
+    /// came (a note's pills, a lock chip): a focused part that went lets the focus go, and under a
+    /// pointer that may be still, what it hovers is looked
     /// for again where it rests, as a move there would, in the select tool with nothing under way. A
     /// pill's target hovered as the level drops gives way to its note.
     func drawsSkeletonsDidChange(in editor: CanvasEditor) {
+        // A focused part drawn only in full (a chip) is gone with the skeleton.
+        partFocusDidSettle()
         guard editor.currentToolID == .select, editor.session == nil, let point = lastPointer else { return }
         hover(atViewPoint: point)
     }
@@ -500,6 +546,10 @@ extension CanvasEditor {
     /// Whether going back (`goBack`) would change the selection: there's a step back whose shapes
     /// aren't all gone, and aren't what's selected. Without the Selection plugin, false.
     public var canGoBack: Bool { selectionState?.canGoBack ?? false }
+
+    /// Whether going forward (`goForward`) would change the selection: Back has been gone, and nothing has
+    /// changed the selection since but going back and forward. Without the Selection plugin, false.
+    public var canGoForward: Bool { selectionState?.canGoForward ?? false }
 
     /// Whether the shape is there and its kind's rule (`ShapeSelectability`) lets it be selected.
     public func isSelectable(_ id: ShapeID) -> Bool {
@@ -600,12 +650,28 @@ extension CanvasEditor {
     public var canNudge: Bool { session == nil && editingShapeID == nil && !selectedShapeIDs.isEmpty }
 
     /// An arrow key's nudge: moves every selected shape by `delta`, in world units, as `translate`
-    /// does, in one transaction ("Move"), with no snapping. Read-only shapes stay, refused (a locked
-    /// one shakes), and the rest move. Does nothing unless it `canNudge`.
+    /// does, in one transaction ("Move"), with no snapping, first bringing them into view if they are not
+    /// (`revealIfOffscreen`: what a key acts on shows, P7). Read-only shapes stay, refused (a locked
+    /// one shakes), and the rest move. As the step it's in closes (a held key let go, its repeats the
+    /// same step), what the nudges moved settles in or out of containers, gliding there, as a drag's
+    /// release settles what it drops (`settleNudge`); never between repeats. Does nothing unless it `canNudge`.
     public func nudgeSelection(by delta: CGPoint) {
         guard canNudge else { return }
+        revealIfOffscreen(selectedShapeIDs)
         let ids = Set(selectedShapeIDs)
-        transact("Move") { $0.translate(ids, by: delta) }
+        let kinds = registry.containingKinds
+        undoHistory.group {
+            guard let state = selectionState, !kinds.isEmpty else { return transact("Move") { $0.translate(ids, by: delta) } }
+            // What an earlier step's nudges left unsettled (closed where nothing could commit) is not this step's.
+            if !undoHistory.willFinish(NudgeSettle()) { state.nudged = nil }
+            var nudged = state.nudged ?? Nudged()
+            for id in ids where nudged.from[id] == nil { nudged.from[id] = .some(document.container(of: id, containingKinds: kinds)) }
+            transact("Move") { $0.translate(ids, by: delta) }
+            nudged.ids.formUnion(ids)
+            nudged.moved = CGPoint(x: nudged.moved.x + delta.x, y: nudged.moved.y + delta.y)
+            state.nudged = nudged
+            if !undoHistory.finishing(NudgeSettle(), { [weak state] in state?.settleNudge() }) { state.nudged = nil }
+        }
     }
 
     /// Edits the only selected shape if its kind is editable, whatever else opening it would do
@@ -630,6 +696,16 @@ extension CanvasEditor {
         state.goBack()
     }
 
+    /// Go › Forward (⌘]): undoes Back, a browser's Forward: selects what was selected before Back was last
+    /// gone, with the camera where it was then, animated, or on its board, as going back does. Back and
+    /// Forward walk the same steps both ways; any other change of the selection lets the way forward go.
+    /// Ends editing; does nothing mid-gesture.
+    public func goForward() {
+        guard session == nil, let state = selectionState else { return }
+        endEditing()
+        state.goForward()
+    }
+
     // MARK: Drawing
 
     /// The selection's outlines, the box around several selected shapes (tldraw's selection
@@ -637,10 +713,20 @@ extension CanvasEditor {
     /// a selected shape): the shape hovered, else, for one hovered elsewhere (a row of a shape the
     /// canvas doesn't show), the shape on the board shown that holds it. Unlike tldraw's, the
     /// selection's stay while it moves, and follow it, and the hover's is fainter than theirs, so a
-    /// hovered shape doesn't read as selected.
+    /// hovered shape doesn't read as selected. In the accent while the keyboard is the canvas's or in the shape
+    /// being edited, else in a secondary color (`SelectionStyle.secondary`): keys go elsewhere (P7).
     var selectionOutlines: Outlines {
         let box = selectedShapeIDs.count > 1 ? selectionBounds : nil
-        return Outlines(shapes: selectedShapeIDs, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [])
+        return Outlines(shapes: selectedShapeIDs, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [],
+                        color: selectionOutlineColor)
+    }
+
+    /// The color the selection is outlined in now (`Outlines.color`): nil, the accent, while the keyboard is the canvas's
+    /// or in the shape being edited, else `SelectionStyle.secondary` (P7). A plugin that outlines shapes with the selection
+    /// (a relationship type's end arrows) names it too: the core strokes every plugin's full outlines in one color, and
+    /// one that named none would turn the selection back to the accent.
+    public var selectionOutlineColor: NSColor? {
+        !hasKeyboard && editingShapeID == nil && !selectedShapeIDs.isEmpty ? SelectionStyle.secondary : nil
     }
 
     /// What the hover outlines faintly: the shape hovered (on the canvas, what a click there would
@@ -653,5 +739,97 @@ extension CanvasEditor {
         }
         guard let elsewhere = hoveredElsewhere, let holder = file.shape(on: board, holding: elsewhere) else { return [] }
         return [holder]
+    }
+}
+
+/// The open step's nudges, settled as it closes.
+private struct NudgeSettle: Hashable {}
+
+/// What a step's nudges moved (`SelectionState.nudged`).
+struct Nudged {
+    var ids: Set<ShapeID> = []
+    /// How far, in world units, in all.
+    var moved: CGPoint = .zero
+    /// The container each was in as it was first nudged (nil: on the board directly).
+    var from: [ShapeID: ShapeID?] = [:]
+}
+
+extension SelectionState {
+    /// The nudges of the step closing settle, in its last commit, gliding there. First, what they took partway
+    /// across a container's edge goes the rest of the way, the way it went (`crossing`): out of the container it was
+    /// in, or into the one it came into, to the gap past the edge, so one press of a key at a time gets a shape in
+    /// or out as a held key does, where the drop's rule alone would put it back each time. Then it settles as a
+    /// drop does (`Transaction.settle`). A read-only container (a locked frame) that would take it refuses, and it
+    /// goes back where the nudges began, as a refused drop does.
+    func settleNudge() {
+        guard let nudged else { return }
+        self.nudged = nil
+        let ids = Set(nudged.ids.filter { editor.document[$0] != nil && !editor.isReadOnly($0) })
+        guard !ids.isEmpty else { return }
+        let kinds = editor.registry.containingKinds
+        let (settlement, push, carried) = editor.transact("Move") { transaction -> (Settlement, CGPoint, Set<ShapeID>) in
+            // What moving them moves: they and what they hold, which glide with them.
+            let carried = ids.union(ids.flatMap { transaction.document.descendants(of: $0, containingKinds: kinds) })
+            let push: CGPoint
+            do {
+                // Judged by the frames they are laid out in, as the settling after it judges them; let go before
+                // anything changes.
+                let context = transaction.shapes
+                push = crossing(of: ids, nudged, in: context)
+            }
+            if push != .zero { transaction.translate(ids, by: push) }
+            let settlement = transaction.settle(ids)
+            if case .refused = settlement {
+                transaction.translate(ids, by: CGPoint(x: -nudged.moved.x - push.x, y: -nudged.moved.y - push.y))
+            }
+            return (settlement, push, carried)
+        }
+        switch settlement {
+        case .settled(var nudges):
+            for id in carried where push != .zero { nudges[id] = CGPoint(x: (nudges[id]?.x ?? 0) + push.x, y: (nudges[id]?.y ?? 0) + push.y) }
+            editor.glide(nudges)
+        case .refused:
+            let back = CGPoint(x: -nudged.moved.x, y: -nudged.moved.y)
+            editor.glide(Dictionary(uniqueKeysWithValues: carried.map { ($0, back) }))
+        }
+    }
+
+    /// How much further the nudged shapes go, the way they went, to finish crossing a container's edge they're
+    /// partway across: the edge ahead of the container they were in, to `Settlement.gap` outside it; else the near
+    /// edge of a container they've come partway into (the innermost), to the gap inside it, if they fit there. Zero
+    /// when they cross none, or came from different containers (the drop's rule judges them). They are measured by
+    /// the frames they are laid out in (a note grown by its type is as big as it looks), as `Transaction.settle`
+    /// judges them, and the containers by their boxes.
+    private func crossing(of ids: Set<ShapeID>, _ nudged: Nudged, in context: ShapeContext) -> CGPoint {
+        let kinds = editor.registry.containingKinds, travel = nudged.moved, gap = Settlement.gap, document = context.document
+        guard travel != .zero else { return .zero }
+        // The shapes moved whole: those no other of them holds.
+        let roots = ids.filter { document.container(of: $0, containingKinds: kinds).map { !ids.contains($0) } ?? true }
+        guard let first = roots.first, let from = nudged.from[first], roots.allSatisfy({ nudged.from[$0] == .some(from) }) else { return .zero }
+        let boxes = roots.compactMap { context.frame(of: $0) }
+        guard boxes.count == roots.count, let box = boxes.dropFirst().reduce(boxes.first, { $0?.union($1) }) else { return .zero }
+        let across = abs(travel.x) >= abs(travel.y), forward: CGFloat = (across ? travel.x : travel.y) > 0 ? 1 : -1
+        /// The box's sides along the way it went, and a container's: low and high.
+        func span(_ rect: CGRect) -> (low: CGFloat, high: CGFloat) { across ? (rect.minX, rect.maxX) : (rect.minY, rect.maxY) }
+        func offset(_ distance: CGFloat) -> CGPoint { across ? CGPoint(x: distance, y: 0) : CGPoint(x: 0, y: distance) }
+        let moving = span(box)
+        // Leaving the one it was in, past the edge ahead.
+        if let held = from, let edge = document[held]?.box, !edge.contains(box) {
+            let side = span(edge)
+            let hangs = forward > 0 ? moving.high > side.high && moving.low < side.high : moving.low < side.low && moving.high > side.low
+            return hangs ? offset(forward > 0 ? side.high + gap - moving.low : side.low - gap - moving.high) : .zero
+        }
+        // Coming into another, across its near edge, the innermost first.
+        var moved = Set(roots)
+        for root in roots { moved.formUnion(document.descendants(of: root, containingKinds: kinds)) }
+        let entered = document.shapes.filter { record in
+            guard kinds.contains(record.kind), !moved.contains(record.id), record.id != from, let edge = record.box,
+                  edge.intersects(box), !edge.contains(box), edge.width >= box.width + 2 * gap, edge.height >= box.height + 2 * gap else { return false }
+            let side = span(edge)
+            return forward > 0 ? moving.low < side.low && moving.high > side.low : moving.high > side.high && moving.low < side.high
+        }.min { ($0.box?.width ?? 0) * ($0.box?.height ?? 0) < ($1.box?.width ?? 0) * ($1.box?.height ?? 0) }
+        guard let edge = entered?.box else { return .zero }
+        let side = span(edge)
+        return offset(forward > 0 ? side.low + gap - moving.low : side.high - gap - moving.high)
     }
 }

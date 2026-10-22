@@ -20,6 +20,8 @@ import AppKit
 ///   of what a text view does with Escape. (In the panel, the panel hears Escape before the view
 ///   does, and leaves itself. ⌘. never comes to the view as a key: the window sends
 ///   `cancelOperation:` up the responder chain, which the view leaves to the panel's root.)
+/// - `tabBehavior`: Tab types a tab (the default), moves the keyboard on to the next control (the panel's boxes), or
+///   is the host's. A list at the caret closes on ⇧Tab and on Tab with nothing to pick, and the key goes on.
 /// - `placeholder` is drawn, dimmed, where the text starts while there's none.
 /// - `highlights` are ranges of the text drawn on a rounded background under it, as a mention's pill
 ///   is (`TextHighlight`): how an owner marks text that means something to it, with nothing for a
@@ -63,6 +65,25 @@ open class EditingTextView: NSTextView {
     /// a new note): asked first of every key down, but never while a list at the caret holds keys or
     /// text is being composed.
     public var onKeyDown: (@MainActor (NSEvent) -> Bool)?
+    /// What Tab, ⇧Tab and ⌥Tab do in the text.
+    public enum TabBehavior: Equatable, Sendable {
+        /// Tab types a tab, as a text view does (the default: text on the canvas never moves the keyboard off it).
+        case insertsTab
+        /// Tab and ⇧Tab move the keyboard to the next and previous control of the window's key view loop; ⌥Tab types
+        /// a tab (`insertTabIgnoringFieldEditor`, which a subclass may turn into an indent step).
+        case movesKeyView
+        /// The host answers Tab and ⇧Tab (a text view delegate's `doCommandBy`); the view types no tab and moves nothing.
+        case host
+    }
+
+    /// What Tab, ⇧Tab and ⌥Tab do: types a tab unless set.
+    public var tabBehavior: TabBehavior = .insertsTab
+
+    /// Whether Tab with nothing to pick and ⇧Tab close a list at the caret before the key goes on (the list's rule,
+    /// `CaretList.Action.closeAndPass`). False for a list that stays open whatever is pressed (Jump To's): the key
+    /// still goes on, unless the view answers it first, as Jump To's field does.
+    open var closesListOnTab: Bool { true }
+
     /// Drawn where the text starts while there's none, in the text's font, dimmed.
     public var placeholder: String? {
         didSet { if placeholder != oldValue { needsDisplay = true } }
@@ -115,6 +136,16 @@ open class EditingTextView: NSTextView {
     // MARK: Keys
 
     open override func keyDown(with event: NSEvent) {
+        // Tab with nothing to pick and ⇧Tab close the list at the caret, and the key goes on: to the host's `onKeyDown`
+        // (a note's hop to the next note), then to the text.
+        if let listWindow = caretListWindow, closesListOnTab, !hasMarkedText(), let reading = KeyMeaning.Reading(event: event),
+           reading.modifiers.subtracting(.shift).isEmpty {
+            switch reading.meaning {
+            case .previous: listWindow.closeList()
+            case .next where listWindow.list.highlightedItem == nil: listWindow.closeList()
+            default: break
+            }
+        }
         if let onKeyDown, !holdsKeys, !hasMarkedText(), onKeyDown(event) { return }
         // ⌘↩ says the text's done, list or not: a list at the caret closes first.
         if commandCommit != nil, Self.isCommandReturn(event), !hasMarkedText() { caretListWindow?.closeList() }
@@ -170,6 +201,10 @@ open class EditingTextView: NSTextView {
                 switch action {
                 case .pick: listWindow.pickHighlighted()
                 case .close: listWindow.closeList()
+                case .closeAndPass:
+                    // The key always goes on (Tab moves on); the list closes unless it stays open whatever is pressed.
+                    if closesListOnTab { listWindow.closeList() }
+                    return super.doCommand(by: selector)
                 default: break
                 }
                 return
@@ -180,6 +215,34 @@ open class EditingTextView: NSTextView {
             return
         }
         super.doCommand(by: selector)
+    }
+
+    // MARK: Tab
+
+    open override func insertTab(_ sender: Any?) { tab(#selector(NSResponder.insertTab(_:))) { super.insertTab(sender) } }
+    open override func insertBacktab(_ sender: Any?) { tab(#selector(NSResponder.insertBacktab(_:))) { super.insertBacktab(sender) } }
+
+    /// ⌥Tab: a tab is typed where Tab moves on (`movesKeyView`), never where the host answers Tab.
+    open override func insertTabIgnoringFieldEditor(_ sender: Any?) {
+        switch tabBehavior {
+        case .insertsTab: super.insertTabIgnoringFieldEditor(sender)
+        case .movesKeyView: if isEditable { insertText("\t", replacementRange: selectedRange()) }
+        case .host: break
+        }
+    }
+
+    /// Tab or ⇧Tab as the text command it came as, read through `KeyMeaning`: per `tabBehavior`.
+    private func tab(_ command: Selector, orElse typed: () -> Void) {
+        switch tabBehavior {
+        case .insertsTab: typed()
+        case .host: break
+        case .movesKeyView:
+            switch KeyMeaning.Reading(command: command) {
+            case .some(let reading) where reading.meaning == .next: window?.selectNextKeyView(self)
+            case .some(let reading) where reading.meaning == .previous: window?.selectPreviousKeyView(self)
+            default: break
+            }
+        }
     }
 
     /// ⌘., which the window sends up the responder chain as this command with no key, closes the

@@ -1,12 +1,12 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import CanvasUI
+@_spi(Host) import CanvasUI
 import Geometry
 import TestKit
 
 @MainActor let zoomIndicatorTests = Suite("Zoom indicator", [
-    test("a change of zoom shows it at once, rounded, above the minimap; it stays while the zoom goes on changing, and fades out a second after the last change") {
+    test("a change of zoom shows it at once, rounded, above the minimap; it stays while the zoom goes on changing, and fades out a second after the last change, announced") {
         let h = try minimapEditor()
         let (_, canvas, minimap) = try minimapped(h)
         _ = h.add(Box(CGRect(x: 0, y: 0, width: 1000, height: 800)))
@@ -24,8 +24,11 @@ import TestKit
         h.wait(999)
         expect(zoom.isShowing, "a second from the last change")
         expect(zoom.layer?.animationKeys()?.contains("opacity") != true)
+        expectEqual(h.editor.announcements, [], "not while it changes")
         h.wait(1)
         expect(!zoom.isShowing)
+        expectEqual(h.editor.announcements, ["Zoom 50%"], "VoiceOver hears where it came to, once, through the editor")
+        expectEqual(canvas.accessibilityPosts.last, .announcementRequested)
         expectEqual(zoom.alphaValue, 0, "to where the fade ends")
         expect(zoom.layer?.animationKeys()?.contains("opacity") == true, "fading out")
         h.wait(150)

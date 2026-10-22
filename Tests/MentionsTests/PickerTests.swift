@@ -138,7 +138,7 @@ private func picker(_ h: EditorHarness, owner: ShapeID?, query: String = "") -> 
         none.highlight(row: 0)
         expectEqual(none.highlighted, nil)
         expectEqual(none.perform(#selector(NSResponder.insertNewline(_:))).taken, false, "Return does what it would without the picker")
-        expectEqual(none.perform(#selector(NSResponder.insertTab(_:))).taken, false)
+        expect(none.perform(#selector(NSResponder.insertTab(_:))) == (true, .closeAndPass), "Tab with nothing to pick closes the list and goes on")
     },
 
     test("a shape on a read-only board is marked too: a frozen pocket's, and a pocket's on it that isn't frozen itself, whether or not the board is shown; thawed, none is") {

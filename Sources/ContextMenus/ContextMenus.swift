@@ -1,5 +1,7 @@
+import AppKit
 import Canvas
 import CoreGraphics
+import Keyboard
 import Selection
 
 /// Context menus, as a plugin: a right-click (or Control-click) on a shape opens the items that
@@ -339,10 +341,44 @@ public struct ContextMenusPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { ContextMenuState(editor: $0) }
         registrar.menuForSecondaryClick { editor, pointer in editor.service(ContextMenuState.self)?.menu(for: pointer) }
-        registrar.menuForSelection { editor, commands in editor.service(ContextMenuState.self)?.menuForSelection(omitting: commands) }
+        registrar.menuForSelection { editor, commands, popped in
+            editor.service(ContextMenuState.self)?.menuForSelection(omitting: popped ? commands.union([.showContextMenu]) : commands)
+        }
+        // The selection's menu by key (⌃↩, the Menu key) and by VoiceOver's Show Menu: popped under the
+        // selection, its first item highlighted, less this item, which would only open itself again.
+        registrar.command(.showContextMenu, title: ContextMenusStyle.showContextMenu, shortcuts: [.controlReturn, .menu], runs: .whenIdle,
+                          isEnabled: { !$0.shapes.isEmpty }) { subject in
+            subject.editor.showContextMenuForSelection()
+        }
         registrar.contextMenuForCanvas {
+            MenuItem(command: .showContextMenu, in: SelectionMenuGroup.self, when: { $0.point == nil })
             MenuItem(command: .delete, in: SelectionMenuGroup.self)
             MenuItem(command: .selectAll, in: SelectionMenuGroup.self, when: { $0.shapes.isEmpty })
         }
+    }
+}
+
+extension CanvasCommand {
+    /// Shape › Show Context Menu: the selection's menu, opened under the selection.
+    public static let showContextMenu: CanvasCommand = "showContextMenu"
+}
+
+extension KeyChord {
+    /// ⌃↩: the selection's menu (Return alone opens the selection).
+    static let controlReturn = KeyChord(KeyChord.return.key, .control)
+}
+
+@MainActor
+enum ContextMenusStyle {
+    static let showContextMenu = "Show Context Menu"
+}
+
+extension CanvasEditor {
+    /// Opens the selection's menu under the selection, its first item highlighted so Return takes it;
+    /// what a key and VoiceOver's Show Menu do. Nothing with nothing selected.
+    public func showContextMenuForSelection() {
+        guard let bounds = selectionBounds,
+              let menu = service(ContextMenuState.self)?.menuForSelection(omitting: [.showContextMenu]) else { return }
+        popUpMenu(menu, below: bounds, highlighting: menu.items.first { !$0.isSeparatorItem && $0.isEnabled })
     }
 }

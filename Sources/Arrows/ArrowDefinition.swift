@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Colors
+import ContextMenus
 import Geometry
 import Mentions
 import Publishing
@@ -397,6 +398,15 @@ public struct ArrowsPlugin: ListedPlugin {
             arrow.opens("Open", where: { shape, editor in editor.relationships?.end(shape.id) != nil }) { shape, editor in
                 guard let hub = editor.relationships?.end(shape.id)?.type else { return }
                 editor.definitionCards?.open(hub, focus: .endName(shape.id))
+            }
+            // Its ends, bend and label are parts (⌥Tab), each taking the arrow keys as its drag moves it (`ArrowParts`).
+            arrow.shapeParts(named: "ArrowHandles") { editor, shape in ArrowParts.parts(of: shape, in: editor) }
+            // VoiceOver: "Arrow, from Checkout to Payment", its label's words its value.
+            arrow.accessibility { shape, editor in ArrowParts.accessibility(of: shape, in: editor) }
+            // Each head on or off from the Shape menu, as a double-click on its end does (no pointer needed).
+            arrow.contextMenu {
+                MenuItem(ArrowStyle.toggleStartHead) { $0.toggleArrowhead(at: .start) }
+                MenuItem(ArrowStyle.toggleEndHead) { $0.toggleArrowhead(at: .end) }
             }
         }
         registrar.service { ArrowTargeting(editor: $0) }

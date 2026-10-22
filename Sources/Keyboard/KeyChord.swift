@@ -33,6 +33,13 @@ public struct KeyChord: Hashable, Sendable, CustomStringConvertible, Expressible
     public static let downArrow = KeyChord("\u{F701}")
     public static let leftArrow = KeyChord("\u{F702}")
     public static let rightArrow = KeyChord("\u{F703}")
+    /// The Menu key, where a keyboard has one (`NSMenuFunctionKey`).
+    public static let menu = KeyChord("\u{F735}")
+    public static let pageUp = KeyChord("\u{F72C}")
+    public static let pageDown = KeyChord("\u{F72D}")
+    /// Home and End (fn ← and fn → on a laptop).
+    public static let home = KeyChord("\u{F729}")
+    public static let end = KeyChord("\u{F72B}")
 
     /// As menus show it: the modifiers in the order ⌃ ⌥ ⇧ ⌘, then the key, a letter as a capital:
     /// "V", "⇧⌘G", "⌘.", "⎋", "Space".
@@ -47,7 +54,8 @@ public struct KeyChord: Hashable, Sendable, CustomStringConvertible, Expressible
 
     private static let names: [Character: String] = [
         "\u{1b}": "⎋", "\r": "↩", "\u{3}": "⌤", "\u{7f}": "⌫", "\u{F728}": "⌦", "\t": "⇥", " ": "Space",
-        "\u{F700}": "↑", "\u{F701}": "↓", "\u{F702}": "←", "\u{F703}": "→",
+        "\u{F735}": "Menu", "\u{F700}": "↑", "\u{F701}": "↓", "\u{F702}": "←", "\u{F703}": "→",
+        "\u{F72C}": "⇞", "\u{F72D}": "⇟", "\u{F729}": "↖", "\u{F72B}": "↘",
     ]
 }
 

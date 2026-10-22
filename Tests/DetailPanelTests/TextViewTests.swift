@@ -119,7 +119,7 @@ extension PanelWindow {
 }
 
 @MainActor let textViewTests = Suite("Text boxes", [
-    test("a code editor types exactly what's keyed: monospaced, no substitutions; Tab is two spaces, Return keeps the indentation") {
+    test("a code editor types exactly what's keyed: monospaced, no substitutions; ⌥Tab is two spaces, Return keeps the indentation") {
         let editor = try gadgetEditor([CodeBoxesPlugin()], scheduler: TaskScheduler())
         let panel = PanelWindow(editor)
         let id = try panel.showCode()
@@ -142,7 +142,7 @@ extension PanelWindow {
         panel.window.pressReturn()
         panel.window.type(#""a": "x -- y","#)
         panel.window.pressReturn()
-        panel.window.press("\t", code: 48)
+        panel.window.press(.optionTab)
         panel.window.type("[]")
         panel.window.press("\u{F702}", code: 123)       // ←, between the brackets
         panel.window.pressReturn()
@@ -151,6 +151,37 @@ extension PanelWindow {
         expectEqual(code.string, expected)
         expectEqual(editor.props(id, as: Gadget.self)?.remark, expected, "written as typed, key by key")
         expectEqual(codeCommits, 0)
+    },
+    test("Tab and ⇧Tab move the keyboard on and back through every box of the panel, and type nothing; ⌥Tab types a tab in words and two spaces in code") {
+        let editor = try gadgetEditor([CodeBoxesPlugin()], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let id = try panel.showCode()
+        let code = try require(panel.code), words = try require(panel.words), typed = try require(panel.typed)
+        let before = try require(editor.props(id, as: Gadget.self))
+        let boxes = [code, words, typed]
+        for box in boxes { expect((box as? EditingTextView)?.tabBehavior == .movesKeyView) }
+        panel.focus(code)
+        panel.window.recalculateKeyViewLoop()
+        var visited: [NSResponder] = [code], steps = 0
+        while !boxes.allSatisfy({ box in visited.contains { $0 === box } }), steps < 12 {
+            panel.window.press(.tab)
+            steps += 1
+            if let now = panel.window.firstResponder, !visited.contains(where: { $0 === now }) { visited.append(now) }
+        }
+        expect(boxes.allSatisfy { box in visited.contains { $0 === box } }, "Tab reaches every box: \(visited.map { String(describing: type(of: $0)) })")
+        for _ in 0..<steps { panel.window.press(.backTab) }
+        expect(panel.window.firstResponder === code, "⇧Tab undoes each Tab")
+        let after = try require(editor.props(id, as: Gadget.self))
+        expectEqual([after.remark, after.name], [before.remark, before.name], "the stored text is unchanged by Tab")
+        expect(!code.string.contains("\t") && !words.string.contains("\t") && !typed.string.contains("\t"), "no tab typed")
+        panel.focus(words)
+        panel.window.press(.optionTab)
+        expectEqual(words.string.suffix(1), "\t", "⌥Tab types a tab in words")
+        panel.focus(code)
+        panel.window.press(.optionTab)
+        expectEqual(code.string.suffix(2), "  ", "and two spaces in code")
+        panel.window.press(.optionBackTab)
+        expect(!code.string.hasPrefix(" "), "⌥⇧Tab takes them off")
     },
     test("⌘↩, the keyboard leaving and Escape commit a code editor; Return doesn't") {
         let editor = try gadgetEditor([CodeBoxesPlugin()], scheduler: TaskScheduler())

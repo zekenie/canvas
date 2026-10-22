@@ -127,6 +127,18 @@ extension Shortcut {
     }
 }
 
+/// What Space presses before it holds the Hand: the thing on the canvas that has the keyboard (a selected
+/// shape's focused part, Selection's), as Return does. At most one plugin claims it; it answers whether it
+/// pressed something, and Space holds the Hand only when it didn't.
+public enum PressFocused {}
+
+extension PressFocused: KeyedExtensionPoint {
+    public typealias Contribution = @MainActor (CanvasEditor) -> Bool
+    public static var owner: PluginID { .keyboard }
+    public static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["what Space presses"] }
+    public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "press focused" }
+}
+
 // MARK: Sugar (what plugins write)
 
 extension PluginRegistrar {
@@ -166,6 +178,12 @@ extension PluginRegistrar {
     public mutating func shortcut(_ chord: KeyChord, _ title: String, forCommands commands: [CanvasCommand]) {
         precondition(!commands.isEmpty, "a key that runs commands names one")
         contribute(Shortcut(chord: chord, effect: .commands(commands, title: title, repeats: false)), to: KeyboardShortcuts.self)
+    }
+
+    /// What Space presses (see `PressFocused`): `press` presses what has the keyboard on the canvas and says
+    /// whether there was something; when there wasn't, Space holds the Hand. At most one plugin claims it.
+    public mutating func pressFocused(_ press: @escaping @MainActor (CanvasEditor) -> Bool) {
+        contribute(press, to: PressFocused.self)
     }
 
     /// A toolbar tool (`tool(_:_:)`), and the key that switches to it.
@@ -355,11 +373,11 @@ extension KeyboardState: EditorService {}
 
 /// Claims key strokes and their releases, and gives the core's own actions their keys: H for the
 /// Hand, and Space held to pan as it does whatever the tool (`editor.isHandHeld`, Figma's and
-/// tldraw's), Escape (⌘. too, as anywhere on the Mac) to cancel, Q for the tool lock
+/// tldraw's), unless it pressed what has the keyboard (`pressFocused`), Escape (⌘. too, as anywhere on the Mac) to cancel, Q for the tool lock
 /// (`editor.isToolLocked`, tldraw's), ⌘Z and ⇧⌘Z to undo and redo (held, again and again), and the
 /// View menu's zoom keys: ⌘= and ⌘- (held, again and again), = and - alone the same, ⌘0 and ⇧0 for
 /// Actual Size, and ⇧1 for Zoom to Fit (tldraw's, and again to go back), the number row's digits
-/// whatever the layout types with them.
+/// whatever the layout types with them; Page Up and Page Down (held, again and again), Home and End.
 public struct KeyboardPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .keyboard }
@@ -375,7 +393,12 @@ public struct KeyboardPlugin: ListedPlugin {
         registrar.keyStrokes { editor, stroke in editor.service(KeyboardState.self)?.handle(stroke) ?? false }
         registrar.keyReleases { editor, stroke in editor.service(KeyboardState.self)?.release(stroke) }
         registrar.shortcut("h", forTool: .hand)
-        registrar.shortcut(.space, "Pan", whileHeld: { $0.isHandHeld = true }, released: { $0.isHandHeld = false })
+        // Space presses what has the keyboard on the canvas, if a plugin says something does (`pressFocused`),
+        // and holds nothing; else it holds the Hand.
+        registrar.shortcut(.space, "Pan", whileHeld: { editor in
+            if editor.registry.contributions(to: PressFocused.self).first?.value(editor) == true { return }
+            editor.isHandHeld = true
+        }, released: { $0.isHandHeld = false })
         registrar.shortcut(.escape, "Cancel") { $0.cancel() }
         registrar.shortcut(KeyChord(".", .command), "Cancel") { $0.cancel() }
         registrar.shortcut(KeyChord("z", .command), forCommand: .undo, repeats: true)
@@ -388,6 +411,12 @@ public struct KeyboardPlugin: ListedPlugin {
         registrar.shortcut(KeyChord("0", .command), forCommand: .zoomToActualSize)
         registrar.shortcut(KeyChord("0", .shift), forCommand: .zoomToActualSize)
         registrar.shortcut(KeyChord("1", .shift), forCommand: .zoomToFit)
+        // Page Up and Page Down move the view a page, again and again while held, Home and End to the start and the
+        // end of the board's shapes (the core's commands: a key no shortcut takes is swallowed by the canvas).
+        registrar.shortcut(.pageUp, forCommand: .pageUp, repeats: true)
+        registrar.shortcut(.pageDown, forCommand: .pageDown, repeats: true)
+        registrar.shortcut(.home, forCommand: .scrollToStart)
+        registrar.shortcut(.end, forCommand: .scrollToEnd)
         // What the core reads of keys held with the pointer, for the Keyboard Shortcuts window: ⇧
         // keeps a drag to one axis (`TranslatingSession`), and ⌘ makes a scroll zoom (`CanvasView`).
         registrar.keyHint("⇧ Drag", "Move Along One Axis", while: .pointer)

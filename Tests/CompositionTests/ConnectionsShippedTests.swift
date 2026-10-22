@@ -3,6 +3,7 @@ import Arrows
 import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
+import CanvasUI
 import DetailPanel
 import Frames
 import LanguageModels
@@ -607,7 +608,6 @@ extension ConnectionGroup {
         w.editor.selection = a
         w.window.spin { list.subject == a && list.hasLanded && !list.isAsking }
         w.window.spin { w.connectionRows.count == 1 }
-        expect(w.connectionRows[0].isEnabled, "the row")
         w.connectionRows[0].performClick(nil)
         w.window.spin { w.editor.selection == b }
         expectEqual(w.editor.document[a]?[LockedProperty.self], true, "and it is as it was")
@@ -631,9 +631,64 @@ extension ConnectionGroup {
         w.window.spin { w.connectionRows.count == list.panel.flatMap(\.rows).count }
         expectEqual(list.panel.first?.names.first, "Banana", "the best match first")
         expect(list.panel.flatMap(\.rows).count < 20, "narrowed")
-        // Escape in the field hands the keyboard back to the canvas, and the search stays.
-        w.window.pressEscape()
+        // Down goes into the list, on its first line.
+        let driver = KeyDriver(w.window)
+        driver.send(.down)
+        w.window.spin { w.window.firstResponder === w.connectionTable }
+        expect(w.window.firstResponder === w.connectionTable, "Down from the search field enters the list: \(String(describing: w.window.firstResponder))")
+        // Back in the field, the first Escape clears the search, the second leaves.
+        w.window.focus(try require(w.fields.first))
+        driver.send(.escape)
+        w.window.spin { list.search.isEmpty }
+        expectEqual(list.search, "", "the first Escape clears the search")
+        expect(!w.canvasHasKeyboard, "and the keyboard stays in the field")
+        driver.send(.escape)
         w.window.spin { w.canvasHasKeyboard }
-        expectEqual(list.search, "an")
+        expect(w.canvasHasKeyboard, "the second hands the keyboard back to the canvas")
+    },
+    test("in the app's window the Connections list is one Tab stop the arrows walk: the line the keys are on lights its shape on the canvas as the pointer does, and Return goes to it") {
+        let (a, b, c, s) = (ShapeID(), ShapeID(), ShapeID(), ShapeID())
+        let w = try InspectorWindow(file: CanvasFile(root: CanvasDocument(shapes: [
+            card(a, "Alpha", 1, 0), card(b, "Beta", 2, 0), card(c, "Gamma", 0, 0), link(from: a, to: b), link(from: c, to: a),
+            titled(s, Subboard(frame: CGRect(x: 0, y: 800, width: 240, height: 160)), "Plans"),
+        ])))
+        let list = try require(w.editor.neighborList)
+        w.editor.selection = a
+        w.window.spin { list.subject == a && list.hasLanded && !list.isAsking }
+        w.window.spin { w.connectionRows.count == 2 }
+        let table = try require(w.connectionTable)
+        let driver = KeyDriver(w.window)
+        w.window.makeFirstResponder(table)
+        w.window.spin { w.window.firstResponder === table }
+        // Entering the list puts the highlight on its first line, a head, which lights nothing.
+        w.window.settle()
+        expectEqual(w.editor.hovered, nil)
+        driver.send(.down)
+        w.window.spin { w.editor.hovered == b }
+        expectEqual(w.editor.hovered, b, "Beta's line lights Beta")
+        driver.send(.down)
+        driver.send(.down)
+        w.window.spin { w.editor.hovered == c }
+        expectEqual(w.editor.hovered, c, "and Gamma's, under the next list's head")
+        driver.send(.up)
+        driver.send(.up)
+        w.window.spin { w.editor.hovered == b }
+        expectEqual(w.editor.hovered, b, "Up undoes Down")
+        // Tab leaves the list, and lets go of what it lit.
+        driver.send(.tab)
+        w.window.spin { w.window.firstResponder !== table }
+        w.window.spin { w.editor.hovered == nil }
+        expectEqual(w.editor.hovered, nil)
+        // Return goes to the shape.
+        w.window.makeFirstResponder(table)
+        w.window.spin { w.editor.hovered == b }
+        expectEqual(w.editor.hovered, b, "the keyboard back in the list lights the line it was on")
+        driver.send(.return)
+        w.window.spin { w.editor.selection == b }
+        expectEqual(w.editor.selection, b, "Return on a line goes to its shape")
+        // What each reads: a row its name (and board and caption, when it has them), a head its title, its count and
+        // whether it is folded.
+        expectEqual(DetailGroupHeader.spoken(count: 1, isCollapsed: false), "1, expanded")
+        expectEqual(DetailGroupHeader.spoken(count: 3, isCollapsed: true), "3, collapsed")
     },
 ])

@@ -8,6 +8,8 @@ import SlashCommands
 enum ColorCommandRows {
     /// The row of `None`: no name or value reads as an empty text.
     static let noneID = ""
+    /// The row of Edit Colors…: no name has a line break, so it is none's.
+    static let editID = "\n"
 
     /// A color's chip: its line color, following the appearance it's drawn in.
     static func chip(_ swatch: Swatch) -> NSColor { NSColor(swatch.solid) }
@@ -24,6 +26,7 @@ enum ColorCommandRows {
         if editor.document[owner]?.ownColor != nil {
             rows.append(SlashChoice(noneID, title: ColorsStyle.none, group: 2))
         }
+        rows.append(SlashChoice(editID, title: ColorsStyle.editColors, group: 3))
         return rows
     }
 
@@ -38,7 +41,7 @@ enum ColorCommandRows {
 
 /// `/color`, on the kinds that have colors (`scope`): a list of the named colors, each row a chip in
 /// its color, and a typed hex value as a row of its own. `None` is in the list while the shape has a
-/// color of its own. A pick runs at once ("Change Color"). A read-only shape is offered nothing.
+/// color of its own. Edit Colors… is its last row, opening the list of the file's colors. A pick runs at once ("Change Color"). A read-only shape is offered nothing.
 @MainActor
 func registerColorCommand(into scope: inout ScopedRegistrar) {
     scope.slashCommands {
@@ -46,7 +49,11 @@ func registerColorCommand(into scope: inout ScopedRegistrar) {
                      choices: { owner, editor in ColorCommandRows.rows(for: owner, in: editor) },
                      otherwise: { typed, _, editor in ColorCommandRows.valueRow(typed: typed, in: editor) },
                      step: ColorsStyle.changeColor) { owner, choice, editor in
-            editor.setColor(ShapeColor(choice.id), of: [owner])
+            if choice.id == ColorCommandRows.editID {
+                ColorListPanel.show(for: editor)
+            } else {
+                editor.setColor(ShapeColor(choice.id), of: [owner])
+            }
         }
     }
 }

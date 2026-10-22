@@ -130,6 +130,25 @@ private let size = CGSize(width: 40, height: 26)
         expect(h.key("\r"))
         expectEqual(h.editor.editingShapeID, id)
     },
+    test("Tab and ⇧Tab in a label end editing, change nothing in its text, type no tab, and leave the arrow selected") {
+        for back in [false, true] {
+            let (h, id) = try labelHarness("calls")
+            h.editor.selection = id
+            expect(h.key("\r"))
+            let view = try require(h.editor.makeEditingView())
+            let textView = try labelTextView(view)
+            expect(textView.tabBehavior == .host)
+            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView?.addSubview(view.view)
+            window.makeFirstResponder(textView)
+            _ = KeyDriver(window).send(back ? .backTab : .tab)
+            expectEqual(h.editor.editingShapeID, nil, "editing ended")
+            expectEqual(h.editor.selectedShapeIDs, [id], "the arrow stays selected")
+            expectEqual(textView.string, "calls", "no tab typed")
+            expectEqual(try arrow(h, id).text, "calls")
+        }
+    },
     test("the label's editor checks the spelling of what's typed as the app does (Edit › Spelling and Grammar)") {
         let (h, id) = try labelHarness("calls")
         h.editor.selection = id

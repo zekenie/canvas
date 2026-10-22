@@ -10,8 +10,23 @@ struct DefinitionFace: Hashable, Sendable {
     let shape: ShapeID
 }
 
+extension TypesStyle {
+    /// The pill's part (⌥Tab), and the command that opens a relationship's fields.
+    public static let fields = "Fields"
+}
+
 @MainActor
 func registerDefinitionFace(into registrar: inout PluginRegistrar) {
+    // The same by keys: the pill is one part of itself, which opens the card as the click does.
+    registrar.forShapes(holding: RelationshipProperty.self) { relationshipKinds in
+        relationshipKinds.shapeParts(named: "DefinitionFace") { editor, record in
+            guard editor.editingShapeID != record.id, record[RelationshipProperty.self] == true, editor.rowBook?.pill(of: record.id) != nil,
+                  let frame = editor.frame(inFile: record.id) else { return [] }
+            return [ShapePart(id: DefinitionFace(shape: record.id), title: TypesStyle.fields, rect: frame) { editor in
+                editor.definitionCards?.open(record.id)
+            }]
+        }
+    }
     registrar.shapeFaces(at: { (editor: CanvasEditor, record: AnyShapeRecord, point: CGPoint) -> DefinitionFace? in
         // A relationship type is drawn as a pill (`TypeRows.pill`), and the point is on the shape itself.
         guard editor.editingShapeID != record.id, record[RelationshipProperty.self] == true, editor.rowBook?.pill(of: record.id) != nil else { return nil }

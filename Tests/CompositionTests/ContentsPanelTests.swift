@@ -42,6 +42,62 @@ final class SampleWindow {
     var backButton: NSButton? { host.descendants(NSButton.self).first { $0.isInPanelHeader(of: host) } }
 }
 
+/// The app's window as `makeWindowControllers` makes it (unshown) over the sample board, the panel in
+/// its inspector, with the app's menus, View's items sent to its controller (an unshown window isn't
+/// the key window, where they'd go), and a key driver that routes keys through them.
+@MainActor
+final class SampleBoardWindow {
+    let board: BoardDocument
+    let controller: BoardWindowController
+    let window: NSWindow
+    let canvas: CanvasView
+    let menus: BoardMenus.Menus
+    let keys: KeyDriver
+    var editor: CanvasEditor { board.editor }
+
+    init() throws {
+        try configureBoards()
+        board = BoardDocument()
+        board.start(with: SampleBoard.document())
+        board.makeWindowControllers()
+        controller = try require(board.windowControllers.first as? BoardWindowController)
+        window = try require(controller.window)
+        window.settle()
+        canvas = try require(board.focus.canvas, "the window's content made the canvas")
+        menus = BoardMenus.make(appName: "Infinite Canvas", registry: board.editor.registry)
+        for item in menus.main.item(withTitle: "View")?.submenu?.items ?? [] { item.target = controller }
+        keys = KeyDriver(window, menu: menus.main)
+    }
+
+    /// The table of contents' list, while the panel shows it.
+    var list: NSOutlineView? { window.contentView?.descendants(NSOutlineView.self).first { $0.isTableOfContents } }
+    /// Its rows, less its header.
+    var rows: Int { max(0, (list?.numberOfRows ?? 0) - 1) }
+    var listHasKeyboard: Bool { list.map { window.firstResponder === $0 } ?? false }
+    var canvasHasKeyboard: Bool { window.firstResponder === canvas }
+    var notes: [ShapeID] { editor.document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id) }
+    /// The panel header's title field (Titles' `TitleHeader`): a shape's panel shows.
+    var titleField: NSTextField? {
+        guard let content = window.contentView else { return nil }
+        return content.descendants(NSTextField.self).first { field in
+            field.isEditable && field.isInPanelHeader(of: content) && !field.isDescendant(of: canvas)
+                && field.convert(field.bounds, to: nil).minX >= canvas.convert(canvas.bounds, to: nil).maxX
+        }
+    }
+
+    /// Whether the whole shape is in the canvas's view.
+    func isShown(_ id: ShapeID) -> Bool {
+        guard let box = editor.document[id]?.box else { return false }
+        let view = CGRect(origin: .zero, size: editor.viewportSize)
+        return view.contains(editor.camera.toView(box.origin)) && view.contains(editor.camera.toView(CGPoint(x: box.maxX, y: box.maxY)))
+    }
+}
+
+extension Chord {
+    /// View › Focus Inspector's.
+    static let focusInspector = Chord("i", [.command, .option])
+}
+
 extension NSView {
     /// In the detail panel's header, the top 44 points (`DetailStyle.headerHeight`) of the window's
     /// content, where the back button is.
@@ -134,37 +190,166 @@ extension NSTableView {
         w.window.spin { w.rows == 6 }
         expect(w.backButton == nil)
     },
-    test("in the panel, picking one row takes the list away and gives the canvas the keyboard, so Return opens its shape there") {
-        let w = try SampleWindow()
+    test("in the panel, a click on one row takes the list away and gives the canvas the keyboard, so Return opens its shape there") {
+        let w = try SampleBoardWindow()
+        defer { w.board.close() }
         w.window.spin { w.rows == 6 }
-        w.window.makeFirstResponder(try require(w.contents))
-        w.window.settle()
-        w.window.press(String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!), code: 125, modifiers: [.numericPad, .function])
-        let note = try require(w.editor.selection, "↓ picks the first row")
-        w.window.spin { w.contents == nil && w.canvasHasKeyboard }     // the note's panel; the row's own Return can't be pressed
-        w.window.pressReturn()
+        w.keys.send(.focusInspector)
+        w.window.spin { w.listHasKeyboard }
+        // As a click on the row does: the list's own selection, with no key.
+        try require(w.list).selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
+        let note = try require(w.editor.selection, "the click picks the first row")
+        w.window.spin { w.list == nil && w.canvasHasKeyboard }     // the note's panel; the row's own Return can't be pressed
+        expect(w.titleField != nil, "the note's panel")
+        w.keys.send(.return)
         w.window.spin { w.editor.editingShapeID == note }
     },
-    test("↓ held in the list picks a row; its repeats, once the canvas has the keyboard, don't move what it picked, while a fresh ↓ there does") {
-        let w = try SampleWindow()
+    test("⌥⌘I, then ↓ ↓ ↑ walk the rows: each selects and reveals its shape, the list keeps the keyboard and stays up, no shape moves and no step opens; ↓ then ↑ lands where it was") {
+        let w = try SampleBoardWindow()
+        defer { w.board.close() }
         w.window.spin { w.rows == 6 }
-        w.window.makeFirstResponder(try require(w.contents))
-        w.window.settle()
-        let down = String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!)
-        @MainActor func key(_ type: NSEvent.EventType, isRepeat: Bool = false) -> NSEvent {
-            NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [.numericPad, .function], timestamp: 1, windowNumber: w.window.windowNumber,
-                             context: nil, characters: down, charactersIgnoringModifiers: down, isARepeat: isRepeat, keyCode: 125)!
+        expect(w.canvasHasKeyboard)
+        expect(w.keys.send(.focusInspector).menuItem?.title == "Focus Inspector", "the chord is View's item")
+        w.window.spin { w.listHasKeyboard }
+        let before = w.editor.file
+        var walked: [ShapeID] = []
+        for key in [Chord.down, .down, .up] {
+            w.keys.send(key)
+            let shape = try require(w.editor.selectedShapeIDs.count == 1 ? w.editor.selection : nil, "\(key) selects one shape")
+            walked.append(shape)
+            w.window.spin { w.isShown(shape) }
+            w.window.settle()
+            expect(w.listHasKeyboard, "the list still has the keyboard after \(key): \(String(describing: w.window.firstResponder))")
+            expect(w.list != nil && w.titleField == nil, "and the panel still shows it, not the shape's panel")
+            expectEqual(w.list?.selectedRow, walked.count == 2 ? 2 : 1, "the row the walk is on")
         }
-        w.window.sendEvent(key(.keyDown))
-        let note = try require(w.editor.selection, "↓ picks the first row")
-        let origin = try require(w.editor.document[note]?.box).origin
-        w.window.spin { w.contents == nil && w.canvasHasKeyboard }
-        for _ in 0..<5 { w.window.sendEvent(key(.keyDown, isRepeat: true)) }
-        expectEqual(w.editor.document[note]?.box?.origin, origin, "held on, the key moves nothing")
+        expect(walked[0] != walked[1], "↓ went on to the next row")
+        expectEqual(walked[2], walked[0], "↑ came back to the row ↓ left")
+        expectEqual(w.editor.file, before, "no shape moved")
+        expect(!w.editor.canUndo, "and no step opened")
+    },
+    test("held, ↓ walks on a row a press: its repeats are the list's, and move no shape") {
+        let w = try SampleBoardWindow()
+        defer { w.board.close() }
+        w.window.spin { w.rows == 6 }
+        w.keys.send(.focusInspector)
+        w.window.spin { w.listHasKeyboard }
+        let before = w.editor.file
+        w.keys.hold(.down, repeats: 3)
+        w.window.settle()
+        expectEqual(w.list?.selectedRow, 4, "four presses, four rows")
+        expect(w.listHasKeyboard && w.titleField == nil, "the list kept the keyboard and the panel")
+        expectEqual(w.editor.file, before, "held on, the key moves nothing")
         expect(!w.editor.canUndo, "nor is it a step")
-        w.window.sendEvent(key(.keyUp))
-        w.window.sendEvent(key(.keyDown))
-        expectEqual(w.editor.document[note]?.box?.origin, CGPoint(x: origin.x, y: origin.y + 1), "a fresh ↓ is the canvas's: the selection's nudge")
+    },
+    test("Tab and ⇧Tab step the rows as ↓ and ↑ do, and stay in the list") {
+        let w = try SampleBoardWindow()
+        defer { w.board.close() }
+        w.window.spin { w.rows == 6 }
+        w.keys.send(.focusInspector)
+        w.window.spin { w.listHasKeyboard }
+        w.keys.send(.tab)
+        w.keys.send(.tab)
+        w.window.settle()
+        expectEqual(w.list?.selectedRow, 2)
+        let second = w.editor.selection
+        w.keys.send(.backTab)
+        w.window.settle()
+        expectEqual(w.list?.selectedRow, 1)
+        w.keys.send(.tab)
+        w.window.settle()
+        expectEqual(w.editor.selection, second, "⇧Tab then Tab lands where it was")
+        expect(w.listHasKeyboard && w.titleField == nil, "the list kept the keyboard and the panel")
+    },
+    test("→ and ← open and close a row's disclosure triangle, its arrow under it, and leave the selection") {
+        let w = try SampleBoardWindow()
+        defer { w.board.close() }
+        w.window.spin { w.rows == 6 }
+        w.keys.send(.focusInspector)
+        w.window.spin { w.listHasKeyboard }
+        // Front to back: the sixth note, then the fifth, which an arrow starts from.
+        w.keys.send(.down)
+        w.keys.send(.down)
+        w.window.settle()
+        let note = try require(w.editor.selection)
+        let list = try require(w.list)
+        expect(!list.isItemExpanded(list.item(atRow: 2)), "collapsed to start")
+        w.keys.send(.right)
+        w.window.spin { w.rows == 7 }
+        expect(list.isItemExpanded(list.item(atRow: 2)))
+        w.keys.send(.left)
+        w.window.spin { w.rows == 6 }
+        expectEqual(w.editor.selectedShapeIDs, [note])
+        expect(w.listHasKeyboard && w.titleField == nil)
+    },
+    test("Escape gives the canvas the keyboard with the row's shape selected, and only then does the shape's panel show") {
+        let w = try SampleBoardWindow()
+        defer { w.board.close() }
+        w.window.spin { w.rows == 6 }
+        w.keys.send(.focusInspector)
+        w.window.spin { w.listHasKeyboard }
+        w.keys.send(.down)
+        w.window.settle()
+        let note = try require(w.editor.selection)
+        expect(w.list != nil && w.titleField == nil, "the list, while it has the keyboard")
+        w.keys.send(.escape)
+        w.window.spin { w.canvasHasKeyboard }
+        expectEqual(w.editor.selectedShapeIDs, [note])
+        w.window.spin { w.list == nil && w.titleField != nil }
+        expect(w.canvasHasKeyboard)
+    },
+    test("Return on a row walked to opens its shape") {
+        let w = try SampleBoardWindow()
+        defer { w.board.close() }
+        w.window.spin { w.rows == 6 }
+        w.keys.send(.focusInspector)
+        w.window.spin { w.listHasKeyboard }
+        w.keys.send(.down)
+        w.window.settle()
+        let note = try require(w.editor.selection)
+        w.keys.send(.return)
+        w.window.spin { w.editor.editingShapeID == note }
+        w.window.spin { !w.listHasKeyboard }
+        expect(!w.listHasKeyboard, "the note's text has the keyboard: \(String(describing: w.window.firstResponder))")
+    },
+    test("⇧↓ adds the next row: the list stays, under the header of two, and keeps the keyboard") {
+        let w = try SampleBoardWindow()
+        defer { w.board.close() }
+        w.window.spin { w.rows == 6 }
+        w.keys.send(.focusInspector)
+        w.window.spin { w.listHasKeyboard }
+        w.keys.send(.down)
+        w.window.settle()
+        let list = try require(w.list)
+        w.keys.send(Chord(Key.down, .shift))
+        w.window.settle()
+        expectEqual(w.editor.selectedShapeIDs.count, 2)
+        expect(w.list === list, "the same list")
+        expect(w.listHasKeyboard, "with the keyboard: \(String(describing: w.window.firstResponder))")
+        expectEqual(w.rows, 6, "still every row")
+        w.keys.send(.up)
+        w.window.settle()
+        expectEqual(w.editor.selectedShapeIDs.count, 1)
+        expect(w.list === list && w.listHasKeyboard && w.titleField == nil, "back to one, still walking")
+    },
+    test("View › Show All Shapes lists every shape again while the list is scoped, keeping the selection; dimmed otherwise") {
+        let w = try SampleBoardWindow()
+        defer { w.board.close() }
+        w.window.spin { w.rows == 6 }
+        let view = try require(w.menus.main.item(withTitle: "View")?.submenu)
+        let titles = view.items.map(\.title)
+        let item = try require(view.items.first { $0.title == "Show All Shapes" })
+        expectEqual(titles[try require(titles.firstIndex(of: "Show Minimap")) + 1], "Show All Shapes")
+        expectEqual(item.keyEquivalent, "", "no key: its item and the header's button are the ways")
+        expect(!w.controller.validateMenuItem(item), "every shape is listed")
+        let two = [w.notes[1], w.notes[2]]
+        w.editor.selectedShapeIDs = two
+        w.window.spin { w.rows == 2 }
+        expect(w.controller.validateMenuItem(item), "the list is scoped")
+        view.performActionForItem(at: view.index(of: item))
+        w.window.spin { w.rows == 6 }
+        expectEqual(Set(w.editor.selectedShapeIDs), Set(two))
+        expect(!w.controller.validateMenuItem(item))
     },
     test("Escape in the list gives the keyboard back to the canvas, where tool shortcuts work again") {
         let w = try SampleWindow()
@@ -176,5 +361,30 @@ extension NSTableView {
         w.window.spin { w.canvasHasKeyboard }
         w.window.press("n")
         expectEqual(w.editor.currentToolID, ToolID(placing: "sticky-note"))
+    },
+    test("⌘↑ and ⌘↩ in the list give the canvas the keyboard with the row's shape selected, as Escape does; ⌥Tab and ⌥⇧Tab, into parts a row has none of, do nothing") {
+        let w = try SampleBoardWindow()
+        defer { w.board.close() }
+        w.window.spin { w.rows == 6 }
+        for key in [Chord(Key.up, .command), .commandReturn] {
+            w.editor.selection = nil
+            w.window.makeFirstResponder(w.canvas)
+            w.window.spin { w.list != nil && w.titleField == nil }
+            w.keys.send(.focusInspector)
+            w.window.spin { w.listHasKeyboard }
+            w.keys.send(.down)
+            w.window.settle()
+            let note = try require(w.editor.selection)
+            for part in [Chord.optionTab, .optionBackTab] {
+                w.keys.send(part)
+                w.window.settle()
+                expect(w.listHasKeyboard, "\(part) leaves the list as it was")
+                expectEqual(w.editor.selectedShapeIDs, [note])
+            }
+            w.keys.send(key)
+            w.window.spin { w.canvasHasKeyboard }
+            expectEqual(w.editor.selectedShapeIDs, [note], "\(key) keeps the row's shape selected")
+            expectEqual(w.editor.editingShapeID, nil, "and opens nothing")
+        }
     },
 ])

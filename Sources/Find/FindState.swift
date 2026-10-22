@@ -18,7 +18,8 @@ import Topology
 /// list each shape with hits once, in order (`FindSearch.order`), and the count is hits. Stepping
 /// (Return, ⌘G, the buttons) goes hit by hit, wrapping, and shows each one's board; a session of it
 /// is one step back (`editor.navigate(from:_:)`). It never changes the selection, and never
-/// transacts.
+/// transacts. Up and Down (Page Up, Page Down) in the field move between results without selecting
+/// anything; ⌘↩ (`finish()`) closes Find and selects the current hit's shape.
 @MainActor
 @Observable
 public final class FindState {
@@ -35,10 +36,14 @@ public final class FindState {
     }
     /// The shapes with hits, in order, each once.
     public private(set) var results: [FindResult] = []
+    @ObservationIgnored private var labelStems: [Int: String] = [:]
     /// How many hits, exact and typos alike.
     public private(set) var total = 0
     /// The current hit: a result, and which of its hits.
     public private(set) var current: FindPosition?
+    /// +1 each step to another hit (⌘G, the arrows and buttons, a click on a row), never for typing's
+    /// landing: what VoiceOver announces by, so typing is not talked over.
+    public private(set) var stepCount = 0
     /// +1 each ⌘F: the panel focuses its field and selects what's typed.
     public private(set) var focusRequest = 0
     /// Whether the index is still being built: the field shows a spinner.
@@ -282,6 +287,7 @@ public final class FindState {
 
     private func setResults(_ list: [FindResult], places: [ShapeID: Int], offsets: [Int], total: Int) {
         results = list
+        labelStems.removeAll(keepingCapacity: true)
         self.places = places
         self.offsets = offsets
         self.total = total
@@ -384,6 +390,7 @@ public final class FindState {
             next = forward ? FindPosition(result: 0, ordinal: 0) : FindPosition(result: results.count - 1, ordinal: results[results.count - 1].hitCount - 1)
         }
         current = next
+        stepCount &+= 1
         go(to: next.result)
         editor.setNeedsDisplay()
     }
@@ -392,13 +399,84 @@ public final class FindState {
     public func select(_ id: ShapeID) {
         guard isActive, editor.session == nil, let i = places[id] else { return }
         current = FindPosition(result: i, ordinal: 0)
+        stepCount &+= 1
         go(to: i)
         editor.setNeedsDisplay()
+    }
+
+    /// Up, Down, Page Up and Page Down in the field: the result `by` rows on (negative: before),
+    /// wrapping, its first hit current and brought into view, as a click on its row does. Nothing
+    /// current yet: the first result going down, the last going up. Changes neither the selection
+    /// nor the document.
+    public func move(by rows: Int) {
+        guard isActive, editor.session == nil, answered == generation, task == nil, !results.isEmpty else { return }
+        let count = results.count
+        let target: Int
+        if let current, results.indices.contains(current.result) {
+            target = ((current.result + rows) % count + count) % count
+        } else {
+            target = rows >= 0 ? 0 : count - 1
+        }
+        current = FindPosition(result: target, ordinal: 0)
+        stepCount &+= 1
+        go(to: target)
+        editor.setNeedsDisplay()
+    }
+
+    /// ⌘↩ in the field: closes Find and selects the current hit's shape, taking the hit along. The
+    /// selection and the board shown are the only things it changes, as one step back to where the
+    /// session began (Back returns there, even after the stepping moved the camera or showed another
+    /// board). False, with Find left open, when there is no hit.
+    @discardableResult
+    public func finish() -> Bool {
+        guard isActive, editor.session == nil, let hit = currentHit else { return false }
+        let began = start
+        close()
+        let select = { [editor] in editor.goTo([hit.shape]) }
+        if let began { editor.navigate(from: began, select) } else { select() }
+        return true
+    }
+
+    /// What VoiceOver reads for a result's row: the text around its first hit, the kind's name, the
+    /// board when it isn't the one shown, and the hit's number among all.
+    public func rowLabel(of index: Int) -> String {
+        guard results.indices.contains(index) else { return "" }
+        var parts = [labelStem(of: index)]
+        let number = current?.result == index ? currentNumber : offsets[safe: index].map { $0 + 1 }
+        if let number { parts.append("hit \(number) of \(total)") }
+        return parts.joined(separator: ", ")
+    }
+
+    /// The part of a row's label that holds until the results change: its text, kind and board. Made once a
+    /// row and kept, since every row is asked again at each step, with or without VoiceOver.
+    private func labelStem(of index: Int) -> String {
+        if let known = labelStems[index] { return known }
+        let result = results[index]
+        var parts = [FindSnippet.text(of: result, in: self), kindName(of: result.id)]
+        if result.board != editor.board {
+            let board = heading(of: result.board).title
+            if !board.isEmpty { parts.append(board) }
+        }
+        let made = parts.joined(separator: ", ")
+        labelStems[index] = made
+        return made
+    }
+
+    /// What each step announces: "Hit 3 of 12, Note, the text around it".
+    public var announcement: String? {
+        guard isActive, let current, results.indices.contains(current.result), let number = currentNumber else { return nil }
+        let result = results[current.result]
+        return ["Hit \(number) of \(total)", kindName(of: result.id), FindSnippet.text(of: result, in: self)].joined(separator: ", ")
+    }
+
+    private func kindName(of id: ShapeID) -> String {
+        editor.withoutObservingDocument { editor.file.record(id).map { editor.registry.label(of: $0.kind).name } ?? "" }
     }
 
     /// Shows a result's board, if it isn't shown, and brings the current hit into view unless it's
     /// there: part of the session's one step back.
     private func go(to i: Int) {
+        labelStems.removeAll(keepingCapacity: true)  // the board shown may change, which rows name
         let result = results[i]
         let move = { [self] in
             if result.board != editor.board {

@@ -74,6 +74,8 @@ public final class FieldFormView: NSView {
     var jsonDrafts: [FieldPath: String] = [:]
     public internal(set) var jsonErrors: Set<FieldPath> = []
     var jsonStop: FieldStop?
+    /// The elements VoiceOver was given for the stops, kept so each is the same object from one query to the next.
+    var stopElements: [FieldStop: CardStopElement] = [:]
     var jsonPath: FieldPath?
     var isLeavingJSON = false
     var metrics = FormMetrics()
@@ -158,6 +160,7 @@ public final class FieldFormView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(linesScrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         cellEditor.delegate = self
         cellEditor.onLeave = { [weak self] in self?.editorLeft() }
+        cellEditor.onCommit = { [weak self] in self?.finish() }
         if case .fold = root { levels[0].title = foldTitle() }
         editor.fieldCards?.follow(self)
         rebuild()
@@ -546,6 +549,7 @@ public final class FieldFormView: NSView {
     public func focus(_ stop: FieldStop?) {
         if let stop, !sheet.stops.contains(stop) { return }
         if let picking = picking, stop != picking.stop { endNotePicking() }
+        let old = focus
         focus = stop
         syncEditor()
         // The keyboard is where the focus is, if it was somewhere else (a click on a control beside the form, and back).
@@ -560,6 +564,7 @@ public final class FieldFormView: NSView {
         if let stop { scrollToVisible(stop) }
         grid.needsDisplay = true
         needsDisplay = true
+        announceFocus(from: old)
     }
 
     /// Scrolls the grid so the stop is in view, under what stays put.

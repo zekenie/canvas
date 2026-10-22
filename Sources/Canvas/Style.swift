@@ -120,6 +120,13 @@ public enum Style {
     static let firstVisitInset: CGFloat = 64
     /// How long the zoom commands ease the camera (tldraw's animationMediumMs).
     static let zoomDuration: Duration = .milliseconds(320)
+    /// How far a pan by the keys moves the view (`CanvasEditor.pan`), in view points, the same on
+    /// screen at any zoom; a page (⇧, Page Up and Down) is this much of the view's clear part.
+    static let panStep: CGFloat = 50
+    static let panPage: CGFloat = 0.8
+    /// How long a pan by the keys eases the camera: a held key's repeats each go on from where the
+    /// last was headed, eased out, so the view glides rather than steps.
+    static let panDuration: Duration = .milliseconds(160)
     /// How long the pointer stays on what a popover is about before it shows (`hoverPopover`), and
     /// how soon after one goes another shows at once.
     static let popoverDelay: Duration = .milliseconds(500)
@@ -189,4 +196,7 @@ public enum Style {
     /// step moves the guess toward what it took. Seconds.
     static let initialPreviewCost = 2e-6
     static let previewCostLearning = 0.25
+    /// Up to this many shapes selected, the shapes VoiceOver sees past its limit are those nearest any
+    /// of them (`accessibleShapes(limit:)`); past it, those nearest the middle of them.
+    static let accessibleNearestSelected = 32
 }

@@ -28,6 +28,15 @@ enum FrameStyle {
     /// The kind's color where a frame is shown by its kind: its row's symbol, and its mentions' tint
     /// in the picker. Neutral, as the frame is.
     static let tint = NSColor.systemGray
+    /// What VoiceOver reads as a frame's value, what it holds: "Empty", "1 shape", "12 shapes", as a
+    /// subboard's card says what its board holds.
+    static func accessibleContents(_ count: Int) -> String {
+        switch count {
+        case 0: "Empty"
+        case 1: "1 shape"
+        default: "\(count.formatted()) shapes"
+        }
+    }
 
     /// While a frame is drawn with the Frame tool, its surface shows at this much, so what it's drawn
     /// over shows through until it's put down and takes in what's mostly inside it.

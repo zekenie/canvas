@@ -3,6 +3,7 @@ import Canvas
 import CoreGraphics
 import DetailPanel
 import Selection
+import Titles
 
 // The card a row with more in it opens under itself. This file holds the request, the card's id and the
 // service that opens it. The core piece the card stands on is generic and knows no field.
@@ -159,6 +160,7 @@ public final class FieldCards {
         form.onReadOnly = { [weak editor] in editor?.setCardStep(nil) }
         form.onResize = { [weak editor] in editor?.cardDidResize() }
         let card = CanvasCard(id: id, about: request.shape, anchor: request.rowRect, view: form, firstResponder: form, stepName: stepName,
+                              accessibilityLabel: TypesStyle.fieldsAccessibilityLabel(of: editor.document[request.shape].flatMap { editor.registry.title(of: $0) }),
                               size: { [unowned form, weak editor] room in
                                   form.fittingSize(anchorWidth: request.rowRect.width * CGFloat(editor?.zoomPercentage ?? 100) / 100, room: room)
                               },

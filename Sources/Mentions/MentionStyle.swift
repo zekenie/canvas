@@ -100,5 +100,7 @@ enum MentionStyle {
     static let unknownSymbol = "square.dashed"
     /// The canvas's context menu item, and a pill's in text.
     static let showWhatMentions = "Show What Mentions"
+    /// Go › Go to Mention, which follows the pill on the caret.
+    static let goToMention = "Go to Mention"
     static func showWhatMentions(_ label: String) -> String { "Show What Mentions “\(label)”" }
 }

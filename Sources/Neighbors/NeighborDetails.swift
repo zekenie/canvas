@@ -60,10 +60,19 @@ struct NeighborListView: View {
     }
 }
 
-/// The search field, once the lists are long, then each list that has shapes: its head, which folds
-/// it, and its rows, made as they scroll into view.
+/// What a line of the lists is: a list's head, or one of its rows.
+enum NeighborItemID: Hashable, Sendable {
+    case head(Int)
+    case row(group: Int, shape: ShapeID)
+}
+
+/// The search field, once the lists are long, then one list of rows (`DetailRowList`: a stop of Tab,
+/// walked with the arrows): each list that has shapes has its head, which folds it, and its rows,
+/// made as they scroll into view. The row the keys are on lights what it stands for on the canvas, as
+/// the pointer on it does.
 struct NeighborLists: View {
     let list: NeighborList
+    @State private var handle = DetailListHandle()
 
     var body: some View {
         let searching = !list.search.isEmpty
@@ -71,7 +80,7 @@ struct NeighborLists: View {
         let stamp = list.listing?.stamp ?? 0
         VStack(alignment: .leading, spacing: NeighborStyle.spacing) {
             if searching || list.total >= NeighborStyle.searchFrom {
-                DetailSearchField(NeighborStyle.searchPrompt, text: Binding(get: { list.search }, set: { list.setSearch($0) }))
+                DetailSearchField(NeighborStyle.searchPrompt, text: Binding(get: { list.search }, set: { list.setSearch($0) }), list: handle)
             }
             if lists.isEmpty {
                 // Nothing said until the answer is in: most shapes have something.
@@ -81,32 +90,69 @@ struct NeighborLists: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                 }
             } else {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(lists, id: \.group) { listed in
-                        let group = list.groups[listed.group]
-                        // Searching unfolds every list, so its head folds nothing then.
-                        DetailGroupHeader(group.title, count: listed.shown.count, tint: group.color, isCollapsed: !list.showsRows(of: listed.group)) {
-                            list.setFolded(listed.group, !list.isFolded(listed.group))
-                        }
-                        .padding(.top, listed.group == lists.first?.group ? 0 : NeighborStyle.groupSpacing)
-                        ForEach(listed.shown.rows) { row in
-                            NeighborRowView(list: list, group: listed.group, row: row, stamp: stamp).equatable()
+                let (items, rows) = items(of: lists)
+                DetailRowList(items, label: NeighborStyle.tab, handle: handle, onHighlight: { id in highlight(id) }) { item in
+                    switch item.id {
+                    case .head(let group):
+                        let shown = list.shown(in: group).count
+                        let isFolded = !list.showsRows(of: group)
+                        DetailGroupHeader(list.groups[group].title, count: shown, tint: list.groups[group].color, isCollapsed: isFolded, isRow: true) {}
+                            .detailRowAccessibility(label: list.groups[group].title, value: DetailGroupHeader.spoken(count: shown, isCollapsed: isFolded),
+                                                    activate: item.activate)
+                    case .row(let group, _):
+                        if let row = rows[item.id] {
+                            NeighborRowView(list: list, group: group, row: row, stamp: stamp, activate: item.activate).equatable()
                         }
                     }
                 }
             }
         }
     }
+
+    /// Each list's head, then its rows while it shows them (and the rows by line). Searching unfolds
+    /// every list, so its head folds nothing then.
+    private func items(of lists: [(group: Int, shown: (count: Int, rows: [NeighborRow]))])
+        -> ([DetailRowItem<NeighborItemID>], [NeighborItemID: NeighborRow]) {
+        var items: [DetailRowItem<NeighborItemID>] = [], rows: [NeighborItemID: NeighborRow] = [:]
+        for listed in lists {
+            let group = listed.group, isFolded = !list.showsRows(of: group)
+            items.append(DetailRowItem(id: .head(group), kind: .head(isFolded: isFolded)) { list.setFolded(group, !list.isFolded(group)) })
+            for row in listed.shown.rows {
+                let id = NeighborItemID.row(group: group, shape: row.id)
+                rows[id] = row
+                items.append(DetailRowItem(id: id, parent: .head(group), height: rowHeight(group)) { list.go(to: row.id) })
+            }
+        }
+        return (items, rows)
+    }
+
+    /// A row with a caption is taller by it: read the way the row draws it, once.
+    private func rowHeight(_ group: Int) -> CGFloat {
+        DetailRowItem<NeighborItemID>.height(captionLines: list.groups[group].caption == nil ? 0 : 1)
+    }
+
+    /// The row the keys are on lights its shape as the pointer on the row does; nothing is lit once
+    /// the keyboard leaves the list.
+    private func highlight(_ id: NeighborItemID?) {
+        if let lit = lit { list.endHover(lit) }
+        lit = nil
+        guard case .row(_, let shape)? = id else { return }
+        lit = shape
+        list.hover(shape)
+    }
+
+    @State private var lit: ShapeID?
 }
 
 /// One shape: the pointer on it hovers it on the canvas (its card, if it's on another board), and a
-/// click goes to it.
+/// click goes to it; so do Return and Space on it in the list.
 struct NeighborRowView: View, Equatable {
     let list: NeighborList
     let group: Int
     let row: NeighborRow
     /// The answer it was drawn for: its name and its caption are read here.
     let stamp: Int
+    let activate: @MainActor () -> Void
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.group == b.group && a.row == b.row && a.stamp == b.stamp
@@ -115,15 +161,12 @@ struct NeighborRowView: View, Equatable {
     var body: some View {
         let id = row.id
         let line = list.line(for: row, in: group)
-        Button { list.go(to: id) } label: {
-            DetailShapeRow(symbol: line.symbol, tint: line.tint, name: line.name, detail: line.detail, lines: line.caption.map { [$0] } ?? [])
-        }
-        .buttonStyle(.borderless)
-        .foregroundStyle(.primary)
-        .padding(.bottom, line.caption == nil ? 0 : NeighborStyle.captionedRowBottom)
-        .onHover { inside in
-            if inside { list.hover(id) } else { list.endHover(id) }
-        }
-        .onDisappear { list.endHover(id) }
+        DetailShapeRow(symbol: line.symbol, tint: line.tint, name: line.name, detail: line.detail, lines: line.caption.map { [$0] } ?? [])
+            .foregroundStyle(.primary)
+            .detailRowAccessibility(label: line.spoken, activate: activate)
+            .onHover { inside in
+                if inside { list.hover(id) } else { list.endHover(id) }
+            }
+            .onDisappear { list.endHover(id) }
     }
 }

@@ -112,17 +112,30 @@ private final class Bench {
     /// The row with the caret or the focus.
     var focused: String? { rowsView?.focusedRow }
 
-    func tab() { editor.undoHistory.seal(); window.press("\t", code: 48) }
-    func backtab() { editor.undoHistory.seal(); window.press("\u{19}", code: 48, modifiers: .shift) }
-    func down() { window.press(String(UnicodeScalar(NSDownArrowFunctionKey)!), code: 125) }
-    func up() { window.press(String(UnicodeScalar(NSUpArrowFunctionKey)!), code: 126) }
-    func space() { window.press(" ", code: 49) }
+    func tab() { editor.undoHistory.seal(); window.press(.tab) }
+    func backtab() { editor.undoHistory.seal(); window.press(.backTab) }
+    func down() { window.press(.down) }
+    func up() { window.press(.up) }
+    func space() { window.press(.space) }
 
     /// A press delivered to the rows' view under a point, as the window would.
     func press(at point: CGPoint, clicks: Int = 1) throws {
         let hit = try require(canvas.hitTest(canvas.convert(point, to: canvas.superview)), "a view under \(point)")
         guard hit is RowsView else { throw Failure("the rows' view takes the press, not \(type(of: hit))") }
         hit.mouseDown(with: window.mouse(.leftMouseDown, at: point, clicks: clicks, time: 1))
+    }
+}
+
+extension Bench {
+    /// A key walk of the note being edited: the rows' stops are "note/<row>", the words' "words".
+    func walk(settle: KeyWalk.Settling? = nil) -> KeyWalk {
+        let walk = KeyWalk(window, editor: editor, readers: [.custom("note") { [unowned self] window in
+            if let row = self.rowsView?.focusedRow { return Focus.of(window, surface: "note", element: row) }
+            if self.words_ != nil { return Focus.of(window, surface: "words", element: "") }
+            return nil
+        }], settle: settle ?? .both(h.scheduler))
+        walk.pending = ["words: the note's words have no accessibility label, accessibility-5"]
+        return walk
     }
 }
 
@@ -309,21 +322,87 @@ private final class Bench {
         b.editor.undo()
         expectEqual(b.editor.document[c]?.typed(as: StickyNote.self)?.props.text.stored, "")
     },
-    test("Tab and ⇧Tab walk every row, typed or not; Tab off the last row ends editing; ⇧Tab from the first puts the caret at the end of the words") {
+    test("Tab and ⇧Tab walk every row, typed or not; Tab off the last row edits the next note; ⇧Tab from the first puts the caret at the end of the words") {
         let b = try Bench()
         let id = b.note(of: [FieldFixtures.kindsAID])
+        let next = b.note(of: [FieldFixtures.personID], at: CGPoint(x: 440, y: 40))
         expect(try b.begin(id, on: "name"))
         var seen = [b.focused ?? ""]
         for _ in 0..<8 { b.tab(); seen.append(b.focused ?? "") }
         expectEqual(seen, ["name", "price", "due", "done", "status", "roles", "tags", "venue", "shipping address"])
         expect(b.window.firstResponder === b.rowsView || b.field != nil)
         b.tab()
-        expectEqual(b.editor.editingShapeID, nil, "off the last row, editing ends")
+        expect(b.editor.editingShapeID == next, "off the last row, the next note in reading order is edited")
+        expect(b.words_ != nil && b.focused == nil, "at its words")
+        b.editor.endEditing()
         expect(try b.begin(id, on: "price"))
         for _ in 0..<3 { b.backtab() }
         expectEqual(b.focused, nil, "⇧Tab from the first row goes back to the words")
         let words = try require(b.words_, "the words have the keyboard")
         expectEqual(words.selectedRange().location, words.string.count, "the caret at the end of the words")
+    },
+    test("Tab in a typed note's words goes to its first row, then through its rows and on to the next note's words; ⇧Tab goes back the same way, to the previous note's last row") {
+        let b = try Bench()
+        let a = b.note(of: [FieldFixtures.personID])
+        let c = b.note(of: [FieldFixtures.personID], at: CGPoint(x: 440, y: 40))
+        let rows = b.book.rows(of: a).map(\.name)
+        expect(rows.count > 1, "a Person has rows: \(rows)")
+        expect(b.editor.beginEditing(a))
+        expect(b.words_ != nil, "begun with no press, the words have the keyboard")
+        // Forward: the words, each row, then the next note's words.
+        var stops = ["words"]
+        for _ in 0..<rows.count {
+            b.tab()
+            stops.append(b.focused ?? "words")
+        }
+        expectEqual(stops, ["words"] + rows)
+        b.tab()
+        expect(b.editor.editingShapeID == c, "past the last row, the next note")
+        expect(b.words_ != nil && b.focused == nil, "at its words")
+        // Back: every stop again, in the other order.
+        var back: [String] = []
+        for _ in 0..<(rows.count + 1) {
+            b.backtab()
+            expect(b.editor.editingShapeID == a, "⇧Tab stays in the note it came back to")
+            back.append(b.focused ?? "words")
+        }
+        expectEqual(back, Array((["words"] + rows).reversed()), "⇧Tab undoes Tab, stop by stop")
+        expect(b.words_ != nil)
+    },
+    test("with no other note, Tab off the last row comes round to the words, and ⇧Tab from the words goes to the last row") {
+        let b = try Bench()
+        for id in b.editor.document.shapes.map(\.id) { b.editor.transact { $0.update(id) { $0[Frozen.self] = true } } }
+        let id = b.note(of: [FieldFixtures.personID])
+        let last = try require(b.book.rows(of: id).last?.name)
+        expect(b.editor.beginEditing(id))
+        b.backtab()
+        expect(b.editor.editingShapeID == id)
+        expectEqual(b.focused, last, "round to the last row")
+        b.tab()
+        expect(b.editor.editingShapeID == id, "Tab off the last row stays in the only note")
+        expect(b.words_ != nil && b.focused == nil, "back at the words")
+    },
+    test("an edited typed note's words keep a line: its rows move down as editing begins, stay put as the first letter is typed, and go back up when editing ends with nothing typed; a press on a row at rest still begins in that row") {
+        let b = try Bench()
+        let id = b.note(of: [FieldFixtures.personID], words: "")
+        let frame = try require(b.editor.shapeContext.frame(of: id))
+        let rest = try b.row(id, "name").rect.minY
+        expect(b.editor.beginEditing(id))
+        let edited = try b.row(id, "name").rect.minY
+        expect(edited > rest + 20, "the rows moved down for the words' line: \(rest) to \(edited)")
+        let words = try require(b.words_)
+        let caret = try require((words as? EditingTextView)?.caretFrame)
+        let caretInWorld = words.convert(caret, to: b.rowsView?.superview).offsetBy(dx: frame.minX, dy: frame.minY)
+        expect(caretInWorld.maxY <= edited, "the caret sits above the rows: \(caretInWorld) against \(edited)")
+        b.window.type("a")
+        expectEqual(try b.row(id, "name").rect.minY, edited, "the first letter typed moves nothing")
+        b.window.pressDelete()
+        b.editor.endEditing()
+        expectEqual(try b.row(id, "name").rect.minY, rest, "back where they were once editing ends with nothing typed")
+        // A press on a row's value at rest begins in that row, wherever the row has moved to.
+        expect(try b.begin(id, on: "email"))
+        expectEqual(b.focused, "email")
+        expect(b.field != nil)
     },
     test("↓ from the words' last line focuses the first row; ↓ on an earlier line moves the caret a line; ↑ from the first row goes back; ↓ on the last row does nothing") {
         let b = try Bench(words: "One line\nTwo lines")
@@ -404,7 +483,7 @@ private final class Bench {
         expectEqual(b.editor.editingShapeID, id, "still editing")
         b.window.pressReturn()
         expectEqual(b.book.opened.count, 2)
-        for _ in 0..<12 where cards.openTarget != nil { b.window.press("\t", code: 48) }
+        for _ in 0..<12 where cards.openTarget != nil { b.window.press(.tab) }
         expect(cards.openTarget == nil, "Tab off the card's last stop closed it")
         expectEqual(b.focused, "venue", "and went to the next row")
         b.space()
@@ -737,5 +816,118 @@ private final class Bench {
         expectEqual(b.focused, "status")
         let focused = ink(bitmap(), in: local, paper: paper, by: 10)
         expect(focused > unfocused + 5, "`▾` and the outline's end: \(focused) against \(unfocused)")
+    },
+    test("a key walk of a typed note, one note on the board: the words, then every row, round to the words, ⇧Tab undoing each step; the stops are named for VoiceOver by their row, and a key with no use at a stop that does not type changes nothing") {
+        let b = try Bench()
+        for id in b.editor.document.shapes.map(\.id) { b.editor.transact { $0.update(id) { $0[Frozen.self] = true } } }
+        let id = b.note(of: [FieldFixtures.kindsAID], ["name": "Ann", "price": 12])
+        let names = b.book.rows(of: id).map(\.name)
+        expectEqual(names, ["name", "price", "due", "done", "status", "roles", "tags", "venue", "shipping address"])
+        expect(b.editor.beginEditing(id))
+        let walk = b.walk()
+        let stops = ["words"] + names.map { "note/\($0)" }
+        walk.expectCycle(stops)
+        let rowStops = names.map { "note/\($0)" }
+        walk.expectShows(rowStops.map { Focus(surface: "note", element: String($0.dropFirst(5))) })
+        let still = ["done", "status", "roles", "tags", "venue", "shipping address"].map { Focus(surface: "note", element: $0) }
+        walk.expectInert(at: still, escapes: false)
+        expect(b.editor.editingShapeID == id, "the note is still being edited")
+        // The roles VoiceOver reads, by what the row is: a field a text field, a box a check box, a choice a pop-up button.
+        let roles = ["name": "AXTextField", "price": "AXTextField", "due": "AXTextField", "done": "AXCheckBox", "status": "AXPopUpButton",
+                     "roles": "AXButton", "tags": "AXButton"]
+        for (name, role) in roles {
+            walk.go("note/\(name)")
+            expectEqual(walk.focus.role, role, name)
+            expectEqual(walk.focus.label, name, name)
+        }
+        walk.go("note/price")
+        expectEqual(walk.focus.value, "12", "Price, text field, 12")
+        walk.go("note/done")
+        expectEqual(walk.focus.value, "0")
+        // The children, one per row, in order.
+        let children = try require(b.rowsView?.accessibilityChildren()).compactMap { $0 as? NSAccessibilityProtocol }
+        expectEqual(children.compactMap { AccessibilityProbe.label(of: $0) }, names)
+    },
+    test("two notes: Tab off the last row goes to the next note's words and ⇧Tab from them comes back to the last row, the walk keyed as a keyboard sends keys") {
+        let b = try Bench()
+        for id in b.editor.document.shapes.map(\.id) { b.editor.transact { $0.update(id) { $0[Frozen.self] = true } } }
+        let a = b.note(of: [FieldFixtures.personID])
+        let c = b.note(of: [FieldFixtures.personID], at: CGPoint(x: 440, y: 40))
+        let rows = b.book.rows(of: a).map(\.name)
+        expect(b.editor.beginEditing(a))
+        let walk = b.walk()
+        walk.press(.tab)
+        expectEqual(walk.focus.id, "note/\(rows[0])")
+        walk.go("note/\(rows.last!)")
+        walk.press(.tab)
+        expect(b.editor.editingShapeID == c, "the next note")
+        expectEqual(walk.focus.id, "words")
+        walk.press(.backTab)
+        expect(b.editor.editingShapeID == a)
+        expectEqual(walk.focus.id, "note/\(rows.last!)", "back to the last row")
+    },
+    test("holding Space on a box toggles it once, and a held Tab or ↓ keeps moving") {
+        let b = try Bench()
+        let id = b.note(of: [FieldFixtures.kindsAID])
+        expect(try b.begin(id, on: "due"))
+        let walk = b.walk()
+        walk.go("note/done")
+        b.editor.undoHistory.seal()
+        let driver = KeyDriver(b.window)
+        driver.hold(.space, repeats: 6)
+        expectEqual(b.value(id, "done"), true, "one press: ticked, not toggled back and forth")
+        expectEqual(b.editor.undoHistory.undoName, "Change Done")
+        walk.go("note/name")
+        walk.press(.down, times: 4)
+        expectEqual(b.focused, "status", "a held ↓ repeats")
+        walk.press(.tab, times: 2)
+        expectEqual(b.focused, "tags", "a held Tab repeats")
+    },
+    test("Return on a choice row pops its menu, as Space does; on a box it ends editing, and Space toggles it") {
+        let b = try Bench()
+        let id = b.note(of: [FieldFixtures.kindsAID])
+        expect(try b.begin(id, on: "due"))
+        // The run loop would pop the queued menu, and its tracking blocks: only the scheduler's turns.
+        let walk = b.walk(settle: .manual(b.h.scheduler))
+        walk.go("note/status")
+        walk.press(.return)
+        let queued = try require(b.editor.menuToPopUp, "Return pops the choice's menu")
+        expectEqual(queued.menu.items.map(\.title), ["draft", "paid", "shipped", "", "None"])
+        b.editor.menuDidPopUp()
+        expectEqual(b.editor.editingShapeID, id, "and editing goes on")
+        walk.go("note/done")
+        walk.press(.space)
+        expectEqual(b.value(id, "done"), true)
+        walk.press(.return)
+        expectEqual(b.editor.editingShapeID, nil, "Return on a box ends editing")
+        expectEqual(b.value(id, "done"), true, "and toggles nothing")
+    },
+    test("⇧Return in a row, typed or not, adds a note beside this one and edits it; the note's values are as they were") {
+        for rowName in ["name", "done", "tags"] {
+            let b = try Bench()
+            let id = b.note(of: [FieldFixtures.kindsAID], ["name": "Ann"])
+            let before = b.editor.document[id]?[FieldValuesProperty.self]
+            expect(try b.begin(id, on: "due"))
+            let walk = b.walk()
+            walk.go("note/\(rowName)")
+            let notes = b.editor.document.shapes.filter { $0.kind == StickyNote.kind }.count
+            walk.press(Chord(.return, .shift))
+            let editing = try require(b.editor.editingShapeID, "\(rowName): a note is edited")
+            expect(editing != id, "\(rowName): the new one")
+            expectEqual(b.editor.document.shapes.filter { $0.kind == StickyNote.kind }.count, notes + 1, rowName)
+            expectEqual(b.editor.document[id]?[FieldValuesProperty.self], before, "\(rowName): nothing written")
+            expectEqual(b.editor.undoHistory.undoName, "Add Note", rowName)
+            b.editor.endEditing()
+        }
+    },
+    test("Option-Return in a row's field ends editing, as Return does") {
+        let b = try Bench()
+        let id = b.note(of: [FieldFixtures.personID])
+        expect(try b.begin(id, on: "name"))
+        let field = try require(b.field)
+        b.window.type("Ann")
+        field.doCommand(by: #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)))
+        expectEqual(b.editor.editingShapeID, nil, "Option-Return ends editing")
+        expectEqual(b.value(id, "name"), "Ann")
     },
 ])

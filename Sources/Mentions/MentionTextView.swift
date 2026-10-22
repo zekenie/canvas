@@ -509,7 +509,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         if pill.resolution.isLive {
             let target = pill.target
             items.append(NSMenuItem(title: MentionStyle.goTo(pill.shownLabel)) { [weak self] in self?.mentions?.follow(target) })
-            if let mentions, owner != target || mentions.isMentioned(target) {
+            if canShowWhatMentions(of: pill) {
                 items.append(NSMenuItem(title: MentionStyle.showWhatMentions(pill.shownLabel)) { [weak self] in
                     self?.mentions?.showWhatMentions([target])
                 })
@@ -646,8 +646,48 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     /// caret list).
     public override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
-        if resigned { endPointerHover() }
+        if resigned {
+            endPointerHover()
+            mentions?.leave(self)
+        }
         return resigned
+    }
+
+    /// The keyboard arriving makes this the text the pill commands (Go to Mention, Show What Mentions,
+    /// Remove Mention) act on.
+    public override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { mentions?.enter(self) }
+        return became
+    }
+
+    // MARK: The pill commands
+
+    /// The pill the commands act on: the one that is exactly the selection, else the one the caret
+    /// touches (before it, else after it).
+    var pillOnCaret: MentionAttachment? {
+        let range = selectedRange()
+        switch range.length {
+        case 0: return pill(at: range.location - 1) ?? pill(at: range.location)
+        case 1: return pill(at: range.location)
+        default: return nil
+        }
+    }
+
+    /// Whether the pill on the caret can be turned back into text: not in a text that can't be edited.
+    var canRemovePillOnCaret: Bool { isEditable && pillOnCaret != nil }
+
+    /// Turns the pill on the caret into its name, as Remove Mention in the pill's menu does.
+    func removePillOnCaret() {
+        guard isEditable, let pill = pillOnCaret else { return }
+        removeMention(target: pill)
+    }
+
+    /// Whether the pill's menu offers Show What Mentions: its target is live and another shape
+    /// mentions it (this text's shape does, unless it is the target, whose own mention doesn't count).
+    func canShowWhatMentions(of pill: MentionAttachment) -> Bool {
+        guard pill.resolution.isLive, let mentions else { return false }
+        return owner != pill.target || mentions.isMentioned(pill.target)
     }
 
     // MARK: Windows and undo
@@ -660,6 +700,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     public override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil {
             endPointerHover()
+            mentions?.leave(self)
             if let undoManager {
                 if let textStorage { undoManager.removeAllActions(withTarget: textStorage) }
                 undoManager.removeAllActions(withTarget: self)
@@ -807,6 +848,8 @@ extension MentionTextView: DetailTextContent {
 extension MentionStyle {
     static func goTo(_ label: String) -> String { "Go to “\(label)”" }
     static let removeMention = "Remove Mention"
+    /// A note's part that follows a mention in its text, for ⌥Tab and VoiceOver.
+    static func goToPart(_ label: String) -> String { "Go to \(label)" }
 
     /// A pill as VoiceOver reads it: "Groceries, Note", or "Groceries, deleted".
     static func spoken(_ pill: MentionAttachment) -> String {

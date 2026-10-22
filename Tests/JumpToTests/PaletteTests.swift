@@ -213,6 +213,21 @@ private let arrowDown = "\u{F701}", arrowUp = "\u{F700}"
         expectEqual(w.field?.string, "zzzz", "no new line, no tab")
         expect(w.fieldHasKeyboard)
     },
+    test("⇧Tab moves the highlight up, wrapping, and the palette stays open") {
+        let w = try PaletteWindow()
+        w.openWithKey()
+        w.type("a")
+        let rows = w.state.rows.count
+        expect(rows > 1)
+        expectEqual(w.state.list.highlighted, 0)
+        w.window.press(.backTab)
+        expect(w.state.isOpen && w.fieldHasKeyboard)
+        expectEqual(w.state.list.highlighted, rows - 1, "up from the first wraps")
+        w.window.press(.backTab)
+        expectEqual(w.state.list.highlighted, rows - 2)
+        w.window.press(.tab)
+        expect(!w.state.isOpen, "Tab picks the highlighted row")
+    },
     test("Escape closes it and gives the canvas the keyboard; so does ⌘.; neither goes anywhere") {
         let w = try PaletteWindow()
         w.openWithKey()

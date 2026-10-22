@@ -78,7 +78,7 @@ extension RowBook {
 
     /// The shape's rows as shown for `block`, kept: built when there are none kept for its width.
     func shownRows(of record: AnyShapeRecord, subject: RowSubject, template: RowTemplate, block: CGRect) -> ShownRows {
-        let lead = hasWords(record)
+        let lead = hasLead(record)
         if let kept = shown[record.id], kept.width == block.width, kept.hasLead == lead, kept.renames == renames { return kept }
         #if DEBUG
         rowsShown += 1

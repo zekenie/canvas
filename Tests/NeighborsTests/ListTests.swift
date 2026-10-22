@@ -141,6 +141,9 @@ extension EditorHarness {
         expectEqual(bank?.symbol, h.editor.registry.label(of: Box.kind).systemImage ?? "square.dashed")
         expectEqual(h.line(town.u, in: Lists.wiredTo)?.name, h.editor.registry.label(of: Box.kind).name, "an uncaptioned box is called what its kind is")
         expectEqual(h.line(town.x, in: Lists.wiredTo)?.detail, "Park", "on the pocket's board")
+        expectEqual(bank?.spoken, "Bank", "a row reads its name, then its board and its caption when it has them")
+        expectEqual(h.line(town.x, in: Lists.wiredTo)?.spoken.hasSuffix(", Park"), true)
+        expectEqual(h.line(town.m, in: Lists.quotedBy)?.spoken.hasPrefix("Mill, "), true)
         expectEqual(h.line(town.y, in: Lists.wiredTo)?.detail, "Park", "in a corral on the pocket's board: the board's name, not the corral's")
         expectEqual(h.line(town.m, in: Lists.quotedBy)?.caption, "Mill quotes \(town.s.description.prefix(4))", "what its light says of the two shapes")
         // From the pocket's board, a shape on the root is on the board the file names.

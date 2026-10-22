@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
@@ -12,6 +13,22 @@ import TestKit
 // `/lock` and the chip run too.
 
 @MainActor let lockKeyTests = Suite("Locking from the keyboard", [
+    test("⌥Tab reaches a locked shape's chip, named Locked, and Return unlocks it; the open lock that fades is no part, so the focus is the shape's again") {
+        let h = try lockingHarness()
+        let box = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
+        h.editor.lock([box])
+        h.editor.selection = box
+        expect(h.key(Chord.optionTab))
+        expectEqual(h.editor.focusedPart?.title, "Locked")
+        expect(h.key(Chord.return))
+        expect(!h.editor.isLocked(box))
+        expectEqual(h.editor.undoHistory.undoName, "Unlock")
+        expect(!h.editor.adornmentFrames(of: box).isEmpty, "the lock shows open")
+        expect(!h.editor.hasFocusedPart)
+        expectEqual(h.editor.selectedShapeIDs, [box])
+        expect(h.key(Chord.optionTab))
+        expect(!h.editor.hasFocusedPart, "no part to go to")
+    },
     test("⇧L locks the selection, then unlocks it once every shape is locked; with one locked it locks the rest; each is one step, named as the menu's") {
         let h = try lockingHarness()
         let a = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
@@ -94,10 +111,10 @@ import TestKit
         let h = try lockingHarness()
         let box = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
         h.editor.selection = box
-        expectEqual(try require(h.editor.menuForSelection(omitting: [.delete])).outline, ["Lock"])
-        expect(h.editor.menuForSelection(omitting: [.lock, .delete]) == nil, "Lock runs the command: nothing left")
-        try require(h.editor.menuForSelection(omitting: [.delete])).choose("Lock")
+        expectEqual(try require(h.editor.menuForSelection(omitting: [.delete, .showContextMenu])).outline, ["Lock"])
+        expect(h.editor.menuForSelection(omitting: [.lock, .delete, .showContextMenu]) == nil, "Lock runs the command: nothing left")
+        try require(h.editor.menuForSelection(omitting: [.delete, .showContextMenu])).choose("Lock")
         expect(h.editor.isLocked(box))
-        expectEqual(try require(h.editor.menuForSelection(omitting: [.delete])).outline, ["Unlock"])
+        expectEqual(try require(h.editor.menuForSelection(omitting: [.delete, .showContextMenu])).outline, ["Unlock"])
     },
 ])

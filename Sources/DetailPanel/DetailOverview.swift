@@ -5,9 +5,10 @@ import SwiftUI
 
 /// What the panel shows where it has no one shape to show: in place of "No Selection", and under
 /// the header when several shapes are selected (as data-canvas's details panel shows its table of
-/// contents). The plugin whose view it is gives it (`registrar.detailOverview`: the table of
-/// contents', its `ContentsOverviewPlugin`), so the panel never learns what it is. At most one: two
-/// are `RegistryError.conflict` at startup.
+/// contents); and whatever is selected while it holds the keyboard (`holdsKeyboard`: the table of
+/// contents walked by keys). The plugin whose view it is gives it (`registrar.detailOverview`: the
+/// table of contents', its `ContentsOverviewPlugin`), so the panel never learns what it is. At most
+/// one: two are `RegistryError.conflict` at startup.
 public enum DetailOverviews {}
 
 extension DetailOverviews: KeyedExtensionPoint {
@@ -17,9 +18,11 @@ extension DetailOverviews: KeyedExtensionPoint {
     public static func summary(of _: DetailOverview, for _: ShapeTarget) -> String { "detail overview" }
 }
 
-/// What `DetailOverviews` stores: the view, made for a panel as the panel is. Only the sugar makes one.
+/// What `DetailOverviews` stores: whether it holds the keyboard, and the view, made for a panel as
+/// the panel is. Only the sugar makes one.
 @MainActor
 public struct DetailOverview {
+    let holdsKeyboard: @MainActor (CanvasEditor) -> Bool
     let content: @MainActor (CanvasEditor, @escaping @MainActor () -> Void) -> AnyView
 }
 
@@ -48,13 +51,22 @@ public struct DetailTakeover {
 
 extension PluginRegistrar {
     /// The panel's overview: `content` is handed the panel's editor and its `onExit`, which gives
-    /// the keyboard back to the canvas (a list calls it on Escape), and follows the editor by itself:
+    /// the keyboard back to the canvas (a list calls it on Escape), and follows the editor by itself.
     ///
-    ///     registrar.detailOverview { editor, onExit in TableOfContentsView(editor: editor, onExit: onExit) }
+    /// `holdsKeyboard`: while it says so, the panel keeps the overview showing whatever is selected,
+    /// one shape too (under the header of several, as ever), so the keys walking a list in it go on
+    /// walking it rather than its first step taking it away; once it says no, the panel shows what
+    /// the selection calls for. Read in the panel's body, so it reads observable state, as a
+    /// takeover's `isActive` does. By default, never:
+    ///
+    ///     registrar.detailOverview(holdsKeyboard: { $0.tableOfContents?.isWalkedByKeys == true }) { editor, onExit in
+    ///         TableOfContentsView(editor: editor, onExit: onExit)
+    ///     }
     public mutating func detailOverview<Content: View>(
+        holdsKeyboard: @escaping @MainActor (CanvasEditor) -> Bool = { _ in false },
         @ViewBuilder _ content: @escaping @MainActor (_ editor: CanvasEditor, _ onExit: @escaping @MainActor () -> Void) -> Content
     ) {
-        contribute(DetailOverview(content: { AnyView(content($0, $1)) }), to: DetailOverviews.self)
+        contribute(DetailOverview(holdsKeyboard: holdsKeyboard, content: { AnyView(content($0, $1)) }), to: DetailOverviews.self)
     }
 
     /// A takeover of the panel: while `isActive` holds, `content` (handed the panel's editor and its

@@ -47,7 +47,7 @@ public final class MentionPicker {
 
     /// What a command the keys send does while the picker is open: its list's (`CaretList.Action`).
     public enum Action: Hashable, Sendable {
-        case moveUp, moveDown, pageUp, pageDown, pick, close
+        case moveUp, moveDown, pageUp, pageDown, pick, close, closeAndPass
 
         init(_ action: CaretList.Action) {
             switch action {
@@ -57,6 +57,7 @@ public final class MentionPicker {
             case .pageDown: self = .pageDown
             case .pick: self = .pick
             case .close: self = .close
+            case .closeAndPass: self = .closeAndPass
             }
         }
     }
@@ -199,8 +200,9 @@ public final class MentionPicker {
 
     /// Does what a command does to the list: whether the picker takes it (the text view then
     /// doesn't run it), and what's left for the view to carry out, `.pick` or `.close` (nil when
-    /// moving the highlight was all). Return and Tab with nothing to pick aren't taken, so they do
-    /// what they would without the picker; nor is any command the picker doesn't know.
+    /// moving the highlight was all). Return with nothing to pick isn't taken, so it does what it would
+    /// without the picker; Tab with nothing to pick and ⇧Tab always are, as `.closeAndPass`: the list
+    /// closes and the view then carries the key out. Nor is any command the picker doesn't know.
     public func perform(_ command: Selector) -> (taken: Bool, action: Action?) {
         let (taken, action) = list.perform(command)
         return (taken, action.map(Action.init))

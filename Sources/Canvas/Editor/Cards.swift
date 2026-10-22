@@ -26,6 +26,8 @@ public struct CanvasCard {
     /// The step keeps the action's name. Needs a `stepName`; a card shown outside an action is as
     /// any card.
     public let adoptsPress: Bool
+    /// What VoiceOver calls it ("Fields of Checkout"); the host names its box with it. Nil: "Card".
+    public let accessibilityLabel: String?
     /// The size it wants, in view points, no larger than `room`. Asked each time it is laid out.
     public let size: @MainActor (_ room: CGSize) -> CGSize
     /// Called once, after it is taken down and the keyboard is back where it was. Closed because a commit took
@@ -35,7 +37,7 @@ public struct CanvasCard {
 
     public init<ID: Hashable & Sendable>(id: ID, about shape: ShapeID? = nil, anchor: CGRect, view: NSView,
                                          firstResponder: NSResponder? = nil, stepName: String? = nil,
-                                         adoptsPress: Bool = false,
+                                         adoptsPress: Bool = false, accessibilityLabel: String? = nil,
                                          size: @escaping @MainActor (CGSize) -> CGSize,
                                          didClose: @escaping @MainActor (CanvasCardClosing) -> Void = { _ in }) {
         self.id = AnyHashable(id)
@@ -45,6 +47,7 @@ public struct CanvasCard {
         self.firstResponder = firstResponder
         self.stepName = stepName
         self.adoptsPress = adoptsPress
+        self.accessibilityLabel = accessibilityLabel
         self.size = size
         self.didClose = didClose
     }
@@ -155,11 +158,12 @@ extension CanvasEditor {
     /// The camera, the zoom level or the view moved, or the card's anchor did: the card closes when
     /// its shape is drawn as a skeleton, or its anchor is out of the view, as the caret list closes
     /// when its anchor leaves the visible text. An empty viewport (a test that gave no size) closes
-    /// nothing.
+    /// nothing. The anchor is judged where the camera is headed (`cameraTarget`), as a reveal judges the shapes it brings
+    /// into view: a card opened on a shape the camera is gliding to stays open through the glide.
     func cardFollowsCamera() {
         guard let card = shownCard else { return }
         if card.shape.map(drawsSkeleton(of:)) ?? drawsSkeletons { return closeCard(.skeleton) }
         let view = unobscuredViewport
-        if !view.isEmpty, !view.intersects(camera.toView(card.anchor)) { closeCard(.leftView) }
+        if !view.isEmpty, !view.intersects(cameraTarget.toView(card.anchor)) { closeCard(.leftView) }
     }
 }

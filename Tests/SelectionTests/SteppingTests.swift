@@ -315,10 +315,15 @@ extension EditorHarness {
         expectEqual(h.editor.selectedShapeIDs, [a, b])
         h.step(right, adding: true)
         expectEqual(h.editor.selectedShapeIDs, [a, b, c])
+        // Selected outright, so no step is there to undo.
+        h.editor.selectedShapeIDs = []
+        h.editor.selectedShapeIDs = [a, b, c]
         h.step(left, adding: true)
         expectEqual(h.editor.selectedShapeIDs, [a, b, c], "b and a are selected, and d is not to the west")
         h.step(down, adding: true)
         expectEqual(h.editor.selectedShapeIDs, [a, b, c, d])
+        h.editor.selectedShapeIDs = []
+        h.editor.selectedShapeIDs = [a, b, c, d]
         h.step(up, adding: true)
         expectEqual(h.editor.selectedShapeIDs, [a, b, c, d], "all selected")
         h.editor.selectedShapeIDs = [a]
@@ -349,6 +354,119 @@ extension EditorHarness {
         expectEqual(h.editor.selectedShapeIDs, [b])
         h.editor.goBack()
         expectEqual(h.editor.selectedShapeIDs, [a])
+    },
+    test("Go › Forward (⌘]) undoes Back, step by step, until anything else changes the selection") {
+        let h = try stepHarness()
+        let a = h.dot(50, 50), b = h.dot(250, 50), c = h.dot(450, 50)
+        h.editor.selectedShapeIDs = [a]
+        h.tabs(through: [b, c])
+        expect(!h.editor.canGoForward, "nothing gone back from")
+        h.hold(.command)
+        expect(!h.key("]"), "the key passes, as the item is dimmed")
+        expect(h.key("["))
+        expect(h.key("["))
+        expectEqual(h.editor.selectedShapeIDs, [a])
+        expect(h.key("]"))
+        expectEqual(h.editor.selectedShapeIDs, [b])
+        expect(h.key("]"))
+        expectEqual(h.editor.selectedShapeIDs, [c])
+        expect(!h.key("]"), "as far as it went")
+        expect(h.key("["))
+        h.hold([])
+        expectEqual(h.editor.selectedShapeIDs, [b])
+        expect(h.editor.canGoForward)
+        h.editor.selectedShapeIDs = [a]
+        expect(!h.editor.canGoForward, "a new step lets the way forward go, as a browser's does")
+        h.editor.goBack()
+        expectEqual(h.editor.selectedShapeIDs, [b], "and Back is as it was")
+    },
+    test("⇧Tab after Tab from several shapes selects them again, and Tab after ⇧Tab; a step of its own goes on from the first") {
+        let h = try stepHarness()
+        let a = h.dot(50, 50), b = h.dot(250, 50), c = h.dot(450, 50), d = h.dot(650, 50)
+        h.editor.selectedShapeIDs = [b, c]
+        h.tab()
+        expectEqual(h.editor.selectedShapeIDs, [c], "from the first of them in reading order")
+        h.tab(back: true)
+        expectEqual(h.editor.selectedShapeIDs, [b, c], "exactly where it began")
+        h.tab(back: true)
+        expectEqual(h.editor.selectedShapeIDs, [a], "a step of its own")
+        h.tab()
+        expectEqual(h.editor.selectedShapeIDs, [b, c])
+        h.tabs(through: [c, d, a, b])
+        for back in [a, d, c] { h.tab(back: true); expectEqual(h.editor.selectedShapeIDs, [back]) }
+        h.tab(back: true)
+        expectEqual(h.editor.selectedShapeIDs, [b, c], "every step retraced")
+        h.editor.selectedShapeIDs = [a, d]
+        h.tab()
+        h.editor.selectedShapeIDs = [c]
+        h.editor.selectedShapeIDs = [b]
+        h.tab(back: true)
+        expectEqual(h.editor.selectedShapeIDs, [a], "the selection changed otherwise: no step is undone")
+        h.editor.selectedShapeIDs = []
+        h.tab()
+        h.tab(back: true)
+        expectEqual(h.editor.selectedShapeIDs, [], "from nothing selected, back to nothing")
+    },
+    test("⌥⌘ and an arrow, then the opposite, come back to the start, in each direction, where the nearest that way would not") {
+        let across = try stepHarness()
+        let s = across.dot(0, 0), r = across.dot(300, 0), x = across.dot(200, 60)
+        let down = try stepHarness()
+        let top = down.dot(0, 0), bottom = down.dot(0, 300), side = down.dot(60, 200)
+        // x is nearer r than s is, westward, and side nearer bottom than top is, northward.
+        for (h, start, arrow, there, back, near) in [(across, s, right, r, left, x), (across, r, left, x, right, r),
+                                                     (down, top, KeyChord.downArrow, bottom, KeyChord.upArrow, side),
+                                                     (down, bottom, KeyChord.upArrow, side, KeyChord.downArrow, bottom)] {
+            h.editor.selectedShapeIDs = [start]
+            h.step(arrow)
+            expectEqual(h.editor.selectedShapeIDs, [there])
+            h.step(back)
+            expectEqual(h.editor.selectedShapeIDs, [start], "back where it began")
+            h.editor.selectedShapeIDs = [there]
+            h.step(back)
+            expectEqual(h.editor.selectedShapeIDs, [near], "with no step to undo, the nearest that way")
+        }
+    },
+    test("a step back to a shape that has gone since steps on instead: ⇧Tab after Tab and a deletion goes to the stop before, never to nothing") {
+        let h = try stepHarness()
+        let a = h.dot(100, 100), b = h.dot(300, 100), c = h.dot(500, 100)
+        h.editor.selectedShapeIDs = [a]
+        h.tab()
+        expectEqual(h.editor.selectedShapeIDs, [b])
+        h.editor.transact { $0.delete([a]) }
+        expectEqual(h.editor.selectedShapeIDs, [b], "still where Tab left it")
+        h.tab(back: true)
+        expectEqual(h.editor.selectedShapeIDs, [c], "the stop before b, wrapping, as with no step to undo")
+    },
+    test("⇧⌥⌘ and an arrow, then the opposite, take off the shape it added") {
+        let h = try stepHarness()
+        let a = h.dot(100, 100), b = h.dot(300, 100), c = h.dot(500, 100)
+        h.editor.selectedShapeIDs = [a]
+        h.step(right, adding: true)
+        h.step(right, adding: true)
+        expectEqual(h.editor.selectedShapeIDs, [a, b, c])
+        h.step(left, adding: true)
+        expectEqual(h.editor.selectedShapeIDs, [a, b])
+        h.step(left, adding: true)
+        expectEqual(h.editor.selectedShapeIDs, [a])
+        h.step(right, adding: true)
+        h.step(left)
+        expectEqual(h.editor.selectedShapeIDs, [a], "a plain ⌥⌘ step is no undo of an added one: from b, west is a")
+    },
+    test("Tab from a selected arrow goes to the stop after its middle in reading order, ⇧Tab to the one before, never an end; the opposite key comes back to it") {
+        let h = try stepHarness()
+        h.dot(50, 50)
+        let b = h.dot(250, 50), c = h.dot(450, 50)
+        h.dot(650, 50)
+        let link = h.add(Link(from: b, to: c))
+        h.editor.selectedShapeIDs = [link]
+        h.tab()
+        expectEqual(h.editor.selectedShapeIDs, [c], "after the middle, between b and c")
+        h.tab(back: true)
+        expectEqual(h.editor.selectedShapeIDs, [link], "back to the arrow")
+        h.tab(back: true)
+        expectEqual(h.editor.selectedShapeIDs, [b], "before the middle")
+        h.tab()
+        expectEqual(h.editor.selectedShapeIDs, [link])
     },
 ])
 

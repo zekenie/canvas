@@ -18,6 +18,9 @@ import Titles
 // note and a subboard.
 
 extension InspectorWindow {
+    /// The Connections tab's list: one table of heads and rows.
+    var connectionTable: NSTableView? { tables.first }
+
     /// The Connections tab's rows: the panel's buttons beside the canvas, under its header, as
     /// tall as a line of a name (a list's head is shorter), top first.
     var connectionRows: [NSButton] {

@@ -76,6 +76,9 @@ extension LockChip: Adornment {
 }
 
 extension LockChip: ClickableAdornment {
+    /// The chip is a lock alone: VoiceOver reads it as the state it shows.
+    public static var partTitle: String { "Locked" }
+
     /// A locked shape's chip unlocks it; a just-unlocked one's locks it again.
     public static func click(_ click: AdornmentClick, in editor: CanvasEditor) { editor.service(LockState.self)?.click(click.shape) }
 }
@@ -119,6 +122,8 @@ public struct LockingPlugin: ListedPlugin {
                 MenuItem(command: .lock, in: StateMenuGroup.self)
                 MenuItem(command: .unlock, in: StateMenuGroup.self)
             }
+            // VoiceOver says a locked shape is, after what it is: "Checkout, Note, locked".
+            lock.accessibility { shape, _ in shape.isLocked ? AccessibleTraits(states: [LockingStyle.accessibleState]) : nil }
             // `/lock` typed on a line of a shape's text (Titles offers `/title`, the other command that
             // ships), while the shape can be locked. There is no `/unlock`: a locked shape's text can't be
             // edited, so it couldn't be typed.
@@ -127,6 +132,13 @@ public struct LockingPlugin: ListedPlugin {
             }
         }
     }
+}
+
+/// Locking's UI words.
+@MainActor
+enum LockingStyle {
+    /// The state VoiceOver says of a locked shape, after its kind.
+    static let accessibleState = "locked"
 }
 
 extension CanvasEditor {

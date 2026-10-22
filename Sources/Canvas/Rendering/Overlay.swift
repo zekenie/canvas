@@ -10,15 +10,15 @@ public enum OverlaySpace: Sendable {
 
 /// What a plugin wants outlined, from `registrar.outlines`: shapes by their `indicatorPath`, and
 /// world rects. The core strokes every plugin's outlines and the hint in one pass, in the accent
-/// color at a constant screen width, just above the shapes. `faintShapes` are stroked first, wider
+/// color (or the one they name, `color`) at a constant screen width, just above the shapes. `faintShapes` are stroked first, wider
 /// and lighter (a hover beside a selection; stronger beside `tinted` groups, where it's the shape
 /// they're about); a shape outlined in full too is stroked only in full. `tinted` groups are
 /// stroked before those, in colors of their own. A closed shape's outline is
 /// stroked standing off its edge, the same distance for every kind (`CanvasEditor.outlinePath(of:)`,
 /// `outlineGap`: 4 view points), and so is a rect, which holds the shapes' own; an open shape's is
 /// stroked on its own path. Zoomed out, where shapes are skeletons, an outline is a ring on its frame.
-/// Outlines compare equal when all four lists do, so a plugin that keeps what it hands the core can
-/// tell whether it changed, and ask for a frame only then.
+/// Outlines compare equal when all four lists and the color do, so a plugin that keeps what it hands the
+/// core can tell whether it changed, and ask for a frame only then.
 public struct Outlines: Equatable {
     public var shapes: [ShapeID]
     /// World units.
@@ -26,11 +26,17 @@ public struct Outlines: Equatable {
     public var faintShapes: [ShapeID]
     /// Shapes outlined in colors of their own, each group stroked under every other outline.
     public var tinted: [TintedOutlines]
-    public init(shapes: [ShapeID] = [], rects: [CGRect] = [], faintShapes: [ShapeID] = [], tinted: [TintedOutlines] = []) {
+    /// The color `shapes` and `rects` are stroked in, nil for the accent (the selection's, quieter while the
+    /// canvas hasn't the keyboard). Every plugin's are stroked in one pass, in the color they name when every
+    /// plugin that outlines any names that one, else in the accent; the hint goes with them.
+    public var color: NSColor?
+    public init(shapes: [ShapeID] = [], rects: [CGRect] = [], faintShapes: [ShapeID] = [], tinted: [TintedOutlines] = [],
+                color: NSColor? = nil) {
         self.shapes = shapes
         self.rects = rects
         self.faintShapes = faintShapes
         self.tinted = tinted
+        self.color = color
     }
 }
 

@@ -55,7 +55,7 @@ import Types
         expect(picker.listed.map(\.name).contains("color"), "\(picker.listed.map(\.name))")
         window.type("color ")
         let choices = try require(editing.slashCommands?.choices, "the colors are listed")
-        expectEqual(choices.listed.map(\.title), ["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"])
+        expectEqual(choices.listed.map(\.title), ["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink", "Edit Colors…"])
         window.type("pu")
         expectEqual(choices.highlightedChoice?.title, "purple")
         window.settle()
@@ -93,8 +93,8 @@ import Types
         let isA = try require(outline.firstIndex(of: "Is a ▸"), "\(outline)")
         let color = try require(outline.firstIndex(of: "Color ▸"), "\(outline)")
         expect(color > isA, "after Is a ▸: \(outline)")
-        expectEqual(Array(outline[(color + 1)...].prefix(13)),
-                    ["  Gray", "  Red", "  Orange", "  Yellow", "  Green", "  Teal", "  Blue", "  Indigo", "  Purple", "  Pink", "  —", "  ✓ None", "—"])
+        expectEqual(Array(outline[(color + 1)...].prefix(14)),
+                    ["  Gray", "  Red", "  Orange", "  Yellow", "  Green", "  Teal", "  Blue", "  Indigo", "  Purple", "  Pink", "  —", "  ✓ None", "  —", "  Edit Colors…"])
         expect(menu(at: CGPoint(x: 190, y: 500), 2)?.outline.contains("Color ▸") == true, "an arrow's")
         expect(menu(at: CGPoint(x: 200, y: 700), 3)?.outline.contains("Color ▸") == true, "a frame's")
         expect(menu(at: CGPoint(x: 560, y: 116), 4)?.outline.contains("Color ▸") == false, "a reference has no color")

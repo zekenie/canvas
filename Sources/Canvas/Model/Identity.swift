@@ -82,8 +82,8 @@ public struct ToolID: Hashable, Sendable, ExpressibleByStringLiteral, CustomStri
 /// it's called, where its menu bar item is and what it runs, and that any key, menu item, button or
 /// plugin runs with `editor.perform`. Stated once, as a static member in the plugin that declares it
 /// (`extension CanvasCommand { static let group: CanvasCommand = "group" }`): the core knows what a
-/// command is, never which commands exist, as it knows kinds and tools. Its own are undo, redo and
-/// the zooms.
+/// command is, never which commands exist, as it knows kinds and tools. Its own are undo, redo,
+/// the zooms and the pages.
 public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, CustomStringConvertible {
     public let rawValue: String
     public init(_ rawValue: String) { self.rawValue = rawValue }
@@ -99,4 +99,11 @@ public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, Cus
     public static let zoomToActualSize: CanvasCommand = "zoomToActualSize"
     /// View › Zoom to Fit: the core's own, every shape of the board shown in view.
     public static let zoomToFit: CanvasCommand = "zoomToFit"
+    /// Page Up and Page Down: the core's own, the view a page up or down the board (`editor.pan(_:far:)`).
+    public static let pageUp: CanvasCommand = "pageUp"
+    public static let pageDown: CanvasCommand = "pageDown"
+    /// Home and End: the core's own, the view to the start or the end of the board's shapes
+    /// (`editor.scrollToStart()`, `scrollToEnd()`).
+    public static let scrollToStart: CanvasCommand = "scrollToStart"
+    public static let scrollToEnd: CanvasCommand = "scrollToEnd"
 }

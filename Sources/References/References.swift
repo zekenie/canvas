@@ -4,6 +4,7 @@ import CanvasRPC
 import Connections
 import ContextMenus
 import DetailPanel
+import Geometry
 import Keyboard
 import Publishing
 import Queries
@@ -196,6 +197,14 @@ public struct ReferencesPlugin: ListedPlugin {
                 if let target = shape.props.target { return .shapes([target.id]) }
                 if let query = shape.props.query { return .provided(ReferenceState.key(query: query, all: shape.props.all)) }
                 return nil
+            }
+            // The go button, the leading symbol, as a part: Return on it goes to the original, as its click does.
+            reference.shapeParts(named: "go") { editor, shape in
+                guard !editor.drawsSkeletons, let state = editor.service(ReferenceState.self), state.state(of: shape.props, id: shape.id).hasOriginal else { return [] }
+                let box = ReferenceStyle.goBox(of: shape.props.frame, zoom: editor.camera.zoom)
+                return [ShapePart(id: "go", title: ReferenceStyle.goToOriginal, role: .link, rect: box) { editor in
+                    editor.service(ReferenceState.self)?.goToOriginal(shape.id)
+                }]
             }
             reference.referenceRow()
             reference.referencePanel()

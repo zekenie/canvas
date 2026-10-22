@@ -120,4 +120,41 @@ import TestKit
         expect(h.editor.showBoard(.root))
         expectEqual(h.editor.drawingOffset(of: box), .zero, "not left shaken")
     },
+    test("VoiceOver hears a refusal of read-only shapes: \"Locked\" for one, \"2 shapes locked\" for two, nothing for shapes that can change") {
+        let h = try frozenHarness()
+        let box = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
+        let other = h.add(Box(CGRect(x: 300, y: 100, width: 100, height: 100)))
+        let free = h.add(Box(CGRect(x: 500, y: 100, width: 100, height: 100)))
+        h.editor.freeze([box, other])
+        h.editor.refuseChanges(to: [free])
+        expectEqual(h.editor.announcements, [], "a refusal that isn't a lock's is its plugin's to explain")
+        h.editor.selectedShapeIDs = [box]
+        expect(h.key("\u{7f}"))
+        expectEqual(h.editor.announcements, ["Locked"])
+        h.wait(1_100)
+        h.editor.selectedShapeIDs = [box, other, free]
+        expect(h.key("\u{7f}"))
+        expectEqual(h.editor.document[free], nil, "the free one goes")
+        expectEqual(h.editor.announcements, ["Locked", "2 shapes locked"], "the read-only ones counted")
+    },
+    test("a held arrow's repeats, each a refused nudge, are said once, however long the shapes shake; a try after a quiet second is said again") {
+        let h = try frozenHarness()
+        let box = h.add(Box(CGRect(x: 100, y: 100, width: 100, height: 100)))
+        h.editor.freeze([box])
+        h.editor.selectedShapeIDs = [box]
+        let right = "\u{F703}"
+        expect(h.key(right))
+        for _ in 0..<40 {                               // 2 s of repeats, 50 ms apart: several shakes over
+            h.wait(50)
+            expect(h.key(right, isRepeat: true))
+        }
+        expectEqual(h.editor.document[box]?.box, CGRect(x: 100, y: 100, width: 100, height: 100))
+        expectEqual(h.editor.announcements, ["Locked"])
+        h.wait(900)
+        _ = h.key(right)
+        expectEqual(h.editor.announcements, ["Locked"], "under a second after the last try: still the same tries")
+        h.wait(1_100)
+        _ = h.key(right)
+        expectEqual(h.editor.announcements, ["Locked", "Locked"])
+    },
 ])

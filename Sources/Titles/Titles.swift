@@ -459,5 +459,9 @@ public struct TitlesPlugin: ListedPlugin {
         }
         // Zoomed out, where a skeleton has no pill, the title is said on the shape.
         registrar.overlay(TitleCoverOverlay())
+        // VoiceOver says a titled shape's title first, before what it is: "Checkout, Note".
+        registrar.forShapes(adopting: .titled) { titled in
+            titled.accessibility { record, editor in AccessibleTraits(name: editor.registry.title(of: record)) }
+        }
     }
 }

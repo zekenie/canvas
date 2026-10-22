@@ -18,6 +18,9 @@ public struct FindPanelPlugin: ListedPlugin {
     public var id: PluginID { .findPanel }
 
     public func register(into registrar: inout PluginRegistrar) {
+        registrar.keyHint("↩ or ⇧↩ in Find", "Next or Previous Hit", while: .text)
+        registrar.keyHint("↑ or ↓ in Find", "Previous or Next Result", while: .text)
+        registrar.keyHint("⌘↩ in Find", "Select Hit and Close", while: .text)
         registrar.detailTakeover(isActive: { $0.find?.isActive ?? false }, onEscape: { $0.find?.close() }) { editor, onExit in
             FindPanel(editor: editor, onExit: onExit)
         }
@@ -29,7 +32,9 @@ public struct FindPanelPlugin: ListedPlugin {
 /// 12", hits) with the buttons that step, and a row per shape with hits, under its board's heading
 /// (`FindState.heading(of:)`), in order: the kind's symbol, the text around its first hit with each
 /// hit there semibold, and its count when it has more than one. A click on a row makes its first hit
-/// current, keeping the keyboard in the field. `onExit` gives the keyboard to the canvas (Done).
+/// current, keeping the keyboard in the field, and so do Up, Down, Page Up and Page Down there; ⌘↩
+/// closes Find on the current hit's shape, selected (`FindState.finish()`). A row is read as its text,
+/// kind, board and hit's number, the current one selected; each step is announced. `onExit` gives the keyboard to the canvas (Done).
 /// A shape's symbol is its kind's, in the tint the shape has (`FindState.symbol(of:)`; none: secondary).
 public struct FindPanel: View {
     let editor: CanvasEditor
@@ -64,6 +69,16 @@ private struct FindPanelContent: View {
         .background(FieldWindowReader(box: window))
         .onAppear { focusIfAsked() }
         .onChange(of: find.focusRequest) { focusIfAsked() }
+        .onChange(of: find.stepCount) { announceStep() }
+    }
+
+    /// Whether an input method has marked text in the field.
+    private var composing: Bool { (window.window?.firstResponder as? NSTextView)?.hasMarkedText() == true }
+
+    /// VoiceOver hears each step: "Hit 3 of 12, Note, …".
+    private func announceStep() {
+        guard let text = find.announcement else { return }
+        AccessibilityNotification.Announcement(text).post()
     }
 
     private var header: some View {
@@ -76,8 +91,25 @@ private struct FindPanelContent: View {
                         .focused($focused)
                         .onKeyPress(.return, phases: [.down, .repeat]) { press in
                             // An input method composing: Return picks its candidate, and isn't a step.
-                            if (window.window?.firstResponder as? NSTextView)?.hasMarkedText() == true { return .ignored }
+                            if composing { return .ignored }
+                            if press.modifiers == .command {
+                                // ⌘↩ finishes: the hit's shape selected, Find closed, the keyboard on the canvas.
+                                if find.finish() { onExit() }
+                                return .handled
+                            }
                             find.step(forward: !press.modifiers.contains(.shift))
+                            return .handled
+                        }
+                        .onKeyPress(keys: [.upArrow, .downArrow, .pageUp, .pageDown], phases: [.down, .repeat]) { press in
+                            // The composing method moves in its candidates; a modified arrow is the field's (text selection).
+                            // An arrow's events carry the keypad flag, which isn't a modifier held.
+                            if composing || !press.modifiers.intersection([.shift, .control, .option, .command]).isEmpty { return .ignored }
+                            switch press.key {
+                            case .upArrow: find.move(by: -1)
+                            case .downArrow: find.move(by: 1)
+                            case .pageUp: find.move(by: -FindStyle.pageRows)
+                            default: find.move(by: FindStyle.pageRows)
+                            }
                             return .handled
                         }
                     if find.isIndexing { ProgressView().controlSize(.mini) }
@@ -205,7 +237,7 @@ private struct FindRow: View {
                 Image(systemName: symbol.systemImage ?? "square")
                     .foregroundStyle(symbol.tint.map { Color(nsColor: $0) } ?? Color.secondary)
                     .frame(width: FindStyle.rowSymbolWidth)
-                Text(snippet).font(FindStyle.snippet).lineLimit(1).truncationMode(.tail)
+                Text(FindSnippet.attributed(of: result, in: find)).font(FindStyle.snippet).lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 0)
                 if result.hitCount > 1 {
                     Text(isCurrent ? "\((find.current?.ordinal ?? 0) + 1)/\(result.hitCount)" : "\(result.hitCount)")
@@ -221,33 +253,8 @@ private struct FindRow: View {
         // As the rows of the panel's lists: a borderless button's label is otherwise drawn dimmed.
         .foregroundStyle(.primary)
         .focusable(false)
-    }
-
-    /// The text around the first hit, on one line, every hit in it semibold.
-    private var snippet: AttributedString {
-        let texts = find.texts(of: result.id)
-        guard texts.indices.contains(result.first.text) else { return AttributedString() }
-        let text = texts[result.first.text] as NSString
-        let hits = find.hits(of: result.id)[safe: result.first.text] ?? []
-        let shown = FindSnippet.range(in: text as String, around: result.first.range)
-        let from = shown.lowerBound, to = shown.upperBound
-        var snippet = AttributedString(from > 0 ? "…" : "")
-        var cursor = from
-        for hit in hits where hit.range.upperBound > from && hit.range.lowerBound < to {
-            let lower = max(hit.range.lowerBound, cursor), upper = min(hit.range.upperBound, to)
-            guard lower < upper else { continue }
-            if lower > cursor { snippet += plain(text.substring(with: NSRange(location: cursor, length: lower - cursor))) }
-            var bold = plain(text.substring(with: NSRange(location: lower, length: upper - lower)))
-            bold.font = FindStyle.snippetHit
-            snippet += bold
-            cursor = upper
-        }
-        if cursor < to { snippet += plain(text.substring(with: NSRange(location: cursor, length: to - cursor))) }
-        return snippet
-    }
-
-    private func plain(_ text: String) -> AttributedString {
-        AttributedString(text.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\u{FFFC}", with: ""))
+        .accessibilityLabel(find.rowLabel(of: index))
+        .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }
 }
 
@@ -270,6 +277,40 @@ public enum FindSnippet {
         guard to > from else { return min(from, text.length)..<min(from, text.length) }
         let snapped = text.rangeOfComposedCharacterSequences(for: NSRange(location: from, length: to - from))
         return snapped.location..<NSMaxRange(snapped)
+    }
+}
+
+extension FindSnippet {
+    /// The text around a result's first hit, on one line, every hit in it semibold.
+    static func attributed(of result: FindResult, in find: FindState) -> AttributedString {
+        let texts = find.texts(of: result.id)
+        guard texts.indices.contains(result.first.text) else { return AttributedString() }
+        let text = texts[result.first.text] as NSString
+        let hits = find.hits(of: result.id)[safe: result.first.text] ?? []
+        let shown = range(in: text as String, around: result.first.range)
+        let from = shown.lowerBound, to = shown.upperBound
+        var snippet = AttributedString(from > 0 ? "…" : "")
+        var cursor = from
+        for hit in hits where hit.range.upperBound > from && hit.range.lowerBound < to {
+            let lower = max(hit.range.lowerBound, cursor), upper = min(hit.range.upperBound, to)
+            guard lower < upper else { continue }
+            if lower > cursor { snippet += plain(text.substring(with: NSRange(location: cursor, length: lower - cursor))) }
+            var bold = plain(text.substring(with: NSRange(location: lower, length: upper - lower)))
+            bold.font = FindStyle.snippetHit
+            snippet += bold
+            cursor = upper
+        }
+        if cursor < to { snippet += plain(text.substring(with: NSRange(location: cursor, length: to - cursor))) }
+        return snippet
+    }
+
+    /// The same, as plain text, for VoiceOver.
+    static func text(of result: FindResult, in find: FindState) -> String {
+        String(attributed(of: result, in: find).characters)
+    }
+
+    private static func plain(_ text: String) -> AttributedString {
+        AttributedString(text.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\u{FFFC}", with: ""))
     }
 }
 

@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Selection
 import Titles
 import Types
 
@@ -7,6 +8,11 @@ import Types
 // and `· 2` after it when it has fields, and none of a note's paper, words or rows (the words it keeps are not drawn).
 // Types says what it is and how big; this draws that, lays it out about the middle of the frame it stores
 // (`NoteLayout.pillFrame`) and, zoomed out, fills the capsule with no letters. Double-click edits its name in place.
+//
+// By keys the pill is walked as a typed note is, its words, its rows, then the next note: its name, the card that defines it (its
+// parts), then the next note. Tab in the name opens the card; Tab off the card's last stop edits the next note at its words
+// (`definitionWalk`, `NoteHops`); ⇧Tab off the card's first stop comes back to the name; ⇧Tab in the name edits the previous note at
+// its last stop, and ⇧Tab from the next note's words comes back into the card at its last stop.
 
 @MainActor
 extension StickyNoteDefinition {
@@ -22,8 +28,9 @@ extension StickyNoteDefinition {
 
     /// The editing view of a relationship type's pill: its name on one line; each change is written as the title in the
     /// editing session's step ("Name Relationship Type" where nothing else names it), Return and Escape end editing keeping
-    /// it, and Tab does too and asks for the card that defines the type (`RelationshipHooks.openDefinition`). Nil for a
-    /// note that is no pill.
+    /// it, Tab does too and goes on into the card that defines the type (`RelationshipHooks.openDefinition`), and ⇧Tab goes back
+    /// to the previous note at its last stop (`NoteHops`), or with no other note round to the card's last stop. Nil for a note that
+    /// is no pill.
     func pillEditor(for shape: ShapeRecord<StickyNote>, context: EditContext<StickyNote>) -> TypePillEditor? {
         guard let book = context.service(RowBook.self), let pill = book.pill(of: shape.id) else { return nil }
         let ink = context.service(TypeIndex.self)?.look(of: shape.id).rowInk ?? .white
@@ -37,7 +44,13 @@ extension StickyNoteDefinition {
         }
         editor.finished = { ending in
             context.end()
-            if ending == .tab { _ = context.service(RelationshipHooks.self)?.openDefinition(id) }
+            switch ending {
+            case .done, .escape: break
+            case .tab: _ = context.service(RelationshipHooks.self)?.openDefinition(id)
+            case .backTab:
+                guard context.service(NoteHops.self)?.editNote(.previous, from: id) != true else { return }
+                _ = context.service(DefinitionCards.self)?.open(id, fromEnd: true)
+            }
         }
         return editor
     }

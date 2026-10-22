@@ -144,7 +144,7 @@ extension Minute {
             let known = Set(editor.document.shapes.map(\.id))
             if viaMenu {
                 let menu = try require(m.h.secondaryClick(at: try m.pillPoint()))
-                try menu.choose("Relate to Layer")
+                try menu.choose("Relate to", "Layer")
             } else {
                 m.h.click(at: try m.pillPoint())
                 try require(editor.menuToPopUp).menu.choose("Relate to Layer")

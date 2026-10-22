@@ -18,4 +18,5 @@ runTests([
     colorValidationTests,
     colorTintTests,
     inheritedColorTests,
+    colorKeyTests,
 ])

@@ -2,14 +2,19 @@ import AppKit
 import Canvas
 import Selection
 import SwiftUI
+import TextEditing
 
 /// The table of contents: a Mac source list of the shown board's shapes, a shape that owns a board
 /// opening onto that board's (`BoardRows`). The app shows it in the detail panel when nothing or
-/// several shapes are selected (`ContentsOverviewPlugin`); it follows the editor by itself. Clicking a row gives it the keyboard, as a source list does: the arrow keys
-/// move through the rows, Delete runs the `.delete` command (what Delete on the canvas and Edit ›
-/// Delete run: deleting the selection), a double-click or Return on a row opens its shape (as
-/// Return on the canvas does: Selection's `editor.open`), and Escape calls `onExit`, which gives the keyboard back to the
-/// canvas. So does hiding the list while a row has the keyboard.
+/// several shapes are selected (`ContentsOverviewPlugin`), and while it's walked by keys
+/// (`ContentsState.isWalkedByKeys`); it follows the editor by itself. Clicking a row gives it the
+/// keyboard, as a source list does: ↑ and ↓ move through the rows (⇧ extends), and so do Tab and ⇧Tab,
+/// which stay in the list; → and ← open and close a row's disclosure triangle; Delete runs the
+/// `.delete` command (what Delete on the canvas and Edit › Delete run: deleting the selection); a
+/// double-click or Return on a row opens its shape (as Return on the canvas does: Selection's
+/// `editor.open`); and Escape calls `onExit`, which gives the keyboard back to the canvas, as ⌘↑ and ⌘↩ do. So does
+/// hiding the list while a row has the keyboard. It tells the state when it has the keyboard, from
+/// the window's first responder, and which selections its keys made.
 ///
 /// Its header names the board listed: a plugin says how (`ContentsHeadings`), else it's "Board".
 /// The list doesn't know what a board is called; the plugin that names boards does.
@@ -31,8 +36,43 @@ public struct TableOfContentsView: View {
                 ContentUnavailableView("No Contents", systemImage: "list.bullet.indent")
             }
         }
+        // Heard before the list's table, which handles the key after: a selection it makes for one
+        // is the keys'. Tab and ⇧Tab step the rows as ↓ and ↑ do, rather than leaving the list.
+        .onKeyPress(phases: [.down, .repeat]) { press in key(press) }
         .onExitCommand(perform: onExit)
-        .background(ContentsWindowReader(box: window, onHide: reclaimSoon))
+        .background(ContentsWindowReader(box: window, onHide: reclaimSoon, onFirstResponder: noteKeyboard))
+    }
+
+    /// A key on its way to the list's table, while the list has the keyboard.
+    private func key(_ press: KeyPress) -> KeyPress.Result {
+        guard let state = editor.tableOfContents else { return .ignored }
+        state.keyReachedList()
+        // ⌘↑ is out to the list's container, the canvas, and ⌘↩ finishes, as Escape gives the canvas the keyboard (Go ›
+        // Enclosing Board takes ⌘↑ first on a board inside another); ⌥Tab and ⌥⇧Tab go into a thing's drawn parts,
+        // which a row has none of (keyboard navigation's P6: same key, same meaning).
+        let held = KeyMeaning.Modifiers(press.modifiers)
+        let backTab = press.characters == ContentsStyle.backTab
+        if held == .command, press.key == .upArrow || press.key == .return {
+            onExit()
+            return .handled
+        }
+        if press.key == .tab || backTab, held.contains(.option) { return .handled }
+        guard press.key == .tab || backTab, held.subtracting(.shift).isEmpty,
+              let table = window.window?.firstResponder as? NSTableView else { return .ignored }
+        let up = backTab || held.contains(.shift)
+        let arrow = String(UnicodeScalar(UInt16(up ? NSUpArrowFunctionKey : NSDownArrowFunctionKey))!)
+        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.numericPad, .function],
+                                           timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: table.window?.windowNumber ?? 0,
+                                           context: nil, characters: arrow, charactersIgnoringModifiers: arrow,
+                                           isARepeat: press.phase == .repeat, keyCode: up ? 126 : 125) else { return .ignored }
+        table.keyDown(with: event)
+        return .handled
+    }
+
+    /// The window's first responder changed: whether it's this list's table.
+    private func noteKeyboard(_ hasIt: Bool) {
+        guard let state = editor.tableOfContents, state.listHasKeyboard != hasIt else { return }
+        state.listHasKeyboard = hasIt
     }
 
     /// After AppKit has hidden the list: if the keyboard fell to the window, hand it to the canvas.
@@ -82,7 +122,7 @@ struct ContentsList: View {
             ContentUnavailableView("No Shapes", systemImage: "square.on.square.dashed",
                                    description: Text("Shapes on the board are listed here."))
         } else {
-            List(selection: Binding(get: { Set(editor.selectedShapeIDs) }, set: { state.select($0) })) {
+            List(selection: Binding(get: { Set(editor.selectedShapeIDs) }, set: { state.selectFromList($0) })) {
                 Section {
                     ForEach(ListedRows(entries, state: state)) { listed in
                         ContentsTree(listed: listed, state: state)
@@ -131,6 +171,7 @@ struct ContentsTree: View {
                 }
             } label: {
                 ContentsRow(entry: entry, state: state)
+                    .background(DisclosureName(name: entry.spokenName))
                     .tag(listed.id)
             }
         } else {
@@ -247,11 +288,13 @@ struct ContentsHeader: View {
     var body: some View {
         HStack(spacing: ContentsStyle.headerSpacing) {
             if state.isFiltered {
-                Text("Selection")
+                Text(ContentsStyle.selectionHeading)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
-                Button("Show All", action: state.showAll)
+                // View › Show All Shapes, the command.
+                Button(ContentsStyle.showAllButton) { editor.perform(.showAllShapes) }
                     .buttonStyle(.borderless)
-                    .help("List every shape on the board")
+                    .help(ContentsStyle.showAllHelp)
             } else {
                 let heading = state.heading
                 if let up = heading.up, editor.canPerform(up) {
@@ -270,6 +313,7 @@ struct ContentsHeader: View {
                     Image(systemName: symbol)
                 }
                 Text(heading.title).lineLimit(1)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
             }
         }
@@ -377,6 +421,7 @@ struct ContentsRowView: View, Equatable {
         HStack(spacing: 0) {
             entry.row.view
                 .environment(\.contentsSymbol, entry.symbol)
+                .environment(\.contentsKindName, entry.kindName)
                 .frame(maxWidth: .infinity, alignment: .leading)    // so the marks line up at the end
             ForEach(marks.indices, id: \.self) { i in
                 ContentsMarkView(mark: marks[i])
@@ -392,24 +437,81 @@ final class ContentsWindowBox {
     weak var window: NSWindow?
 }
 
-/// Fills the box, and reports the list being hidden (it, or a view it's in, like the panel), which
-/// `onDisappear` doesn't.
+/// Fills the box, reports the list being hidden (it, or a view it's in, like the panel), which
+/// `onDisappear` doesn't, and says whether the window's first responder is the list's table each
+/// time it changes: a table in the list's frame, as the reader is drawn behind the list.
 struct ContentsWindowReader: NSViewRepresentable {
     let box: ContentsWindowBox
     let onHide: @MainActor () -> Void
-    func makeNSView(context: Context) -> ReaderView { ReaderView(box: box, onHide: onHide) }
-    func updateNSView(_ view: ReaderView, context: Context) { view.onHide = onHide }
+    let onFirstResponder: @MainActor (Bool) -> Void
+    func makeNSView(context: Context) -> ReaderView { ReaderView(box: box, onHide: onHide, onFirstResponder: onFirstResponder) }
+    func updateNSView(_ view: ReaderView, context: Context) {
+        view.onHide = onHide
+        view.onFirstResponder = onFirstResponder
+    }
 
     final class ReaderView: NSView {
         let box: ContentsWindowBox
         var onHide: @MainActor () -> Void
-        init(box: ContentsWindowBox, onHide: @escaping @MainActor () -> Void) {
+        var onFirstResponder: @MainActor (Bool) -> Void
+        private var watching: NSKeyValueObservation?
+        init(box: ContentsWindowBox, onHide: @escaping @MainActor () -> Void, onFirstResponder: @escaping @MainActor (Bool) -> Void) {
             self.box = box
             self.onHide = onHide
+            self.onFirstResponder = onFirstResponder
             super.init(frame: .zero)
         }
         required init?(coder: NSCoder) { fatalError("not from a nib") }
-        override func viewDidMoveToWindow() { if let window { box.window = window } }
+        override func viewDidMoveToWindow() {
+            if let window { box.window = window }
+            watching = window?.observe(\.firstResponder, options: [.initial, .new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.firstResponderChanged() }
+            }
+            if window == nil { onFirstResponder(false) }
+        }
         override func viewDidHide() { onHide() }
+        // Drawn behind the list: never what a click lands on.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        private func firstResponderChanged() {
+            guard let window, let table = window.firstResponder as? NSTableView, !isHiddenOrHasHiddenAncestor else { return onFirstResponder(false) }
+            let frame = table.convert(table.visibleRect, to: nil)
+            onFirstResponder(convert(bounds, to: nil).contains(CGPoint(x: frame.midX, y: frame.midY)))
+        }
+    }
+}
+
+/// Names the row's disclosure triangle for assistive apps by the row ("Checkout"; AppKit's role and
+/// value say it's a disclosure triangle, open or not), which the list's table draws beside the row
+/// and gives no name: drawn behind the row, it finds the triangle in the row's view whenever it's
+/// placed or laid out, and as the row it's in is reused.
+struct DisclosureName: NSViewRepresentable {
+    let name: String
+    func makeNSView(context: Context) -> NamingView { NamingView(name: name) }
+    func updateNSView(_ view: NamingView, context: Context) { view.name = name }
+
+    final class NamingView: NSView {
+        var name: String { didSet { if name != oldValue { nameTriangle() } } }
+        init(name: String) {
+            self.name = name
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError("not from a nib") }
+        override func viewDidMoveToWindow() { nameTriangle() }
+        override func layout() {
+            super.layout()
+            nameTriangle()
+        }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        private func nameTriangle() {
+            var view = superview
+            while let current = view, !(current is NSTableRowView) { view = current.superview }
+            guard let row = view else { return }
+            for case let button as NSButton in row.subviews where button.identifier == NSOutlineView.disclosureButtonIdentifier {
+                if button.accessibilityLabel() != name { button.setAccessibilityLabel(name) }
+                if button.cell?.accessibilityLabel() != name { button.cell?.setAccessibilityLabel(name) }
+            }
+        }
     }
 }

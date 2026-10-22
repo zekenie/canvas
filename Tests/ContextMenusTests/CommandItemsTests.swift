@@ -188,7 +188,7 @@ extension CanvasCommand {
         expectEqual(log.points, [middle(0)], "the click's point")
         log.points = []
         let menu = try require(h.editor.menuForSelection(omitting: []))
-        expectEqual(menu.outline, clicked)
+        expectEqual(menu.outline, clicked.dropLast() + ["Show Context Menu", "Delete"], "and Shape's own Show Context Menu, which no click shows")
         expectEqual(log.points, [nil], "no click, no point")
         expect(!menu.autoenablesItems, "its items are enabled as they were made")
         try menu.choose("Adjust", "Twirl")
@@ -214,11 +214,11 @@ extension CanvasCommand {
         h.editor.selectedShapeIDs = [lamp]
         let lampItems = ["Turn On", "Brighter", "Level ▸", "  ✓ 1", "  2", "  3"]
         expectEqual(try require(h.editor.menuForSelection(omitting: [])).outline,
-                    lampItems + ["—", "Dim", "Adjust ▸", "  Brighten", "  Twirl", "Where", "—", "Only ▸", "  Dim", "—", "Delete"])
+                    lampItems + ["—", "Dim", "Adjust ▸", "  Brighten", "  Twirl", "Where", "—", "Only ▸", "  Dim", "—", "Show Context Menu", "Delete"])
         expectEqual(try require(h.editor.menuForSelection(omitting: [.dim])).outline,
-                    lampItems + ["—", "Adjust ▸", "  Brighten", "  Twirl", "Where", "—", "Delete"], "both Dims, and the Only submenu they were all of")
+                    lampItems + ["—", "Adjust ▸", "  Brighten", "  Twirl", "Where", "—", "Show Context Menu", "Delete"], "both Dims, and the Only submenu they were all of")
         expectEqual(try require(h.editor.menuForSelection(omitting: [.dim, .brighten, .delete])).outline,
-                    lampItems + ["—", "Adjust ▸", "  Twirl", "Where"], "Adjust keeps its own item; Delete's group leaves no line")
+                    lampItems + ["—", "Adjust ▸", "  Twirl", "Where", "—", "Show Context Menu"], "Adjust keeps its own item; Delete leaves, Show Context Menu stays")
     },
     test("an item that runs a command shows while the command can act on the menu's shapes, in a right-click and the selection's menu alike; in the selection's menu it is dimmed while the command can't run now (a shape being edited)") {
         let log = Flashes()
@@ -253,6 +253,6 @@ extension CanvasCommand {
     },
     test("the report: the plugin claims the selection's menu beside the secondary click") {
         let report = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin()]).report
-        expect(report.split(separator: "\n").contains { $0.hasSuffix("secondary-click menu · selection menu · CanvasContextMenu in SelectionMenuGroup last") }, report)
+        expect(report.split(separator: "\n").contains { $0.hasSuffix("secondary-click menu · selection menu · command showContextMenu · shortcut ⌃↩ → command showContextMenu · shortcut Menu → command showContextMenu · CanvasContextMenu in SelectionMenuGroup last") }, report)
     },
 ])

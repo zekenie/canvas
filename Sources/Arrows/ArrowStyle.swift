@@ -31,4 +31,27 @@ enum ArrowStyle {
     static let bindingHintWidth: CGFloat = 2
     static let bindingDotRadius: CGFloat = 4
     static let bindingCrossSize: CGFloat = 6
+
+    // An arrow's parts, as ⌥Tab reaches them (`ArrowParts`).
+    /// How wide a handle's part is, in view points: the handle as drawn (Selection's handle, 4 points across its middle), which the focus ring goes round.
+    static let handlePartSize: CGFloat = 8
+    /// What VoiceOver calls each.
+    static let startPart = "Start"
+    static let endPart = "End"
+    static let bendPart = "Bend"
+    static let labelPart = "Label"
+    /// The Shape menu's items for each head.
+    static let toggleStartHead = "Toggle Start Arrowhead"
+    static let toggleEndHead = "Toggle End Arrowhead"
+    /// A key's step that bends an arrow less than this (along it) bends it not at all, in world units.
+    static let keyBendEpsilon: CGFloat = 0.001
+    /// A label drawn within this of where it is kept, in world units, slides by the keys from where it is kept.
+    static let labelKeySlack: CGFloat = 1
+
+    /// Where an arrow runs, as VoiceOver says it after "Arrow": "from Checkout to Payment", "to Payment"; nil with
+    /// neither end bound.
+    static func accessibleRun(from start: String?, to end: String?) -> String? {
+        let run = [start.map { "from \($0)" }, end.map { "to \($0)" }].compactMap { $0 }.joined(separator: " ")
+        return run.isEmpty ? nil : run
+    }
 }

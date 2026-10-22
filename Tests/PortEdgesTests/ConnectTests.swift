@@ -42,6 +42,25 @@ import TestKit
         editor.undo()
         expectEqual(connections(in: editor).count, 0)
     },
+    test("the connection-made hook runs once, after the commit and inside the Connect step; a refusal runs none") {
+        var heard: [(ShapeID, Bool, String?)] = []
+        let hook = Contributor(id: "heard") { registrar in
+            registrar.connectionMade { id, editor in heard.append((id, editor.document[id] != nil, editor.undoHistory.undoName)) }
+        }
+        let editor = try edgesEditor(more: [hook])
+        let a = add(Tile(CGRect(x: 0, y: 0, width: 100, height: 60), label: "A"), to: editor)
+        let card = add(Card(CGRect(x: 300, y: 0, width: 100, height: 60), text: "C"), to: editor)
+        editor.selectedShapeIDs = [card, a]
+        editor.perform(.connect)
+        expectEqual(heard.count, 0, "a refusal runs none")
+        editor.selectedShapeIDs = [a, card]
+        editor.perform(.connect)
+        expectEqual(heard.count, 1)
+        expectEqual(heard.first?.0, connections(in: editor).first?.id)
+        expectEqual(heard.first?.1, true, "after the commit")
+        expectEqual(heard.first?.2, "Connect", "inside the step")
+        expectEqual(editor.undoHistory.undoName, "Connect")
+    },
     test("Connect can't run with one shape, or three, selected, nor while a shape is edited; the key then goes on") {
         let editor = try edgesEditor()
         let a = add(Tile(CGRect(x: 0, y: 0, width: 100, height: 60), label: "A"), to: editor)

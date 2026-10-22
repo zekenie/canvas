@@ -144,9 +144,12 @@ extension PluginRegistrar {
 
     /// What a command run from a key or the menu bar acts on: the selection, for the plugin that keeps
     /// it (`registrar.commandShapes { $0.selectedShapeIDs }`, Selection's). At most one plugin may claim
-    /// it; otherwise such a command acts on no shapes.
-    public mutating func commandShapes(_ shapes: @escaping @MainActor (CanvasEditor) -> [ShapeID]) {
-        contribute(shapes, to: CorePoints.CommandShapes.self)
+    /// it; otherwise such a command acts on no shapes. `select`: how that plugin selects shapes when
+    /// something other than a plugin asks (VoiceOver's press on a shape, `editor.selectForAccessibility`);
+    /// nil, and nothing does.
+    public mutating func commandShapes(_ shapes: @escaping @MainActor (CanvasEditor) -> [ShapeID],
+                                       select: (@MainActor (CanvasEditor, [ShapeID]) -> Void)? = nil) {
+        contribute(CommandShapesClaim(shapes: shapes, select: select), to: CorePoints.CommandShapes.self)
     }
 }
 
@@ -179,7 +182,8 @@ extension Registry {
                                 answering: Dictionary(registrations.compactMap { r in r.answering.map { ($0, r.command) } },
                                                       uniquingKeysWith: { first, _ in first }),
                                 inOrder: registrations,
-                                shapes: contributions(to: CorePoints.CommandShapes.self).first?.value)
+                                shapes: contributions(to: CorePoints.CommandShapes.self).first?.value.shapes,
+                                select: contributions(to: CorePoints.CommandShapes.self).first?.value.select)
         }
     }
 }
@@ -192,6 +196,15 @@ struct CommandTable {
     let inOrder: [CommandRegistration]
     /// What a command run from a key or the menu bar acts on (`registrar.commandShapes`), if a plugin says.
     let shapes: (@MainActor (CanvasEditor) -> [ShapeID])?
+    /// How that plugin selects shapes, if it says.
+    let select: (@MainActor (CanvasEditor, [ShapeID]) -> Void)?
+}
+
+/// The selection as the core reads it (`registrar.commandShapes`): what commands act on, and how the
+/// plugin that keeps it selects shapes.
+struct CommandShapesClaim {
+    let shapes: @MainActor (CanvasEditor) -> [ShapeID]
+    let select: (@MainActor (CanvasEditor, [ShapeID]) -> Void)?
 }
 
 private struct CommandTableMemo: Hashable {}

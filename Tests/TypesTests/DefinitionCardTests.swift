@@ -357,7 +357,7 @@ import Validation
         r.editor.transact("Delete") { $0.delete([r.hub]) }
         expect(r.editor.card == nil && r.cards.openType == nil, "gone with the type")
     },
-    test("a locked type's card opens to be read: no caret, a try shakes the type, and nothing is written") {
+    test("a locked type's card opens to be read: Tab walks its stops with their mark and no caret, a try shakes the type, and nothing is written") {
         let log = RefusalLog()
         let r = try DefinitionRig(log: log)
         defer { r.close() }
@@ -365,14 +365,26 @@ import Validation
         expect(r.open())
         let view = try require(r.view)
         expect(view.isReadOnly)
-        expectEqual(view.focus, nil)
-        expect(!r.inEditor)
+        expectEqual(view.focus, .title, "the first stop has the keyboard")
+        expect(!r.inEditor && r.inCard)
         let before = r.editor.document
+        r.tab()
+        expectEqual(view.focus, .addField)
+        r.tab()
+        expectEqual(view.focus, .endName(r.fromEnd))
+        expect(!r.inEditor, "no caret")
+        r.backtab()
+        expectEqual(view.focus, .addField)
+        expect(log.refusals.isEmpty, "walking is no try")
         r.window.type("x")
         expect(!log.refusals.isEmpty, "a try shakes")
+        let tries = log.refusals.count
+        r.window.pressReturn()
+        r.space()
+        expect(log.refusals.count >= tries + 2, "Return and Space shake it too")
         let name = try require(view.rect(of: .addField))
         view.click(at: CGPoint(x: name.midX, y: name.midY))
-        expectEqual(r.editor.document, before)
+        expectEqual(r.editor.document, before, "nothing was written")
         expectEqual(r.fields, [])
     },
     test("an end arrow that is locked refuses its row's name, with a shake, and the card shows the name it has") {
@@ -395,5 +407,223 @@ import Validation
         expectEqual(book.kind(of: field).typeLabel(), DefinedKind.choice.label)
         r.editor.fieldDefiner?.addOption("red", to: "color", in: r.hub)
         expectEqual(try require(r.editor.fieldBook).kind(of: field).typeLabel(), DefinedKind.choice.label)
+    },
+])
+
+// The card by keys alone (keyboard navigation's P3 to P9 and P12), over a canvas in an unshown window: every stop reached by Tab
+// in reading order and left by ⇧Tab, what each key does at a stop that is no text, Escape's depth, ⌘↩, removing a line by key,
+// and what VoiceOver reads at each stop.
+
+extension DefinitionRig {
+    func endName(_ end: ShapeID) -> String { end == fromEnd ? "from" : "to" }
+
+    /// A walk of the card, then the canvas (selection: the type, "owner").
+    func walk() -> KeyWalk {
+        KeyWalk(window, editor: editor, readers: [.definition({ [unowned self] in view }, ends: { [unowned self] in endName($0) }),
+                                                  .canvas(canvas, selection: { [unowned self] in editor.selectedShapeIDs.isEmpty ? [] : ["owner"] })],
+                settle: .runLoop)
+    }
+
+    /// The type with a Choice of two options.
+    func addColor() {
+        editor.fieldDefiner?.addField(named: "color", kind: .choice, to: hub)
+        editor.fieldDefiner?.addOption("red", to: "color", in: hub)
+        editor.fieldDefiner?.addOption("blue", to: "color", in: hub)
+    }
+}
+
+@MainActor let definitionKeysTests = Suite("The card that defines a relationship type, by keys", [
+    test("VoiceOver's focused element is one of the children it is given, the same object at every query, at a text stop and at one that is none") {
+        let r = try DefinitionRig()
+        defer { r.close() }
+        r.addColor()
+        r.open()
+        let view = try require(r.view)
+        for stop in view.stops {
+            view.focus(stop)
+            let focused = try require(view.accessibilityFocusedUIElement as AnyObject?)
+            let children = try require(view.accessibilityChildren()) as [AnyObject]
+            expect(children.contains { $0 === focused }, "\(stop): the focused element is a child")
+            expect(try require(view.accessibilityChildren()).contains { $0 as AnyObject === focused }, "\(stop): and still on the next query")
+            expect(view.accessibilityFocusedUIElement as AnyObject === focused, "\(stop): the same object")
+        }
+    },
+
+    test("a held Backspace or Delete takes one field out, not the fields the keyboard moves on to") {
+        let r = try DefinitionRig()
+        defer { r.close() }
+        for name in ["a", "b", "c"] { r.editor.fieldDefiner?.addField(named: name, kind: .text, to: r.hub) }
+        r.open()
+        let view = try require(r.view)
+        view.focus(.fieldKind("a"))
+        KeyDriver(r.window).hold(.delete, repeats: 4)
+        r.window.settle()
+        expectEqual(r.fields.count, 2, "one press, one field")
+    },
+
+    test("Tab walks a Choice, its options, add field and both ends in reading order, ⇧Tab undoes each step, and each stop shows with a role and a label") {
+        let r = try DefinitionRig()
+        defer { r.close() }
+        r.addColor()
+        r.open()
+        let view = try require(r.view)
+        let ids = definitionStopIDs(view, ends: r.endName)
+        expectEqual(ids, ["card/title", "card/field:color", "card/kind:color", "card/option:color:0", "card/option:color:1", "card/newOption:color", "card/addField",
+                          "card/name:from", "card/needed:from", "card/onlyOne:from", "card/name:to", "card/needed:to", "card/onlyOne:to"])
+        let walk = r.walk()
+        walk.expectCardStops(ids)
+        walk.press(.tab)
+        expect(r.editor.card == nil, "Tab off the last stop takes the card down")
+        r.open()
+        walk.expectShows(ids.map { Focus(surface: "card", element: String($0.dropFirst(5))) })
+    },
+    test("a key with no use at a check or a kind changes nothing, and reaches no shortcut of the canvas") {
+        let r = try DefinitionRig()
+        defer { r.close() }
+        r.addColor()
+        r.open()
+        let walk = r.walk()
+        let letters: [Chord] = [Chord("v"), Chord("n"), Chord("f"), Chord("1"), Chord("]")]
+        walk.expectInert(letters, at: [Focus(surface: "card", element: "kind:color")], escapes: false)
+        walk.expectInert(letters + [.delete, .forwardDelete],
+                         at: [Focus(surface: "card", element: "needed:from"), Focus(surface: "card", element: "onlyOne:from"), Focus(surface: "card", element: "needed:to")],
+                         escapes: false)
+    },
+    test("Escape closes the list of kinds, then the card, which lands on the type selected with the canvas having the keyboard; what was typed is kept") {
+        let r = try DefinitionRig()
+        defer { r.close() }
+        r.addColor()
+        r.open()
+        let walk = r.walk()
+        walk.go("card/kind:color")
+        walk.press(.return)
+        expectEqual(r.view?.listing, "color")
+        walk.expectEscapeLadder(["card/kind:color", "canvas/owner"])
+        r.open(at: .addField)
+        r.window.type("since")
+        walk.expectEscapeLadder(["canvas/owner"], keepsTyped: "since")
+        expectEqual(r.fields.map(\.name), ["color", "since"])
+    },
+    test("← and → go to the stop before and after on the line, and stay at its ends; in a name they are the caret's") {
+        let r = try DefinitionRig()
+        defer { r.close() }
+        r.addColor()
+        r.open(at: .needed(r.fromEnd))
+        let view = try require(r.view)
+        let walk = r.walk()
+        walk.press(.right)
+        expectEqual(view.focus, .onlyOne(r.fromEnd))
+        walk.press(.right)
+        expectEqual(view.focus, .onlyOne(r.fromEnd), "the end of the line")
+        walk.press(.left)
+        expectEqual(view.focus, .needed(r.fromEnd))
+        walk.press(.left)
+        expectEqual(view.focus, .endName(r.fromEnd))
+        walk.press(.left)
+        expectEqual(view.focus, .endName(r.fromEnd), "in a name ← is the text's")
+        view.focus(.fieldKind("color"))
+        walk.press(.left)
+        expectEqual(view.focus, .fieldName("color"), "the line of a field is its name and its kind")
+        walk.press(.right)
+        expectEqual(view.focus, .fieldName("color"), "in a name → is the text's, too")
+    },
+    test("Delete on a kind takes the field out in one step; ⌘⌫ in a field's name or an option does too; one Undo brings each back") {
+        let r = try DefinitionRig()
+        defer { r.close() }
+        r.addColor()
+        r.editor.fieldDefiner?.addField(named: "since", kind: .date, to: r.hub)
+        let walk = r.walk()
+        let before = r.editor.document
+        // An Undo takes the card down, so each removal opens it afresh.
+        @MainActor func opened(at stop: DefinitionStop) throws -> DefinitionView {
+            r.cards.close()
+            r.open(at: stop)
+            return try require(r.view)
+        }
+        _ = try opened(at: .fieldKind("since"))
+        walk.press(.delete)
+        expectEqual(r.fields.map(\.name), ["color"])
+        expectEqual(r.undoName, FieldDefiner.Step.removeField)
+        r.editor.undo()
+        expectEqual(r.editor.document, before)
+        _ = try opened(at: .option("color", 1))
+        walk.press(Chord(Key.delete, .command))
+        expectEqual(r.fields.first?.options, ["red"])
+        expectEqual(r.undoName, FieldDefiner.Step.removeOption)
+        r.editor.undo()
+        expectEqual(r.editor.document, before)
+        let view = try opened(at: .fieldName("since"))
+        expect(!view.cellEditor.string.isEmpty, "the name has content")
+        walk.press(Chord(Key.delete, .command))
+        expectEqual(r.fields.map(\.name), ["color"])
+        expectEqual(r.undoName, FieldDefiner.Step.removeField)
+        r.editor.undo()
+        expectEqual(r.editor.document, before)
+    },
+    test("⌘↩ in a name or at a check writes what is typed and closes the card as Esc does") {
+        let r = try DefinitionRig()
+        defer { r.close() }
+        r.open(at: .addField)
+        let walk = r.walk()
+        r.window.type("since")
+        walk.press(.commandReturn)
+        expect(r.editor.card == nil)
+        expectEqual(r.fields.map(\.name), ["since"])
+        expectEqual(walk.focus.id, "canvas/owner")
+        r.open(at: .needed(r.fromEnd))
+        walk.press(.commandReturn)
+        expect(r.editor.card == nil, "from a check too")
+    },
+    test("a locked type's card is walked: every stop shows with its role and label, Delete and letters change nothing, Escape closes") {
+        let log = RefusalLog()
+        let r = try DefinitionRig(log: log)
+        defer { r.close() }
+        r.editor.freeze([r.hub])
+        r.open()
+        let view = try require(r.view)
+        let ids = definitionStopIDs(view, ends: r.endName)
+        expectEqual(ids.count, 8)
+        let walk = r.walk()
+        walk.expectCardStops(ids)
+        r.cards.close()
+        r.open()
+        walk.expectShows(ids.map { Focus(surface: "card", element: String($0.dropFirst(5))) })
+        r.cards.close()
+        r.open()
+        let before = r.editor.document
+        walk.expectInert([Chord("v"), .delete, .return, .space], at: [Focus(surface: "card", element: "needed:from")], escapes: false)
+        expectEqual(r.editor.document, before)
+        expect(!log.refusals.isEmpty, "the tries shook the type")
+        walk.expectEscapeLadder(["canvas/owner"])
+    },
+    test("VoiceOver reads the card as a popover named for the type, its stops as elements with a role, a label from the field and a value, and the keyboard's stop as focused") {
+        let r = try DefinitionRig()
+        defer { r.close() }
+        r.addColor()
+        r.open()
+        let view = try require(r.view)
+        var host: NSView? = view
+        while let up = host, up.accessibilityRole() != .popover { host = up.superview }
+        expectEqual(host?.accessibilityRole(), .popover)
+        expectEqual(host?.accessibilityLabel(), "Fields of owner")
+        // The stop with the caret is the cell editor over it; every other stop is an element.
+        let all = view.accessibilityChildren() ?? []
+        expectEqual(all.count, view.stops.count)
+        expect(all.contains { $0 as AnyObject === view.cellEditor }, "the stop with the caret is the editor over it")
+        let children = all.compactMap { $0 as? NSAccessibilityElement }
+        expectEqual(children.count, all.count - 1)
+        let kind = try require(children.first { $0.accessibilityLabel() == "Kind of color" })
+        expectEqual(kind.accessibilityRole(), .popUpButton)
+        expectEqual(kind.accessibilityValue() as? String, "Choice")
+        let needed = try require(children.first { $0.accessibilityLabel() == "Needed" })
+        expectEqual(needed.accessibilityRole(), .checkBox)
+        expectEqual(needed.accessibilityValue() as? Int, 0)
+        expect(needed.accessibilityFrame().height > 0)
+        expectEqual(r.view?.cellEditor.accessibilityLabel(), "Name", "the editor is named for the stop it is over")
+        view.focus(.fieldKind("color"))
+        let focused = view.accessibilityFocusedUIElement as? NSAccessibilityElement
+        expectEqual(focused?.accessibilityLabel(), "Kind of color")
+        expect(needed.accessibilityPerformPress())
+        expectEqual(r.editor.shape(inFile: r.fromEnd)?[RelationshipEndProperty.self]?.needed, true, "pressing ticks it")
     },
 ])

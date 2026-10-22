@@ -173,7 +173,7 @@ private final class ListingTextView: EditingTextView {
         list.highlight(row: 0)
         expectEqual(list.highlighted, nil)
         expectEqual(list.perform(#selector(NSResponder.insertNewline(_:))).taken, false, "Return does what it would without the list")
-        expectEqual(list.perform(#selector(NSResponder.insertTab(_:))).taken, false)
+        expect(list.perform(#selector(NSResponder.insertTab(_:))) == (true, .closeAndPass), "Tab with nothing to pick closes and passes")
         expectEqual(CaretList(metrics: fruitMetrics, rows: fruitRows(3)).highlighted, 0)
     },
 
@@ -199,6 +199,7 @@ private final class ListingTextView: EditingTextView {
         expectEqual(list.highlighted, 0)
         expect(key(#selector(NSResponder.insertNewline(_:))) == (true, .pick))
         expect(key(#selector(NSResponder.insertTab(_:))) == (true, .pick))
+        expect(key(#selector(NSResponder.insertBacktab(_:))) == (true, .closeAndPass), "⇧Tab closes and passes the key on, with a row highlighted too")
         expect(key(#selector(NSResponder.cancelOperation(_:))) == (true, .close))
         expect(key(#selector(NSResponder.complete(_:))) == (true, .close))
         expect(key(#selector(NSResponder.moveLeft(_:))) == (false, nil))
@@ -475,6 +476,45 @@ private final class ListingTextView: EditingTextView {
         view.close()
         window.pressReturn()
         expectEqual(view.string, "apple\n\n banana cherry", "closed: a new line")
+    },
+
+    test("Tab with nothing to pick and ⇧Tab close the list and the key goes on to the host's onKeyDown and then the text; Tab with a row picks") {
+        let (window, view) = ListingTextView.inWindow()
+        var asked: [UInt16] = []
+        view.onKeyDown = { event in
+            asked.append(event.keyCode)
+            return true
+        }
+        view.open([.header("Fruit")])
+        window.press("\t", code: 48)
+        expect(view.caretListWindow == nil, "closed")
+        expectEqual(asked, [48], "and the host heard the Tab")
+        expectEqual(view.picks, [])
+        view.open(fruitRows(3))
+        window.press(.backTab)
+        expect(view.caretListWindow == nil, "⇧Tab closes it even with a row highlighted")
+        expectEqual(asked, [48, 48], "and the host heard it")
+        expectEqual(view.picks, [], "nothing picked")
+        view.open(fruitRows(3))
+        window.press("\t", code: 48)
+        expectEqual(view.picks, [0], "a row is highlighted: Tab picks")
+        expectEqual(asked, [48, 48])
+        view.onKeyDown = nil
+        view.open(fruitRows(3))
+        view.tabBehavior = .host
+        window.press(.backTab)
+        expectEqual(view.string, "apple banana cherry", "no tab typed")
+    },
+
+    test("a caret list's rows are accessibility rows, the highlighted one selected") {
+        let text = ListedText()
+        text.open(fruitRows(3))
+        let rows = try require(text.rowsView)
+        let children = (rows.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
+        expectEqual(children.count, 3)
+        expect(children.allSatisfy { $0.accessibilityRole() == .row })
+        expectEqual(children.map { $0.isAccessibilitySelected() }, [true, false, false])
+        text.close()
     },
 
     test("onKeyDown has a key before the text and keeps it by answering true; while a list holds the keys it isn't asked") {

@@ -327,6 +327,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Make what you draw for a shape outside it count as the shape (a press, a hover, a right-click) | Selection's `registrar.decorationHits`; adornments already do | [DecorationHits](#drawn-for-a-shape-decorationhits) |
 | Carry a copy of the selection when it is dragged with ⌥ held | Selection's `registrar.copiesOnDrag` (Clipboard's claim); the drag moves the copies, in the press's step | [The clipboard](#the-clipboard) |
 | Make part of a shape's content answer a click without taking the shape's press (a mention's pill, a link, a checkbox) | Selection's `registrar.shapeFaces(at:click:doubleClick:hovering:)` | [Faces](#faces-clickable-parts-of-a-shape) |
+| Let the keys reach what you draw on a shape (a button, a handle): ⌥Tab, Return, Space, the arrows | Selection's `scope.shapeParts { editor, shape in [ShapePart] }`; a clickable adornment already is one | [Parts of a shape](#parts-of-a-shape) |
 | Connect shapes with arrows: dots beside a kind's sides, dragged to another shape | `x.ports(C.self, sides:role:)`, on a channel; `ArrowPortsPlugin` draws the arrow | [Ports](#a-kinds-ports), [`ArrowPortsPlugin`](#the-connector-arrows) |
 | Declare a channel: a kind of connection, and which kinds take it | A `Channel` type, `registrar.channel(C.self)`; `ports` on each kind that takes it | [Channels](#channels) |
 | Say what an arrow's end may bind to (tldraw's canBind) | Arrows' `registrar.arrowBindingRule { query in ... }` | [`ArrowPortsPlugin`](#the-connector-arrows) |
@@ -2233,8 +2234,8 @@ of a selection: Selection works through the same generic hooks any plugin can us
 | `registrar.defaultTool(.select)` | The editor starts in Select, Select leads the toolbar, and Escape and placing a shape come back to it. |
 | `registrar.outlines { ... }` | Each selected shape's outline, the box around several, and the hover's faint outline (the shape hovered, else the shape that holds the one hovered elsewhere). The core strokes every plugin's outlines and the hint in one pass, over the faint ones. |
 | `registrar.commandShapes { $0.selectedShapeIDs }` | What a command run from a key or the menu bar acts on: the selection ([Commands](#commands)). |
-| `registrar.command(.delete, …)`, `.selectAll`, `.goBack`, `.openSelection`, `.zoomToSelection` and `.smartMagnify`, Selection's own (with their keys, through Keyboard) | Delete, and Edit › Delete (AppKit's own item, which `.delete` answers; enabled while something's selected, a locked shape too, which refuses and shakes), deletes the selection; ⌘A, and Edit › Select All (enabled while the board has shapes), selects everything; ⌘[, and Go › Back (enabled while there's a step back), goes back to the previous selection; ⌘↓ (enabled while the only selected shape can be opened, or the selection is a group selected whole, or a container that neither opens nor edits, and nothing is being edited, as ⌘↓ is then the text's) opens it, or goes into the group or the container ([Moving between shapes](#moving-between-shapes)). Return and Enter (shortcuts of their own, which always take the key) run `.openSelection` too. ⇧2, and View › Zoom to Selection (enabled while something's selected), reveals the selection; a trackpad's smart zoom (a two-finger double-tap) reveals the shape under the pointer, and the next goes back. The arrow keys (shortcuts of their own, repeating) nudge the selection a world unit, ten with ⇧ (`nudgeSelection(by:)`: a `translate`, "Move", with no snapping), while `canNudge`. |
-| `Tool.cancel` | Escape in Select, with nothing under way, deselects. |
+| `registrar.command(.delete, …)`, `.selectAll`, `.goBack`, `.openSelection`, `.zoomToSelection` and `.smartMagnify`, Selection's own (with their keys, through Keyboard) | Delete, and Edit › Delete (AppKit's own item, which `.delete` answers; enabled while something's selected, a locked shape too, which refuses and shakes), deletes the selection; ⌘A, and Edit › Select All (enabled while the board has shapes), selects everything; ⌘[, and Go › Back (enabled while there's a step back), goes back to the previous selection, and ⌘], Go › Forward, undoes it; ⌘↓ (enabled while the only selected shape can be opened, or the selection is a group selected whole, or a container that neither opens nor edits, and nothing is being edited, as ⌘↓ is then the text's) opens it, or goes into the group or the container ([Moving between shapes](#moving-between-shapes)). Return and Enter (shortcuts of their own, which always take the key) run `.openSelection` too. ⇧2, and View › Zoom to Selection (enabled while something's selected), reveals the selection; a trackpad's smart zoom (a two-finger double-tap) reveals the shape under the pointer, and the next goes back. The arrow keys (shortcuts of their own, repeating) nudge the selection a world unit, ten with ⇧ (`nudgeSelection(by:)`: a `translate`, "Move", with no snapping), while `canNudge`, settling into or out of a frame as the key is let go (`undoHistory.finishing`); with nothing selected they pan the view (`editor.pan`), and ⌥ with them resizes the selected box. A nudge and Delete bring a selection out of view into view first. |
+| `Tool.cancel` | Escape in Select, with nothing under way, goes out one level: a focused part to its shape, a group's part to the group, a frame's shapes to the frame, and at the board's own shapes deselects. It never leaves the board. |
 | `Tool.ignoresPress` | The rest of a double-click whose first click, on a face, went somewhere (changed the selection or moved the camera) is ignored, so the camera goes on and nothing is placed or edited where it's brought. |
 | `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects a shape just placed. |
 | `EditorService.boardDidChange`, `editor.showBoard` | Another board shown: what was selected on the board left is a step back, and nothing is selected on arrival. |
@@ -2284,6 +2285,8 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   contents, Escape, a deletion. Going back takes the last one off, selects its shapes (less any that
   are gone) and animates the camera back over 200 ms, as data-canvas does. The detail panel's header
   has the back button, and Go › Back (⌘[) works whatever has the keyboard, but not mid-gesture.
+  Go › Forward (⌘], `goForward()`, `canGoForward`) undoes Back, as a browser's Forward does, until
+  anything else changes the selection.
   The stack holds 50 steps, skips a repeat of the step below, and going back skips a step that
   would change nothing: its shapes are all gone (unless it selected nothing, the board's list), or
   they're what's selected. `canGoBack` is true only when a step wouldn't be skipped, so after
@@ -2738,13 +2741,18 @@ registrar.shortcut(KeyChord(arrow.key, [.option, .command]), "Select Nearest Sha
   0.5 × the degrees off the direction. It starts from the stop selected last. With none that way, or
   nothing selected, nothing happens, and the key is taken. With ⇧ (⌥⇧⌘ and an arrow) the nearest stop
   that is not selected yet is added after what is selected, so the one you started from stays first.
+  The opposite key undoes a step exactly while nothing else has changed the selection (`StepTrail`):
+  ⇧Tab after Tab from two shapes selects the two again, ← after → comes back to where it started, and
+  the ⇧ step's opposite takes off what it added. Tab from an arrow, which is no stop, goes on from where
+  its middle reads among the stops.
 - **Into and out of groups and containers.** ⌘↓ and Return, with the selection one group selected
   whole, select its first part one level in, first in reading order (the part a click on a selected
   group selects); with one container selected whose kind neither opens (`ShapeOpening`) nor edits
   (`Editable`), a frame, they select the first stop in it. Both are `.openSelection`, enabled for them;
   a double-click is as it was. ⌘↑ (`editor.selectionEnclosure`, `selectEnclosure()`) selects the innermost
   group the selection is inside, whole, as Escape does (focus a level out), else the container all the
-  selected shapes are in; Boards adds the third step, up a board.
+  selected shapes are in; Boards adds the third step, up a board. Escape climbs the same steps, then
+  deselects, never leaving the board.
 - **The camera** moves only for a stop that is not all in view (`editor.revealIfOffscreen(_:)`,
   tldraw's `zoomToSelectionIfOffscreen`): it centers the shapes with 100 points of margin at the zoom it
   has, or farther out where they do not fit, never closer. One in view leaves it alone.
@@ -2761,6 +2769,107 @@ registrar.shortcut(KeyChord(arrow.key, [.option, .command]), "Select Nearest Sha
 
 Each step is a selection change, a step back like any other. `canStepSelection` is false while a
 gesture runs or a shape is edited, and then the keys pass.
+
+### Parts of a shape
+
+What a shape draws that a click acts on (its chips and pills, buttons, handles, its arrows) is one
+level in from the shape, and the keys reach it there: with one shape selected, ⌥Tab focuses its first
+part in reading order and ⌥⇧Tab its last, and again steps to the next or previous, round inside the
+shape; Return or Space presses the focused part, an arrow key adjusts a part that moves (a handle), and
+Escape goes back to the shape, still selected ([Parts.swift](../Sources/Selection/Parts.swift);
+[keyboard navigation](../.claude/rules/keyboard-navigation.md), principles 1 to 5). Tab stays the
+shapes'. A plugin writes no key code for it: it lists the parts, scoped as any face on other kinds'
+shapes is (the `ShapeParts` point; the registry refuses a list for every shape with no scope, and its
+report names each scope, "parts LockChip → every shape holding locked"):
+
+```swift
+registrar.forShapes(holding: LinkProperty.self) { link in
+    link.shapeParts { editor, shape in
+        guard let rect = editor.goButtonRect(of: shape.id) else { return [] }
+        return [ShapePart(id: "go", title: "Go to Original", role: .link, rect: rect) { $0.follow(shape.id) }]
+    }
+}
+// A kind's own: shape.shapeParts { editor, record in … }; another plugin's kind: registrar.shapeParts(on: Pin.self) { … }
+```
+
+- **A part** is an id that stays the same from one listing to the next while it is the same part (an
+  adornment's button, a handle, an edge), a title (what VoiceOver says: "Locked", "Person"), a role
+  (`.button`, `.menuButton`, `.link`, `.checkbox`, `.handle`, `.connection`), where it is drawn in world
+  units, `press` (what its click does) and, for a part that moves, `adjust`, given the arrow as a
+  `PartStep` (a unit direction, ⇧ for a large one, and `offset`, as far as a nudge goes; `toNearest`
+  with ⌥⌘, which `adjacentDirection` names as stepping does): it answers whether it took the step, and a
+  step it doesn't take, or a part with no `adjust`, nudges the shape (with ⌥⌘, steps to the nearest
+  shape). An arrow's ends, bend and label are handles of this kind (Arrows' `ArrowParts`): an end bound
+  with ⌥⌘ goes to `editor.nearestShape(to:toward:among:)`, the nearest shape that way by the rule ⌥⌘
+  steps by.
+- **Order.** `editor.shapeParts(of:)` lists every plugin's in reading order of their rects' middles
+  (`StopOrder.reading`, as Tab reads shapes, a row being parts within half the shortest one's height,
+  so a note's rows read top to bottom), parts level with one another by `order`, then plugin
+  order; a part two lists give (the same id) once. None for the shape being edited, whose parts are
+  its editor's.
+- **Listed when a key asks**, never on every frame: a list may lay out what it needs. The ring's place
+  is kept from the last listing until the board, the layout or the zoom changes.
+- **The focus** is Selection's (`editor.focusedPart`, `hasFocusedPart`): it goes with any other change
+  of the selection, a commit that takes the part away (checked once every service has the commit: a
+  lock chip whose shape was unlocked), another tool or board, and editing. A press that pops a menu or
+  opens a card leaves it on the part, so Escape out of the menu lands back there. While a part has it,
+  Delete deletes nothing (Edit › Delete is dimmed): a chip focused is no shape to delete.
+- **The keys** are Selection's, one shortcut a chord, listed in the Keyboard Shortcuts window: ⌥Tab
+  "Next Part" and ⌥⇧Tab "Previous Part" (`editor.canFocusParts`: one shape selected, nothing under way
+  or being edited, else they pass; a shape with no parts takes them and focuses none); Return and Enter
+  press the part before they open the selection; the arrows adjust before they nudge, and ⌥⌘ with an
+  arrow before it steps to the nearest shape; Escape lets the
+  part go before it leaves a group. Space is Keyboard's: it asks the one plugin that claims
+  `registrar.pressFocused { editor in … }` (Selection) to press what has the keyboard, and holds the
+  Hand only when nothing was pressed.
+- **The ring** (`PartFocusOverlay`) is an accent outline 2 view points wide, stood off the part's rect
+  by 3, its corners as round as a chip's (`SelectionStyle.partRingWidth`, `partRingStandoff`), and a
+  part out of view comes into it (`revealIfOffscreen`, over the part's rect).
+- **Adornments lists every clickable adornment** by itself, in the scope it is registered in
+  ([Adornments](#adornments)): the lock, public and type chips, "+N", the relationship pill and its offer
+  are parts with no code of their own.
+## Describing a shape for VoiceOver
+
+VoiceOver sees the canvas as a layout area named for its board, whose children are its shapes, each
+a layout item that says what it is; the selection is its focus, so Tab moves VoiceOver with it. The
+core says what a shape is from what plugins tell it, and CanvasUI alone turns that into NSAccessibility
+([Accessibility.swift](../Sources/Canvas/Editor/Accessibility.swift),
+[ShapeElements.swift](../Sources/CanvasUI/ShapeElements.swift)). A plugin describes the shapes it
+reaches, scoped by their opt-in as any face is, or a kind its own shapes:
+
+```swift
+// Titles: the title first, on every kind with one.
+registrar.forShapes(adopting: .titled) { titled in
+    titled.accessibility { record, editor in AccessibleTraits(name: editor.registry.title(of: record)) }
+}
+// A kind of its own, typed: the first example's patch says how big it is.
+registrar.shape(PatchDefinition()) { patch in
+    patch.accessibility { record, _ in AccessibleTraits(value: "\(Int(record.frame.width)) by \(Int(record.frame.height))") }
+}
+```
+
+- **What VoiceOver reads** is `editor.accessibleDescription(of:)`, every contribution that reaches
+  the kind joined in plugin order, the kind's own first: the first `name`, then the kind's label
+  (`registry.label(of:)`, always), every plugin's `labelParts`, then every plugin's `states`, joined
+  with ", " ("Checkout, Note, Person, locked"), and the first `value` and `help`. With none, a shape is
+  its kind ("Note").
+- **Asked, never kept.** It runs only when an assistive app asks for a shape, never per frame, and
+  is worked out afresh each time, so a description reads the record and services as they are.
+- **The order and the parts** are two claims, each one plugin's: `registrar.accessibleOrder` (the Tab
+  stops where the selection is, in reading order) and `registrar.accessibleParts(_:focused:)` (a
+  shape's drawn parts as `AccessiblePart`s, and the one focused). Without them, VoiceOver walks the
+  shapes in view in paint order, the selection first. Selection claims both on the shipped list, with
+  Tab's order and ⌥Tab's parts ([Parts of a shape](#parts-of-a-shape)), so a chip a plugin draws is a
+  pressable element with no accessibility code of its own.
+- **Who says what** on the shipped list: Titles the name, StickyNotes a note's words (its value),
+  Locking "locked", Validation "1 error" and "2 warnings", Frames and Subboards what they hold.
+- **The focus** is the selection, which the core reads as what commands act on
+  (`registrar.commandShapes(_:select:)`, whose `select` is how a press on a shape's element selects
+  it). The plugin that keeps the selection, or a focused part, calls `editor.accessibilityFocusDidChange()`
+  when it changes.
+- **Saying something.** `editor.announce("Locked", priority: .medium)` speaks to whoever uses VoiceOver
+  (debug builds keep it in `editor.announcements`, for tests). Selection's shake says "Locked" for every
+  plugin whose rule makes shapes read-only, so such a plugin says nothing itself.
 
 ## Commands
 
@@ -2859,13 +2968,15 @@ What the shipped app's keys do:
 | Key | Does | Registered by |
 |---|---|---|
 | V, H, N, B, S, R, L, E | Switches to that tool (a tool that places shapes passes its key on a board that takes none) | The tool's plugin; H by Keyboard, for the core's Hand |
-| Space, held | A press pans as the Hand's does, whatever the tool, which stays the tool (`editor.isHandHeld`); let go (with ⌘ held too), or with the canvas losing the keyboard or a menu opening, it stops | Keyboard, for the core's held hand |
+| Space, held | Presses the selected shape's focused part (⌥⇥), as ↩ does, and holds nothing; else a press pans as the Hand's does, whatever the tool, which stays the tool (`editor.isHandHeld`); let go (with ⌘ held too), or with the canvas losing the keyboard or a menu opening, it stops | Keyboard, for the core's held hand |
 | ⎋ (and ⌘.) | Cancels: the drag under way, else the tool's own Escape, else back to Select (`editor.cancel()`) | Keyboard |
-| ⌫ and ⌦ | Deletes the selection, as Edit › Delete does | Selection |
-| ↩ (and ⌤), ⌘↓ | Opens the only selected shape: edits it, or its kind's own way (`ShapeOpening`); or, with a group selected whole, selects its first part, and, with a container that neither opens nor edits selected, the first shape in it; ↩ and ⌤ take the key even when there's nothing to open, ⌘↓ passes then | Selection |
+| ⌫ and ⌦ | Deletes the selection, as Edit › Delete does (not while a part of it has the keyboard, ⌥⇥) | Selection |
+| ↩ (and ⌤), ⌘↓ | ↩ and ⌤ press the selected shape's focused part (⌥⇥), if one is; otherwise they, and ⌘↓, open the only selected shape: edits it, or its kind's own way (`ShapeOpening`); or, with a group selected whole, selects its first part, and, with a container that neither opens nor edits selected, the first shape in it; ↩ and ⌤ take the key even when there's nothing to open, ⌘↓ passes then | Selection |
 | ⌘A | Selects everything, as Edit › Select All does | Selection |
 | ⌘[ | Goes back to what was selected before, as Go › Back does (while there's somewhere to go) | Selection |
+| ⌘] | Undoes Back, as Go › Forward does (while Back has been gone) | Selection |
 | ⌘↑ | Steps out, as Go › Enclosing Board does, named for the step: selects the group the selection is inside, whole (Enclosing Group), else the container its shapes are in (Enclosing Frame), else goes up to the board above, with the shape whose board it left selected (Enclosing Board; off the root only) | Boards |
+| ⌥⌘P | Gives the path of crumbs over the canvas the keyboard, as Go › Board Path does (off the root only): ← and → walk the crumbs and "…", Return goes up, ↓ shows a crumb's menu whose rows ↑ ↓ → ← walk and Return picks, Escape backs out a level at a time | Boards |
 | ⌘X, ⌘C, ⌘V | Cuts, copies and pastes shapes, as Edit › Cut, Copy and Paste do | Clipboard |
 | ⇧⌘V | Pastes as ⌘V does, centered on the pointer while it's over the canvas (`editor.isPointerOverCanvas`), else as ⌘V; Edit › Paste at Pointer, which text being edited keeps the key of | Clipboard |
 | ⇧⌘C | Copies the selection, or the whole board with nothing selected, as a PNG image (2×, in the window's appearance): Edit › Copy as Image, a menu item of the window's own, which draws what [Clipboard says](#host-slots) (`registrar.imageSource`) | The window (CanvasUI), Clipboard's shapes |
@@ -2882,6 +2993,7 @@ What the shipped app's keys do:
 | ← → ↑ ↓ (⇧ too) | Nudges the selection a world unit, ten with ⇧, again and again while held, one undo step (while something's selected and nothing's under way or edited; a locked shape stays and shakes) | Selection |
 | ⇥, ⇧⇥ | Selects the next and the previous shape in reading order, round the selection's siblings, bringing it into view if it is not (again and again while held; while nothing's under way or edited) | Selection |
 | ⌥⌘ and ← → ↑ ↓ (⇧ too) | Selects the nearest shape that way, from the one selected last; with ⇧ adds it to the selection (again and again while held; while nothing's under way or edited) | Selection |
+| ⌥⇥, ⌥⇧⇥ | Focuses the only selected shape's first or last part in reading order (its chips, pills, buttons, handles: [parts of a shape](#parts-of-a-shape)), then the next or previous, round inside the shape, bringing it into view if it is not; ↩ and Space press it, ← → ↑ ↓ adjust one that moves (else nudge the shape), ⎋ goes back to the shape (while one shape is selected and nothing's under way or edited) | Selection |
 | ⌘L | Connects two selected shapes, from the one selected first to the other, as `canvas draw` makes an edge (`registry.drawConnection`: the channel both take; where none does, or the maker refuses, nothing, and both shake), one step, Connect; Connect in a right-click on two shapes and in the Shape menu runs it too | Connections (`PortsPlugin`; the item, `ConnectMenuPlugin`) |
 | ⇧↩ in a note | Puts a new note down beside the one edited (where Placing puts a note's box beside it, `Surroundings.near`, the right first), in its color, and edits it: one step, Add Note; with no room, the note shakes | StickyNotes (a key hint: the note's editor reads it) |
 | ⇥, ⇧⇥ in a note | Edits the next and the previous note in reading order, round the notes in the one's container, passing over read-only ones (a list open at the caret takes them first) | StickyNotes (a key hint) |
@@ -2913,8 +3025,8 @@ What the shipped app's keys do:
   is dimmed, and the tool stays as it was. **A
   held key** does its thing once; its repeats are the shortcut's all the same (so AppKit doesn't
   beep), and run it again only with `repeats: true`, for a key meant to be held, and only while
-  the canvas has seen it go down: a key held down elsewhere (↓ in the table of contents, whose
-  pick gives the canvas the keyboard) repeats on the canvas as nothing, until it's pressed again.
+  the canvas has seen it go down: a key held down elsewhere, whose press handed the canvas the
+  keyboard, repeats on the canvas as nothing, until it's pressed again.
 - **Commands and menus.** A [command](#commands) is declared once with its keys:
   `registrar.command(.selectAll, title: "Select All", answering: .selectAll, shortcut: KeyChord("a",
   .command), isEnabled: { … }) { … }` claims it, names it, says it is Edit › Select All on the board
@@ -3615,8 +3727,15 @@ color of its own, the title and the count if given, all one borderless button as
 header; the caller keeps whether the list is folded and leaves its rows out while it is.
 `DetailSearchField("Search", text: $text)` searches such a list: a magnifying glass, the text typed as
 keyed (nothing corrected), and a button that clears it once there's text, as tall as a list row;
-Escape, as anywhere in the panel, gives the keyboard back to the canvas. All four are in
-`ListRows.swift`, and DetailPanelTests' `listRowTests` hold them.
+Escape clears the text first and, with none, gives the keyboard back to the canvas as anywhere in the
+panel; ↓ goes into the list its `list:` handle names. All four are in `ListRows.swift`, and DetailPanelTests'
+`listRowTests` hold them.
+
+A list that is walked by keys is a `DetailRowList(items, label:)` over `DetailRowItem`s (a row, or a head
+that folds the rows under it; each says what Return, Space and a click do), in the same file: one Tab
+stop, ↑ ↓ Home End to move, Return and Space to run the highlighted line, ← → to fold a head (a head
+passes `isRow: true` to `DetailGroupHeader`), `onHighlight` to light what the line stands for. A row
+says how it reads with `.detailRowAccessibility(label:value:activate:)`. PanelWalkTests holds one.
 
 `when` reads only the value. A section of the shape's state that a service knows (whether its types
 give it a field) says when it shows with `shownWhile`, over the record and a `DetailContext`, as
@@ -4047,7 +4166,11 @@ registry, and never learns what either view is.
   has no one shape to show: in place of "No Selection", and under the header of several
   (data-canvas's details panel takes an `emptyView` and a `multiSelectView` the same way). A plugin
   gives it with `registrar.detailOverview { editor, onExit in … }`, and its view follows the
-  editor by itself. The table of contents gives its list (`ContentsOverviewPlugin`, below).
+  editor by itself. `holdsKeyboard:` says when it holds the keyboard (read in the panel's body, so
+  on observable state, as a takeover's `isActive` is): meanwhile the panel shows it whatever is
+  selected, one shape too, and it stays the same view as the header of several comes and goes, so
+  a list walked by keys isn't taken away by its own first step. The table of contents gives its
+  list (`ContentsOverviewPlugin`, below), holding the keyboard while it's walked by keys.
 - **A takeover** (`DetailTakeovers`, a list in plugin order: the first that's active shows) is
   `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }`: `isActive` (read in the
   panel's body, so on observable state: the panel redraws when it flips), `onEscape` and the view.
@@ -4104,7 +4227,8 @@ A sticky note's is the same without Open. Every shape has Delete, ContextMenus' 
 canvas (in `SelectionMenuGroup`, `.last`, after Lock, as Keynote has it), which runs
 Selection's `.delete` on the menu's shapes, as the Delete key does: a locked one shakes. As shipped,
 every shape has Lock (or Unlock) too, and every copyable shape Cut and Copy, items for the canvas,
-which are in every menu with shapes; an arrow's menu is those alone, since Arrange leaves it out. A
+which are in every menu with shapes; an arrow's menu is those and its own Toggle Start Arrowhead and
+Toggle End Arrowhead, first, since Arrange leaves it out. A
 shape something mentions has Show What Mentions too, after its own items (Mentions', for the
 canvas, in `MentionsMenuGroup`, `.after(ShapeMenuGroup.self)`), which goes to what mentions it
 ([What mentions a shape](#what-mentions-a-shape)). A shape that can be turned into another kind has Turn
@@ -4324,7 +4448,7 @@ CompositionTests' `shapeMenuShippedTests` the shipped menu.
 The core has never heard of context menus. It has one generic hook, like commands: at most one
 plugin claims the secondary click (`registrar.menuForSecondaryClick { editor, pointer in ... }`,
 returning an `NSMenu` or nil), and ContextMenus does. Beside it is the selection's menu, with no click
-(`registrar.menuForSelection { editor, commands in ... }`, `editor.menuForSelection(omitting:)`, host API),
+(`registrar.menuForSelection { editor, commands, popped in ... }`, `editor.menuForSelection(omitting:)` and `editor.menuForPoppedSelection()`, host API),
 which ContextMenus claims too. `CanvasView.menu(for:)`, which AppKit asks on a
 right-click and on a Control-click, passes the click to the editor (`editor.menu(for:)`, host API),
 which asks that plugin unless a press is under way. AppKit shows what comes back. A Control-click
@@ -4672,22 +4796,35 @@ registrar.forEveryShape { every in   // every shape is checked (its schema, at l
   the header's body (`ContentsState.heading`), so it reads observable state and the header alone
   redraws as that changes. The table of contents doesn't know what a board is called; the
   heading's maker does (Boards' `BoardContentsPlugin`: [Boards](#boards)). Filtered, the header is
-  "Selection" with Show All, whatever the heading.
+  "Selection" with Show All, whatever the heading: a button that runs View › Show All Shapes
+  (`.showAllShapes`, the table of contents' command, no key, enabled while the list is scoped), so
+  the menu bar has the way back to every row too. Both headings are headers to VoiceOver.
 - **Opening a row.** A double-click or Return on a row opens its shape, as Return on the canvas
   does: `ContentsState.open(_:)`, the list's primary action, selects it and runs Selection's
   `editor.open` (entering the board it owns, editing it, whatever its kind opens to; one row, that
   `editor.canOpen`; several open nothing). A single click still selects and zooms. That's the list
-  on its own; in the app's panel, picking one row selects its shape, so the panel shows that
+  on its own; in the app's panel, a click on one row selects its shape, so the panel shows that
   shape's panel in the list's place (the list is gone before a double-click's second click) and
-  hands the keyboard to the canvas, where Return opens it.
+  hands the keyboard to the canvas, where Return opens it. A row walked to by keys stays in the
+  list (below), so Return there is the list's.
 - **Going back.** A row's click is a step in Selection's history like any other change of the
   selection, so the back button in the shape's header (or Go › Back, ⌘[) brings the list back,
   with the view as it was before the zoom, as data-canvas's back button does.
-- **The keyboard.** A click gives the list the keyboard, as a source list does: the arrow keys move
-  through the rows, Delete runs the `.delete` command (deleting the selected shapes, as Delete on
-  the canvas does), and Escape gives the keyboard back to the canvas (`onExit`). So does hiding the panel while the list has the keyboard.
+- **The keyboard.** A click gives the list the keyboard, as a source list does, and so does View ›
+  Focus Inspector (⌥⌘I) with nothing selected: ↑ and ↓ walk the rows (⇧ extends), selecting and
+  revealing each shape, Tab and ⇧Tab step them as ↓ and ↑ do and stay in the list, → and ← open and
+  close a row's disclosure triangle, Return opens the row's shape, Delete runs the `.delete` command
+  (deleting the selected shapes, as Delete on the canvas does), and Escape gives the keyboard back
+  to the canvas (`onExit`), the shape still selected. So does hiding the panel while the list has the
+  keyboard. While it's walked by keys (`ContentsState.isWalkedByKeys`: the list has the keyboard,
+  which its view reads from the window's first responder, and a key in it made the selection as it
+  is) the panel keeps the list up, though one shape is selected, so the next ↓ walks on rather than
+  nudging that shape; once the keyboard leaves (Escape, Return, a click elsewhere) or the selection
+  changes some other way (a click on a row, the canvas), the panel shows what the selection calls
+  for. Rows are said with their kind ("Checkout, Note"; a stand-in "Alias"), and each disclosure
+  triangle is named by its row.
 - **Headless**, `ContentsState` (`editor.tableOfContents`) is all of it: `entries` (the rows, a tree),
-  `scope`, `select(_:)`, `showAll()`, the rows' hover: `hover(_:)` and `endHover(_:)` as the
+  `scope`, `select(_:)`, `showAll()`, `listHasKeyboard` and `isWalkedByKeys`, the rows' hover: `hover(_:)` and `endHover(_:)` as the
   pointer moves onto a row and off it (for a row of another board, read back with
   `editor.hoveredElsewhere`) and `isHovered(_:)` for whether a row shows as hovered; and
   their disclosure, `isExpanded(_:)` and `setExpanded(_:_:)`. Tests read a row's text, symbol and
@@ -4830,7 +4967,9 @@ the plugin, after both:
 public struct ContentsOverviewPlugin: ListedPlugin {
     public var id: PluginID { .contentsOverview }      // "contents-overview"
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.detailOverview { editor, onExit in TableOfContentsView(editor: editor, onExit: onExit) }
+        registrar.detailOverview(holdsKeyboard: { $0.tableOfContents?.isWalkedByKeys == true }) { editor, onExit in
+            TableOfContentsView(editor: editor, onExit: onExit)
+        }
     }
 }
 ```
@@ -4906,7 +5045,13 @@ registrar.forShapes(holding: LockedProperty.self) { lock in
   a locked shape. Locking a shape shows its chip because the label now says so; nothing is added.
 - **A `ClickableAdornment`** is one a click does something with: a [canvas button](#canvas-buttons)
   whose `click(_:in:)` gets an `AdornmentClick`: the shape it's on, the label's tag and where the
-  chip is ([pointing](#pointing)).
+  chip is ([pointing](#pointing)). Each one shown is also a [part of its shape](#parts-of-a-shape),
+  listed by the sugar that places it, in the same scope, with no code of its own: ⌥Tab reaches it, and
+  Return and Space click it, at the rect it is laid out at. VoiceOver calls it by its label's text, or,
+  for a symbol alone, `partTitle` (its type's name in words by default; the lock's is "Locked"), and
+  `partRole` says what it is (`.button`; `.menuButton` for one that pops a menu, as a type chip does).
+  One showing for a moment ([`ChipFade`](#a-chip-that-fades-chipfade): the open lock, "Private") is left out,
+  since what its click does has a command; so is any on a skeleton, which shows none.
 
 ### Placing one
 
@@ -8844,9 +8989,10 @@ contributes to Boards' `BoardKinds` point (at most one per kind; its report line
 - **Opening**: Selection's `opens("Open")`, which shows the shape's board
   (`editor.showBoard(BoardID(owner:))`), so a double-click, Return, Enter, ⌘↓ and Go › Open Selection all
   enter it ([opening a shape](#selection)), and so does its row in the table of contents: Return
-  once the row is picked (in the app's panel, the canvas's Return, since picking a row shows the
-  shape's panel and gives the canvas the keyboard), and a double-click only where the list stays
-  put, not in the app's panel ([opening a row](#the-table-of-contents)).
+  on the row (walked to by keys, the list's own; picked by a click, in the app's panel the canvas's
+  Return, since a click on a row shows the shape's panel and gives the canvas the keyboard), and a
+  double-click only where the list stays put, not in the app's panel
+  ([opening a row](#the-table-of-contents)).
 - **Open** first in its context menu (`BoardsMenuGroup`, `.before(ShapeMenuGroup.self)`, as Finder's Open is): Selection's
   `.openSelection`, titled Open, so it shows ⌘↓ and does to the menu's shapes what ⌘↓ does: it opens
   one, goes into a group of them selected whole, and is left out for several. The Shape menu leaves it
@@ -9672,11 +9818,13 @@ registrar.forShapes(adopting: .box) { boxes in
 - **`MovingPlugin`** (id `moving`, the module's one public type) puts both commands on every kind
   whose props are `BoxShapeProps` (the core's capability `.box`, "with a box"), so a link, a tag or an arrow
   offers neither, and fills the table of contents' `ContentsMoves`; the report's line is
-  `moving /move-to /move-near → every shape with a box · ContentsMoves`. It's right before
+  `moving /move-to /move-near → every shape with a box · CanvasContextMenu → every shape with a box · ContentsMoves`. It's right before
   Reordering in the shipped list, after every plugin with a command for many kinds, so a note's `/`
   list ends `title, lock, public, move-to, move-near`. Both steps are "Move", a drag's name ("Undo
-  Move To" would read badly). A list with it needs `SlashCommandsPlugin()` and
-  `TableOfContentsPlugin()`.
+  Move To" would read badly). It also puts Move To ▸ in the selection's menu (the Shape
+  menu's too) on the same kinds: the frames, subboards and enclosing boards the selection can go to as
+  the table of contents' drop would take it, nearest first, at most twenty. A list with it needs
+  `SlashCommandsPlugin()`, `ContextMenusPlugin()` and `TableOfContentsPlugin()`.
 - **`/move-to` takes a frame or a subboard** (its `kinds`, the kinds that hold shapes or own boards,
   so the picker ranks only those, and only the titled ones, which have names) on any board the app
   can show, but not the shape itself, or what goes with it (what it holds at any depth, and what's on
@@ -9975,9 +10123,9 @@ registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, q
   tab that came with its lists would come a turn late, so with nothing connected it says "No
   Connections" once the answer is in. The view is a search field once the lists hold 20 shapes in all
   (`NeighborStyle.searchFrom`: more than a panel shows without scrolling), or while something is typed
-  (`DetailSearchField`), then, in one `LazyVStack`, each list that has
+  (`DetailSearchField`), then, in one list, each list that has
   shapes: its head (`DetailGroupHeader`: a disclosure triangle, a dot in the light's color, the title and
-  the count), which folds it, and its rows (`DetailShapeRow` in a borderless button: the kind's symbol and
+  the count), which folds it, and its rows (`DetailShapeRow` in a borderless button, all in one `DetailRowList` that the arrow keys walk: the kind's symbol and
   tint, its name, the board it's on when that is neither the board shown nor the shape's own, and the
   light's caption under it), made as they scroll into view, so a list of thousands draws the rows
   in view. A search that finds nothing says "No Matches". A click on a row goes to the shape
@@ -13795,28 +13943,28 @@ and a test checks it loads and registers.
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core                 tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
-keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
-selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in Go · shortcut ⌘[ → command goBack · command openSelection in Go · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection in View · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
+core                 tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
+selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in Go · shortcut ⌘[ → command goBack · command goForward in Go · shortcut ⌘] → command goForward · command openSelection in Go · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · press focused · command zoomToSelection in View · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
 topology             service TopologyIndex · edge type stands-for
-arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
-subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
-framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title cover surface → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
-references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
-validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape
+arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
+sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → Add Note Beside · shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link
+subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
+framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title cover surface → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · accessibility → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
+references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · ContentsRows → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
+validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
 adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
-detail-panel         service DetailPanelState · host inspector
-context-menus        service ContextMenuState · secondary-click menu · selection menu · CanvasContextMenu in SelectionMenuGroup last
+detail-panel         service DetailPanelState · host inspector · command nextInspectorTab in View · shortcut ⌥⌘] → command nextInspectorTab · command previousInspectorTab in View · shortcut ⌥⌘[ → command previousInspectorTab · key hint ⇥ or ⇧⇥ Next or Previous Control · key hint ⌥⇥ Type a Tab · key hint ⎋ Back to the Canvas · key hint ⌘↩ Commit · key hint ⌃Space Complete
+context-menus        service ContextMenuState · secondary-click menu · selection menu · command showContextMenu · shortcut ⌃↩ → command showContextMenu · shortcut Menu → command showContextMenu · CanvasContextMenu in SelectionMenuGroup last
 slash-commands       service SlashCommandState · key hint / at a Line's Start Run a Command
-table-of-contents    service ContentsState
+table-of-contents    service ContentsState · command showAllShapes in View
 contents-overview    detail overview
-titles               property title · adornment TitlePill → every shape with a title pill · /title → every shape holding title · overlay TitleCoverOverlay
-mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup
-board-navigation     service BoardCrumbs · command enclosingBoard in Go · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · host overlay · window subtitle
+titles               property title · adornment TitlePill → every shape with a title pill · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title
+mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup · command goToMention in Go · shortcut ⌥⌘↩ → command goToMention · command showWhatMentionsOfPill in Go · command removeMention in Edit · parts mentions → every shape with mention text
+board-navigation     service BoardCrumbs · command enclosingBoard in Go · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · command boardPath in Go · shortcut ⌥⌘P → command boardPath · host overlay · window subtitle
 board-contents       contents heading
 find-in-boards       service FindState · overlay FindOverlay · command find in Edit › Find · shortcut ⌘F → command find · command findNext in Edit › Find · shortcut ⌘G → command findNext · command findPrevious in Edit › Find · shortcut ⇧⌘G → command findPrevious
-find-panel           detail takeover
+find-panel           key hint ↩ or ⇧↩ in Find Next or Previous Hit · key hint ↑ or ↓ in Find Previous or Next Result · key hint ⌘↩ in Find Select Hit and Close · detail takeover
 board-find           find heading
 title-find           findable title → every shape with a title
 mention-find         findable mention text → every shape with mention text · findable mention text over the canvas → every shape with mention text
@@ -13828,9 +13976,9 @@ mention-validation   ValidationRules → every shape naming shapes
 title-validation     service TitleIndex · ValidationRules → every shape with a title
 grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in Arrange · shortcut ⌥⌘G → command group · command ungroup in Arrange · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer in Edit · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate in Edit · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
-locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip last → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding locked · /lock → every shape holding locked
-publishing           property public · property public → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu in PublishMenuGroup after StateMenuGroup · adornment PublicChip last → every shape holding public · ContentsMarks → every shape holding public · /public /private → every shape holding public
-types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property autofill · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldFill · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu in ShapeMenuGroup first · DecorationHits · outlines · ShapeFaces · ShapeFaces · ShapeFaces · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu in ShapeMenuGroup first · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding is · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup · adornment TypeChips after TitlePill → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · adornment RelationshipOfferPill after RelationshipPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
+locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip last → every shape holding locked · parts LockChip → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding locked · accessibility → every shape holding locked · /lock → every shape holding locked
+publishing           property public · property public → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu in PublishMenuGroup after StateMenuGroup · adornment PublicChip last → every shape holding public · parts PublicChip → every shape holding public · ContentsMarks → every shape holding public · /public /private → every shape holding public
+types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property autofill · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldFill · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu in ShapeMenuGroup first · DecorationHits · outlines · parts RowFace → every shape holding schema · parts RowFace → every shape holding is · ShapeFaces · parts DefinitionFace → every shape holding relationship · ShapeFaces · command openFields · CanvasContextMenu in ShapeMenuGroup first · command retryTypeSync · CanvasContextMenu in ShapeMenuGroup first → every shape holding schema · accessibility → every shape holding is · accessibility → every shape holding schema · ShapeFaces · parts RelateFace → every shape holding schema · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu in ShapeMenuGroup first · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding is · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup · adornment TypeChips after TitlePill → every shape holding is · parts TypeChips → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · parts RelationshipPill → every shape holding is · adornment RelationshipOfferPill after RelationshipPill → every shape holding is · parts RelationshipOfferPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
 type-validation      ValidationRules → every shape holding schema · ValidationRules → every shape holding is · ValidationRules → every shape holding schema
 type-details         ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding autofill · ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding endRule
 field-find           findable field value → every shape showing field values · findable relationship type name → every shape holding relationship
@@ -13839,9 +13987,9 @@ color-validation     service ColorWarnings · ValidationRules → every shape ho
 color-details        ShapeDetails in Style last → every shape holding color
 type-colors          inherited color → every shape holding is
 snapping             service SnapState · translation adjuster · key hint ⌘ or ⌃ Drag Move Without Snapping
-ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect
+ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect · parts arrows → every shape
 connect-menu         CanvasContextMenu in ShapeMenuGroup first
-arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
+arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
 language-models      service LanguageModelState
 prose-maps           service ProseMapService · overlay ProseMapFrames
 draw-engine          draw engine
@@ -13870,7 +14018,7 @@ arrow-lights         neighbor light · neighbor light
 mention-lights       neighbor light · neighbor light
 type-lights          neighbor light · neighbor light
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
-moving               /move-to /move-near → every shape with a box · ContentsMoves
+moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in Arrange · shortcut ] → command bringToFront · command bringForward in Arrange · shortcut ⌥] → command bringForward · command sendBackward in Arrange · shortcut ⌥[ → command sendBackward · command sendToBack in Arrange · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order
 ```
 
@@ -13930,7 +14078,7 @@ lines (`/title → every shape holding title`, `/lock → every shape holding lo
 every shape holding public`, `/turn-into-subboard → every shape that can turn into subboard`: each call
 of the sugar is one entry, its commands as `/name`, then the kind or the scope they're for:
 [Registering commands](#registering-commands)), and Moving's, its line's one entry
-(`moving /move-to /move-near → every shape with a box`, [Moving](#moving)).
+(`moving /move-to /move-near → every shape with a box · CanvasContextMenu → every shape with a box`, [Moving](#moving)).
 `transform` is the service that says what a shape can turn into (`TransformState`, which hears no
 commit) and contributes nothing else: what offers and takes a channel is on their lines, last but
 its Create Frame item on Frames' (`offers channel container → frame`) and on Subboards'

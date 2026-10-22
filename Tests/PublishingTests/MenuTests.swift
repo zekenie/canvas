@@ -65,15 +65,31 @@ private let spot = CGPoint(x: 150, y: 150)
         expectEqual(h.editor.document[draft]?[PublicProperty.self], nil)
         expectEqual(h.editor.undoHistory.undoName, "Make Public")
     },
-    test("Make Private is dimmed when every public shape in the menu is held; the shape stays public, and choosing does nothing") {
-        let h = try publishingHarness()
+    test("Make Private on held public shapes is enabled; choosing it changes nothing, shakes them and shows Connections") {
+        let log = RefusalLog()
+        let h = try publishingHarness([FreezingPlugin(log: log)])
         let a = h.add(Plaque(plaqueFrame)), b = h.add(Plaque(CGRect(x: 300, y: 100, width: 100, height: 100)))
         h.publish(a, b)
         h.hold([a, b])
         h.editor.selectedShapeIDs = [a, b]
-        expectEqual(try require(h.secondaryClick(at: spot)).outline, ["(Make Private)", "—", "Delete"])
+        expectEqual(try require(h.secondaryClick(at: spot)).outline, ["Make Private", "—", "Delete"])
         h.editor.selectedShapeIDs = [a]
-        expectEqual(try require(h.secondaryClick(at: spot)).outline, ["(Make Private)", "—", "Delete"])
+        let menu = try require(h.secondaryClick(at: spot))
+        expectEqual(menu.outline, ["Make Private", "—", "Delete"])
+        let before = h.editor.undoHistory.undoName
+        try menu.choose("Make Private")
+        expectEqual(h.editor.document[a]?[PublicProperty.self], true, "stays public")
+        expectEqual(h.editor.undoHistory.undoName, before, "no step")
+        expectEqual(log.refusals, [[a]])
+        h.wait(16)
+        expect(h.editor.drawingOffset(of: a) != .zero, "shaking")
+    },
+    test("Make Private on an unheld public shape makes it private") {
+        let h = try publishingHarness()
+        let a = h.add(Plaque(plaqueFrame))
+        h.publish(a)
+        try require(h.secondaryClick(at: spot)).choose("Make Private")
+        expectEqual(h.editor.document[a]?[PublicProperty.self], nil)
     },
     test("a mix of held and free public shapes: the free ones go private in one step, and the held one shakes") {
         let log = RefusalLog()

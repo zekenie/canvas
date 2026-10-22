@@ -252,6 +252,20 @@ let elsewhere = CGPoint(x: 600, y: 20)
 // during that makes it public again. A click while anything stands for the shape is refused.
 
 @MainActor let chipClickTests = Suite("Clicking the public chip", [
+    test("with the keys alone: ⌥Tab reaches the chip, Space makes the shape private, and the Private that fades is no part, so the focus is the shape's again") {
+        let h = try publishingHarness()
+        let plaque = h.add(Plaque(plaqueFrame))
+        h.publish(plaque)
+        h.editor.selection = plaque
+        expect(h.key(Chord.optionTab))
+        expectEqual(h.editor.focusedPart?.title, "Public")
+        expect(h.key(Chord.space))
+        expectEqual(h.editor.document[plaque]?[PublicProperty.self], nil)
+        expectEqual(h.editor.undoHistory.undoName, "Make Private")
+        expectEqual(h.chip(of: plaque)?.label.text, "Private", "it shows")
+        expect(!h.editor.hasFocusedPart, "but its click has a command: Make Public")
+        expectEqual(h.editor.selectedShapeIDs, [plaque])
+    },
     test("a click makes the shape private, in one step named Make Private; the chip reads Private, and a click on that makes it public again") {
         let h = try publishingHarness()
         let plaque = h.add(Plaque(plaqueFrame))

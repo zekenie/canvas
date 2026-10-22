@@ -7,7 +7,7 @@ import Selection
 enum IsATypesMenuGroup {}
 extension IsATypesMenuGroup: MenuGroup {}
 
-/// The line inside Is a ▸ after the file's types: where the arrow's relationship types are.
+/// The line inside Is a ▸ after the file's types: `Go to` each type the shape is.
 enum IsAGoToMenuGroup {}
 extension IsAGoToMenuGroup: MenuGroup {}
 
@@ -30,8 +30,8 @@ struct IsAMenu {
     let types: [(type: ShapeID, name: String?)]
     /// The types every shape is: checked.
     let had: Set<ShapeID>
-    /// The relationship types of the one shape the menu is for that are in the file: an arrow's chip opens its card, so the
-    /// chip's `Go to` is here.
+    /// The types of the one shape the menu is for that are in the file, in its list's order: `Go to Person`, the type chip's
+    /// click by keys (an arrow's chip opens its card, so its relationship type's `Go to` is here too).
     let goTos: [(type: ShapeID, name: String)]
 
     init(_ shapes: [ShapeID], in editor: CanvasEditor) {
@@ -53,8 +53,8 @@ struct IsAMenu {
             common = common.map { $0.intersection(links) } ?? links
         }
         had = common ?? []
-        if applies, records.count == 1, let types = editor.types, let relationships = editor.relationships {
-            goTos = (records[0][IsAProperty.self] ?? []).filter { relationships.graph.isRelationshipType($0.shape) && editor.file.record($0.shape) != nil }
+        if applies, records.count == 1, let types = editor.types {
+            goTos = (records[0][IsAProperty.self] ?? []).filter { editor.file.record($0.shape) != nil }
                 .map { ($0.shape, TypesStyle.menuName(types.name(of: $0))) }
         } else {
             goTos = []
@@ -72,16 +72,21 @@ struct IsAMenu {
 /// where it would hold nothing, and, by its scope, where a selected shape holds no `is` (a frame, a subboard).
 @MainActor
 func registerTypeMenus(into registrar: inout PluginRegistrar) {
-    // The offer on a pill in a type's words (`RelateOffers`), where the menu was asked for: `Relate to Layer`, the same item
-    // the click on the pill opens. Left out at a skeleton's zoom, where no pill is drawn, off every other point, and where
-    // no click asked (the selection's menu, a menu bar's Shape menu).
+    // The offers in a type's words (`RelateOffers`): Relate to ▸, a type for each, the same pick the click on a pill opens, so the
+    // selection's menu (the Shape menu) and a right-click anywhere on the type have them with no pointer on the pill.
     registrar.contextMenuForCanvas {
         MenuItems(in: ShapeMenuGroup.self, id: "relate") { subject in
-            if subject.shapes.count == 1, let id = subject.shapes.first, let point = subject.point, !subject.editor.drawsSkeleton(of: id),
-               let record = subject.editor.document[id], let face = RelateOffers.find(at: point, on: record, in: subject.editor) {
-                MenuItem(RelateOffers.title(for: face, in: subject.editor), in: ShapeMenuGroup.self, id: "relate-\(face.target.rawValue.uuidString)",
-                         stepName: TypesStyle.newRelationshipType) { _, editor in
-                    editor.acceptRelateOffer(face)
+            if subject.shapes.count == 1, let id = subject.shapes.first, let record = subject.editor.document[id] {
+                let offers = RelateOffers.offers(on: record, in: subject.editor)
+                if !offers.isEmpty {
+                    Submenu(TypesStyle.relateTo, in: ShapeMenuGroup.self, id: "relate") {
+                        for face in offers {
+                            MenuItem(RelateOffers.name(of: face.target, in: subject.editor), in: ShapeMenuGroup.self, id: "relate-\(face.target.rawValue.uuidString)",
+                                     stepName: TypesStyle.newRelationshipType) { _, editor in
+                                editor.acceptRelateOffer(face)
+                            }
+                        }
+                    }
                 }
             }
         }

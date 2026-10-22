@@ -306,6 +306,13 @@ public final class RowBook {
         return !words.stored.unicodeScalars.allSatisfy(CharacterSet.whitespacesAndNewlines.contains)
     }
 
+    /// The shape is being edited: its words have a line however empty they are (`RowsExtent.wordsLine`), and its rows
+    /// their lead under them. The core lays a shape out afresh as its editing begins and ends.
+    func isEdited(_ record: AnyShapeRecord) -> Bool { record.id == editor?.editingShapeID }
+
+    /// The rows have their lead and the hairline over it: under words, or under the line an edited shape's words keep.
+    func hasLead(_ record: AnyShapeRecord) -> Bool { isEdited(record) || hasWords(record) }
+
     // MARK: Templates
 
     func template(_ subject: RowSubject) -> RowTemplate {
@@ -478,7 +485,15 @@ public final class RowBook {
 
     /// The room a shape's rows take, from what is kept: nil for a shape with none. The provider's answer
     /// for the committed file.
-    public func extent(of record: AnyShapeRecord) -> RowsExtent? {
+    public func extent(of record: AnyShapeRecord) -> RowsExtent? { extent(of: record, edited: isEdited(record)) }
+
+    /// The extent as it is while the shape is edited (`true`) or at rest (`false`): the same rows, with or without the lead and
+    /// the words' line editing gives. A kind that lays a press made at rest out against the rows edited asks both.
+    public func extent(ofShape id: ShapeID, edited: Bool) -> RowsExtent? {
+        editor?.document[id].flatMap { extent(of: $0, edited: edited) }
+    }
+
+    private func extent(of record: AnyShapeRecord, edited: Bool) -> RowsExtent? {
         guard let subject = subject(of: record), kinds.contains(record.kind) else { return nil }
         let template = template(subject)
         let count: Int
@@ -493,13 +508,15 @@ public final class RowBook {
             guard !template.items.isEmpty else { return nil }
             count = template.items.count
         }
-        return extent(rows: count, hasWords: hasWords(record), hasRule: template.hasRule)
+        return extent(rows: count, hasLead: edited || hasWords(record), wordsLine: edited, hasRule: template.hasRule)
     }
 
-    /// `count` rows with words over them or not, and the dashed line when fields and relation rows both are there.
-    private func extent(rows count: Int, hasWords: Bool, hasRule: Bool = false) -> RowsExtent {
+    /// `count` rows with their lead or not, and the dashed line when fields and relation rows both are there; `wordsLine`
+    /// while the shape is edited.
+    private func extent(rows count: Int, hasLead: Bool, wordsLine: Bool = false, hasRule: Bool = false) -> RowsExtent {
         RowsExtent(minimumWidth: TypesStyle.rowsMinimumWidth,
-                   height: (hasWords ? TypesStyle.rowsLead : 0) + CGFloat(count) * TypesStyle.rowHeight + (hasRule ? TypesStyle.relationRuleHeight : 0))
+                   height: (hasLead ? TypesStyle.rowsLead : 0) + CGFloat(count) * TypesStyle.rowHeight + (hasRule ? TypesStyle.relationRuleHeight : 0),
+                   wordsLine: wordsLine)
     }
 
     /// The provider of `TypeRows.extent`, cheapest test first: a board first shown asks it of every note,
@@ -523,10 +540,11 @@ public final class RowBook {
         let hasWords = hasWords(record)
         // A type's foot is the sync's, which knows the shape by its id whatever the transaction did to it.
         if count > 0 {
-            return extent(rows: count + (subject.isType && footFailure(of: record.id) != nil ? 1 : 0), hasWords: hasWords, hasRule: fields > 0 && relations > 0)
+            return extent(rows: count + (subject.isType && footFailure(of: record.id) != nil ? 1 : 0), hasLead: hasWords || isEdited(record),
+                          wordsLine: isEdited(record), hasRule: fields > 0 && relations > 0)
         }
         // A type with no fields: as its status idle and not waiting says, blank with no words, else one row.
-        return subject.isType && hasWords ? extent(rows: 1, hasWords: true) : nil
+        return subject.isType && hasWords ? extent(rows: 1, hasLead: true, wordsLine: isEdited(record)) : nil
     }
 
     /// How many relation rows the subject gets from the ends the reading has, none of its arrows: the graph the
@@ -566,7 +584,7 @@ public final class RowBook {
         #if DEBUG
         rowsShown += 1
         #endif
-        let geometry = RowGeometry(block: block, hasLead: hasWords(record), template: template)
+        let geometry = RowGeometry(block: block, hasLead: hasLead(record), template: template)
         return template.items.enumerated().map { row, item in
             let rect = geometry.rect(row), name = geometry.nameRect(row), value = geometry.valueRect(row)
             switch item {

@@ -7,16 +7,17 @@ import TextEditing
 // pill's, world units, as every editing view's are.
 
 /// The line a pill's name is typed in: a text view with no autocorrect, quotes, dashes or lists, that hands each change
-/// and the key that ends it to its host.
+/// and the key that ends it to its host, read through the one key table (`KeyMeaning`).
 @MainActor
 public final class TypePillEditor: NSView, NSTextViewDelegate {
-    /// How editing ended: Return, Escape or Tab. Each keeps what was typed; Tab also asks for the card that defines the type.
-    public enum Ending: Sendable { case done, escape, tab }
+    /// How editing ended: Return, Escape, Tab or ⇧Tab. Each keeps what was typed; Tab goes on into the card that defines the type
+    /// (its parts), and ⇧Tab back to what is before the pill.
+    public enum Ending: Sendable { case done, escape, tab, backTab }
 
     public let field = FieldCellEditor()
     /// The name as typed, after each change.
     public var typed: ((String) -> Void)?
-    /// Return, Escape or Tab.
+    /// Return, Escape, Tab or ⇧Tab.
     public var finished: ((Ending) -> Void)?
 
     public init(title: String?, ink: NSColor) {
@@ -62,15 +63,14 @@ public final class TypePillEditor: NSView, NSTextViewDelegate {
     }
 
     public func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-        switch selector {
-        case #selector(NSResponder.insertNewline(_:)):
-            finished?(.done)
-        case #selector(NSResponder.cancelOperation(_:)):
-            finished?(.escape)
-        case #selector(NSResponder.insertTab(_:)), #selector(NSResponder.insertBacktab(_:)):
-            finished?(.tab)
-        default:
-            return false
+        guard let reading = KeyMeaning.Reading(command: selector) else { return false }
+        switch reading.meaning {
+        // A name is one line: Return with a modifier ends it as Return does, and types no line break.
+        case .activate, .finish: finished?(.done)
+        case .back: finished?(.escape)
+        case .next: finished?(.tab)
+        case .previous: finished?(.backTab)
+        default: return false
         }
         return true
     }

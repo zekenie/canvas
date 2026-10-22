@@ -257,7 +257,7 @@ extension ShapeRegistrar {
     test("the selection's menu is what its plugin makes, told the commands to leave out; unclaimed, the editor has none; two claims conflict") {
         let asked = RunLog()
         let h = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "x") { r in
-            r.menuForSelection { _, commands in
+            r.menuForSelection { _, commands, _ in
                 asked.commands.append(commands.map(\.rawValue).sorted().joined(separator: ","))
                 return commands.isEmpty ? NSMenu(title: "everything") : nil
             }
@@ -267,8 +267,8 @@ extension ShapeRegistrar {
         expectEqual(asked.commands, ["", "copy,cut"])
         expect(try EditorHarness(plugins: [FixturesPlugin()]).editor.menuForSelection(omitting: []) == nil)
         expectThrows(RegistryError.conflict(point: "SelectionMenu", key: "the selection's menu", plugins: ["x", "y"])) {
-            _ = try Registry(plugins: [Contributor(id: "x") { $0.menuForSelection { _, _ in nil } },
-                                       Contributor(id: "y") { $0.menuForSelection { _, _ in nil } }])
+            _ = try Registry(plugins: [Contributor(id: "x") { $0.menuForSelection { _, _, _ in nil } },
+                                       Contributor(id: "y") { $0.menuForSelection { _, _, _ in nil } }])
         }
     },
     test("a key stroke goes to the one plugin that claims key strokes, as it came; unclaimed, no key does anything; two claims conflict") {
@@ -308,12 +308,12 @@ extension ShapeRegistrar {
                                                   r.command("scrap", title: "Scrap", menu: "Edit") { _ in }
                                                   r.defaultTool(ToolID(placing: Card.kind))
                                                   r.menuForSecondaryClick { _, _ in nil }
-                                                  r.menuForSelection { _, _ in nil }
+                                                  r.menuForSelection { _, _, _ in nil }
                                                   r.keyStrokes { _, _ in false }
                                                   r.contribute("x", to: Described.self)
                                               }])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
+        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         fixtures      shape box · shape disc · shape tag
         cards         shape card · tool card
         stamps        \("")

@@ -78,8 +78,14 @@ extension CanvasEditor {
     /// `reveal` brings small shapes to). Does nothing before the view has a size, or when none of the
     /// shapes has bounds.
     public func revealIfOffscreen(_ ids: [ShapeID]) {
+        guard let bounds = shapeContext.bounds(of: ids) else { return }
+        revealIfOffscreen(rect: bounds)
+    }
+
+    /// The same for a rect in world units (a part of a shape, `ShapeParts`).
+    func revealIfOffscreen(rect bounds: CGRect) {
         let view = unobscuredViewport, camera = cameraTarget
-        guard !view.isEmpty, let bounds = shapeContext.bounds(of: ids), !camera.toWorld(view).contains(bounds) else { return }
+        guard !view.isEmpty, !bounds.isNull, !camera.toWorld(view).contains(bounds) else { return }
         animateCamera(to: Camera(fitting: bounds, in: view, inset: SelectionStyle.revealInset, maxZoom: camera.zoom),
                       duration: SelectionStyle.revealDuration)
     }

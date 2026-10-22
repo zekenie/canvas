@@ -458,6 +458,11 @@ public struct Registry {
         contributions(to: CorePoints.Tools.self).lazy.compactMap(\.value.placement).first { $0.kind == kind }
     }
 
+    /// What a tool places, for a placing tool (`ShapeRegistrar.tool(placing:)`); nil for any other.
+    func placement(forTool id: ToolID) -> Placement? {
+        contributions(to: CorePoints.Tools.self).first { $0.value.descriptor.id == id }?.value.placement
+    }
+
     /// What a kind is called, and its symbol, wherever a shape is shown by its kind (a panel's
     /// header, a row, a message): what it declares (`ShapeRegistrar.label`), else its placing
     /// tool's label and symbol ("Note"), else its id, with no symbol. Its tint is the one it
@@ -496,7 +501,7 @@ public struct Registry {
     var secondaryClickMenu: (@MainActor (CanvasEditor, Pointer) -> NSMenu?)? {
         contributions(to: CorePoints.SecondaryClickMenu.self).first?.value
     }
-    var selectionMenu: (@MainActor (CanvasEditor, Set<CanvasCommand>) -> NSMenu?)? {
+    var selectionMenu: (@MainActor (CanvasEditor, Set<CanvasCommand>, Bool) -> NSMenu?)? {
         contributions(to: CorePoints.SelectionMenu.self).first?.value
     }
     var keyStrokeHandler: (@MainActor (CanvasEditor, KeyStroke) -> Bool)? {
@@ -594,6 +599,9 @@ struct RawContribution {
             case is CorePoints.KeyStrokes.Type: "key strokes"
             case is CorePoints.KeyReleases.Type: "key releases"
             case is CorePoints.TranslationAdjusters.Type: "translation adjuster"
+            case is CorePoints.ShapeAccessibility.Type: "accessibility → \(target)"
+            case is CorePoints.AccessibleOrder.Type: "accessible order"
+            case is CorePoints.AccessibleParts.Type: "accessible parts"
             default: P.summary(of: value, for: target)
             }
         }

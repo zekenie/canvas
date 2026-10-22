@@ -77,20 +77,21 @@ final class ArrowTargeting {
     /// Binds one end of an arrow to the shape at `point`, or frees it if there's none. This is
     /// tldraw's `updateArrowTargetState` and `onTerminalHandleDrag`. It binds only to a shape the
     /// plugins' rules let it (`ArrowBindingRules`), and `also` (a drag from a port's), looking
-    /// through the rest.
+    /// through the rest. `onto` is a shape a key picked (⌥⌘ and an arrow on a focused end: `ArrowParts`),
+    /// bound to in place of the one at `point`, as an end that arrived quickly is: no pointer aimed.
     func bindTerminal(of arrowID: ShapeID, _ end: ArrowEnd, to point: CGPoint, isPrecise: Bool, modifiers: Modifiers,
-                      accepting also: ((AnyShapeRecord) -> Bool)? = nil) {
+                      accepting also: ((AnyShapeRecord) -> Bool)? = nil, onto picked: ConnectableShape? = nil) {
         guard let arrow = arrow(arrowID) else { return }
         let current = arrow[end].binding
         let opposite = arrow[end.opposite].binding
-        guard let target = arrowTarget(at: point, modifiers: modifiers, accepting: filter(for: arrowID, end, also: also)) else {
+        guard let target = picked ?? arrowTarget(at: point, modifiers: modifiers, accepting: filter(for: arrowID, end, also: also)) else {
             updateArrow(arrowID) { $0[end] = .free(point) }
             editor.hintedShapeID = nil
             return
         }
 
         var precise = isPrecise
-        if !precise, current?.shapeID != target.id {
+        if !precise, picked == nil, current?.shapeID != target.id {
             // Arriving at a shape slowly means the user is aiming at a spot in it.
             precise = editor.pointerSpeed < ArrowStyle.slowPointerSpeed
         }

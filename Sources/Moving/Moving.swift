@@ -37,6 +37,8 @@ public struct MovingPlugin: ListedPlugin {
                 }
             }
         }
+        // Move To ▸ in the selection's menu, on the same kinds.
+        registrar.forShapes(adopting: .box) { registerMoveToMenu(into: &$0) }
         registrar.contentsMoves(admits: { shapes, place, editor in Drop(shapes, to: place, in: editor) != nil },
                                 move: { shapes, place, editor in Drop(shapes, to: place, in: editor)?.commit() })
     }
@@ -47,6 +49,12 @@ public struct MovingPlugin: ListedPlugin {
 enum MovingStyle {
     /// The undo step either command makes: a drag's name, so Edit › Undo Move takes it back.
     static let stepName = "Move"
+    /// The submenu of the selection's menu.
+    static let moveTo = "Move To"
+    /// The most places it lists.
+    static let menuLimit = 20
+    /// What it calls the file's root board when the file has no name.
+    static let rootBoard = "Board"
 }
 
 // MARK: What each command takes

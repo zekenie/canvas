@@ -20,13 +20,18 @@ extension CanvasEditor {
     /// easing, and the last frame, at `duration`, lands exactly on `target`. Any other camera
     /// change (a scroll, a pinch, a hand drag, a press) stops it where it is, as it stops a slide.
     public func animateCamera(to target: Camera, duration: Duration) {
+        animateCamera(to: target, duration: duration, easing: Self.easeInOutCubic)
+    }
+
+    /// `animateCamera(to:duration:)` along `easing` (0 to 1 over the time, 0 to 1 of the way).
+    func animateCamera(to target: Camera, duration: Duration, easing: @escaping @MainActor (CGFloat) -> CGFloat) {
         stopCameraMotion()
         let total = Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
         guard total > 0, camera != target else {
             camera = target
             return
         }
-        scheduleAnimationFrame(from: camera, to: target, elapsed: 0, total: total)
+        scheduleAnimationFrame(from: camera, to: target, elapsed: 0, total: total, easing: easing)
     }
 
     /// Where the camera comes to rest: while an animation runs (`animateCamera`), its target;
@@ -87,7 +92,8 @@ extension CanvasEditor {
     }
 
     /// Milliseconds.
-    private func scheduleAnimationFrame(from start: Camera, to target: Camera, elapsed: Double, total: Double) {
+    private func scheduleAnimationFrame(from start: Camera, to target: Camera, elapsed: Double, total: Double,
+                                        easing: @escaping @MainActor (CGFloat) -> CGFloat) {
         let step = min(Double(Style.cameraSlideFrameMilliseconds), total - elapsed)
         cameraMotion = scheduler.schedule(after: .milliseconds(step)) { [weak self] in
             guard let self else { return }
@@ -96,13 +102,13 @@ extension CanvasEditor {
                 camera = target
                 return
             }
-            let t = Self.easeInOutCubic(CGFloat(now / total))
+            let t = easing(CGFloat(now / total))
             isAnimationFrame = true
             camera = Camera(origin: CGPoint(x: start.origin.x + (target.origin.x - start.origin.x) * t,
                                             y: start.origin.y + (target.origin.y - start.origin.y) * t),
                             zoom: start.zoom + (target.zoom - start.zoom) * t)     // stops the animation…
             isAnimationFrame = false
-            scheduleAnimationFrame(from: start, to: target, elapsed: now, total: total)     // …so it carries on
+            scheduleAnimationFrame(from: start, to: target, elapsed: now, total: total, easing: easing)     // …so it carries on
         }
         cameraAnimationTarget = target
         updateZoomPercentage()
@@ -111,6 +117,77 @@ extension CanvasEditor {
     /// tldraw's EASINGS.easeInOutCubic.
     static func easeInOutCubic(_ t: CGFloat) -> CGFloat {
         t < 0.5 ? 4 * t * t * t : (t - 1) * (2 * t - 2) * (2 * t - 2) + 1
+    }
+
+    /// tldraw's EASINGS.easeOutCubic: fast from the start, so a motion begun again mid-way keeps going.
+    static func easeOutCubic(_ t: CGFloat) -> CGFloat {
+        let u = t - 1
+        return u * u * u + 1
+    }
+}
+
+/// Which way a pan by the keys moves the view over the board (`CanvasEditor.pan`): `.right` shows
+/// what is to the right.
+public enum PanDirection: Hashable, Sendable, CaseIterable {
+    case left, right, up, down
+}
+
+// Moving the view with the keys, as the Hand moves it with the pointer: the arrow keys with nothing
+// selected (Selection's), Page Up and Page Down, Home and End (Keyboard's keys for the core's
+// commands). Each eases the camera from where it's headed, so a held key's repeats glide on.
+extension CanvasEditor {
+    /// Whether the keys can move the view: it has a size.
+    public var canPan: Bool { !unobscuredViewport.isEmpty }
+
+    /// Moves the view a step that way (`Style.panStep` view points, the same on screen at any zoom),
+    /// or with `far` a page (`Style.panPage` of the view's clear part along that way), eased out over
+    /// `Style.panDuration` from where the camera is headed: pressed again, or held, before it lands,
+    /// it goes on from there. Does nothing while the view has no size.
+    public func pan(_ direction: PanDirection, far: Bool = false) {
+        guard canPan else { return }
+        let view = unobscuredViewport
+        let distance: CGFloat
+        switch direction {
+        case .left, .right: distance = far ? view.width * Style.panPage : Style.panStep
+        case .up, .down: distance = far ? view.height * Style.panPage : Style.panStep
+        }
+        // The board moves the other way: to see what's to the right, it goes left.
+        let delta: CGSize = switch direction {
+        case .left: CGSize(width: distance, height: 0)
+        case .right: CGSize(width: -distance, height: 0)
+        case .up: CGSize(width: 0, height: distance)
+        case .down: CGSize(width: 0, height: -distance)
+        }
+        var target = cameraTarget
+        target.pan(by: delta)
+        animateCamera(to: target, duration: Style.panDuration, easing: Self.easeOutCubic)
+    }
+
+    /// Whether Home and End have somewhere to go: the board has shapes, and the view a size.
+    var canScrollToEnds: Bool { canPan && !shapeBounds.isNull }
+
+    /// Home: the start of the board's shapes in view at the zoom it has, their top left
+    /// `Style.firstVisitInset` / 2 in from the view's clear part's, as a document's Home shows its
+    /// beginning; along a way they fit, they are centered instead. Eased as the zooms are.
+    func scrollToStart() { scroll(toEnd: false) }
+
+    /// End: the end of the board's shapes in view, their bottom right in from the view's, as `scrollToStart`.
+    func scrollToEnd() { scroll(toEnd: true) }
+
+    private func scroll(toEnd: Bool) {
+        guard canScrollToEnds else { return }
+        let bounds = shapeBounds, view = unobscuredViewport, margin = Style.firstVisitInset / 2
+        var target = cameraTarget
+        let zoom = target.zoom
+        /// The world coordinate at the view's origin along one way: the shapes' `low`...`high` centered in
+        /// the view's `start`...`end` if they fit, else their start (or end) a margin in.
+        func origin(_ low: CGFloat, _ high: CGFloat, in start: CGFloat, _ end: CGFloat) -> CGFloat {
+            if (high - low) * zoom + 2 * margin <= end - start { return (low + high) / 2 - (start + end) / 2 / zoom }
+            return toEnd ? high - (end - margin) / zoom : low - (start + margin) / zoom
+        }
+        target.origin = CGPoint(x: origin(bounds.minX, bounds.maxX, in: view.minX, view.maxX),
+                                y: origin(bounds.minY, bounds.maxY, in: view.minY, view.maxY))
+        animateCamera(to: target, duration: Style.zoomDuration)
     }
 }
 

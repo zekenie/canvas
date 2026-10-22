@@ -31,7 +31,9 @@ import TestKit
     test("its rows: the built-in colors by name in the book's order, each a chip in its solid; None only with a color of its own") {
         let h = try colorHarness(), book = try require(h.editor.colors)
         let sheet = h.add(Sheet(rect(0)))
-        let rows = try colorCommand(h.editor, on: sheet).choices()
+        let all = try colorCommand(h.editor, on: sheet).choices()
+        expectEqual(all.last?.title, ColorsStyle.editColors, "Edit Colors… is the last row")
+        let rows = Array(all.dropLast())
         expectEqual(rows.map(\.title), book.names.map(\.name))
         expectEqual(rows.map(\.title), ["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"])
         expectEqual(rows.map(\.group), Array(repeating: 0, count: 10), "the file has none yet")
@@ -42,9 +44,9 @@ import TestKit
         expect(anyDiffers, "dynamic colors: some follow the appearance")
         h.editor.setColor(.blue, of: [sheet])
         let withOwn = try colorCommand(h.editor, on: sheet).choices()
-        expectEqual(withOwn.map(\.title), book.names.map(\.name) + ["None"])
-        expectEqual(withOwn.last?.group, 2)
-        expectEqual(withOwn.last?.chip, nil)
+        expectEqual(withOwn.map(\.title), book.names.map(\.name) + ["None", ColorsStyle.editColors])
+        expectEqual(withOwn.dropLast().last?.group, 2)
+        expectEqual(withOwn.dropLast().last?.chip, nil)
     },
     test("typed text that reads as a hex value is offered as the one row, as it is stored; other text, nothing") {
         let h = try colorHarness()

@@ -7,6 +7,13 @@ import DetailPanel
 // field.
 
 extension TypesStyle {
+    /// What VoiceOver calls a card and a form of a shape's fields: `Fields of Checkout`, else `Fields`.
+    static func fieldsAccessibilityLabel(of name: String?) -> String {
+        guard let name, !name.isEmpty else { return rowsAccessibilityLabel }
+        return "\(rowsAccessibilityLabel) of \(name)"
+    }
+    /// What VoiceOver calls a branch name with no words of its own.
+    static let branchAccessibilityLabel = "Kind"
     /// A line, in the card and in the panel.
     public static let formRowHeight: CGFloat = 22
     /// The card's padding above and below the lines, and at the sides.

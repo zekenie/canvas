@@ -50,7 +50,7 @@ private let names = ["Gray", "Red", "Orange", "Yellow", "Green", "Teal", "Blue",
         let b = try Bench()
         let sheet = b.sheets(1)[0]
         let items = try b.colorItems(try b.menu(on: sheet))
-        expectEqual(items, names + ["—", "None"].map { $0 == "None" ? "✓ None" : $0 }, "no shape has a color: None is checked")
+        expectEqual(items, names + ["—", "✓ None", "—", ColorsStyle.editColors], "no shape has a color: None is checked")
         expect(!items.contains { $0.hasPrefix("(") }, "never dimmed")
     },
     test("checks: a color every selected shape has is checked; none when they differ; None when no shape has one") {

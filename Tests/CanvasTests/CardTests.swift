@@ -223,6 +223,19 @@ private let anchor = CGRect(x: 100, y: 100, width: 120, height: 22)
         editor.viewportDidResize(to: CGSize(width: 90, height: 90))
         expectEqual(rig.log.closings.last, .leftView, "the view shrinking past it")
     },
+    test("a card's anchor is judged where the camera is headed: one opened on a shape the camera glides to stays, one the glide leaves behind closes") {
+        let rig = try Rig()
+        let editor = rig.h.editor
+        editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        rig.show(about: rig.box)
+        var there = Camera()
+        there.origin = CGPoint(x: 5000, y: 0)
+        editor.animateCamera(to: there, duration: .milliseconds(200))
+        editor.moveCard(to: CGRect(x: 5100, y: 100, width: 10, height: 10))
+        expect(editor.card != nil, "off the view now, in it where the camera is headed")
+        editor.moveCard(to: CGRect(x: 100, y: 100, width: 10, height: 10))
+        expectEqual(rig.log.closings, [.leftView], "in the view now, out of it where the camera is headed")
+    },
     test("a card stays: a press and a pan press on its anchor, a refused beginEditing, a commit, a hover popover") {
         let rig = try Rig()
         let editor = rig.h.editor

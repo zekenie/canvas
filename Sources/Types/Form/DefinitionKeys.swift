@@ -24,46 +24,78 @@ extension DefinitionView: NSTextViewDelegate {
 
     public func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         guard textView === cellEditor else { return false }
-        switch selector {
-        case #selector(NSResponder.insertTab(_:)): tab(forward: true)
-        case #selector(NSResponder.insertBacktab(_:)): tab(forward: false)
-        case #selector(NSResponder.insertNewline(_:)): returnKey()
-        case #selector(NSResponder.moveUp(_:)): vertical(-1)
-        case #selector(NSResponder.moveDown(_:)): vertical(1)
-        case #selector(NSResponder.cancelOperation(_:)): escape()
-        case #selector(NSResponder.deleteBackward(_:)): return backspaceOnEmptyLine()
+        // ⌘⌫ in a name or an option takes its line out; elsewhere it is the text's (to the start of the line).
+        if selector == #selector(NSResponder.deleteToBeginningOfLine(_:)) { return removeFocusedLine() }
+        guard let reading = KeyMeaning.Reading(command: selector) else { return false }
+        switch reading.meaning {
+        case .next: tab(forward: true)
+        case .previous: tab(forward: false)
+        case .activate:
+            guard reading.modifiers.isEmpty else { return false }
+            returnKey()
+        case .up: vertical(-1)
+        case .down: vertical(1)
+        case .back: escape()
+        case .delete:
+            guard selector == #selector(NSResponder.deleteBackward(_:)) else { return false }
+            return backspaceOnEmptyLine()
         default: return false
         }
         return true
     }
 
     public override func keyDown(with event: NSEvent) {
-        let shift = event.modifierFlags.contains(.shift)
+        let reading = KeyMeaning.Reading(event: event)
+        // ⌘↩ finishes, from a stop that is no text as from a cell (`cellEditor.onCommit`).
+        if reading?.meaning == .finish { return finish() }
+        // ⌫ and ⌦ on a kind take its field out, with ⌘ or not.
+        if reading?.meaning == .delete, let modifiers = reading?.modifiers, modifiers.subtracting(.command).isEmpty, !isReadOnly {
+            _ = removeFocusedLine(repeating: event.isARepeat)
+            return
+        }
         guard event.modifierFlags.isDisjoint(with: [.command, .control, .option]) else { return super.keyDown(with: event) }
-        switch event.keyCode {
-        case 48: tab(forward: !shift)
-        case 36, 76: returnKey()
-        case 49: spaceKey()
-        case 53: escape()
-        case 126: vertical(-1)
-        case 125: vertical(1)
-        case 123: tab(forward: false)
-        case 124: tab(forward: true)
-        default:
+        guard let reading else {
             // A read-only card has no caret: a try shakes the type.
             if isReadOnly, event.characters?.isEmpty == false { editor.refuseChanges(to: [hub]) }
+            return
+        }
+        switch reading.meaning {
+        case .next: tab(forward: !reading.modifiers.contains(.shift))
+        case .previous: tab(forward: false)
+        case .activate: returnKey()
+        case .toggle: spaceKey()
+        case .back: escape()
+        case .up: vertical(-1)
+        case .down: vertical(1)
+        case .left: horizontal(-1)
+        case .right: horizontal(1)
+        case .finish: finish()
+        case .delete: if isReadOnly { editor.refuseChanges(to: [hub]) }
         }
     }
 
     // MARK: Moving
 
     /// What was typed in the stop with the caret is written, and the keyboard goes to the stop `forward` or back from it. Off
-    /// the first stop or the last the card is taken down.
+    /// the first stop or the last the card is taken down (the card's owner says where the keyboard goes on to), and so is it by
+    /// ⇧Tab at the stop a key brought it in at (`entry`).
     func tab(forward: Bool) {
-        guard !isReadOnly else { return }
         isMoving = true
         defer { isMoving = false }
         if listing != nil { closeList() }
+        // ⇧Tab where a key brought the keyboard in goes back out, as it came.
+        if !forward, let entry, focus == entry {
+            self.entry = nil
+            if let stop = editorStop, stop == entry, let key = commit(stop) { return added(key) }
+            onClose?(.tabbed(forward: false))
+            return
+        }
+        // ⇧Tab at the first line past the name, in a card the walk came into, goes back to the pill's name.
+        if !forward, passesTitle, let first = stops.first(where: { $0 != .title }), focus == first {
+            if let stop = editorStop, stop == first, let key = commit(stop) { return added(key) }
+            onClose?(.tabbed(forward: false))
+            return
+        }
         let before = stops
         let at = focus.flatMap { before.firstIndex(of: $0) }
         if let stop = editorStop, stop == focus, let key = commit(stop) {
@@ -92,7 +124,8 @@ extension DefinitionView: NSTextViewDelegate {
     }
 
     func returnKey() {
-        guard let stop = focus, !isReadOnly else { return }
+        guard let stop = focus else { return }
+        guard !isReadOnly else { return editor.refuseChanges(to: [hub]) }
         switch stop {
         case .fieldKind(let key):
             if listing == key { pick(DefinedKind.allCases[highlight], for: key) } else { openList(for: key) }
@@ -108,7 +141,8 @@ extension DefinitionView: NSTextViewDelegate {
     }
 
     private func spaceKey() {
-        guard let stop = focus, !isReadOnly else { return }
+        guard let stop = focus else { return }
+        guard !isReadOnly else { return editor.refuseChanges(to: [hub]) }
         switch stop {
         case .fieldKind(let key):
             if listing == key { pick(DefinedKind.allCases[highlight], for: key) } else { openList(for: key) }
@@ -129,13 +163,28 @@ extension DefinitionView: NSTextViewDelegate {
         onClose?(.escaped)
     }
 
+    /// ⌘↩: what Esc does at the top level, whatever else is open: the list is closed, what is typed is written, the card goes down.
+    func finish() {
+        closeList()
+        commitPending()
+        onClose?(.escaped)
+    }
+
+    /// ← and → on a stop that is no text go to the stop before and after it on its line, and stay at the ends.
+    private func horizontal(_ delta: Int) {
+        guard let stop = focus, listing == nil, let line = lines.first(where: { $0.stops(in: model).contains(stop) }) else { return }
+        let same = line.stops(in: model)
+        guard let place = same.firstIndex(of: stop), same.indices.contains(place + delta) else { return }
+        focus(same[place + delta])
+    }
+
     func vertical(_ delta: Int) {
         if let key = listing, focus == .fieldKind(key) {
             highlight = min(max(highlight + delta, 0), DefinedKind.allCases.count - 1)
             content.needsDisplay = true
             return
         }
-        guard let stop = focus, !isReadOnly, let line = lines.firstIndex(where: { $0.stops(in: model).contains(stop) }) else { return }
+        guard let stop = focus, let line = lines.firstIndex(where: { $0.stops(in: model).contains(stop) }) else { return }
         isMoving = true
         defer { isMoving = false }
         if let editing = editorStop, editing == stop, let key = commit(editing) { return added(key) }
@@ -147,10 +196,56 @@ extension DefinitionView: NSTextViewDelegate {
         }
     }
 
+    /// ⌫, ⌦ or ⌘⌫ on a line that can go: a field's name or its kind takes the field out, an option takes itself out; in one step.
+    /// False for a stop that is on no such line.
+    func removeFocusedLine(repeating: Bool = HeldKey.isRepeating) -> Bool {
+        guard !isReadOnly, let stop = focus else { return false }
+        switch stop {
+        case .fieldName, .fieldKind, .option:
+            // A held key is one press: it takes one line out, not the lines the keyboard moves on to, nor what they hold.
+            if repeating { return true }
+            cellEditor.dropsRepeats = true
+        default: break
+        }
+        switch stop {
+        case .fieldName(let field), .fieldKind(let field):
+            let line = lines.firstIndex { $0.stops(in: model).contains(stop) }
+            editorStop = nil
+            cellClip.isHidden = true
+            definer?.removeField(field, from: hub)
+            reload()
+            keepAfterRemoval(near: line)
+        case .option(let field, let place):
+            let line = lines.firstIndex { $0.stops(in: model).contains(stop) }
+            editorStop = nil
+            cellClip.isHidden = true
+            definer?.removeOption(at: place, of: field, in: hub)
+            reload()
+            keepAfterRemoval(near: line)
+        default:
+            return false
+        }
+        return true
+    }
+
+    /// The keyboard goes to the line that took the removed one's place, else the one before it.
+    private func keepAfterRemoval(near line: Int?) {
+        isMoving = true
+        defer { isMoving = false }
+        var next = min(line ?? 0, lines.count - 1)
+        while lines.indices.contains(next) {
+            if let first = lines[next].stops(in: model).first { return focus(first) }
+            next -= 1
+        }
+        focus(fallbackStop())
+    }
+
     private func backspaceOnEmptyLine() -> Bool {
         guard !isReadOnly, cellEditor.string.isEmpty, let stop = editorStop else { return false }
         switch stop {
         case .fieldName, .option:
+            // A held ⌫ empties one name; it does not go on to take the lines before it out.
+            if HeldKey.isRepeating { return true }
             tab(forward: false)
             return true
         default:

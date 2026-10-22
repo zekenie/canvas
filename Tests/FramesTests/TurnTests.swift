@@ -9,7 +9,7 @@ import Titles
 import Transform
 
 /// The Color ▸ items a frame's menu holds, with None checked: a frame has no color yet.
-private let frameColorItems = ["Color ▸", "  Gray", "  Red", "  Orange", "  Yellow", "  Green", "  Teal", "  Blue", "  Indigo", "  Purple", "  Pink", "  —", "  ✓ None"]
+private let frameColorItems = ["Color ▸", "  Gray", "  Red", "  Orange", "  Yellow", "  Green", "  Teal", "  Blue", "  Indigo", "  Purple", "  Pink", "  —", "  ✓ None", "  —", "  Edit Colors…"]
 
 // Frames offer the container channel and know nothing of what takes it: what a frame turns into is
 // whatever takes the channel (Subboards, in the app: CompositionTests hold that). Here it's CanvasTesting's
@@ -63,7 +63,7 @@ private let frameColorItems = ["Color ▸", "  Gray", "  Red", "  Orange", "  Ye
     test("a frame offers the container channel and knows nothing of what takes it: it turns into nothing until a kind does, and brings no Turn into item or command of its own") {
         let registry = try Registry(plugins: framePlugins())
         let framing = try require(registry.report.split(separator: "\n").first { $0.hasPrefix("framing") })
-        expect(framing.hasSuffix("ShapeDetails → frame · offers channel container → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup"), "\(framing)")
+        expect(framing.hasSuffix("ShapeDetails → frame · offers channel container → frame · accessibility → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup"), "\(framing)")
         expectEqual(registry.turnTargets(of: Frame.kind), [])
 
         let h = try frameHarness()

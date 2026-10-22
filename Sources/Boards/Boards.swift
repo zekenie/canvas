@@ -24,6 +24,8 @@ extension CanvasCommand {
     /// Up to the board above the one shown, whatever is selected: what a list's header button runs
     /// (the table of contents'), where ⌘↑ may step out of a group or a container first.
     public static let goUpBoard: CanvasCommand = "goUpBoard"
+    /// Go › Board Path (⌥⌘P): the keyboard goes to the path over the canvas, on its last crumb.
+    public static let boardPath: CanvasCommand = "boardPath"
 }
 
 /// The extension point: which kinds' shapes open onto their boards, and what a board is called
@@ -82,10 +84,15 @@ public struct BoardsPlugin: ListedPlugin {
         // Up to the board above whatever is selected: the table of contents' header button.
         registrar.command(.goUpBoard, title: BoardsStyle.enclosingBoard, runs: .whenIdle,
                           isEnabled: { !$0.editor.board.isRoot }) { $0.editor.goToEnclosingBoard() }
+        // Go › Board Path: the keyboard to the path's pill (Left and Right walk the crumbs, Return goes up
+        // to one, Down shows its menu, Escape comes back); nothing on the root, where there is no pill.
+        registrar.command(.boardPath, title: BoardsStyle.boardPath, menu: "Go", order: 110,
+                          shortcut: KeyChord("p", [.command, .option]), runs: .whenIdle,
+                          isEnabled: { !$0.editor.board.isRoot }) { $0.editor.boardCrumbs?.requestKeyboard() }
         // What the window hosts of it: the path over the top of the canvas, which a fit leaves clear
         // of as far down as its pill reaches, and the board shown's name as the window's subtitle
         // (its crumb's title; none on the root, which the window's title, the file's name, names).
-        registrar.hostOverlay(alignment: .top, coveredTop: { BoardPath.coveredHeight(on: $0) }) { editor, _ in BoardPath(editor: editor) }
+        registrar.hostOverlay(alignment: .top, coveredTop: { BoardPath.coveredHeight(on: $0) }) { editor, exit in BoardPath(editor: editor, onExit: exit) }
         registrar.windowSubtitle { $0.boardCrumbs?.crumbs.last?.title }
     }
 }

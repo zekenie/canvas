@@ -15,6 +15,9 @@ public struct ContentsOverviewPlugin: ListedPlugin {
     public var id: PluginID { .contentsOverview }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.detailOverview { editor, onExit in TableOfContentsView(editor: editor, onExit: onExit) }
+        // While the list is walked by keys the panel keeps it up, though one shape is selected.
+        registrar.detailOverview(holdsKeyboard: { $0.tableOfContents?.isWalkedByKeys == true }) { editor, onExit in
+            TableOfContentsView(editor: editor, onExit: onExit)
+        }
     }
 }

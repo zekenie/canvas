@@ -1,6 +1,7 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
+import Geometry
 import Keyboard
 import TestKit
 
@@ -187,6 +188,37 @@ import TestKit
         h.hold([])
         expectEqual(h.editor.zoomPercentage, 100)
     },
+    test("Page Up and Page Down move the view a page, eased, again and again while held; Home and End go to the start and the end of the board's shapes; with no view, or Home and End with no shapes, they pass") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), FixturesPlugin()])
+        let pageUp = "\u{F72C}", pageDown = "\u{F72D}", home = "\u{F729}", end = "\u{F72B}"
+        expect(!h.key(pageDown), "no view yet")
+        h.editor.viewportDidResize(to: CGSize(width: 1000, height: 700))
+        expect(h.key(pageDown))
+        expectEqual(h.editor.camera.origin, .zero, "eased, not jumped")
+        h.wait(200)
+        expectEqual(h.editor.camera.origin, CGPoint(x: 0, y: 560), "0.8 of the view")
+        expect(h.key(pageDown, isRepeat: true), "held, again")
+        h.wait(200)
+        expectEqual(h.editor.camera.origin, CGPoint(x: 0, y: 1120))
+        expect(h.key(pageUp))
+        expect(h.key(pageUp))
+        h.wait(200)
+        expectEqual(h.editor.camera.origin, .zero, "the second goes on from where the first was headed")
+        expect(!h.key(home), "an empty board: nowhere to go")
+        expect(!h.key(end))
+        h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
+        expect(h.key(home))
+        h.wait(400)
+        expectEqual(h.editor.camera.origin, CGPoint(x: -450, y: -300), "a board that fits is centered")
+        h.add(Box(CGRect(x: 2000, y: 1500, width: 100, height: 100)))
+        expect(h.key(home))
+        h.wait(400)
+        expectEqual(h.editor.camera.origin, CGPoint(x: -32, y: -32), "its top left, half a fit's margin in")
+        expect(h.key(end))
+        h.wait(400)
+        expectEqual(h.editor.camera.origin, CGPoint(x: 1132, y: 932), "its bottom right")
+        expectEqual(h.editor.camera.zoom, 1, "at the zoom it has")
+    },
     test("Q turns the tool lock on and off, whatever the tool; Escape leaves the tool and the lock stays") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), CardsPlugin(), cardKey])
         expect(!h.editor.isToolLocked)
@@ -361,6 +393,10 @@ import TestKit
             KeyboardHelpRow(keys: ["⌘-", "-"], title: "Zoom Out", place: .command(.zoomOut)),
             KeyboardHelpRow(keys: ["⌘0", "⇧0"], title: "Actual Size", place: .command(.zoomToActualSize)),
             KeyboardHelpRow(keys: ["⇧1"], title: "Zoom to Fit", place: .command(.zoomToFit)),
+            KeyboardHelpRow(keys: ["⇞"], title: "Page Up", place: .command(.pageUp)),
+            KeyboardHelpRow(keys: ["⇟"], title: "Page Down", place: .command(.pageDown)),
+            KeyboardHelpRow(keys: ["↖"], title: "Start of Board", place: .command(.scrollToStart)),
+            KeyboardHelpRow(keys: ["↘"], title: "End of Board", place: .command(.scrollToEnd)),
             KeyboardHelpRow(keys: ["C"], title: card.label, place: .tool),
             KeyboardHelpRow(keys: ["⌘S", "↩"], title: "Stamp", place: .command("stamp")),
             KeyboardHelpRow(keys: ["T", "Y"], title: "Tick", place: .command("tick")),
@@ -427,10 +463,11 @@ import TestKit
         expectEqual(registry.shortcuts.map(\.action), [.tool(.hand), .custom("Pan"), .custom("Cancel"), .custom("Cancel"), .command(.undo), .command(.redo), .custom("Tool Lock"),
                                                        .command(.zoomIn), .command(.zoomOut), .command(.zoomIn), .command(.zoomOut),
                                                        .command(.zoomToActualSize), .command(.zoomToActualSize), .command(.zoomToFit),
+                                                       .command(.pageUp), .command(.pageDown), .command(.scrollToStart), .command(.scrollToEnd),
                                                        .tool(ToolID(placing: Disc.kind)), .tool("zap"), .command("stamp"), .custom("Next")])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
-        keyboard      service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
+        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+        keyboard      service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
         discs         shape disc · tool disc · shortcut D → tool disc · tool zap · shortcut Z → tool zap · command stamp · shortcut ⌘S → command stamp · shortcut ⇥ → Next
         """)
     },

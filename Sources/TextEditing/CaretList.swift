@@ -101,6 +101,8 @@ public final class CaretList {
     /// What a command the keys send does while the list is open.
     public enum Action: Hashable, Sendable {
         case moveUp, moveDown, pageUp, pageDown, pick, close
+        /// Close the list and let the key go on as it would with no list (Tab with nothing to pick, ⇧Tab).
+        case closeAndPass
     }
 
     public let metrics: CaretListMetrics
@@ -153,7 +155,7 @@ public final class CaretList {
     // MARK: Keys
 
     /// What a text view command does while the list is open, if it takes it: ↑/↓ (and ⌃P/⌃N)
-    /// move the highlight, Page Up/Down (and ⌥) by a page, Return and Tab pick, Escape, ⌥⎋ and F5
+    /// move the highlight, Page Up/Down (and ⌥) by a page, Return and Tab pick (⇧Tab closes and passes), Escape, ⌥⎋ and F5
     /// (`complete:`) close. Every other command (←/→ among them) is the text view's.
     public static func action(for command: Selector) -> Action? {
         switch command {
@@ -162,6 +164,7 @@ public final class CaretList {
         case #selector(NSResponder.scrollPageUp(_:)), #selector(NSResponder.pageUp(_:)): .pageUp
         case #selector(NSResponder.scrollPageDown(_:)), #selector(NSResponder.pageDown(_:)): .pageDown
         case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)): .pick
+        case #selector(NSResponder.insertBacktab(_:)): .closeAndPass
         case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.complete(_:)): .close
         default: nil
         }
@@ -169,8 +172,9 @@ public final class CaretList {
 
     /// Does what a command does to the list: whether the list takes it (the text view then
     /// doesn't run it), and what's left for its owner to carry out, `.pick` or `.close` (nil when
-    /// moving the highlight was all). Return and Tab with nothing to pick aren't taken, so they do
-    /// what they would without the list; nor is any command the list doesn't know.
+    /// moving the highlight was all). Return with nothing to pick isn't taken, so it does what it
+    /// would without the list; nor is any command the list doesn't know. Tab with nothing to pick
+    /// and ⇧Tab always are taken as `.closeAndPass`: the list closes and the key goes on.
     public func perform(_ command: Selector) -> (taken: Bool, action: Action?) {
         guard let action = Self.action(for: command) else { return (false, nil) }
         switch action {
@@ -178,7 +182,10 @@ public final class CaretList {
         case .moveDown: moveHighlight(by: 1)
         case .pageUp: moveHighlight(by: -metrics.rowsShown)
         case .pageDown: moveHighlight(by: metrics.rowsShown)
-        case .pick: return highlightedItem == nil ? (false, nil) : (true, .pick)
+        case .pick:
+            if highlightedItem != nil { return (true, .pick) }
+            return command == #selector(NSResponder.insertTab(_:)) ? (true, .closeAndPass) : (false, nil)
+        case .closeAndPass: return (true, .closeAndPass)
         case .close: return (true, .close)
         }
         return (true, nil)

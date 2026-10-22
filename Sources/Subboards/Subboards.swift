@@ -80,6 +80,9 @@ public struct SubboardsPlugin: ListedPlugin {
             sub.subboardRow()                              // the table of contents, named by Titles
             sub.subboardPanel()                            // renamed in the panel's header; its description in a tab
             sub.subboardLinks()                            // and ports: arrows to and from a subboard, on its channel and every other
+            sub.accessibility { sub, editor in             // VoiceOver reads what its board holds as its value, as its card says it: "3 shapes"
+                AccessibleTraits(value: SubboardStyle.caption(of: editor.file[BoardID(owner: sub.id)].shapes.count))
+            }
         }
         registrar.channel(SubboardLink.self)               // which this plugin declares
         // Shapes that hold shapes (a frame) turn into a subboard: one a subboard's size at their top-left

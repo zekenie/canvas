@@ -39,12 +39,14 @@ public struct DetailCodeEditor: View {
     let coloring: DetailCodeColoring?
     let completions: DetailCodeCompleting?
     let onCompleting: (@MainActor (Bool) -> Void)?
+    let label: String?
     let onCommit: (@MainActor () -> Void)?
 
     public init(_ text: Binding<String>, height: CGFloat = DetailStyle.codeEditorHeight, isEditable: Bool = true,
                 coloring: DetailCodeColoring? = nil, completions: DetailCodeCompleting? = nil,
-                onCompleting: (@MainActor (Bool) -> Void)? = nil, onCommit: (@MainActor () -> Void)? = nil) {
+                onCompleting: (@MainActor (Bool) -> Void)? = nil, label: String? = nil, onCommit: (@MainActor () -> Void)? = nil) {
         _text = text
+        self.label = label
         self.height = height
         self.isEditable = isEditable
         self.coloring = coloring
@@ -59,7 +61,7 @@ public struct DetailCodeEditor: View {
         let fitted = max(height, (lines + 1) * DetailStyle.codeLineHeight + DetailStyle.fieldCorner * 2)
         let coloring = coloring, completions = completions, onCompleting = onCompleting
         // ⌘↩ commits; Return is a new line.
-        DetailTextBox($text, height: nil, isEditable: isEditable, commitsOnReturn: false, onCommit: onCommit,
+        DetailTextBox($text, height: nil, isEditable: isEditable, commitsOnReturn: false, label: label, onCommit: onCommit,
                       make: PlainTextView.code, prepare: PlainTextView.unwrapLines, update: { view in
                           view.coloring = coloring
                           view.onCompleting = onCompleting
@@ -154,6 +156,7 @@ public struct DetailStatusLine: View {
             // a line in its place with or without buttons), the keyboard would stay on the window,
             // where no key reaches the canvas, so the panel hands it back.
             let text = Text(status.text).foregroundStyle(status.tone == .neutral ? .secondary : .primary).textSelection(.enabled)
+                .accessibilityLabel(status.tone.spoken(status.text))
                 .onDisappear { reclaim() }
             if actions.isEmpty {
                 text
@@ -177,6 +180,20 @@ public struct DetailStatusLine: View {
                 }
             }
             .frame(width: DetailStyle.statusIconWidth)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+extension DetailStatus.Tone {
+    /// A status line as assistive apps hear it: the tone, then the text ("Warning: …"); a neutral line is
+    /// its text.
+    @MainActor func spoken(_ text: String) -> String {
+        switch self {
+        case .neutral: text
+        case .info: "\(DetailStyle.infoName): \(text)"
+        case .warning: "\(DetailStyle.warningName): \(text)"
+        case .error: "\(DetailStyle.errorName): \(text)"
         }
     }
 }
@@ -226,6 +243,7 @@ public struct DetailTextBox<Content: DetailTextContent>: View {
     let placeholder: String?
     let isEditable: Bool
     let commitsOnReturn: Bool
+    let label: String?
     let onCommit: (@MainActor () -> Void)?
     let make: @MainActor () -> Content
     let prepare: (@MainActor (Content, NSScrollView) -> Void)?
@@ -235,15 +253,15 @@ public struct DetailTextBox<Content: DetailTextContent>: View {
     @Environment(\.isEnabled) private var isEnabled
 
     public init(_ value: Binding<Content.Value>, height: CGFloat = DetailStyle.textAreaHeight, placeholder: String? = nil,
-                onCommit: (@MainActor () -> Void)? = nil, make: @escaping @MainActor () -> Content) {
-        self.init(value, height: height, placeholder: placeholder, commitsOnReturn: onCommit != nil, onCommit: onCommit, make: make)
+                label: String? = nil, onCommit: (@MainActor () -> Void)? = nil, make: @escaping @MainActor () -> Content) {
+        self.init(value, height: height, placeholder: placeholder, commitsOnReturn: onCommit != nil, label: label, onCommit: onCommit, make: make)
     }
 
     /// `height` nil: as tall as it's made. `prepare` sets up the view and its scroll view once
     /// made (the box's own settings made first), and `update` sets it up again on every update of
     /// the box (before it's shown enabled or not).
     init(_ value: Binding<Content.Value>, height: CGFloat?, placeholder: String? = nil, isEditable: Bool = true, commitsOnReturn: Bool,
-         onCommit: (@MainActor () -> Void)?, make: @escaping @MainActor () -> Content,
+         label: String? = nil, onCommit: (@MainActor () -> Void)?, make: @escaping @MainActor () -> Content,
          prepare: (@MainActor (Content, NSScrollView) -> Void)? = nil, update: (@MainActor (Content) -> Void)? = nil,
          baseline: CGFloat = DetailStyle.textBaseline) {
         _value = value
@@ -251,6 +269,7 @@ public struct DetailTextBox<Content: DetailTextContent>: View {
         self.placeholder = placeholder
         self.isEditable = isEditable
         self.commitsOnReturn = commitsOnReturn
+        self.label = label
         self.onCommit = onCommit
         self.make = make
         self.prepare = prepare
@@ -262,7 +281,7 @@ public struct DetailTextBox<Content: DetailTextContent>: View {
         // Disabled, SwiftUI would take every click over the view, so none reached the text: the
         // view is told (not editable, dimmed), and SwiftUI sees it enabled.
         DetailTextHost(value: $value, placeholder: placeholder, isEditable: isEditable, isEnabled: isEnabled,
-                       commitsOnReturn: commitsOnReturn, onCommit: onCommit, make: make, prepare: prepare, update: update)
+                       commitsOnReturn: commitsOnReturn, label: label, onCommit: onCommit, make: make, prepare: prepare, update: update)
             .environment(\.isEnabled, true)
             .detailTextBox(height: height, baseline: baseline)
     }
@@ -278,6 +297,7 @@ struct DetailTextHost<Content: DetailTextContent>: NSViewRepresentable {
     /// it's enabled, so it answers clicks.)
     let isEnabled: Bool
     let commitsOnReturn: Bool
+    let label: String?
     let onCommit: (@MainActor () -> Void)?
     let make: @MainActor () -> Content
     let prepare: (@MainActor (Content, NSScrollView) -> Void)?
@@ -316,12 +336,30 @@ struct DetailTextHost<Content: DetailTextContent>: NSViewRepresentable {
         coordinator.value = $value
         view.isEditable = isEditable && isEnabled
         view.isSelectable = true
+        view.tabBehavior = .movesKeyView
         update?(view)
         view.showEnabled(isEnabled)
         view.commitsOnReturn = commitsOnReturn
         view.onCommit = onCommit
-        view.onExit = context.environment.detailExit
+        let exit = context.environment.detailExit
+        view.onExit = exit
+        // ⌘↩ finishes: a box with something to commit commits (the view does), and one without
+        // leaves the panel, keeping what is typed (it is written as it is typed).
+        if onCommit == nil, view.onKeyDown == nil || coordinator.hooksKeys {
+            coordinator.hooksKeys = true
+            view.onKeyDown = { event in
+                guard event.keyCode == 36 || event.keyCode == 76,
+                      event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command else { return false }
+                exit()
+                return true
+            }
+        } else if coordinator.hooksKeys {
+            coordinator.hooksKeys = false
+            view.onKeyDown = nil
+        }
         view.placeholder = placeholder
+        let spoken = label ?? placeholder
+        if view.accessibilityLabel() != spoken { view.setAccessibilityLabel(spoken) }
         // Changed from outside: show it. (Typing changes the text view first, then the binding.)
         if value != coordinator.shown {
             coordinator.shown = value
@@ -340,6 +378,8 @@ struct DetailTextHost<Content: DetailTextContent>: NSViewRepresentable {
         var shown: Content.Value
         /// The box's own, so text shown from outside can drop what typing registered.
         let undo = UndoManager()
+        /// Whether the box's `onKeyDown` is its own (⌘↩ leaves), rather than the content's.
+        var hooksKeys = false
 
         init(value: Binding<Content.Value>) {
             self.value = value
@@ -363,7 +403,7 @@ struct DetailTextHost<Content: DetailTextContent>: NSViewRepresentable {
 /// TextKit 1, as the panel's text has always been laid out: a code editor is as tall as its lines
 /// in TextKit 1's metrics (`DetailStyle.codeLineHeight`), and as wide as its longest.
 final class PlainTextView: EditingTextView, DetailTextContent {
-    /// `DetailCodeEditor`'s: Return keeps the line's indentation, Tab is two spaces.
+    /// `DetailCodeEditor`'s: Return keeps the line's indentation, ⌥Tab indents two spaces and ⌥⇧Tab outdents.
     private(set) var isCode = false
     var coloring: DetailCodeColoring?
     /// `DetailCodeEditor`'s: what can be typed at the caret. Taken away, the list closes.
@@ -535,9 +575,30 @@ final class PlainTextView: EditingTextView, DetailTextContent {
         }
     }
 
-    override func insertTab(_ sender: Any?) {
-        guard isCode, isEditable else { return super.insertTab(sender) }
+    /// ⌥Tab in code indents one step (Tab moves on, as in every box of the panel).
+    override func insertTabIgnoringFieldEditor(_ sender: Any?) {
+        guard isCode, isEditable else { return super.insertTabIgnoringFieldEditor(sender) }
         insertText(Self.indentStep, replacementRange: selectedRange())
+    }
+
+    /// ⌥⇧Tab in code takes one step off the start of each line the selection touches: two spaces, or a tab.
+    private func outdent() {
+        guard isEditable else { return }
+        let text = string as NSString
+        let lines = text.lineRange(for: selectedRange())
+        let original = text.substring(with: lines)
+        var changed = false
+        let outdented = original.split(separator: "\n", omittingEmptySubsequences: false).map { line -> Substring in
+            var rest = line
+            if rest.first == "\t" { rest = rest.dropFirst(); changed = true; return rest }
+            var removed = 0
+            while removed < Self.indentStep.count, rest.first == " " { rest = rest.dropFirst(); removed += 1; changed = true }
+            return rest
+        }.joined(separator: "\n")
+        guard changed, shouldChangeText(in: lines, replacementString: outdented) else { return }
+        textStorage?.replaceCharacters(in: lines, with: outdented)
+        setSelectedRange(NSRange(location: lines.location, length: (outdented as NSString).length))
+        didChangeText()
     }
 
     private static let indentStep = "  "
@@ -549,6 +610,10 @@ final class PlainTextView: EditingTextView, DetailTextContent {
     override func keyDown(with event: NSEvent) {
         if isCode, Self.isControlSpace(event), !hasMarkedText(), completions != nil || offersCompletions {
             return toggleCompletions()
+        }
+        if isCode, completions == nil, !hasMarkedText(), event.keyCode == 48,
+           event.modifierFlags.intersection([.command, .shift, .option, .control]) == [.shift, .option] {
+            return outdent()
         }
         super.keyDown(with: event)
     }
@@ -717,6 +782,8 @@ struct HeaderTitleField: NSViewRepresentable {
         field.cell?.isScrollable = true
         field.cell?.wraps = false
         field.placeholderString = placeholder
+        field.setAccessibilityLabel(DetailStyle.nameLabel)
+        field.cell?.setAccessibilityLabel(DetailStyle.nameLabel)
         field.delegate = context.coordinator
         return field
     }

@@ -92,7 +92,8 @@ public final class ColorBook {
     /// The appearance last drawn in, and whether it's dark: asked once an appearance, not a shape.
     @ObservationIgnored private var appearance: NSAppearance?
     @ObservationIgnored private var appearanceIsDark = false
-    @ObservationIgnored private var handlers: [@MainActor () -> Void] = []
+    @ObservationIgnored private var handlers: [(id: ObjectIdentifier, call: @MainActor () -> Void)] = []
+    @ObservationIgnored private var releasers: [(id: ObjectIdentifier, call: @MainActor () -> Void)] = []
 
     /// How many distinct colors are kept before the lot is let go: a picker dragged across its
     /// wheel asks for thousands of values.
@@ -266,8 +267,42 @@ public final class ColorBook {
     /// Calls `handler` after the file's colors change (one added, renamed, given another value or
     /// removed, an undo of any, a file put in place): what a plugin that keeps something made from a
     /// color hears, to make it again. A shape's own color changing is a commit, which says so itself.
+    /// The handler is kept for the file's life: what a service keeps made from the colors. A listener that
+    /// goes sooner (a window that closes) subscribes instead.
     public func onChange(_ handler: @escaping @MainActor () -> Void) {
-        handlers.append(handler)
+        handlers.append((ObjectIdentifier(self), handler))
+    }
+
+    /// `onChange`, for a listener that goes before the file does: the calls end with the subscription
+    /// returned, which the listener holds.
+    public func subscribe(_ handler: @escaping @MainActor () -> Void) -> Subscription {
+        let subscription = Subscription(book: self)
+        handlers.append((ObjectIdentifier(subscription), handler))
+        return subscription
+    }
+
+    /// Calls `handler` when the book goes with its file (its document closed): what a window that
+    /// shows the file's colors closes by. Ends with the returned subscription.
+    func onRelease(_ handler: @escaping @MainActor () -> Void) -> Subscription {
+        let subscription = Subscription(book: self)
+        releasers.append((ObjectIdentifier(subscription), handler))
+        return subscription
+    }
+
+    /// A listener's hold on the book's calls: let go of, they stop.
+    @MainActor
+    public final class Subscription {
+        private weak var book: ColorBook?
+        fileprivate init(book: ColorBook) { self.book = book }
+        isolated deinit {
+            let id = ObjectIdentifier(self)
+            book?.handlers.removeAll { $0.id == id }
+            book?.releasers.removeAll { $0.id == id }
+        }
+    }
+
+    isolated deinit {
+        for releaser in releasers { releaser.call() }
     }
 
     /// What `InheritedColors` gives changed for shapes no commit names (a type given another color: its
@@ -293,7 +328,7 @@ public final class ColorBook {
         defaults.removeAll(keepingCapacity: true)
         lastColor = nil
         lastKind = nil
-        let handlers = handlers
+        let handlers = handlers.map(\.call)
         editor.onceHeard { for handler in handlers { handler() } }
         editor.setNeedsDisplay()
     }

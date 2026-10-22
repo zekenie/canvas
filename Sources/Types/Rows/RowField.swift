@@ -18,6 +18,8 @@ enum RowKey {
     case commit, escape
     /// Space on a row that is not typed.
     case space
+    /// ⇧Return: a new note beside this one, edited.
+    case addBeside
 }
 
 @MainActor
@@ -72,6 +74,8 @@ final class RowField: EditingTextView {
         isAutomaticDataDetectionEnabled = false
         CaretListSubstitutions.off.apply(to: self)
         commitsOnLeaving = false
+        setAccessibilityRole(.textField)
+        onKeyDown = { [weak self] event in self?.rowKey(event) ?? false }
     }
 
     @available(*, unavailable)
@@ -167,6 +171,7 @@ final class RowField: EditingTextView {
     override func doCommand(by selector: Selector) {
         // Picking a note for a relationship: the list's keys come first, as `NotePicking.perform` says them. Tab and ⇧Tab are never a pick:
         // the list closes with nothing stored, and the key goes on as the rows' (`EditingTextView` would hand it to the list).
+        let reading = KeyMeaning.Reading(command: selector)
         if let (picker, window) = picking {
             let (taken, action) = picker.perform(selector)
             if taken {
@@ -180,23 +185,32 @@ final class RowField: EditingTextView {
             if action == .close {
                 let onKey = onKey
                 window.closeList()
-                switch selector {
-                case #selector(insertTab(_:)): onKey?(.next)
-                case #selector(insertBacktab(_:)): onKey?(.previous)
+                switch reading?.meaning {
+                case .next: onKey?(.next)
+                case .previous: onKey?(.previous)
                 default: break
                 }
                 return
             }
         }
-        switch selector {
-        case #selector(insertTab(_:)): onKey?(.next)
-        case #selector(insertBacktab(_:)): onKey?(.previous)
-        case #selector(moveDown(_:)): onKey?(.down)
-        case #selector(moveUp(_:)): onKey?(.up)
-        case #selector(insertNewline(_:)), #selector(insertNewlineIgnoringFieldEditor(_:)), #selector(insertLineBreak(_:)): onKey?(.commit)
-        case #selector(cancelOperation(_:)): onKey?(.escape)
+        switch reading?.meaning {
+        case .next: onKey?(.next)
+        case .previous: onKey?(.previous)
+        case .down: onKey?(.down)
+        case .up: onKey?(.up)
+        case .activate: onKey?(.commit)
+        case .back: onKey?(.escape)
         default: super.doCommand(by: selector)
         }
+    }
+
+    /// ⇧Return adds a note beside the note; a held Return is one press. Every other key is the text view's.
+    private func rowKey(_ event: NSEvent) -> Bool {
+        guard let reading = KeyMeaning.Reading(event: event), reading.meaning == .activate else { return false }
+        if event.isARepeat { return true }
+        guard reading.modifiers == .shift else { return false }
+        onKey?(.addBeside)
+        return true
     }
 
     // MARK: The keyboard

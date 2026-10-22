@@ -24,7 +24,9 @@ final class CardView: NSView {
         clip.layer?.masksToBounds = true
         addSubview(clip)
         clip.addSubview(content)
-        setAccessibilityElement(false)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.popover)
+        setAccessibilityLabel(card.accessibilityLabel ?? CardStyle.accessibilityLabel)
     }
 
     @available(*, unavailable)
@@ -51,9 +53,24 @@ final class CardView: NSView {
         bubbleFrame.contains(point) ? super.hitTest(point) : nil
     }
 
-    // What the content didn't take stops here. A modifier change alone goes to the canvas, which keeps
-    // the editor's held keys (Space's pan, ⇧'s axis).
-    override func keyDown(with event: NSEvent) {}
+    /// Closes the card (`editor.closeCard(.asked)`): what Escape does when the content didn't take it.
+    var onEscape: (() -> Void)?
+
+    // What the content didn't take stops here. Escape closes the card, a fallback for content that
+    // handles it itself (the shipped cards do), and Tab and ⇧Tab walk the card's own stops, wrapping;
+    // every other key is swallowed. A modifier change alone goes to the canvas, which keeps the
+    // editor's held keys (Space's pan, ⇧'s axis).
+    override func keyDown(with event: NSEvent) {
+        let held = event.modifierFlags.intersection([.command, .control, .option])
+        guard held.isEmpty else { return }
+        switch event.keyCode {
+        case 53: onEscape?()
+        case 48: walk(by: event.modifierFlags.contains(.shift) ? -1 : 1)
+        default: break
+        }
+    }
+    /// ⌘. and Escape as a command: the same.
+    override func cancelOperation(_ sender: Any?) { onEscape?() }
     override func scrollWheel(with event: NSEvent) {}
     override func magnify(with event: NSEvent) {}
     override func smartMagnify(with event: NSEvent) {}
@@ -63,10 +80,40 @@ final class CardView: NSView {
     override func rightMouseDown(with event: NSEvent) {}
     override func otherMouseDown(with event: NSEvent) {}
     /// A key binding's command the content passed on (`deleteBackward:`) is nobody's, and doesn't beep.
-    override func doCommand(by selector: Selector) {}
+    override func doCommand(by selector: Selector) {
+        if selector == #selector(NSResponder.cancelOperation(_:)) { onEscape?() }
+    }
     /// Not the canvas's menu: a view looks up its superviews for one.
     override func menu(for event: NSEvent) -> NSMenu? { nil }
     override func flagsChanged(with event: NSEvent) { superview?.flagsChanged(with: event) }
+
+    /// What can take the keyboard in the content, in reading order (top to bottom, then left to right).
+    private var stops: [NSView] {
+        var found: [NSView] = []
+        func collect(_ view: NSView) {
+            if view.acceptsFirstResponder, view.canBecomeKeyView, !view.isHiddenOrHasHiddenAncestor, !((view as? NSTextView)?.isFieldEditor ?? false) {
+                found.append(view)
+            }
+            for sub in view.subviews { collect(sub) }
+        }
+        collect(content)
+        // A container and what it holds begin together: the container is first (the walk's own order).
+        return found.enumerated().sorted {
+            let a = convert($0.element.bounds, from: $0.element), b = convert($1.element.bounds, from: $1.element)
+            return (a.minY, a.minX, $0.offset) < (b.minY, b.minX, $1.offset)
+        }.map(\.element)
+    }
+
+    /// The keyboard to the next (`step` 1) or previous stop, wrapping inside the card.
+    private func walk(by step: Int) {
+        let stops = stops
+        guard !stops.isEmpty, let window else { return }
+        var current = window.firstResponder as? NSView
+        if let text = current as? NSTextView, text.isFieldEditor { current = text.delegate as? NSView }
+        let here = stops.firstIndex { $0 === current } ?? stops.lastIndex { current?.isDescendant(of: $0) ?? false }
+        let next = here.map { ($0 + step + stops.count) % stops.count } ?? (step > 0 ? 0 : stops.count - 1)
+        window.makeFirstResponder(stops[next])
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let cg = NSGraphicsContext.current?.cgContext else { return }
@@ -96,6 +143,8 @@ enum CardStyle {
     static let cornerRadius: CGFloat = 8
     /// The least tall it is asked to be when there is hardly room.
     static let minHeight: CGFloat = 44
+    /// What VoiceOver calls a card that says nothing of itself.
+    static let accessibilityLabel = "Card"
     static let background = NSColor.textBackgroundColor
     static let border = NSColor.separatorColor
     // The popover's shadow.

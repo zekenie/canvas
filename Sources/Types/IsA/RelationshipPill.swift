@@ -21,6 +21,8 @@ extension RelationshipPill: Adornment {
 }
 
 extension RelationshipPill: ClickableAdornment {
+    public static var partRole: PartRole { .menuButton }
+
     public static func click(_ click: AdornmentClick, in editor: CanvasEditor) {
         if TypeChips.opensCard(click, in: editor) { return }
         guard let menu = TypeChipMenus.menu(for: click, in: editor) else { return }
@@ -87,6 +89,8 @@ extension RelationshipOfferPill: Adornment {
 }
 
 extension RelationshipOfferPill: ClickableAdornment {
+    public static var partRole: PartRole { .menuButton }
+
     /// A click lists the types that fit, as a port's release lists them, under the pill: a pick types the arrow.
     public static func click(_ click: AdornmentClick, in editor: CanvasEditor) {
         guard let offers = editor.service(RelationshipOffers.self), let (taken, open) = offers.fitting(click.shape),

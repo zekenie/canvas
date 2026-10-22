@@ -384,5 +384,9 @@ public struct PortsPlugin: ListedPlugin {
                                 drag: { dot, origin, editor in editor.service(PortState.self)?.connect(from: dot, at: origin) })
         // ⌘L connects two selected shapes, the port's drag from the keyboard (its item: `ConnectMenuPlugin`).
         registrar.connectCommand()
+        // A shape's arrows are its ⌥Tab parts: every shape by its nature can have one bound to it.
+        registrar.forEveryShape { shapes in
+            shapes.shapeParts(named: "arrows") { editor, shape in editor.connectionParts(of: shape.id) }
+        }
     }
 }

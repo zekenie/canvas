@@ -11,10 +11,14 @@ public struct RowsExtent: Hashable, Sendable {
     public var minimumWidth: CGFloat
     /// How tall they are, all of them, the fold included.
     public var height: CGFloat
+    /// The words over them have a line, however empty they are: the shape is being edited, so its caret sits above the
+    /// rows rather than under them.
+    public var wordsLine: Bool
 
-    public init(minimumWidth: CGFloat, height: CGFloat) {
+    public init(minimumWidth: CGFloat, height: CGFloat, wordsLine: Bool = false) {
         self.minimumWidth = minimumWidth
         self.height = height
+        self.wordsLine = wordsLine
     }
 }
 

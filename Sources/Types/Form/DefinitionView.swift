@@ -59,6 +59,13 @@ public final class DefinitionView: NSView {
     public internal(set) var highlight = 0
     /// The field just added by `add field`: picking its kind goes on to the next line.
     var fresh: String?
+    /// The stop a key brought the keyboard in at from outside the card (Tab in the pill's name, at its first line past the name): ⇧Tab there goes
+    /// back out as the key came in (P4's exact way back). Any other move of the keyboard forgets it.
+    public internal(set) var entry: DefinitionStop?
+    /// The card was entered by the walk from the pill's name or back from the shape after it, so the name is the pill's own
+    /// stop, edited under it, not the card's: the walk goes between the pill's name and the card's first line, and the card's
+    /// Name stop is passed in both directions (Open Fields starts at it, and walks it).
+    public internal(set) var passesTitle = false
 
     /// The one text editor, over the focused text stop.
     public let cellEditor = FieldCellEditor()
@@ -66,6 +73,8 @@ public final class DefinitionView: NSView {
     let scroll = NSScrollView()
     let content = DefinitionContent()
     var editorStop: DefinitionStop?
+    /// The elements VoiceOver was given for the stops, kept so each is the same object from one query to the next.
+    var stopElements: [DefinitionStop: CardStopElement] = [:]
     /// A key is being handled: a stop that goes is replaced by the one the key chose, not by the fallback.
     var isMoving = false
     var isLoadingEditor = false
@@ -93,6 +102,7 @@ public final class DefinitionView: NSView {
         cellClip.isHidden = true
         content.addSubview(cellClip)
         cellEditor.delegate = self
+        cellEditor.onCommit = { [weak self] in self?.finish() }
         relayout()
     }
 
@@ -236,25 +246,22 @@ public final class DefinitionView: NSView {
            stop == .title ? TitleProperty.folded(cellEditor.string) ?? "" != now : cellEditor.string != now {
             setEditorText(now)
         }
-        if focus == nil, !isReadOnly, !isMoving { self.focus(fallbackStop()) }
+        if focus == nil, !isMoving { self.focus(fallbackStop()) }
         if height != before { onResize?() }
     }
 
     private var height: CGFloat { frame.height }
 
     /// Where the keyboard goes when its stop has gone.
-    private func fallbackStop() -> DefinitionStop? { stops.contains(.addField) ? .addField : stops.first }
+    func fallbackStop() -> DefinitionStop? { stops.contains(.addField) ? .addField : stops.first }
 
     // MARK: Focus
 
     /// The keyboard goes to the stop: a text one has the caret with its text selected. Whatever was typed in the stop it leaves is
-    /// written first. A read-only card has no caret (nothing is focused).
+    /// written first. A read-only card takes any stop and draws its mark, with no caret (the card has the keyboard itself).
     public func focus(_ stop: DefinitionStop?) {
-        if isReadOnly {
-            focus = nil
-            hideEditor()
-            return
-        }
+        let old = focus
+        if stop != entry { entry = nil }
         if let old = editorStop, old != stop { commit(old) }
         var stop = stop
         if let held = stop, !stops.contains(held) { stop = fallbackStop() }
@@ -267,10 +274,17 @@ public final class DefinitionView: NSView {
         }
         if let stop, let rect = rect(of: stop) { content.scrollToVisible(rect) }
         content.needsDisplay = true
+        announceFocus(from: old)
     }
 
     /// The first stop: the card opens at the name, or at `add field`.
     public func focusFirst() { focus(stops.first) }
+
+    /// The keyboard comes in at `stop` by a key from outside the card: ⇧Tab there goes back out (`entry`).
+    public func enter(at stop: DefinitionStop?) {
+        focus(stop)
+        entry = isReadOnly ? nil : focus
+    }
 
     /// Shows the editor over the focused text stop, or hides it.
     func syncEditor() {

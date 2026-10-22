@@ -1,3 +1,4 @@
+import AppKit
 import Canvas
 import Observation
 import TableOfContents
@@ -36,6 +37,12 @@ public struct CrumbMenu: Equatable, Sendable {
     }
 }
 
+/// A place in the path the keyboard can be: a crumb, by its board, or "…".
+public enum PathStop: Hashable, Sendable {
+    case crumb(BoardID)
+    case fold
+}
+
 /// The path from the root to the board shown, as crumbs, kept for `BoardPath`: made again when
 /// another board is shown, or when a board above this one changes (only there are the owners on
 /// the path, whose titles name the crumbs, and whose locks make boards read-only), so a commit on
@@ -54,6 +61,17 @@ public final class BoardCrumbs {
     /// The crumb whose menu shows, by its board (`menu(of:)` says what the menu lists); nil while
     /// none does. One at a time, as the pointer goes (`pointerEntered(crumb:)` and the rest).
     public private(set) var openMenu: BoardID?
+    /// Where the keyboard is in the pill (`BoardPath`'s key view has it); nil while it is elsewhere,
+    /// or in the menu that shows (`menuKeyboard`). Another board shown clears it.
+    public var focus: PathStop?
+    /// The keyboard in the menu that shows, opened with it (`openFromKeyboard`): the row that has it.
+    public let menuKeyboard = OutlineKeyboard()
+    /// The view that takes the pill's keys, as the path made it (`requestKeyboard` makes it the first
+    /// responder).
+    @ObservationIgnored weak var keyView: NSView?
+    /// Gives the keyboard back to the canvas (the path's `onExit`), for a change the pill's keys
+    /// didn't make: another board shown while the pill or its menu has the keyboard.
+    @ObservationIgnored var giveKeyboardBack: (@MainActor () -> Void)?
     /// Whether the board shown has no shapes, so its crumb has no menu: kept as commits change it,
     /// so the path reads it without reading the document, which every commit changes.
     private(set) var shownIsEmpty = true
@@ -128,6 +146,52 @@ public final class BoardCrumbs {
         return CrumbMenu(board: board, highlighted: path[index + 1].owner)
     }
 
+    /// Go › Board Path: the keyboard goes to the pill, on the crumb of the board shown (the path's
+    /// deepest). Nothing on the root, where the path shows nothing. False if the pill has no key
+    /// view to take it.
+    @discardableResult
+    public func requestKeyboard() -> Bool {
+        guard let last = crumbs.last, let view = keyView, let window = view.window else { return false }
+        closeMenu()
+        focus = .crumb(last.board)
+        defer { NSAccessibility.post(element: view, notification: .valueChanged) }
+        return window.makeFirstResponder(view)
+    }
+
+    /// Whether the pill, or its menu, has the keyboard.
+    public var hasKeyboard: Bool { focus != nil || menuKeyboard.isTaken }
+
+    /// Down on a crumb (the keyboard's way to what hovering does): its menu shows now, and takes the
+    /// keyboard on its rows. False for a crumb with no menu. Asked by an assistive app's Show
+    /// Contents too, with the canvas holding the keyboard: the pill's key view takes it, which the
+    /// menu's rows are answered through.
+    @discardableResult
+    public func openFromKeyboard(_ board: BoardID) -> Bool {
+        guard menu(of: board) != nil else { return false }
+        cancelOpen()
+        cancelClose()
+        openMenu = board
+        focus = nil
+        menuKeyboard.take()
+        if let view = keyView, let window = view.window, window.firstResponder !== view { window.makeFirstResponder(view) }
+        return true
+    }
+
+    /// Escape in the menu: it closes, and the keyboard goes to its crumb.
+    public func closeMenuToCrumb() {
+        let board = openMenu
+        closeMenu()
+        if let board { focus = .crumb(board) }
+    }
+
+    /// The keyboard has gone from the pill and its menu (another view took it): the stop is cleared,
+    /// and a menu it opened closes.
+    func keyboardLeft() {
+        let hadMenu = menuKeyboard.isTaken
+        focus = nil
+        if hadMenu { closeMenu() }
+    }
+
     /// The pointer is on the crumb of `board`: its menu shows once the pointer has stayed there
     /// `BoardsStyle.menuDelay` (150 ms, data-canvas's hover intent), in place of any other, which
     /// stays till then. Nothing for a crumb without a menu (an empty board shown's).
@@ -140,7 +204,7 @@ public final class BoardCrumbs {
         pendingOpen = (board, editor.scheduler.schedule(after: BoardsStyle.menuDelay) { [weak self] in
             guard let self else { return }
             pendingOpen = nil
-            openMenu = board
+            show(board)
         })
     }
 
@@ -165,6 +229,7 @@ public final class BoardCrumbs {
         cancelOpen()
         cancelClose()
         if openMenu != nil { openMenu = nil }
+        menuKeyboard.reset()
     }
 
     /// A row of the menu that shows, picked: the menu closes, then its shape is followed
@@ -176,11 +241,22 @@ public final class BoardCrumbs {
         editor.follow(id)
     }
 
+    /// Shows the menu of `board` in place of any other. The keyboard, if the menu being replaced had
+    /// it, goes to the new one's rows: a row of the old menu is no row of this one.
+    private func show(_ board: BoardID) {
+        guard openMenu != board else { return }
+        let hadKeyboard = menuKeyboard.isTaken
+        if hadKeyboard { menuKeyboard.reset() }
+        openMenu = board
+        if hadKeyboard { menuKeyboard.take() }
+    }
+
     private func closeSoon() {
         guard openMenu != nil, pendingClose == nil else { return }
         pendingClose = editor.scheduler.schedule(after: BoardsStyle.menuDelay) { [weak self] in
             guard let self else { return }
             pendingClose = nil
+            guard !menuKeyboard.isTaken else { return }
             openMenu = nil
         }
     }
@@ -208,10 +284,15 @@ extension BoardCrumbs: EditorService {
         if shownIsEmpty, openMenu == editor.board { closeMenu() }
     }
 
-    /// Another board shown: the crumbs are made again, and the menu that showed closes.
+    /// Another board shown: the crumbs are made again, and the menu that showed closes. If the pill
+    /// or its menu had the keyboard (a board picked from "…", Back or ⌘↑ from the menu bar), it goes
+    /// back to the canvas: the stop it was on is gone, and a key view with none would hold the keys.
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        let hadKeyboard = hasKeyboard
         closeMenu()
+        focus = nil
         remake()
+        if hadKeyboard { giveKeyboardBack?() }
     }
 }
 

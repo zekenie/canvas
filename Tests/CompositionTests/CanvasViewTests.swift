@@ -622,14 +622,19 @@ struct NotePill: Hashable, Sendable {
         expectEqual(menu.outline.last, "Delete")
         expectEqual(editor.selectedShapeIDs, [subboard])
         expect(canvas.menu(for: window.mouse(.leftMouseDown, at: card, modifiers: .control, time: 4)) != nil)
-        // An arrow's menu is the clipboard's (nothing to paste yet), Lock, its colors and Delete: Arrange leaves
-        // out what's painted by anchor.
+        // An arrow's menu is its heads', the clipboard's (nothing to paste yet), Lock, its colors and Delete: Arrange
+        // leaves out what's painted by anchor.
         expectEqual(try require(canvas.menu(for: window.mouse(.rightMouseDown, at: arrow, time: 5))).outline,
-                    ["Cut", "Copy", "Duplicate", "—", "Lock", "Color ▸", "  Gray", "  Red", "  Orange", "  Yellow", "  Green", "  Teal", "  Blue", "  Indigo", "  Purple", "  Pink", "  —", "  ✓ None", "—", "Delete"])
-        // Asked with some other event (the accessibility Show Menu action), there's no click to go by.
+                    ["Toggle Start Arrowhead", "Toggle End Arrowhead", "—", "Cut", "Copy", "Duplicate", "—", "Lock", "Color ▸", "  Gray", "  Red", "  Orange", "  Yellow", "  Green", "  Teal", "  Blue", "  Indigo", "  Purple", "  Pink", "  —", "  ✓ None", "  —", "  Edit Colors…", "—", "Delete"])
+        // Asked with some other event (the accessibility Show Menu action), there's no click: the selection's menu.
         let key = try require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 5, windowNumber: window.windowNumber,
                                                context: nil, characters: "m", charactersIgnoringModifiers: "m", isARepeat: false, keyCode: 46))
-        expect(canvas.menu(for: key) == nil)
+        editor.selectedShapeIDs = []
+        expect(canvas.menu(for: key) == nil, "nothing selected, nothing to show")
+        editor.selectedShapeIDs = [subboard]
+        let selected = try require(canvas.menu(for: key), "the selection's menu: VoiceOver's Show Menu")
+        expectEqual(selected.outline.first, "Open")
+        expectEqual(selected.outline.last, "Delete")
     },
     test("in the hand tool, a Control-press is a press with ⌃: no menu, and its drag pans") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())

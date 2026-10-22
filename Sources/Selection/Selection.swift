@@ -27,6 +27,8 @@ extension CanvasCommand {
     public static let selectAll: CanvasCommand = "selectAll"
     /// Go › Back (⌘[): what was selected before, wherever it was, whatever has the keyboard.
     public static let goBack: CanvasCommand = "goBack"
+    /// Go › Forward (⌘]): what Back left, again.
+    public static let goForward: CanvasCommand = "goForward"
     /// Go › Open Selection (⌘↓): a shape alone opened (its board shown, or edited), or a group whole or
     /// a container alone gone into; the selection, or a context menu's shapes.
     public static let openSelection: CanvasCommand = "openSelection"
@@ -202,46 +204,88 @@ public struct SelectionPlugin: ListedPlugin {
         registrar.outlines { $0.selectionOutlines }
         registrar.overlay(GroupFocusOverlay())
         registrar.overlay(HandlesOverlay())
+        registrar.overlay(PartFocusOverlay())
         // The keys the select tool and resizing read with the pointer, for the Keyboard Shortcuts window.
         registrar.keyHint("⇧ or ⌘ Click", "Add or Remove From Selection", while: .pointer)
         registrar.keyHint("⌘ Drag", "Select Shapes Wholly in the Box", while: .pointer)
         registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)
         registrar.keyHint("⇧ Resize", "Keep Proportions", while: .pointer)
         registrar.keyHint("⌥ Resize", "Resize From the Center", while: .pointer)
-        // What a command run from a key or the menu bar acts on: the selection.
-        registrar.commandShapes { $0.selectedShapeIDs }
+        // What a command run from a key or the menu bar acts on: the selection; and VoiceOver's press on
+        // a shape selects it, as Tab does.
+        registrar.commandShapes({ $0.selectedShapeIDs }, select: { editor, ids in
+            editor.selectedShapeIDs = ids
+            editor.revealIfOffscreen(ids)
+        })
+        // VoiceOver walks the board in Tab's order, and a shape's parts are ⌥Tab's (Accessibility.swift).
+        registerAccessibility(into: &registrar)
         // Delete and Forward Delete, and Edit › Delete, delete the shapes, while there are some (a
-        // locked one too, which shakes); ⌘A and Edit › Select All select everything, while the
+        // locked one too, which shakes) and, from a key or the menu bar, no part of the shape has the keyboard
+        // (⌥Tab: a chip focused is no shape to delete; a context menu's Delete deletes its shapes); ⌘A and Edit › Select All select everything, while the
         // board has shapes; ⌘[ and Go › Back go back to what was selected before, when there's
-        // somewhere to go; ⌘↓ opens the only selected shape, when it can be opened and isn't being
+        // somewhere to go, and ⌘] and Go › Forward undo it; ⌘↓ opens the only selected shape, when it can be opened and isn't being
         // edited (⌘↓ is then the text's), and Return (and Enter) does too, but always takes the
         // key, as it did when it only edited; a group selected whole, or a container that is neither
         // opened nor edited (a frame), is gone into instead, selecting its first part, or the first
         // shape in it, in reading order; ⇧2 and View › Zoom to Selection bring the shapes
         // into view (tldraw's key), and a trackpad's smart zoom the shape under the pointer.
+        // An offscreen selection is brought into view as it goes, so the key's effect shows (P7).
         registrar.command(.delete, title: "Delete", answering: .delete, shortcuts: [.delete, .deleteForward],
-                          isEnabled: { !$0.shapes.isEmpty }) { $0.editor.deleteShapes($0.shapes) }
+                          isEnabled: { !$0.shapes.isEmpty && !$0.editor.hasFocusedPart(for: $0) }) {
+            $0.editor.revealIfOffscreen($0.shapes)
+            $0.editor.deleteShapes($0.shapes)
+        }
         registrar.command(.selectAll, title: "Select All", answering: .selectAll, shortcut: KeyChord("a", .command),
                           isEnabled: { !$0.editor.document.shapes.isEmpty }) { $0.editor.selectAll() }
         registrar.command(.goBack, title: "Back", menu: "Go", order: 0, shortcut: KeyChord("[", .command), runs: .betweenPresses,
                           isEnabled: { $0.editor.canGoBack }) { $0.editor.goBack() }
+        registrar.command(.goForward, title: "Forward", menu: "Go", order: 1, shortcut: KeyChord("]", .command), runs: .betweenPresses,
+                          isEnabled: { $0.editor.canGoForward }) { $0.editor.goForward() }
         // Return and Enter are keys of their own that always take the key, called as the command is, so
         // the Keyboard Shortcuts window lists them in its row.
         let openSelection = "Open Selection"
         registrar.command(.openSelection, title: openSelection, menu: "Go", order: 20, shortcut: KeyChord(KeyChord.downArrow.key, .command),
                           runs: .whenIdle, isEnabled: { $0.editor.canOpenSelection($0.shapes) }) { $0.editor.openSelection($0.shapes) }
-        registrar.shortcut(.return, openSelection) { $0.perform(.openSelection) }
-        registrar.shortcut(.enter, openSelection) { $0.perform(.openSelection) }
+        // With a part of the shape focused (⌥Tab), they press it instead, as Space does (`pressFocused`); with a
+        // tool picked that places a shape (N, F), they put its shape down at the pointer, or the view's middle, and
+        // edit it (`placeAtKeyboard`), as a click with the tool does.
+        registrar.shortcut(.return, openSelection) { $0.returnKey() }
+        registrar.shortcut(.enter, openSelection) { $0.returnKey() }
+        registrar.pressFocused { $0.pressFocusedPart() }
         registrar.command(.zoomToSelection, title: "Zoom to Selection", menu: "View", order: 140, shortcut: KeyChord("2", .shift),
                           isEnabled: { !$0.shapes.isEmpty && !$0.editor.unobscuredViewport.isEmpty }) { $0.editor.reveal($0.shapes) }
         registrar.command(.smartMagnify, title: "Smart Zoom", answering: .smartMagnify) { $0.editor.smartMagnify() }
         // ← → ↑ ↓ nudge the selection a world unit, and ten with ⇧, again and again while held (one
-        // undo step), while nothing's under way or being edited; with nothing selected they pass.
+        // undo step, settled into or out of a container as the key is let go), while nothing's under way or
+        // being edited; a focused part that adjusts (a handle) takes them instead. With nothing selected
+        // they pan the view a step, and with ⇧ a page (the core's `pan`), as the Hand would.
         for (arrow, direction) in SelectionStyle.nudges {
-            registrar.shortcut(arrow, "Nudge", when: { $0.canNudge }, repeats: true) { $0.nudgeSelection(by: direction * SelectionStyle.nudge) }
-            registrar.shortcut(KeyChord(arrow.key, .shift), "Nudge", when: { $0.canNudge }, repeats: true) {
-                $0.nudgeSelection(by: direction * SelectionStyle.shiftNudge)
+            registrar.shortcut(arrow, SelectionStyle.nudgeOrPan, when: { $0.canNudge || $0.canPanByKeys }, repeats: true) {
+                $0.arrowKey(direction, large: false)
             }
+            registrar.shortcut(KeyChord(arrow.key, .shift), SelectionStyle.nudgeOrPan, when: { $0.canNudge || $0.canPanByKeys }, repeats: true) {
+                $0.arrowKey(direction, large: true)
+            }
+        }
+        // ⌥ and an arrow resize the only selected shape of a kind that resizes, from its top left: → and ↓ grow it,
+        // ← and ↑ shrink it, a world unit, ten with ⇧, again and again while held, one step, "Resize", settled as
+        // the key is let go as the drag's release settles it; a read-only one shakes.
+        for (arrow, direction) in SelectionStyle.nudges {
+            registrar.shortcut(KeyChord(arrow.key, .option), "Resize", when: { $0.keyResizable != nil }, repeats: true) {
+                $0.resizeSelection(direction, large: false)
+            }
+            registrar.shortcut(KeyChord(arrow.key, [.option, .shift]), "Resize", when: { $0.keyResizable != nil }, repeats: true) {
+                $0.resizeSelection(direction, large: true)
+            }
+        }
+        // ⌥Tab and ⌥⇧Tab go into the only selected shape's parts (`ShapeParts`: its chips, pills, buttons,
+        // handles), the first or the last in reading order, and step between them, round inside the shape;
+        // Escape goes back to the shape. Tab stays the shapes'.
+        registrar.shortcut(KeyChord(KeyChord.tab.key, .option), "Next Part", when: { $0.canFocusParts }, repeats: true) {
+            $0.focusAdjacentPart(.next)
+        }
+        registrar.shortcut(KeyChord(KeyChord.tab.key, [.option, .shift]), "Previous Part", when: { $0.canFocusParts }, repeats: true) {
+            $0.focusAdjacentPart(.previous)
         }
         // Tab and ⇧Tab select the next and previous shape in reading order, ⌥⌘ and an arrow the nearest in
         // that direction, and with ⇧ add it to the selection, among the selection's siblings (tldraw's);
@@ -251,9 +295,11 @@ public struct SelectionPlugin: ListedPlugin {
         registrar.shortcut(KeyChord(KeyChord.tab.key, .shift), "Previous Shape", when: { $0.canStepSelection }, repeats: true) {
             $0.selectAdjacentShape(.previous)
         }
+        // A focused part that adjusts (an arrow's end) takes ⌥⌘ and an arrow first (`PartStep.toNearest`).
         for (arrow, direction) in SelectionStyle.steps {
+            let vector = SelectionStyle.nudges.first { $0.0 == arrow }?.1 ?? .zero
             registrar.shortcut(KeyChord(arrow.key, [.option, .command]), "Select Nearest Shape", when: { $0.canStepSelection }, repeats: true) {
-                $0.selectAdjacentShape(direction)
+                if !$0.adjustFocusedPart(PartStep(direction: vector, toNearest: true)) { $0.selectAdjacentShape(direction) }
             }
             registrar.shortcut(KeyChord(arrow.key, [.option, .shift, .command]), "Add Nearest Shape to Selection", when: { $0.canStepSelection },
                                repeats: true) { $0.selectAdjacentShape(direction, adding: true) }

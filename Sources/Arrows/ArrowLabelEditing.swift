@@ -76,7 +76,7 @@ extension ArrowLabelDragSession: Session {
 /// units, the label's frame at their origin, so AppKit scales it by the zoom and the text lays out
 /// as the canvas draws it (`ArrowStyle.labelText`, centered), its padding in from the label's
 /// edges. Each change is written to the arrow, which the label grows with, and the canvas lays the
-/// view over the label again. Escape and ⌘↩ end editing; Return is a new line, as in tldraw, unless
+/// view over the label again. Escape, Tab, ⇧Tab and ⌘↩ end editing; Return is a new line, as in tldraw, unless
 /// the line is a slash command, which it runs. The text is mention text (`MentionTextView`): an
 /// `@` lists the shapes to mention, each a pill, and a `/` on an empty line lists the commands the
 /// arrow offers (`/lock`, ...), as a note's text does.
@@ -106,6 +106,7 @@ final class ArrowLabelEditor: NSView, NSTextViewDelegate {
         textView.spelling = .app
         textView.delegate = self
         textView.commitsOnLeaving = false
+        textView.tabBehavior = .host
         textView.onCommit = { [weak self] in self?.context.end() }
         clipsToBounds = true
         addSubview(textView)
@@ -152,8 +153,13 @@ final class ArrowLabelEditor: NSView, NSTextViewDelegate {
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        guard commandSelector == #selector(cancelOperation(_:)) else { return false }
-        context.end()
-        return true
+        // Escape, Tab and ⇧Tab end editing and leave the arrow selected; a tab is never typed.
+        switch commandSelector {
+        case #selector(cancelOperation(_:)), #selector(insertTab(_:)), #selector(insertBacktab(_:)):
+            context.end()
+            return true
+        default:
+            return false
+        }
     }
 }

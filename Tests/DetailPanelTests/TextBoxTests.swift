@@ -297,7 +297,7 @@ let commandReturn = (characters: "\r", code: UInt16(36), modifiers: NSEvent.Modi
         expectEqual(keyedCommits, 2)
         expectEqual(view.commands.count, 2, "Return and ⌘↩ commit before they come to commands")
     },
-    test("without a commit, Return is a new line and ⌘↩ isn't taken: it goes on to the view's commands") {
+    test("without a commit, Return is a new line and ⌘↩ leaves the panel, keeping what was typed") {
         let editor = try gadgetEditor([KeyedBoxesPlugin()], scheduler: TaskScheduler())
         let panel = PanelWindow(editor)
         let id = try panel.showKeys()
@@ -308,10 +308,10 @@ let commandReturn = (characters: "\r", code: UInt16(36), modifiers: NSEvent.Modi
         panel.window.pressReturn()
         panel.window.type("b")
         expectEqual(editor.props(id, as: Gadget.self)?.name, "a\nb")
-        expect(!view.performKeyEquivalent(with: panel.window.keyEvent(commandReturn.characters, code: commandReturn.code, modifiers: commandReturn.modifiers)))
-        let commands = view.commands.count
+        expectEqual(panel.exits, 0)
         panel.window.press(commandReturn.characters, code: commandReturn.code, modifiers: commandReturn.modifiers)
-        expectEqual(view.commands.count, commands + 1, "⌘↩ came to the view: \(view.commands)")
+        expectEqual(panel.exits, 1, "⌘↩ is the panel's: the keyboard goes back to the canvas")
+        expectEqual(editor.props(id, as: Gadget.self)?.name, "a\nb", "and what was typed stays")
         expectEqual(keyedCommits, 0)
     },
     test("a disabled box (something else writing it) is read-only and dimmed; enabled again, it's editable in the label's color") {

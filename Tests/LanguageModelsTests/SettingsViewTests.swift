@@ -43,4 +43,27 @@ private func hostSettings(keys: AnthropicKeyStore, model: ScriptedLanguageModel)
             window.spin(until: { keys.read() == testKey })
         }
     },
+    test("the key field has the keyboard once the view appears") {
+        try withTemporaryStore { keys in
+            let (window, hosting) = hostSettings(keys: keys, model: ScriptedLanguageModel())
+            defer { window.close() }
+            let field = try require(hosting.descendants(NSSecureTextField.self).first)
+            window.spin(until: { (window.firstResponder as? NSTextView)?.delegate === field })
+        }
+    },
+    test("a status change is announced, and a failure's detail is its hint") {
+        try withTemporaryStore { keys in
+            try keys.write(testKey)
+            let model = ScriptedLanguageModel()
+            model.queue(.unauthorized)
+            let settings = AnthropicKeySettings(keys: keys, model: model)
+            var heard: [String] = []
+            settings.announce = { heard.append($0) }
+            settings.test()
+            spinRunLoop(until: { settings.status != .testing })
+            expectEqual(heard, ["Testing…", "API key rejected"])
+            settings.remove()
+            expectEqual(heard.count, 2, "a removal says nothing the field doesn't")
+        }
+    },
 ])

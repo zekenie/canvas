@@ -155,6 +155,138 @@ final class FindWindow {
         w.window.spin { w.canvasHasKeyboard }
         expect(!w.find.isActive)
     },
+    test("Up, Down, Page Up and Page Down in the field walk the results, wrapping, and change neither the selection nor the document") {
+        let bodies = (1...12).map { "pear \($0)" }
+        let w = try FindWindow(CanvasFile(root: CanvasDocument(shapes: memos(bodies))))
+        let keys = KeyDriver(w.window)
+        w.commandF()
+        w.window.spin { w.fieldHasKeyboard }
+        w.window.type("pear")
+        w.window.spin { w.find.total == 12 && w.find.isSettled }
+        let first = try require(w.find.found.first)
+        w.editor.selectedShapeIDs = [first]
+        let before = w.editor.file
+        expectEqual(w.find.currentNumber, 1)
+        expect(!keys.send(.down).isUnhandled)
+        w.window.spin { w.find.currentNumber == 2 }
+        keys.send(.up)
+        w.window.spin { w.find.currentNumber == 1 }
+        keys.send(.up)
+        w.window.spin { w.find.currentNumber == 12 }
+        keys.send(.down)
+        w.window.spin { w.find.currentNumber == 1 }
+        keys.send(Chord(.pageDown))
+        w.window.spin { w.find.currentNumber == 1 + 8 }
+        keys.send(Chord(.pageUp))
+        w.window.spin { w.find.currentNumber == 1 }
+        keys.send(Chord(.pageUp))
+        w.window.spin { w.find.currentNumber == 12 - 8 + 1 }
+        expect(w.fieldHasKeyboard, "the field keeps the keyboard")
+        expectEqual(w.editor.selectedShapeIDs, [first], "stepping selects nothing")
+        expectEqual(w.editor.file, before, "and changes no document")
+        expectEqual(w.editor.currentToolID, .select)
+    },
+    test("every row reads its text, kind, board and hit's number, and each step announces where it went") {
+        let pockets = PocketFile(root: ["pear one", "pear two"], inA: ["pear three"], inA1: [], inB: [])
+        let w = try FindWindow(pockets.file)
+        let keys = KeyDriver(w.window)
+        w.commandF()
+        w.window.spin { w.fieldHasKeyboard }
+        w.window.type("pear")
+        w.window.spin { w.find.total == 3 && w.find.isSettled && w.rows.count == 3 }
+        // SwiftUI's accessibility tree isn't built in an unshown window (the rows' buttons report no
+        // label), so what the panel hands VoiceOver is read from Find's state, which it labels from.
+        expectEqual((0..<3).map { w.find.rowLabel(of: $0) },
+                    ["pear one, memo, hit 1 of 3", "pear two, memo, hit 2 of 3", "pear three, memo, hit 3 of 3"],
+                    "a board with no name isn't said")
+        expectEqual(w.find.announcement, "Hit 1 of 3, memo, pear one")
+        expectEqual(w.find.stepCount, 0, "typing lands on a hit without a step, so VoiceOver is not talked over")
+        keys.send(.down)
+        w.window.spin { w.find.currentNumber == 2 }
+        expectEqual(w.find.stepCount, 1, "a step is announced")
+        expectEqual(w.find.rowLabel(of: 0), "pear one, memo, hit 1 of 3", "a row's label is the same asked again")
+        expectEqual(w.find.announcement, "Hit 2 of 3, memo, pear two")
+        keys.send(.down)
+        w.window.spin { w.find.currentNumber == 3 }
+        expectEqual(w.find.announcement, "Hit 3 of 3, memo, pear three")
+    },
+    test("⌘↩ closes Find, selects the hit's shape, gives the canvas the keyboard and adds one Back step; Escape, ⌘. and Done select nothing") {
+        let pockets = PocketFile(root: ["pear one", "pear two"], inA: ["pear three"], inA1: [], inB: [])
+        let w = try FindWindow(pockets.file)
+        let keys = KeyDriver(w.window)
+        @MainActor func open() {
+            w.commandF()
+            w.window.spin { w.fieldHasKeyboard }
+            if w.find.query.isEmpty { w.window.type("pear") }
+            w.window.spin { w.find.total == 3 && w.find.isSettled }
+        }
+        // The ways out that take nothing along.
+        open()
+        keys.send(.down)
+        w.window.spin { w.find.currentNumber == 2 }
+        keys.send(.escape)
+        w.window.spin { w.canvasHasKeyboard }
+        expect(!w.find.isActive)
+        expectEqual(w.editor.selectedShapeIDs, [])
+        open()
+        keys.send(.commandPeriod)
+        w.window.spin { w.canvasHasKeyboard }
+        expectEqual(w.editor.selectedShapeIDs, [])
+        open()
+        try require(w.done).performClick(nil)
+        w.window.spin { w.canvasHasKeyboard }
+        expectEqual(w.editor.selectedShapeIDs, [], "Done")
+        // ⌘↩ takes the hit along: on this board, then on another.
+        open()
+        keys.send(.up)
+        w.window.spin { w.find.currentNumber == 3 }
+        expectEqual(w.editor.board, pockets.aBoard, "stepping showed the hit's board")
+        keys.send(Chord(.down))
+        w.window.spin { w.find.currentNumber == 1 }
+        keys.send(.commandReturn)
+        w.window.spin { w.canvasHasKeyboard }
+        expect(!w.find.isActive)
+        expectEqual(w.editor.selectedShapeIDs, [pockets.root[0].id])
+        expectEqual(w.editor.board, .root)
+        keys.send(Chord("[", .command))     // Back: one step to where Find began
+        w.window.settle()
+        w.editor.goBack()
+        expectEqual(w.editor.selectedShapeIDs, [], "one step back reaches where Find began")
+        expect(!w.editor.canGoBack, "and there was one step")
+    },
+    test("⌘↩ on a hit on another board shows the board and selects the shape; Back returns to where Find began") {
+        let pockets = PocketFile(root: ["plum"], inA: ["pear three"], inA1: [], inB: [])
+        let w = try FindWindow(pockets.file)
+        let keys = KeyDriver(w.window)
+        w.commandF()
+        w.window.spin { w.fieldHasKeyboard }
+        w.window.type("pear")
+        w.window.spin { w.find.total == 1 && w.find.isSettled }
+        keys.send(.commandReturn)
+        w.window.spin { w.canvasHasKeyboard }
+        expectEqual(w.editor.board, pockets.aBoard)
+        expectEqual(w.editor.selectedShapeIDs, [pockets.inA[0].id])
+        w.editor.goBack()
+        expectEqual(w.editor.board, .root)
+        expect(!w.editor.canGoBack)
+    },
+    test("Tab from the field never traps, and Escape gives the keyboard back") {
+        let w = try FindWindow(CanvasFile(root: CanvasDocument(shapes: memos(["pear one", "pear two"]))))
+        let keys = KeyDriver(w.window)
+        w.commandF()
+        w.window.spin { w.fieldHasKeyboard }
+        w.window.type("pear")
+        w.window.spin { w.find.total == 2 && w.find.isSettled }
+        let file = w.editor.file
+        for _ in 0..<4 {
+            keys.send(.tab)
+            w.window.settle()
+            expectEqual(w.editor.file, file)
+        }
+        keys.send(.escape)
+        w.window.spin { w.canvasHasKeyboard }
+        expect(!w.find.isActive)
+    },
     test("FindPanelPlugin needs the detail panel, whose place it takes; Find alone needs neither") {
         expectThrows(RegistryError.ownerNotInstalled(point: "DetailTakeovers", owner: .detailPanel, contributor: .findPanel)) {
             _ = try Registry(plugins: findPlugins(more: [FindPanelPlugin()]))

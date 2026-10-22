@@ -44,6 +44,9 @@ extension SelectTool: Tool {
         // A Control-click is the Mac's secondary click: whatever menu it has, AppKit already showed.
         // It doesn't press. (Other tools still get it, as a press with ⌃ held.)
         guard !pointer.isControlClick else { return }
+        // The pointer takes over from the keys: a part focused with ⌥Tab lets go, so what the press does (and Space,
+        // Return and Delete after it) is the shape's, or what it presses, never the part's the pointer left.
+        editor.selectionState?.clearPartFocus()
         // Whatever this press does to the selection, through the end of its drag, is one step back.
         editor.selectionState?.pressBegan()
         defer { editor.selectionState?.pressEnded() }
@@ -163,8 +166,9 @@ extension SelectTool: Tool {
         editor.hoverPopover(nil)
     }
 
-    /// Escape with nothing under way deselects all, or, with the selection inside a group, goes out
-    /// of it, selecting the group whole (tldraw's).
+    /// Escape with nothing under way goes out one level (`SelectionState.escape`): from a focused part to
+    /// its shape, out of the group the selection is inside, selecting the group whole (tldraw's), then out
+    /// of the frame its shapes are in, selecting the frame; at the board's own shapes it deselects all.
     func cancel(in editor: CanvasEditor) -> Bool {
         if let state = editor.selectionState { state.escape() } else { editor.selection = nil }
         return true

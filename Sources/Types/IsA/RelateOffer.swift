@@ -13,7 +13,9 @@ import Selection
 
 extension TypesStyle {
     /// The offer's one item: `Relate to Layer`.
-    public static func relate(to name: String) -> String { "Relate to \(name)" }
+    public static func relate(to name: String) -> String { "\(relateTo) \(name)" }
+    /// The submenu of the offers in a type's words.
+    public static let relateTo = "Relate to"
 }
 
 /// A pill in a type's words that offers to relate its type to the type it names (world units).
@@ -21,6 +23,13 @@ struct RelateFace: Hashable, Sendable {
     let shape: ShapeID
     let target: ShapeID
     let frame: CGRect
+
+    /// What the offer is, whatever its pill's frame: the part's id stays the same when the type moves or its pills reflow.
+    struct Offer: Hashable, Sendable {
+        let shape: ShapeID
+        let target: ShapeID
+    }
+    var offer: Offer { Offer(shape: shape, target: target) }
 }
 
 @MainActor
@@ -28,18 +37,38 @@ enum RelateOffers {
     /// The face under `point` on `record`, or nil. It is asked on every move over a shape, so the cheap tests come first
     /// and a note that is no type costs one lookup of an added value.
     static func find(at point: CGPoint, on record: AnyShapeRecord, in editor: CanvasEditor) -> RelateFace? {
-        // A type is a shape that holds a schema (this names no kind).
-        guard editor.editingShapeID != record.id, let schema = record[TypeSchemaProperty.self] else { return nil }
-        guard !editor.isBoardReadOnly, let types = editor.types, let relationships = editor.relationships else { return nil }
-        // A relationship type's pills name its ends, which are arrows; it relates to nothing.
-        guard !relationships.graph.isRelationshipType(record.id) else { return nil }
-        guard let pill = editor.mentionPills(of: record.id).last(where: { $0.frame.contains(point) }), pill.isLive,
-              types.canBeEmbedded(pill.target) else { return nil }
+        guard editor.editingShapeID != record.id, let schema = record[TypeSchemaProperty.self], canOffer(on: record, in: editor) else { return nil }
+        guard let pill = editor.mentionPills(of: record.id).last(where: { $0.frame.contains(point) }) else { return nil }
+        return offer(pill, on: record, schema: schema, in: editor)
+    }
+
+    /// Every offer in `record`'s words, in the order its pills are laid out, one for each type they name: what Relate to ▸ lists
+    /// and ⌥Tab reaches, with no point.
+    static func offers(on record: AnyShapeRecord, in editor: CanvasEditor) -> [RelateFace] {
+        guard editor.editingShapeID != record.id, let schema = record[TypeSchemaProperty.self], canOffer(on: record, in: editor) else { return [] }
+        var named = Set<ShapeID>()
+        return editor.mentionPills(of: record.id).compactMap { pill in
+            guard !named.contains(pill.target), let face = offer(pill, on: record, schema: schema, in: editor) else { return nil }
+            named.insert(pill.target)
+            return face
+        }
+    }
+
+    /// Whether `record`, a type, offers anything: a board that can change, the index and relationships, and no relationship type
+    /// (its pills name its ends, which are arrows; it relates to nothing).
+    private static func canOffer(on record: AnyShapeRecord, in editor: CanvasEditor) -> Bool {
+        guard !editor.isBoardReadOnly, editor.types != nil, let relationships = editor.relationships, editor.registry.drawsConnections else { return false }
+        return !relationships.graph.isRelationshipType(record.id)
+    }
+
+    /// The offer of one pill, or nil: a live pill naming a type that can be embedded, on the board shown or one a pill can stand
+    /// for, that the type neither holds in place nor is joined to by a relationship type.
+    private static func offer(_ pill: MentionPillFrame, on record: AnyShapeRecord, schema: SchemaText, in editor: CanvasEditor) -> RelateFace? {
+        guard pill.isLive, let types = editor.types, let relationships = editor.relationships, types.canBeEmbedded(pill.target) else { return nil }
         // The type the pill names: on the board shown, or on another, which a pill can stand for.
         if editor.document[pill.target] == nil {
             guard FarVerdicts(editor).verdict(of: pill.target) != .cannot else { return nil }
         }
-        guard editor.registry.drawsConnections else { return nil }
         // The two that cost: a type that holds the other's fields in place is not related to it, and neither is one that a
         // relationship type already joins to it.
         if SchemaReferences.refs(in: schema.text).contains(where: { $0.shape == pill.target }) { return nil }
@@ -47,15 +76,19 @@ enum RelateOffers {
         return RelateFace(shape: record.id, target: pill.target, frame: pill.frame)
     }
 
+    /// What a type is called in an offer: `Layer`, with what a pick of a type on another board does first.
+    static func name(of target: ShapeID, in editor: CanvasEditor) -> String {
+        let record = editor.shape(inFile: target)
+        var name = record.flatMap { editor.registry.mentionAppearance(of: $0)?.label } ?? editor.types?.name(of: target) ?? TypesStyle.untitledType
+        if editor.document[target] == nil, case .fulfils(let needs) = editor.farVerdict(of: target) {
+            name += " · " + TypesStyle.willBeMade(needs)
+        }
+        return name
+    }
+
     /// The item's title: `Relate to Layer`, with what a pick of a type on another board does first.
     static func title(for face: RelateFace, in editor: CanvasEditor) -> String {
-        let record = editor.shape(inFile: face.target)
-        let name = record.flatMap { editor.registry.mentionAppearance(of: $0)?.label } ?? editor.types?.name(of: face.target) ?? TypesStyle.untitledType
-        var title = TypesStyle.relate(to: name)
-        if editor.document[face.target] == nil, case .fulfils(let needs) = editor.farVerdict(of: face.target) {
-            title += " · " + TypesStyle.willBeMade(needs)
-        }
-        return title
+        TypesStyle.relate(to: name(of: face.target, in: editor))
     }
 
     /// The menu a click opens: one item.
@@ -103,4 +136,16 @@ func registerRelateOffer(into registrar: inout PluginRegistrar) {
                              }
                          },
                          hovering: { face, editor in editor.document[face.target] != nil ? face.target : nil })
+    // The same by keys: each offer is a part of the type (⌥Tab), whose press opens the menu the click opens.
+    registrar.forShapes(holding: TypeSchemaProperty.self) { typeKinds in
+        typeKinds.shapeParts(named: "RelateFace") { editor, record in
+            guard record[TypeSchemaProperty.self] != nil, !editor.drawsSkeleton(of: record.id) else { return [] }
+            return RelateOffers.offers(on: record, in: editor).map { face in
+                ShapePart(id: face.offer, title: RelateOffers.title(for: face, in: editor), role: .menuButton, rect: face.frame) { editor in
+                    let menu = RelateOffers.menu(for: face, in: editor)
+                    editor.popUpMenu(menu, below: face.frame, highlighting: menu.items.first)
+                }
+            }
+        }
+    }
 }

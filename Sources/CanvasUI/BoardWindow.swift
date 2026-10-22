@@ -23,6 +23,9 @@ import AppKit
 public final class BoardWindow: NSWindow {
     /// The editor whose board this window shows.
     public weak var editor: CanvasEditor? { didSet { Self.watchOtherWindows() } }
+    /// Escape where nothing takes it (the toolbar, the bare hosting view): the controller gives the keyboard back to the
+    /// canvas; true if it did.
+    var escapeToCanvas: (@MainActor () -> Bool)?
     /// Text's undo and redo, while text that keeps none of its own has the keyboard.
     public let textUndo = UndoManager()
     /// Localized menu titles for the board's steps ("Undo Move", or "Undo" for a step without a
@@ -124,6 +127,9 @@ public final class BoardWindow: NSWindow {
     /// the table of contents' list), begins something new: a run of panel writes ends there. (The
     /// canvas's own presses and keys are steps of their own anyway.)
     public override func sendEvent(_ event: NSEvent) {
+        // Escape held with no modifier that changes a key (Caps Lock is no such modifier).
+        if event.type == .keyDown, event.keyCode == 53, Modifiers(event.modifierFlags).isEmpty,
+           textWithKeyboard == nil, escapeToCanvas?() == true { return }
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
             editor?.undoHistory.seal()

@@ -11,6 +11,47 @@ import CoreGraphics
 /// to the nearest in a direction.
 public enum AdjacentDirection: Hashable, Sendable {
     case next, previous, left, right, up, down
+
+    /// The way back: ⇧Tab's for Tab's, ←'s for →'s.
+    var opposite: AdjacentDirection {
+        switch self {
+        case .next: .previous
+        case .previous: .next
+        case .left: .right
+        case .right: .left
+        case .up: .down
+        case .down: .up
+        }
+    }
+}
+
+/// The steps Tab, ⇧Tab and ⌥⌘ with an arrow (⇧ too, adding) took the selection on, latest last, so the
+/// opposite key undoes each exactly (P4), back to where it began even where that was no stop (several shapes,
+/// an arrow, nothing): tldraw's nearest-scoring and the reading order need not lead back on their own. The
+/// selection keeps it until anything else changes it. Holds the last `limit` steps.
+struct StepTrail {
+    struct Step {
+        let before: [ShapeID]
+        let after: [ShapeID]
+        let direction: AdjacentDirection
+        let adding: Bool
+    }
+
+    static let limit = 50
+
+    private(set) var steps: [Step] = []
+
+    mutating func push(_ step: Step) {
+        steps.append(step)
+        if steps.count > Self.limit { steps.removeFirst(steps.count - Self.limit) }
+    }
+
+    /// The latest step, taken off, if `direction` (with `adding` as it was) undoes it from `selection`, where
+    /// it left the selection.
+    mutating func undo(_ direction: AdjacentDirection, adding: Bool, from selection: [ShapeID]) -> Step? {
+        guard let last = steps.last, last.after == selection, last.direction == direction.opposite, last.adding == adding else { return nil }
+        return steps.removeLast()
+    }
 }
 
 /// What stepping out of the selection selects (`editor.selectionEnclosure`): ⌘↑'s step before it goes up a
@@ -39,12 +80,18 @@ enum StopOrder {
     /// right, then within a row the next two are swapped where the one after next is closer to the stop
     /// by under `readingSwapCloseness` of the squared distance and no more than `readingSwapAngle` degrees
     /// off the horizontal to its right. Stops level with one another stay in the order they came.
-    static func reading(_ stops: [Stop]) -> [Stop] {
-        guard stops.count > 1 else { return stops }
-        let byHeight = stops.enumerated().sorted { ($0.element.center.y, $0.offset) < ($1.element.center.y, $1.offset) }.map(\.element)
-        var rows: [[Stop]] = []
+    static func reading(_ stops: [Stop]) -> [Stop] { reading(stops) { $0.center } }
+
+    /// Anything in reading order by a middle of its own, as stops are (a shape's parts, by their rects'). `rowRange`: how near two
+    /// middles are in height to be read in one row (shapes', by default; a shape's parts are smaller, and their rows closer).
+    static func reading<Item>(_ items: [Item], rowRange: CGFloat? = nil, center: (Item) -> CGPoint) -> [Item] {
+        guard items.count > 1 else { return items }
+        let range = rowRange ?? SelectionStyle.readingRowRange
+        let byHeight = items.map { (item: $0, center: center($0)) }.enumerated()
+            .sorted { ($0.element.center.y, $0.offset) < ($1.element.center.y, $1.offset) }.map(\.element)
+        var rows: [[(item: Item, center: CGPoint)]] = []
         for stop in byHeight {
-            if let row = rows.indices.reversed().first(where: { abs(stop.center.y - rows[$0][rows[$0].count - 1].center.y) < SelectionStyle.readingRowRange }) {
+            if let row = rows.indices.reversed().first(where: { abs(stop.center.y - rows[$0][rows[$0].count - 1].center.y) < range }) {
                 rows[row].append(stop)
             } else {
                 rows.append([stop])
@@ -61,7 +108,7 @@ enum StopOrder {
                 }
             }
         }
-        return rows.flatMap { $0 }
+        return rows.flatMap { $0.map(\.item) }
     }
 
     private static func squaredDistance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
@@ -101,13 +148,23 @@ enum StopOrder {
 }
 
 /// Which shapes stepping looks at: those the selection's siblings are.
-private enum StepScope {
+enum StepScope: Equatable {
     /// The board's own shapes, in no container.
     case top
     /// The shapes in a container.
     case inside(ShapeID)
     /// Any shape, in any container: nothing is selected, and the focus is a group.
     case anywhere
+}
+
+/// What the stops in reading order were worked out from: the board, its shapes and their layout, which
+/// shapes stepping looks at, and the groups the selection is inside.
+struct ReadingOrderKey: Equatable {
+    let board: BoardID
+    let revision: Int
+    let layoutRevision: Int
+    let scope: StepScope
+    let focus: [AnyHashable]
 }
 
 extension SelectionState {
@@ -133,7 +190,7 @@ extension SelectionState {
 
     /// tldraw's: the container the selected shapes are all in if they are, else the board's own. With
     /// nothing selected, those inside the group the selection was in, if it was in one.
-    private var stepScope: StepScope {
+    var stepScope: StepScope {
         guard !selectedIDs.isEmpty else { return focus.isEmpty ? .top : .anywhere }
         return commonContainer().map(StepScope.inside) ?? .top
     }
@@ -159,17 +216,23 @@ extension SelectionState {
     }
 
     /// Where a step goes from the selection, or nil: Tab and ⇧Tab to the next and previous stop in reading
-    /// order, from the first selected one (the first stop with nothing selected, the last going back),
-    /// wrapping; an arrow to the nearest stop that way from the stop selected last, leaving out, when
-    /// `adding`, those selected already.
+    /// order, from the first selected one, wrapping; with a selection that holds no stop (an arrow), from
+    /// where the middle of its bounds reads among the stops, never from either end; with nothing selected,
+    /// the first stop (the last, going back). An arrow key to the nearest stop that way from the stop
+    /// selected last, leaving out, when `adding`, those selected already.
     func adjacentStop(_ direction: AdjacentDirection, adding: Bool) -> Stop? {
         switch direction {
         case .next, .previous:
-            let order = StopOrder.reading(stops(in: stepScope))
+            let order = orderedStops(), step = direction == .next ? 1 : -1
             guard !order.isEmpty else { return nil }
-            let current = order.firstIndex { $0.shapes.contains(where: selectedSet.contains) }
-            let from = current ?? (direction == .previous ? 0 : -1)
-            return order[(from + (direction == .next ? 1 : -1) + order.count) % order.count]
+            if let current = order.firstIndex(where: { $0.shapes.contains(where: selectedSet.contains) }) {
+                return order[(current + step + order.count) % order.count]
+            }
+            guard let bounds = selectionBounds else { return order[direction == .previous ? order.count - 1 : 0] }
+            // The selection's middle read among the stops, as a stop of no shapes: the one after it, or before.
+            let placed = StopOrder.reading(order + [Stop(shapes: [], center: CGPoint(x: bounds.midX, y: bounds.midY))])
+            guard let middle = placed.firstIndex(where: \.shapes.isEmpty) else { return nil }
+            return placed[(middle + step + placed.count) % placed.count]
         case .left, .right, .up, .down:
             guard let last = selectedIDs.last else { return nil }
             let unit = unit(of: last, within: focus)
@@ -180,6 +243,22 @@ extension SelectionState {
             }
             return StopOrder.nearest(to: origin.center, among: candidates, toward: direction)
         }
+    }
+
+    /// The stops Tab steps through where the selection is, in reading order, each one's shapes in turn (a
+    /// group's back to front): the order VoiceOver walks the board in (`registrar.accessibleOrder`).
+    var readingOrder: [ShapeID] { orderedStops().flatMap(\.shapes) }
+
+    /// The stops in `stepScope`, in reading order, kept until the board, its shapes, their layout, the scope
+    /// or the group the selection is inside changes: Tab and VoiceOver ask for the same ones, and a step to a
+    /// sibling, or a pan, finds them kept.
+    private func orderedStops() -> [Stop] {
+        let scope = stepScope
+        let key = ReadingOrderKey(board: editor.board, revision: editor.revision, layoutRevision: editor.layoutRevision, scope: scope, focus: focus)
+        if let kept = keptReadingOrder, kept.key == key { return kept.stops }
+        let ordered = StopOrder.reading(stops(in: scope))
+        keptReadingOrder = (key, ordered)
+        return ordered
     }
 
     // MARK: In and out
@@ -240,6 +319,29 @@ extension SelectionState {
         return nil
     }
 
+    /// A step of Tab, ⇧Tab or ⌥⌘ and an arrow (`adding`, with ⇧): the latest step undone exactly when this is
+    /// its opposite and the selection is where it left it (`trail`), else the selection moved to the adjacent
+    /// stop (`adjacentStop`), or the stop added to it, and the step kept for its opposite. A step back to shapes
+    /// that are gone, or can't be selected now (deleted, undone, drawn away by an agent), can't be undone exactly:
+    /// the trail goes, and the key steps as with none. The shapes to bring into view, or nil for nowhere to step.
+    func step(_ direction: AdjacentDirection, adding: Bool) -> [ShapeID]? {
+        var trail = self.trail
+        if let undone = trail.undo(direction, adding: adding, from: selectedIDs) {
+            if undone.before.allSatisfy(isSelectable(id:)) {
+                select(undone.before)
+                self.trail = trail
+                return undone.before
+            }
+            trail = StepTrail()
+        }
+        guard let stop = adjacentStop(direction, adding: adding) else { return nil }
+        let before = selectedIDs
+        select(adding ? before + stop.shapes : stop.shapes)
+        if selectedIDs != before { trail.push(StepTrail.Step(before: before, after: selectedIDs, direction: direction, adding: adding)) }
+        self.trail = trail
+        return stop.shapes
+    }
+
     /// Selects the enclosure (`enclosure`); false if there is none.
     func selectEnclosure() -> Bool {
         guard let enclosure else { return false }
@@ -259,15 +361,16 @@ extension CanvasEditor {
     /// shape in reading order, or the nearest in a direction, among the selection's siblings (in the same
     /// container, inside the same group), and brings it into view if it is not (`revealIfOffscreen`).
     /// What a stop is: what a click there selects, a group whole, else the shape; an arrow, which has
-    /// no box, is never one. Next and previous wrap, and with nothing selected go to the first stop (the
-    /// last, going back); a direction goes from the stop selected last, and with nothing that way, or
+    /// no box, is never one. Next and previous wrap, with nothing selected go to the first stop (the
+    /// last, going back), and from a selection that is no stop (an arrow) to the stop after (before) its
+    /// middle in reading order; a direction goes from the stop selected last, and with nothing that way, or
     /// nothing selected, does nothing. With `adding`, a direction adds the nearest stop that is not
-    /// selected yet to the selection, after what is selected. Does nothing while a gesture runs or a shape
-    /// is edited.
+    /// selected yet to the selection, after what is selected. The opposite key undoes a step exactly
+    /// while nothing else has changed the selection: ⇧Tab after Tab, ← after →, and the ⇧ step's opposite
+    /// takes off what it added (`StepTrail`). Does nothing while a gesture runs or a shape is edited.
     public func selectAdjacentShape(_ direction: AdjacentDirection, adding: Bool = false) {
-        guard canStepSelection, let state = selectionState, let stop = state.adjacentStop(direction, adding: adding) else { return }
-        selectedShapeIDs = adding ? selectedShapeIDs + stop.shapes : stop.shapes
-        revealIfOffscreen(stop.shapes)
+        guard canStepSelection, let state = selectionState, let shapes = state.step(direction, adding: adding) else { return }
+        revealIfOffscreen(shapes)
     }
 
     /// The shape after (`.next`) or before (`.previous`) `id` in reading order, the order Tab steps in,
@@ -286,6 +389,19 @@ extension CanvasEditor {
         let order = StopOrder.reading(stops)
         guard order.count > 1, let index = order.firstIndex(where: { $0.shapes == [id] }) else { return nil }
         return order[(index + (direction == .next ? 1 : -1) + order.count) % order.count].shapes[0]
+    }
+
+    /// The shape nearest `point` in a direction, by the rule ⌥⌘ and an arrow step to the nearest shape by
+    /// (`StopOrder.nearest`), among the shapes on the board shown that have a box and `include` takes, in
+    /// any container, each a stop of its own at the middle of its bounds (no group taken whole): where
+    /// ⌥⌘ and an arrow take an arrow's focused end (Arrows'). Nil for none that way, and for a direction
+    /// that is next or previous.
+    public func nearestShape(to point: CGPoint, toward direction: AdjacentDirection, among include: (AnyShapeRecord) -> Bool) -> ShapeID? {
+        let stops = document.shapes.compactMap { record -> Stop? in
+            guard record.box != nil, include(record), let bounds = shapeContext.bounds(of: [record.id]) else { return nil }
+            return Stop(shapes: [record.id], center: CGPoint(x: bounds.midX, y: bounds.midY))
+        }
+        return StopOrder.nearest(to: point, among: stops, toward: direction)?.shapes[0]
     }
 
     /// What ⌘↑ selects before it goes up a board (`selectEnclosure`): the innermost group the selection

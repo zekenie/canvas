@@ -17,7 +17,8 @@ import SwiftUI
 /// canvas, the table of contents' list, a control in the panel), except in text, which takes them
 /// first: the commands that answer them. Edit › Undo and Redo are its window's (`BoardWindow`), which
 /// splits them between text and the board. Its own, with no command: showing or hiding the details
-/// and the minimap, View › Focus Inspector (the keyboard to the inspector's list, field or control),
+/// and the minimap, View › Focus Inspector (the keyboard to the inspector's list, field or control) and
+/// Focus Next and Previous Pane (F6, ⇧F6: the canvas, the inspector, the toolbar, round),
 /// and Edit › Copy as Image (a PNG of what a plugin says to draw, on the pasteboard).
 @MainActor
 public final class BoardWindowController: NSWindowController {
@@ -35,6 +36,7 @@ public final class BoardWindowController: NSWindowController {
         super.init(window: window)
         shouldCascadeWindows = true
         showSubtitle()
+        window.escapeToCanvas = { [weak self] in self?.escapeToCanvas() ?? false }
     }
 
     private let editor: CanvasEditor
@@ -80,40 +82,136 @@ public final class BoardWindowController: NSWindowController {
     }
 
     /// The keyboard goes to the inspector's view that suits; an inspector just shown has none until
-    /// SwiftUI has made its views, a turn or two on, so it tries again a few times.
+    /// SwiftUI has made its views, a turn or two on, so it tries again a few times. When it finds none
+    /// at all, the inspector's hosting view takes the keyboard, where Tab enters the panel's loop:
+    /// asking for the inspector never gives up silently.
     private func giveInspectorTheKeyboard(retries: Int) {
         if let view = inspectorKeyView() {
             window?.makeFirstResponder(view)
             return
         }
-        guard retries > 0 else { return }
+        guard retries > 0 else {
+            if let host = window?.contentView { window?.makeFirstResponder(host) }
+            return
+        }
         _ = editor.scheduler.schedule(after: InspectorFocusStyle.retryDelay) { [weak self] in
             self?.giveInspectorTheKeyboard(retries: retries - 1)
         }
     }
 
-    /// The view of the inspector that gets the keyboard: a list or table if it shows one, else a text
-    /// field, else any other control that takes it, the topmost of its kind, left to right. The
+    /// The view of the inspector that gets the keyboard: the one the panel declares it takes
+    /// (`HostInspector.keyboardEntry`: the list when its overview shows, else its header's field), else
+    /// by its kind: a list, table or text field if it shows one, else any other control that takes it,
+    /// the topmost, left to right (with a shape selected its title field
+    /// above whatever lists its tab has; with nothing, the table of contents' list). The
     /// inspector is the window's content beside the canvas, whatever it holds (the window knows no
     /// plugin's view): the views that are shown, outside the canvas and what it hosts, and not over it
     /// (the path of crumbs is a view over the canvas), that accept first responder (the scroll views a
     /// list sits in do, and aren't wanted).
-    func inspectorKeyView() -> NSView? {
+    public func inspectorKeyView() -> NSView? {
         guard let content = window?.contentView, let canvas = board?.focus.canvas else { return nil }
-        let canvasFrame = canvas.convert(canvas.bounds, to: nil)
+        if let declared = editor.registry.hostInspector?.keyboardEntry?(editor), declared.window === window, !declared.isHiddenOrHasHiddenAncestor,
+           declared.acceptsFirstResponder { return declared }
         var found: [(view: NSView, rank: Int, frame: CGRect)] = []
         func walk(_ view: NSView) {
             guard !view.isHidden, view !== canvas else { return }
             let frame = view.convert(view.bounds, to: nil)
-            if view.acceptsFirstResponder, !(view is NSScrollView || view is NSClipView), !frame.isEmpty,
-               !canvasFrame.contains(CGPoint(x: frame.midX, y: frame.midY)) {
-                found.append((view, view is NSTableView ? 0 : view is NSTextField || view is NSText ? 1 : 2, frame))
+            if view.acceptsFirstResponder, !(view is NSScrollView || view is NSClipView), !frame.isEmpty, !isOverCanvas(view, canvas: canvas) {
+                found.append((view, view is NSTableView || view is NSTextField || view is NSText ? 0 : 1, frame))
             }
             for subview in view.subviews { walk(subview) }
         }
         walk(content)
         // Top to bottom (a window's y runs up), then left to right.
         return found.min { ($0.rank, -$0.frame.maxY, $0.frame.minX) < ($1.rank, -$1.frame.maxY, $1.frame.minX) }?.view
+    }
+
+    // MARK: Panes
+
+    /// The places the keyboard can be in the window, in the order F6 visits them.
+    public enum Pane: Equatable { case canvas, inspector, toolbar }
+
+    /// The panes shown now, in order: the canvas, the inspector while it is shown, the toolbar while it has
+    /// a view that takes the keyboard.
+    public func shownPanes() -> [Pane] {
+        var panes: [Pane] = [.canvas]
+        if board?.viewState.showsDetails == true, editor.registry.hostInspector != nil { panes.append(.inspector) }
+        if toolbarEntry() != nil { panes.append(.toolbar) }
+        return panes
+    }
+
+    /// The pane the keyboard is in; nil when it is nowhere in one (on the window itself). The canvas's is the canvas
+    /// and what lies over it, what it hosts and what the window puts over it (the board path, Jump To's field); the
+    /// inspector's is the rest of the window's content, its hosting view too (where Focus Inspector leaves the
+    /// keyboard when the panel has nothing to take it), so F6 from there goes on round.
+    public func currentPane() -> Pane? {
+        guard let responder = window?.firstResponder as? NSView else { return nil }
+        if let canvas = board?.focus.canvas, responder === canvas || responder.isDescendant(of: canvas) || isOverCanvas(responder, canvas: canvas) {
+            return .canvas
+        }
+        if toolbarViews().contains(where: { responder === $0 || responder.isDescendant(of: $0) }) { return .toolbar }
+        if let content = window?.contentView, responder === content || responder.isDescendant(of: content) { return .inspector }
+        return nil
+    }
+
+    /// Whether a view of the window's content lies over the canvas (its middle in the canvas's frame): one the window
+    /// puts over it (the board path), not the inspector beside it. Never the content view itself, which holds both.
+    private func isOverCanvas(_ view: NSView, canvas: NSView) -> Bool {
+        guard view !== window?.contentView else { return false }
+        let frame = view.convert(view.bounds, to: nil)
+        return canvas.convert(canvas.bounds, to: nil).contains(CGPoint(x: frame.midX, y: frame.midY))
+    }
+
+    /// The toolbar's item views, which are in the window's frame, outside its content.
+    private func toolbarViews() -> [NSView] {
+        guard let toolbar = window?.toolbar, toolbar.isVisible else { return [] }
+        return toolbar.items.compactMap(\.view)
+    }
+
+    /// The first view of the toolbar that takes the keyboard.
+    func toolbarEntry() -> NSView? {
+        func entry(in view: NSView) -> NSView? {
+            guard !view.isHidden else { return nil }
+            if view.acceptsFirstResponder, !(view is NSScrollView || view is NSClipView) { return view }
+            for subview in view.subviews { if let found = entry(in: subview) { return found } }
+            return nil
+        }
+        return toolbarViews().lazy.compactMap(entry(in:)).first
+    }
+
+    /// View › Focus Next Pane (F6): the keyboard to the next pane shown, round the ends.
+    @objc public func focusNextPane(_ sender: Any?) { stepPane(by: 1) }
+
+    /// View › Focus Previous Pane (⇧F6): the exact inverse.
+    @objc public func focusPreviousPane(_ sender: Any?) { stepPane(by: -1) }
+
+    private func stepPane(by delta: Int) {
+        let panes = shownPanes()
+        let from = currentPane().flatMap { panes.firstIndex(of: $0) } ?? (delta > 0 ? 0 : panes.count)
+        focus(panes[((from + delta) % panes.count + panes.count) % panes.count])
+    }
+
+    public func focusPane(_ pane: Pane) { focus(pane) }
+
+    private func focus(_ pane: Pane) {
+        switch pane {
+        case .canvas:
+            board?.focus.take()
+        case .inspector:
+            editor.endEditing()
+            giveInspectorTheKeyboard(retries: InspectorFocusStyle.retries)
+        case .toolbar:
+            editor.endEditing()
+            if let entry = toolbarEntry() { window?.makeFirstResponder(entry) }
+        }
+    }
+
+    /// Escape where nothing takes it: in the toolbar, whose controls take no text, or on the inspector's hosting view
+    /// itself (Focus Inspector's last resort): the keyboard back to the canvas, the selection kept. Whether it was there.
+    func escapeToCanvas() -> Bool {
+        guard currentPane() == .toolbar || window?.firstResponder === window?.contentView else { return false }
+        board?.focus.take()
+        return true
     }
 
     /// View › Show Minimap, or Hide Minimap.
@@ -165,6 +263,7 @@ extension BoardWindowController: NSMenuItemValidation {
         }
         if item.action == #selector(focusInspector(_:)) { return board != nil && editor.registry.hostInspector != nil }
         if item.action == #selector(copyAsImage(_:)) { return editor.registry.imageSource?.isAvailable(editor) == true }
+        if editor.editingShapeID != nil, !(window?.firstResponder is NSText), CanvasView.editMenuActions.contains(item.action) { return false }
         if let action = item.action.flatMap({ Self.standard[$0] }) { return board?.editor.canPerform(answering: action) == true }
         if item.action == #selector(runCommand(_:)), let command = BoardMenus.command(of: item) {
             // A command that waits for editing to end leaves its key to text with the keyboard (⌘↓ moves the

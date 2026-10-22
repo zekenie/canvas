@@ -37,7 +37,63 @@ private struct TakeoverField: View {
     var body: some View { TextField(name, text: $model.text) }
 }
 
+/// Whether an overview holds the keyboard (`HoldingOverviewPlugin`).
+@Observable @MainActor final class HoldModel {
+    var holds = false
+}
+
+/// An overview, a field whose placeholder is "Overview", that holds the keyboard while `model` says.
+private struct HoldingOverviewPlugin: CanvasPlugin {
+    let model: HoldModel
+    var id: PluginID { "holding-overview" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        let model = model
+        registrar.detailOverview(holdsKeyboard: { _ in model.holds }) { _, _ in TextField("Overview", text: .constant("")) }
+    }
+}
+
 @MainActor let takeoverTests = Suite("Panel overview and takeovers", [
+    test("an overview that holds the keyboard stays up whatever is selected, the same view with the keyboard in it as the header of several comes and goes; let go, one shape's panel shows") {
+        let model = HoldModel()
+        let editor = try gadgetEditor([HoldingOverviewPlugin(model: model)], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        let a = editor.add(Box(gadgetFrame)), b = editor.add(Box(gadgetFrame.offsetBy(dx: 300, dy: 0)))
+        panel.window.spin { panel.fields.map(\.placeholderString) == ["Overview"] }
+        let field = try panel.field("Overview")
+        panel.window.focus(field)
+        model.holds = true
+        for selection in [[a], [a, b], [], [b]] {
+            editor.selectedShapeIDs = selection
+            panel.window.settle()
+            expect(panel.fields.count == 1 && panel.fields.first === field, "\(selection.count) selected: the overview's field, the same one: \(panel.fields.map(\.stringValue))")
+            expect((panel.window.firstResponder as? NSTextView)?.delegate === field, "and it keeps the keyboard")
+        }
+        expectEqual(editor.selectedShapeIDs, [b])
+        model.holds = false
+        panel.window.spin { panel.fields.map(\.stringValue) == ["240 pt", "160 pt", "380 pt", "40 pt"] }
+    },
+    test("Next and Previous Inspector Tab step only the tabs the panel shows: not under a takeover, nor while the overview holds the keyboard") {
+        let hold = HoldModel(), takeover = TakeoverModel()
+        let editor = try gadgetEditor([WalkersPlugin(), HoldingOverviewPlugin(model: hold), TakeoverPlugin(model: takeover)], scheduler: TaskScheduler())
+        let id = editor.add(Walker(gadgetFrame))
+        editor.selection = id
+        let state = try require(editor.detailPanel)
+        @MainActor func tab() throws -> DetailTabID? { state.currentTab(in: try editor.layout(id), for: Walker.kind) }
+        expectEqual(state.canStepTab, true)
+        hold.holds = true
+        expectEqual(state.canStepTab, false, "the overview has no tab strip")
+        expect(!state.stepTab(by: 1))
+        expectEqual(try tab(), .of(WalkerTab.self), "and the remembered tab was not changed")
+        hold.holds = false
+        takeover.active = true
+        expectEqual(state.canStepTab, false, "a takeover is in the tabs' place")
+        expect(!state.stepTab(by: -1))
+        expectEqual(try tab(), .of(WalkerTab.self))
+        takeover.active = false
+        expect(state.stepTab(by: 1))
+        expectEqual(try tab(), .of(SecondWalkerTab.self))
+    },
     test("active, a takeover shows in place of the selection's panel and the overview; inactive, the panel is as it was") {
         let model = TakeoverModel()
         let editor = try gadgetEditor([OverviewPlugin(), TakeoverPlugin(model: model)], scheduler: TaskScheduler())
@@ -58,7 +114,7 @@ private struct TakeoverField: View {
         panel.window.spin { panel.fields.map(\.stringValue) == ["240 pt", "160 pt", "80 pt", "40 pt"] }
     },
     test("the overview and a takeover are the panel's points: the report names them, and a list without the panel refuses either") {
-        let registry = try Registry(plugins: [DetailPanelPlugin(), OverviewPlugin(), TakeoverPlugin(model: TakeoverModel())])
+        let registry = try Registry(plugins: [KeyboardPlugin(), DetailPanelPlugin(), OverviewPlugin(), TakeoverPlugin(model: TakeoverModel())])
         let lines = registry.report.split(separator: "\n")
         expect(lines.contains { $0.hasPrefix("overview ") && $0.hasSuffix(" detail overview") }, registry.report)
         expect(lines.contains { $0.hasPrefix("takeover ") && $0.hasSuffix(" detail takeover") }, registry.report)
@@ -71,7 +127,7 @@ private struct TakeoverField: View {
     },
     test("the panel has one overview: a second is a conflict") {
         expectThrows(RegistryError.conflict(point: "DetailOverviews", key: "overview", plugins: ["overview", "second"])) {
-            _ = try Registry(plugins: [DetailPanelPlugin(), OverviewPlugin(), OverviewPlugin(name: "Second")])
+            _ = try Registry(plugins: [KeyboardPlugin(), DetailPanelPlugin(), OverviewPlugin(), OverviewPlugin(name: "Second")])
         }
     },
     test("of several takeovers the first that's active shows, in plugin order, and Escape is its own") {
@@ -103,7 +159,7 @@ private struct TakeoverField: View {
         inspector.onDismiss(editor)
         expectEqual(model.log, ["escape"], "nothing to escape")
         let lines = editor.registry.report.split(separator: "\n")
-        expect(lines.contains { $0.hasPrefix("detail-panel ") && $0.hasSuffix(" host inspector") }, editor.registry.report)
+        expect(lines.contains { $0.hasPrefix("detail-panel ") && $0.contains(" host inspector") }, editor.registry.report)
         expect(try Registry(plugins: [KeyboardPlugin(), SelectionPlugin()]).hostInspector == nil, "no panel, no inspector")
     },
     test("typing goes to the takeover's field; Escape in it runs onEscape, then onExit, and hands the keyboard to the canvas") {

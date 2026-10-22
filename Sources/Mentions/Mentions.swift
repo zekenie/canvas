@@ -1,4 +1,5 @@
 import Canvas
+import Keyboard
 
 /// Mentions, as a plugin: text that mentions shapes, as pills. A kind opts into being mentioned
 /// (`x.mentionable(...)`), saying how its shapes are called; text holds mentions when its type is
@@ -10,6 +11,15 @@ import Canvas
 /// Topology's index; `MentionState` keeps each target's look, what mentions each shape, on any
 /// board (`mentioners(of:)`), and what the `@` picker offers. The core never learns what a mention
 /// is.
+extension CanvasCommand {
+    /// Go › Go to Mention: follows the pill the caret is on or the selection is.
+    public static let goToMention: CanvasCommand = "goToMention"
+    /// Go › Show What Mentions: selects the shapes that mention the pill's target.
+    public static let showWhatMentionsOfPill: CanvasCommand = "showWhatMentionsOfPill"
+    /// Edit › Remove Mention: turns the pill back into its name.
+    public static let removeMention: CanvasCommand = "removeMention"
+}
+
 extension PluginID {
     public static let mentions: PluginID = "mentions"
 }
@@ -34,5 +44,7 @@ public struct MentionsPlugin: ListedPlugin {
         registrar.overlay(MentionFrames())
         registerMentionFaces(into: &registrar)
         registerMentionMenus(into: &registrar)
+        registerMentionCommands(into: &registrar)
+        registerMentionParts(into: &registrar)
     }
 }

@@ -95,6 +95,45 @@ public enum DetailStyle {
     /// A code editor's: `textFont`'s size, monospaced.
     static let codeFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
 
+    /// A row list's captioned row grows by a line of caption text this tall, one per line.
+    static let captionLine: CGFloat = 13
+    /// A row list's least height, its border and inset beyond its rows, and what it leaves of the
+    /// panel's height when it is as tall as it gets: room for the head of its section and a line under.
+    static let rowListMinHeight: CGFloat = 66
+    static let rowListChrome: CGFloat = 8
+    static let rowListMargin: CGFloat = 96
+
+    /// View › Next Inspector Tab and Previous Inspector Tab: their titles, and where they sit in View.
+    static let nextTab = "Next Inspector Tab"
+    static let previousTab = "Previous Inspector Tab"
+    static let nextTabOrder = 22
+    /// What the panel's text answers to, for the Keyboard Shortcuts window (Editing Text).
+    static let tabKeys = "⇥ or ⇧⇥"
+    static let tabHint = "Next or Previous Control"
+    static let typeTabKeys = "⌥⇥"
+    static let typeTabHint = "Type a Tab"
+    static let escapeKeys = "⎋"
+    static let escapeHint = "Back to the Canvas"
+    static let commitKeys = "⌘↩"
+    static let commitHint = "Commit"
+    static let completeKeys = "⌃Space"
+    static let completeHint = "Complete"
+
+    /// Controls within this many points of top are one row, for the order Tab walks them in.
+    static let rowTolerance: CGFloat = 8
+    /// How often and how soon after the panel changes its Tab ring is closed, and the first control
+    /// is looked for again (SwiftUI makes its views a turn or two on).
+    static let focusRetries = 12
+    static let focusRetry: Duration = .milliseconds(20)
+    /// What a fold says of itself, to assistive apps.
+    static let infoName = "Info"
+    static let warningName = "Warning"
+    static let errorName = "Error"
+    /// The header's title field, to assistive apps.
+    static let nameLabel = "Name"
+    static let expanded = "expanded"
+    static let collapsed = "collapsed"
+
     static let info = Color.blue
     static let warning = Color.orange
     static let error = Color.red
@@ -232,7 +271,7 @@ public struct DetailNumberField<V: BinaryFloatingPoint>: View where V.Stride: Bi
     /// What's typed is a draft only while it differs from what's shown.
     private func edit(_ text: String, shown: String) {
         draft = text == shown ? nil : text
-        if draft == nil { drafts?.pending = nil } else { drafts?.pending = DraftTracker.Draft(revert: { draft = nil }, commit: commit) }
+        if draft == nil { drafts?.pending = nil } else { drafts?.pending = DraftTracker.Draft(owner: nil, shown: shown, revert: { draft = nil }, commit: commit) }
     }
 
     private func commit() {
@@ -267,16 +306,37 @@ public struct DetailNumberField<V: BinaryFloatingPoint>: View where V.Stride: Bi
 @MainActor
 final class DraftTracker {
     struct Draft {
+        /// Who holds it: a search field's, which has no number to commit; nil for a number field's.
+        var owner: UUID?
+        /// What the field showed before it was typed in: what Escape puts back in it.
+        let shown: String
         let revert: @MainActor () -> Void
         let commit: @MainActor () -> Void
     }
 
     var pending: Draft?
 
-    func revert() {
+    /// A field that clears with Escape holds the draft for as long as it has text and the keyboard; it
+    /// commits nothing.
+    func hold(_ owner: UUID, shown: String, clear: @escaping @MainActor () -> Void) {
+        pending = Draft(owner: owner, shown: shown, revert: clear, commit: {})
+    }
+
+    /// The field lets go of the draft, if it is still its own.
+    func release(_ owner: UUID) {
+        if pending?.owner == owner { pending = nil }
+    }
+
+    /// Drops the draft; `field`, the field being typed in, if it is, shows what it showed before, as a
+    /// field that stays focused isn't redrawn from its binding until it is left.
+    func revert(in field: NSTextView? = nil) {
         let draft = pending
         pending = nil
         draft?.revert()
+        if let draft, let field, field.isFieldEditor {
+            field.string = draft.shown
+            field.selectAll(nil)
+        }
     }
 
     /// Writes the draft, as Return in its field does.
@@ -372,20 +432,23 @@ public enum DetailNumberText {
 /// `onCommit`, Return calls it (the text is done: a plugin may act on it), ⇧↩ is a new line, and the
 /// keyboard leaving the box calls it too; without, Return is a new line and nothing else happens.
 /// `asTyped` is for a value, not words: no spelling check and no correction, no smart quotes or
-/// dashes, nothing changed as it is keyed (the panel's own font still).
+/// dashes, nothing changed as it is keyed (the panel's own font still). `label` is what assistive
+/// apps call the box (its placeholder, else nothing).
 public struct DetailTextArea: View {
     @Binding var text: String
     let height: CGFloat
     let placeholder: String?
     let asTyped: Bool
+    let label: String?
     let onCommit: (@MainActor () -> Void)?
 
     public init(_ text: Binding<String>, height: CGFloat = DetailStyle.textAreaHeight, placeholder: String? = nil,
-                asTyped: Bool = false, onCommit: (@MainActor () -> Void)? = nil) {
+                asTyped: Bool = false, label: String? = nil, onCommit: (@MainActor () -> Void)? = nil) {
         _text = text
         self.height = height
         self.placeholder = placeholder
         self.asTyped = asTyped
+        self.label = label
         self.onCommit = onCommit
     }
 
@@ -393,7 +456,8 @@ public struct DetailTextArea: View {
     /// draws the placeholder itself and checks spelling as the app does (SwiftUI's `TextEditor`
     /// can't be told to).
     public var body: some View {
-        DetailTextBox($text, height: height, placeholder: placeholder, onCommit: onCommit, make: asTyped ? PlainTextView.keyed : PlainTextView.prose)
+        DetailTextBox($text, height: height, placeholder: placeholder, label: label, onCommit: onCommit,
+                      make: asTyped ? PlainTextView.keyed : PlainTextView.prose)
     }
 }
 

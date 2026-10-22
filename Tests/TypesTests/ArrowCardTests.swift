@@ -242,3 +242,52 @@ final class ArrowCardRig {
         expectEqual(r.editor.document[r.s.layerNote], notes.1)
     },
 ])
+
+// The arrow's card by keys (keyboard navigation's P3 to P9): Tab through its fields, ⇧Tab undoing each, Escape and Tab off its ends
+// leaving the arrow selected with the canvas having the keyboard, ⌘↩ finishing, and the card named for VoiceOver.
+
+extension ArrowCardRig {
+    func walk() -> KeyWalk {
+        KeyWalk(window, editor: editor, readers: [.form({ [unowned self] in form }),
+                                                  .canvas(canvas, selection: { [unowned self] in editor.selectedShapeIDs == [arrow] ? ["link"] : [] })],
+                settle: .both(s.harness.scheduler))
+    }
+}
+
+@MainActor let arrowCardKeysTests = Suite("The arrow's card, by keys", [
+    test("Tab runs its fields and ⇧Tab undoes each; Tab off the last leaves the arrow selected with the canvas having the keyboard; every stop shows, named") {
+        let r = try ArrowCardRig()
+        defer { r.close() }
+        expect(r.editor.openRelationshipCard(for: r.arrow))
+        let walk = r.walk()
+        let ids = formStopIDs(try require(r.form))
+        expectEqual(ids.count, 2)
+        walk.expectCardStops(ids)
+        expectEqual(walk.press(.tab).id, "canvas/link")
+        expect(r.editor.card == nil)
+        expect(r.editor.openRelationshipCard(for: r.arrow))
+        walk.expectShows(ids.map { Focus(surface: "card", element: String($0.dropFirst(5))) })
+        r.window.makeFirstResponder(r.canvas)
+        r.editor.closeCard()
+        expect(r.editor.openRelationshipCard(for: r.arrow))
+        expectEqual(walk.press(.backTab).id, "canvas/link", "⇧Tab off the first stop")
+    },
+    test("Escape and ⌘↩ keep what was typed and leave the arrow selected; the card is a popover named for VoiceOver") {
+        let r = try ArrowCardRig()
+        defer { r.close() }
+        expect(r.editor.openRelationshipCard(for: r.arrow))
+        let walk = r.walk()
+        var host: NSView? = r.form
+        while let up = host, up.accessibilityRole() != .popover { host = up.superview }
+        expectEqual(host?.accessibilityRole(), .popover)
+        expect(host?.accessibilityLabel()?.hasPrefix("Fields") == true, "named for what it holds")
+        r.window.type("lead")
+        walk.expectEscapeLadder(["canvas/link"], keepsTyped: "lead")
+        expectEqual(r.values.value(at: FieldPath(field: "role")), "lead")
+        expect(r.editor.openRelationshipCard(for: r.arrow))
+        r.window.type("x")
+        walk.press(.commandReturn)
+        expectEqual(walk.focus.id, "canvas/link")
+        expect(r.editor.card == nil)
+    },
+])

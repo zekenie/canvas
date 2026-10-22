@@ -1,5 +1,7 @@
+import AppKit
 import Canvas
 import Observation
+import Selection
 
 /// What the panel shows for one shape, resolved from the frozen registry. The view renders it;
 /// tests read it.
@@ -185,6 +187,45 @@ public final class DetailPanelState {
     }
 
     public func choose(_ tab: DetailTabID, for kind: ShapeKind) { chosenTabs[kind] = tab }
+
+    /// The tabs the panel shows for the one shape selected, and the one chosen among them; nil with
+    /// no one shape selected or fewer than two tabs, where there is nothing to step between, and
+    /// while the panel shows something in their place: a takeover (Find), or the overview the
+    /// keyboard holds (the table of contents walked by keys), which have no tab strip.
+    private func shownTabs() -> (kind: ShapeKind, tabs: [DetailTabID], index: Int)? {
+        guard editor.selectedShapeIDs.count == 1, let id = editor.selection, let record = editor.document[id],
+              editor.registry.activeDetailTakeover(in: editor) == nil,
+              editor.registry.detailOverview?.holdsKeyboard(editor) != true else { return nil }
+        let layout = layout(for: record)
+        guard layout.tabs.count > 1, let current = currentTab(in: layout, for: record.kind),
+              let index = layout.tabs.firstIndex(of: current) else { return nil }
+        return (record.kind, layout.tabs, index)
+    }
+
+    /// Whether `stepTab(by:)` has tabs to step between.
+    public var canStepTab: Bool { shownTabs() != nil }
+
+    /// View › Next Inspector Tab (+1) and Previous Inspector Tab (-1): the tab `delta` after the one
+    /// shown among those the shape's panel has, round the ends. The keyboard then goes to the new
+    /// tab's first control (`focusesFirstControl`), as a click on a tab does not: the keys that
+    /// switched it are the ones that go on into it. False when there is nothing to step.
+    @discardableResult
+    public func stepTab(by delta: Int) -> Bool {
+        guard let shown = shownTabs() else { return false }
+        let count = shown.tabs.count
+        choose(shown.tabs[((shown.index + delta) % count + count) % count], for: shown.kind)
+        focusesFirstControl?()
+        return true
+    }
+
+    /// Gives the keyboard to the first control of the tab shown, once the panel has drawn it: the
+    /// panel sets it as it appears (it knows its window).
+    @ObservationIgnored var focusesFirstControl: (@MainActor () -> Void)?
+
+    /// The view of the panel that takes the keyboard when the window gives the inspector the keyboard
+    /// (the host slot's `keyboardEntry`): the list while the overview shows, else the header's field;
+    /// nil when the panel has neither. The panel sets it as it appears (it knows its window).
+    @ObservationIgnored public var keyboardEntry: (@MainActor () -> NSView?)?
 
     /// Remembered by key: an every-box section collapses for every kind, a kind's own for that kind.
     public func isCollapsed(_ key: DetailSectionKey) -> Bool { collapsed.contains(key) }

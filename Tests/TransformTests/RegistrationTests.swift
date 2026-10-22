@@ -1,6 +1,7 @@
 import Canvas
 import CanvasTesting
 import ContextMenus
+import Keyboard
 import CoreGraphics
 import SlashCommands
 import TestKit
@@ -109,7 +110,7 @@ extension OddKindDefinition: ShapeDefinition {
             _ = try Registry(plugins: [FixturesPlugin(), CorralsPlugin(), plugin("bridge") { $0.turnable(Corral.self, through: ContainerChannel.self) }])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "TransformTargets", owner: .transform, contributor: "bridge")) {
-            _ = try Registry(plugins: [ContextMenusPlugin(), SlashCommandsPlugin(), PocketsPlugin(),
+            _ = try Registry(plugins: [KeyboardPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), PocketsPlugin(),
                                        plugin("bridge") { $0.turnable(into: Pocket.self, through: ContainerChannel.self) { _, _ in } }])
         }
         expectThrows(RegistryError.unknownKind(Corral.kind, point: "TransformSources", contributor: "bridge")) {
@@ -120,7 +121,7 @@ extension OddKindDefinition: ShapeDefinition {
                                        plugin("takes") { $0.turnable(into: Pocket.self, through: ContainerChannel.self) { _, _ in } }])
         }
         expectThrows(RegistryError.ownerNotInstalled(point: "ShapeSlashCommands", owner: .slashCommands, contributor: "takes")) {
-            _ = try Registry(plugins: [TransformPlugin(), ContextMenusPlugin(), PocketsPlugin(),
+            _ = try Registry(plugins: [TransformPlugin(), KeyboardPlugin(), ContextMenusPlugin(), PocketsPlugin(),
                                        plugin("takes") { $0.turnable(into: Pocket.self, through: ContainerChannel.self) { _, _ in } }])
         }
         // A kind that offers a channel needs only Transform.

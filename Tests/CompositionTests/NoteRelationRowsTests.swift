@@ -251,13 +251,13 @@ private final class Bench {
         expectEqual(b.rowsView?.focusedRow, "in", "the row is the focus")
         b.window.type("Foundation")
         expectEqual(b.editor.document[note], before, "typing in a row that sets nothing yet writes nothing")
-        // Tab off the last row ends editing; ⇧Tab goes back to the field.
+        // Tab off the last row goes on to the next note (the types' notes are notes too); ⇧Tab goes back to the field.
         b.window.press("\u{19}", code: 48, modifiers: .shift)
         expectEqual(b.rowsView?.focusedRow, "purpose")
         b.window.press("\t", code: 48)
         expectEqual(b.rowsView?.focusedRow, "in", "Tab walks onto a relation row")
         b.window.press("\t", code: 48)
-        expect(b.editor.editingShapeID == nil, "off the last row")
+        expect(b.editor.editingShapeID != nil && b.editor.editingShapeID != note, "off the last row, the next note is edited")
         expectEqual(b.editor.document[note], before)
     },
 ])

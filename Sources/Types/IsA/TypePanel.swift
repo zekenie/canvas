@@ -235,7 +235,7 @@ struct TypesRow: View {
             .disabled(isGone)
             Button { editor?.removeTypeLink(link.shape, from: owner) } label: { Image(systemName: "minus.circle") }
                 .buttonStyle(.borderless)
-                .accessibilityLabel(TypesStyle.removeType)
+                .accessibilityLabel(TypesStyle.removeType(named: TypesStyle.menuName(name)))
                 .disabled(editor?.isReadOnly(inFile: owner) ?? true)
         }
     }

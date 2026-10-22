@@ -64,6 +64,13 @@ public final class MinimapView: NSView {
         updateVisibility()
     }
 
+    /// How much of the board the canvas shows, as VoiceOver reads it: "Showing 12 of 40 shapes",
+    /// counted as it's asked.
+    public override func accessibilityValue() -> Any? {
+        let view = editor.camera.toWorld(CGRect(origin: .zero, size: editor.viewportSize))
+        return MinimapStyle.accessibleValue(showing: editor.paintOrder(in: view).count, of: editor.document.shapes.count)
+    }
+
     /// Hidden while the board has nothing to show (no shape, or none with a place: `shapeBounds` is
     /// null), where it would be an empty frame that does nothing when clicked, and the corner is
     /// the canvas's; it fades in with the first shape, and hides with the last. The first shape
@@ -465,6 +472,8 @@ struct MinimapLayout {
 /// The minimap's constants, in view points unless noted. Its behavior follows tldraw's.
 @MainActor
 enum MinimapStyle {
+    /// Its value for VoiceOver: how many of the board's shapes the canvas shows.
+    static func accessibleValue(showing shown: Int, of total: Int) -> String { "Showing \(shown) of \(total) shapes" }
     /// Its width: a quarter of the canvas's, within these. Its height follows the canvas's
     /// proportions, within these.
     static let widths: ClosedRange<CGFloat> = 120...200

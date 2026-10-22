@@ -261,7 +261,7 @@ private func close(_ a: [Int], _ b: [Int], within tolerance: Int = 3) -> Bool {
         editor.redo()
         expectEqual(editor.document[rel]?[TitleProperty.self], "owner")
     },
-    test("Return, Escape and Tab end editing keeping what was typed; Escape on nothing typed leaves it untitled; Tab also asks for the card that defines the type, after editing has ended") {
+    test("Return, Escape, Tab and Shift-Tab end editing keeping what was typed; Escape on nothing typed leaves it untitled; Tab also asks for the card that defines the type, after editing has ended, and Shift-Tab never does") {
         for (name, selector) in [("Return", #selector(NSResponder.insertNewline(_:))), ("Escape", #selector(NSResponder.cancelOperation(_:))),
                                  ("Tab", #selector(NSResponder.insertTab(_:))), ("Shift-Tab", #selector(NSResponder.insertBacktab(_:)))] {
             let editor = try makeEditor()
@@ -276,7 +276,7 @@ private func close(_ a: [Int], _ b: [Int], within tolerance: Int = 3) -> Bool {
             pillEditor.field.doCommand(by: selector)
             expectEqual(editor.editingShapeID, nil, "\(name) ends editing")
             expectEqual(editor.document[rel]?[TitleProperty.self], "in", "\(name) keeps the name")
-            let isTab = name.hasSuffix("Tab")
+            let isTab = name == "Tab"
             expectEqual(asked.count, isTab ? 1 : 0, "\(name): the definition card is asked for by Tab alone")
             if isTab {
                 expectEqual(asked.first?.0, rel)
@@ -392,7 +392,16 @@ private func close(_ a: [Int], _ b: [Int], within tolerance: Int = 3) -> Bool {
         expect(editor.card == nil, "a drag is a move")
         expect(try require(editor.box(rel)).minX > stored.minX, "it moved")
     },
-    test("a double-click edits the name and takes the card down; Tab in the name opens the card at add field") {
+    test("VoiceOver reads a relationship type's name and not its words, which are kept and never drawn; a note's words it reads") {
+        let h = try EditorHarness(plugins: notePlugins + [ArrowsPlugin(), ArrowPortsPlugin()])
+        let editor = h.editor
+        let rel = editor.addTypeNote(title: "owns")
+        let plain = editor.add(StickyNote(frame: CGRect(x: 400, y: 0, width: 150, height: 150), text: "describes ownership"))
+        editor.transact("Words") { $0.update(rel, as: StickyNote.self) { $0.props.text = MentionText([.text("describes ownership")]) } }
+        expectEqual(editor.accessibleDescription(of: rel)?.value, nil)
+        expectEqual(editor.accessibleDescription(of: plain)?.value, "describes ownership")
+    },
+    test("a double-click edits the name and takes the card down; Tab in the name opens the card at its first line past the name") {
         let h = try EditorHarness(plugins: notePlugins + [ArrowsPlugin(), ArrowPortsPlugin()])
         let editor = h.editor
         editor.viewportDidResize(to: CGSize(width: 600, height: 500))
@@ -409,5 +418,89 @@ private func close(_ a: [Int], _ b: [Int], within tolerance: Int = 3) -> Bool {
         expectEqual(editor.editingShapeID, nil)
         expectEqual(editor.definitionCards?.openType, rel)
         expectEqual(editor.definitionCards?.openView?.focus, .addField)
+    },
+])
+
+/// Three shapes in a line, read left to right: a note, a relationship type's pill and a note, in a window, with the walk's reader:
+/// the note or the pill being edited (its words, its name), or the card's stop.
+@MainActor private struct PillWalk {
+    let editor: CanvasEditor
+    let window: NSWindow
+    let a: ShapeID, rel: ShapeID, b: ShapeID
+    let walk: KeyWalk
+
+    init() throws {
+        let editor = try makeEditor()
+        self.editor = editor
+        (window, _) = windowed(editor)
+        window.isReleasedWhenClosed = false
+        editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        let a = editor.add(StickyNote(frame: CGRect(x: 20, y: 60, width: 150, height: 150), text: ""))
+        let rel = editor.addTypeNote(title: "owns", at: CGRect(x: 220, y: 60, width: 150, height: 150))
+        let b = editor.add(StickyNote(frame: CGRect(x: 420, y: 60, width: 150, height: 150), text: ""))
+        (self.a, self.rel, self.b) = (a, rel, b)
+        let names = [a: "A", rel: "owns", b: "B"]
+        let reader = CustomFocusReader.custom("pill walk") { _ in
+            if editor.card != nil, let view = editor.definitionCards?.openView { return Focus(surface: "card", element: view.focus.map { "\($0)" } ?? "none") }
+            if let id = editor.editingShapeID { return Focus(surface: names[id] ?? "?", element: id == rel ? "name" : "words") }
+            return nil
+        }
+        let scheduler = try require(editor.scheduler as? ManualScheduler)
+        walk = KeyWalk(window, editor: editor, readers: [reader], settle: .both(scheduler))
+        editor.selection = a
+        editor.beginEditing(a)
+        window.settle()
+    }
+}
+
+@MainActor let notePillWalkTests = Suite("Walking a relationship type's pill by keys", [
+    test("the pill is walked as a typed note is, its name then its card: Tab in the name opens the card at add field, Tab off its last stop edits the next note at its words, ⇧Tab in the name edits the previous note; Tab then ⇧Tab lands where it started at every stop") {
+        let w = try PillWalk()
+        defer { w.window.close() }
+        expectEqual(w.walk.focus.id, "A/words")
+        w.walk.expectCycle(["A/words", "owns/name", "card/addField", "B/words"])
+        expectEqual(w.walk.focus.id, "A/words", "round to the first")
+    },
+    test("⇧Tab from the next note comes back into the card at its last stop; ⇧Tab off the card's first stop comes back to the name; Escape in the card leaves the pill selected with the canvas having the keyboard") {
+        let w = try PillWalk()
+        defer { w.window.close() }
+        w.walk.go("B/words")
+        expectEqual(w.walk.press(.backTab).id, "card/addField", "the card's last stop")
+        expectEqual(w.walk.press(.backTab).id, "owns/name", "off the first line: the name, which is the pill's, not the card's")
+        expectEqual(w.walk.press(.tab).id, "card/addField")
+        expectEqual(w.walk.press(.backTab).id, "owns/name")
+        expectEqual(w.walk.press(.tab).id, "card/addField")
+        w.walk.press(.escape)
+        expect(w.editor.card == nil, "the card is down")
+        expectEqual(w.editor.editingShapeID, nil)
+        expectEqual(w.editor.selectedShapeIDs, [w.rel], "the pill stays selected")
+    },
+    test("a pill with fields: Tab from its name visits every line of the card once, and ⇧Tab from the next note walks the same lines back") {
+        let w = try PillWalk()
+        defer { w.window.close() }
+        let key = try require(w.editor.fieldDefiner?.addField(named: "since", kind: .date, to: w.rel))
+        w.window.settle()
+        let line = [DefinitionStop.fieldName(key), .fieldKind(key), .addField].map { "card/\($0)" }
+        w.walk.expectCycle(["A/words", "owns/name"] + line + ["B/words"])
+        w.walk.go("B/words")
+        for stop in line.reversed() { expectEqual(w.walk.press(.backTab).id, stop) }
+        expectEqual(w.walk.press(.backTab).id, "owns/name")
+    },
+    test("alone on its board, the pill's name and card are a cycle of their own: ⇧Tab in the name goes round to the card's last stop, Tab off it round to the name") {
+        let editor = try makeEditor()
+        let (window, _) = windowed(editor)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let rel = editor.addTypeNote(title: "owns")
+        editor.selection = rel
+        editor.beginEditing(rel)
+        window.settle()
+        let pillEditor = try require(window.firstResponder as? NSTextView)
+        pillEditor.doCommand(by: #selector(NSResponder.insertBacktab(_:)))
+        expectEqual(editor.definitionCards?.openType, rel, "round to the card")
+        expectEqual(editor.definitionCards?.openView?.focus, .addField, "at its last stop")
+        editor.definitionCards?.openView?.cellEditor.doCommand(by: #selector(NSResponder.insertTab(_:)))
+        expect(editor.card == nil)
+        expectEqual(editor.editingShapeID, rel, "and round to the name")
     },
 ])

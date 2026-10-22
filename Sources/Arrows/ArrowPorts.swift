@@ -59,6 +59,8 @@ public struct ArrowPortsPlugin: ListedPlugin {
                               // between two types) is Types', in the press's own step.
                               finished: { editor.connectionDrawn($0) })
         }
+        // Connect (⌘L) gives the arrow it made the release a drag gives: the same wiring, in its step.
+        registrar.connectionMade { connection, editor in editor.connectionDrawn(connection) }
         registrar.arrowBindingRule { query in
             guard let channel = query.arrow[ChannelProperty.self], query.registry.declares(channel) else { return true }
             return query.registry.accepts(query.shape, on: channel, as: query.end == .start ? .source : .target)

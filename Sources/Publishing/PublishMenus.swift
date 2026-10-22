@@ -16,9 +16,10 @@ extension CanvasCommand {
 /// The menu has one item for the shapes it's for, as Lock's: Make Public while any shape that can be
 /// public isn't, which makes the rest public, else Make Private. An item is dimmed while its command
 /// can do nothing: every shape it would change is read-only (the core refuses a locked shape, and
-/// shakes it), and, for Make Private, every public shape is held by something that stands for it. On
-/// a mix, the shapes nothing stands for go private in one step, and the held ones shake. `/private`,
-/// as the chip, is a try: offered on a public shape, held or not, it shakes one that's held.
+/// shakes it). Make Private stays enabled on a public shape something stands for, as the chip's click
+/// and `/private` are: it changes nothing, shakes the shape, and the panel shows what holds it
+/// (Connections), so the key explains itself. On a mix, the shapes nothing stands for go private in
+/// one step, and the held ones shake.
 @MainActor
 func registerPublishMenus(into registrar: inout PluginRegistrar) {
     registrar.command(.makePublic, title: PublicStyle.makePublic,
@@ -26,10 +27,7 @@ func registerPublishMenus(into registrar: inout PluginRegistrar) {
         subject.editor.makePublic(subject.toMakePublic)
     }
     registrar.command(.makePrivate, title: PublicStyle.makePrivate,
-                      isEnabled: { subject in
-                          let publishing = subject.editor.publishing
-                          return subject.toMakePrivate.contains { !subject.editor.isReadOnly($0) && publishing?.isHeld($0) != true }
-                      }) { subject in
+                      isEnabled: { subject in subject.toMakePrivate.contains { !subject.editor.isReadOnly($0) } }) { subject in
         subject.editor.makePrivate(subject.toMakePrivate)
     }
     // Items for any shapes, not a scope's: a menu over a mix, some of kinds that can't be public, has

@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import DetailPanel
+import Observation
 import Palette
 import SwiftUI
 
@@ -35,6 +36,13 @@ extension ColorsStyle {
     public static let renameColorItem = "Rename…"
     public static let changeColorItem = "Change…"
     public static let removeColorItem = "Remove"
+    /// Edit Colors…: the item in Color ▸ and the row in /color, and the list it opens.
+    public static let editColors = "Edit Colors…"
+    public static let colorsTitle = "Colors"
+    public static let noFileColors = "No colors"
+    public static let listWidth: CGFloat = 260
+    public static let listHeight: CGFloat = 220
+    public static let focusWidth: CGFloat = 1.5
     public static let nameFieldWidth: CGFloat = 140
 }
 
@@ -59,10 +67,18 @@ public enum ColorChoice {
 /// is drawn.
 @MainActor
 public struct ColorRowModel {
-    private let id: ShapeID
+    private let id: ShapeID?
     private let own: ShapeColor?
     private let shown: ShapeColor?
     private let book: ColorBook
+
+    /// The model for the file's own colors, with no shape: what Edit Colors… writes through.
+    public init(book: ColorBook) {
+        self.book = book
+        id = nil
+        own = nil
+        shown = nil
+    }
 
     public init(record: AnyShapeRecord, book: ColorBook) {
         self.book = book
@@ -145,7 +161,7 @@ public struct ColorRowModel {
                 if let new = writes(picked: picked) { color.wrappedValue = new }
             }
         case .name(let name):
-            book.editor.nameColor(of: id, name)
+            if let id { book.editor.nameColor(of: id, name) }
         case .rename(let named, let name):
             book.editor.renameColor(named.name, to: name)
         case .changeValue(let named):
@@ -210,4 +226,105 @@ final class ColorPanelTarget: NSObject {
     }
 
     @objc private func changed(_ panel: NSColorPanel) { handler(panel.color) }
+}
+
+/// Where the keyboard is in the grid: a dot (its group and place in it) or one of the plain rows under them.
+public enum ColorGridStop: Hashable {
+    case dot(group: Int, index: Int)
+    case row(Int)
+}
+
+/// The grid's arrow keys, with no view: dots in rows of `ColorsStyle.dotsPerRow`, a group after another, then
+/// the plain rows. Left and right go dot to dot across the groups and stay at the ends; up and down keep the
+/// column where the next row is shorter.
+@MainActor
+public struct ColorGridMap {
+    public enum Direction { case left, right, up, down }
+
+    /// Dots in each group.
+    public let groups: [Int]
+    /// The plain rows under the dots.
+    public let rows: Int
+
+    public init(groups: [Int], rows: Int) {
+        self.groups = groups
+        self.rows = rows
+    }
+
+    private var perRow: Int { ColorsStyle.dotsPerRow }
+
+    /// Where the keyboard starts: `ringed` (a dot) if there is one, else the first dot, else the first row.
+    public func start(ringed: ColorGridStop?) -> ColorGridStop? {
+        if let ringed { return ringed }
+        if !groups.isEmpty, groups[0] > 0 { return .dot(group: 0, index: 0) }
+        return rows > 0 ? .row(0) : nil
+    }
+
+    /// Where `direction` goes from `stop`; `stop` itself at an edge.
+    public func move(_ direction: Direction, from stop: ColorGridStop) -> ColorGridStop {
+        switch stop {
+        case .dot(let group, let index): return moveDot(direction, group: group, index: index)
+        case .row(let row):
+            switch direction {
+            case .down: return row + 1 < rows ? .row(row + 1) : stop
+            case .up:
+                if row > 0 { return .row(row - 1) }
+                guard let last = groups.lastIndex(where: { $0 > 0 }) else { return stop }
+                return .dot(group: last, index: ((groups[last] - 1) / perRow) * perRow)
+            case .left, .right: return stop
+            }
+        }
+    }
+
+    private func moveDot(_ direction: Direction, group: Int, index: Int) -> ColorGridStop {
+        let here = ColorGridStop.dot(group: group, index: index)
+        let size = groups[group]
+        let column = index % perRow
+        switch direction {
+        case .right:
+            if index + 1 < size { return .dot(group: group, index: index + 1) }
+            guard let next = ((group + 1)..<groups.count).first(where: { groups[$0] > 0 }) else { return here }
+            return .dot(group: next, index: 0)
+        case .left:
+            if index > 0 { return .dot(group: group, index: index - 1) }
+            guard let before = (0..<group).last(where: { groups[$0] > 0 }) else { return here }
+            return .dot(group: before, index: groups[before] - 1)
+        case .down:
+            if index + perRow < size { return .dot(group: group, index: index + perRow) }
+            if (index / perRow + 1) * perRow < size { return .dot(group: group, index: size - 1) }
+            if let next = ((group + 1)..<groups.count).first(where: { groups[$0] > 0 }) {
+                return .dot(group: next, index: min(column, groups[next] - 1))
+            }
+            return rows > 0 ? .row(0) : here
+        case .up:
+            if index >= perRow { return .dot(group: group, index: index - perRow) }
+            guard let before = (0..<group).last(where: { groups[$0] > 0 }) else { return here }
+            let lastRow = (groups[before] - 1) / perRow
+            return .dot(group: before, index: min(lastRow * perRow + column, groups[before] - 1))
+        }
+    }
+}
+
+/// What is being named in the grid: a new color (the value the shape holds), or one of the file's.
+public enum ColorNaming: Equatable {
+    case new
+    case renaming(NamedColor)
+}
+
+/// The grid's levels: the dots, or the name form in their place. Escape in the form goes back to the dots
+/// (dropping the name typed); on the dots it is not taken, so the popover closes.
+@MainActor
+@Observable
+public final class ColorGridState {
+    public var naming: ColorNaming?
+
+    public init(naming: ColorNaming? = nil) { self.naming = naming }
+
+    /// Escape: one level out. Whether it was taken.
+    @discardableResult
+    public func escape() -> Bool {
+        guard naming != nil else { return false }
+        naming = nil
+        return true
+    }
 }

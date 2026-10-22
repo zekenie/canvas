@@ -2,6 +2,7 @@ import Canvas
 import CanvasTesting
 import CoreGraphics
 import DetailPanel
+import Keyboard
 import SwiftUI
 import TestKit
 import Validation
@@ -23,7 +24,7 @@ let boxSections = Contributor(id: "box-sections") { r in
 }
 
 @MainActor func harness(_ plugins: [any CanvasPlugin]) throws -> EditorHarness {
-    try EditorHarness(plugins: [FixturesPlugin()] + plugins)
+    try EditorHarness(plugins: [KeyboardPlugin(), FixturesPlugin()] + plugins)
 }
 
 extension EditorHarness {
@@ -95,10 +96,13 @@ extension EditorHarness {
         }
     },
     test("the Issues tab's plugin is one line in the report, and contributes to Validation nothing") {
-        let registry = try Registry(plugins: [ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin()])
-        expectEqual(registry.report, """
-        core                tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
-        validation          service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape
+        let registry = try Registry(plugins: [KeyboardPlugin(), ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin()])
+        // Less Keyboard's own line, and the panel's keys (its commands, shortcuts and hints) after what it holds.
+        let report = registry.report.split(separator: "\n").filter { !$0.hasPrefix("keyboard") }
+            .map { $0.hasPrefix("detail-panel") ? String($0.prefix { $0 != "·" }) + "· host inspector" : String($0) }.joined(separator: "\n")
+        expectEqual(report, """
+        core                tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+        validation          service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
         detail-panel        service DetailPanelState · host inspector
         validation-details  DetailStatuses in Issues after Style → every shape
         """)

@@ -71,7 +71,7 @@ public struct TypesPlugin: ListedPlugin {
                                   return .wrong
                               },
                               openCard: { [weak editor] id in editor?.openRelationshipCard(for: id) ?? false },
-                              openDefinition: { [weak editor] id in editor?.definitionCards?.open(id, focus: .addField) ?? false })
+                              openDefinition: { [weak editor] id in editor?.definitionCards?.open(id, enteredByKey: true) ?? false })
         }
         // What a shape's rows are made of and the room they take, announced as a type changes: last, so it
         // hears each commit after the index, the field book and the sync.
@@ -87,6 +87,12 @@ public struct TypesPlugin: ListedPlugin {
         registerRowFaces(into: &registrar)
         // A click on a relationship type's pill opens the card that defines it.
         registerDefinitionFace(into: &registrar)
+        // And by keys: Open Fields, the card of the selected arrow's relationship or of the selected relationship type; Retry, the
+        // failed read's action.
+        registerFieldsCommand(into: &registrar)
+        registerRetryCommand(into: &registrar)
+        // What VoiceOver says a shape is: its types, or that it is one.
+        registerTypeAccessibility(into: &registrar)
         // A click on a pill in a type's words that names a type it is not yet related to: `Relate to Layer`. Asked before
         // Mentions' faces, since Types is listed after Mentions.
         registerRelateOffer(into: &registrar)

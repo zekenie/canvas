@@ -13,6 +13,15 @@ public struct ContentsEntry: Identifiable {
     public var label: ContentsLabel? { row.label }
     /// The kind's symbol (`registry.label(of:)`), which a `ContentsLabel` without its own shows.
     public var symbol: String { row.symbol }
+    /// What the kind is called (`registry.label(of:)`): what VoiceOver says of the row after its
+    /// name ("Checkout, Note").
+    public var kindName: String { row.kindName }
+    /// What the row is called to assistive apps, where its own words aren't at hand (its disclosure
+    /// triangle): its text, else what its kind is called.
+    public var spokenName: String {
+        let text = label?.text ?? ""
+        return text.isEmpty ? kindName : text
+    }
     /// The dots at the row's trailing end (`ContentsMarks`), in contribution order.
     public var marks: [ContentsMark] { row.marks }
     /// The rows nested under this one, in document order (the list shows them front to back); nil
@@ -54,6 +63,7 @@ final class ShapeRow {
     let view: AnyView
     let label: ContentsLabel?
     let symbol: String
+    let kindName: String
     let marks: [ContentsMark]
     /// Where the shape is in the stack, which orders rows among their siblings. Every shape in a
     /// document has a key.
@@ -66,7 +76,7 @@ final class ShapeRow {
     let startsExpanded: Bool
 
     init(record: AnyShapeRecord, isListed: Bool, parent: ShapeID?, ownsBoard: Bool, startsExpanded: Bool, row: ResolvedRow, symbol: String,
-         marks: [ContentsMark]) {
+         kindName: String, marks: [ContentsMark]) {
         self.record = record
         self.isListed = isListed
         self.parent = parent
@@ -75,6 +85,7 @@ final class ShapeRow {
         view = row.view
         label = row.label
         self.symbol = symbol
+        self.kindName = kindName
         self.marks = marks
         key = record.stackingKey!
     }
@@ -95,6 +106,7 @@ final class ShapeRow {
             label = row.label
         }
         symbol = row.symbol
+        kindName = row.kindName
         self.marks = marks
         key = row.key
     }
@@ -234,6 +246,14 @@ public final class ContentsState {
     /// How many times a row's disclosure triangle has been turned.
     @ObservationIgnored private(set) var turns = 0
     private var pin: Pin?
+    /// Whether the list has the keyboard, which its view says as the window's first responder
+    /// changes (`TableOfContentsView`).
+    public internal(set) var listHasKeyboard = false
+    /// The selection the list's keys made last, as of `editor.selectionRevision`: a walk by keys,
+    /// told from a click.
+    private var keyedSelection: Int?
+    /// A key reached the list this turn: a selection the list makes meanwhile is the key's.
+    @ObservationIgnored private var keyArrived = false
     /// How many times a service has said rows changed outside a commit (`contentsDidChange(for:)`):
     /// read by `entries`, so whoever reads the list reads again.
     private var outsideChanges = 0
@@ -415,6 +435,27 @@ public final class ContentsState {
             current = owner
         }
         return place.reversed()
+    }
+
+    /// Whether the list is being walked by keys: it has the keyboard, and a key in it made the
+    /// selection as it is (↑ ↓, Tab and ⇧Tab, ⇧ with them). While it is, the detail panel keeps the
+    /// list up whatever is selected (`isWalkedByKeys` is the overview's `holdsKeyboard`), so the next
+    /// key walks on rather than nudging the shape; the keyboard leaving the list (Escape, Return,
+    /// a click elsewhere), a click on a row, or the selection changing anywhere else ends it, and the
+    /// panel shows what the selection calls for.
+    public var isWalkedByKeys: Bool { listHasKeyboard && keyedSelection == editor.selectionRevision }
+
+    /// A key reached the list: what the list selects for it, before the next turn, is by keys.
+    func keyReachedList() {
+        guard !keyArrived else { return }
+        keyArrived = true
+        _ = editor.scheduler.schedule(after: .zero) { [weak self] in self?.keyArrived = false }
+    }
+
+    /// The list's own selection changed (a click, a key): `select`, noting a key's.
+    func selectFromList(_ ids: Set<ShapeID>) {
+        select(ids)
+        if keyArrived, keyedSelection != editor.selectionRevision { keyedSelection = editor.selectionRevision }
     }
 
     /// Lists every shape, keeping the selection, until the selection next changes.
@@ -613,7 +654,7 @@ public final class ContentsState {
         return ShapeRow(record: record, isListed: isListed,
                         parent: contribution?.parent?(record, ContentsContext(editor: editor)) ?? registry.container(of: record, in: document),
                         ownsBoard: ownsBoard, startsExpanded: !ownsBoard && registry.isContainer(record),
-                        row: resolvedRow(of: record, kind: kind), symbol: kind.symbol,
+                        row: resolvedRow(of: record, kind: kind), symbol: kind.symbol, kindName: kind.name,
                         marks: marked ? marks(of: record, isListed: isListed, kind: kind) : [])
     }
 

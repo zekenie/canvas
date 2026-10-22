@@ -36,6 +36,16 @@ public final class FieldCellEditor: EditingTextView {
         textContainer?.maximumNumberOfLines = 1
     }
 
+    /// A key took a line out and the keyboard moved on to this cell: the repeats of that held key are the first press's, so they are
+    /// let go until the next press (they would delete what the cell holds, and then the line itself).
+    var dropsRepeats = false
+
+    public override func keyDown(with event: NSEvent) {
+        if event.isARepeat, dropsRepeats { return }
+        if !event.isARepeat { dropsRepeats = false }
+        super.keyDown(with: event)
+    }
+
     /// The list of notes a note's cell finds in while it is typed over: the keys are the list's first.
     var picking: (picker: any NotePicking, window: CaretListWindow)?
 

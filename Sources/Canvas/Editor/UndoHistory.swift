@@ -75,6 +75,8 @@ public final class UndoHistory {
         var firstName: String?
         /// What an editing session's step is called when nothing else names it (`Editable.editingStepName`).
         var editingName: String?
+        /// What runs as it closes, its last commits (`finishing`), in the order first asked, one a key.
+        var finishes: [(key: AnyHashable, body: @MainActor () -> Void)] = []
         let before: [ObjectIdentifier: any Sendable]
         var name: String? { groupName ?? firstName ?? (holder == .editing ? editingName ?? "Typing" : nil) }
     }
@@ -107,6 +109,8 @@ public final class UndoHistory {
     /// The card was shown inside an action and takes its step on (`CanvasCard.adoptsPress`): when the
     /// action ends, its open step stays open as the card's, to close with the card.
     private var adoptsAction = false
+    /// A commit is under way (`willCommit`): what a step closing then would finish with is dropped.
+    private var isCommitting = false
 
     init() {}
 
@@ -199,6 +203,25 @@ public final class UndoHistory {
         default: break
         }
     }
+
+    /// `body` runs as the step open now closes, whatever closes it (a held key let go, another action, Undo, another
+    /// board shown), and what it commits is that step's last: a held arrow key's nudges settle into or out of a
+    /// container once, as the key is let go, not at every repeat. One a `key` a step: asked again under the same key,
+    /// the later body runs in its place. With no step open, nothing runs. A body the step closes where nothing may
+    /// commit (inside a commit) is dropped. Whether a step was open to take it.
+    @discardableResult
+    public func finishing(_ key: AnyHashable, _ body: @escaping @MainActor () -> Void) -> Bool {
+        guard open != nil else { return false }
+        if let index = open?.finishes.firstIndex(where: { $0.key == key }) {
+            open?.finishes[index].body = body
+        } else {
+            open?.finishes.append((key, body))
+        }
+        return true
+    }
+
+    /// Whether the step open now finishes with something under `key` (`finishing`): false once it has closed.
+    public func willFinish(_ key: AnyHashable) -> Bool { open?.finishes.contains { $0.key == key } ?? false }
 
     /// A card with a step name shows: commits under `key` are one step called `name` until `letGo`. A
     /// step kept under another key or name closes. Opens nothing, so the press a card is shown in keeps
@@ -318,39 +341,48 @@ public final class UndoHistory {
     /// A commit is about to take the document from `old`, as `changes` says: it goes into the step
     /// it's part of, which opens (and clears what there was to redo) if none is.
     func willCommit(_ changes: ChangeSet, from old: CanvasFile, name: String?, coalescing key: AnyHashable?, origin: Origin) {
-        if depth > 0 {
-            // An editing view's commit joins its session's step; anything else the action commits
-            // ends that step and is the action's own.
-            if open == nil || (open?.holder == .editing && origin != .editing) {
-                close()
-                openStep(.action)
-            }
-        } else if origin == .editing, isEditing {
-            if open?.holder != .editing {
-                close()
-                openStep(.editing)
-                open?.editingName = editingName
-            }
-        } else if let key, let kept = keptRun, kept.key == key {
-            if open?.holder != .kept(key) {
-                close()
-                openStep(.kept(key))
-                open?.firstName = kept.name
-            }
-        } else if let key {
-            if open?.holder != .run(key) {
-                close()
-                openStep(.run(key))
-            }
-        } else {
+        if let holder = opening(coalescing: key, origin: origin) {
+            // Inside a commit: the transaction has built its document, and what the step closing would
+            // finish with would be written over (`willTransact` closed it first, if it could).
+            isCommitting = true
             close()
-            openStep(.single)
+            isCommitting = false
+            openStep(holder)
+            if holder == .editing { open?.editingName = editingName }
+            if case .kept = holder { open?.firstName = keptRun?.name }
         }
         guard var step = open else { return }
         step.builder.willCommit(changes, from: old)
         if step.groupName == nil { step.groupName = groupNames.lazy.compactMap { $0 }.first }
         if step.firstName == nil { step.firstName = name }
         open = step
+    }
+
+    /// The step a commit under `key`, from `origin`, opens, the one open closing first; nil when it goes
+    /// into the one open. An editing view's commit joins its session's step; anything else an action
+    /// commits ends that step and is the action's own.
+    private func opening(coalescing key: AnyHashable?, origin: Origin) -> Holder? {
+        if depth > 0 {
+            return open == nil || (open?.holder == .editing && origin != .editing) ? .action : nil
+        } else if origin == .editing, isEditing {
+            return open?.holder != .editing ? .editing : nil
+        } else if let key, let kept = keptRun, kept.key == key {
+            return open?.holder != .kept(key) ? .kept(key) : nil
+        } else if let key {
+            return open?.holder != .run(key) ? .run(key) : nil
+        }
+        return .single
+    }
+
+    /// A transaction on the board shown is about to read the document, its commit under `key`, from
+    /// `origin`. If that commit would close the open step and the step finishes with something
+    /// (`finishing`: a held key's nudges settling), it closes now, so what it finishes with commits
+    /// before the transaction reads the document, never inside its commit, which would write over
+    /// it. A transaction that then commits nothing has closed it all the same, as anything else that
+    /// happens does.
+    func willTransact(coalescing key: AnyHashable?, origin: Origin) {
+        guard open?.finishes.isEmpty == false, opening(coalescing: key, origin: origin) != nil else { return }
+        close()
     }
 
     /// A commit on a board that isn't shown (`transact(on:)`), about to take the file from `old` as
@@ -394,8 +426,20 @@ public final class UndoHistory {
         didChange?(.began)
     }
 
-    /// Closes the open step: onto the stack, or, if it came to nothing, dropped.
+    /// Closes the open step: onto the stack, or, if it came to nothing, dropped. What it was to finish with
+    /// (`finishing`) runs first, as an action of the step's, so its commits are the step's.
     func close() {
+        if let finishes = open?.finishes, !finishes.isEmpty {
+            open?.finishes = []
+            if !isCommitting, editor?.canTransact == true {
+                open?.holder = .action
+                depth += 1
+                groupNames.append(nil)
+                for finish in finishes { finish.body() }
+                depth -= 1
+                groupNames.removeLast()
+            }
+        }
         guard let step = open, let editor else { return }
         open = nil
         let delta = step.builder.delta(now: editor.storedFile)

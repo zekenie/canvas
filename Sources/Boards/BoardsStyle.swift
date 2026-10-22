@@ -45,4 +45,13 @@ enum BoardsStyle {
     static let menuShadowRadius: CGFloat = 9
     static let menuShadowY: CGFloat = 6
     static let menuShadowOpacity: Double = 0.14
+    /// The path with the keyboard: its stop outlined, and what assistive apps call the path and its
+    /// action that shows a crumb's menu.
+    static let focusWidth: CGFloat = 2
+    static let focusRadius: CGFloat = 8
+    static let pathLabel = "Board path"
+    static let showContents = "Show Contents"
+    static let foldLabel = "Boards between"
+    /// The Go item that gives the keyboard to the path.
+    static let boardPath = "Board Path"
 }

@@ -30,6 +30,8 @@ extension TypeChips: Adornment {
 }
 
 extension TypeChips: ClickableAdornment {
+    public static var partRole: PartRole { .menuButton }
+
     public static func click(_ click: AdornmentClick, in editor: CanvasEditor) {
         if opensCard(click, in: editor) { return }
         guard let menu = TypeChipMenus.menu(for: click, in: editor) else { return }

@@ -31,33 +31,39 @@ extension NSWindow {
         contentView?.layoutSubtreeIfNeeded()
     }
 
-    /// A key typed: `sendEvent` routes it to the first responder, as AppKit does.
+    /// A key typed, routed as NSApplication routes it (`KeyDriver`): the window's key equivalents,
+    /// then the first responder. `code` 0 is the key the US layout types `characters` with (the
+    /// key code of "a" when it types none).
     public func press(_ characters: String, code: UInt16 = 0, modifiers: NSEvent.ModifierFlags = []) {
-        sendEvent(keyEvent(characters, code: code, modifiers: modifiers))
+        KeyDriver(self).deliver(keyEvent(characters, code: code, modifiers: modifiers))
     }
 
+    /// A chord pressed, routed as NSApplication routes it (`KeyDriver`, with `menu` as the menu bar).
+    @discardableResult
+    public func press(_ chord: Chord, menu: NSMenu? = nil) -> Delivery { KeyDriver(self, menu: menu).send(chord) }
+
     /// A key-down event for this window. `ignoringModifiers` is what the key types without them, when
-    /// that differs (⌃H types "\u{8}", ignoring ⌃ "h").
+    /// that differs (⌃H types "\u{8}", ignoring ⌃ "h"). `code` 0: the key the US layout types the
+    /// characters with, when one does.
     public func keyEvent(_ characters: String, ignoringModifiers: String? = nil, code: UInt16 = 0, modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
-        NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 1, windowNumber: windowNumber, context: nil,
-                         characters: characters, charactersIgnoringModifiers: ignoringModifiers ?? characters, isARepeat: false, keyCode: code)!
+        let ignoring = ignoringModifiers ?? characters
+        let code = code != 0 ? code : Key.code(typing: ignoring) ?? 0
+        return NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 1, windowNumber: windowNumber, context: nil,
+                                characters: characters, charactersIgnoringModifiers: ignoring, isARepeat: false, keyCode: code)!
     }
 
     public func type(_ text: String) {
         for character in text { press(String(character)) }
     }
 
-    public func pressReturn() { press("\r", code: 36) }
-    public func pressEscape() { press("\u{1b}", code: 53) }
-    public func pressDelete() { press("\u{7f}", code: 51) }
+    public func pressReturn() { press(.return) }
+    public func pressEscape() { press(.escape) }
+    public func pressDelete() { press(.delete) }
 
     /// ⌘., as the app hands a key with ⌘ on: to the window's key equivalents first, then, if none
     /// took it, to the window, which sends `cancelOperation:` up the responder chain from the first
     /// responder (no key down reaches it).
-    public func pressCommandPeriod() {
-        let event = keyEvent(".", code: 47, modifiers: .command)
-        if !performKeyEquivalent(with: event) { sendEvent(event) }
-    }
+    public func pressCommandPeriod() { press(.commandPeriod) }
 
     /// Gives a field the keyboard, with its text selected, as a click does.
     public func focus(_ field: NSTextField) {

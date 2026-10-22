@@ -11,6 +11,12 @@ extension PluginID {
     public static let tableOfContents: PluginID = "table-of-contents"
 }
 
+extension CanvasCommand {
+    /// View › Show All Shapes: the list, scoped to the selection, lists every shape again
+    /// (`ContentsState.showAll()`); its header's Show All runs it.
+    public static let showAllShapes: CanvasCommand = "showAllShapes"
+}
+
 // MARK: The extension point
 
 /// How a kind's shapes appear in the table of contents. At most one contribution per kind: two
@@ -432,6 +438,7 @@ public struct ContentsLabel: View {
     public let path: [ContentsPathName]
 
     @Environment(\.contentsSymbol) private var kindSymbol
+    @Environment(\.contentsKindName) private var kindName
 
     public init(_ title: String, placeholder: String? = nil, systemImage: String? = nil, color: Color? = nil, badge: String? = nil,
                 standsIn: Bool = false, path: [ContentsPathName] = []) {
@@ -475,6 +482,10 @@ public struct ContentsLabel: View {
         return cut + "…"
     }
 
+    /// What VoiceOver says of the row after its name: what its kind is called, or "Alias" for a row
+    /// that stands in for another shape, whose name it wears.
+    public func spokenValue(kind: String) -> String { standsIn ? ContentsStyle.standInSpoken : kind }
+
     /// The same label, called `title` (`ContentsTitles`).
     func retitled(_ title: String) -> ContentsLabel {
         ContentsLabel(title, placeholder: placeholder, systemImage: systemImage, color: color, badge: badge, standsIn: standsIn, path: path)
@@ -501,8 +512,9 @@ public struct ContentsLabel: View {
                     symbol
                 }
             }
-            // What the arrow shows, said: the row's name alone would be its shape's.
-            .accessibilityValue(standsIn ? ContentsStyle.standInSpoken : "")
+            // What the row is after its name: its kind ("Checkout, Note"), or what the arrow shows, for
+            // a stand-in, whose name alone would be its shape's.
+            .accessibilityValue(spokenValue(kind: kindName))
             Spacer(minLength: 0)
             if let badge {
                 Text(badge).foregroundStyle(.secondary).monospacedDigit()
@@ -680,10 +692,20 @@ struct ContentsSymbolKey: EnvironmentKey {
     static let defaultValue = "square.dashed"
 }
 
+/// What the row's kind is called (`registry.label(of:)`), which a `ContentsLabel` says after its name.
+struct ContentsKindNameKey: EnvironmentKey {
+    static let defaultValue = ""
+}
+
 extension EnvironmentValues {
     var contentsSymbol: String {
         get { self[ContentsSymbolKey.self] }
         set { self[ContentsSymbolKey.self] = newValue }
+    }
+
+    var contentsKindName: String {
+        get { self[ContentsKindNameKey.self] }
+        set { self[ContentsKindNameKey.self] = newValue }
     }
 }
 
@@ -697,6 +719,9 @@ public struct TableOfContentsPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { ContentsState(editor: $0) }
+        // No key: the list's header has its button, and the menu bar its item, for the keyboard.
+        registrar.command(.showAllShapes, title: ContentsStyle.showAllShapes, menu: "View", order: ContentsStyle.showAllOrder,
+                          isEnabled: { $0.editor.tableOfContents?.isFiltered == true }) { $0.editor.tableOfContents?.showAll() }
     }
 }
 
@@ -709,6 +734,15 @@ enum ContentsStyle {
     /// The header's: what it calls the board listed when no plugin says (`ContentsHeadings`); between
     /// the up button, the heading's symbol and its title; the up button's width.
     static let heading = "Board"
+    /// The header of a list of the selection, its button that lists every shape again and that
+    /// button's tooltip; the command it runs, and its place in View, after Show Minimap.
+    static let selectionHeading = "Selection"
+    static let showAllButton = "Show All"
+    static let showAllHelp = "List every shape on the board"
+    static let showAllShapes = "Show All Shapes"
+    static let showAllOrder = 40
+    /// What ⇧Tab types: the back-tab character, which the list takes as ↑.
+    static let backTab = "\u{19}"
     static let headerSpacing: CGFloat = 4
     static let upWidth: CGFloat = 16
     /// The up button's: an arrow that turns up, a way out as Finder's enclosing folder is, not a disclosure.
@@ -757,8 +791,13 @@ enum ContentsStyle {
     static let outlineRowPadding: CGFloat = 6
     static let outlineHoverOpacity: CGFloat = 0.08
     static let outlineRadius: CGFloat = 6
+    static let outlineFocusWidth: CGFloat = 2
     static let outlineIconWidth: CGFloat = 18
     static let outlineIconSpacing: CGFloat = 5
+    /// What VoiceOver says of the outline's rows: the row on the way you came, and a disclosure
+    /// triangle, by its row ("Checkout, expand").
+    static let outlineCurrentPath = "current path"
+    static func outlineDisclosureSpoken(_ name: String, isExpanded: Bool) -> String { "\(name), \(isExpanded ? "collapse" : "expand")" }
     /// Dragging rows: how much of a row, at its top and at its bottom, is above or below it where
     /// its shape takes shapes (a frame's, a subboard's), the rest being on it (a row that takes
     /// nothing is above or below by halves); the line a drop above or below shows, and the ring at

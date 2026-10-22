@@ -10,6 +10,10 @@ extension ColorFileMenuGroup: MenuGroup {}
 enum ColorNoneMenuGroup {}
 extension ColorNoneMenuGroup: MenuGroup {}
 
+/// Edit Colors… under them all, as the submenu lists it last.
+enum ColorEditMenuGroup {}
+extension ColorEditMenuGroup: MenuGroup {}
+
 /// The color every shape has as its own: `.some(nil)` when none has one, nil when they differ.
 private func agreed(_ owns: [ShapeColor?]) -> ShapeColor?? {
     if owns.dropFirst().allSatisfy({ $0 == owns[0] }) { return .some(owns[0]) }
@@ -17,7 +21,7 @@ private func agreed(_ owns: [ShapeColor?]) -> ShapeColor?? {
 }
 
 /// Color ▸ in the menu of every selection whose shapes all have colors (`scope`), beside Lock (`StateMenuGroup`):
-/// the built-in colors by name, a line, the file's, a line, and None; a check by the color every
+/// the built-in colors by name, a line, the file's, a line, None, a line and Edit Colors… (the list of the file's colors); a check by the color every
 /// selected shape has as its own (none, when they differ; None, when no shape has one). Choosing
 /// one colors the whole selection in one step ("Change Color"). Never dimmed: a read-only shape is
 /// refused by the core and shakes, while the rest of the selection changes. Items are plain titles:
@@ -45,6 +49,9 @@ func registerColorMenu(into scope: inout ScopedRegistrar) {
                     }
                     MenuItem(ColorsStyle.none, in: ColorNoneMenuGroup.self, id: "none", isChecked: { _ in common == .some(nil) },
                              stepName: ColorsStyle.changeColor) { ids, editor in editor.setColor(nil, of: ids) }
+                    MenuItem(ColorsStyle.editColors, in: ColorEditMenuGroup.self, id: "edit-colors") { _, editor in
+                        ColorListPanel.show(for: editor)
+                    }
                 }
             }
         }

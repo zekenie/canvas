@@ -589,6 +589,9 @@ enum ValidationStyle {
     /// is then off by at most a tenth of 3 points, which no one sees, and a pinch or a zoom's glide
     /// grows each ring once every tenth, not every frame.
     static let ringZoomTolerance: CGFloat = 0.1
+    /// What VoiceOver says of a shape's issues: "1 error", "2 warnings".
+    static func errors(_ count: Int) -> String { count == 1 ? "1 error" : "\(count) errors" }
+    static func warnings(_ count: Int) -> String { count == 1 ? "1 warning" : "\(count) warnings" }
 }
 
 /// The horizontal draws its own decoration; shapes never know they're invalid. A shape is outlined
@@ -785,5 +788,17 @@ public struct ValidationPlugin: ListedPlugin {
         registrar.overlay(ValidationOverlay())
         // Every shape has a schema, its kind's, so every shape is checked against it.
         registrar.forEveryShape { $0.validate(ignoringMoves: true, schemaIssues) }
+        // VoiceOver says the issues that show, after what a shape is: "Checkout, Note, 1 error, 2 warnings".
+        // Any shape may have them, so every shape says them.
+        registrar.forEveryShape { $0.accessibility { shape, editor in Self.accessibleIssues(of: shape, in: editor) } }
+    }
+
+    /// How many errors and warnings a shape on the board shown has, as VoiceOver says them; nil for none, or
+    /// for a shape elsewhere, whose board isn't checked.
+    @MainActor static func accessibleIssues(of shape: AnyShapeRecord, in editor: CanvasEditor) -> AccessibleTraits? {
+        guard editor.document[shape.id] != nil, let issues = editor.validation?.result(for: shape.id)?.issues, !issues.isEmpty else { return nil }
+        let errors = issues.count(where: { $0.severity == .error }), warnings = issues.count(where: { $0.severity == .warning })
+        let states = (errors > 0 ? [ValidationStyle.errors(errors)] : []) + (warnings > 0 ? [ValidationStyle.warnings(warnings)] : [])
+        return states.isEmpty ? nil : AccessibleTraits(states: states)
     }
 }

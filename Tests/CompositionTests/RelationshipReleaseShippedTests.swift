@@ -38,9 +38,14 @@ final class Minute {
     let canvas: CanvasView
     let feature = ShapeID(), layer = ShapeID(), featureNote = ShapeID(), layerNote = ShapeID()
 
-    init(featureAt: CGPoint = CGPoint(x: 40, y: 40), layerAt: CGPoint = CGPoint(x: 1000, y: 40)) throws {
+    /// `extra`: plugins after the shipped list.
+    init(featureAt: CGPoint = CGPoint(x: 40, y: 40), layerAt: CGPoint = CGPoint(x: 1000, y: 40), extra: [any CanvasPlugin] = []) throws {
         let pasteboard = self.pasteboard, model = self.model
-        h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, pasteboard: pasteboard, model: model) }
+        h = try EditorHarness { scheduler in
+            guard !extra.isEmpty else { return ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler, pasteboard: pasteboard, model: model) }
+            return CanvasEditor(registry: try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: model) + extra),
+                                document: CanvasDocument(), scheduler: scheduler)
+        }
         editor = h.editor
         (window, canvas) = windowed(editor)
         window.isReleasedWhenClosed = false

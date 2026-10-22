@@ -90,6 +90,12 @@ private struct Pair {
         expectEqual(editor.selectedShapeIDs, [p.hub])
         expectEqual(Set(editor.outlines.shapes), [p.hub, p.from, p.to])
         expect(try p.accent(around: p.to) > before + 20, "the half the click was not on is drawn outlined too")
+        // Another view takes the keyboard: the halves go quiet with the type, not back to the accent (P7).
+        editor.keyboardDidChange(hasKeyboard: false)
+        expect(editor.outlines.color != nil, "the selection's quiet color, the halves with it")
+        expectEqual(editor.outlines.color, editor.selectionOutlineColor)
+        editor.keyboardDidChange(hasKeyboard: true)
+        expectEqual(editor.outlines.color, nil, "the accent again")
         // A pointer on a half of the selected type hovers the half, not the type.
         p.hover(try p.onHalf(p.from))
         expectEqual(editor.hovered, p.from)

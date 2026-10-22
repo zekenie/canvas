@@ -80,9 +80,10 @@ enum CorePoints {
     }
 
     /// What a command run from a key or the menu bar acts on (`registrar.commandShapes`): the
-    /// selection. One plugin may claim it; otherwise such a command acts on no shapes.
+    /// selection, and how VoiceOver's press on a shape sets it. One plugin may claim it; otherwise
+    /// such a command acts on no shapes.
     enum CommandShapes: KeyedExtensionPoint {
-        typealias Contribution = @MainActor (CanvasEditor) -> [ShapeID]
+        typealias Contribution = CommandShapesClaim
         static var owner: PluginID { .core }
         static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the shapes commands act on"] }
     }
@@ -109,7 +110,7 @@ enum CorePoints {
     /// selection would open, less the commands the menu bar already runs. One plugin may claim it;
     /// otherwise there is none.
     enum SelectionMenu: KeyedExtensionPoint {
-        typealias Contribution = @MainActor (CanvasEditor, Set<CanvasCommand>) -> NSMenu?
+        typealias Contribution = @MainActor (CanvasEditor, Set<CanvasCommand>, Bool) -> NSMenu?
         static var owner: PluginID { .core }
         static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the selection's menu"] }
     }
@@ -136,6 +137,30 @@ enum CorePoints {
         typealias Contribution = @MainActor (CanvasEditor, TranslationStart) -> (any TranslationAdjuster)?
         static var owner: PluginID { .core }
         static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the translation adjuster"] }
+    }
+
+    /// What VoiceOver says of a shape (`scope.accessibility`, `shape.accessibility`): every
+    /// contribution that reaches its kind, in plugin order, the kind's own first.
+    enum ShapeAccessibility: ExtensionPoint {
+        typealias Contribution = @MainActor (AnyShapeRecord, CanvasEditor) -> AccessibleTraits?
+        static var owner: PluginID { .core }
+        static var scope: PointScope { .scoped }
+    }
+
+    /// The order VoiceOver walks a board's shapes in (`registrar.accessibleOrder`): the current
+    /// scope's Tab stops. One plugin may claim it; otherwise paint order, the selection first.
+    enum AccessibleOrder: KeyedExtensionPoint {
+        typealias Contribution = @MainActor (CanvasEditor) -> [ShapeID]
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the accessible order"] }
+    }
+
+    /// A shape's drawn parts as VoiceOver sees them, and the one focused (`registrar.accessibleParts`).
+    /// One plugin may claim it; otherwise a shape has none.
+    enum AccessibleParts: KeyedExtensionPoint {
+        typealias Contribution = AccessiblePartsClaim
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the accessible parts"] }
     }
 }
 
@@ -223,6 +248,9 @@ struct ServiceRegistration {
 /// Installed ahead of every plugin list: the Hand, undo and redo (Edit › Undo and Redo, AppKit's own
 /// items, which text answers first), and zooming, in View (their keys Keyboard gives). Zoom In and
 /// Zoom Out are dimmed at the last stop, Actual Size at 100%, and Zoom to Fit with nothing to fit.
+/// Paging, the commands of Page Up, Page Down, Home and End (Keyboard's keys too), have no menu
+/// item: a key a menu names that no ⌘ is held with would take it from text, where those keys move
+/// the caret. They run while the view has a size, Home and End while the board has shapes.
 struct CorePlugin: CanvasPlugin {
     var id: PluginID { .core }
     func register(into registrar: inout PluginRegistrar) {
@@ -238,5 +266,9 @@ struct CorePlugin: CanvasPlugin {
         registrar.command(.zoomToActualSize, title: "Actual Size", menu: "View", order: 120,
                           isEnabled: { $0.editor.zoomPercentage != 100 }) { $0.editor.zoom(toPercent: 100) }
         registrar.command(.zoomToFit, title: "Zoom to Fit", menu: "View", order: 130, isEnabled: { $0.editor.canZoomToFit }) { $0.editor.zoomToFit() }
+        registrar.command(.pageUp, title: "Page Up", isEnabled: { $0.editor.canPan }) { $0.editor.pan(.up, far: true) }
+        registrar.command(.pageDown, title: "Page Down", isEnabled: { $0.editor.canPan }) { $0.editor.pan(.down, far: true) }
+        registrar.command(.scrollToStart, title: "Start of Board", isEnabled: { $0.editor.canScrollToEnds }) { $0.editor.scrollToStart() }
+        registrar.command(.scrollToEnd, title: "End of Board", isEnabled: { $0.editor.canScrollToEnds }) { $0.editor.scrollToEnd() }
     }
 }

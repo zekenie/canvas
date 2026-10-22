@@ -17,7 +17,7 @@ struct NoteLayout {
 
     /// With no rows, the stored frame and its words inset by the padding, nothing measured: the note
     /// as it was drawn before it had any. With rows, the frame `size(of:rows:)` says, its words at the
-    /// width the rows leave them, and the rows right under the words. A relationship type
+    /// width the rows leave them (a line at least while edited), and the rows right under the words. A relationship type
     /// (`TypeRows.pill`) is a capsule of the size Types says, centered on the middle of its stored frame, with no words
     /// and no rows (those it keeps are not drawn).
     init(_ shape: ShapeRecord<StickyNote>, in context: ShapeContext) {
@@ -38,11 +38,10 @@ struct NoteLayout {
         pill = nil
         let size = NoteLayout.size(of: shape.props, rows: rows)
         let inner = size.width - p * 2
-        let height = NoteWords.height(of: shape.props.text, width: inner)
-        let gap = height > 0 ? NoteStyle.blockGap : 0
+        let height = NoteLayout.wordsHeight(of: shape.props.text, width: inner, rows: rows)
         frame = CGRect(origin: shape.frame.origin, size: size)
         words = CGRect(x: frame.minX + p, y: frame.minY + p, width: inner, height: height)
-        block = CGRect(x: frame.minX + p, y: frame.minY + p + height + gap, width: inner, height: rows.height)
+        block = CGRect(x: frame.minX + p, y: frame.minY + NoteLayout.blockTop(of: shape.props.text, width: inner, rows: rows), width: inner, height: rows.height)
     }
 
     /// What Types says a relationship type is drawn as. A pill has no rows (it is the case of none), so this is asked only
@@ -60,6 +59,20 @@ struct NoteLayout {
         CGRect(x: box.midX - pill.size.width / 2, y: box.midY - pill.size.height / 2, width: pill.size.width, height: pill.size.height)
     }
 
+    /// How tall the words over rows are: as measured, and a line at least while the note is edited
+    /// (`RowsExtent.wordsLine`), so an empty note's caret sits above its rows rather than under them.
+    static func wordsHeight(of text: MentionText, width: CGFloat, rows: RowsExtent) -> CGFloat {
+        let measured = NoteWords.height(of: text, width: width)
+        return rows.wordsLine ? max(measured, NoteStyle.oneLineHeight) : measured
+    }
+
+    /// How far under the paper's top the rows start: the padding, the words and the gap under them if there are any. The one
+    /// place that says so, for the layout and for a press made at rest that editing moves the rows from under.
+    static func blockTop(of text: MentionText, width: CGFloat, rows: RowsExtent) -> CGFloat {
+        let height = wordsHeight(of: text, width: width, rows: rows)
+        return NoteStyle.padding + height + (height > 0 ? NoteStyle.blockGap : 0)
+    }
+
     /// The paper's size: the stored one, no rows. With rows, as wide as they read at and as tall as
     /// the padding, the words at that width, the gap, the rows and the padding, never under a new
     /// note's height; and no smaller than it stores either way.
@@ -67,7 +80,7 @@ struct NoteLayout {
         guard let rows else { return note.frame.size }
         let p = NoteStyle.padding
         let width = max(note.frame.width, rows.minimumWidth)
-        let words = NoteWords.height(of: note.text, width: width - p * 2)
+        let words = wordsHeight(of: note.text, width: width - p * 2, rows: rows)
         let needed = max(NoteStyle.size.height, p + words + (words > 0 ? NoteStyle.blockGap : 0) + rows.height + p)
         return CGSize(width: width, height: max(note.frame.height, needed))
     }

@@ -494,3 +494,26 @@ struct ShownAdornment {
         return isOverflow || button.tag == label.tag
     }
 }
+
+// MARK: Parts
+
+/// Each clickable adornment a shape shows, as a part of the shape (Selection's `ShapeParts`), listed in the
+/// scope the adornment is registered in (its sugar lists them): its rect where it is laid out now, its title
+/// its label's text (else the type's `partTitle`), and a press that is its click. One that shows for a
+/// moment and fades (`ChipFade`) is left out, and so is any on a shape drawn as a skeleton (none shows).
+@MainActor
+enum AdornmentParts {
+    static func isClickable<A: Adornment>(_: A.Type) -> Bool { A.self is any ClickableAdornment.Type }
+
+    static func parts<A: Adornment>(of _: A.Type, on id: ShapeID, in editor: CanvasEditor) -> [ShapePart] {
+        guard let clickable = A.self as? any ClickableAdornment.Type, editor.adornmentState != nil,
+              editor.service(ChipFade.self)?.isShowing(A.self, on: id) != true else { return [] }
+        let adornment = AdornmentID.of(A.self)
+        return editor.adornmentFrames(of: id).filter { $0.adornment == adornment }.map { frame in
+            let button = AdornmentButton(adornment, on: id, tag: frame.tag, isOverflow: frame.isOverflow)
+            return ShapePart(id: button, title: frame.label.text ?? clickable.partTitle, role: clickable.partRole, rect: frame.rect) { editor in
+                editor.adornmentState?.click(button)
+            }
+        }
+    }
+}

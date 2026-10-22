@@ -1,6 +1,7 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
+import Geometry
 import Keyboard
 import Selection
 import TestKit
@@ -88,6 +89,33 @@ struct Row {
         expectEqual(h.editor.selectionFocus, [])
         h.escape()
         expectEqual(h.editor.selectedShapeIDs, [])
+    },
+    test("Escape goes out one level at a time, as ⌘↑ steps out: from a shape in a group in a container, the group whole, then the container, brought into view, then nothing; never off the board") {
+        let groups = GroupsFixture()
+        let h = try groupsHarness(groups, [CorralsPlugin()])
+        let view = CGSize(width: 400, height: 300)
+        h.editor.viewportDidResize(to: view)
+        let corral = h.add(Corral(CGRect(x: -50, y: -50, width: 900, height: 300)))
+        let row = Row(h)
+        h.editor.put([row.a, row.b, row.c], in: corral)
+        groups.paths = [row.a: ["g"], row.b: ["g"]]
+        h.editor.selectedShapeIDs = [row.a]
+        var enclosures: [Set<ShapeID>] = []
+        while h.editor.selectEnclosure() { enclosures.append(Set(h.editor.selectedShapeIDs)) }
+        expectEqual(enclosures, [[row.a, row.b], [corral]], "⌘↑'s steps")
+        h.wait(200)
+        h.editor.camera = Camera()
+        h.editor.selectedShapeIDs = [row.a]
+        h.escape()
+        expectEqual(Set(h.editor.selectedShapeIDs), [row.a, row.b], "the group whole")
+        h.escape()
+        expectEqual(h.editor.selectedShapeIDs, [corral], "the container")
+        h.wait(200)
+        expectEqual(h.editor.camera, Camera(fitting: CGRect(x: -50, y: -50, width: 900, height: 300), in: view, inset: 100, maxZoom: 1),
+                    "brought into view")
+        h.escape()
+        expectEqual(h.editor.selectedShapeIDs, [], "at the board's own shapes, nothing")
+        expectEqual(h.editor.board, .root)
     },
     test("inside a group, a lone shape follows the pointer from the press, and the group stays") {
         let groups = GroupsFixture()

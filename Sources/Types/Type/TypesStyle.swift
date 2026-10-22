@@ -6,9 +6,16 @@ import ProseMaps
 /// constants in an extension, in its own files.
 @MainActor
 public enum TypesStyle {
+    /// What VoiceOver reads of a note's rows: the group, and the help of a value that is needed or wrong.
+    static let rowsAccessibilityLabel = "Fields"
+    static let neededHelp = "needed"
+    static let wrongHelp = "wrong"
+    static func moreHelp(_ count: Int) -> String { ", \(count) more" }
     /// The steps.
     public static let makeType = "Make Type"
     public static let removeType = "Remove Type"
+    /// A Types-tab row's minus, as VoiceOver names it: `Remove Type Person`.
+    public static func removeType(named name: String) -> String { "\(removeType) \(name)" }
     /// The mark by hand: a relationship type made, and taken back to the plain type it still is.
     public static let makeRelationshipType = "Make Relationship Type"
     public static let makePlainType = "Make Plain Type"

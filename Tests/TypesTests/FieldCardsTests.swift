@@ -468,6 +468,15 @@ private extension Resolved {
         r.editor.undo()
         expect(form.chipName(FieldFixtures.addressID) == ("Address", false), "back whole when the delete is undone")
     },
+    test("a card is named for VoiceOver as a popover") {
+        let r = try CardRig()
+        defer { r.close() }
+        expect(r.open("shippingAddress"))
+        var host: NSView? = r.form
+        while let up = host, up.accessibilityRole() != .popover { host = up.superview }
+        expectEqual(host?.accessibilityRole(), .popover)
+        expectEqual(host?.accessibilityLabel(), "Fields")
+    },
 ])
 
 @MainActor private func storedValues(_ editor: CanvasEditor, _ shape: ShapeID) -> FieldValues? {

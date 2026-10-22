@@ -16,6 +16,13 @@ extension AlertsTab: DetailTab {
     static var order: Order<Self> { .after(StyleTab.self) }
 }
 
+/// A report less Keyboard's line and the panel's commands, shortcuts and key hints (View's tab items, Editing
+/// Text's rows), which these tests aren't about.
+@MainActor func withoutKeys(_ report: String) -> String {
+    report.split(separator: "\n").filter { !$0.hasPrefix("keyboard") }
+        .map { $0.hasPrefix("detail-panel") ? "detail-panel  service DetailPanelState · host inspector" : String($0) }.joined(separator: "\n")
+}
+
 // What the panel shows for a shape, resolved headlessly from the registry.
 @MainActor let layoutTests = Suite("Detail layout", [
     test("the panel has no sections of its own: a box nobody contributes to shows only its header") {
@@ -101,7 +108,7 @@ extension AlertsTab: DetailTab {
     },
     test("details for a kind nobody registers are an unknown kind") {
         expectThrows(RegistryError.unknownKind(Gadget.kind, point: "ShapeDetails", contributor: "p")) {
-            _ = try Registry(plugins: [DetailPanelPlugin(), Contributor(id: "p") { r in
+            _ = try Registry(plugins: [KeyboardPlugin(), DetailPanelPlugin(), Contributor(id: "p") { r in
                 r.details(Gadget.self) { DetailSection(in: StyleTab.self) { _ in Text("Orphan") } }
             }])
         }
@@ -213,7 +220,7 @@ extension AlertsTab: DetailTab {
         }
     },
     test("status lines for a tab name it in the report") {
-        let registry = try Registry(plugins: [FixturesPlugin(), DetailPanelPlugin(), Contributor(id: "p") { r in
+        let registry = try Registry(plugins: [KeyboardPlugin(), FixturesPlugin(), DetailPanelPlugin(), Contributor(id: "p") { r in
             r.forEveryShape { scope in
                 scope.detailStatus { _, _ in [] }
             }
@@ -221,23 +228,23 @@ extension AlertsTab: DetailTab {
                 scope.detailStatus(in: AlertsTab.self) { _, _ in [] }
             }
         }])
-        expectEqual(registry.report, """
-        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
+        expectEqual(withoutKeys(registry.report), """
+        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState · host inspector
         p             DetailStatuses → every shape · DetailStatuses in Alerts after Style → every shape
         """)
     },
     test("one details call is one line in the report") {
-        let registry = try Registry(plugins: [FixturesPlugin(), DetailPanelPlugin(), Contributor(id: "p") { r in
+        let registry = try Registry(plugins: [KeyboardPlugin(), FixturesPlugin(), DetailPanelPlugin(), Contributor(id: "p") { r in
             r.details(Box.self, header: { _ in DetailHeader("Box") }) {
                 DetailSection(in: StyleTab.self) { _ in Text("One") }
                 DetailSection("Two", in: StyleTab.self) { _ in Text("Two") }
                 DetailSection("Three", in: FrameTab.self) { _ in Text("Three") }
             }
         }])
-        expectEqual(registry.report, """
-        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
+        expectEqual(withoutKeys(registry.report), """
+        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState · host inspector
         p             ShapeDetails in Style last, Frame after Style → box

@@ -224,6 +224,14 @@ private let holder = #"""
         f.window.pressDelete()
         expectEqual(f.form.sheet.lines.count, 3, "nothing on the waiting line")
     },
+    test("a held ⌘⌫ takes one line out of a list, not the lines the caret moves on to") {
+        let f = try FormWindow("tags", stored: ["a", "b", "c", "d"])
+        defer { f.close() }
+        f.form.focus(f.at(2))
+        KeyDriver(f.window).hold(Chord(.delete, .command), repeats: 4)
+        f.window.settle()
+        expectEqual(f.value(f.path), ["a", "b", "d"], "one press, one line")
+    },
     test("a list written from elsewhere to another length loses its blank lines") {
         let f = try FormWindow("tags", stored: ["a", "b", "c"])
         defer { f.close() }
@@ -598,5 +606,162 @@ private let holder = #"""
         f.editor.transact("Write") { $0.update(FieldFixtures.addressID) { $0[TypeSchemaProperty.self] = SchemaText(#"{"type": "object", "properties": {"street": {"type": "string"}}}"#) } }
         scheduler.advance(by: .zero)
         expectEqual(f.form.sheet.lines.map(\.name), ["street"])
+    },
+])
+
+// The form by keys alone, through the key-walk harness (keyboard navigation's P3 to P9): Tab through every stop of a card and of a
+// table, ⇧Tab undoing each, what a stop that is no text does with a key, Escape's depth, ⌘↩, removing a line by key, ← and → on a
+// line, and what VoiceOver reads at each stop.
+
+extension FormWindow {
+    func walk() -> KeyWalk {
+        KeyWalk(window, editor: editor, readers: [.form({ [unowned self] in form })], settle: .runLoop)
+    }
+}
+
+@MainActor let fieldFormKeysTests = Suite("Field form, by keys", [
+    test("a card of rows: Tab visits every stop in reading order and ⇧Tab undoes each; Tab off the last and ⇧Tab off the first leave the card; each stop shows, named") {
+        let f = try FormWindow("shipment")
+        defer { f.close() }
+        f.form.focusFirst()
+        let walk = f.walk()
+        let ids = formStopIDs(f.form)
+        expectEqual(ids.count, 7)
+        walk.expectCardStops(ids)
+        walk.press(.tab)
+        expectEqual(f.closings, [.tabbed(forward: true)])
+        f.form.focusFirst()
+        walk.press(.backTab)
+        expectEqual(f.closings.last, .tabbed(forward: false))
+        walk.expectShows(ids.map { Focus(surface: "card", element: String($0.dropFirst(5))) })
+    },
+    test("a stop that is no text takes no letter and no Delete: a box, a choice and a row with more change nothing, and Tab and ⇧Tab move on") {
+        let f = try FormWindow("shipment")
+        defer { f.close() }
+        f.form.focusFirst()
+        let walk = f.walk()
+        let before = f.editor.document
+        let stops = ["d0/3.0", "d0/4.0", "d0/5.-1"].map { Focus(surface: "card", element: $0) }
+        walk.expectInert(Chord.inert, at: stops, escapes: false)
+        expectEqual(f.editor.document, before)
+        expectEqual(f.closings, [])
+    },
+    test("a level opened in a card: Tab runs its stops and out of it to the stop after its opener; ⇧Tab then lands on the opener (the one exception to the exact way back); Escape goes up one level at a time and closes at the top") {
+        let f = try FormWindow("shipment")
+        defer { f.close() }
+        let walk = f.walk()
+        f.form.focus(f.at(5, -1))
+        walk.press(.return)
+        expectEqual(f.form.depth, 1)
+        let level = formStopIDs(f.form)
+        expectEqual(level.count, 3)
+        walk.expectCardStops(level)
+        expectEqual(walk.press(.tab).id, "card/d0/6.-1", "out of the level, onto the stop after the one that opened it")
+        expectEqual(f.form.depth, 0)
+        expectEqual(walk.press(.backTab).id, "card/d0/5.-1", "⇧Tab lands on the opener, not on the level's last stop")
+        walk.press(.return)
+        expectEqual(f.form.depth, 1)
+        walk.press(.escape)
+        expectEqual(f.form.depth, 0)
+        expectEqual(walk.focus.id, "card/d0/5.-1", "Escape lands on the opener")
+        expectEqual(f.closings, [])
+        walk.press(.escape)
+        expectEqual(f.closings, [.escaped], "and from the top it closes")
+    },
+    test("⌘↩ in a cell at any depth does what Escape does at the top: the card closes; in the panel it closes nothing") {
+        let f = try FormWindow("shipment")
+        defer { f.close() }
+        let walk = f.walk()
+        f.form.focus(f.at(5, -1))
+        walk.press(.return)
+        expectEqual(f.form.depth, 1)
+        f.window.type("Mill St")
+        walk.press(.commandReturn)
+        expectEqual(f.closings, [.escaped])
+        expectEqual(f.form.depth, 0)
+        expectEqual(f.value(f.path.key("to").key("street")), "Mill St", "what was typed is kept")
+        f.form.focus(f.at(3, 0))
+        walk.press(.commandReturn)
+        expectEqual(f.closings, [.escaped, .escaped], "from a box too")
+        let panel = try FormWindow("shipment", presentation: .panel)
+        defer { panel.close() }
+        panel.form.focusFirst()
+        panel.walk().press(.commandReturn)
+        expectEqual(panel.closings, [])
+    },
+    test("← and → on a stop that is no text go to the stop before and after on the line and stop at its ends") {
+        let lines: JSONValue = [["sku": "Mug", "qty": 2, "ok": false, "size": "S"]]
+        let f = try FormWindow("lines", stored: lines)
+        defer { f.close() }
+        let walk = f.walk()
+        f.form.focus(f.at(0, 2))
+        walk.press(.right)
+        expectEqual(f.stop, f.at(0, 3))
+        walk.press(.right)
+        expectEqual(f.stop, f.at(0, 3), "the end of the line")
+        walk.press(.left)
+        expectEqual(f.stop, f.at(0, 2))
+        walk.press(.left)
+        expectEqual(f.stop, f.at(0, 1), "onto a text cell")
+        walk.press(.left)
+        expectEqual(f.stop, f.at(0, 1), "in a cell ← is the text's")
+    },
+    test("Delete on a stop that is no text takes its line out of a table in one step; ⌘⌫ in a cell with content does too; the waiting line and rows keep theirs") {
+        let lines: JSONValue = [["sku": "Mug", "qty": 2, "ok": true, "size": "S"], ["sku": "Plate", "qty": 1, "ok": false, "size": "M"], ["sku": "Cup"]]
+        let f = try FormWindow("lines", stored: lines)
+        defer { f.close() }
+        let walk = f.walk()
+        @MainActor func skus() -> [String] { (f.value(f.path)?.arrayValue ?? []).compactMap { $0.objectValue?["sku"]?.stringValue } }
+        f.form.focus(f.at(0, 2))
+        expect(f.window.firstResponder === f.form, "a box has the keyboard itself")
+        walk.press(.delete)
+        expectEqual(skus(), ["Plate", "Cup"])
+        f.editor.undo()
+        expectEqual(skus(), ["Mug", "Plate", "Cup"], "one Undo brings it back")
+        f.form.reload()
+        f.form.focus(f.at(1, 0))
+        expect(f.inEditor)
+        expectEqual(f.form.cellEditor.string, "Plate")
+        walk.press(Chord(Key.delete, .command))
+        expectEqual(skus(), ["Mug", "Cup"])
+        f.editor.undo()
+        expectEqual(skus(), ["Mug", "Plate", "Cup"])
+        f.form.reload()
+        let waiting = f.form.sheet.lines.count - 1
+        let before = f.editor.document
+        f.form.focus(f.at(waiting, 0))
+        walk.press(Chord(Key.delete, .command))
+        walk.press(.delete)
+        expectEqual(f.editor.document, before, "the waiting line cannot go")
+        let rows = try FormWindow("shipment")
+        defer { rows.close() }
+        rows.form.focus(rows.at(3, 0))
+        let rowsBefore = rows.editor.document
+        rows.walk().press(.delete)
+        expectEqual(rows.editor.document, rowsBefore, "a row is not a line of a list")
+    },
+    test("VoiceOver: the form is a group named for the shape, its children are the stops in Tab's order with a role by control, a label from the field and a value from the cell, and the stop with the keyboard is focused") {
+        let f = try FormWindow("shipment", stored: ["note": "hello", "rush": true, "mode": "sea"])
+        defer { f.close() }
+        f.form.focusFirst()
+        expectEqual(f.form.accessibilityRole(), .group)
+        expectEqual(f.form.accessibilityLabel(), "Fields", "an untitled shape")
+        // The stop with the caret is the cell editor over it, the object VoiceOver's focus is; the others are elements.
+        let all = f.form.accessibilityChildren() ?? []
+        expectEqual(all.count, f.form.sheet.stops.count)
+        expect(all.first as AnyObject === f.form.cellEditor, "the first stop has the caret: its child is the editor over it")
+        expectEqual(f.form.cellEditor.accessibilityLabel(), "note", "the editor is named for the cell it is over")
+        expectEqual(f.form.cellEditor.string, "hello")
+        let children = all.dropFirst().compactMap { $0 as? NSAccessibilityElement }
+        expectEqual(children.count, all.count - 1)
+        expectEqual(children.map { $0.accessibilityRole() }, [.textField, .textField, .checkBox, .popUpButton, .button, .button])
+        expectEqual(children.map { $0.accessibilityLabel() }, ["count", "due", "rush", "mode", "to", "tags"])
+        expectEqual(children[2].accessibilityValue() as? Int, 1)
+        expectEqual(children[3].accessibilityValue() as? String, "sea")
+        expect(children.allSatisfy { $0.accessibilityFrame().height > 0 })
+        f.form.focus(f.at(3, 0))
+        expectEqual((f.form.accessibilityFocusedUIElement as? NSAccessibilityElement)?.accessibilityLabel(), "rush")
+        expect(children[2].accessibilityPerformPress(), "pressing toggles it")
+        expectEqual(f.value(f.path.key("rush")), false)
     },
 ])

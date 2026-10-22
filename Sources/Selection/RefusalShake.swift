@@ -12,6 +12,11 @@ import Foundation
 /// moves with it (a locked frame, under the notes in it); a shape whose board holds a refused
 /// shape is the one tried, so it's the one that shakes. What's under way stops with the board.
 ///
+/// VoiceOver hears it too: a try refused on shapes that can't change (read-only: locked, on the shipped
+/// list) says "Locked", or "N shapes locked" (`SelectionStyle.refused`), once while tries of the same
+/// shapes keep coming (a held arrow key's nudges), until `refusalQuiet` passes with none. A refusal of
+/// shapes that can change (a public shape something stands for) is the refusing plugin's to explain.
+///
 /// Per editor, made by `SelectionPlugin`.
 @MainActor
 public final class RefusalShake {
@@ -19,8 +24,26 @@ public final class RefusalShake {
     /// Each shaking shape, and how many frames of its shake have played.
     private var shakes: [ShapeID: Int] = [:]
     private var nextFrame: ScheduledTask?
+    /// The read-only shapes last said to VoiceOver, while tries of them keep coming; and when that ends.
+    private var said: Set<ShapeID> = []
+    private var quiet: ScheduledTask?
 
     init(editor: CanvasEditor) { self.editor = editor }
+
+    /// Says a try refused on read-only shapes, unless they were said and tries of them have kept coming
+    /// since: each try puts the quiet off again.
+    func announce(_ ids: Set<ShapeID>) {
+        let locked = ids.filter { editor.isReadOnly($0) }
+        guard !locked.isEmpty else { return }
+        quiet?.cancel()
+        quiet = editor.scheduler.schedule(after: SelectionStyle.refusalQuiet) { [weak self] in
+            self?.said = []
+            self?.quiet = nil
+        }
+        guard !locked.isSubset(of: said) else { return }
+        said = locked
+        editor.announce(SelectionStyle.refused(locked.count))
+    }
 
     /// Shakes each shape of `ids` on the board shown, with what they hold, unless it's shaking
     /// already.
@@ -74,12 +97,18 @@ extension RefusalShake: EditorService {
         for id in changes.removed { shakes[id] = nil }
     }
 
-    /// A try to change read-only shapes: they shake.
-    public func didRefuseChanges(to ids: Set<ShapeID>, in editor: CanvasEditor) { shake(ids) }
+    /// A try to change read-only shapes: they shake, and VoiceOver hears it.
+    public func didRefuseChanges(to ids: Set<ShapeID>, in editor: CanvasEditor) {
+        shake(ids)
+        announce(ids)
+    }
 
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         shakes = [:]
         nextFrame?.cancel()
         nextFrame = nil
+        said = []
+        quiet?.cancel()
+        quiet = nil
     }
 }

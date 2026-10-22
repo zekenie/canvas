@@ -101,8 +101,7 @@ public final class ZoomIndicator: NSView {
             guard let self else { return }
             isShowing = false
             // VoiceOver hears the zoom it came to, once, rather than every step on the way.
-            NSAccessibility.post(element: self, notification: .announcementRequested,
-                                 userInfo: [.announcement: "Zoom \(title)", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+            editor.announce(ZoomIndicatorStyle.announcement(title), priority: .medium)
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = ZoomIndicatorStyle.fadeOutDuration / .seconds(1)
                 animator().alphaValue = 0
@@ -153,6 +152,8 @@ enum ZoomIndicatorStyle {
     /// How long it stays after the last change, and then how long it takes to fade out.
     static let holdDuration: Duration = .milliseconds(1000)
     static let fadeOutDuration: Duration = .milliseconds(300)
+    /// What VoiceOver hears once the zoom settles: "Zoom 50%".
+    static func announcement(_ zoom: String) -> String { "Zoom \(zoom)" }
 
     /// Where it goes in a canvas of `size`: above the minimap (`minimap`, its frame while it shows,
     /// else nil), their left edges in line; with none, in its corner.

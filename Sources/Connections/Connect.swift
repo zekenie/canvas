@@ -1,3 +1,4 @@
+import CoreGraphics
 import Canvas
 import ContextMenus
 import Draw
@@ -14,6 +15,25 @@ extension PluginRegistrar {
     mutating func connectCommand() {
         command(.connect, title: ConnectionsStyle.connect, shortcut: KeyChord("l", .command), runs: .whenIdle,
                 isEnabled: { $0.shapes.count == 2 && $0.editor.registry.drawsConnections }) { $0.editor.connect($0.shapes) }
+    }
+}
+
+/// What a connection made without a drag (Connect) is told once it is committed, inside the Connect step: the
+/// same word a port's drag gives its connection when released, from whoever owns what the connection then is (a
+/// relationship type, Types'), so Connections names no kind and the key and the pointer give the same document. A
+/// plugin value of its own after the connector; the hook gets the connection and the editor.
+public enum ConnectionMade {}
+
+extension ConnectionMade: ExtensionPoint {
+    public typealias Contribution = @MainActor (ShapeID, CanvasEditor) -> Void
+    public static var owner: PluginID { .ports }
+    public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "connection made" }
+}
+
+extension PluginRegistrar {
+    /// Hears of every connection Connect makes, after its commit and inside its step.
+    public mutating func connectionMade(_ hook: @escaping @MainActor (ShapeID, CanvasEditor) -> Void) {
+        contribute(hook, to: ConnectionMade.self)
     }
 }
 
@@ -54,11 +74,18 @@ extension CanvasEditor {
         }
         // Whole or not at all (`transactWhole`): a pair the connector refuses, or a board that takes nothing, commits
         // nothing and shakes both.
-        transactWhole(ConnectionsStyle.connect, shaking: Set(ids)) { transaction in
-            guard let made = registry.drawConnection(from: ids[0], to: ids[1], in: transaction.shapes, standingFor: (from, to))
-            else { throw Transaction.Refused() }
-            transaction.insert(made)
-            guard transaction.document[made.id] != nil else { throw Transaction.Refused() }
+        // The step is a group around the commit and the hooks (`ConnectionMade`), as a drag's press is: what a hook
+        // changes (a relationship type given to the arrow) is the step's, and a menu it pops needs the arrow committed.
+        undoHistory.group(ConnectionsStyle.connect) {
+            let made: ShapeID? = transactWhole(ConnectionsStyle.connect, shaking: Set(ids)) { transaction in
+                guard let made = registry.drawConnection(from: ids[0], to: ids[1], in: transaction.shapes, standingFor: (from, to))
+                else { throw Transaction.Refused() }
+                transaction.insert(made)
+                guard transaction.document[made.id] != nil else { throw Transaction.Refused() }
+                return made.id
+            }
+            guard let made else { return }
+            for hook in registry.contributions(to: ConnectionMade.self) { hook.value(made, self) }
         }
     }
 }
@@ -66,4 +93,11 @@ extension CanvasEditor {
 @MainActor
 enum ConnectionsStyle {
     static let connect = "Connect"
+    /// A shape's arrows as its parts: "Arrow to Payment".
+    static let arrowTo = "Arrow to "
+    static let arrowFrom = "Arrow from "
+    /// How far a part's ring stands off the arrow's segment, in view points.
+    static let partPad: CGFloat = 6
+    /// How much of an arrow, from where it leaves a shape, its part takes in, in view points.
+    static let partLength: CGFloat = 48
 }

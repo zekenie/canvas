@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([menuTests, selectionMenuTests, contributionTests, propertyMenuTests, undoTests, dynamicItemsTests, commandItemsTests, selectionMenuForBarTests])
+runTests([menuTests, selectionMenuTests, contributionTests, propertyMenuTests, undoTests, dynamicItemsTests, commandItemsTests, selectionMenuForBarTests, showMenuTests])

@@ -4,6 +4,7 @@ import Canvas
 import CanvasTesting
 import CanvasUI
 import Clipboard
+import DetailPanel
 import Find
 import Foundation
 import Geometry
@@ -21,8 +22,9 @@ import TestKit
 /// Boards as the app configures them, with the app's content less its toolbar, and their clipboard
 /// and Copy as Image's pasteboard on `pasteboard` (the test's own unless it passes one).
 /// `extra`: plugins after the shipped list.
-@MainActor func configureBoards(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, extra: [any CanvasPlugin] = []) throws {
-    BoardDocument.configuration = BoardConfiguration(registry: try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel()) + extra),
+@MainActor func configureBoards(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, model: ScriptedLanguageModel = ScriptedLanguageModel(),
+                                extra: [any CanvasPlugin] = []) throws {
+    BoardDocument.configuration = BoardConfiguration(registry: try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: model) + extra),
                                                      imagePasteboard: pasteboard) { board in
         AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails, showsMinimap: board.view.showsMinimap,
                               view: board.view))
@@ -397,27 +399,30 @@ let boardType = "com.example.InfiniteCanvas.board"
         try command("Edit", "Duplicate", .duplicate, "d")
         let edit = try require(menus.main.item(withTitle: "Edit")?.submenu)
         expectEqual(edit.items.map(\.title), ["Undo", "Redo", "", "Cut", "Copy", "Copy as Image", "Paste", "Paste at Pointer", "Duplicate", "Delete",
-                                              "Select All", "", "Find", "Spelling and Grammar"], "the window's own items and Clipboard's and Find's, each at its order")
+                                              "Select All", "Remove Mention", "", "Find", "Spelling and Grammar"], "the window's own items and Clipboard's and Find's, each at its order")
         let find = try require(edit.item(withTitle: "Find")?.submenu)
         expectEqual(find.items.map(\.title), ["Find…", "Find Next", "Find Previous"])
         expectEqual(find.items.compactMap(BoardMenus.command(of:)), [.find, .findNext, .findPrevious], "never an AppKit find action, which a text view answers")
         expectEqual(find.items.map(\.keyEquivalent), ["f", "g", "g"])
         expectEqual(find.items.map(\.keyEquivalentModifierMask), [.command, .command, [.command, .shift]])
         let go = try require(menus.main.item(withTitle: "Go")?.submenu)
-        expectEqual(go.items.map(\.title), ["Back", "Enclosing Board", "Open Selection", "", "Jump To…"], "Jump To follows Open Selection, after a separator")
+        expectEqual(go.items.map(\.title), ["Back", "Forward", "Enclosing Board", "Open Selection", "Go to Mention", "Show What Mentions", "", "Jump To…", "Board Path"], "Jump To follows Open Selection, after a separator, and Board Path follows it")
         try command("Go", "Jump To…", .jumpTo, "k")
         try command("Go", "Back", .goBack, "[")
+        try command("Go", "Forward", .goForward, "]")
         try command("Go", "Enclosing Board", .enclosingBoard, "\u{F700}")
         try command("Go", "Open Selection", .openSelection, "\u{F701}")
         try check("View", "Show Inspector", "toggleDetails:", "i", [.command, .control])
         try check("View", "Show Minimap", "toggleMinimap:", "m", [.command, .control])
+        try command("View", "Next Inspector Tab", .nextInspectorTab, "]", [.command, .option])
+        try command("View", "Previous Inspector Tab", .previousInspectorTab, "[", [.command, .option])
         try command("View", "Zoom In", .zoomIn, "=")
         try command("View", "Zoom Out", .zoomOut, "-")
         try command("View", "Actual Size", .zoomToActualSize, "0")
         try command("View", "Zoom to Fit", .zoomToFit, "1", .shift)
         try command("View", "Zoom to Selection", .zoomToSelection, "2", .shift)
         let view = try require(menus.main.item(withTitle: "View")?.submenu)
-        expectEqual(view.items.map(\.title), ["Show Toolbar", "Show Inspector", "Focus Inspector", "Show Minimap", "", "Zoom In", "Zoom Out", "Actual Size",
+        expectEqual(view.items.map(\.title), ["Show Toolbar", "Show Inspector", "Focus Inspector", "Next Inspector Tab", "Previous Inspector Tab", "Focus Next Pane", "Focus Previous Pane", "Show Minimap", "Show All Shapes", "", "Zoom In", "Zoom Out", "Actual Size",
                                               "Zoom to Fit", "Zoom to Selection", "", "Enter Full Screen"])
         expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "Shape", "Arrange", "View", "Go", "Window", "Help"])
         expect(try require(menus.main.item(withTitle: "Shape")?.submenu).items.isEmpty, "Shape fills itself as it opens")

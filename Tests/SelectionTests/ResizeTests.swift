@@ -354,4 +354,127 @@ final class StillAdjuster: TranslationAdjuster {
                                        Contributor(id: "more") { $0.resizable(Box.self, minimumSize: CGSize(width: 1, height: 1)) }])
         }
     },
+    test("⌥→ and ⌥↓ grow the only selected shape from its top left, ⌥← and ⌥↑ shrink it, a unit, ten with ⇧; held, one step, Resize") {
+        let (h, box) = try resizeHarness()
+        let right = "\u{F703}", left = "\u{F702}", up = "\u{F700}", down = "\u{F701}"
+        h.hold(.option)
+        expect(h.key(right))
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 201, height: 100))
+        expect(h.key(down))
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 201, height: 101))
+        expect(h.key(left))
+        expect(h.key(up))
+        expectEqual(h.frame(of: box), resizeFrame, "the top left stays put")
+        h.hold([.option, .shift])
+        expect(h.key(right))
+        for _ in 0..<2 { expect(h.key(right, isRepeat: true)) }
+        h.editor.keyUp(KeyStroke(right, modifiers: [.option, .shift]))
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 230, height: 100))
+        expectEqual(h.editor.undoHistory.undoName, "Resize")
+        h.editor.undo()
+        expectEqual(h.frame(of: box), resizeFrame, "the held key's three, one step")
+        expectEqual(h.editor.selectedShapeIDs, [box])
+    },
+    test("by the keys too, never smaller than the kind's minimum: at it, the key changes nothing and leaves no step") {
+        let (h, box) = try resizeHarness()
+        h.hold([.option, .shift])
+        for _ in 0..<30 { expect(h.key("\u{F702}")) }
+        for _ in 0..<30 { expect(h.key("\u{F700}")) }
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 20, height: 10))
+        expect(h.key("\u{F700}"), "the key is still taken")
+        h.editor.undo()
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 20, height: 20), "undo takes back the last press that changed it")
+    },
+    test("⌥ and an arrow on a read-only shape shake it and change nothing; with no resizable shape selected alone, they pass") {
+        let log = RefusalLog()
+        let (h, box) = try resizeHarness([FreezingPlugin(log: log), CardsPlugin()])
+        h.editor.freeze([box])
+        h.hold(.option)
+        expect(h.key("\u{F703}"))
+        expectEqual(h.frame(of: box), resizeFrame)
+        expectEqual(log.refusals, [[box]], "refused, so a lock shakes")
+        h.editor.freeze([box], false)
+        let other = h.add(Box(CGRect(x: 400, y: 100, width: 50, height: 50)))
+        h.editor.selectedShapeIDs = [box, other]
+        expect(!h.key("\u{F703}"), "two selected")
+        h.editor.selection = h.add(Card(CGRect(x: 0, y: 300, width: 100, height: 60)))
+        expect(!h.key("\u{F703}"), "a kind that doesn't resize")
+        h.editor.selection = nil
+        expect(!h.key("\u{F703}"), "nothing selected")
+        expectEqual(h.frame(of: box), resizeFrame)
+    },
+    test("the resize handles are parts of their shape: ⌥Tab reaches each in reading order, and an arrow moves the one focused as its drag does") {
+        let (h, box) = try resizeHarness([FreezingPlugin()])
+        h.hold(.option)
+        var titles: [String] = []
+        for _ in 0..<8 {
+            expect(h.key("\t"))
+            titles.append(h.editor.focusedPart?.title ?? "none")
+        }
+        expectEqual(titles, ["Top Left Corner", "Top Edge", "Top Right Corner", "Left Edge", "Right Edge",
+                             "Bottom Left Corner", "Bottom Edge", "Bottom Right Corner"])
+        expectEqual(h.editor.focusedPart?.role, .handle)
+        expect(h.key("\t"))
+        expectEqual(h.editor.focusedPart?.title, "Top Left Corner", "round to the first")
+        h.hold([])
+        expect(h.key("\u{F703}"))
+        expectEqual(h.frame(of: box), CGRect(x: 101, y: 100, width: 199, height: 100), "the left side follows →")
+        h.hold(.shift)
+        expect(h.key("\u{F701}"))
+        expectEqual(h.frame(of: box), CGRect(x: 101, y: 110, width: 199, height: 90), "and the top ⇧↓, ten")
+        expectEqual(h.editor.focusedPart?.title, "Top Left Corner", "the focus stays on it")
+        h.hold([])
+        h.editor.selection = nil
+        h.editor.selection = box
+        h.hold(.option)
+        for _ in 0..<2 { expect(h.key("\t")) }
+        expectEqual(h.editor.focusedPart?.title, "Top Edge")
+        h.hold([])
+        expect(h.key("\u{F703}"))
+        expectEqual(h.frame(of: box), CGRect(x: 102, y: 110, width: 199, height: 90), "across the way the top edge moves, → nudges the shape")
+        h.editor.freeze([box])
+        expectEqual(h.editor.shapeParts(of: box).filter { $0.role == .handle }.count, 0, "a read-only shape has none, as it shows none")
+    },
+    test("a focused handle the zoom leaves out, drawn in full still, has no focus: no part takes the keys, Delete deletes, and the first Escape goes on out") {
+        let (h, _) = try resizeHarness()
+        let box = h.add(Box(CGRect(x: 400, y: 100, width: 60, height: 40)))
+        h.editor.selection = box
+        h.hold(.option)
+        expect(h.key("\t"))
+        h.hold([])
+        expectEqual(h.editor.focusedPart?.title, "Top Left Corner")
+        h.editor.camera.zoom = 0.5
+        expect(!h.editor.drawsSkeletons, "in full")
+        expect(h.editor.shapeParts(of: box).isEmpty, "30 by 20 on screen: no handles")
+        expect(!h.editor.hasFocusedPart)
+        expect(h.editor.canPerform(.delete), "Delete is no part's")
+        expect(h.key("\u{1b}"))
+        expectEqual(h.editor.selectedShapeIDs, [], "one Escape, out of the shape: nothing focused was left to back out of")
+        h.editor.camera.zoom = 1
+        h.editor.selection = box
+        h.hold(.option)
+        expect(h.key("\t"))
+        h.hold([])
+        h.editor.camera.zoom = 0.5
+        expect(h.key("\u{7f}"))
+        expectEqual(h.editor.document[box], nil)
+    },
+    test("a held arrow on a focused handle that shrinks the box past showing it stops there: its repeats never move the shape") {
+        let (h, _) = try resizeHarness()
+        let box = h.add(Box(CGRect(x: 400, y: 100, width: 100, height: 30)))
+        h.editor.selection = box
+        h.hold([.option, .shift])
+        expect(h.key("\t"))
+        h.hold([])
+        expectEqual(h.editor.focusedPart?.title, "Bottom Right Corner")
+        let up = "\u{F700}"
+        expect(h.key(up))
+        for _ in 0..<10 { expect(h.key(up, isRepeat: true)) }
+        expectEqual(h.frame(of: box), CGRect(x: 400, y: 100, width: 100, height: 23), "under 24 points the corner is gone, and the rest of the hold does nothing")
+        expect(!h.editor.hasFocusedPart)
+        h.editor.keysReleased()
+        expectEqual(h.editor.undoHistory.undoName, "Resize")
+        expect(h.key(up))
+        expectEqual(h.frame(of: box), CGRect(x: 400, y: 99, width: 100, height: 23), "pressed again, the arrow nudges")
+    },
 ])

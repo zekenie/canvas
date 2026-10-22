@@ -30,6 +30,7 @@ Read `docs/plugin-system.md` first; it's the guide to the plugin system, with th
 - Arrows mirror tldraw's arc arrows: check tldraw before changing arrow behavior and call out any intentional deviation, and never regenerate the proof-of-concept fixtures from the app to make a change pass ([arrows](.claude/rules/arrows.md)).
 - UI constants live in each module's `@MainActor` style enum (`Style`, `ArrowStyle`, `NoteStyle`, `TypesStyle`, ...), a kind's skeleton's beside its full look's (`NoteStyle.skeletonFill`, `SubboardStyle.skeletonBorderWidth`, `ReferenceStyle.skeletonFill`, `ArrowStyle.skeletonLineWidth`). The core's are internal (`Style.skeletonZoom`, `Style.skeleton`, `Style.skeletonText`, `Style.drawingPad`): a plugin goes by `editor.drawsSkeletons`, never the number, and one that simplifies further farther out reads `context.zoom`. Pure geometry (Geometry, `ArrowGeometry`) is nonisolated, so its constants live on those types.
 - Never print, log or write the Anthropic API key ([language models](.claude/rules/language-models.md)).
+- Anything a click acts on is reached and done with keys alone, walked in reading order with an exact way back, named for VoiceOver, and tested by a key walk: read the twelve principles in [keyboard navigation](.claude/rules/keyboard-navigation.md) before adding a face, an adornment, a button, a control, a list or a key.
 - A commit that lands on main carries its session's record: `python3 .claude/skills/history/condense.py --self` writes this session's record to `history/sessions/<record>/` (its transcript, condensed, and its plan files); the commit adds that directory and names it in a `Session: history/sessions/<record>/` trailer, above `Co-Authored-By`. The message still says why on its own; the record is the evidence behind it ([history](.claude/skills/history/SKILL.md)).
 
 ## Tests
@@ -64,6 +65,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [containers](.claude/rules/containers.md): shapes holding shapes on a board, settling what's put down, and putting a container down around shapes.
 - [boards on disk](.claude/rules/boards-on-disk.md): `BoardDocument` and `BoardCodec`: formats, migrations and fixtures, what's kept aside, the view memory, autosave.
 - [drawing](.claude/rules/drawing.md): what a frame may cost, the dot grid, skeletons, board previews, the minimap, the pointer over the views the canvas hosts.
+- [accessibility](.claude/rules/accessibility.md): what VoiceOver hears of the canvas: a shape's description (`ShapeAccessibility`, `accessibleDescription(of:)`, its title first), the order and parts one plugin claims, `announce`, the selection as the focus, and CanvasUI's `ShapeElement`s (nothing runs until an assistive app asks).
 - [Quick Look](.claude/rules/quick-look.md): a board file's preview and thumbnail in the Finder: `BoardPicture`, the app's extension, how it's built, signed and registered.
 
 **Core libraries**
@@ -73,10 +75,11 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [palette](.claude/rules/palette.md): the color math: a color as sRGB and OKLCH, the seven roles one color is drawn in on the light canvas and the dark (`Swatch`), contrast, the one test for a dark appearance.
 
 **Platform**, horizontals in the window (what a shape shows up on)
+- [keyboard navigation](.claude/rules/keyboard-navigation.md): the principles every surface meets (reach by keys alone, reading order with parts first, the exact way back, one level at a time, one meaning a key and its named exceptions, focus shown, no traps or leaks, VoiceOver, nothing pointer-only, key-walk tests, pro speed) and how the app meets them.
 - [keyboard](.claude/rules/keyboard.md): shortcuts and chords, how a key reaches the canvas, the menu bar and its Shape menu (the selection's context menu), keys that type staying out of text, the Keyboard Shortcuts window (generated from what's registered and the hints).
 - [selection](.claude/rules/selection.md): the select tool, handles and resizing, opening, Back, canvas buttons, going to shapes, faces, the shake a refused change gives, groups selected as one, moving between shapes (Tab, ⌥⌘ arrows, in and out of groups and frames).
 - [detail panel](.claude/rules/detail-panel.md): sections, tabs, status lines, headers, bindings, text boxes, list rows (a row, a group's header, a search field), the code editor and its completions, and its overview and takeovers (what other plugins show in it).
-- [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed (front to back), its heading, hover, another board's outline, dragging rows.
+- [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed (front to back), its heading, hover, another board's outline, the keyboard (walking the list with the panel holding it, Show All Shapes, what VoiceOver hears, the outline's keys), dragging rows.
 - [adornments](.claude/rules/adornments.md): pills and chips on shapes: placing them, their places, drawing and pointing.
 - [context menus](.claude/rules/context-menus.md): a shape's items, the canvas's items (an item can run a command, and show its key), right-clicks and Control-clicks, the selection's menu.
 - [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text.

@@ -53,6 +53,10 @@ public struct NeighborLine: Equatable {
     /// The board it's on, when that isn't the board shown.
     public let detail: String?
     public let caption: String?
+
+    /// What assistive apps read of the row: its name, the board it is on, and its caption, as the row
+    /// draws them.
+    public var spoken: String { [name, detail, caption].compactMap { $0 }.joined(separator: ", ") }
 }
 
 /// What's connected to the shape a panel shows, in lists by how, one per editor: each light's

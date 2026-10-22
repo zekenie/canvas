@@ -1,5 +1,6 @@
 @_spi(Host) import Canvas
 import CanvasTesting
+import ContextMenus
 import CoreGraphics
 import Keyboard
 import Moving
@@ -15,7 +16,7 @@ import TestKit
 
 /// The fixtures, freezing (every refusal in `log`), slash commands, the table of contents and Moving, then `more`.
 @MainActor func movingPlugins(log: RefusalLog = RefusalLog(), _ more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
-    [FixturesPlugin(), CorralsPlugin(), PocketsPlugin(), LinksPlugin(), CardsPlugin(), FreezingPlugin(log: log), SlashCommandsPlugin(),
+    [KeyboardPlugin(), FixturesPlugin(), CorralsPlugin(), PocketsPlugin(), LinksPlugin(), CardsPlugin(), FreezingPlugin(log: log), ContextMenusPlugin(), SlashCommandsPlugin(),
      TableOfContentsPlugin(), MovingPlugin()] + more
 }
 
@@ -26,7 +27,7 @@ import TestKit
 
 /// The same, with the keyboard and the selection first, so several rows can be selected and dragged together.
 @MainActor func droppingHarness(_ file: CanvasFile = CanvasFile(), log: RefusalLog = RefusalLog(), _ more: [any CanvasPlugin] = []) throws -> EditorHarness {
-    try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin()] + movingPlugins(log: log, more), file: file)
+    try EditorHarness(plugins: [SelectionPlugin()] + movingPlugins(log: log, more), file: file)
 }
 
 // MARK: A pin

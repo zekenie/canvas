@@ -27,9 +27,20 @@ public protocol CanvasEditorDelegate: AnyObject {
     /// `card` changed (shown, taken down, moved, resized): show it over what the canvas hosts, under the
     /// popover, give its `firstResponder` the keyboard, or take it down and give the keyboard back.
     func editorCardDidChange(_ editor: CanvasEditor)
+    /// Where VoiceOver's focus is moved (`accessibilityFocusDidChange`): the selection changed, or the
+    /// part of a shape focused. Tell an assistive app, if one is listening.
+    func editorAccessibilityFocusDidChange(_ editor: CanvasEditor)
+    /// Something to be said to whoever uses VoiceOver (`announce`).
+    func editorAnnounce(_ editor: CanvasEditor, _ text: String, priority: AnnouncementPriority)
+    /// A commit, settled, added shapes to the board shown or took some off it (never one that only
+    /// changed shapes): what an assistive app is told its elements changed by.
+    func editorShapesDidComeOrGo(_ editor: CanvasEditor, added: Set<ShapeID>, removed: Set<ShapeID>)
 }
 
 @_spi(Host) extension CanvasEditorDelegate {
+    public func editorAccessibilityFocusDidChange(_ editor: CanvasEditor) {}
+    public func editorAnnounce(_ editor: CanvasEditor, _ text: String, priority: AnnouncementPriority) {}
+    public func editorShapesDidComeOrGo(_ editor: CanvasEditor, added: Set<ShapeID>, removed: Set<ShapeID>) {}
     public func editorBoardDidChange(_ editor: CanvasEditor) {}
     public func editorPopoverDidChange(_ editor: CanvasEditor) {}
     public func editorMenuToPopUpDidChange(_ editor: CanvasEditor) {}
@@ -110,6 +121,10 @@ public final class CanvasEditor {
     }
     /// +1 per change services hear: a transaction that changed something, another board shown.
     public private(set) var revision = 0
+    #if DEBUG
+    /// Everything `announce` was asked to say, in order (debug builds only), for tests.
+    @ObservationIgnored public internal(set) var announcements: [String] = []
+    #endif
     /// Setting it stops the camera's slide or animation (CanvasEditor+Camera.swift), and a session
     /// that scrolls at the canvas's edges hears a drag where the pointer is (EdgeScrolling.swift). A
     /// zoom across `skeletonZoom` tells services (`drawsSkeletonsDidChange`).
@@ -331,6 +346,8 @@ public final class CanvasEditor {
     @ObservationIgnored var tracker = PointerTracker()
     /// Whether the pointer is over the canvas itself (`isPointerOverCanvas`).
     @ObservationIgnored var pointerIsOverCanvas = false
+    /// Whether the canvas view has the keyboard (`hasKeyboard`).
+    @ObservationIgnored var canvasHasKeyboard = true
     @ObservationIgnored var heldModifiers: Modifiers = []
     @ObservationIgnored var recentlyReleased: Modifiers = []
     @ObservationIgnored var releaseTimer: ScheduledTask?
@@ -589,12 +606,17 @@ public final class CanvasEditor {
         try transact(name, coalescing: key, origin: .ordinary, body)
     }
 
+    /// Whether a transaction may begin now: none is under way, no change is being delivered, and no step
+    /// is being put back.
+    var canTransact: Bool { !isApplying && delivery == nil && !isTransacting }
+
     /// `origin` says whether an editing view commits (`EditContext`), whose commits are its session's step.
     func transact<T>(_ name: String?, coalescing key: AnyHashable?, origin: UndoHistory.Origin,
                      _ body: (inout Transaction) throws -> T) rethrows -> T {
         precondition(!isApplying, "nothing may transact while undo or redo puts a step back (a service's documentDidChange, say)")
         precondition(delivery == nil, "nothing may transact while services hear a change (a service's documentDidChange, say)")
         precondition(!isTransacting, "transactions don't nest; use the one you were given")
+        if !isReplacingFile { undoHistory.willTransact(coalescing: key, origin: origin) }
         isTransacting = true
         var transaction = Transaction(document: document, board: board, isBoardReadOnly: isBoardReadOnly, registry: registry, camera: camera,
                                       keys: stackingKeys, file: fileAccess, layout: layoutSource)
@@ -1046,6 +1068,9 @@ public final class CanvasEditor {
         if let shape = shownCard?.shape, changes.removed.contains(shape) { closeCard(.shapeGone) }
         // Services drop what no longer names a shape, as the hint's setter does.
         finishDelivery()
+        if !changes.added.isEmpty || !changes.removed.isEmpty {
+            delegate?.editorShapesDidComeOrGo(self, added: changes.added, removed: changes.removed)
+        }
         hintedShapeID = hintedID
         // A shape that's gone, can no longer change (it, a container it's in, or its board), or is of
         // another kind now (turned, `Transaction.turn`), isn't edited.
@@ -1251,6 +1276,22 @@ public final class CanvasEditor {
         put(placement.shape(at: point), placing: placement, from: undoHistory.isPressHeld && session == nil ? point : nil)
     }
 
+    /// The placing tool's shape put down without the pointer (Return with the Note tool picked, Selection's
+    /// key): what the current tool places (`registry.placement(for:)`, the tool's own), centered on the
+    /// pointer while it is over the canvas (`isPointerOverCanvas`), else on the middle of the view's clear part
+    /// (`unobscuredViewport`), as `place(_:at:)` puts it with no press: settled at once, the default tool back
+    /// unless the tool is locked, and an editing placement's shape edited. False, and nothing done, when the
+    /// current tool places nothing, a press is under way, a shape is being edited, or the view has no size and
+    /// the pointer isn't over it.
+    @discardableResult
+    public func placeAtKeyboard() -> Bool {
+        guard session == nil, editingShapeID == nil, let placement = registry.placement(forTool: currentToolID) else { return false }
+        let view = unobscuredViewport
+        guard isPointerOverCanvas || !view.isEmpty else { return false }
+        place(placement, at: isPointerOverCanvas ? pointerWorldLocation : camera.toWorld(CGPoint(x: view.midX, y: view.midY)))
+        return true
+    }
+
     /// Puts one down with this frame (world units), where `place(_:at:)` centers one of its size on a
     /// point: what a tool that draws its shape's rect with a drag puts down at the release (the Frame
     /// tool). As `place(_:at:)` with no press under way: it settles at once (into a container, or out,
@@ -1358,6 +1399,11 @@ public final class CanvasEditor {
     /// yes; the pointer leaving it, no), whatever the tool; false until the pointer has been seen there.
     /// Not observed.
     public var isPointerOverCanvas: Bool { pointerIsOverCanvas }
+    /// Whether the canvas view has the keyboard (is its window's first responder), as the host tells it
+    /// (`keyboardDidChange`): false while a panel's field, a card or the editing view over a shape has it.
+    /// True with no view (a test's editor). Each change asks for a frame, so what is drawn by it (the
+    /// selection's outline, quieter without it) follows. Not observed.
+    public var hasKeyboard: Bool { canvasHasKeyboard }
     /// View points per millisecond, smoothed.
     public var pointerSpeed: CGFloat { tracker.speed }
     /// View points per millisecond, per axis, smoothed like `pointerSpeed`; reset on every press.
@@ -1384,6 +1430,9 @@ public final class CanvasEditor {
         editingStartPoint = point
         editingStartClickCount = point == nil ? 1 : clickCount
         editingShapeID = id
+        // Laid out afresh as editing begins and again as it ends, before its view is made: what lays a shape out may read
+        // whether it's the one edited (a typed note keeps a line for its words then, so the caret sits above its rows).
+        shapesDidChangeLayout([id])
         undoHistory.editingBegan(stepName: (registry.definition(for: record.kind) as? any Editable)?.editingStepName)
         dismissPopover()
         closeCard(.editing)
@@ -1415,6 +1464,7 @@ public final class CanvasEditor {
         editingShapeID = nil
         editingStartPoint = nil
         editingStartClickCount = 1
+        shapesDidChangeLayout([id])
         dismissPopover()
         delegate?.editorEditingDidChange(self)
         setNeedsDisplay()
@@ -1440,14 +1490,20 @@ public final class CanvasEditor {
     /// too, so that a frame costs what's in view rather than what's on the board. Only those of
     /// `drawnShapes`, when it says some.
     public func paintOrder(in rect: CGRect) -> [AnyShapeRecord] {
-        let list = shapeIndex.paintList(in: shapeContext), shapes = document.shapes, only = drawnShapes
         var shown: [AnyShapeRecord] = []
+        forEachShape(in: rect) { record, _ in shown.append(record) }
+        return shown
+    }
+
+    /// `paintOrder(in:)`'s shapes, back to front, each with its kept extent (world units): the one rule for what
+    /// may show in a rect, for what reads the extents too (VoiceOver's shapes in view, ranked by their middles).
+    func forEachShape(in rect: CGRect, _ body: (AnyShapeRecord, CGRect) -> Void) {
+        let list = shapeIndex.paintList(in: shapeContext), shapes = document.shapes, only = drawnShapes
         for (position, extent) in list.extents.enumerated() where extent.touches(rect) {
             let record = shapes[list.order[position]]
             if let only, !only.contains(record.id) { continue }
-            shown.append(record)
+            body(record, extent)
         }
-        return shown
     }
 
     /// The shapes of the board shown that are drawn, nil for all of them: a picture of some of a

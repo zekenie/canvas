@@ -319,4 +319,31 @@ private let kinds = (a: FieldFixtures.everyKind.a, b: FieldFixtures.everyKind.b)
         r.editor.undo()
         expectEqual(r.values.value(at: r.path("anything")), nil)
     },
+    test("the panel's form is walked by keys: Tab visits every line and cell, ⇧Tab undoes each, Space opens and closes a triangle, Return on a box row stays in the panel, and each stop is named") {
+        let r = try PanelRig(of: [FieldFixtures.orderID])
+        defer { r.close() }
+        r.set([["product": "Mug", "quantity": 2, "price": 3], ["product": "Plate", "quantity": 1, "price": 4]], "lineItems")
+        let form = try r.form("lineItems")
+        form.activate(r.line(0))
+        r.window.makeFirstResponder(form)
+        form.focusFirst()
+        let walk = KeyWalk(r.window, editor: r.editor, readers: [.form({ form })], settle: .runLoop)
+        let ids = formStopIDs(form)
+        expect(ids.count >= 4, "\(ids)")
+        walk.expectCardStops(ids)
+        form.focusFirst()
+        walk.expectShows(ids.map { Focus(surface: "card", element: String($0.dropFirst(5))) })
+        form.focusFirst()
+        let before = r.editor.document
+        expectEqual(form.sheet.lines[0].disclosure, true)
+        walk.press(.space)
+        expectEqual(form.sheet.lines.count, 1, "Space closes the triangle")
+        walk.press(.space)
+        expect(form.sheet.lines.count > 1, "and opens it")
+        expectEqual(r.editor.document, before)
+        let children = (form.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
+        expectEqual(children.count, form.sheet.stops.count)
+        expectEqual(children.first?.accessibilityRole(), .disclosureTriangle)
+        expectEqual(children.first?.accessibilityValue() as? Int, 1)
+    },
 ])

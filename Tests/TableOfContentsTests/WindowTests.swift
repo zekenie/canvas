@@ -243,4 +243,115 @@ final class ContentsWindow {
         w.window.spin { w.canvasHasKeyboard }
         expectEqual(w.exits, 1)
     },
+    test("the list says when it has the keyboard; ↓ in it walks by keys, a click's pick doesn't, and the walk ends as the keyboard leaves") {
+        let editor = try contentsEditor(scheduler: TaskScheduler())
+        _ = threeWidgets(editor)
+        let w = ContentsWindow(editor)
+        w.window.spin { w.rows == 3 }
+        expect(!editor.contents.listHasKeyboard)
+        try w.focusList()
+        expect(editor.contents.listHasKeyboard, "the reader heard the first responder change")
+        expect(!editor.contents.isWalkedByKeys, "nothing picked yet")
+        let keys = KeyDriver(w.window)
+        keys.send(.down)
+        expectEqual(editor.selectedShapeIDs.count, 1)
+        expect(editor.contents.isWalkedByKeys, "↓ picked the row")
+        w.window.settle()       // a click comes as an event of its own, a turn on
+        try require(w.table).selectRowIndexes(IndexSet(integer: 2), byExtendingSelection: false)
+        w.window.settle()
+        expectEqual(editor.selectedShapeIDs.count, 1)
+        expect(!editor.contents.isWalkedByKeys, "a click's pick, the list's selection with no key, isn't a walk")
+        keys.send(.down)
+        expect(editor.contents.isWalkedByKeys)
+        editor.selectedShapeIDs = []
+        expect(!editor.contents.isWalkedByKeys, "the selection changed elsewhere")
+        keys.send(.up)
+        expect(editor.contents.isWalkedByKeys)
+        keys.send(.escape)
+        w.window.spin { w.canvasHasKeyboard }
+        expect(!editor.contents.listHasKeyboard && !editor.contents.isWalkedByKeys, "the keyboard left the list")
+    },
+    test("Tab and ⇧Tab step the rows as ↓ and ↑ do, and keep the keyboard in the list") {
+        let editor = try contentsEditor(scheduler: TaskScheduler())
+        let (a, b, c) = threeWidgets(editor)
+        let w = ContentsWindow(editor)
+        w.window.spin { w.rows == 3 }
+        try w.focusList()
+        let keys = KeyDriver(w.window)
+        var picked: [[ShapeID]] = []
+        for chord in [Chord.tab, .tab, .tab, .tab, .backTab, .backTab, .backTab] {
+            keys.send(chord)
+            picked.append(editor.selectedShapeIDs)
+            expect(w.window.firstResponder === w.table, "\(chord) stays in the list: \(String(describing: w.window.firstResponder))")
+        }
+        // Front to back: C, B, A; stopping at the ends, as the arrows do.
+        expectEqual(picked, [[c], [b], [a], [a], [b], [c], [c]])
+        expect(editor.contents.isWalkedByKeys)
+    },
+    test("Caps Lock on, Tab and ⇧Tab still step the rows and keep the keyboard in the list") {
+        let editor = try contentsEditor(scheduler: TaskScheduler())
+        let (a, b, c) = threeWidgets(editor)
+        let w = ContentsWindow(editor)
+        w.window.spin { w.rows == 3 }
+        try w.focusList()
+        let keys = KeyDriver(w.window)
+        var picked: [[ShapeID]] = []
+        for chord in [Chord.tab.capsLock, .tab.capsLock, .backTab.capsLock] {
+            keys.send(chord)
+            picked.append(editor.selectedShapeIDs)
+            expect(w.window.firstResponder === w.table, "\(chord) stays in the list: \(String(describing: w.window.firstResponder))")
+        }
+        expectEqual(picked, [[c], [b], [c]])
+        _ = a
+    },
+    test("rows say their kind after their name, a stand-in \"Alias\"; each disclosure triangle is named by its row") {
+        let editor = try contentsEditor(scheduler: TaskScheduler())
+        let (a, _, _) = threeWidgets(editor)
+        editor.add(Pin("P", on: a))
+        let unnamed = editor.add(Widget(CGRect(x: 600, y: 0, width: 100, height: 60), name: ""))
+        editor.add(Pin("Q", on: unnamed))
+        let w = ContentsWindow(editor)
+        w.window.spin { w.rows == 4 }
+        let entries = editor.contents.entries
+        let widget = try require(entries.first { $0.id == a })
+        expectEqual(widget.kindName, "Widget")
+        expectEqual(widget.label?.spokenValue(kind: widget.kindName), "Widget")
+        expectEqual(ContentsLabel("Checkout", standsIn: true).spokenValue(kind: "Reference"), "Alias", "a stand-in's name is its shape's")
+        expectEqual(widget.spokenName, "A")
+        expectEqual(entries.first { $0.id == unnamed }?.spokenName, "Unnamed", "no name: the placeholder")
+        // SwiftUI's accessibility tree isn't built in an unshown window, but the table's is AppKit's.
+        @MainActor func triangles() -> [String?] {
+            (w.table?.descendants(NSButton.self) ?? []).filter { $0.identifier == NSOutlineView.disclosureButtonIdentifier }
+                .sorted { $0.convert($0.bounds, to: nil).maxY > $1.convert($1.bounds, to: nil).maxY }
+                .map { $0.cell.map(AccessibilityProbe.label(of:)) ?? nil }
+        }
+        w.window.spin { triangles() == ["Unnamed", "A"] }
+        try w.expand(1)
+        w.window.spin { w.rows == 5 }
+        w.window.settle()
+        expectEqual(triangles(), ["Unnamed", "A"], "turned, still named")
+        editor.add(Widget(CGRect(x: 800, y: 0, width: 100, height: 60), name: "D"))
+        w.window.spin { w.rows == 6 }
+        w.window.settle()
+        expectEqual(triangles(), ["Unnamed", "A"], "rows replaced or moved, each still its own row's")
+    },
+    test("the header's Show All runs View › Show All Shapes, which lists every shape again while the list is scoped, keeping the selection") {
+        let editor = try contentsEditor(scheduler: TaskScheduler())
+        let (a, b, _) = threeWidgets(editor)
+        let w = ContentsWindow(editor)
+        w.window.spin { w.rows == 3 }
+        expectEqual(editor.registry.title(of: .showAllShapes), "Show All Shapes")
+        expect(!editor.canPerform(.showAllShapes), "every shape is listed")
+        editor.selectedShapeIDs = [a, b]
+        w.window.spin { w.rows == 2 }
+        expect(editor.canPerform(.showAllShapes))
+        try require(w.headerButtons.first, "Show All").performClick(nil)
+        w.window.spin { w.rows == 3 }
+        expectEqual(editor.selectedShapeIDs, [a, b])
+        expect(!editor.canPerform(.showAllShapes))
+        editor.selectedShapeIDs = [b]
+        w.window.spin { w.rows == 1 }
+        editor.perform(.showAllShapes)
+        w.window.spin { w.rows == 3 }
+    },
 ])

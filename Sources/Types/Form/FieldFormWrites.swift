@@ -227,6 +227,7 @@ extension FieldFormView {
         if isPairs, stop.column != 0 { return false }
         if !isPairs, held.cells.count > 1, !held.cells.allSatisfy({ $0.shown.isEmpty }) { return false }
         if held.slot == slots.slots.count - 1, slots.slots[held.slot] == .blank { return true }
+        if HeldKey.isRepeating { return true }
         remove(held, column: stop.column)
         return true
     }
@@ -245,19 +246,40 @@ extension FieldFormView {
         case .stored(nil): writer.remove(at: list.index(index), of: shape, step: step)
         case .blank, .pair: break
         }
+        let removedAt = sheet.lines.firstIndex(of: held)
         reload()
-        let target = max(held.slot - 1, 0)
+        // The line before it in the same list (a slot is the draft's number; the sheet's lines may start anywhere), else the
+        // nearest stop at or above where it was.
+        let before = sheet.lines.indices.first { sheet.lines[$0].list == list && sheet.lines[$0].slot == max(held.slot - 1, 0) }
+        let target = before ?? max((removedAt ?? 0) - 1, 0)
         if let stop = sheet.stops.last(where: { $0.line == target && $0.column == max(column, 0) }) ?? sheet.stops.last(where: { $0.line <= target }) {
             focus(stop)
             if editorStop != nil { cellEditor.setSelectedRange(NSRange(location: (cellEditor.string as NSString).length, length: 0)) }
         }
     }
 
-    /// The right-click menu of a line of a list, a table or pairs: `Remove`. None on rows, the waiting line, or read-only.
-    public func contextMenu(for stop: FieldStop) -> NSMenu? {
+    /// The line a stop is on, when a right-click or a key can take it out: a line of a list, a table or pairs, never on rows, the
+    /// waiting line, or read-only.
+    func removableLine(at stop: FieldStop) -> FieldLine? {
         guard mode == .values, !isReadOnly, let held = line(at: stop), let list = held.list else { return nil }
         let slots = draft(at: list).slots
         guard slots.indices.contains(held.slot), !(held.slot == slots.count - 1 && slots[held.slot] == .blank) else { return nil }
+        return held
+    }
+
+    /// ⌫, ⌦ or ⌘⌫ on a stop of a line that can go: the line is taken out, in one step. False for a stop on a line that cannot.
+    func removeFocusedLine(repeating: Bool = HeldKey.isRepeating) -> Bool {
+        guard let stop = focus, let held = removableLine(at: stop) else { return false }
+        // A held key is one press: it takes one line out, not the lines the caret moves on to.
+        if repeating { return true }
+        cellEditor.dropsRepeats = true
+        remove(held, column: stop.column)
+        return true
+    }
+
+    /// The right-click menu of a line of a list, a table or pairs: `Remove` (`removableLine`).
+    public func contextMenu(for stop: FieldStop) -> NSMenu? {
+        guard removableLine(at: stop) != nil else { return nil }
         let menu = NSMenu()
         let item = NSMenuItem(title: FieldWords.remove, action: #selector(removePicked(_:)), keyEquivalent: "")
         item.target = self

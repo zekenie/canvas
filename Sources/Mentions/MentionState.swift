@@ -313,6 +313,41 @@ public final class MentionState {
 
     // MARK: Going to and hovering
 
+    // MARK: The text with the keyboard
+
+    /// The mention text that has the keyboard (a note's editor, a panel's box): what Go to Mention, Show
+    /// What Mentions and Remove Mention act on, as the pill's menu does. Set as a text takes the keyboard,
+    /// and let go as it gives it up.
+    @ObservationIgnored private weak var keyboardText: (any PillCommandText)?
+
+    func enter(_ text: any PillCommandText) { keyboardText = text }
+
+    func leave(_ text: any PillCommandText) {
+        if keyboardText === text { keyboardText = nil }
+    }
+
+    /// The pill on the caret of the text with the keyboard.
+    var pillOnCaret: MentionAttachment? { keyboardText?.pillOnCaret }
+
+    /// Go to Mention: the live pill on the caret, followed on the next turn as a double-click does.
+    var canFollowPillOnCaret: Bool { pillOnCaret?.resolution.isLive == true }
+
+    func followPillOnCaret() {
+        guard let pill = pillOnCaret, pill.resolution.isLive else { return }
+        follow(pill.target)
+    }
+
+    var canShowWhatMentionsOnCaret: Bool { pillOnCaret.map { keyboardText?.canShowWhatMentions(of: $0) == true } ?? false }
+
+    func showWhatMentionsOnCaret() {
+        guard let pill = pillOnCaret, keyboardText?.canShowWhatMentions(of: pill) == true else { return }
+        showWhatMentions([pill.target])
+    }
+
+    var canRemovePillOnCaret: Bool { keyboardText?.canRemovePillOnCaret == true }
+
+    func removePillOnCaret() { keyboardText?.removePillOnCaret() }
+
     /// Follows a mention of the target on the next turn of the scheduler (`editor.followMention`:
     /// ends editing, goes to it or into it; ⌘[ comes back): a click inside the text being edited is
     /// still being tracked by the view that going ends.
@@ -1009,3 +1044,14 @@ private struct Found {
     let slot: Int
     var score: Int
 }
+
+/// A mention text view the pill commands act on (`MentionState.enter`).
+@MainActor
+protocol PillCommandText: AnyObject {
+    var pillOnCaret: MentionAttachment? { get }
+    var canRemovePillOnCaret: Bool { get }
+    func removePillOnCaret()
+    func canShowWhatMentions(of pill: MentionAttachment) -> Bool
+}
+
+extension MentionTextView: PillCommandText {}

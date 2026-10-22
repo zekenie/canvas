@@ -1,5 +1,6 @@
 import Canvas
 import CoreGraphics
+import Geometry
 
 /// Parts of a shape's content that answer a click without taking the shape's press: a mention's pill
 /// in a note's text, a link, a checkbox drawn on a card. Unlike a canvas button, a face is the
@@ -87,6 +88,16 @@ extension CanvasEditor {
             if let face = source.face(self, record, point) { return FaceHit(source: source, face: face) }
         }
         return nil
+    }
+
+    /// The face a plain press at a view point would click (`ShapeFaces`), as its plugin knows it, and the
+    /// shape it is on: the select tool's own lookup, for a shape it would press there itself (not one in a
+    /// group past the selection's), canvas buttons and handles not counted. Nil where there's none, and
+    /// without the Selection plugin.
+    public func face(atViewPoint point: CGPoint) -> (shape: ShapeID, face: AnyHashable)? {
+        let world = camera.toWorld(point)
+        guard let hit = selectableHit(at: world), selectionUnit(of: hit.id) == [hit.id], let face = faceHit(on: hit, at: world) else { return nil }
+        return (hit.id, face.face)
     }
 
     /// The shape the pointer at a world point hovers in the select tool, the selectable shape there

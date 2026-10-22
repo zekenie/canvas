@@ -135,16 +135,21 @@ extension SelectionState {
         }
     }
 
-    /// Escape with nothing under way: out of the group the selection is inside, selecting it whole
-    /// (tldraw's popFocusedGroupId), or, with nothing selected there, out of it altogether; with the
-    /// selection in no group, nothing selected.
+    /// Escape with nothing under way, one level out at a time (P5): from a focused part of the selected shape
+    /// (⌥Tab), back to the shape, still selected; else out of the group the selection is inside, selecting it
+    /// whole (tldraw's popFocusedGroupId), or, with nothing selected there, out of it altogether; else out of
+    /// the container its shapes are all in (a frame), selecting that, as ⌘↑ does (`selectEnclosure`), brought
+    /// into view if it is not; with the selection in neither, nothing selected. It never leaves the board.
     func escape() {
-        guard let innermost = focus.last else { return select([]) }
+        // A focus whose part went with no commit (left out as the zoom changed) shows nothing: let it go and go on.
+        let partShown = editor.hasFocusedPart
+        if clearPartFocus(), partShown { return }
         guard !selectedIDs.isEmpty else {
             focus = []
             return
         }
-        select(members(of: innermost))
+        if selectEnclosure() { return editor.revealIfOffscreen(selectedIDs) }
+        select([])
     }
 
     /// A press on empty canvas outside the box of the group the selection is inside leaves it

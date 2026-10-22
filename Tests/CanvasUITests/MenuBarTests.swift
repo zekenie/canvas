@@ -52,7 +52,7 @@ import TestKit
         let seek = try require(menus.main.item(withTitle: "Edit")?.submenu?.item(withTitle: "Seek")?.submenu)
         expectEqual(seek.items.map(\.title), ["Seek…", "Seek Next"])
         expectEqual(seek.items.compactMap(BoardMenus.command(of:)), ["seek", "seek-next"])
-        expectEqual(try titles(menus, "View"), ["Show Toolbar", "Show Inspector", "Focus Inspector", "Show Minimap", "", "Zoom In", "Zoom Out",
+        expectEqual(try titles(menus, "View"), ["Show Toolbar", "Show Inspector", "Focus Inspector", "Focus Next Pane", "Focus Previous Pane", "Show Minimap", "", "Zoom In", "Zoom Out",
                                                "Actual Size", "Zoom to Fit", "", "Enter Full Screen"], "the core's zooms, among the window's own")
     },
     test("the menus come in the Mac's order: Arrange after Shape, Go after View, one the window doesn't know before Window; a menu with nothing in it isn't there") {
@@ -79,7 +79,7 @@ import TestKit
     test("the Shape menu leaves out every command the menu bar runs, its own items' and AppKit's") {
         let omitted = Omitted()
         let registry = try Registry(plugins: [declared, Contributor(id: "selection-menu") { r in
-            r.menuForSelection { _, commands in
+            r.menuForSelection { _, commands, _ in
                 omitted.asked.append(commands)
                 return NSMenu(title: "made")
             }

@@ -109,6 +109,8 @@ public enum BoardMenus {
                 Placed(0, item("Show Toolbar", #selector(NSWindow.toggleToolbarShown(_:)), "t", [.command, .option])),
                 Placed(10, item("Show Inspector", #selector(BoardWindowController.toggleDetails(_:)), "i", [.command, .control])),
                 Placed(20, item("Focus Inspector", #selector(BoardWindowController.focusInspector(_:)), "i", [.command, .option])),
+                Placed(24, item("Focus Next Pane", #selector(BoardWindowController.focusNextPane(_:)), Self.f6, [])),
+                Placed(25, item("Focus Previous Pane", #selector(BoardWindowController.focusPreviousPane(_:)), Self.f6, .shift)),
                 Placed(30, item("Show Minimap", #selector(BoardWindowController.toggleMinimap(_:)), "m", [.command, .control])),
                 Placed(900, item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])),
             ],
@@ -172,6 +174,9 @@ public enum BoardMenus {
     public static let keyBoardEditor: @MainActor () -> CanvasEditor? = {
         [NSApp.keyWindow, NSApp.mainWindow].lazy.compactMap { $0 as? BoardWindow }.first?.editor
     }
+
+    /// F6, the key of View › Focus Next Pane.
+    fileprivate static let f6 = String(UnicodeScalar(UInt16(NSF6FunctionKey))!)
 
     fileprivate static func item(_ title: String, _ action: Selector, _ key: String = "",
                              _ modifiers: NSEvent.ModifierFlags = .command) -> NSMenuItem {
@@ -291,7 +296,8 @@ final class ShapeMenu: NSMenu, NSMenuDelegate {
 /// so the text moves its caret with it. (AppKit's menus take a disabled item's key, and beep.) And
 /// an item whose key types (View › Zoom to Fit, ⇧1, and Zoom to Selection, ⇧2; Arrange › Bring to Front,
 /// `]`, and the rest: no ⌘, so ⇧, ⌥ or nothing held with the key, ⌃ too) never takes it from text,
-/// where it types ("!" on a US keyboard, a quote for ⌥]); elsewhere it answers the key it names (a digit
+/// where it types ("!" on a US keyboard, a quote for ⌥]), and from a control of the panel (a checkbox), whose key it
+/// is; only the canvas, the window itself and a list (the table of contents) answer the key it names (a digit
 /// is the number row's key, whatever the layout types with it), and leaves it while it's disabled.
 /// A key held with fn (🌐) is AppKit's as ever, text or not: the items it adds for them (Edit ›
 /// Emoji & Symbols, 🌐E; Start Dictation, 🌐D; View › Enter Full Screen, 🌐F) answer only as key
@@ -332,6 +338,13 @@ final class MenuBar: NSMenu {
             let found = (KeyStroke.numberRow[event.keyCode] ?? (typed?.count == 1 ? typed?.first : nil)).flatMap { typedItem($0, modifiers, in: self) }
             if inText { return modifiers.contains(.control) ? super.performKeyEquivalent(with: event) : false }
             if let (menu, index) = found {
+                // Only where the key is the board's: the canvas, the window itself, a list (the table of
+                // contents). A panel's checkbox or button with the keyboard types or presses its own.
+                let boards = MainActor.assumeIsolated {
+                    let responder = (window ?? NSApp.keyWindow)?.firstResponder
+                    return responder is CanvasView || responder is NSTableView || responder === (window ?? NSApp.keyWindow)
+                }
+                if !boards { return false }
                 menu.update()
                 guard let item = menu.item(at: index), item.isEnabled else { return false }
                 if event.isARepeat { return true }

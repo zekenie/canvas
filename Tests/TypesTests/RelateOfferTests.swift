@@ -18,7 +18,7 @@ import Validation
 // The offer: a click on a pill in a type's words that names another type, not yet related to it and not embedded by it, opens
 // `Relate to <Type>`, which makes the relationship type between the two types in one step, as the drag between them does,
 // and writes neither the words nor the schema of either (no model is asked). Where it does not apply the pill is Mentions':
-// no menu. The same item is in the canvas's context menu on the pill. Over slips (types that show rows), bonds and relays,
+// no menu. The same offers are in the canvas's context menu and the selection's, under Relate to ▸. Over slips (types that show rows), bonds and relays,
 // with the engine of `canvas draw` making the arrows; the shipped notes are CompositionTests'.
 
 @MainActor private func drawing() -> [any CanvasPlugin] {
@@ -313,33 +313,32 @@ private struct Offer {
         s.editor.closeCard()
         expect(s.relationshipTypesMade() == 1, "and its ports draw arrows as any")
     },
-    test("the same item is in the canvas's context menu on the pill, and on nothing else of the note; choosing it is the click's item") {
+    test("the canvas's context menu on the type, anywhere on it, and the selection's menu hold Relate to ▸ with the offer, needing no point; a note that is no type has none; choosing it is the click's item") {
         let s = try Offer()
         let pill = try s.pill(of: s.feature)
         s.editor.selection = s.feature
         let on = try require(s.harness.secondaryClick(at: s.middle(pill)))
-        expect(on.outline.contains("Relate to Layer"), "\(on.outline)")
-        let off = s.harness.secondaryClick(at: CGPoint(x: pill.minX - 8, y: pill.midY))
-        expect(off?.outline.contains("Relate to Layer") != true, "\(off?.outline ?? [])")
+        expect(on.outline.contains("Relate to ▸") && on.outline.contains("  Layer"), "\(on.outline)")
+        let off = try require(s.harness.secondaryClick(at: CGPoint(x: pill.minX - 8, y: pill.midY)))
+        expect(off.outline.contains("Relate to ▸"), "off the pill too: \(off.outline)")
+        s.editor.selection = s.feature
+        let selection = try require(s.editor.menuForSelection(omitting: []))
+        expect(selection.outline.contains("Relate to ▸") && selection.outline.contains("  Layer"), "the Shape menu: \(selection.outline)")
         // A note that is no type has no pill to relate, whatever its words mention.
         s.say(s.note, MentionText([.text("in a "), .mention(s.layer, label: "Layer")]))
         let note = try require(s.harness.secondaryClick(at: s.middle(try s.pill(of: s.note))))
-        expect(!note.outline.contains("Relate to Layer"), "\(note.outline)")
+        expect(!note.outline.contains("Relate to ▸"), "\(note.outline)")
         // Chosen from the menu: the same step, the same three shapes.
         s.editor.undoHistory.seal()
         let known = s.ids
         s.editor.selection = s.feature
         let again = try require(s.harness.secondaryClick(at: s.middle(pill)))
-        try again.choose("Relate to Layer")
+        try again.choose("Relate to", "Layer")
         s.editor.closeCard()
         expectEqual(s.added(since: known).count, 3)
         expectEqual(s.editor.undoHistory.undoName, TypesStyle.newRelationshipType)
         s.editor.undo()
         expect(s.added(since: known).isEmpty, "one Undo")
-        // At a skeleton's zoom no pill is drawn, so there is no item.
-        s.editor.camera.setZoom(0.2, around: .zero)
-        let far = s.harness.secondaryClick(at: s.harness.view(s.middle(pill)))
-        expect(far?.outline.contains("Relate to Layer") != true)
     },
     test("a type that mentions itself, \"friends with another @Person\", offers Relate to Person and is made a type related to itself: two arrows, never a two-headed one; the offer goes and one Undo takes it back") {
         let s = try Offer(says: .itself)

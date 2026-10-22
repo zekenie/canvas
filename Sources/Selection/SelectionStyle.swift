@@ -6,6 +6,9 @@ import Palette
 @MainActor
 enum SelectionStyle {
     static let accent = NSColor.controlAccentColor
+    /// The selection's outline while the canvas hasn't the keyboard (`editor.hasKeyboard`), as a list's selected
+    /// rows go gray while another view has it: where keys go shows in the accent alone.
+    static let secondary = NSColor.secondaryLabelColor
     /// The halo around a hovered or pressed handle.
     static let accentFill = NSColor(name: nil) {
         NSColor.controlAccentColor.withAlphaComponent($0.isDark ? 0.2 : 0.24)
@@ -32,6 +35,11 @@ enum SelectionStyle {
     static let shakeDuration: Duration = .milliseconds(360)
     /// A frame of a shake.
     static let shakeFrame: Duration = .milliseconds(16)
+    /// What VoiceOver hears as shapes that can't change refuse a try: "Locked", or "3 shapes locked".
+    static func refused(_ count: Int) -> String { count == 1 ? "Locked" : "\(count) shapes locked" }
+    /// Tries that keep coming (a held arrow key's refused nudges) are said once: the same shapes refused again are
+    /// said again only after this long with no try.
+    static let refusalQuiet: Duration = .seconds(1)
     /// Going back moves the camera this long (data-canvas's).
     static let goBackDuration: Duration = .milliseconds(200)
     /// Bringing shapes into view (`reveal`), as selecting a row of data-canvas's table of contents
@@ -53,9 +61,15 @@ enum SelectionStyle {
     static let groupFocusStrokeWidth: CGFloat = 1
     static let groupFocusDash: [CGFloat] = [4, 3]
     static let groupFocusStandoff: CGFloat = 10
+    /// The ring around a shape's focused part (⌥Tab, `PartFocusOverlay`): this wide, in the accent, stood off
+    /// the part's rect by this much.
+    static let partRingWidth: CGFloat = 2
+    static let partRingStandoff: CGFloat = 3
     /// How far an arrow key nudges the selection, and with ⇧, in world units (tldraw's 1 and 10).
     static let nudge: CGFloat = 1
     static let shiftNudge: CGFloat = 10
+    /// What the Keyboard Shortcuts window calls the arrow keys: they nudge the selection, or with none pan the view.
+    static let nudgeOrPan = "Nudge or Pan"
     // Stepping from shape to shape (`StopOrder`), with tldraw's numbers (`Editor.selectAdjacentShape`).
     /// Reading order: a shape joins a row when its center is less than this far, in world units, above or
     /// below the row's last.

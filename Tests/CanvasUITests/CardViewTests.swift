@@ -314,4 +314,49 @@ private final class Stop: NSView {
         // Closed: the frame is whatever the box was; nothing is laid out for it.
         expect(rig.canvas.cardFrame == nil)
     },
+    test("Escape that the plugin's view didn't take closes the card as asked and gives the canvas the keyboard; so does ⌘. ; a view that takes it keeps it") {
+        let rig = try Rig()
+        expect(rig.show())
+        rig.probe.takes = { _ in false }
+        rig.window.pressEscape()
+        expectEqual(rig.closings.closings, [.asked])
+        expect(rig.window.firstResponder === rig.canvas, "the canvas has the keyboard")
+        expect(rig.h.editor.card == nil)
+        expect(rig.show())
+        rig.window.pressCommandPeriod()
+        expectEqual(rig.closings.closings, [.asked, .asked])
+        expect(rig.window.firstResponder === rig.canvas)
+        // A view that takes Escape itself: the card is its own to close.
+        expect(rig.show())
+        rig.probe.takes = { _ in true }
+        rig.window.pressEscape()
+        expectEqual(rig.closings.closings, [.asked, .asked], "the view took it")
+        expect(rig.h.editor.card != nil)
+        expectEqual(rig.probe.keys.last, "\u{1b}")
+    },
+    test("Tab and ⇧Tab that the view didn't take walk the card's stops in reading order, wrapping inside the card; Delete changes nothing") {
+        let rig = try Rig()
+        let first = Stop(frame: CGRect(x: 0, y: 0, width: 50, height: 20)), second = Stop(frame: CGRect(x: 60, y: 0, width: 50, height: 20))
+        let third = Stop(frame: CGRect(x: 0, y: 40, width: 50, height: 20))
+        for stop in [third, second, first] { rig.probe.addSubview(stop) }
+        expect(rig.show())
+        rig.probe.takes = { _ in false }
+        @MainActor func focused() -> String {
+            let responder = rig.window.firstResponder
+            return responder === first ? "first" : responder === second ? "second" : responder === third ? "third" : responder === rig.probe ? "card" : "other"
+        }
+        expectEqual(focused(), "card")
+        var walk: [String] = []
+        for _ in 0..<4 { rig.window.press(.tab); walk.append(focused()) }
+        expectEqual(walk, ["first", "second", "third", "card"], "reading order (the card's own view first), wrapping")
+        walk = []
+        for _ in 0..<4 { rig.window.press(.backTab); walk.append(focused()) }
+        expectEqual(walk, ["third", "second", "first", "card"], "and back")
+        rig.window.press(.backTab)
+        expectEqual(focused(), "third", "⇧Tab off the first wraps to the last")
+        rig.window.pressDelete()
+        expectEqual(rig.log.commands, [])
+        expect(rig.h.editor.card != nil, "Tab and Delete don't close it")
+        expectEqual(rig.log.keys, [])
+    },
 ])

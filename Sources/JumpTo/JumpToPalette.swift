@@ -158,6 +158,9 @@ final class JumpToTextView: EditingTextView {
 
     override var caretListWindow: CaretListWindow? { listWindow }
 
+    /// The list stays open whatever is pressed.
+    override var closesListOnTab: Bool { false }
+
     // `init(frame:)` makes the text system and goes through `init(frame:textContainer:)`, which
     // AppKit asks of this class: it's the one that sets the field up.
     override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
@@ -239,6 +242,12 @@ final class JumpToTextView: EditingTextView {
             onEscape?()
             return
         }
+        // The palette stays modal: ⇧Tab moves the highlight up, and Tab with nothing to pick does nothing.
+        if selector == #selector(NSResponder.insertBacktab(_:)) {
+            listWindow?.list.moveHighlight(by: -1)
+            return
+        }
+        if selector == #selector(NSResponder.insertTab(_:)), listWindow?.list.highlightedItem == nil { return }
         super.doCommand(by: selector)
     }
 

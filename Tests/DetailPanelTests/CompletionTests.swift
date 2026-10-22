@@ -184,7 +184,7 @@ extension PanelWindow {
         expectEqual(code.selectedRange(), NSRange(location: 12 + 9, length: 2), "its count, to be typed over")
         expectEqual(editor.props(id, as: Gadget.self)?.remark, "basket(jam)\ncherry * 12")
     },
-    test("while it's open ↑ ↓ ⌃P ⌃N move, wrapping, and Page Up and Down a page, stopping at the ends; ← and → are the text's; closed, Return and Tab indent") {
+    test("while it's open ↑ ↓ ⌃P ⌃N move, wrapping, and Page Up and Down a page, stopping at the ends; ← and → are the text's; closed, Return keeps the indent and ⌥Tab indents") {
         let editor = try gadgetEditor([CodeBoxesPlugin()], scheduler: TaskScheduler())
         let panel = PanelWindow(editor)
         let (_, code) = try panel.focusCode()
@@ -212,7 +212,7 @@ extension PanelWindow {
         panel.window.press("\u{1b}", code: 53)
         expect(panel.completions == nil)
         panel.window.pressReturn()
-        panel.tab()
+        panel.window.press(.optionTab)
         expectEqual(code.string, "\n  ap", "closed: a new line, then two spaces")
     },
     test("typing asks again: the list follows what's typed, and closes once nothing matches, nothing's offered, or the caret leaves what it opened for") {

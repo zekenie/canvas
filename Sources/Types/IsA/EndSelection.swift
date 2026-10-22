@@ -20,7 +20,8 @@ extension CanvasEditor {
         return hub
     }
 
-    /// What a relationship type outlines besides itself while it is selected or hovered: its end arrows.
+    /// What a relationship type outlines besides itself while it is selected or hovered: its end arrows, in the selection's
+    /// color (quiet while the keyboard is elsewhere).
     var relationshipEndOutlines: Outlines {
         guard let relationships, relationships.isActive else { return Outlines() }
         // The selected relationship types, read from whichever is smaller, the selection or the types with ends: a frame of a large
@@ -31,7 +32,7 @@ extension CanvasEditor {
         for id in selectedHubs { full.append(contentsOf: relationships.endArrows(of: id)) }
         var faint: [ShapeID] = []
         if session == nil, let hovered { faint = Array(relationships.endArrows(of: hovered)) }
-        return Outlines(shapes: full, faintShapes: faint)
+        return Outlines(shapes: full, faintShapes: faint, color: full.isEmpty ? nil : selectionOutlineColor)
     }
 }
 

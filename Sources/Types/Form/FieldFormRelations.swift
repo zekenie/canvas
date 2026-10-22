@@ -96,9 +96,11 @@ extension FieldFormView {
 
     /// Backspace or Delete on a stored line's note: the line goes, with its arrow, its values and the pill it empties, in the card's
     /// step. A line whose arrow cannot go shakes the note, as a pill deleted in the row does.
-    func removeFocusedRelation() -> Bool {
+    func removeFocusedRelation(repeating: Bool = HeldKey.isRepeating) -> Bool {
         guard relations != nil, depth == 0, mode == .values, let stop = focus, let held = line(at: stop), let arrow = held.owner,
               let cell = cell(at: stop), case .note = cell.control, cell.isStored else { return false }
+        if repeating { return true }
+        cellEditor.dropsRepeats = true
         guard !isReadOnly else {
             tryAtReadOnly()
             return true

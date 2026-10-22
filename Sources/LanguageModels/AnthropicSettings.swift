@@ -44,7 +44,22 @@ public final class AnthropicKeySettings {
     }
     /// Whether a key is saved.
     public private(set) var hasKey: Bool
-    public private(set) var status: Status = .idle
+    public private(set) var status: Status = .idle {
+        didSet {
+            guard status != oldValue, let text = statusText else { return }
+            announce(text)
+        }
+    }
+
+    /// Says a status to whoever uses VoiceOver, as it changes (`statusText`): by default the app's
+    /// announcement; a test sets it to hear what was said.
+    @ObservationIgnored public var announce: @MainActor (String) -> Void = AnthropicKeySettings.announceToVoiceOver
+
+    /// An announcement VoiceOver speaks at once.
+    public static func announceToVoiceOver(_ text: String) {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    }
 
     /// Where the key is kept.
     public let keys: AnthropicKeyStore
@@ -168,6 +183,7 @@ enum SettingsStyle {
 /// Settings…, ⌘,), afresh each time the window opens.
 public struct AnthropicSettingsView: View {
     @State private var settings: AnthropicKeySettings
+    @FocusState private var keyFieldFocused: Bool
 
     /// The key in `keys`, tested with `model` (by default, Claude Haiku reading `keys`).
     public init(keys: AnthropicKeyStore = .standard, model: (any LanguageModel)? = nil) {
@@ -200,9 +216,11 @@ public struct AnthropicSettingsView: View {
             Section {
                 SecureField("Anthropic API key", text: $settings.draft, prompt: Text(settings.hasKey ? "Saved" : "sk-ant-…"))
                     .onSubmit { settings.save() }
+                    .focused($keyFieldFocused)
                     .help(Self.storageHelp(settings.keys))
                 HStack(spacing: SettingsStyle.buttonSpacing) {
                     Button("Save") { settings.save() }
+                        .keyboardShortcut(.defaultAction)
                         .disabled(!settings.canSave)
                     Button("Remove") { settings.remove() }
                         .disabled(!settings.canRemove)
@@ -218,6 +236,7 @@ public struct AnthropicSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { keyFieldFocused = true }
         .frame(width: SettingsStyle.width)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -244,6 +263,8 @@ public struct AnthropicSettingsView: View {
             }
             .font(.callout)
             .help(settings.statusHelp ?? text)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint(settings.statusHelp.flatMap { $0 == text ? nil : $0 } ?? "")
         }
     }
 }

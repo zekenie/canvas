@@ -116,4 +116,28 @@ import TestKit
         h.editor.undo()
         expectEqual(h.editor.document, before, "undone whole")
     },
+    test("a container resized by the keys settles what it now reaches as the key is let go, in the resize's step; a shape in one grows by the keys no further than its edge") {
+        let h = try corralResizeHarness()
+        let corral = h.add(Corral(CGRect(x: 100, y: 100, width: 300, height: 200)))
+        let wholly = h.add(Box(CGRect(x: 420, y: 150, width: 60, height: 40)))
+        h.editor.replaceDocument(with: h.editor.document)            // nothing to undo
+        let before = h.editor.document
+        h.editor.selection = corral
+        h.hold([.option, .shift])
+        expect(h.key("\u{F703}"))
+        for _ in 0..<9 { expect(h.key("\u{F703}", isRepeat: true)) }
+        expectEqual(h.frame(of: corral), CGRect(x: 100, y: 100, width: 400, height: 200))
+        expectEqual(h.editor.holder(of: wholly), nil, "nothing settles while the key is held")
+        h.editor.keyUp(KeyStroke("\u{F703}", modifiers: [.option, .shift]))
+        expectEqual(h.editor.holder(of: wholly), corral, "taken in as the key is let go")
+        expectEqual(h.editor.undoHistory.undoName, "Resize")
+        h.editor.undo()
+        expectEqual(h.editor.document, before, "the resize and its settling, one step")
+        let inside = h.add(Box(CGRect(x: 300, y: 150, width: 60, height: 40)))
+        h.editor.put([inside], in: corral)
+        h.editor.selection = inside
+        for _ in 0..<10 { expect(h.key("\u{F703}")) }
+        h.hold([])
+        expectEqual(h.frame(of: inside), CGRect(x: 300, y: 150, width: 84, height: 40), "the gap inside the edge")
+    },
 ])
