@@ -9,7 +9,7 @@ and only `land` moves a ref or pushes.
     python3 review.py rebuild DIR [--message FILE] [--leave-unreviewed]
     python3 review.py land DIR
 """
-import argparse, glob, json, os, re, subprocess, sys, tempfile
+import argparse, glob, json, os, re, shutil, subprocess, sys, tempfile
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -100,28 +100,62 @@ def message(sha):
     return git("log", "-1", "--format=%B", sha)
 
 
+def record_name(path):
+    """The record a path names: a trailer's `history/sessions/<name>/` (the form since records
+    became directories), `history/sessions/<name>.md` (the trailers already on main), or a tree
+    entry's path."""
+    return os.path.basename(re.sub(r"\.md$", "", path.rstrip("/")))
+
+
 def trailer_records(msg):
-    return [os.path.basename(p) for p in re.findall(r"^Session: (\S+)\s*$", msg, re.M)]
+    return [record_name(p) for p in re.findall(r"^Session: (\S+)\s*$", msg, re.M)]
 
 
 def records_at(rev):
-    return {os.path.basename(p) for p in git("ls-tree", "--name-only", rev, f"{RECORDS}/").split()}
+    return {record_name(p) for p in git("ls-tree", "--name-only", rev, f"{RECORDS}/").split()}
+
+
+def record_dirs(folder):
+    return sorted(n for n in os.listdir(folder) if os.path.isdir(f"{folder}/{n}"))
+
+
+def record_files(folder, name):
+    """Every file of a record (transcript.md, plans/...) as a path inside its directory."""
+    root = f"{folder}/{name}"
+    return sorted(os.path.relpath(os.path.join(d, f), root) for d, _, fs in os.walk(root) for f in fs)
+
+
+def copy_record(rev, name, folder):
+    """A record's directory as it is at rev, every file of it, copied into folder."""
+    paths = [p for p in git("ls-tree", "-r", "--name-only", "-z", rev, f"{RECORDS}/{name}/").split("\0") if p]
+    if not paths:
+        sys.exit(f"a Session: trailer names {RECORDS}/{name}/, which isn't in the repository at {rev[:8]}")
+    for path in paths:
+        r = subprocess.run(["git", "show", f"{rev}:{path}"], capture_output=True)
+        if r.returncode:
+            sys.exit(f"git show {rev[:8]}:{path}: {r.stderr.decode().strip()}")
+        dest = f"{folder}/{name}/{os.path.relpath(path, f'{RECORDS}/{name}')}"
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        open(dest, "wb").write(r.stdout)
 
 
 def run_condense(*args):
+    """condense.py's record directory, the last line it prints."""
     r = subprocess.run([sys.executable, f"{HERE}/condense.py", *args], capture_output=True, text=True)
     if r.returncode:
         sys.exit(f"condense.py {' '.join(args[:1])}: {r.stderr.strip()}")
-    return r.stdout.strip().splitlines()[-1]
+    return r.stdout.strip().splitlines()[-1].rstrip("/")
 
 
 def keep_name(path, in_repo):
     """A session already recorded in the repository keeps its record's name, so the new record
-    replaces the old one."""
-    m = re.search(r"-([0-9a-f]{8})\.md$", path)
-    same = [n for n in in_repo if m and "-pr-" not in path and n.endswith(f"-{m.group(1)}.md")]
+    (a directory) replaces the old one."""
+    m = re.search(r"-([0-9a-f]{8})$", path)
+    same = [n for n in in_repo if m and "-pr-" not in path and n.endswith(f"-{m.group(1)}")]
     if same and os.path.basename(path) != same[0]:
-        os.replace(path, os.path.join(os.path.dirname(path), same[0]))
+        to = os.path.join(os.path.dirname(path), same[0])
+        shutil.rmtree(to, ignore_errors=True)
+        os.replace(path, to)
         return same[0]
     return os.path.basename(path)
 
@@ -242,8 +276,9 @@ def pr_record(n, out_dir):
     lines += [f"\n## Review comment by {c['user']['login']} on {c['path']}:{c.get('line')} at {c['created_at']}\n\n{c['body']}\n"
               for c in inline]
     slug = re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", pr["title"].lower())).strip("-")[:60]
-    name = f"{pr['createdAt'][:10]}-pr-{n}-{slug}.md"
-    open(f"{out_dir}/{name}", "w").write("".join(lines))
+    name = f"{pr['createdAt'][:10]}-pr-{n}-{slug}"
+    os.makedirs(f"{out_dir}/{name}", exist_ok=True)
+    open(f"{out_dir}/{name}/transcript.md", "w").write("".join(lines))
     return name
 
 
@@ -310,18 +345,16 @@ def prepare(a):
                 prs[u["pr"]] = found[0] if found else pr_record(u["pr"], f"{run}/backfill")
             u["pr_record"] = prs[u["pr"]]
 
-    backfill = sorted(os.listdir(f"{run}/backfill"))
+    backfill = record_dirs(f"{run}/backfill")
     named = {r for u in units for c in u["commits"] for r in c["records"]} | {u["pr_record"] for u in units if u.get("pr_record")}
     for name in sorted(named - set(backfill)):
-        if name not in in_repo:
-            sys.exit(f"a Session: trailer names {RECORDS}/{name}, which isn't in the repository at {tip[:8]}")
-        open(f"{run}/records/{name}", "w").write(git("show", f"{tip}:{RECORDS}/{name}") + "\n")
+        copy_record(tip, name, f"{run}/records")
 
     def where(name):
-        return f"{run}/{'backfill' if name in backfill else 'records'}/{name}"
+        return f"{run}/{'backfill' if name in backfill else 'records'}/{name}/transcript.md"
 
     def raw(name):
-        m = re.search(r"-([0-9a-f]{8})\.md$", name)
+        m = re.search(r"-([0-9a-f]{8})$", name)
         return sorted(glob.glob(f"{PROJECTS}*/{m.group(1)}*.jsonl")) if m and "-pr-" not in name else []
 
     groups = {}
@@ -332,7 +365,7 @@ def prepare(a):
     out = []
     for names, us in groups.items():
         sessions = [n for n in names if "-pr-" not in n] + [n for n in names if "-pr-" in n]
-        title = re.sub(r"^\d{4}-\d\d-\d\d-|-[0-9a-f]{8}\.md$|\.md$", "", sessions[0])[:40]
+        title = re.sub(r"^\d{4}-\d\d-\d\d-|-[0-9a-f]{8}$", "", sessions[0])[:40]
         notes, must = [], False
         for u in us:
             if u["merge"] and len(u["commits"]) > 1:
@@ -547,7 +580,7 @@ def rebuild(a):
     if unreviewed and not a.leave_unreviewed:
         sys.exit(f"{len(unreviewed)} groups have no finished review ({', '.join(unreviewed)}): run them again with "
                  "`args --only`, or pass --leave-unreviewed, and they won't come up again")
-    backfill = sorted(os.listdir(f"{a.dir}/backfill"))
+    backfill = record_dirs(f"{a.dir}/backfill")
     if backfill and not a.message:
         sys.exit(f"{len(backfill)} records to add at the tip ({', '.join(backfill)}): write that commit's message "
                  "to a file and pass --message")
@@ -592,7 +625,7 @@ def rebuild(a):
                 sys.exit(f"{fp[k][:8]} merges {len(members[fp[k]])} commits and no message was written for them")
             text = message(members[fp[k]][0])
         names = list(dict.fromkeys(r for s in shas for r in records(s)))
-        units.append(dict(shas=shas, message=text, sessions=[f"{RECORDS}/{n}" for n in names]))
+        units.append(dict(shas=shas, message=text, sessions=[f"{RECORDS}/{n}/" for n in names]))
         k = j + 1
     units += [dict(shas=[s], message=message(s), sessions=[], replay=True) for s in fp[end + 1:]]
     plan = f"{a.dir}/plan.json"
@@ -610,13 +643,17 @@ def rebuild(a):
         index = f"{a.dir}/records.index"
         env = dict(os.environ, GIT_INDEX_FILE=index)
         git("read-tree", rebuilt, env=env)
-        for name in sorted(os.listdir(f"{a.dir}/backfill")):
-            blob = git("hash-object", "-w", f"{a.dir}/backfill/{name}")
-            git("update-index", "--add", "--cacheinfo", f"100644,{blob},{RECORDS}/{name}", env=env)
+        for name in record_dirs(f"{a.dir}/backfill"):
+            # The new transcript replaces the old, and the record as one file goes; plans only
+            # accumulate, so one the repository has and the transcripts no longer give stays.
+            git("rm", "--cached", "-q", "--ignore-unmatch", "--", f"{RECORDS}/{name}.md", env=env)
+            for rel in record_files(f"{a.dir}/backfill", name):
+                blob = git("hash-object", "-w", f"{a.dir}/backfill/{name}/{rel}")
+                git("update-index", "--add", "--cacheinfo", f"100644,{blob},{RECORDS}/{name}/{rel}", env=env)
         tree = git("write-tree", env=env)
         os.unlink(index)
         with tempfile.NamedTemporaryFile("w", delete=False, suffix=".msg") as f:
-            f.write(with_sessions(open(a.message).read(), [f"{RECORDS}/{own}"]))
+            f.write(with_sessions(open(a.message).read(), [f"{RECORDS}/{own}/"]))
         final = git("commit-tree", tree, "-p", rebuilt, "-F", f.name)
         os.unlink(f.name)
 

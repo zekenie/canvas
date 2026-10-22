@@ -10,34 +10,58 @@ the summary an agent reads in `git log` and blame; the session's record, in `his
 is the evidence: what the owner asked, the questions put to them and their answers, their
 corrections, the plans, and what was turned down.
 
+A record is a directory, `history/sessions/<date>-<title>-<session>/`: `transcript.md`, the
+session's transcript condensed, and `plans/`, the plan files the session and its agents wrote, as
+they were last written, when it wrote any. A plan file is a plan mode's (`~/.claude/plans/`), or
+markdown in the session's scratchpad named for a plan (`plan.md`, `v1-plan.md`, `build-plan.md`)
+or kept in a `plan/` or `plans/` folder at its top, outside any clone of a repository and any
+deeper `plans/` folder (a copy of a record's); its path under
+`plans/` is its path in the scratchpad.
+
 ## Landing
 
 When a change lands on main as one squashed commit:
 
-1. `python3 .claude/skills/history/condense.py --self` condenses this session's transcript to
-   `history/sessions/<date>-<title>-<session>.md` and prints the path. A session that lands more
-   than once rewrites its one file, which then covers both landings. The record covers the session up to
-   this step, so the landing itself is in the next landing's record, or none.
-2. Add the file to the squashed commit.
-3. End the message with the trailer `Session: history/sessions/<file>.md`, above
+1. `python3 .claude/skills/history/condense.py --self` writes this session's record and prints its
+   directory. A session that lands more than once rewrites its one record, which then covers both
+   landings. The record covers the session up to this step, so the landing itself is in the next
+   landing's record, or none.
+2. Add the directory to the squashed commit.
+3. End the message with the trailer `Session: history/sessions/<record>/`, above
    `Co-Authored-By`.
 
-The record keeps the owner's messages whole, the questions and answers, refusals, the
-assistant's prose, plans, agent briefs and git commands; it leaves tool output out and redacts
-anything shaped like a key. Read it before committing, as the commit publishes it to everyone
+The transcript keeps the owner's messages whole, the questions and answers, refusals, the
+assistant's prose, plans, agent briefs and git commands; it leaves tool output out. A plan file
+is taken from disk, or rebuilt from the transcript's writes and edits when it's gone; plans only
+accumulate, so one recorded before stays when it can no longer be found. Both redact
+anything shaped like a key. Read them before committing, as the commit publishes them to everyone
 with the repository.
 
 ## Reading a commit's why
 
-`git log -1 --format=%B <sha>` ends with its `Session:` trailer; read that file. A record holds
-the whole session, so a session that landed several commits has one record they all name, with a
-line where each commit's message was written. The records began on 2026-10-18, when the commits
+`git log -1 --format=%B <sha>` ends with its `Session:` trailer; read that record's
+`transcript.md`, and its plans. A trailer written before records were directories, on
+2026-10-21, names `history/sessions/<record>.md`: the record is the directory of that name
+without `.md`. A record holds the whole session, so a session that landed several commits has one
+record they all name, with a line where each commit's message was written. The records began on 2026-10-18, when the commits
 from `canvas draw` (2026-09-28) on were reviewed against their sessions, their messages rewritten
 where the session said more than the message did, and every record added in one commit. The 41
 commits before them name no record. A commit from a cloud session, whose transcript stayed in the
 cloud, names its pull request's record instead: the description, comments and commits.
 
 `history/` is in `.ignore`, so a search of the code skips it; search it by path.
+
+## Backfill
+
+Claude Code deletes a transcript 30 days after its session was last used (unless
+`cleanupPeriodDays` in `~/.claude/settings.json` says otherwise), and plan files can go sooner, with the
+scratchpad. `python3 .claude/skills/history/backfill.py [--dry-run]` makes every record in
+`history/sessions/` a directory (a record kept as one file, `<record>.md`, becomes
+`<record>/transcript.md`) and writes the plans of every recorded session whose transcript is still
+on this machine. It leaves the transcripts as they were committed, since the weekly review read
+those, and a pull request's record, whose session never ran here. It prints what it moved and which
+records' plans it wrote; run it again and it writes only plans that are new or changed. Commit what
+it writes like any other change.
 
 ## Weekly review
 
