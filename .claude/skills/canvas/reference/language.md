@@ -1,8 +1,9 @@
+<!-- ids: 7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11 -->
 # The canvas draw language
 
 The whole language `canvas draw` reads: every statement, word and rule, how a script's placements become positions, what comes back, and every way a script can fail. [../SKILL.md](../SKILL.md) is the tour; this page is where to look when you need a construct the tour doesn't cover, or when an error points at behavior you didn't expect.
 
-The examples on this page are one story. They run in order on one empty board: each block tagged `draw` succeeds there, and later blocks name shapes that earlier blocks drew. Each block tagged `draw-error` fails with the reason on its first line, and changes nothing. The shapes are the kinds that shipped when this was written. `canvas kinds` says what your app has.
+The examples on this page are one story. They run in order on one empty board: each block tagged `draw` succeeds there, and later blocks name shapes that earlier blocks drew. Each block tagged `draw-error` fails with the reason on its first line, and changes nothing. Each block tagged `query` is a `canvas query` of the board as the blocks above left it, whose first line, a comment, says what it answers ([query.md](query.md)). The id in [References](#references) is a sample: a board's own is whatever its run's or its query's rows give. The shapes are the kinds that shipped when this was written. `canvas kinds` says what your app has.
 
 ## Contents
 
@@ -109,7 +110,7 @@ A kind is drawable when a tool places it. These are the shipped ones:
 | `sticky-note` | 260x200 | its title, a pill above its top-left corner | `text:`; a type's `schema:` in its panel | `note-link`, all four sides |
 | `subboard` | 240x160 | its title, drawn on its card | `description:`, what it's for, in its panel; its board is its own | every channel (`subboard-link`, `note-link`), all four sides |
 | `frame` | 640x400 | its title, a pill above its top-left corner | nothing else: it holds what's drawn `in` it | none |
-| `reference` | 120x32 | nothing: it has no title, so a script can't name one (an edge to a shape on another board draws one, [Through a reference](#through-a-reference)) | `query:`, a query in the query language; `all:` | none |
+| `reference` | 120x32 | nothing: it has no title (an edge to a shape on another board draws one, [Through a reference](#through-a-reference)); one drawn by its query is named by its id ([References](#references)) | `query:`, a query in the query language; `all:` | none |
 
 `arrow` is what edges are: write `edge "A" -> "B"`, never `arrow`. A kind that isn't installed is `unknown_kind`, with the drawable kinds listed and the one like it named (`did you mean sticky-note?`). Words from other languages get a hint with what to write instead: `node`, `note` and `box` that a statement starts with its kind, `link` to write `edge "A" -> "B"`, `-->` in an edge the arrow to write, and a line that joins two titles without `edge` (`API --> DB`, `"A" -> "B"`) the edge it means (`edge "API" -> "DB"`).
 
@@ -118,7 +119,7 @@ A kind is drawable when a tool places it. These are the shipped ones:
 A shape is referred to by its title. An id is for a shape that has none. Everywhere a statement names a shape the file already has, a quoted title may be written as an id instead, in the spelling a query uses: `#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`, a `#` and 36 characters, no quotes. The places are an edge's ends, `delete` and `delete edge`, a placement's target (`right of #…`), `in #…`, a shape statement's own name (`sticky-note #… text: "…"`, which restates that shape), the shapes a `group` or `ungroup` names and `share:`'s host. A query's rows give the ids (`id`), and so do a run's, for every shape the file has. Write one only for a shape with no title; where it has a title, use it. A shape named by its id and by its title in one script is one shape (two statements about it are `duplicate`).
 
 - **An id names a shape the file already has, never makes one.** One no shape has is `unknown_id` (it may have been deleted: run the query again), a malformed one `not_an_id`; a shape on a board the app can't show, or kept aside, is `unknown_id` too. The statement is refused at its line and nothing is drawn.
-- **An id names only a shape a title could name**: an arrow's, a reference's and any other kind's that has no title are `invalid_value`. Name an arrow by its two ends, and a reference by the shape it stands for.
+- **An id names only a shape a title could name, or a reference drawn by its query**: an arrow's, a reference's that stands for one shape (an edge's, or one the user picked), and any other kind's that has no title are `invalid_value`. Name an arrow by its two ends, and such a reference by the shape it stands for. A reference drawn by its query stands for whatever the query finds, so its id is the only name it has ([References](#references)).
 - **It is found as a title is**: on the board the run draws on, or on any other board the app can show. A run draws on the board of what it names, as for a title; an edge's end on another board goes through a reference as a titled one does, and the reference is called what the shape is called where it has no title (its words, else its values).
 - **A shape the script deletes can't be named by id after it**, as a title can't (`unknown_id`, "which this script deletes").
 
@@ -127,7 +128,7 @@ A shape is referred to by its title. An id is for a shape that has none. Everywh
 - **Names are read as the file has them when the run starts**, every board of it, plus the titles the script itself draws. A rename takes effect from the next run.
 - **A type is a note with a `schema:`**, called by its title as any note is: its name is the note's title, never a `"title"` in its schema. `sticky-note[schema]` finds the types.
 - **A type refers to another in words by its title, and in its schema by its id.** Its text mentions the type, `@[Address]` ([A text that mentions shapes](#a-text-that-mentions-shapes): a mention of a type is a reference to it, a mention of any other shape only words), and its schema points to it with `{\"$ref\": \"urn:uuid:<id, lowercase>\"}` where that field goes, the id being the type's, which `canvas query`'s rows give (a fragment after it, `#/$defs/zip`, points to a part of it). Write both, as the app keeps them: the mention in words, the `$ref` in JSON. Only the `$ref` takes an id.
-- **A kind with no title can't be named.** A reference is drawn without one: `reference "Saved"` is `untitlable`.
+- **A kind with no title can't be given one.** A reference is drawn without one: `reference "Saved"` is `untitlable`. One drawn by its query is named by its id afterwards ([References](#references)).
 
 ```draw-error
 // reason: untitlable
@@ -896,6 +897,39 @@ So is one that reads what the person is doing (`:selected`, `:current-board`), s
 reference above "Owner" query: "sticky-note:selected"
 ```
 
+### Arrows into it
+
+A reference drawn by its query has no title, and stands for no one shape that could name it, so a later script names it by its id: the `created` row of the run that drew it says it (`id`), and so does a query's row. Ask for it, then write the id where a statement names a shape:
+
+```query
+/* matches: (reference) */
+reference[query]
+```
+
+```draw
+edge "Alerts" -> #7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11
+```
+
+The arrow runs straight into the pill, on the board the pill is on, and the row calls that end by the id as written (`to`, and `toId`). A reference takes every channel on its left and right, so an edge into one is on the other end's first (`note-link`, from a note), and `channel: none` draws a plain arrow. Everything that reads the file reads the arrow as an arrow into each shape the query finds, whatever it finds from one moment to the next. A run again is `unchanged`. The id names the pill wherever an id names a shape: a restatement (`reference #… all: false`, or a new `query:`, changes what it stands for, and keeps its arrows), a placement's target, a group, and `delete #…`, which takes the arrows on it too. A `delete` of the shape at an arrow's other end takes the arrow and leaves the pill, which, unlike an edge's own reference, isn't there for one arrow. Nothing stands for a reference, so `via:` into one is `invalid_value`, and an edge to one on another board goes there only through a reference beside it for the other end, which must be public (else `several_boards`).
+
+### Testing what it stands for
+
+A query says what a reference stands for now: a shape that stands for others has a `stands-for` edge to each of them ([references.md](references.md#reading-through-a-reference)), here the public shapes its query finds (the first in file order, or with `all: true` up to fifty). Like any query that reads edges, it waits up to two seconds for the app to find them, and says `pending` among its warnings if they were still arriving. The pill stands for Runbook and Cutoff, the two public notes:
+
+```query
+/* count: 2 */
+:edge-from(#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11, stands-for)
+```
+
+And the arrow into it reads as an arrow into each:
+
+```query
+/* matches: "Alerts" */
+"Alerts":edge-to("Cutoff")
+```
+
+Before drawing one, run its query on its own: a reference stands for what the query finds that is public, so `:is(<query>)[public]` lists what it would stand for, and `:is(<query>):not([public])` what it leaves out (the pill says how many, and the user, never a script, makes them public).
+
 ## How a run is applied
 
 1. **Read.** Every line is read. Lines that can't be read are reported together, up to 20.
@@ -1004,7 +1038,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `unknown_kind` | The first word isn't a kind the app has. `node "Web"`, with the drawable kinds listed, and the one like it named (`note`: `did you mean sticky-note?`) | Use a kind from `canvas kinds`. |
 | `not_placeable` | The kind exists but no tool places it, like an arrow. | Draw an arrow as `edge "A" -> "B"`. |
 | `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, locked:, public:, text:` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
-| `invalid_value` | The value doesn't fit the key. An id of a shape a title couldn't name (`#7C1E… is an arrow, which a script can't name`: an arrow, a reference) · `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on subboard-link`) · a head its arrow doesn't say (`edge "A" -> "B": startArrowhead: true isn't what the edge as written says`) · a mention in a text of a shape it can't mention, or `@[]` with no title (its hint, like `unknown_title`'s, says how to write the characters `@[`; the others' say how to mend the mention) · `via:` with a kind that stands for nothing (`edge "A" -> "B": via: tile isn't a kind of shape that stands for others`, the hint listing the kinds that do) or for a shape that can't be stood for (`edge "Ingest" -> "Clean": via: reference can't stand for "Clean": only a public shape can be stood for`) · `via:` over an edge drawn straight (`the edge "A" -> "B" is drawn straight to "B"`) or through a reference to the other end · a side named for a reference that has no port on it (`to: top: a reference has no ports on its top`) · `share:` with a value that isn't `true` or a title (`share: false`), on an edge drawn straight (`edge "A" -> "B": share: is for an edge that goes through a reference, and this one is drawn straight`), naming the edge's own start, or a shape that has no reference for the end (`edge "Draft" -> "Cutoff": share: "Retry" has no reference to "Cutoff" beside it`) or isn't in the start's container | Write a value of the kind the hint names. For `share:`, draw the host's edge above the line, or write `share: true`, or leave `share:` out. |
+| `invalid_value` | The value doesn't fit the key. An id of a shape a script can't name (`#7C1E… is an arrow, which a script can't name`: an arrow, a reference that stands for one shape) · `via:` into a reference drawn by its query (`via: reference can't stand for #7C1E…, a reference that stands for others itself`) · `locked: maybe isn't true or false` · `size: huge isn't a size` · `gap: wdie isn't a gap` · a size or gap over 100000 · `from: middle isn't a side` · `channel: note-lnk isn't a channel` · a JSON member the object doesn't have, or a value of the wrong type in it · with `channel:` written, a side the kind has no port on · another channel for an edge already drawn (`the edge from "A" to "B" is on note-link, not on subboard-link`) · a head its arrow doesn't say (`edge "A" -> "B": startArrowhead: true isn't what the edge as written says`) · a mention in a text of a shape it can't mention, or `@[]` with no title (its hint, like `unknown_title`'s, says how to write the characters `@[`; the others' say how to mend the mention) · `via:` with a kind that stands for nothing (`edge "A" -> "B": via: tile isn't a kind of shape that stands for others`, the hint listing the kinds that do) or for a shape that can't be stood for (`edge "Ingest" -> "Clean": via: reference can't stand for "Clean": only a public shape can be stood for`) · `via:` over an edge drawn straight (`the edge "A" -> "B" is drawn straight to "B"`) or through a reference to the other end · a side named for a reference that has no port on it (`to: top: a reference has no ports on its top`) · `share:` with a value that isn't `true` or a title (`share: false`), on an edge drawn straight (`edge "A" -> "B": share: is for an edge that goes through a reference, and this one is drawn straight`), naming the edge's own start, or a shape that has no reference for the end (`edge "Draft" -> "Cutoff": share: "Retry" has no reference to "Cutoff" beside it`) or isn't in the start's container | Write a value of the kind the hint names. For `share:`, draw the host's edge above the line, or write `share: true`, or leave `share:` out. |
 | `duplicate` | Something is written twice. `"locked" is written twice (true, false)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice · a shape named twice by `group` and `ungroup` (`"Billing" is named twice, here and on line 1`) | Keep one. |
 | `not_an_id` | A word after `#` where a statement names a shape isn't an id. `# takes a shape's id, and #Services isn't one` · an id of the wrong length or with a character that isn't a hex digit | An id is what a query's row gives: 36 characters, hex digits in groups of 8, 4, 4, 4 and 12. A title is in double quotes. |
 | `unknown_id` | No shape the app can show has that id. `there's no shape with the id #7C1E…` · one on a board the app can't show · one kept aside · one the script deletes, `an edge is drawn to #7C1E…, which this script deletes` | Run the query that gave the id again: the shape may have been deleted. An id never makes a shape; to make one, write its kind and a title. |

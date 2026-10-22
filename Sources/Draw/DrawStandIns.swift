@@ -386,6 +386,12 @@ extension Drawing {
         let kind: ShapeKind
         if let via {
             guard let standIns, standIns.admits(via, standEnd.record) else {
+                // A stand-in at the end (a reference drawn by its query, named by its id) is stood for by none, being one.
+                if let standIns, standIns.kinds.contains(standEnd.record.kind) {
+                    throw DrawError(statement, .invalidValue,
+                                    "\(written): \(key): \(via) can't stand for \(standName.said), \(indefinite(standEnd.record.kind)) that stands for others itself",
+                                    hint: "leave \(key): out: an arrow into \(standName.said) is read as an arrow into what it stands for")
+                }
                 let needs = standIns?.needs(via)
                 throw DrawError(statement, .invalidValue,
                                 needs.map { "\(written): \(key): \(via) can't stand for \(standName.said): only \(indefinite($0)) shape can be stood for" }

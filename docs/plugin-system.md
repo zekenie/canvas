@@ -8721,7 +8721,7 @@ registrar.queryPseudoClass(word.rawValue, summary, example: ":\(word.rawValue)",
 registrar.querySelection(Word.selected.rawValue, "the person has it selected", example: ":selected") { $0.selectedShapeIDs }
 ```
 
-- **An edge names its ends**, so a kind draw can't name (no naming property, no derived title) has no edges to list: `PortEdgesPlugin`'s `sides` is empty for it, though the kind has ports (`registry.drawCanName`).
+- **An edge names its ends**, so a kind draw can't name (no naming property, no derived title) has no edges to list: `PortEdgesPlugin`'s `sides` is empty for it, though the kind has ports (`registry.drawCanName`). A reference drawn by its query is an end all the same, named by its id, on its own ports (`registry.drawCanName(_:)` of a record).
 - **Names are titles.** A kind's shapes are `.named` when it opts into the title Titles keeps
   (`TitleProperty`), read off the record on any thread; `.derived` when Titles works them out (no
   shipped kind's), read through `registry.title(of:)` in slices, which
@@ -10698,8 +10698,10 @@ against the board as the run starts:
    places it, `registry.placement(for:)`); each title, through DrawNames, to the one board shape
    it names (restated) or to none (made); each id to the shape the file has with it, on any board
    the app can show (`FileNames.place(ofID:)`, the file's own index by id, a lookup and not a pass),
-   and to none is `unknown_id`, never a new shape, and one a title could not name (an arrow, a
-   pill) `invalid_value`; both found into one set of items, so a shape named by its title and by
+   and to none is `unknown_id`, never a new shape, and one a script can't name (an arrow, a pill
+   for a shape its record names: `registry.drawCanName(_:)` of the record, which takes a kind a title
+   names and a stand-in that stands for what's provided, a reference drawn by its query, whose id is
+   the only name it has) `invalid_value`; both found into one set of items, so a shape named by its title and by
    its id in one script is one shape; each attribute by the kind's schema, own and added
    properties alike (`KindVocabulary`, over the core's [`KindSchema`](#a-kinds-schema): a value
    read as its property's type, in draw's own words when it can't be, and JSON held to the schema
@@ -10964,7 +10966,7 @@ and `needs`](#stand-ins-forwarding)), and References' `reference` is what answer
 one group, `ungroup "A"` takes them out of every group; shapes in a group are selected as one in the
 app. Draw owns the statement and no meaning of a group: it finds each shape named as a placement's
 target is (a title or an id; a shape the script draws, restates or renames counts, by the title its
-statement calls it; one the script deletes, or an arrow or a reference by its id, is refused), on the
+statement calls it; one the script deletes, or an arrow or a direct reference by its id, is refused), on the
 board the run draws on (a name claims its board as a target does, so shapes on two boards are
 `several_boards`), refuses a shape named twice in a run (`duplicate`), and, once every shape and edge
 the script draws is in the transaction, hands the shapes of each statement, in the order written, and
