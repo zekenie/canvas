@@ -59,10 +59,16 @@ struct GadgetDefinition: ShapeDefinition {
 }
 
 enum GadgetTab {}
-extension GadgetTab: DetailTab { static var title: String { "Gadget" } }
+extension GadgetTab: DetailTab {
+    static var title: String { "Gadget" }
+    static var order: Order<Self> { .first }
+}
 
 enum PartsTab {}
-extension PartsTab: DetailTab { static var title: String { "Parts" } }
+extension PartsTab: DetailTab {
+    static var title: String { "Parts" }
+    static var order: Order<Self> { .first }
+}
 
 /// The gadget kind, its tool, and its panel: Gadget (main, Count), Parts (Items, shown only with
 /// parts), Style (Color).
@@ -99,7 +105,7 @@ struct GadgetsPlugin: CanvasPlugin {
 enum FrameTab {}
 extension FrameTab: DetailTab {
     static var title: String { "Frame" }
-    static var order: Int { 200 }
+    static var order: Order<Self> { .after(StyleTab.self) }
 }
 
 /// Every box's frame, in a tab of its own: Size, then Position. The panel has no sections of its
@@ -136,7 +142,6 @@ enum Remarks: KeyedExtensionPoint {
 enum RemarksTab {}
 extension RemarksTab: DetailTab {
     static var title: String { "Remarks" }
-    static var order: Int { 50 }
 }
 
 extension ShapeRegistrar {

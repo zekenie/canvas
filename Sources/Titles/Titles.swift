@@ -336,7 +336,6 @@ public enum TitlePill {}
 
 extension TitlePill: Adornment {
     public static var placement: AdornmentPlacement { .aboveTopLeft }
-    public static var order: Int { 50 }
 }
 
 extension CanvasEditor {

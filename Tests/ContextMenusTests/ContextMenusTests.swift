@@ -370,13 +370,41 @@ import TestKit
         let report = try harness([Contributor(id: "lit") { r in
             r.forShapes(adopting: LampDefinition.self) { $0.contextMenuForCanvas { MenuItem("Dim All") { _, _ in } } }
         }]).editor.registry.report
-        expectEqual(report.split(separator: "\n").first { $0.hasPrefix("lit") }.map(String.init), "lit            CanvasContextMenu → every shape adopting LampDefinition")
+        expectEqual(report.split(separator: "\n").first { $0.hasPrefix("lit") }.map(String.init), "lit            CanvasContextMenu in ShapeMenuGroup first → every shape adopting LampDefinition")
     },
-    test("the report: the plugin claims the secondary click, and each kind's items are one line") {
+    test("the report: the plugin claims the secondary click, and each kind's items are one line, naming their groups with their orders") {
         let report = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), AppliancesPlugin()]).report
         expectEqual(report.split(separator: "\n").filter { $0.hasPrefix("context-menus") || $0.hasPrefix("appliances") }, [
-            "context-menus  service ContextMenuState · secondary-click menu · selection menu · CanvasContextMenu",
-            "appliances     shape lamp · ShapeContextMenus → lamp · shape fan · ShapeContextMenus → fan",
+            "context-menus  service ContextMenuState · secondary-click menu · selection menu · CanvasContextMenu in SelectionMenuGroup last",
+            "appliances     shape lamp · ShapeContextMenus in ShapeMenuGroup first → lamp · shape fan · ShapeContextMenus in ShapeMenuGroup first → fan",
         ])
     },
+    test("an item in ActionsMenuGroup, which only places other groups, is refused") {
+        expectThrows(RegistryError.invalid(point: "CanvasContextMenu", reason: "Act is in ActionsMenuGroup, which holds no item: it's a place to be put beside, after every group right after a kind's own")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), Contributor(id: "act") { r in
+                r.contextMenuForCanvas { MenuItem("Act", in: ActionsMenuGroup.self) { _, _ in } }
+            }])
+        }
+    },
+    test("menu groups placed beside each other in a circle are refused") {
+        expectThrows(RegistryError.invalid(point: "CanvasContextMenu", reason: "menu groups placed beside each other in a circle: PingMenuGroup before PongMenuGroup, PongMenuGroup before PingMenuGroup")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), Contributor(id: "loop") { r in
+                r.contextMenuForCanvas {
+                    MenuItem("Ping", in: PingMenuGroup.self) { _, _ in }
+                    MenuItem("Pong", in: PongMenuGroup.self) { _, _ in }
+                }
+            }])
+        }
+    },
 ])
+
+/// Two groups each placed right before the other: no order would do.
+enum PingMenuGroup {}
+extension PingMenuGroup: MenuGroup {
+    static var order: Order<Self> { .before(PongMenuGroup.self) }
+}
+
+enum PongMenuGroup {}
+extension PongMenuGroup: MenuGroup {
+    static var order: Order<Self> { .before(PingMenuGroup.self) }
+}

@@ -63,7 +63,7 @@ private let frameColorItems = ["Color ▸", "  Gray", "  Red", "  Orange", "  Ye
     test("a frame offers the container channel and knows nothing of what takes it: it turns into nothing until a kind does, and brings no Turn into item or command of its own") {
         let registry = try Registry(plugins: framePlugins())
         let framing = try require(registry.report.split(separator: "\n").first { $0.hasPrefix("framing") })
-        expect(framing.hasSuffix("ShapeDetails → frame · offers channel container → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu"), "\(framing)")
+        expect(framing.hasSuffix("ShapeDetails → frame · offers channel container → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup"), "\(framing)")
         expectEqual(registry.turnTargets(of: Frame.kind), [])
 
         let h = try frameHarness()

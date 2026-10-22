@@ -10,15 +10,16 @@ import Selection
 import TestKit
 
 // The chip, as the adornment frames report it (the label as drawn, and where). A fixture chip stands
-// in for the lock at order 300, at the right end of the row, so the chip's place beside it is held
-// without Locking; and a fixture pill for the title at order 50, at the left end, saying a plaque's
+// in for the lock, last as the lock is and before Publishing in the list as Locking is (two that
+// don't know each other go in plugin order), at the right end of the row, so the chip's place beside
+// it is held without Locking; and a fixture pill for the title, at the left end, saying a plaque's
 // name as Titles' pill says a title (its text alone), so the room the chip leaves it is held without
 // Titles.
 
 enum StubLock {}
 extension StubLock: Adornment {
     static var placement: AdornmentPlacement { .aboveTopRight }
-    static var order: Int { 300 }
+    static var order: Order<Self> { .last }
 }
 
 let stubLock = Contributor(id: "stub-lock") { r in
@@ -30,7 +31,6 @@ let stubLock = Contributor(id: "stub-lock") { r in
 enum StubTitle {}
 extension StubTitle: Adornment {
     static var placement: AdornmentPlacement { .aboveTopLeft }
-    static var order: Int { 50 }
 }
 
 let stubTitle = Contributor(id: "stub-title") { r in
@@ -67,7 +67,7 @@ let elsewhere = CGPoint(x: 600, y: 20)
 
 @MainActor let chipTests = Suite("The public chip", [
     test("a public shape has a chip, Public with a globe, 4 points left of the lock's; a private one has none") {
-        let h = try publishingHarness([stubTitle, stubLock])
+        let h = try publishingHarness([stubTitle], before: [stubLock])
         let plaque = h.add(Plaque(plaqueFrame))
         expectEqual(h.chip(of: plaque), nil, "private: none")
         h.publish(plaque)
@@ -82,7 +82,7 @@ let elsewhere = CGPoint(x: 600, y: 20)
         expect(chip.label.compactFace != nil, "a compact face to fall back on")
     },
     test("every face of the chip, full and compact, has its globe in full white: public, counted, and Private lingering and fading") {
-        let h = try publishingHarness([stubTitle, stubLock])
+        let h = try publishingHarness([stubTitle], before: [stubLock])
         let plaque = h.add(Plaque(plaqueFrame))
         h.publish(plaque)
         @MainActor func expectBright(_ message: String) {
@@ -106,7 +106,7 @@ let elsewhere = CGPoint(x: 600, y: 20)
         expectBright("Private fading")
     },
     test("a seal (always public), a draft (never) and a stand-in have no chip: nothing to toggle") {
-        let h = try publishingHarness([stubTitle, stubLock])
+        let h = try publishingHarness([stubTitle], before: [stubLock])
         let seal = h.add(Seal(plaqueFrame)), draft = h.add(Draft(plaqueFrame)), holder = h.hold([seal])
         for id in [seal, draft, holder] {
             expectEqual(h.chip(of: id), nil)
@@ -153,7 +153,7 @@ let elsewhere = CGPoint(x: 600, y: 20)
         expectEqual(h.chipText(of: plaque), "Public · 1")
     },
     test("with a title, the chip takes its compact face as soon as the full one would leave the title cut short, and keeps it for every longer title") {
-        let h = try publishingHarness([stubTitle, stubLock])
+        let h = try publishingHarness([stubTitle], before: [stubLock])
         let plaque = h.add(Plaque(plaqueFrame))
         h.publish(plaque)
         h.hold([plaque])
@@ -176,7 +176,7 @@ let elsewhere = CGPoint(x: 600, y: 20)
         // "Payments roadmap" on a public shape three things stand for, with a lock, as the shape widens. The
         // full chip ("Public · 3") is 78 points, the compact (the globe and 3) 36, the lock 18, the title
         // whole 117, the room a title needs 30, the gap between them 4.
-        let h = try publishingHarness([stubTitle, stubLock])
+        let h = try publishingHarness([stubTitle], before: [stubLock])
         let plaque = h.add(Plaque(plaqueFrame))
         h.publish(plaque)
         h.hold([plaque])
@@ -236,7 +236,7 @@ let elsewhere = CGPoint(x: 600, y: 20)
         expectEqual(try title(atWidth: 221).chip.label.text, "Public · 3", "the first width the full chip and the whole title fit together")
     },
     test("unreferenced, the compact face is the globe alone") {
-        let h = try publishingHarness([stubTitle, stubLock])
+        let h = try publishingHarness([stubTitle], before: [stubLock])
         let plaque = h.add(Plaque(CGRect(x: 100, y: 100, width: 80, height: 100)))
         h.publish(plaque)
         h.name(plaque, "W")

@@ -11,9 +11,9 @@ public struct DetailLayout {
     public let kindName: String
     /// The symbol of the tool that places the kind, which a header without its own shows.
     let kindSymbol: String?
-    /// Only tabs with at least one section shown for this shape, or a status line, sorted by
-    /// `order`, then by first appearance (the kind's own contributions in plugin order, then
-    /// every-box ones, then status lines').
+    /// Only tabs with at least one section shown for this shape, or a status line, each where its
+    /// `order` puts it among them, counted from where it first appears (the kind's own contributions
+    /// in plugin order, then every-box ones, then status lines').
     public let tabs: [DetailTabID]
     let sectionsByTab: [DetailTabID: [ResolvedSection]]
     let statusesByTab: [DetailTabID: [DetailStatus]]
@@ -103,7 +103,7 @@ public final class DetailPanelState {
         let shown = all.sections.filter { $0.section.isShown(record) && !hidden.contains($0.key) }
         var firstSeen: [DetailTabID] = []
         for tab in shown.map(\.key.tab) + statuses.map(\.tab) where !firstSeen.contains(tab) { firstSeen.append(tab) }
-        let tabs = firstSeen.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map(\.element)
+        let tabs = OrderRule.arranged(firstSeen) { ($0.anchor, $0.order) }
         // The kind's header, else the kind's label (`registry.label(of:)`).
         let label = editor.registry.label(of: record.kind)
         let header = all.headers.lazy.compactMap { [editor] in $0(record, editor) }.first ?? ResolvedHeader(DetailHeader(label.name))

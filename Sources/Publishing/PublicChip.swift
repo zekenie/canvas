@@ -3,7 +3,7 @@ import Canvas
 
 /// A public shape's chip: "Public" with a globe, after "·" and how many things stand for the shape
 /// once any do ("Public · 3"), at the right end of the row above its top edge, next to the lock's
-/// (the lock, order 300, is nearest the end; this is order 310, 4 points to its left). A click
+/// (both last, the lock first in plugin order, so nearest the end; this 4 points to its left). A click
 /// makes the shape private, unless something stands for it: then nothing is written, the shape
 /// shakes, and its panel shows what stands for it. The chip then reads "Private" for a moment and
 /// fades (Adornments' `ChipFade`, as the open lock does), and a click on it makes the shape public
@@ -15,7 +15,8 @@ public enum PublicChip {}
 
 extension PublicChip: Adornment {
     public static var placement: AdornmentPlacement { .aboveTopRight }
-    public static var order: Int { 310 }
+    /// A state that comes and goes, as a lock is: last, after the lock in plugin order.
+    public static var order: Order<Self> { .last }
 }
 
 extension PublicChip: ClickableAdornment {

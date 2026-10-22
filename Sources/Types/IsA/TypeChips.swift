@@ -3,6 +3,7 @@ import AppKit
 import Canvas
 import Foundation
 import Selection
+import Titles
 
 /// A shape's types, as chips in the row above its top-left corner, after its title's pill: one chip
 /// for each type it is, in the order of its list, each light, in its type's color, with its type's
@@ -24,8 +25,8 @@ public enum TypeChips {}
 
 extension TypeChips: Adornment {
     public static var placement: AdornmentPlacement { .aboveTopLeft }
-    /// After a title's pill (a horizontal's feature, 50), before the states that come and go (300).
-    public static var order: Int { 100 }
+    /// Right after a title's pill: what a shape is called, then what it is.
+    public static var order: Order<Self> { .after(TitlePill.self) }
 }
 
 extension TypeChips: ClickableAdornment {

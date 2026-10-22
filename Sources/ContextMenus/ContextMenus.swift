@@ -29,6 +29,42 @@ extension ShapeContextMenus: KeyedExtensionPoint {
     public static func uniqueKeys(of contribution: ContextMenuContribution, for target: ShapeTarget) -> [AnyHashable] {
         contribution.entries.flatMap { $0.paths(under: []) }.map { MenuItemKey(target: target, path: $0) }
     }
+
+    /// Groups placed beside each other in a circle have no order.
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        try MenuGroupID.checkOrders(in: registry, point: "\(Self.self)")
+    }
+
+    /// Its items name their groups, each with its order if it says one: "ShapeContextMenus in
+    /// BoardsMenuGroup before ShapeMenuGroup → subboard".
+    public static func summary(of contribution: ContextMenuContribution, for target: ShapeTarget) -> String {
+        "\(Self.self)" + MenuGroupID.reported(contribution.entries.map(\.key.group)) + (target == .any ? "" : " → \(target)")
+    }
+}
+
+extension MenuGroupID {
+    /// " in A, B before C": the groups named, once each in the order named, as the report says them.
+    static func reported(_ groups: [MenuGroupID]) -> String {
+        var named: [MenuGroupID] = []
+        for group in groups where !named.contains(group) { named.append(group) }
+        return named.isEmpty ? "" : " in " + named.map(\.reported).joined(separator: ", ")
+    }
+
+    /// Refuses groups placed beside each other in a circle, among those any item, in a submenu too,
+    /// names (a group only an item made as the menu opens names is ordered as it's met). Both points
+    /// run it, since either may name a group the other doesn't.
+    @MainActor static func checkOrders(in registry: Registry, point: String) throws(RegistryError) {
+        let shapes = registry.contributions(to: ShapeContextMenus.self).flatMap { $0.value.entries.flatMap { $0.paths(under: []) } }
+        let canvas = registry.contributions(to: CanvasContextMenu.self).flatMap { $0.value.entries.flatMap { $0.paths(under: []) } }
+        let actions = MenuGroupID(ActionsMenuGroup.self)
+        if let held = (shapes + canvas).first(where: { $0.contains { $0.group == actions } }) {
+            throw .invalid(point: point, reason: "\(held.map(\.id).joined(separator: " ▸ ")) is in ActionsMenuGroup, which holds no item: "
+                           + "it's a place to be put beside, after every group right after a kind's own")
+        }
+        if let cycle = OrderRule.cycle(from: (shapes + canvas).flatMap { $0.map(\.group.anchor) }) {
+            throw .invalid(point: point, reason: "menu groups placed beside each other in a circle: \(cycle)")
+        }
+    }
 }
 
 /// Where an item is: which shapes, and its group and id at each level ("box Arrange ▸ Send to Back").
@@ -226,6 +262,17 @@ extension CanvasContextMenu: KeyedExtensionPoint {
     public static func uniqueKeys(of contribution: CanvasMenuContribution, for target: ShapeTarget) -> [AnyHashable] {
         contribution.entries.flatMap { $0.paths(under: []) }.map { MenuItemKey(target: target, path: $0) }
     }
+
+    /// Groups placed beside each other in a circle have no order.
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        try MenuGroupID.checkOrders(in: registry, point: "\(Self.self)")
+    }
+
+    /// Its items name their groups, each with its order if it says one: "CanvasContextMenu in
+    /// StateMenuGroup before SelectionMenuGroup → every shape holding locked".
+    public static func summary(of contribution: CanvasMenuContribution, for target: ShapeTarget) -> String {
+        "\(Self.self)" + MenuGroupID.reported(contribution.entries.map(\.group)) + (target == .any ? "" : " → \(target)")
+    }
 }
 
 /// What a context menu is for, as its items for the canvas see it, asked once per menu: what its
@@ -262,18 +309,18 @@ extension PluginRegistrar {
 
 // MARK: The plugin
 
-/// What a shape is made from its menu, after every kind's own groups and before Delete: locked
-/// (Locking's Lock and Unlock), a type (Types' Is a ▸). Together, with no line between them.
+/// What a shape is made from its menu, after every kind's own groups and right before Delete:
+/// locked (Locking's Lock and Unlock), a type (Types' Is a ▸). Together, with no line between them.
 public enum StateMenuGroup {}
 extension StateMenuGroup: MenuGroup {
-    public static var order: Int { 300 }
+    public static var order: Order<Self> { .before(SelectionMenuGroup.self) }
 }
 
 /// Selection's commands, last in every menu, after Lock, as Keynote has Delete: Delete on the
 /// menu's shapes, and Select All on empty canvas.
 public enum SelectionMenuGroup {}
 extension SelectionMenuGroup: MenuGroup {
-    public static var order: Int { 400 }
+    public static var order: Order<Self> { .last }
 }
 
 /// Claims the secondary click and the selection's menu (a menu bar's Shape menu: the same items over

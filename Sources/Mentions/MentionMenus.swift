@@ -1,11 +1,11 @@
 import Canvas
 import ContextMenus
 
-/// Mentions' items in the canvas's context menu: after a kind's own items, as a feature's are.
+/// Mentions' items in the canvas's context menu: right after a kind's own items, as a feature's are.
 public enum MentionsMenuGroup {}
 
 extension MentionsMenuGroup: MenuGroup {
-    public static var order: Int { 50 }
+    public static var order: Order<Self> { .after(ShapeMenuGroup.self) }
 }
 
 /// Show What Mentions, in the context menu: an item for the canvas, since whether a shape is

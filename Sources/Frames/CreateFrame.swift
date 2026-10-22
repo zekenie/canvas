@@ -3,11 +3,12 @@ import ContextMenus
 import CoreGraphics
 import Keyboard
 import Selection
+import Transform
 
-/// Create Frame's band in a context menu: after a transform's (60), before Cut, Copy and Paste (100).
+/// Create Frame's group in a context menu: right after a transform's, before Cut, Copy and Paste.
 public enum FramesMenuGroup {}
 extension FramesMenuGroup: MenuGroup {
-    public static var order: Int { 70 }
+    public static var order: Order<Self> { .after(TransformMenuGroup.self) }
 }
 
 extension FrameStyle {

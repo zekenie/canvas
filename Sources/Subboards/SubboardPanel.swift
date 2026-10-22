@@ -8,6 +8,7 @@ import Titles
 enum DescriptionTab {}
 extension DescriptionTab: DetailTab {
     static var title: String { "Description" }
+    static var order: Order<Self> { .first }
 }
 
 extension ShapeRegistrar where Definition == SubboardDefinition {

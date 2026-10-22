@@ -61,13 +61,13 @@ extension FanDefinition: ShapeDefinition {
 /// A feature's group, as a horizontal would declare one.
 enum PowerMenuGroup {}
 extension PowerMenuGroup: MenuGroup {
-    static var order: Int { 50 }
+    static var order: Order<Self> { .after(ShapeMenuGroup.self) }
 }
 
-/// A group every kind shares, after the rest.
+/// A group every kind shares, after the rest but what a shape is made from and Delete.
 enum LateMenuGroup {}
 extension LateMenuGroup: MenuGroup {
-    static var order: Int { 200 }
+    static var order: Order<Self> { .before(StateMenuGroup.self) }
 }
 
 /// Each kind's own menu. A lamp: Turn On or Turn Off (whichever applies), Brighter (dimmed at the

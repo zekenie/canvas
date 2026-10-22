@@ -2,10 +2,10 @@ import Canvas
 import ContextMenus
 import Keyboard
 
-/// Arrange, after every other item.
+/// Arrange, after every other item but what the shape is made from (Lock, Is a ▸) and Delete.
 public enum ReorderMenuGroup {}
 extension ReorderMenuGroup: MenuGroup {
-    public static var order: Int { 200 }
+    public static var order: Order<Self> { .before(StateMenuGroup.self) }
 }
 
 /// Bring to Front, Bring Forward, Send Backward and Send to Back: Reordering's commands.

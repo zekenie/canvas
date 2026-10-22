@@ -18,8 +18,6 @@ public enum RelationshipPill {}
 
 extension RelationshipPill: Adornment {
     public static var placement: AdornmentPlacement { .inLabelLead }
-    /// Where the chips' order puts it, so a shape that has both reads them the same.
-    public static var order: Int { 100 }
 }
 
 extension RelationshipPill: ClickableAdornment {
@@ -84,7 +82,8 @@ public enum RelationshipOfferPill {}
 
 extension RelationshipOfferPill: Adornment {
     public static var placement: AdornmentPlacement { .inLabelLead }
-    public static var order: Int { 300 }
+    /// After the pill of a relationship type, which takes the lead where both would show.
+    public static var order: Order<Self> { .after(RelationshipPill.self) }
 }
 
 extension RelationshipOfferPill: ClickableAdornment {

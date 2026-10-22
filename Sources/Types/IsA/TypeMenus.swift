@@ -3,17 +3,13 @@ import Foundation
 import ContextMenus
 import Selection
 
-/// The line inside Is a ▸, between `Type` and the file's types.
+/// The line inside Is a ▸, between `Type` and the file's types (the submenu lists them in that order).
 enum IsATypesMenuGroup {}
-extension IsATypesMenuGroup: MenuGroup {
-    static var order: Int { 1 }
-}
+extension IsATypesMenuGroup: MenuGroup {}
 
 /// The line inside Is a ▸ after the file's types: where the arrow's relationship types are.
 enum IsAGoToMenuGroup {}
-extension IsAGoToMenuGroup: MenuGroup {
-    static var order: Int { 2 }
-}
+extension IsAGoToMenuGroup: MenuGroup {}
 
 /// What Is a ▸ shows for a menu's shapes, read once when the menu opens.
 @MainActor

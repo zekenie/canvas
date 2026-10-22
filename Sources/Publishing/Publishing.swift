@@ -96,11 +96,10 @@ extension CanvasEditor {
     }
 }
 
-/// Make Public and Make Private, after Lock and Unlock and before Delete (`StateMenuGroup`'s 300,
-/// `SelectionMenuGroup`'s 400).
+/// Make Public and Make Private, right after Lock and Unlock (`StateMenuGroup`), before Delete.
 public enum PublishMenuGroup {}
 extension PublishMenuGroup: MenuGroup {
-    public static var order: Int { 310 }
+    public static var order: Order<Self> { .after(StateMenuGroup.self) }
 }
 
 /// A rule over the plugin list that always has a contribution, so the registry checks it: a

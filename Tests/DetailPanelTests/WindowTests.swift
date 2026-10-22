@@ -634,7 +634,7 @@ struct OverviewPlugin: CanvasPlugin {
                 r.details(Gadget.self) { DetailSection(in: ListTab.self) { _ in Text("List") } }
             }])
             editor.selection = editor.add(Gadget(gadgetFrame))
-            expectEqual(try editor.layout(try require(editor.selection)).tabs.map(\.title), ["Gadget", "List", "Remarks", "Style", "Frame"])
+            expectEqual(try editor.layout(try require(editor.selection)).tabs.map(\.title), ["Gadget", "Remarks", "List", "Style", "Frame"])
             return try inkRuns(DetailPanelView(editor: editor), width: panelWidth, rows: 48...62)
         }
         let roomy = try titleWidths(panelWidth: 600)

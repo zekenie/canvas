@@ -22,7 +22,7 @@ extension Ghost: ClickableAdornment {
 enum Echo {}
 extension Echo: Adornment {
     static var placement: AdornmentPlacement { .aboveTopRight }
-    static var order: Int { 310 }
+    static var order: Order<Self> { .after(Ghost.self) }
 }
 
 @MainActor func fadingChips() -> Contributor {

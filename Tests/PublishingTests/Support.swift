@@ -225,15 +225,16 @@ struct KindsPlugin: CanvasPlugin {
 let plaqueFrame = CGRect(x: 100, y: 100, width: 150, height: 100)
 
 /// What the app has around Publishing: the keys, the selection, the graph, the context menu, the
-/// table of contents, the panel, adornments and slash commands; and `more` after them (fixture
-/// chips and a title pill, read-only shapes), on `file`.
-@MainActor func publishingPlugins(_ more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
+/// table of contents, the panel, adornments and slash commands; `before` just ahead of Publishing,
+/// where the shipped list has Locking (the fixture lock); and `more` after them (fixture chips and a
+/// title pill, read-only shapes), on `file`.
+@MainActor func publishingPlugins(_ more: [any CanvasPlugin] = [], before: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), LinksPlugin(), KindsPlugin(), ContextMenusPlugin(),
-     TableOfContentsPlugin(), DetailPanelPlugin(), AdornmentsPlugin(), SlashCommandsPlugin(), PublishingPlugin()] + more
+     TableOfContentsPlugin(), DetailPanelPlugin(), AdornmentsPlugin(), SlashCommandsPlugin()] + before + [PublishingPlugin()] + more
 }
 
-@MainActor func publishingHarness(_ more: [any CanvasPlugin] = [], file: CanvasFile = CanvasFile()) throws -> EditorHarness {
-    try EditorHarness(plugins: publishingPlugins(more), file: file)
+@MainActor func publishingHarness(_ more: [any CanvasPlugin] = [], before: [any CanvasPlugin] = [], file: CanvasFile = CanvasFile()) throws -> EditorHarness {
+    try EditorHarness(plugins: publishingPlugins(more, before: before), file: file)
 }
 
 extension EditorHarness {

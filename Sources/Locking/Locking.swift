@@ -72,7 +72,7 @@ public enum LockChip {}
 
 extension LockChip: Adornment {
     public static var placement: AdornmentPlacement { .aboveTopRight }
-    public static var order: Int { 300 }
+    public static var order: Order<Self> { .last }
 }
 
 extension LockChip: ClickableAdornment {

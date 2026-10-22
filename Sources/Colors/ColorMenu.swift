@@ -1,19 +1,14 @@
 import Canvas
 import ContextMenus
 
-/// The built-in colors in Color ▸, then a line, the file's, a line, and `None`.
+/// The built-in colors in Color ▸, then a line, the file's, a line, and `None`, in the order the
+/// submenu lists them.
 enum ColorBuiltInMenuGroup {}
-extension ColorBuiltInMenuGroup: MenuGroup {
-    static var order: Int { 0 }
-}
+extension ColorBuiltInMenuGroup: MenuGroup {}
 enum ColorFileMenuGroup {}
-extension ColorFileMenuGroup: MenuGroup {
-    static var order: Int { 1 }
-}
+extension ColorFileMenuGroup: MenuGroup {}
 enum ColorNoneMenuGroup {}
-extension ColorNoneMenuGroup: MenuGroup {
-    static var order: Int { 2 }
-}
+extension ColorNoneMenuGroup: MenuGroup {}
 
 /// The color every shape has as its own: `.some(nil)` when none has one, nil when they differ.
 private func agreed(_ owns: [ShapeColor?]) -> ShapeColor?? {

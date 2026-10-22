@@ -32,12 +32,12 @@ public struct NeighborDetailsPlugin: ListedPlugin {
 }
 
 /// The tab of what's connected to a shape. Always there, on every shape: its lists are read once
-/// it shows, a turn or so after, and a tab that came with them would come late.
+/// it shows, a turn or so after, and a tab that came with them would come late. Where it first
+/// appears: after a kind's own tabs and the feature tabs of the plugins before it, before Style.
 public enum NeighborsTab {}
 
 extension NeighborsTab: DetailTab {
     public static var title: String { NeighborStyle.tab }
-    public static var order: Int { NeighborStyle.tabOrder }
 }
 
 /// The lists of one shape. It tells the service which shape's lists are on screen, so the engine is

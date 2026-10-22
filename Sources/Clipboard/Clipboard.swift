@@ -97,12 +97,10 @@ public enum ClipboardStyle {
 
 // MARK: The context menu
 
-/// Cut, Copy, Duplicate and Paste, items for the canvas: after a kind's own items and a feature's, before
-/// Arrange.
+/// Cut, Copy, Duplicate and Paste, items for the canvas: where they first appear, after a kind's own
+/// items and a feature's, before Arrange and what the shape is made from.
 public enum ClipboardMenuGroup {}
-extension ClipboardMenuGroup: MenuGroup {
-    public static var order: Int { 100 }
-}
+extension ClipboardMenuGroup: MenuGroup {}
 
 // MARK: The plugin
 

@@ -58,10 +58,10 @@ public struct BoardKind: Sendable {
     public let systemImage: String
 }
 
-/// Open, first in the menu of a shape that owns a board, as Finder's is.
+/// Open, first in the menu of a shape that owns a board, as Finder's is: before a kind's own items.
 public enum BoardsMenuGroup {}
 extension BoardsMenuGroup: MenuGroup {
-    public static var order: Int { 0 }
+    public static var order: Order<Self> { .before(ShapeMenuGroup.self) }
 }
 
 /// A horizontal any board-owning kind opts into (`x.opensBoard(…)`): opening its shapes shows their

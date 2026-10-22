@@ -165,7 +165,7 @@ import TestKit
 
     test("the report counts it as an item for the canvas") {
         let r = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), generating(Generator([]), id: "made")])
-        expect(try require(r.report.split(separator: "\n").first { $0.hasPrefix("made") }).hasSuffix("CanvasContextMenu"))
+        expect(try require(r.report.split(separator: "\n").first { $0.hasPrefix("made") }).hasSuffix("CanvasContextMenu in PowerMenuGroup after ShapeMenuGroup"))
     },
 ])
 

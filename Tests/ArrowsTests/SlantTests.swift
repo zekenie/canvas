@@ -310,7 +310,7 @@ struct SlantShows: OptionSet {
 @MainActor var slantShows: [ShapeID: SlantShows] = [:]
 
 enum SlantLock {}
-extension SlantLock: Adornment { static var placement: AdornmentPlacement { .aboveTopRight }; static var order: Int { 300 } }
+extension SlantLock: Adornment { static var placement: AdornmentPlacement { .aboveTopRight }; static var order: Order<Self> { .last } }
 
 struct SlantFixturesPlugin: CanvasPlugin {
     var id: PluginID { "slant-fixtures" }

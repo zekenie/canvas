@@ -13,8 +13,6 @@ enum NeighborStyle {
     nonisolated static let rootName = "Board"
     /// A row's symbol, for a kind with none.
     nonisolated static let fallbackSymbol = "square.dashed"
-    /// The tab's order: after a horizontal's feature tabs (50), before a type's Schema (70) and Style (100).
-    nonisolated static let tabOrder = 60
 
     static let empty = "No Connections"
     static let noMatches = "No Matches"

@@ -13,46 +13,61 @@ extension PluginID {
 /// declare one; it shows for a shape when a section that applies to the shape names it, or when the
 /// shape has status lines for it (`DetailStatuses`).
 ///
-///     public enum TypesTab {}
-///     extension TypesTab: DetailTab {
-///         public static var title: String { "Types" }
-///         public static var order: Int { 50 }
+///     public enum TypeSchemaTab {}
+///     extension TypeSchemaTab: DetailTab {
+///         public static var title: String { "Schema" }
+///         public static var order: Order<Self> { .after(NeighborsTab.self) }
 ///     }
 ///
 /// Two tab types may not share a title: the registry refuses the plugin list (`RegistryError.invalid`).
-public protocol DetailTab {
+public protocol DetailTab: SendableMetatype {
     static var title: String { get }
-    /// Tabs sort by this, then by first appearance. The bands: 0 for a kind's own tabs (the
-    /// default), 50 for a feature tab a horizontal adds to the kinds that opt into it, 100 for
-    /// Style, so a shared tab trails, as in Keynote, and 300 for a tab of the shape's state that
-    /// comes and goes with it (Issues), last, so the others keep their order.
-    /// (The strip shares its width among the tabs, so a tab that comes narrows the rest.)
-    static var order: Int { get }
+    /// Where it goes among a shape's tabs (`Order`). By default where it first appears: a kind's own
+    /// contributions first, then the rest in plugin order. A kind's own tabs are first (a subboard's
+    /// Description), so a feature's tab its opt-in brings, which says nothing, goes after them; Style
+    /// is last, as a shared tab trails in Keynote; a tab of the shape's state that comes and goes with
+    /// it (Issues) is after Style, so the others keep their places; a type's Schema is after
+    /// Connections, so a type's panel opens on what's connected to it. (The strip shares its width
+    /// among the tabs, so a tab that comes narrows the rest.)
+    static var order: Order<Self> { get }
 }
 
 extension DetailTab {
-    public static var order: Int { 0 }
+    public static var order: Order<Self> { .natural }
+
+    /// How another tab names this one, to be placed beside it.
+    static var orderAnchor: OrderAnchor { OrderAnchor(Self.self, name: title) { order.rule } }
+}
+
+extension Order where Subject: DetailTab {
+    /// Right before `tab`.
+    public static func before<Tab: DetailTab>(_: Tab.Type) -> Self { Self(.before(Tab.orderAnchor)) }
+    /// Right after `tab`.
+    public static func after<Tab: DetailTab>(_: Tab.Type) -> Self { Self(.after(Tab.orderAnchor)) }
 }
 
 /// Appearance: color, what the shape shows. Share it rather than making a near-duplicate.
 public enum StyleTab {}
 extension StyleTab: DetailTab {
     public static var title: String { "Style" }
-    public static var order: Int { 100 }
+    public static var order: Order<Self> { .last }
 }
 
 /// A tab as the layout reports it. Equal when the tab types are.
 public struct DetailTabID: Hashable, Sendable, CustomStringConvertible {
     let type: ObjectIdentifier
     public let title: String
-    let order: Int
+    /// Where it goes among a shape's tabs, and how another tab names it.
+    let order: OrderRule
+    let anchor: OrderAnchor
     /// Module-qualified (`Schemas.SchemaTab`): stable across launches, for persisting later.
     public let name: String
 
     init<T: DetailTab>(_: T.Type) {
         type = ObjectIdentifier(T.self)
         title = T.title
-        order = T.order
+        order = T.order.rule
+        anchor = T.orderAnchor
         name = String(reflecting: T.self)
     }
 
@@ -267,14 +282,27 @@ extension ShapeDetails: KeyedExtensionPoint {
 
     /// Two tabs with one title would show as two identical tabs.
     public static func check(_ registry: Registry) throws(RegistryError) {
-        try DetailTabID.checkTitles(in: registry, point: "\(Self.self)")
+        try DetailTabID.checkTabs(in: registry, point: "\(Self.self)")
+    }
+
+    /// Sections name their tabs, each with its order if it says one: "ShapeDetails in Schema after
+    /// Connections → every shape holding schema".
+    public static func summary(of contribution: DetailContribution, for target: ShapeTarget) -> String {
+        var tabs: [DetailTabID] = []
+        for section in contribution.sections where !tabs.contains(section.tab) { tabs.append(section.tab) }
+        return "\(Self.self)" + (tabs.isEmpty ? "" : " in " + tabs.map(\.reported).joined(separator: ", "))
+            + (target == .any ? "" : " → \(target)")
     }
 }
 
 extension DetailTabID {
-    /// Refuses two tab types with one title, whether sections or status lines name them. Both of
-    /// the panel's points run it, since either may name a tab the other doesn't.
-    @MainActor static func checkTitles(in registry: Registry, point: String) throws(RegistryError) {
+    /// As the registry's report names it: its title, and its order if it says one ("Style last").
+    var reported: String { order == .natural ? title : "\(title) \(order)" }
+
+    /// Refuses two tab types with one title, whether sections or status lines name them, and tabs
+    /// placed beside each other in a circle. Both of the panel's points run it, since either may
+    /// name a tab the other doesn't.
+    @MainActor static func checkTabs(in registry: Registry, point: String) throws(RegistryError) {
         let sectionTabs = registry.contributions(to: ShapeDetails.self).flatMap { contribution in
             contribution.value.sections.map { (tab: $0.tab, plugin: contribution.pluginID) }
         }
@@ -291,6 +319,9 @@ extension DetailTabID {
                 throw .invalid(point: point, reason: "\(seen.tab.name) (from \(seen.plugin)) and \(tab.name) "
                                + "(from \(plugin)) are both tabs titled \"\(tab.title)\"; share one, or retitle one")
             }
+        }
+        if let cycle = OrderRule.cycle(from: (sectionTabs + statusTabs).map(\.tab.anchor)) {
+            throw .invalid(point: point, reason: "tabs placed beside each other in a circle: \(cycle)")
         }
     }
 }
@@ -310,12 +341,12 @@ extension DetailStatuses: ExtensionPoint {
 
     /// Two tabs with one title would show as two identical tabs.
     public static func check(_ registry: Registry) throws(RegistryError) {
-        try DetailTabID.checkTitles(in: registry, point: "\(Self.self)")
+        try DetailTabID.checkTabs(in: registry, point: "\(Self.self)")
     }
 
-    /// Lines for a tab name it: "DetailStatuses in Issues".
+    /// Lines for a tab name it, with its order if it says one: "DetailStatuses in Issues after Style".
     public static func summary(of contribution: DetailStatusContribution, for target: ShapeTarget) -> String {
-        "\(Self.self)" + (contribution.tab.map { " in \($0.title)" } ?? "") + (target == .any ? "" : " → \(target)")
+        "\(Self.self)" + (contribution.tab.map { " in \($0.reported)" } ?? "") + (target == .any ? "" : " → \(target)")
     }
 }
 

@@ -25,22 +25,32 @@ extension PluginID {
 ///     public enum LockChip {}
 ///     extension LockChip: Adornment {
 ///         public static var placement: AdornmentPlacement { .aboveTopRight }
-///         public static var order: Int { 300 }
+///         public static var order: Order<Self> { .last }
 ///     }
-public protocol Adornment {
+public protocol Adornment: SendableMetatype {
     /// Where it goes on its shape. Adornments sets out every place, so nothing in one overlaps
     /// anything else.
     static var placement: AdornmentPlacement { get }
-    /// Adornments in one place sort by this, then by first appearance (the kind's own, then every
-    /// kind's, each in plugin order); the first is nearest the place's start. The bands, as the
-    /// detail panel's tabs and the context menu's groups: 0 for a kind's own (the default), 50 for
-    /// one a horizontal's feature brings (a title's pill), 300 for a state of
-    /// the shape that comes and goes (a lock), farthest out, so the others keep their places.
-    static var order: Int { get }
+    /// Where it goes among the adornments in its place (`Order`), the first nearest the place's
+    /// start, as the detail panel's tabs and the context menu's groups do: by default where it first
+    /// appears (the kind's own, then every kind's, each in plugin order). One that says the shape's
+    /// state, which comes and goes (a lock), is last, farthest out, so the others keep their places;
+    /// one that goes with another is right after it (a type's chips after the title's pill).
+    static var order: Order<Self> { get }
 }
 
 extension Adornment {
-    public static var order: Int { 0 }
+    public static var order: Order<Self> { .natural }
+
+    /// How another adornment names this one, to be placed beside it.
+    static var orderAnchor: OrderAnchor { OrderAnchor(Self.self, name: "\(Self.self)") { order.rule } }
+}
+
+extension Order where Subject: Adornment {
+    /// Right before `adornment`, in its place.
+    public static func before<A: Adornment>(_: A.Type) -> Self { Self(.before(A.orderAnchor)) }
+    /// Right after `adornment`, in its place.
+    public static func after<A: Adornment>(_: A.Type) -> Self { Self(.after(A.orderAnchor)) }
 }
 
 /// An adornment a click does something with: a canvas button (Selection's), which the select tool
@@ -107,14 +117,17 @@ public struct AdornmentID: Hashable, Sendable, CustomStringConvertible {
     /// Module-qualified (`Titles.TitlePill`): in conflict keys.
     public let name: String
     public let placement: AdornmentPlacement
-    let order: Int
+    /// Where it goes among the adornments in its place, and how another names it.
+    let order: OrderRule
+    let anchor: OrderAnchor
     let shortName: String
 
     init<A: Adornment>(_: A.Type) {
         type = ObjectIdentifier(A.self)
         name = String(reflecting: A.self)
         placement = A.placement
-        order = A.order
+        order = A.order.rule
+        anchor = A.orderAnchor
         shortName = String(describing: A.self)
     }
 
@@ -472,15 +485,21 @@ extension ShapeAdornments: KeyedExtensionPoint {
 
     /// Several labels are for the row's left end only: at the right end a run is cut where it
     /// reaches `maxRun`, and everything after it with it (the lock), and the corner is a tally's.
+    /// Adornments placed beside each other in a circle have no order.
     public static func check(_ registry: Registry) throws(RegistryError) {
         for c in registry.contributions(to: ShapeAdornments.self) where c.value.isGroup && c.value.adornment.placement != .aboveTopLeft {
             throw .invalid(point: "ShapeAdornments", reason: "\(c.value.adornment.name) (from \(c.pluginID)) shows several labels, which only aboveTopLeft allows, not \(c.value.adornment.placement)")
         }
+        if let cycle = OrderRule.cycle(from: registry.contributions(to: ShapeAdornments.self).map(\.value.adornment.anchor)) {
+            throw .invalid(point: "ShapeAdornments", reason: "adornments placed beside each other in a circle: \(cycle)")
+        }
     }
 
-    /// "adornment LockChip → every shape holding locked", "adornment Flag → box".
+    /// "adornment LockChip last → every shape holding locked", "adornment Flag → box": its order if
+    /// it says one.
     public static func summary(of contribution: AdornmentContribution, for target: ShapeTarget) -> String {
-        "adornment \(contribution.adornment) → \(target)"
+        let order = contribution.adornment.order
+        return "adornment \(contribution.adornment)" + (order == .natural ? "" : " \(order)") + " → \(target)"
     }
 }
 

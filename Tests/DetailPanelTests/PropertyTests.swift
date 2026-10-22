@@ -23,7 +23,6 @@ extension Seal: ShapeProperty {
 enum BadgesTab {}
 extension BadgesTab: DetailTab {
     static var title: String { "Badges" }
-    static var order: Int { 50 }
 }
 
 /// Declares both, with sections over each on every shape that has it; gadgets opt in.

@@ -253,6 +253,6 @@ extension CanvasCommand {
     },
     test("the report: the plugin claims the selection's menu beside the secondary click") {
         let report = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin()]).report
-        expect(report.split(separator: "\n").contains { $0.hasSuffix("secondary-click menu · selection menu · CanvasContextMenu") }, report)
+        expect(report.split(separator: "\n").contains { $0.hasSuffix("secondary-click menu · selection menu · CanvasContextMenu in SelectionMenuGroup last") }, report)
     },
 ])

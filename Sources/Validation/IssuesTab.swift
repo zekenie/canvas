@@ -21,13 +21,13 @@ public struct ValidationDetailsPlugin: ListedPlugin {
     }
 }
 
-/// A shape's validation issues. It comes and goes with them, so it trails every other tab, which
-/// keep their order as it does.
+/// A shape's validation issues. It comes and goes with them, so it trails every other tab, Style
+/// too, which keep their places as it does.
 public enum IssuesTab {}
 
 extension IssuesTab: DetailTab {
     public static var title: String { "Issues" }
-    public static var order: Int { 300 }
+    public static var order: Order<Self> { .after(StyleTab.self) }
 }
 
 extension DetailStatus.Tone {

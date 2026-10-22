@@ -24,7 +24,8 @@ final class Watchers: EditorService {
 enum WatchTab {}
 extension WatchTab: DetailTab {
     static var title: String { "Watch" }
-    static var order: Int { 300 }
+    /// A tab of the shape's state, as Issues is: after every other tab here, Frame (after Style) too.
+    static var order: Order<Self> { .after(FrameTab.self) }
 }
 
 /// The gadget's Watch tab, shown while the gadget is watched: a field over its name.

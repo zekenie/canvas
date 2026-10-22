@@ -8,31 +8,66 @@ import Canvas
 ///
 ///     public enum MentionsMenuGroup {}
 ///     extension MentionsMenuGroup: MenuGroup {
-///         public static var order: Int { 50 }
+///         public static var order: Order<Self> { .after(ShapeMenuGroup.self) }
 ///     }
-public protocol MenuGroup {
-    /// Groups sort by this, then by first appearance. The bands, as the detail panel's tabs: 0 for
-    /// a kind's own items (the default), 50 for the items a horizontal's feature brings to the
-    /// kinds that opt into it, 100 and up for groups every kind shares.
-    static var order: Int { get }
+public protocol MenuGroup: SendableMetatype {
+    /// Where it goes among a menu's groups (`Order`), as the detail panel's tabs do: by default where
+    /// it first appears, a kind's own items first, then the rest in plugin order. A kind's own items
+    /// are first (and what opens a shape before them, Finder's Open); what a horizontal's feature
+    /// brings to the kinds that opt into it is right after them; what the shape is made from (Lock,
+    /// Is a ▸) and Delete are last; and a submenu's groups go in the order it lists them.
+    static var order: Order<Self> { get }
 }
 
 extension MenuGroup {
-    public static var order: Int { 0 }
+    public static var order: Order<Self> { .natural }
+
+    /// How another group names this one, to be placed beside it.
+    static var orderAnchor: OrderAnchor { OrderAnchor(Self.self, name: "\(Self.self)") { order.rule } }
+    static var orderRule: OrderRule { order.rule }
 }
 
-/// A kind's own items: the group of an item that names none.
+extension Order where Subject: MenuGroup {
+    /// Right before `group`.
+    public static func before<Group: MenuGroup>(_: Group.Type) -> Self { Self(.before(Group.orderAnchor)) }
+    /// Right after `group`.
+    public static func after<Group: MenuGroup>(_: Group.Type) -> Self { Self(.after(Group.orderAnchor)) }
+}
+
+/// A kind's own items: the group of an item that names none, first.
 public enum ShapeMenuGroup {}
-extension ShapeMenuGroup: MenuGroup {}
+extension ShapeMenuGroup: MenuGroup {
+    public static var order: Order<Self> { .first }
+}
+
+/// Where what a feature does to the menu's shapes goes (Transform's Turn into …, then Frames' Create
+/// Frame): after a kind's own items and the groups a feature puts right after them (what it says of
+/// the shapes: Mentions' Show What Mentions), before Cut, Copy and Paste. No item is in it: it's a
+/// place to be put beside for groups that can't name each other, and having no turn of its own it
+/// comes after every group that is right after a kind's own.
+public enum ActionsMenuGroup {}
+extension ActionsMenuGroup: MenuGroup {
+    public static var order: Order<Self> { .after(ShapeMenuGroup.self) }
+}
 
 struct MenuGroupID: Hashable {
     let type: ObjectIdentifier
-    let order: Int
+    /// Where it goes among a menu's groups, and how another group names it.
+    let order: OrderRule
+    let anchor: OrderAnchor
 
     init(_ group: any MenuGroup.Type) {
         type = ObjectIdentifier(group)
-        order = group.order
+        order = group.orderRule
+        anchor = group.orderAnchor
     }
+
+    static func == (a: Self, b: Self) -> Bool { a.type == b.type }
+    func hash(into hasher: inout Hasher) { hasher.combine(type) }
+
+    /// As the registry's report names it: the type, and its order if it says one
+    /// ("StateMenuGroup before SelectionMenuGroup").
+    var reported: String { order == .natural ? anchor.name : "\(anchor.name) \(order)" }
 }
 
 // MARK: Items

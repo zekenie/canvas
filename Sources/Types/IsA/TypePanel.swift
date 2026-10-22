@@ -3,6 +3,7 @@ import Colors
 import DetailPanel
 import Foundation
 import LanguageModels
+import Neighbors
 import Selection
 import SwiftUI
 import Validation
@@ -11,17 +12,14 @@ import Validation
 public enum TypeSchemaTab {}
 extension TypeSchemaTab: DetailTab {
     public static var title: String { "Schema" }
-    /// After Neighbors' Connections (60), before Style (100): a type's panel opens on what is
-    /// connected to it.
-    public static var order: Int { 70 }
+    /// Right after Neighbors' Connections: a type's panel opens on what is connected to it.
+    public static var order: Order<Self> { .after(NeighborsTab.self) }
 }
 
 /// The Types tab of a shape that is some: each type it is, in the order of its list.
 public enum TypesTab {}
 extension TypesTab: DetailTab {
     public static var title: String { "Types" }
-    /// A feature tab a horizontal adds to the kinds that opt into it.
-    public static var order: Int { 50 }
 }
 
 /// What the panel says about types.

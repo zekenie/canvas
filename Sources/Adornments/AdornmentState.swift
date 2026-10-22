@@ -207,12 +207,12 @@ final class AdornmentState {
         if let known = candidates[kind] { return known }
         let registry = editor.registry
         guard registry.definition(for: kind) != nil else { return [] }
-        // A kind's own come first, so each takes the place of a scoped one of its type.
+        // A kind's own come first, so each takes the place of a scoped one of its type; then each goes
+        // where its order puts it, counted from there.
         var seen = Set<AdornmentID>()
-        let found = registry.contributions(to: ShapeAdornments.self, for: kind)
-            .filter { seen.insert($0.adornment).inserted }
-            .enumerated().sorted { ($0.element.adornment.order, $0.offset) < ($1.element.adornment.order, $1.offset) }
-            .map(\.element)
+        let found = OrderRule.arranged(registry.contributions(to: ShapeAdornments.self, for: kind).filter { seen.insert($0.adornment).inserted }) {
+            ($0.adornment.anchor, $0.adornment.order)
+        }
         candidates[kind] = found
         return found
     }

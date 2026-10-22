@@ -70,7 +70,7 @@ private func close(_ a: RGB, _ b: RGB) -> Bool {
 
 private enum Probe: Adornment {
     static var placement: AdornmentPlacement { .aboveTopRight }
-    static var order: Int { 900 }
+    static var order: Order<Self> { .last }
 }
 
 @MainActor private func probing(_ asked: Asked) -> Contributor {

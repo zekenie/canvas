@@ -13,7 +13,7 @@ extension LookalikeStyleTab: DetailTab { static var title: String { "Style" } }
 enum AlertsTab {}
 extension AlertsTab: DetailTab {
     static var title: String { "Alerts" }
-    static var order: Int { 300 }
+    static var order: Order<Self> { .after(StyleTab.self) }
 }
 
 // What the panel shows for a shape, resolved headlessly from the registry.
@@ -34,9 +34,9 @@ extension AlertsTab: DetailTab {
         expectEqual(layout.tabs, [])
         expectEqual(layout.header, DetailHeader("tag"))
     },
-    test("a kind's own tabs lead in first appearance; a feature tab, Style and Frame trail by order") {
+    test("a kind's own tabs lead, first, in first appearance; a feature tab, Style and Frame trail by order") {
         let editor = try gadgetEditor()
-        // Remarks' tab is contributed first, but its order (50) puts it after the kind's own (0).
+        // Remarks' tab is contributed first, but says nothing, so it goes after the kind's own, which are first.
         expectEqual(try editor.layout(editor.add(Gadget(gadgetFrame, parts: [Gadget.Part()]))).outline, [
             "Gadget: main, Count", "Parts: Items", "Remarks: main", "Style: Color", "Frame: Size, Position",
         ])
@@ -225,7 +225,7 @@ extension AlertsTab: DetailTab {
         core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState · host inspector
-        p             DetailStatuses → every shape · DetailStatuses in Alerts → every shape
+        p             DetailStatuses → every shape · DetailStatuses in Alerts after Style → every shape
         """)
     },
     test("one details call is one line in the report") {
@@ -240,7 +240,30 @@ extension AlertsTab: DetailTab {
         core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
         fixtures      shape box · shape disc · shape tag
         detail-panel  service DetailPanelState · host inspector
-        p             ShapeDetails → box
+        p             ShapeDetails in Style last, Frame after Style → box
         """)
     },
+    test("tabs placed beside each other in a circle are refused, by the point that names them") {
+        expectThrows(RegistryError.invalid(point: "ShapeDetails", reason: "tabs placed beside each other in a circle: Ping after Pong, Pong after Ping")) {
+            _ = try Registry(plugins: [KeyboardPlugin(), FixturesPlugin(), DetailPanelPlugin(), Contributor(id: "loop") { r in
+                r.detailsForEveryBox {
+                    DetailSection("One", in: PingTab.self) { _ in Text("One") }
+                    DetailSection("Two", in: PongTab.self) { _ in Text("Two") }
+                }
+            }])
+        }
+    },
 ])
+
+/// Two tabs each placed right after the other: no order would do.
+enum PingTab {}
+extension PingTab: DetailTab {
+    static var title: String { "Ping" }
+    static var order: Order<Self> { .after(PongTab.self) }
+}
+
+enum PongTab {}
+extension PongTab: DetailTab {
+    static var title: String { "Pong" }
+    static var order: Order<Self> { .after(PingTab.self) }
+}

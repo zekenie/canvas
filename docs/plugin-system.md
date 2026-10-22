@@ -281,11 +281,12 @@ Once one plugin works, the question is which piece the next feature needs.
 | Add a concern any kind can opt into | An `ExtensionPoint`, sugar on `ShapeRegistrar`, and whatever reads the point | [Titles](#a-horizontal-plugin), [Validation](../Sources/Validation/Validation.swift) |
 | Warn about something on a shape, without running again on every drag event | A validation rule, `x.validate(ignoringMoves: true) { … }` (or `scope.validate`, in `registrar.forShapes(holding: P.self)` for the kinds that opted in), for one that reads what shapes are, never where | [Validation](#a-horizontal-plugin), [Mentions' warnings](#warnings-mentions-that-cant-work) |
 | Give the shapes of the kinds that opt in something to hold (a title) | A `ShapeProperty`, `registrar.declare`, and `optIn(to:)` from the concern's sugar | [Titles](#added-properties) |
-| Give that concern a tab on the kinds that opt in | A `DetailTab` at order 50, with `details(of: P.self)` over the concern's added property | [Types](#types-shapes-that-hold-a-schema) |
-| Give that concern menu items on the kinds that opt in | A `MenuGroup` at order 50, and `contextMenu` from the same sugar | [Boards](#a-feature-that-comes-with-menu-items-boards) |
+| Give that concern a tab on the kinds that opt in | A `DetailTab`, which goes where it first appears unless its `order` says otherwise ([Order](#order-where-things-go-among-each-other)), with `details(of: P.self)` over the concern's added property | [Types](#types-shapes-that-hold-a-schema) |
+| Give that concern menu items on the kinds that opt in | A `MenuGroup` placed `.after(ShapeMenuGroup.self)`, and `contextMenu` from the same sugar | [Boards](#a-feature-that-comes-with-menu-items-boards) |
 | Edit an added property in the panel, or from the menu | `details(of: P.self) { DetailSection ... }`, `contextMenu(of: P.self) { MenuItem ... }` | [Added properties](#added-properties), [a flag](#something-the-user-turns-on) |
+| Say where a tab, a menu group or an adornment goes among the others, without a number | `static var order: Order<Self> { .after(NeighborsTab.self) }`: `.first`, `.last`, `.before(X)`, `.after(X)` | [Order](#order-where-things-go-among-each-other) |
 | Put what a concern shows on the shapes of the kinds that opted into it (a chip, a row's mark, a panel section, a rule, found text, edges), whoever defines the kinds | `registrar.forShapes(holding: P.self) { scope in … }`; `forShapes(adopting:)` for the kinds a capability picks; `forEveryShape` only for what every shape has by its nature | [Scopes](#scopes), [Locking](#locking) |
-| Show a section in the panel only while a service says so (what mentions the shape) | `DetailSection(…).shownWhile { shape, context in … }`, at order 300 for a tab that comes and goes | [Contributing](#contributing-two-points-and-their-sugar), [Mentions](#what-mentions-a-shape) |
+| Show a section in the panel only while a service says so (what mentions the shape) | `DetailSection(…).shownWhile { shape, context in … }`, in a tab placed `.after(StyleTab.self)` if it comes and goes | [Contributing](#contributing-two-points-and-their-sugar), [Mentions](#what-mentions-a-shape) |
 | Edit text that isn't a string in the panel, with a text view of your own | An `EditingTextView` subclass adopting `DetailTextContent`, in a `DetailTextBox` | [Text of a plugin's own](#text-of-a-plugins-own-detailtextbox) |
 | Opt another plugin's kind into a concern | From a plugin whose module imports both (a kind's own plugin opts in with the concern's sugar, `patch.title()`): `registrar.optIn(Kind.self, to:)` for an added property, `registrar.title(Kind.self)` and the like for the sugar | [Titles](#a-horizontal-plugin) |
 | Keep state per editor: an engine, a cache, a timer | `registrar.service`, an `EditorService`; redo what's kept per shape for the shapes each commit's `ChangeSet` names | [Validation](../Sources/Validation/Validation.swift)'s `ValidationEngine`, [TableOfContents](../Sources/TableOfContents/ContentsState.swift)' `ContentsState` |
@@ -1286,7 +1287,6 @@ extension Registry {
 public enum TitlePill {}
 extension TitlePill: Adornment {
     public static var placement: AdornmentPlacement { .aboveTopLeft }   // the left end of the row above the shape
-    public static var order: Int { 50 }                                // a horizontal's feature
 }
 
 /// A fact about kinds, stated once by the module that owns it: the phrase names it, and the report
@@ -3535,24 +3535,25 @@ A tab is a type conforming to `DetailTab`. Any module may declare one, and there
 call: a tab shows for a shape when a shown section that applies to the shape names it.
 
 ```swift
-public enum TypesTab {}
-extension TypesTab: DetailTab {
-    public static var title: String { "Types" }
-    public static var order: Int { 50 }
+public enum TypeSchemaTab {}
+extension TypeSchemaTab: DetailTab {
+    public static var title: String { "Schema" }
+    public static var order: Order<Self> { .after(NeighborsTab.self) }
 }
 ```
 
 Being a type, a tab can't be misspelled, and sharing one means importing the module that declares
-it. Tabs sort by `order`, then by first appearance, in these bands:
+it. Its `order` says where it goes among a shape's tabs, beside the others rather than by a number
+([Order](#order-where-things-go-among-each-other)); one that says nothing goes where it first
+appears, a kind's own contributions first, then the rest in plugin order. As shipped:
 
-| Order | Tabs |
-|---|---|
-| 0 (the default) | A kind's own tabs (a subboard's Description) |
-| 50 | Feature tabs a horizontal brings to the kinds that opt into it (Types' Types) |
-| 60 | Neighbors' Connections (`NeighborsTab`), on every shape and always: after the feature tabs, before Style |
-| 70 | Types' Schema (`TypeSchemaTab`), on every type: after Connections, so a type's panel opens on what is connected to it |
-| 100 | `StyleTab`: appearance, shared by every kind |
-| 300 | A tab of the shape's state that comes and goes with it (Validation's `IssuesTab`): last, so the others keep their order |
+| Tab | Its order | So |
+|---|---|---|
+| A kind's own (a subboard's Description, a reference's Reference) | `.first` | first, before the tab a feature's opt-in brings from the kind's own `register` |
+| Types' Types, Neighbors' Connections (`NeighborsTab`, on every shape and always) | none | in plugin order, after a kind's own |
+| Types' Schema (`TypeSchemaTab`, on every type) | `.after(NeighborsTab.self)` | right after Connections: a type's panel opens on what is connected to it |
+| `StyleTab`: appearance, shared by every kind | `.last` | last, as a shared tab trails in Keynote |
+| A tab of the shape's state that comes and goes with it (Validation's `IssuesTab`) | `.after(StyleTab.self)` | after Style, so the others keep their places |
 
 Use the shared `StyleTab` rather than a near-duplicate. Two tab types with one title
 would show as two identical tabs, so they're a registry error (`invalid`, below), whether sections
@@ -3758,7 +3759,7 @@ extension ShapeRegistrar where Definition: BoardOwning {
 Another feature in this pattern has the same parts: a keyed point for whatever it needs per kind
 (Boards' placeholder and symbol); a menu group, if it has actions; when its shapes hold something,
 an added property declared by the horizontal, with sections and items over its value
-(`details(of:)`, `contextMenu(of:)`; [added properties](#added-properties)), in a tab at order 50
+(`details(of:)`, `contextMenu(of:)`; [added properties](#added-properties)), in a tab of its own
 if there is something to show there (Types' Types tab: [what a shape is](#types-shapes-that-hold-a-schema));
 sugar that contributes them all from the kind's registrar; and whatever consumes it (a lookup on
 `Registry`, an adornment).
@@ -3791,17 +3792,17 @@ public struct ValidationDetailsPlugin: ListedPlugin {
     }
 }
 
-/// A shape's validation issues. It comes and goes with them, so it trails every other tab.
+/// A shape's validation issues. It comes and goes with them, so it trails every other tab, Style too.
 public enum IssuesTab {}
 extension IssuesTab: DetailTab {
     public static var title: String { "Issues" }
-    public static var order: Int { 300 }
+    public static var order: Order<Self> { .after(StyleTab.self) }
 }
 ```
 
 Issues come worst first (errors, then warnings, each in the rules' order), each line its
-severity's symbol, red or orange, then its message. The tab is at order 300, after every
-other, so the other tabs keep their order as it comes and goes, though not their width: the
+severity's symbol, red or orange, then its message. The tab is after Style, which is last, so
+after every other, and the other tabs keep their places as it comes and goes, though not their width: the
 strip shares its width among its tabs, and a kind with one tab (a reference's Connections) gains a
 strip with it. Any tab whose lines warn or err draws its worst tone's symbol before its title in
 the strip (`layout.alert(in:)`: the triangle or the octagon, in its color; no count), so from
@@ -3855,7 +3856,7 @@ Plugins fill one type note's panel:
 |---|---|---|
 | Header | the note's title, renamed in place | StickyNotes, with Titles' `TitleHeader` |
 | Schema | the JSON, its issues and the sync's status under it | Types' `TypeDetailsPlugin` |
-| Issues (300) | the type's issues, worst first ("A schema must be a JSON object."), while it has any | Validation's `ValidationDetailsPlugin` |
+| Issues | the type's issues, worst first ("A schema must be a JSON object."), while it has any | Validation's `ValidationDetailsPlugin` |
 
 ### Reading and writing: `ShapeBinding`
 
@@ -4100,16 +4101,16 @@ right-click on a subboard:
 ```
 
 A sticky note's is the same without Open. Every shape has Delete, ContextMenus' own item for the
-canvas (in `SelectionMenuGroup`, order 400, last, after Lock, as Keynote has it), which runs
+canvas (in `SelectionMenuGroup`, `.last`, after Lock, as Keynote has it), which runs
 Selection's `.delete` on the menu's shapes, as the Delete key does: a locked one shakes. As shipped,
 every shape has Lock (or Unlock) too, and every copyable shape Cut and Copy, items for the canvas,
 which are in every menu with shapes; an arrow's menu is those alone, since Arrange leaves it out. A
 shape something mentions has Show What Mentions too, after its own items (Mentions', for the
-canvas, in `MentionsMenuGroup`, order 50), which goes to what mentions it
+canvas, in `MentionsMenuGroup`, `.after(ShapeMenuGroup.self)`), which goes to what mentions it
 ([What mentions a shape](#what-mentions-a-shape)). A shape that can be turned into another kind has Turn
-into … after it (Transform's, in `TransformMenuGroup`, order 60: a frame's is Turn into Subboard,
+into … after it (Transform's, in `TransformMenuGroup`, `.after(ActionsMenuGroup.self)`: a frame's is Turn into Subboard,
 [Transform](#transform)), and any shapes a frame can hold have Create Frame after that (Frames', for
-the canvas, in `FramesMenuGroup`, order 70: a frame put down around them, [Frames](#frames); an
+the canvas, in `FramesMenuGroup`, `.after(TransformMenuGroup.self)`: a frame put down around them, [Frames](#frames); an
 arrow alone has none). On empty canvas the menu is the canvas's items
 that apply there alone: Paste, once there's something to paste, which lands centered where the
 menu was asked for (⌘V keeps its own rule), and Select All (ContextMenus' own, Selection's
@@ -4187,17 +4188,26 @@ contextMenu { MenuItem(command: .openSelection, title: "Open", in: BoardsMenuGro
   duplicates deduplicated at each level, `when` and `isEnabled`, a kind's own item taking its place, one
   undo group named for the item or by its `stepName:`, the registration key's conflict and
   `ownerNotInstalled`.
-- **Groups are types**, like tabs: a separator falls between groups, which sort by `order`, then by
-  first appearance, in the tabs' bands. An item names its group with `in:`; the default is
-  `ShapeMenuGroup`.
+- **Groups are types**, like tabs: a separator falls between groups, each where its `order` puts it,
+  as a tab's does ([Order](#order-where-things-go-among-each-other)). An item names its group with
+  `in:`; the default is `ShapeMenuGroup`. As shipped:
 
-  | Order | Groups |
+  | Group | Its order |
   |---|---|
-  | 0 (the default) | A kind's own items (`ShapeMenuGroup`) |
-  | 50 | A horizontal's feature, on the kinds that opt in (a flag's `FlagMenuGroup`, [below](#something-the-user-turns-on)), or on the shapes it knows something of (`MentionsMenuGroup`) |
-  | 60 | What a feature brings to the shapes it can act on, after the first band (Transform's Turn into …, `TransformMenuGroup`) |
-  | 70 | What a vertical makes of the shapes it's for (Frames' Create Frame, `FramesMenuGroup`) |
-  | 100 and up | Shared by every kind (`ClipboardMenuGroup`, 100; `ReorderMenuGroup`, 200; `StateMenuGroup`, 300, ContextMenus' own, which Grouping's Group and Ungroup, Locking's Lock and Unlock and Types' Is a ▸ share with no line between; `SelectionMenuGroup`, 400, ContextMenus' own Delete and Select All) |
+  | What opens a shape (Boards' Open, `BoardsMenuGroup`; References' Go to Original, `ReferencesMenuGroup`) | `.before(ShapeMenuGroup.self)`, as Finder's Open is first |
+  | A kind's own items (`ShapeMenuGroup`) | `.first` |
+  | A horizontal's feature, on the kinds that opt in (a flag's `FlagMenuGroup`, [below](#something-the-user-turns-on)), or on the shapes it knows something of (`MentionsMenuGroup`) | `.after(ShapeMenuGroup.self)`, in plugin order among themselves |
+  | ContextMenus' `ActionsMenuGroup`, which no item is in: where what acts on the shapes begins, after every group right after a kind's own (having no turn of its own) | `.after(ShapeMenuGroup.self)` |
+  | What a feature brings to the shapes it can act on (Transform's Turn into …, `TransformMenuGroup`) | `.after(ActionsMenuGroup.self)` |
+  | What a vertical makes of the shapes it's for (Frames' Create Frame, `FramesMenuGroup`) | `.after(TransformMenuGroup.self)` |
+  | Cut, Copy, Duplicate and Paste (`ClipboardMenuGroup`) | none: in the middle, where it first appears |
+  | Arrange ▸ (`ReorderMenuGroup`) | `.before(StateMenuGroup.self)` |
+  | What the shape is made from (`StateMenuGroup`, ContextMenus' own, which Grouping's Group and Ungroup, Locking's Lock and Unlock, Types' Is a ▸ and Colors' Color ▸ share with no line between) | `.before(SelectionMenuGroup.self)` |
+  | Make Public and Make Private (`PublishMenuGroup`) | `.after(StateMenuGroup.self)` |
+  | Delete and Select All (`SelectionMenuGroup`, ContextMenus' own) | `.last` |
+
+  A submenu's groups say nothing, and go in the order it lists them (Is a ▸: `Type`, a line, the
+  file's types; Color ▸: the built-in colors, the file's, `None`).
 
 - **Keyed.** Each item claims its target, group and `id` (the title by default), and an item in a
   submenu its path, so two plugins adding one item to a kind are a `conflict`
@@ -4209,8 +4219,8 @@ contextMenu { MenuItem(command: .openSelection, title: "Open", in: BoardsMenuGro
 The pattern of a horizontal's opt-in, again. Boards' opt-in sugar contributes to its own
 point, Selection's, and this one, so `sub.opensBoard(…)` brings opening and Open, the item
 above ([A horizontal's opt-in](#a-horizontals-opt-in-boards)). Its group,
-`BoardsMenuGroup`, is at order 0, so Open comes first, as Finder's does; a feature's group is
-usually at 50. Items over an added property's value go in `contextMenu(of: P.self) { … }`, as its
+`BoardsMenuGroup`, is placed `.before(ShapeMenuGroup.self)`, so Open comes first, as Finder's does; a
+feature's group is usually placed `.after(ShapeMenuGroup.self)`. Items over an added property's value go in `contextMenu(of: P.self) { … }`, as its
 sections go in `details(of:)`: a flag's Flagged is over the flag
 ([Something the user turns on](#something-the-user-turns-on)).
 
@@ -4872,7 +4882,7 @@ public enum LockChip {}
 
 extension LockChip: Adornment {
     public static var placement: AdornmentPlacement { .aboveTopRight }   // the right end of the row above the shape
-    public static var order: Int { 300 }                                 // a state that comes and goes: farthest out
+    public static var order: Order<Self> { .last }                       // a state that comes and goes: farthest out
 }
 
 extension LockChip: ClickableAdornment {
@@ -5077,18 +5087,19 @@ is made, kept and dropped as one shape's labels are, and zoomed out below 35% it
 
 ### Order
 
-In a place, adornments sort by their type's `order`, then by first appearance: the kind's own,
-then those whose scope reaches it, each in plugin order. The first is nearest where the place starts: the row's
-left end, its right end, the corner's outer end. The bands are the tabs' and the menu groups':
+In a place, each adornment goes where its type's `order` puts it, as tabs and menu groups do
+([Order](#order-where-things-go-among-each-other)): one that says nothing where it first appears,
+the kind's own, then those whose scope reaches it, each in plugin order. The first is nearest where
+the place starts: the row's left end, its right end, the corner's outer end. As shipped:
 
-| Order | Adornments |
+| Adornment | Its order |
 |---|---|
-| 0 (the default) | A kind's own |
-| 50 | One a horizontal's feature brings to the kinds that opt in (`TitlePill`) |
-| 300 | A state of the shape that comes and goes (`LockChip`): farthest out, so the others keep their places |
+| A kind's own; one a horizontal's feature brings to the kinds that opt in (`TitlePill`) | none |
+| Types' chips (`TypeChips`): what a shape is, after what it's called | `.after(TitlePill.self)` |
+| A state of the shape that comes and goes (`LockChip`; Publishing's `PublicChip`, after it in plugin order) | `.last`: farthest out, so the others keep their places |
 
 So a flag a kind shows of its own keeps its place at the row's right end whether a lock is beside it
-or not. Equal orders fall back to plugin order, so unrelated plugins needn't agree on numbers.
+or not, and plugins that don't know each other never need to agree on anything.
 
 ### The label
 
@@ -5184,8 +5195,9 @@ does. So a shape shows each adornment once at most, by construction: a contribut
 never an instance, and there's no second one to attach. Its one `check` refuses a group anywhere but `aboveTopLeft`: places are a closed
 set, and orders needn't be unique. Adornments builds on Selection (a clickable adornment is its
 canvas button), so a list with `AdornmentsPlugin` needs `SelectionPlugin` and `KeyboardPlugin` too.
-The report shows each on its placer's line: `adornment TitlePill → every shape with a title pill`,
-`adornment LockChip → every shape holding locked`, or `adornment Flag → box` for one kind.
+The report shows each on its placer's line, with its order if it says one: `adornment TitlePill →
+every shape with a title pill`, `adornment LockChip last → every shape holding locked`, or
+`adornment Flag → box` for one kind.
 
 ### What a label reads
 
@@ -5315,13 +5327,12 @@ extension FlagProperty: ShapeProperty {
 /// A flag at the right end of the row above a flagged shape.
 public enum FlagChip {}
 extension FlagChip: Adornment {
-    public static var placement: AdornmentPlacement { .aboveTopRight }
-    public static var order: Int { 50 }                   // a horizontal's feature: nearer the row's end than a lock
+    public static var placement: AdornmentPlacement { .aboveTopRight }   // no order: nearer the row's end than a lock, which is last
 }
 
 public enum FlagMenuGroup {}
 extension FlagMenuGroup: MenuGroup {
-    public static var order: Int { 50 }
+    public static var order: Order<Self> { .after(ShapeMenuGroup.self) }   // a feature's items, after a kind's own
 }
 
 extension ShapeRegistrar {
@@ -5473,7 +5484,7 @@ giving a shape back the id it had.
   puts them back under them, and undoing the cut too puts the file back as it was, showing the
   board the cut was made on.
 - **In the context menu**, Cut, Copy, Duplicate and Paste are items for the canvas
-  (`registrar.contextMenuForCanvas`), in `ClipboardMenuGroup` (order 100, before Arrange), asked
+  (`registrar.contextMenuForCanvas`), in `ClipboardMenuGroup` (no order: after a kind's own items and a feature's, before Arrange), asked
   once per menu. Cut, Copy and Duplicate (⌘D's, beside the shapes) show when some of the menu's shapes can
   be copied, and act on those; Paste shows when something would paste, on shapes and on empty canvas, and lands where the menu
   was asked for.
@@ -5571,7 +5582,7 @@ extension LockChip: ClickableAdornment {                // a click on the chip: 
   and saved with the shape (`"added" : { "locked" : true }`). Its default is nil, so only locked
   shapes carry it, and unlocking takes it away. Read it with `record.isLocked`, and change it with
   `editor.lock(ids)` and `editor.unlock(ids)`, each one transaction.
-- **The menu** has one of two items, in `StateMenuGroup` (ContextMenus', order 300, after every other group; Types' Is a ▸ is in it too, right after), as
+- **The menu** has one of two items, in `StateMenuGroup` (ContextMenus', right before Delete's; Types' Is a ▸ is in it too, right after), as
   tldraw's toggle: Unlock when every shape the menu is for is locked, and otherwise Lock, which locks
   the rest. They're items for the canvas in Locking's scope (a menu whose every shape holds `locked`,
   as every kind does), so a mix of locked and unlocked shapes gets one; on empty canvas, neither. They run Locking's two [commands](#commands), `.lock` and `.unlock`, whose rules
@@ -6306,8 +6317,9 @@ registrar.forShapes(holding: PublicProperty.self) { publishable in   // what Pub
   It follows Topology (`topology.follow`) for the shapes a change to `stands-for` edges touches, a
   commit's or a provide's alike, and tells Adornments and the table of contents to make their
   chips and rows again (`adornmentsDidChange(for:)`, `contentsDidChange(for:)`).
-- **The chip** (`PublicChip`, a clickable adornment, order 310 at the right end of the row: the lock's
-  300 is nearest the end, this 4 points left of it, a title's pill stops short of both). A text chip
+- **The chip** (`PublicChip`, a clickable adornment at the right end of the row, `.last` as the lock
+  is: the lock, before it in plugin order, is nearest the end, this 4 points left of it, a title's pill
+  stops short of both). A text chip
   on every kind that holds the property, never on an always-public kind's (nothing to toggle), never on
   a shape drawn as a skeleton. It reads "Public" with a globe, "Public · 3" once three things stand for
   the shape (direct and dynamic: what `standIns(for:)` says), and "Private" with the globe, fading, for a
@@ -6329,7 +6341,7 @@ registrar.forShapes(holding: PublicProperty.self) { publishable in   // what Pub
   held or not.
 - **Make Public and Make Private are two [commands](#commands)** (`.makePublic`, `.makePrivate`,
   no key), which the menu, `/public` and `/private` and the chip run. The menu has one item, in
-  `PublishMenuGroup` (order 310, between Lock's 300 and Delete's 400), a toggle as Lock's: Make
+  `PublishMenuGroup` (`.after(StateMenuGroup.self)`: between Lock's and Delete's), a toggle as Lock's: Make
   Public while any shape the menu is for that can be public isn't, which makes the rest public, else
   Make Private (`MenuItem(command:… dims: true)`). Each is dimmed while its command can do nothing:
   every shape it would change is read-only, and, for Make Private, every public shape is held. On a
@@ -6934,7 +6946,7 @@ Two places show them:
   read plain `mention` edges only.
 - **Show What Mentions**, in the canvas's context menu: an item for the canvas
   (`contextMenuForCanvas`, since whether a shape is mentioned is what Mentions' state knows, not
-  the shape), in `MentionsMenuGroup` (order 50, after a kind's own items), shown when any shape the
+  the shape), in `MentionsMenuGroup` (`.after(ShapeMenuGroup.self)`: right after a kind's own items), shown when any shape the
   menu is for is mentioned, and in a pill's menu in text ("Show What Mentions “Name”"). Both run
   `showWhatMentions`.
 
@@ -8835,7 +8847,7 @@ contributes to Boards' `BoardKinds` point (at most one per kind; its report line
   once the row is picked (in the app's panel, the canvas's Return, since picking a row shows the
   shape's panel and gives the canvas the keyboard), and a double-click only where the list stays
   put, not in the app's panel ([opening a row](#the-table-of-contents)).
-- **Open** first in its context menu (`BoardsMenuGroup`, order 0, as Finder's Open is): Selection's
+- **Open** first in its context menu (`BoardsMenuGroup`, `.before(ShapeMenuGroup.self)`, as Finder's Open is): Selection's
   `.openSelection`, titled Open, so it shows ⌘↓ and does to the menu's shapes what ⌘↓ does: it opens
   one, goes into a group of them selected whole, and is left out for several. The Shape menu leaves it
   out, since Go › Open Selection runs the same command.
@@ -9058,7 +9070,7 @@ as SwiftUI sugar is, and the channel and the ports in `SubboardLinks.swift`.)
   under its id, so its props hold neither; its schema is marked `x-canvas-board`. Placing one keeps
   no board: a board with no shapes isn't kept.
 - **Its description** says what it's for, and is edited in its panel's own tab, Description
-  (`DescriptionTab`, a kind's own, order 0, so first, before the Connections and Style tabs every
+  (`DescriptionTab`, a kind's own, `.first`, before the Connections and Style tabs every
   shape has, and the tab a subboard's panel opens on): one headerless section,
   `.named("Description")`, holding `MentionTextArea($sub, \.description)`, the panel's box of
   mention text, two text areas tall, "Add a description" while it's empty. It is mention text as a
@@ -9300,8 +9312,8 @@ registrar.createFrameItem()                                        // Create Fra
   (mostly inside comes in, nudged fully in; mostly outside is nudged out; gliding there). It's
   untitled and selected, one step named as the item ("Create Frame"). A locked shape among them (or
   one in a locked frame) leaves it all as it was, and shakes. An item for the canvas, as Turn into
-  Subboard is, in a band of its own (`FramesMenuGroup`, 70: after Turn into's 60, before Cut, Copy
-  and Paste), so Frames is on ContextMenus. tldraw's Frame Selection is the model, with three
+  Subboard is, in a group of its own (`FramesMenuGroup`, `.after(TransformMenuGroup.self)`: right after
+  Turn into's, before Cut, Copy and Paste), so Frames is on ContextMenus. tldraw's Frame Selection is the model, with three
   intended deviations: the padding is world units, as the model is, where tldraw's is 25 view points
   (zoomed out, that would reach over the neighbors); the frame goes just below the lowest of them,
   not on top of everything, so it covers nothing beside them that was above them, and shows on a big
@@ -9413,7 +9425,7 @@ opt-in does for a horizontal.
 
 - **Turn into `label`** in the context menu: an item for the canvas, as Show What Mentions is, since what
   a shape can turn into is what the registry knows, not the shape. It's in `TransformMenuGroup`
-  (order 60: after Mentions' 50, before Cut, Copy and Paste, 100), shown when every shape the menu is for
+  (`.after(ActionsMenuGroup.self)`, ContextMenus' empty group for what acts on the shapes: after a kind's own items and Mentions', before Cut, Copy and Paste), shown when every shape the menu is for
   can turn into the kind, so a menu for a frame and a note has none. The label is what the target kind's
   schema is titled (a subboard's is "Subboard"), else its id, unless the call gives one.
 - **`/turn-into-<kind id>`** on the kinds that offer the channel, the target's own kind apart (it has
@@ -9958,7 +9970,8 @@ registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, q
   light and no `NeighborsPlugin()` (the lists are then Inside and Contains). It registers the service
   and one headerless section on every shape (`forEveryShape { $0.details { … } }`,
   `enabledWhileReadOnly`: going to a shape changes nothing of this one) in `NeighborsTab`
-  ("Connections", order 60: after a horizontal's feature tabs, before a type's Schema and Style). It's always there: a
+  ("Connections", which says no order: it goes where it first appears, after a kind's own tabs and the
+  feature tabs of the plugins before it, before Style and a type's Schema). It's always there: a
   tab that came with its lists would come a turn late, so with nothing connected it says "No
   Connections" once the answer is in. The view is a search field once the lists hold 20 shapes in all
   (`NeighborStyle.searchFrom`: more than a panel shows without scrolling), or while something is typed
@@ -13759,19 +13772,19 @@ keyboard             service KeyboardState · tool tips · menu keys · keyboard
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in Go · shortcut ⌘[ → command goBack · command openSelection in Go · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · command zoomToSelection in View · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge · shortcut ⇧← → Nudge · shortcut → → Nudge · shortcut ⇧→ → Nudge · shortcut ↑ → Nudge · shortcut ⇧↑ → Nudge · shortcut ↓ → Nudge · shortcut ⇧↓ → Nudge · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
 topology             service TopologyIndex · edge type stands-for
 arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property endRule → arrow · ShapeOpening → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
-subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape that can turn into subboard
-framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title cover surface → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu
-references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails → reference · ShapeContextMenus → reference · ValidationRules → reference
+sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · property is → sticky-note · property fieldValues → sticky-note · type rows → sticky-note · channel note-link · edge type note-link
+subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
+framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title cover surface → frame · mentionable → frame · ShapeResizing → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
+references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · ContentsRows → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape
 adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState · host inspector
-context-menus        service ContextMenuState · secondary-click menu · selection menu · CanvasContextMenu
+context-menus        service ContextMenuState · secondary-click menu · selection menu · CanvasContextMenu in SelectionMenuGroup last
 slash-commands       service SlashCommandState · key hint / at a Line's Start Run a Command
 table-of-contents    service ContentsState
 contents-overview    detail overview
 titles               property title · adornment TitlePill → every shape with a title pill · /title → every shape holding title · overlay TitleCoverOverlay
-mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu
+mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup
 board-navigation     service BoardCrumbs · command enclosingBoard in Go · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · host overlay · window subtitle
 board-contents       contents heading
 find-in-boards       service FindState · overlay FindOverlay · command find in Edit › Find · shortcut ⌘F → command find · command findNext in Edit › Find · shortcut ⌘G → command findNext · command findPrevious in Edit › Find · shortcut ⇧⌘G → command findPrevious
@@ -13781,25 +13794,25 @@ title-find           findable title → every shape with a title
 mention-find         findable mention text → every shape with mention text · findable mention text over the canvas → every shape with mention text
 jump-to              service JumpToState · command jumpTo in Go · shortcut ⌘K → command jumpTo · host overlay
 transform            service TransformState
-validation-details   DetailStatuses in Issues → every shape
+validation-details   DetailStatuses in Issues after Style → every shape
 validation-contents  ContentsMarks → every shape
 mention-validation   ValidationRules → every shape naming shapes
 title-validation     service TitleIndex · ValidationRules → every shape with a title
-grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in Arrange · shortcut ⌥⌘G → command group · command ungroup in Arrange · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu
-clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer in Edit · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate in Edit · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu
-locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu → every shape holding locked · /lock → every shape holding locked
-publishing           property public · property public → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu · adornment PublicChip → every shape holding public · ContentsMarks → every shape holding public · /public /private → every shape holding public
-types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu · DecorationHits · outlines · ShapeFaces · ShapeFaces · ShapeFaces · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu · CanvasContextMenu → every shape holding is · CanvasContextMenu · adornment TypeChips → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · adornment RelationshipOfferPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
+grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in Arrange · shortcut ⌥⌘G → command group · command ungroup in Arrange · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup
+clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer in Edit · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate in Edit · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
+locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip last → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding locked · /lock → every shape holding locked
+publishing           property public · property public → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu in PublishMenuGroup after StateMenuGroup · adornment PublicChip last → every shape holding public · ContentsMarks → every shape holding public · /public /private → every shape holding public
+types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu in ShapeMenuGroup first · DecorationHits · outlines · ShapeFaces · ShapeFaces · ShapeFaces · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu in ShapeMenuGroup first · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding is · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup · adornment TypeChips after TitlePill → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · adornment RelationshipOfferPill after RelationshipPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
 type-validation      ValidationRules → every shape holding schema · ValidationRules → every shape holding is · ValidationRules → every shape holding schema
-type-details         ShapeDetails → every shape holding schema · ShapeDetails → every shape holding is · ShapeDetails → every shape holding is · ShapeDetails → every shape holding endRule
+type-details         ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding endRule
 field-find           findable field value → every shape showing field values · findable relationship type name → every shape holding relationship
-colors               property color · file property colors · service ColorBook · shape tints · /color → every shape holding color · CanvasContextMenu → every shape holding color
+colors               property color · file property colors · service ColorBook · shape tints · /color → every shape holding color · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding color
 color-validation     service ColorWarnings · ValidationRules → every shape holding color
-color-details        ShapeDetails → every shape holding color
+color-details        ShapeDetails in Style last → every shape holding color
 type-colors          inherited color → every shape holding is
 snapping             service SnapState · translation adjuster · key hint ⌘ or ⌃ Drag Move Without Snapping
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect
-connect-menu         CanvasContextMenu
+connect-menu         CanvasContextMenu in ShapeMenuGroup first
 arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowBindingRules
 language-models      service LanguageModelState
 prose-maps           service ProseMapService · overlay ProseMapFrames
@@ -13828,9 +13841,9 @@ neighbors            service NeighborState · outlines
 arrow-lights         neighbor light · neighbor light
 mention-lights       neighbor light · neighbor light
 type-lights          neighbor light · neighbor light
-neighbor-details     service NeighborList · ShapeDetails → every shape
+neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
 moving               /move-to /move-near → every shape with a box · ContentsMoves
-reordering           command bringToFront in Arrange · shortcut ] → command bringToFront · command bringForward in Arrange · shortcut ⌥] → command bringForward · command sendBackward in Arrange · shortcut ⌥[ → command sendBackward · command sendToBack in Arrange · shortcut [ → command sendToBack · ShapeContextMenus → every shape painted in document order
+reordering           command bringToFront in Arrange · shortcut ] → command bringToFront · command bringForward in Arrange · shortcut ⌥] → command bringForward · command sendBackward in Arrange · shortcut ⌥[ → command sendBackward · command sendToBack in Arrange · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order
 ```
 
 A horizontal's opt-in shows as what it contributes: `note.title()` is the opt-in to the property
@@ -13934,8 +13947,63 @@ A point says what it takes, `static var scope` (a `PointScope`): `.scoped` refus
 every kind with no scope, `.kinds` (one kind each, as Boards' and Transform's) refuses a scope and every kind, and
 `.anything` is the default. `registry.contributions(to:for:)` is then exactly what reaches a kind: its own
 first, then those for every kind and those whose scope reaches it, each in plugin order, so a horizontal
-filters nothing. The report names each scope (`adornment LockChip → every shape holding locked`,
+filters nothing. The report names each scope (`adornment LockChip last → every shape holding locked`,
 `/lock → every shape holding locked`, `findable title → every shape with a title`, `ValidationRules → every shape`).
+
+### Order: where things go among each other
+
+A tab among a shape's tabs, a group in a context menu and an adornment in its place each go where
+their type says, beside the others rather than by a number, as an extensible desktop app has a
+contribution say `first`, `last`, `before X` or `after X` (IntelliJ's), never a priority. The core's
+`Order` is the one way to say it (`Sources/Canvas/Plugins/Order.swift`): a point that orders things
+declares the protocol its things adopt, with the requirement `static var order: Order<Self>`, and the
+sugar that names another of its things:
+
+```swift
+public protocol DetailTab: SendableMetatype {
+    static var title: String { get }
+    static var order: Order<Self> { get }      // `.natural` by default
+}
+
+extension Order where Subject: DetailTab {     // a tab can be placed only beside a tab
+    public static func before<Tab: DetailTab>(_: Tab.Type) -> Self { … }
+    public static func after<Tab: DetailTab>(_: Tab.Type) -> Self { … }
+}
+
+extension TypeSchemaTab: DetailTab {
+    public static var title: String { "Schema" }
+    public static var order: Order<Self> { .after(NeighborsTab.self) }
+}
+```
+
+A thing says `.first`, `.last`, `.before(X)` or `.after(X)`, or nothing (`.natural`). What orders them,
+`OrderRule.arranged(_:by:)`, starts from the order they first appear in (as the point gathers them: a
+kind's own, then the rest in plugin order), puts the first ones before the rest and the last ones
+after, and puts one placed beside another right beside it: several beside one in the order they
+appear, and so on down. A thing can name only what its module imports, so:
+
+- **Two that don't know each other** go where they first appear: Locking's lock and Publishing's globe
+  are both `.last`, and Locking comes first in the list. Where that isn't the order wanted, the point
+  gives a thing for both to be placed against: ContextMenus' `ActionsMenuGroup`, which no item is in (the
+  registry refuses one),
+  is right after a kind's own items and, having no turn of its own, after every group that is there
+  too, so Mentions' Show What Mentions comes before Transform's Turn into …, which is placed after it,
+  though Transform's item is contributed earlier (by Subboards, a target) and neither knows the other.
+- **One beside a thing that isn't there** (its plugin isn't installed, or it isn't shown on this
+  shape) goes where that thing's own order would put it, read from its type: in a list without
+  Neighbors, a type's Schema goes where Connections would, after the other tabs and before Style;
+  a shape with no Style tab still has Issues last.
+- **A circle** (two things each placed beside the other, or one beside itself) is refused when the
+  registry is built, by each point's `check` (`OrderRule.cycle(from:)`: "tabs placed beside each other
+  in a circle: Schema after Connections, Connections after Schema"); the arrangement itself never drops
+  a thing.
+
+The report says a thing's order where a contribution names it: `ShapeDetails in Schema after
+Connections → every shape holding schema`, `DetailStatuses in Issues after Style → every shape`,
+`adornment LockChip last → every shape holding locked`, `CanvasContextMenu in StateMenuGroup before
+SelectionMenuGroup → every shape holding locked`; one that says nothing is named alone. The menu bar's
+commands still place themselves by a number (`registrar.command(… menu: "Go", order: 100 …)`,
+[Commands](#commands)), its hundreds the lines between its sections.
 
 ## Testing plugins
 

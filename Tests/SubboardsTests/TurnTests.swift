@@ -69,7 +69,7 @@ extension EditorHarness {
     test("subboards take the container channel, with its menu item and its command: the report says so, and a kind that offers the channel has the subboard among its targets; a subboard offers nothing") {
         let registry = try Registry(plugins: subboardPlugins())
         let line = try require(registry.report.split(separator: "\n").first { $0.hasPrefix("subboards") })
-        expect(line.hasSuffix("takes channel container → subboard · CanvasContextMenu · /turn-into-subboard → every shape that can turn into subboard"), "\(line)")
+        expect(line.hasSuffix("takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard"), "\(line)")
         expectEqual(registry.turnTargets(of: Subboard.kind), [])
 
         let turning = try Registry(plugins: subboardPlugins() + corralsTurnIntoSubboards())

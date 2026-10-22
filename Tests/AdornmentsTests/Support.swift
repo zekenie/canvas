@@ -26,7 +26,7 @@ extension Flag: Adornment {
 enum Pin {}
 extension Pin: Adornment {
     static var placement: AdornmentPlacement { .aboveTopRight }
-    static var order: Int { 300 }
+    static var order: Order<Self> { .last }
 }
 extension Pin: ClickableAdornment {
     static func click(_ click: AdornmentClick, in editor: CanvasEditor) {
@@ -138,7 +138,7 @@ struct SeededGenerator: RandomNumberGenerator {
 enum Chips {}
 extension Chips: Adornment {
     static var placement: AdornmentPlacement { .aboveTopLeft }
-    static var order: Int { 60 }
+    static var order: Order<Self> { .after(Caption.self) }
 }
 extension Chips: ClickableAdornment {
     static func click(_ click: AdornmentClick, in editor: CanvasEditor) {

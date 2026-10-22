@@ -273,13 +273,14 @@ enum ContextMenuItems {
         for run in runs { run.perform(run.ids, editor) }
     }
 
-    /// Groups sorted by `order`, then first appearance, with a separator between them.
+    /// Groups each where its `order` puts it, counted from where it first appears, with a separator
+    /// between them.
     static func menu(_ entries: [ResolvedEntry]) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
         var groups: [MenuGroupID] = []
         for entry in entries where !groups.contains(entry.group) { groups.append(entry.group) }
-        let sorted = groups.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map(\.element)
+        let sorted = OrderRule.arranged(groups) { ($0.anchor, $0.order) }
         for (index, group) in sorted.enumerated() {
             if index > 0 { menu.addItem(.separator()) }
             for entry in entries where entry.group == group {

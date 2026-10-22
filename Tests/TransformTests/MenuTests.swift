@@ -12,7 +12,7 @@ import Transform
 /// A group of the canvas's, after Transform's.
 private enum PastingGroup {}
 extension PastingGroup: MenuGroup {
-    static var order: Int { 100 }
+    static var order: Order<Self> { .after(TransformMenuGroup.self) }
 }
 
 /// A corral K that holds a box A and a corral L holding a box B, a box C beside it, a link between A and

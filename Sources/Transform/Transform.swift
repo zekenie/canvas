@@ -146,11 +146,11 @@ public struct TransformTarget {
     }
 }
 
-/// The band of items a transform brings to a menu: after Mentions' (50), before Cut, Copy and Paste (100),
-/// as a feature's items go.
+/// The items a transform brings to a menu: what acts on the shapes, after a kind's own items and what
+/// a feature says of them (Mentions'), before Cut, Copy and Paste.
 public enum TransformMenuGroup {}
 extension TransformMenuGroup: MenuGroup {
-    public static var order: Int { 60 }
+    public static var order: Order<Self> { .after(ActionsMenuGroup.self) }
 }
 
 // MARK: Sugar (what verticals and horizontals write)

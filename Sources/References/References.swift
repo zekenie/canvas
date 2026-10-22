@@ -118,17 +118,18 @@ extension ReferenceTarget: ShapeNaming {
     }
 }
 
-/// The reference's one tab, which shows no strip while it's the only one.
+/// The reference's one tab, which shows no strip while it's the only one; first, as a kind's own is.
 enum ReferenceTab {}
 
 extension ReferenceTab: DetailTab {
     static var title: String { "Reference" }
+    static var order: Order<Self> { .first }
 }
 
-/// What the context menu gives a reference, first: Go to Original.
+/// What the context menu gives a reference, first: Go to Original, before a kind's own items.
 public enum ReferencesMenuGroup {}
 extension ReferencesMenuGroup: MenuGroup {
-    public static var order: Int { 0 }
+    public static var order: Order<Self> { .before(ShapeMenuGroup.self) }
 }
 
 extension CanvasCommand {

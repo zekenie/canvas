@@ -100,7 +100,7 @@ extension EditorHarness {
         core                tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View
         validation          service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape
         detail-panel        service DetailPanelState · host inspector
-        validation-details  DetailStatuses in Issues → every shape
+        validation-details  DetailStatuses in Issues after Style → every shape
         """)
     },
 ])
