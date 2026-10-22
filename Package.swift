@@ -224,7 +224,7 @@ let shipped = ships.reduce(into: [String]()) { modules, plugin in
 // Types: the JSON a schema is read, completed and checked as; a type, and what a shape is (the two
 // properties and the file's index of them); the fields a list of types gives a note, their kinds,
 // values and one writer; the check of a note's values; the model keeping a type's words and schema
-// in step; what a shape is, shown and changed (the commands, `/is-a`, the menu, the chips, the
+// in step, and filling a note's fields from its words; what a shape is, shown and changed (the commands, `/is-a`, the menu, the chips, the
 // panel's tabs); the form a card and the panel hold; the rows on a note; and the words draw, queries
 // and Find are given.
 //
@@ -235,7 +235,7 @@ let parts: KeyValuePairs<String, [String]> = [
     "Types/Type": ["JSON"],
     "Types/Fields": ["JSON", "Type"],
     "Types/Checks": ["JSON", "Type", "Fields"],
-    "Types/Sync": ["JSON", "Type"],
+    "Types/Sync": ["JSON", "Type", "Fields"],
     "Types/IsA": ["JSON", "Type", "Fields", "Sync"],
     "Types/Form": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA"],
     "Types/Rows": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form"],

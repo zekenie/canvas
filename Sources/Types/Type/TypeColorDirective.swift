@@ -9,12 +9,13 @@ import Colors
 /// Color ▸, draw's `color:`, a file's color renamed or removed) is written in its JSON in the same step,
 /// and one written in its JSON (by hand, by draw's `schema:`, by words that are JSON) is its color;
 /// taking the member out takes the color away. The type's own: a type built on it is drawn in its own
-/// color, and no note of the type holds anything for it.
+/// color, and no note of the type holds anything for it. One of two such members (`HeldDirective`).
 public enum TypeColorDirective {
     /// The member's key in the root's `properties`, and its one keyword: the color.
     public static let name = "color"
     public static let key = "$" + name
-    public static let keyword = "const"
+    public static let keyword = HeldDirective.keyword
+    static let directive = HeldDirective(name: name)
 
     /// What a schema says of its type's color.
     public enum Reading: Equatable, Sendable {
@@ -33,7 +34,7 @@ public enum TypeColorDirective {
 
     /// What a schema's root says (the last `$color` of the last `properties`, as JSON is read).
     public static func reading(of root: JSONNode) -> Reading {
-        guard let member = root["properties"]?[key] else { return .none }
+        guard let member = directive.member(in: root) else { return .none }
         guard let literal = member[keyword]?.string, let color = ShapeColor(literal) else { return .notAColor }
         return .color(color)
     }
@@ -57,80 +58,8 @@ public enum TypeColorDirective {
     /// `$color` taken out. Nil when the text isn't a JSON object or its `properties` isn't one. The rest
     /// of the text stays as typed.
     public static func text(_ text: String, saying color: ShapeColor?) -> String? {
-        guard let color else { return removed(from: text) }
-        let literal = JSONReader.literal(color.text)
-        guard let root = try? JSONReader.read(text), root.isObject else { return nil }
-        if let constant = root["properties"]?[key]?.members?.last(where: { $0.key == keyword })?.value {
-            return constant.string == color.text ? text : replacing(constant.range, in: text, with: literal)
-        }
-        return setting(raw: "{\"\(keyword)\": \(literal)}", in: text)
-    }
-
-    /// `written` with the `$color` member `held` has, as `held` writes it, when `written` has none: a
-    /// schema written whole (draw's `schema:`, the model's) keeps the type's color unless it says one.
-    /// `written` as it is when it has a `$color`, when either isn't a JSON object, or `held` has none.
-    public static func carried(from held: String?, into written: String) -> String {
-        guard let held, let new = try? JSONReader.read(written), new.isObject, new["properties"]?[key] == nil,
-              let old = try? JSONReader.read(held), let value = old["properties"]?[key] else { return written }
-        return setting(raw: slice(value.range, of: held), in: written) ?? written
-    }
-
-    /// `text` without its `$color`, as the model is sent a schema: the color is no business of its.
-    public static func stripped(_ text: String) -> String { removed(from: text) ?? text }
-
-    /// Whether two schemas' texts are the same but for their `$color`: what a type given another color
-    /// changes, which says nothing of its fields.
-    public static func sameButColor(_ a: String, _ b: String) -> Bool {
-        a == b || (a.contains(key) || b.contains(key)) && stripped(a) == stripped(b)
-    }
-
-    /// `text` with `raw` as its `$color`'s value: in place of the one it has, else put in.
-    private static func setting(raw: String, in text: String) -> String? {
-        guard let root = try? JSONReader.read(text), root.isObject else { return nil }
-        guard let properties = root.members?.last(where: { $0.key == "properties" })?.value else {
-            return inserting("\"properties\": {\"\(key)\": \(raw)}", into: root, in: text)
-        }
-        guard let members = properties.members else { return nil }
-        if let member = members.last(where: { $0.key == key }) { return replacing(member.value.range, in: text, with: raw) }
-        return inserting("\"\(key)\": \(raw)", into: properties, in: text)
-    }
-
-    /// `text` with `member` first in `object`, on the line its first member is on and indented as that
-    /// is (after it with a space where that member has one after its colon, and none in a compact
-    /// text), or, in an empty one, on a line of its own one step in from the object's line when the
-    /// text has lines, else inside the braces.
-    private static func inserting(_ member: String, into object: JSONNode, in text: String) -> String {
-        let utf8 = Array(text.utf8)
-        let inside = object.range.lowerBound + 1..<object.range.upperBound - 1
-        guard let first = object.members?.first else {
-            guard utf8.contains(UInt8(ascii: "\n")) else { return replacing(inside, in: text, with: member) }
-            let outer = indentation(ofLineAt: object.range.lowerBound, in: utf8)
-            return replacing(inside, in: text, with: "\n\(outer)\(step(in: utf8))\(member)\n\(outer)")
-        }
-        var space = String(decoding: utf8[inside.lowerBound..<first.keyRange.lowerBound], as: UTF8.self)
-        if space.isEmpty, utf8[first.keyRange.upperBound..<first.value.range.lowerBound].contains(UInt8(ascii: " ")) { space = " " }
-        return replacing(first.keyRange.lowerBound..<first.keyRange.lowerBound, in: text, with: "\(member),\(space)")
-    }
-
-    /// `text` without its root `properties`' `$color` members, each with its comma and the space
-    /// before the next member's key; the text itself when there are none, nil when it isn't a JSON
-    /// object.
-    private static func removed(from text: String) -> String? {
-        var text = text
-        // One a pass, the last first: a schema holds one, and rarely two.
-        while true {
-            guard let root = try? JSONReader.read(text), root.isObject else { return nil }
-            guard let properties = root["properties"], let members = properties.members,
-                  let i = members.lastIndex(where: { $0.key == key }) else { return text }
-            let member = members[i]
-            if i + 1 < members.count {
-                text = replacing(member.keyRange.lowerBound..<members[i + 1].keyRange.lowerBound, in: text, with: "")
-            } else if i > 0 {
-                text = replacing(members[i - 1].value.range.upperBound..<member.value.range.upperBound, in: text, with: "")
-            } else {
-                text = replacing(properties.range.lowerBound + 1..<properties.range.upperBound - 1, in: text, with: "")
-            }
-        }
+        guard let color else { return directive.removed(from: text) }
+        return directive.text(text, saying: JSONReader.literal(color.text), isSaid: { $0.string == color.text })
     }
 
     // MARK: Keeping it
@@ -171,40 +100,5 @@ public enum TypeColorDirective {
     /// name as written (its spelling is the file's to say), a value as it is.
     private static func spelled(_ color: ShapeColor) -> ShapeColor {
         color.name.flatMap(BuiltInColors.named).map(\.color) ?? color
-    }
-
-    // MARK: Text
-
-    private static func replacing(_ range: Range<Int>, in text: String, with new: String) -> String {
-        let utf8 = Array(text.utf8)
-        return String(decoding: utf8[..<range.lowerBound], as: UTF8.self) + new + String(decoding: utf8[range.upperBound...], as: UTF8.self)
-    }
-
-    private static func slice(_ range: Range<Int>, of text: String) -> String {
-        String(decoding: Array(text.utf8)[range], as: UTF8.self)
-    }
-
-    /// The spaces and tabs a line starts with: the line `offset` is on.
-    private static func indentation(ofLineAt offset: Int, in utf8: [UInt8]) -> String {
-        var start = offset
-        while start > 0, utf8[start - 1] != UInt8(ascii: "\n") { start -= 1 }
-        var end = start
-        while end < utf8.count, utf8[end] == UInt8(ascii: " ") || utf8[end] == UInt8(ascii: "\t") { end += 1 }
-        return String(decoding: utf8[start..<end], as: UTF8.self)
-    }
-
-    /// One step of indentation, as the text's first indented line has it: two spaces in a text that
-    /// has none.
-    private static func step(in utf8: [UInt8]) -> String {
-        var i = 0
-        while i < utf8.count {
-            if utf8[i] == UInt8(ascii: "\n") {
-                var end = i + 1
-                while end < utf8.count, utf8[end] == UInt8(ascii: " ") || utf8[end] == UInt8(ascii: "\t") { end += 1 }
-                if end > i + 1 { return String(decoding: utf8[(i + 1)..<end], as: UTF8.self) }
-            }
-            i += 1
-        }
-        return "  "
     }
 }

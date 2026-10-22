@@ -37,12 +37,12 @@ public struct TypeNamesPlugin: ListedPlugin {
         }
         // Two arrows of one pair are two edges, told apart by the types each is of.
         registrar.drawEdgeIdentity(IsAProperty.key)
-        // A schema written whole keeps the type's `$color` unless it says one, as the model's does
-        // (`TypeColorDirective.carried`): a script run again says `unchanged`, and a color given to the
-        // type since stays; `color: null` takes it away.
+        // A schema written whole keeps the type's `$color` and `$autofill` unless it says them, as the model's
+        // does (`HeldDirectives.carried`): a script run again says `unchanged`, and a color given to the type
+        // since stays; `color: null` takes it away, as `autofill: null` does the other.
         registrar.drawValueWriter(for: TypeSchemaProperty.key, merge: { written, held in
             guard case .string(let text) = written else { return written }
-            return .string(TypeColorDirective.carried(from: held?.stringValue, into: text))
+            return .string(HeldDirectives.carried(from: held?.stringValue, into: text))
         })
     }
 }

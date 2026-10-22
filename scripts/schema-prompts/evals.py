@@ -22,8 +22,6 @@ import re
 import statistics
 import sys
 import time
-import urllib.error
-import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "_pylib"))
@@ -34,10 +32,10 @@ except ImportError:  # meta-validation is skipped without it, and says so
 
 sys.path.insert(0, HERE)
 from gen_cases import fmt, STARTER, ORDER  # noqa: E402
+from evalkit import Fatal, block, call as kit_call, is_wrapper, literal as kit_literal, load_key, read_swift, unwrap  # noqa: E402,F401
 
 # ------------------------------------------------------------------ the contract, read out of the Swift
 
-API_URL = "https://api.anthropic.com/v1/messages"
 SOURCES = os.path.normpath(os.path.join(HERE, "..", "..", "Sources"))
 SWIFT = os.path.join(SOURCES, "Types", "Sync", "SchemaPrompts.swift")
 # Each direction's system prompt and max_tokens (the Swift constants they're read from):
@@ -62,43 +60,12 @@ PREAMBLES = ("here's ", "here’s ", "here is ", "here are ", "updated prompt", 
              "sure,", "sure!", "sure.", "certainly,", "certainly!", "certainly.")
 
 
-def block(tag, text):
-    text = (text or "").strip()
-    return f"<{tag}>\n{text}\n</{tag}>" if text else ""
-
-
 def user_message(direction, prompt="", schema="", previous_prompt="", previous_schema="", schemas=""):
     if direction == "to_schema":
         parts = [block("schemas", schemas), block("previous_prompt", previous_prompt), block("prompt", prompt), block("schema", schema)]
     else:
         parts = [block("schemas", schemas), block("prompt", prompt), block("previous_schema", previous_schema), block("schema", schema)]
     return "\n\n".join(p for p in parts if p)
-
-
-def is_wrapper(line):
-    """A fence line, or a line of one tag alone (<answer>, </output>)."""
-    line = line.strip()
-    return line.startswith("```") or re.fullmatch(r"</?[A-Za-z_-]+>", line) is not None
-
-
-def unwrap(t, tag):
-    """Strips what the model sometimes wraps an answer in, from either end: a code-fence line (one that
-    starts with three backticks), a line of one tag alone (</output>), and the block's own tags
-    (<schema>, </schema>). Repeats until nothing changes."""
-    while True:
-        before = t
-        lines = t.split("\n")
-        if lines and is_wrapper(lines[0]):
-            lines = lines[1:]
-        if lines and is_wrapper(lines[-1]):
-            lines = lines[:-1]
-        t = "\n".join(lines).strip()
-        if t.startswith(f"<{tag}>"):
-            t = t[len(tag) + 2:].strip()
-        if t.endswith(f"</{tag}>"):
-            t = t[: -(len(tag) + 3)].strip()
-        if t == before:
-            return t
 
 
 def says_no_change(t):
@@ -268,38 +235,17 @@ def prepare(case):
 
 # ------------------------------------------------------------------ calling
 
-def load_key():
-    path = os.path.expanduser("~/Library/Application Support/InfiniteCanvas/anthropic-api-key")
-    try:
-        with open(path, encoding="utf-8") as f:
-            key = f.read().strip()
-            if key:
-                return key
-    except OSError:
-        pass
-    return os.environ.get("ANTHROPIC_API_KEY", "").strip() or None
-
-
 SYSTEMS = {}
 
 
-class Fatal(Exception):
-    pass
-
-
 def swift_source():
-    with open(SWIFT, encoding="utf-8") as f:
-        return f.read()
+    return read_swift(SWIFT)
 
 
 def literal(name):
-    """The raw string literal `public static let <name> = #\"\"\"` ... `\"\"\"#`, flush left, as Swift
-    reads it: the lines between the delimiters, without the last line break."""
+    """A prompt's raw string literal out of SchemaPrompts.swift, read once (evalkit.literal)."""
     if name not in SYSTEMS:
-        m = re.search(r'static let ' + name + r' = #"""\n(.*?)\n"""#', swift_source(), re.S)
-        if not m:
-            raise Fatal(f"no {name} in {SWIFT}")
-        SYSTEMS[name] = m.group(1)
+        SYSTEMS[name] = kit_literal(swift_source(), name, SWIFT)
     return SYSTEMS[name]
 
 
@@ -350,47 +296,8 @@ def swift_settings():
 
 def call(key, direction, user, schemas="", relationship=False):
     cfg = CONFIG[direction]
-    body = json.dumps({
-        "model": MODEL,
-        "max_tokens": cfg["max_tokens"],
-        "output_config": {"effort": os.environ.get("EVAL_EFFORT") or EFFORT},
-        "system": system_prompt(direction, schemas, relationship),
-        "messages": [{"role": "user", "content": user}],
-    }).encode("utf-8")
-    headers = {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01"}
-    delay = 2.0
-    for attempt in range(6):
-        req = urllib.request.Request(API_URL, data=body, headers=headers, method="POST")
-        started = time.monotonic()
-        try:
-            # As AnthropicModel waits: a minute, and a second for every 100 tokens it may write.
-            with urllib.request.urlopen(req, timeout=60 + cfg["max_tokens"] / 100) as resp:
-                data = json.load(resp)
-            ms = int((time.monotonic() - started) * 1000)
-            text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
-            usage = data.get("usage", {})
-            return {"text": text, "stop_reason": data.get("stop_reason"), "ms": ms,
-                    "in": usage.get("input_tokens", 0), "out": usage.get("output_tokens", 0)}
-        except urllib.error.HTTPError as e:
-            detail = ""
-            try:
-                detail = json.load(e).get("error", {}).get("message", "")
-            except Exception:
-                pass
-            if e.code in (401, 403):
-                raise Fatal(f"HTTP {e.code}: {detail}")
-            if e.code in (429, 500, 502, 503, 529) and attempt < 5:
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise Fatal(f"HTTP {e.code}: {detail}")
-        except (urllib.error.URLError, TimeoutError) as e:
-            if attempt < 5:
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise Fatal(f"network: {e}")
-    raise Fatal("gave up")
+    return kit_call(key, MODEL, cfg["max_tokens"], system_prompt(direction, schemas, relationship), user,
+                    effort=os.environ.get("EVAL_EFFORT") or EFFORT)
 
 
 # ------------------------------------------------------------------ checks

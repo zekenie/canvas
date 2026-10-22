@@ -21,6 +21,17 @@ extension RowLook {
     }
 }
 
+extension ShownRow {
+    /// What an empty value says (`add purpose`), a choice's too; nil for a row that holds a value.
+    var emptyWords: String? {
+        switch content {
+        case .empty(let words): words
+        case .choice(nil): FieldWords.add(name)
+        default: nil
+        }
+    }
+}
+
 /// How a row's pills look: Mentions' pill, outlined (white, a hairline, the live name, no
 /// symbol: board 5's panel 2), in the rows' font; a wrong one in the wrong red.
 @MainActor
@@ -43,6 +54,8 @@ extension RowBook {
         // The row being typed in draws its own text: a caret in its field, which is a path of one step. A caret deeper (a cell
         // of the card the row opened) leaves the row's summary to be drawn, behind the card.
         let typed = editor?.fieldChecks?.typing.flatMap { $0.shape == record.id && $0.path.steps.count == 1 ? $0.path.field : nil }
+        // While the words are being read for its values, an empty field's words are a bar (`FieldFill`).
+        let filling = editor?.fieldFill?.isFilling(record.id) == true
         cg.saveGState()
         defer { cg.restoreGState() }
         cg.translateBy(x: block.minX, y: block.minY)
@@ -61,6 +74,10 @@ extension RowBook {
             // The row being typed in draws its own text, and so does one being picked in.
             if let typed, row.path?.field == typed { continue }
             if let picking, picking.shape == record.id, row.isRow(picking.row) { continue }
+            if filling, row.relation == nil, let words = row.emptyWords {
+                drawFilling(words, in: row.valueRect, midY: midY, to: cg)
+                continue
+            }
             drawValue(row, look: RowLook.of(content: row.content, mark: mark), context: context)
         }
         if !isEditing { drawOpenOutline(of: record, rows: kept.rows, template: template, to: cg) }
@@ -77,6 +94,17 @@ extension RowBook {
             let words = FieldLines.line(value + " ›", style, cutTo: row.valueRect.width)
             FieldLines.draw(words, at: row.valueRect.maxX - words.width, midY: midY, in: cg)
         }
+    }
+
+    /// An empty value being filled: a bar where its words would be, as long as they are (in the value's column), in
+    /// the reading bars' gray.
+    private func drawFilling(_ words: String, in value: CGRect, midY: CGFloat, to cg: CGContext) {
+        let width = min(value.width, FieldLines.width(of: words, .empty))
+        guard width > 0 else { return }
+        let bar = CGRect(x: value.minX, y: midY - TypesStyle.spotBarHeight / 2, width: width, height: TypesStyle.spotBarHeight)
+        cg.setFillColor(TypesStyle.spotBar)
+        cg.addPath(CGPath(roundedRect: bar, cornerWidth: TypesStyle.spotBarHeight / 2, cornerHeight: TypesStyle.spotBarHeight / 2, transform: nil))
+        cg.fillPath()
     }
 
     /// A value, left-aligned in its column.

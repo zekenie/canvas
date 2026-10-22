@@ -79,7 +79,7 @@ extension TypePanelWindow {
         let ann = editor.addInstance("Ann", of: [FieldFixtures.orderID])
         let none = editor.addInstance("None", of: [editor.addType(TypeSchemaProperty.starter, title: "Thing")], at: CGPoint(x: 600, y: 400))
         let loose = editor.addInstance("Loose", of: [], at: CGPoint(x: 900, y: 400))
-        expectEqual(try sectionIDs(editor, ann), ["types", "fields"])
+        expectEqual(try sectionIDs(editor, ann), ["types", "fields", "autofill"], "and at their foot, whether it fills them")
         expectEqual(try sectionIDs(editor, none), ["types"], "a type with no fields, and no values")
         expectEqual(try sectionIDs(editor, FieldFixtures.orderID), [], "a type's own note shows kinds on the note, never values")
         expectEqual(try sectionIDs(editor, FieldFixtures.employeeID), ["types"], "also when it is itself one of another type: no fields")
@@ -90,7 +90,7 @@ extension TypePanelWindow {
         // Fields come and go with the type's.
         let thing = try require(editor.typesOf(none).first)
         editor.transact { $0.update(thing) { $0[TypeSchemaProperty.self] = SchemaText(#"{"type": "object", "properties": {"size": {"type": "number"}}}"#) } }
-        expectEqual(try sectionIDs(editor, none), ["types", "fields"])
+        expectEqual(try sectionIDs(editor, none), ["types", "fields", "autofill"])
         editor.transact { $0.update(thing) { $0[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter) } }
         expectEqual(try sectionIDs(editor, none), ["types"])
         editor.fieldWriter?.set("x", at: FieldPath(field: "size"), of: none)

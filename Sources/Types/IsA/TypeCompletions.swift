@@ -104,27 +104,35 @@ public enum TypeCompletions {
             own = titling(caret)
         case .value(of: TypeColorDirective.keyword) where caret.path == colorDirective:
             own = asking?.colors ?? []
+        case .value(of: HeldDirective.keyword) where caret.path == autofillDirective:
+            own = [JSONCompletionOffer(json: "false", label: "false", detail: "Its notes are filled in by hand"),
+                   JSONCompletionOffer(json: "true", label: "true", detail: "Its notes fill their fields from their words")]
         default:
             own = []
         }
         return own + (asking?.extra(place) ?? [])
     }
 
-    /// Where the root's `$title` and `$color` directives are written, and its `properties`.
+    /// Where the root's `$title`, `$color` and `$autofill` directives are written, and its `properties`.
     private static let titleDirective: [JSONPathComponent] = [.member("properties"), .member("$" + TitleSource.directive)]
     private static let colorDirective: [JSONPathComponent] = [.member("properties"), .member(TypeColorDirective.key)]
+    private static let autofillDirective: [JSONPathComponent] = [.member("properties"), .member(TypeAutofillDirective.key)]
     private static let rootProperties: [JSONPathComponent] = [.member("properties")]
 
     /// The keys code adds to the meta-schema's: in the root's `properties`, `$title` (written with its one
-    /// member and the field to pick) and `$color` (written with its one member and the color to pick); in
-    /// `$title`, `x-canvas-from`. Asked only where a key goes.
+    /// member and the field to pick), `$color` (written with its one member and the color to pick) and
+    /// `$autofill` (written saying false, selected, to pick); in `$title`, `x-canvas-from`. Asked only where a
+    /// key goes.
     static func keys(at caret: JSONCaret) -> [JSONCompletionKeyOffer] {
         if caret.path == rootProperties {
             let value = "{\"\(TitleSource.from)\": \"\"}", color = "{\"\(TypeColorDirective.keyword)\": \"\"}"
+            let autofill = "{\"\(HeldDirective.keyword)\": false}"
             return [JSONCompletionKeyOffer(key: "$" + TitleSource.directive, detail: "Titles a note from a field", value: value,
                                            selection: (value.utf8.count - 2)..<(value.utf8.count - 2), reopens: true),
                     JSONCompletionKeyOffer(key: TypeColorDirective.key, detail: "The type's color", value: color,
-                                           selection: (color.utf8.count - 2)..<(color.utf8.count - 2), reopens: true)]
+                                           selection: (color.utf8.count - 2)..<(color.utf8.count - 2), reopens: true),
+                    JSONCompletionKeyOffer(key: TypeAutofillDirective.key, detail: "Whether its notes fill their fields from their words", value: autofill,
+                                           selection: (autofill.utf8.count - 6)..<(autofill.utf8.count - 1), reopens: true)]
         }
         if caret.path == titleDirective {
             return [JSONCompletionKeyOffer(key: TitleSource.from, detail: "The field", value: "\"\"", selection: 1..<1, reopens: true)]
@@ -161,6 +169,7 @@ public enum TypeCompletions {
         // A directive's one member: the meta-schema would offer every keyword of a property's schema there.
         if caret.path == titleDirective { return item.label == TitleSource.from }
         if caret.path == colorDirective { return item.label == TypeColorDirective.keyword }
+        if caret.path == autofillDirective { return item.label == HeldDirective.keyword }
         switch item.label {
         case "$vocabulary": return false
         case "$schema": return caret.siblings.contains { $0.key == "$id" }

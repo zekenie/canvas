@@ -121,6 +121,11 @@ private let stickyNoteSchema = #"""
   "$schema" : "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties" : false,
   "properties" : {
+    "autofill" : {
+      "description" : "Whether the shape fills its fields from its words, which a language model reads; on a type, whether the shapes of it do unless they say otherwise. None: as its types say, else true.",
+      "type" : "boolean",
+      "x-canvas-owner" : "types"
+    },
     "color" : {
       "contentMediaType" : "text/x-canvas-color",
       "description" : "The shape's color: a named color, or a value as #RRGGBB.",

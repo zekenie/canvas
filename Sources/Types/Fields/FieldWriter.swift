@@ -78,6 +78,27 @@ public final class FieldWriter {
         return apply(shape, field: field, step: step) { $0 = $0.setting(held, at: parent.key(new)).setting(nil, at: parent.key(key)) }
     }
 
+    /// A fill's write (`FieldFill`): each top-level field to its value (nil takes it out), in one step named
+    /// `name`, never joined to another, on the shape's board, shown or not (`transact(on:)`: undoing it shows
+    /// that board). False, and nothing changed, for a shape on no board of the file or the editor can't show, a
+    /// kind that holds no values, and a shape that can't change, which isn't shaken: nobody tried.
+    @discardableResult
+    public func fill(_ values: [(key: String, value: JSONValue?)], of shape: ShapeID, step name: String) -> Bool {
+        guard let editor, let board = editor.file.board(containing: shape), let record = editor.shape(inFile: shape),
+              editor.registry.isTypeable(record.kind), !editor.isReadOnly(inFile: shape) else { return false }
+        let written: Bool? = editor.transact(on: board, name) { transaction in
+            transaction.update(shape) { record in
+                let old = record[FieldValuesProperty.self] ?? FieldValues()
+                var new = old
+                for (key, value) in values { new = new.setting(value, at: FieldPath(field: key)) }
+                record[FieldValuesProperty.self] = new.isEmpty ? nil : new
+                if let title = titling(record, old: old, new: new) { record[TitleProperty.self] = title }
+            }
+            return true
+        }
+        return written == true
+    }
+
     /// A value no field names: the step `Remove <key>`, never coalesced. It does not ask whether a field
     /// names the key (its caller lists only the keys none does).
     @discardableResult

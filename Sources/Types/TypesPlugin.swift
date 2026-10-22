@@ -30,6 +30,8 @@ public struct TypesPlugin: ListedPlugin {
         // holds for their fields.
         registrar.declare(IsAProperty.self)
         registrar.declare(FieldValuesProperty.self)
+        // Whether a shape of a type fills its fields from its words (`FieldFill`), and on a type, whether its shapes do.
+        registrar.declare(AutofillProperty.self)
         // A type that says what an arrow between two notes holds (the mark), and an arrow's rule for the end
         // it is (`relating()` kinds).
         registrar.declare(RelationshipProperty.self)
@@ -47,6 +49,8 @@ public struct TypesPlugin: ListedPlugin {
         // What changes a shape's field values (one writer for every surface), what is said of them (the check),
         // and the card a row with more in it opens.
         registrar.service { FieldWriter(editor: $0) }
+        // What fills a shape's fields from its words, through the writer (and the model, as the sync asks it).
+        registrar.service { FieldFill(editor: $0) }
         // And what changes the fields a type defines: the one writer of its schema's properties.
         registrar.service { FieldDefiner(editor: $0) }
         registrar.service { editor in
@@ -227,6 +231,8 @@ public struct TypeDetailsPlugin: ListedPlugin {
         registerTypePanel(into: &registrar)
         // The Types rows' fields and values, after them.
         registerFieldsPanel(into: &registrar)
+        // Whether a shape fills its fields from its words, at the foot of its Types tab (and a type's, of its Schema tab).
+        registerAutofillPanel(into: &registrar)
         // Needed and Only one, for an arrow that is an end.
         registerEndRulePanel(into: &registrar)
     }

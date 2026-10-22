@@ -66,11 +66,11 @@ private let ownerSchema = #"{"type": "object", "properties": {"since": {"type": 
     test("a relationship type's Schema tab has a Description section above its JSON; a plain type's has none, and the mark taken off takes it away") {
         let editor = try CanvasEditor(registry: Registry(plugins: notePlugins + [LanguageModelsPlugin(model: ScriptedLanguageModel()), TypeDetailsPlugin()]), scheduler: ManualScheduler())
         let id = addOwner(editor)
-        expectEqual(try sections(of: id, in: editor), ["Description", "JSON"], "the kind's own section first")
+        expectEqual(try sections(of: id, in: editor), ["Description", "JSON", "type-autofill"], "the kind's own section first")
         editor.makePlainTypes([id])
-        expectEqual(try sections(of: id, in: editor), ["JSON"], "a plain type's words are on its note")
+        expectEqual(try sections(of: id, in: editor), ["JSON", "type-autofill"], "a plain type's words are on its note")
         editor.makeRelationshipTypes([id])
-        expectEqual(try sections(of: id, in: editor), ["Description", "JSON"])
+        expectEqual(try sections(of: id, in: editor), ["Description", "JSON", "type-autofill"])
     },
     test("typing a description and Return writes the type's words, one step Change Description, and the model writes its fields from them, told it is a relationship type; the box is the panel's mention text") {
         let model = ScriptedLanguageModel()

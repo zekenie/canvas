@@ -1,8 +1,14 @@
 # Type prompts: quick evals
 
-Whether the two prompts that keep a type's words (a note's text) and its JSON Schema in step, and the
-one that links the description's words to the schema's parts (Highlights, below), basically do the
-job. Not a framework: a script, a CSV of cases, a CSV of results, read by eye.
+Whether the two prompts that keep a type's words (a note's text) and its JSON Schema in step, the
+one that links the description's words to the schema's parts (Highlights, below), and the one that
+fills a note's fields from its words (Filling fields, below) basically do the job. Not a framework: a
+script, a CSV of cases, a CSV of results, read by eye.
+
+`evalkit.py` is what the three scripts share, one copy: the key (read from the app's Settings file,
+else `$ANTHROPIC_API_KEY`, never printed), reading a prompt's literal and a setting out of the Swift,
+the call with its retries, and taking an answer out of a fence or a lone tag's line. Each script keeps
+its own request layout, parse rule and scoring, copied from the call it tests.
 
 - `evals.py` runs the cases and appends a row per case to `results.csv` (`pass`, what failed, latency,
   tokens, the output on one line); `results.jsonl` gets everything, and isn't committed.
@@ -388,3 +394,39 @@ around them, `p_ref_kept`; the other 12 answers the `NO_CHANGE` of `p_descriptio
 `s_make_required`, `s_non_latin`, `s_ref_new`, `s_link_a`, `s_title_called`, `s_already_matches`, `s_garbage`),
 38 of 39, `s_link_a` once on `indent` (a schema on one line, the old miss; the to-schema prompts did not change).
 The schemas that came back were not meta-validated (no `_pylib`).
+
+## Filling fields (2026-10-21; run)
+
+`fill_evals.py` evaluates `FieldFill`'s one call: a note of a type has its fields filled from its words. It
+reads the system prompt, `maxTokens`, the model and its effort out of `Sources/Types/Sync/FillPrompts.swift`,
+lays the user message out as `FillPrompts.request` does (`<fields>`, `<values>`, `<today>`,
+`<previous_words>` when there are some, `<words>`), and reads and writes the answer as `FillPrompts.parse` and
+`FieldFill.apply` do: a JSON object of the changes, a member no field names passed over, a group set member by
+member, a list whole, `null` taking a value away, empties not kept. Each case in `fill_cases.py` says, for the
+fields it is about, what the note may hold after (text compared loosely, or none); every other field must hold
+what it held. `--check` reads the Swift and self-tests the scoring, with no call.
+
+```sh
+python3 fill_evals.py --check
+python3 fill_evals.py                     # 24 cases, three runs each
+EVAL_EFFORT=low python3 fill_evals.py     # another effort than the app's
+```
+
+The cases: the owner's own note ("purpose is to be a foobar really good foob"); a task's purpose, status from
+"already started" and an estimate from "about 3 days"; words that say nothing; a contact with no phone given; a
+date from "due Friday" and one with no year, a time stamp, a yes or no from "not urgent"; a choice the field
+doesn't list, words for a number, a field called by its title; a group, a list, Spanish, a mention read as its
+name, two of eight fields; an injection; and seven edits with words before: a value added beside one typed by
+hand, one taken away, one taken away that was typed by hand since (it stays), one changed, words read whole over
+a value they contradict, values already held, and an edit that says nothing new.
+
+Round 1, Haiku 5.5 (`claude-haiku-5-5`), 24 cases × 3 runs:
+
+| effort | right | p50 | max |
+|---|---|---|---|
+| `low` | 71/72 | 977 ms | 7,676 ms |
+| `medium` | 72/72 | 914 ms | 2,090 ms |
+| `medium`, again | 72/72 | 922 ms | 1,975 ms |
+
+`low`'s one miss left an owner the edit took out of the words (`edit_removes`, answered `{}`). `medium` was right
+every time, no slower at the median and with a shorter tail, so the fill ships at `medium`, as the sync does.

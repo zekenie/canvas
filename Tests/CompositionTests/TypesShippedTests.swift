@@ -177,7 +177,7 @@ private let petAnswer = """
         expectEqual(editor.document[arrow]?[FieldValuesProperty.self], nil)
         for shape in [arrow, note] {
             let layout = try require(editor.detailPanel?.layout(for: try require(editor.document[shape])))
-            expectEqual(layout.sections(in: .of(TypesTab.self)).map(\.section), ["types", "fields"])
+            expectEqual(layout.sections(in: .of(TypesTab.self)).map(\.section), ["types", "fields", "autofill"])
         }
         let host = NSHostingView(rootView: try require(editor.registry.hostInspector).view(for: editor, onExit: {}))
         host.frame = CGRect(x: 0, y: 0, width: DetailStyle.idealWidth, height: 700)

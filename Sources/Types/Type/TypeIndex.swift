@@ -71,6 +71,9 @@ public final class TypeIndex {
         /// The color the type's shape holds (not what it is drawn in: `look(of:)`), nil for none. Not
         /// part of its revision, which is what its schema and its name say.
         var color: ShapeColor?
+        /// Whether the type's shapes fill their fields from their words, as its shape holds it (its `$autofill`),
+        /// nil for no say. Not part of its revision either.
+        var autofill: Bool?
         var isRelationship: Bool
     }
 
@@ -82,6 +85,8 @@ public final class TypeIndex {
         var lineage: Set<ShapeID> = [], lists: Set<ShapeID> = [], renamed: Set<ShapeID> = []
         /// Types whose shape holds another color now (or that came or went holding one): what their notes take.
         var recolored: Set<ShapeID> = []
+        /// A type's shape says otherwise of whether its shapes fill their fields (or came or went saying it).
+        var autofills = false
 
         var change: TypeChange { TypeChange(types: types, marks: marks, membership: membership, lineage: lineage, lists: lists) }
     }
@@ -174,6 +179,23 @@ public final class TypeIndex {
         let held = heldColors(of: links, shape: id)
         guard !held.isEmpty, let book = editor?.colors else { return nil }
         return held.first(where: book.has)
+    }
+
+    /// Whether a shape of a type fills its fields from its words (`FieldFill`): its own say (`autofill`), else what
+    /// its types say (`autofillInherited(by:)`). For a type, what its shapes do unless they say otherwise.
+    public func autofills(_ record: AnyShapeRecord) -> Bool {
+        record[AutofillProperty.self] ?? autofillInherited(by: record.id)
+    }
+
+    /// What a shape's types say of filling, with no say of its own: the first that a type of its chain holds, in
+    /// the order its fields resolve (`lineage(of:)`: a type before what it builds on, the one added later first),
+    /// as a color is taken (`color(inheritedBy:)`); true where none says. For a type, what the types it builds on
+    /// say. Asked as a fill is about to start and by the panel, never per frame.
+    public func autofillInherited(by id: ShapeID) -> Bool {
+        for type in kept.lineage(of: id) {
+            if let held = entries[type]?.autofill { return held }
+        }
+        return true
     }
 
     /// The colors the types of `id`'s chain hold, in its order: worked out once for each list, as the
@@ -311,6 +333,14 @@ public final class TypeIndex {
     /// types changed), which `chainRevision` alone does not tell a view.
     func observeChanges() { access(keyPath: \.changeCount) }
 
+    @ObservationIgnored private var autofillsTold = 0
+    private var autofillCount: Int { autofillsTold }
+
+    /// Read in the body of a view that shows whether a shape fills its fields (the panel's box): it draws again
+    /// after a commit in which a type's shape said otherwise of it (or came or went saying it), which moves no
+    /// revision and tells `observeChanges` nothing.
+    func observeAutofills() { access(keyPath: \.autofillCount) }
+
     // MARK: What may be what
 
     /// Whether `/is-a` may make `owner` an instance of `target`: `target` is a type (a shape of a kind
@@ -402,17 +432,20 @@ public final class TypeIndex {
             drop(record.id, heard: &heard)
             return
         }
-        let name = registry.title(of: record), color = record.ownColor
+        let name = registry.title(of: record), color = record.ownColor, autofill = record[AutofillProperty.self]
         let mark = record[RelationshipProperty.self] == true
         let kept = entries[record.id]
         // A type given another color has it written in its schema too (its `$color`): that alone is a color
-        // change, which moves no revision (`TypeColorDirective`).
-        let sameSchema = kept.map { TypeColorDirective.sameButColor($0.schema, schema.text) } ?? false
+        // change, which moves no revision (`TypeColorDirective`); so is a type told whether its shapes fill (its
+        // `$autofill`), which nothing keeps but its entry.
+        let sameSchema = kept.map { HeldDirectives.sameButHeld($0.schema, schema.text) } ?? false
         let same = sameSchema && kept?.name == name
         if var kept, same, kept.isRelationship == mark {
-            guard kept.color != color || kept.schema != schema.text else { return }
+            guard kept.color != color || kept.schema != schema.text || kept.autofill != autofill else { return }
             let recolored = kept.color != color
+            if kept.autofill != autofill { heard.autofills = true }
             kept.color = color
+            kept.autofill = autofill
             kept.schema = schema.text
             entries[record.id] = kept
             if recolored {
@@ -422,6 +455,7 @@ public final class TypeIndex {
             return
         }
         if kept == nil { heard.membership.insert(record.id) }
+        if kept?.autofill != autofill { heard.autofills = true }
         if kept == nil || kept?.name != name || kept?.color != color { heard.renamed.insert(record.id) }
         if kept?.color != color { recolor(record.id, to: color, heard: &heard) }
         if let name { lastNames[record.id] = name }
@@ -429,7 +463,7 @@ public final class TypeIndex {
         if (kept?.isRelationship ?? false) != mark { heard.marks.insert(record.id) }
         if !same { heard.types.insert(record.id) }
         revisions += 1
-        put(record.id, Entry(schema: schema.text, name: name, revision: revisions, color: color, isRelationship: mark))
+        put(record.id, Entry(schema: schema.text, name: name, revision: revisions, color: color, autofill: autofill, isRelationship: mark))
     }
 
     /// A record's list as the index reads a committed shape's: each type its `is` names once, the first, in
@@ -479,6 +513,7 @@ public final class TypeIndex {
         heard.renamed.insert(id)
         if entry.isRelationship { heard.marks.insert(id) }
         if entry.color != nil { recolor(id, to: nil, heard: &heard) }
+        if entry.autofill != nil { heard.autofills = true }
     }
 
     /// The type's shape holds another color now, or none (it came or went holding one): what the shapes
@@ -578,7 +613,13 @@ public final class TypeIndex {
             for type in moved { withMutation(keyPath: \.[nameVersion: type]) { nameVersions[type, default: 0] += 1 } }
             if !chips.isEmpty { editor.adornmentsDidChange(for: chips) }
             if recolors { editor.colors?.inheritedColorsDidChange() }
+            toldAutofills()
         }
+    }
+
+    /// What a type says of its shapes' filling changed: the views that show it draw again.
+    private func toldAutofills() {
+        withMutation(keyPath: \.autofillCount) { autofillsTold &+= 1 }
     }
 }
 
@@ -618,11 +659,13 @@ extension TypeIndex: EditorService {
         // recolored that has shapes of it (or went), or a chain changed while a type holds a color.
         let recolors = heard.recolored.contains { entries[$0] == nil || hasInstances($0) }
             || (!colored.isEmpty && !(heard.lineage.isEmpty && heard.membership.isEmpty))
-        guard !change.isEmpty || !renamed.isEmpty else { return }
+        let autofills = heard.autofills
+        guard !change.isEmpty || !renamed.isEmpty || autofills else { return }
         editor.onceHeard { [weak self, unowned editor] in
             self?.tell(change)
             self?.told(renamed: renamed, in: editor)
             if recolors { editor.colors?.inheritedColorsDidChange() }
+            if autofills { self?.toldAutofills() }
         }
     }
 

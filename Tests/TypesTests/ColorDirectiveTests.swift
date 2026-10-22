@@ -96,24 +96,24 @@ extension CanvasEditor {
         expectEqual(Directive.text(#"{"properties": {"a": {}, "$color": {"const": "red"}}}"#, saying: nil), #"{"properties": {"a": {}}}"#, "last")
         expectEqual(Directive.text(#"{"properties": {"$color": 1, "a": {}, "$color": {"const": "red"}}}"#, saying: nil), #"{"properties": {"a": {}}}"#, "both")
         expectEqual(Directive.text(TypeSchemaProperty.starter, saying: nil), TypeSchemaProperty.starter, "none to take")
-        expectEqual(Directive.stripped(blueStarter), TypeSchemaProperty.starter)
-        expectEqual(Directive.stripped(#"{"properties": {"#), #"{"properties": {"#, "a text being typed, as it is")
+        expectEqual(HeldDirectives.stripped(blueStarter), TypeSchemaProperty.starter)
+        expectEqual(HeldDirectives.stripped(#"{"properties": {"#), #"{"properties": {"#, "a text being typed, as it is")
         let pretty = try require(Directive.text(#"{"type": "object", "properties": {"name": {}}}"#, saying: .red))
         expectEqual(Directive.text(pretty, saying: nil), #"{"type": "object", "properties": {"name": {}}}"#, "there and back")
     },
     test("a schema written whole keeps the $color of the one it replaces, as written, unless it says one") {
         let held = #"{"properties": {"$color": { "const" : "teal" }, "a": {}}}"#
-        expectEqual(Directive.carried(from: held, into: #"{"properties": {"b": {}}}"#), #"{"properties": {"$color": { "const" : "teal" }, "b": {}}}"#)
-        expectEqual(Directive.carried(from: held, into: #"{"properties": {"$color": {"const": "red"}}}"#), #"{"properties": {"$color": {"const": "red"}}}"#,
+        expectEqual(HeldDirectives.carried(from: held, into: #"{"properties": {"b": {}}}"#), #"{"properties": {"$color": { "const" : "teal" }, "b": {}}}"#)
+        expectEqual(HeldDirectives.carried(from: held, into: #"{"properties": {"$color": {"const": "red"}}}"#), #"{"properties": {"$color": {"const": "red"}}}"#,
                     "it says one")
-        expectEqual(Directive.carried(from: #"{"properties": {"$color": 4}}"#, into: "{}"), #"{"properties": {"$color": 4}}"#, "even one that isn't a color")
-        expectEqual(Directive.carried(from: TypeSchemaProperty.starter, into: "{}"), "{}", "none held")
-        expectEqual(Directive.carried(from: nil, into: "{}"), "{}")
-        expectEqual(Directive.carried(from: held, into: #"{"properties": {"#), #"{"properties": {"#, "written being typed")
+        expectEqual(HeldDirectives.carried(from: #"{"properties": {"$color": 4}}"#, into: "{}"), #"{"properties": {"$color": 4}}"#, "even one that isn't a color")
+        expectEqual(HeldDirectives.carried(from: TypeSchemaProperty.starter, into: "{}"), "{}", "none held")
+        expectEqual(HeldDirectives.carried(from: nil, into: "{}"), "{}")
+        expectEqual(HeldDirectives.carried(from: held, into: #"{"properties": {"#), #"{"properties": {"#, "written being typed")
         // What the rule writes and what is carried into the text it was written into are the same text.
         let script = #"{"type": "object", "properties": {"name": {"type": "string"}}}"#
         let kept = try require(Directive.text(script, saying: .blue))
-        expectEqual(Directive.carried(from: kept, into: script), kept)
+        expectEqual(HeldDirectives.carried(from: kept, into: script), kept)
     },
 ])
 

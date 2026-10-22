@@ -94,10 +94,13 @@ extension ShapeRegistrar {
 
     /// This kind's shapes can be types: each may hold a JSON Schema (`TypeSchemaProperty`), which
     /// `/is-a type` gives it and its words are kept in step with, and a type's color is written in it
-    /// as its `$color` as it's written (`TypeColorDirective`). Needs `typeWords`.
+    /// as its `$color` as it's written (`TypeColorDirective`), and whether its shapes fill their fields
+    /// from their words as its `$autofill` (`TypeAutofillDirective`: the `autofill` that `typeable()`
+    /// opts the kind into). Needs `typeWords`.
     public mutating func canBeType() {
         optIn(to: TypeSchemaProperty.self)
         keepsInStep(TypeColorDirective.keep)
+        keepsInStep(TypeAutofillDirective.keep)
     }
 }
 

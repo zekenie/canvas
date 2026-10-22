@@ -355,12 +355,12 @@ private let shapeKeys = ["name", "kind", "size", "radius", "side", "visible", "o
     test("a type: the root's properties offer `$title`, written with its one member and asking for the field; once, and not in a group") {
         let marked = #"{"type": "object", "properties": {"name": {"type": "string"}, |}}"#
         let c = try require(complete(marked))
-        expectEqual(labels(c), ["$title", "$color"])
+        expectEqual(labels(c), ["$title", "$color", "$autofill"])
         expectEqual(try item("$title", in: c).detail, "Titles a note from a field")
         expect(try item("$title", in: c).reopens)
         expectEqual(try picking("$title", at: marked), #"{"type": "object", "properties": {"name": {"type": "string"}, "$title": {"x-canvas-from": "|"}}}"#)
         expectEqual(try picking("$title", at: #"{"properties": {"$ti|": 1}}"#), #"{"properties": {"$title"|: 1}}"#, "the colon is there")
-        expectEqual(labels(complete(#"{"properties": {"$title": {}, |}}"#)), ["$color"], "once")
+        expectEqual(labels(complete(#"{"properties": {"$title": {}, |}}"#)), ["$color", "$autofill"], "once")
         expectEqual(complete(#"{"properties": {"g": {"properties": {|}}}}"#), nil, "not in a group's properties")
         expect(labels(complete(#"{"properties": {"$ti|"}}"#)).contains("$title"), "typed as far as it goes")
     },
@@ -370,7 +370,7 @@ private let shapeKeys = ["name", "kind", "size", "radius", "side", "visible", "o
         expectEqual(try item("$color", in: c).detail, "The type's color")
         expect(try item("$color", in: c).reopens)
         expectEqual(try picking("$color", at: marked), #"{"type": "object", "properties": {"name": {"type": "string"}, "$color": {"const": "|"}}}"#)
-        expectEqual(labels(complete(#"{"properties": {"$color": {}, |}}"#)), ["$title"], "once")
+        expectEqual(labels(complete(#"{"properties": {"$color": {}, |}}"#)), ["$title", "$autofill"], "once")
         expect(!labels(complete(#"{"properties": {"g": {"properties": {|}}}}"#)).contains("$color"), "not in a group's properties")
         expect(labels(complete(#"{"properties": {"$co|"}}"#)).contains("$color"), "typed as far as it goes")
     },
@@ -387,6 +387,19 @@ private let shapeKeys = ["name", "kind", "size", "radius", "side", "visible", "o
         expectEqual(labels(given).last, "Brand", "a file's own, after")
         expectEqual(given?.items.last?.detail, "#4465E9")
         expect(!labels(complete(#"{"properties": {"g": {"properties": {"$color": {"const": "|"}}}}}"#)).contains("blue"), "not in a group's $color")
+    },
+    test("a type: the root's properties offer `$autofill`, written saying false, selected, and asking which; in it `const` alone, true or false") {
+        let marked = #"{"type": "object", "properties": {"name": {"type": "string"}, |}}"#
+        let c = try require(complete(marked))
+        expectEqual(try item("$autofill", in: c).detail, "Whether its notes fill their fields from their words")
+        expect(try item("$autofill", in: c).reopens)
+        expectEqual(try picking("$autofill", at: marked), #"{"type": "object", "properties": {"name": {"type": "string"}, "$autofill": {"const": «false»}}}"#)
+        expectEqual(labels(complete(#"{"properties": {"$autofill": {}, |}}"#)), ["$title", "$color"], "once")
+        expect(!labels(complete(#"{"properties": {"g": {"properties": {|}}}}"#)).contains("$autofill"), "not in a group's properties")
+        expectEqual(labels(complete(#"{"properties": {"$autofill": {|}}}"#)), ["const"], "no other keyword of a property's schema")
+        expectEqual(labels(complete(#"{"properties": {"$autofill": {"const": |}}}"#)), ["false", "true"])
+        expectEqual(try picking("true", at: #"{"properties": {"$autofill": {"const": |}}}"#), #"{"properties": {"$autofill": {"const": true|}}}"#)
+        expect(!labels(complete(#"{"properties": {"g": {"properties": {"$autofill": {"const": |}}}}}"#)).contains("true"), "not in a group's $autofill")
     },
     test("a type: in `$title`, `x-canvas-from` alone, written with its value in quotes and asking for the field") {
         let marked = #"{"properties": {"name": {"type": "string"}, "$title": {|}}}"#

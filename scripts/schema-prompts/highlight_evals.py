@@ -26,30 +26,15 @@ import json
 import os
 import re
 import sys
-import time
-import urllib.error
 import urllib.parse
-import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from highlight_cases import CASES, NEVER  # noqa: E402
+from evalkit import Fatal, call as kit_call, literal, load_key, unwrap  # noqa: E402
 
-API_URL = "https://api.anthropic.com/v1/messages"
 SWIFT = os.path.normpath(os.path.join(HERE, "..", "..", "Sources", "Types", "Sync", "SchemaPrompts.swift"))
 FRAME_SWIFT = os.path.normpath(os.path.join(HERE, "..", "..", "Sources", "ProseMaps", "ProseMapPrompt.swift"))
-
-
-class Fatal(Exception):
-    pass
-
-
-def literal(src, name, path):
-    """A raw string literal's text, between its delimiters, as Swift reads it."""
-    m = re.search(r'static let ' + name + r' = #"""\n(.*?)\n"""#', src, re.S)
-    if not m:
-        raise Fatal(f"no {name} in {path}")
-    return m.group(1)
 
 
 def swift_settings():
@@ -83,83 +68,18 @@ def user_message(prompt, schema):
     return "\n\n".join(p for p in (block("prose", prompt), block("schema", schema)) if p)
 
 
-def load_key():
-    path = os.path.expanduser("~/Library/Application Support/InfiniteCanvas/anthropic-api-key")
-    try:
-        with open(path, encoding="utf-8") as f:
-            key = f.read().strip()
-            if key:
-                return key
-    except OSError:
-        pass
-    return os.environ.get("ANTHROPIC_API_KEY", "").strip() or None
-
-
 def call(key, settings, model, user, names_schemas=False):
     # What it says of other schemas after it, a blank line apart, for a prompt that names some (the
     # context SchemaHighlightsShown passes, which ProseMapPrompt.system puts after the frame).
     system = settings["system"] + "\n" + settings["references"] if names_schemas else settings["system"]
-    body = {"model": model, "max_tokens": settings["max_tokens"], "system": system,
-            "messages": [{"role": "user", "content": user}]}
     if model.startswith("claude-haiku-4"):
-        body["temperature"] = 0.0      # Haiku 4.5 takes no effort; the app asks it at 0, as the sync does
-    else:                              # Sonnet 5.5 and Haiku 5.5 take an effort and no temperature but their default
-        body["output_config"] = {"effort": os.environ.get("EVAL_EFFORT") or settings["effort"]}
-    data = json.dumps(body).encode("utf-8")
-    headers = {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01"}
-    delay = 2.0
-    for attempt in range(6):
-        req = urllib.request.Request(API_URL, data=data, headers=headers, method="POST")
-        started = time.monotonic()
-        try:
-            with urllib.request.urlopen(req, timeout=60 + settings["max_tokens"] / 100) as resp:
-                answer = json.load(resp)
-            ms = int((time.monotonic() - started) * 1000)
-            text = "".join(b.get("text", "") for b in answer.get("content", []) if b.get("type") == "text")
-            usage = answer.get("usage", {})
-            return {"text": text, "stop_reason": answer.get("stop_reason"), "ms": ms,
-                    "in": usage.get("input_tokens", 0), "out": usage.get("output_tokens", 0)}
-        except urllib.error.HTTPError as e:
-            detail = ""
-            try:
-                detail = json.load(e).get("error", {}).get("message", "")
-            except Exception:
-                pass
-            if e.code in (429, 500, 502, 503, 529) and attempt < 5:
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise Fatal(f"HTTP {e.code}: {detail}")
-        except (urllib.error.URLError, TimeoutError) as e:
-            if attempt < 5:
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise Fatal(f"network: {e}")
-    raise Fatal("gave up")
+        # Haiku 4.5 takes no effort; the app asks it at 0, as the sync does.
+        return kit_call(key, model, settings["max_tokens"], system, user, temperature=0.0)
+    # Sonnet 5.5 and Haiku 5.5 take an effort and no temperature but their default.
+    return kit_call(key, model, settings["max_tokens"], system, user, effort=os.environ.get("EVAL_EFFORT") or settings["effort"])
 
 
 # ------------------------------------------------------------------ reading an answer, as the app does
-
-def is_wrapper(line):
-    line = line.strip()
-    return line.startswith("```") or re.fullmatch(r"</?[A-Za-z_-]+>", line) is not None
-
-
-def unwrap(t):
-    """ModelAnswer.unwrapped: without a fence line or a lone tag's line at either end, again until
-    nothing changes."""
-    while True:
-        before = t
-        lines = t.strip().split("\n")
-        if lines and is_wrapper(lines[0]):
-            lines = lines[1:]
-        if lines and is_wrapper(lines[-1]):
-            lines = lines[:-1]
-        t = "\n".join(lines).strip()
-        if t == before:
-            return t
-
 
 def last_array(text):
     """The whole answer if it reads as a JSON array, else the last run of lines from one starting

@@ -57,9 +57,10 @@ final class TypePanelWindow {
     var code: NSTextView? { hosting.descendants(NSTextView.self).first { !$0.isFieldEditor && $0.font?.isFixedPitch == true } }
 
     /// The buttons under the header, in order: the status line's (SwiftUI draws their titles, so
-    /// they're told apart by where they are).
+    /// they're told apart by where they are). Not the checkboxes (`checkboxes`): a type's box at the foot of
+    /// its Schema tab, whether its notes fill.
     var buttons: [NSButton] {
-        hosting.descendants(NSButton.self).filter { $0.convert($0.bounds, to: hosting).maxY > 44 }
+        hosting.descendants(NSButton.self).filter { $0.convert($0.bounds, to: hosting).maxY > 44 && !$0.className.contains("FocusRing") }
     }
 
     /// Gives a text view the keyboard, the caret at `caret` (the end by default).
@@ -151,7 +152,7 @@ final class SettingsCatcher: NSObject, NSApplicationDelegate {
         let order = editor.addType(fixture(6))
         let layout = try require(editor.detailPanel?.layout(for: try require(editor.document[order])))
         expect(layout.tabs.map(\.title).contains("Schema"))
-        expectEqual(layout.sections(in: .of(TypeSchemaTab.self)).map(\.section), ["JSON"])
+        expectEqual(layout.sections(in: .of(TypeSchemaTab.self)).map(\.section), ["JSON", "type-autofill"], "and at its foot, whether its notes fill")
         let plain = editor.add(memo("a pet"))
         let other = try require(editor.detailPanel?.layout(for: try require(editor.document[plain])))
         expect(!other.tabs.map(\.title).contains("Schema"))
