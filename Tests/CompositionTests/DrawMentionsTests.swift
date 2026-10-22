@@ -202,7 +202,7 @@ extension CanvasEditor {
         expect(editor.mentionPills(of: reading.id).allSatisfy(\.isLive))
         let height = try require(reading.box?.height)
         expect(height > 200, "\(height)")
-        expectEqual(try edited("Reading"), CGSize(width: 200, height: height))
+        expectEqual(try edited("Reading"), CGSize(width: StickyNote.defaultSize.width, height: height))
         let wide = try require(edited("Wide"))
         expectEqual(wide.width, 320)
         expectEqual(wide.height, try fitted("Wide", width: 320))

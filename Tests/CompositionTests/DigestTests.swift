@@ -483,11 +483,12 @@ private func isByDesign(_ message: String) -> Bool {
                 expectEqual(change["did"], "created", "\(name): \(change["title"] ?? .null)")
             }
         }
-        // the sizes the plan stated are the sizes the app made them: a typed note is at least 320 wide
+        // the sizes the plan stated are the sizes the app made them: a typed note keeps the width the digest
+        // draws it at (the tool's 300 for a title this short), since rows never widen a note
         let shapes = (try require(plan["boards"]?.arrayValue)).flatMap { $0["shapes"]?.arrayValue ?? [] }
         for title in ["Workflow", "Table", "OrderWorkflow", "orders"] {
             let shape = try require(shapes.first { $0["title"]?.stringValue == title })
-            expect((shape["w"]?.numberValue ?? 0) >= 320, "\(title) is 320 wide at least: \(shape)")
+            expectEqual(shape["w"]?.numberValue, 300, "\(title) is as wide as the digest drew it: \(shape)")
         }
         let tall = { (t: String) -> Double in shapes.first { $0["title"]?.stringValue == t }?["h"]?.numberValue ?? 0 }
         expect(tall("Workflow") > tall("OrderWorkflow") - 100 && tall("Workflow") >= 200, "the type's note has its fields' rows and its ends'")
@@ -634,7 +635,7 @@ private func isByDesign(_ message: String) -> Bool {
         let sizes = Dictionary(uniqueKeysWithValues: (a["shapes"]?.arrayValue ?? []).compactMap { shape in
             shape["title"]?.stringValue.map { ($0, shape["size"]?.arrayValue?.compactMap(\.numberValue) ?? []) }
         })
-        expect((sizes["Workflow"]?.first ?? 0) >= 320 && (sizes["OrderWorkflow"]?.first ?? 0) >= 320, "a typed note is 320 wide at least: \(sizes)")
+        expect(sizes["Workflow"]?.first == 300 && sizes["OrderWorkflow"]?.first == 300, "a typed note keeps the width the digest gives it: \(sizes)")
         expect((sizes["Workflow"]?.last ?? 0) > 200, "a type with fields and ends grows past the least: \(sizes)")
     },
 

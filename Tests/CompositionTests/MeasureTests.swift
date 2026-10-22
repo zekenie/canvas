@@ -255,7 +255,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
             "shapes": [
                 ["line": 1, "title": "Checkout v2", "kind": "sticky-note", "size": [300, 200], "above": 27],
                 ["line": 2, "title": "Region", "kind": "frame", "size": [400, 300], "above": 27],
-                ["line": 3, "title": "Hub", "kind": "sticky-note", "size": [200, 200], "above": 27],
+                ["line": 3, "title": "Hub", "kind": "sticky-note", "size": [260, 200], "above": 27],
             ],
             "references": [["line": 4, "for": "Hub", "size": [91, 32]]],
             "constants": [
@@ -305,7 +305,8 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
-        let schema = scripted(#"{"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}, "role": {"type": "string"}}}"#)
+        // Eight fields: rows taller than a new note, so they give it room.
+        let schema = scripted(#"{"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}, "role": {"type": "string"}, "team": {"type": "string"}, "phone": {"type": "string"}, "office": {"type": "string"}, "manager": {"type": "string"}, "start": {"type": "string"}}}"#)
         expectEqual(try canvas(server, ["draw", #"sticky-note "Person" text: "A person" schema: "\#(schema)""#]).status, 0)
         let script = #"sticky-note "Ann" is: "Person""#
         let before = board.editor.file, revision = board.editor.revision, step = board.editor.undoHistory.undoName
@@ -318,7 +319,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         // No board: the type isn't there, so a note without rows.
         let without = try measured(script, in: shippedEditor()).get()
         let plain = try require(size(without["shapes"]?.arrayValue?.first?["size"]))
-        expect(roomy != plain && roomy[0] >= plain[0] && roomy[1] >= plain[1], "rows give it room: \(roomy) against \(plain)")
+        expect(roomy[0] == plain[0] && roomy[1] > plain[1], "rows make it taller, never wider: \(roomy) against \(plain)")
         expectEqual(without["warnings"]?.arrayValue?.first?["message"], #""Ann": is: there's no shape called "Person"; measured without it"#)
         expectEqual(without["board"], nil, "no board, none named")
         // Nothing changed, no step, and every statement's shape is new: a title the file has is no restatement.
@@ -347,7 +348,8 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         defer { typed.close(); front.close() }
         let server = try startCommandServer(boards: [typed, front], frontmost: front)
         defer { server.stop() }
-        let schema = scripted(#"{"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}}}"#)
+        // Eight fields: rows taller than a new note, so a note of the type measures taller than one without.
+        let schema = scripted(#"{"type": "object", "properties": {"name": {"type": "string"}, "email": {"type": "string"}, "role": {"type": "string"}, "team": {"type": "string"}, "phone": {"type": "string"}, "office": {"type": "string"}, "manager": {"type": "string"}, "start": {"type": "string"}}}"#)
         let drawn = try canvas(server, ["draw", "--board", "\(typed.number)", #"sticky-note "Person" schema: "\#(schema)""#])
         expectEqual(drawn.status, 0, drawn.error)
         expectEqual(typed.editor.document.shapes.count, 1)

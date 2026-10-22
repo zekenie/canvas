@@ -1583,7 +1583,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     // the stand-in the tests use grows a type by its ends: a note of the type has the rows too
     var est = helpers.estimateMeasure(model.buildModel(d));
     var h = function (t) { return est.shapes.filter(function (x) { return x.title === t; })[0]; };
-    assert(h('Workflow').size[0] >= 320 && h('w1').size[0] >= 320, 'a typed note is 320 wide at least');
+    assert(h('Workflow').size[0] === sizes.noteWidth('Workflow') && h('w1').size[0] === sizes.noteWidth('w1'), 'a typed note keeps the width it is drawn at');
     assert(h('Workflow').size[1] > 200, 'a type with fields and ends grows');
     // an untyped digest has the script it always had
     var plain = sizes.measureScript(model.buildModel(fixture('tree')));
@@ -1624,7 +1624,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(acme.runs.every(function (x) { return !/-notes\.draw$/.test(x.name); }), 'an untyped digest has none');
     // the plan's sizes are the measure's, so a typed note is drawn at the size it has with its ends
     var sh = function (t) { return r.plan.boards[0].shapes.concat(r.plan.boards[1].shapes).filter(function (x) { return x.title === t; })[0]; };
-    assert(sh('Workflow').w >= 320 && sh('Workflow').h > 200, 'the type is stated at its measured size');
+    assert(sh('Workflow').w === sizes.noteWidth('Workflow') && sh('Workflow').h > 200, 'the type is stated at its measured size');
     assert(new RegExp('sticky-note "Workflow".* size: ' + sh('Workflow').w + 'x' + sh('Workflow').h + ' ').test(typesRun), 'and drawn at it');
   });
 

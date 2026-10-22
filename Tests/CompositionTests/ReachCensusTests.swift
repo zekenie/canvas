@@ -585,7 +585,7 @@ private struct PlantedFacePlugin: CanvasPlugin {
         b.walk.pending = reachPending.filter { !$0.hasPrefix("“") }
         b.walk.expectGaps(report.gaps)
         // What the board holds to be a census of: each of these found and reached.
-        for thing in ["LockChip button", "PublicChip", "TypeChips “+2” button", "RelationshipPill", "GoButton button", "MentionFace face",
+        for thing in ["LockChip button", "PublicChip", "TypeChips “+", "RelationshipPill", "GoButton button", "MentionFace face",
                       "DefinitionFace face", "RowFace face", "ResizeHandle handle", "ArrowHandle handle"] {
             expect(report.reached.contains { $0.hasPrefix(thing) }, "the census found no \(thing): \(report.reached)")
         }

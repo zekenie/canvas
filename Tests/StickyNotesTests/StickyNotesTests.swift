@@ -89,7 +89,8 @@ import Types
         h.key("n")
         h.press(at: CGPoint(x: 300, y: 300)); h.release()
         let note = try require(h.editor.document.shapes.first)
-        expectEqual(note.box, CGRect(x: 200, y: 200, width: 200, height: 200))
+        let size = StickyNote.defaultSize
+        expectEqual(note.box, CGRect(x: 300 - size.width / 2, y: 300 - size.height / 2, width: size.width, height: size.height))
         expectEqual(h.editor.editingShapeID, note.id)
         expectEqual(h.editor.currentToolID, .select)
     },

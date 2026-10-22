@@ -39,8 +39,8 @@ extension Budget {
 }
 
 /// A Feature type (one field), a Layer type and a relationship type `in`, off the top of the board, with an end drawn from
-/// each type to the relationship type when `ends`; `count` notes of Feature in `columns` columns (340 by 240 apart, 200
-/// stored and 320 laid out), each holding a value; three notes of Layer beside the types; and, when `relationships`, an
+/// each type to the relationship type when `ends`; `count` notes of Feature in `columns` columns (340 by 240 apart, 320
+/// wide, room for three pills a row), each holding a value; three notes of Layer beside the types; and, when `relationships`, an
 /// arrow from each Feature note to each Layer note, of the relationship type or plain when `typed` is false.
 @MainActor private func relationBoard(notes count: Int, columns: Int, ends: Bool, relationships: Bool = false, typed: Bool = true) -> (document: CanvasDocument, note: ShapeID) {
     func bound(_ id: ShapeID) -> ArrowTerminal {
@@ -76,7 +76,7 @@ extension Budget {
         shapes.append(AnyShapeRecord(note))
     }
     for place in 0..<count {
-        let frame = CGRect(x: CGFloat(place % columns) * 340, y: CGFloat(place / columns) * 240, width: 200, height: 200)
+        let frame = CGRect(x: CGFloat(place % columns) * 340, y: CGFloat(place / columns) * 240, width: 320, height: 200)
         var note = ShapeRecord(StickyNote(frame: frame, text: MentionText(plain: "Sign in")))
         note[IsAProperty.self] = [TypeLink(feature)]
         note[FieldValuesProperty.self] = FieldValues(["f1": "sign in with no password"])

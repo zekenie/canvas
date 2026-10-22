@@ -6,8 +6,6 @@ import CoreGraphics
 // place on both.
 
 extension TypesStyle {
-    /// The least width a note with rows reads at.
-    public static let rowsMinimumWidth: CGFloat = 320
     /// One row: 22 points, its text 14.
     public static let rowHeight: CGFloat = 22
     public static let rowFontSize: CGFloat = 14

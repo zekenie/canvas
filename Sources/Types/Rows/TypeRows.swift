@@ -5,18 +5,16 @@ import CoreGraphics
 // extent (`RowBook`) and draws the rows; the kind says only where they go, as `typeWords` says where its
 // words are, so Types names no kind.
 
-/// The room a shape's rows take: what a kind that shows them lays itself out with.
+/// The room a shape's rows take: what a kind that shows them lays itself out with. Only a height: the rows read
+/// at whatever width the shape has, and never widen it, so giving a shape a type moves nothing beside it.
 public struct RowsExtent: Hashable, Sendable {
-    /// The least width the rows read at.
-    public var minimumWidth: CGFloat
     /// How tall they are, all of them, the fold included.
     public var height: CGFloat
     /// The words over them have a line, however empty they are: the shape is being edited, so its caret sits above the
     /// rows rather than under them.
     public var wordsLine: Bool
 
-    public init(minimumWidth: CGFloat, height: CGFloat, wordsLine: Bool = false) {
-        self.minimumWidth = minimumWidth
+    public init(height: CGFloat, wordsLine: Bool = false) {
         self.height = height
         self.wordsLine = wordsLine
     }

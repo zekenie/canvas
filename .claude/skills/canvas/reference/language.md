@@ -106,7 +106,7 @@ A kind is drawable when a tool places it. These are the shipped ones:
 
 | kind | size | named by | what it says | edges |
 |---|---|---|---|---|
-| `sticky-note` | 200x200 | its title, a pill above its top-left corner | `text:`; a type's `schema:` in its panel | `note-link`, all four sides |
+| `sticky-note` | 260x200 | its title, a pill above its top-left corner | `text:`; a type's `schema:` in its panel | `note-link`, all four sides |
 | `subboard` | 240x160 | its title, drawn on its card | `description:`, what it's for, in its panel; its board is its own | every channel (`subboard-link`, `note-link`), all four sides |
 | `frame` | 640x400 | its title, a pill above its top-left corner | nothing else: it holds what's drawn `in` it | none |
 | `reference` | 120x32 | nothing: it has no title, so a script can't name one (an edge to a shape on another board draws one, [Through a reference](#through-a-reference)) | `query:`, a query in the query language; `all:` | none |
@@ -339,7 +339,7 @@ A direction against a side of a shape is measured from that side, wherever the s
 ```draw
 // Owner's top-left is the origin: each note's top-left is the offset written.
 sticky-note "Glossary" right of "Owner" left (gap: 520) below "Owner" top (gap: 20) text: "Words the team uses"
-sticky-note "Contacts" right of "Owner" left (gap: 760) below "Owner" top (gap: 20) text: "Who to call"
+sticky-note "Contacts" right of "Owner" left (gap: 820) below "Owner" top (gap: 20) text: "Who to call"
 ```
 
 ## Which board
@@ -917,15 +917,15 @@ An illustration (not the board on this page):
 ```json
 {"board": {"id": 2, "name": "Pipeline", "shows": "root", "showsPath": ["root"]},
  "changes": [
-   {"line": 3, "did": "created", "kind": "sticky-note", "title": "Ingest", "at": [[400, 300], [200, 200]], "inView": true},
-   {"line": 4, "did": "moved", "kind": "sticky-note", "title": "Backfill", "at": [[380, 580], [200, 200]], "inView": true, "pushedPast": ["Vendor"]},
-   {"line": 5, "did": "renamed", "kind": "sticky-note", "title": "Nightly run", "was": "Nightly schedule", "at": [[940, 580], [200, 200]], "inView": false},
+   {"line": 3, "did": "created", "kind": "sticky-note", "title": "Ingest", "at": [[400, 300], [260, 200]], "inView": true},
+   {"line": 4, "did": "moved", "kind": "sticky-note", "title": "Backfill", "at": [[380, 580], [260, 200]], "inView": true, "pushedPast": ["Vendor"]},
+   {"line": 5, "did": "renamed", "kind": "sticky-note", "title": "Nightly run", "was": "Nightly schedule", "at": [[940, 580], [260, 200]], "inView": false},
    {"line": 6, "did": "deleted", "kind": "sticky-note", "title": "Archive"},
    {"line": 7, "did": "connected", "kind": "arrow", "from": "Ingest", "to": "Clean", "channel": "note-link"},
    {"line": 8, "did": "created", "kind": "reference", "at": [[1180, 434], [106, 32]], "inView": true},
    {"line": 8, "did": "connected", "kind": "arrow", "from": "Load", "to": "Cutoff", "channel": "note-link", "via": "reference"},
    {"line": 9, "did": "unchanged", "kind": "sticky-note", "title": "Load"},
-   {"line": 10, "did": "updated", "kind": "sticky-note", "title": "Order 12", "at": [[400, 300], [320, 236]], "inView": true,
+   {"line": 10, "did": "updated", "kind": "sticky-note", "title": "Order 12", "at": [[400, 300], [260, 236]], "inView": true,
     "problems": [{"field": "customer", "path": "/customer", "class": "needed", "message": "customer is needed"},
                  {"field": "lineItems", "path": "/lineItems/0/quantity", "class": "wrong", "message": "line items › Mug › quantity must be at least 1"}]}
  ],
@@ -1150,7 +1150,7 @@ delete edge "Ingest" -> "Load"
 - `kind`, `title` (what the app calls it) and `tool` (the tool named for it: the one that places it).
 - `drawable`: whether a script can draw it, with the reason if not (`why`).
 - `names`: `named` (a title you give it), `derived` (worked out from what it is), or `none`.
-- `size`: what its tool places, like `"200x200"`.
+- `size`: what its tool places, like `"260x200"`.
 - `smallest`: the smallest its shapes are drawn, like `"96x64"` (a frame's), the same for its tool and resizing; a `size:` under it is `invalid_value`. Absent where any size goes.
 - `holds`: what its shapes hold, for `in` to name: `board` (a subboard's, a board of its own) or `shapes` (a frame's, on the board it's on); absent for neither.
 - `attributes`: each attribute a script can set, with a compact type. The types are a set's words joined by `|`, `true|false`, `number ≥ 0`, `integer`, `text`, `text (≤ 80)`, `date (YYYY-MM-DD or date-time)`, and JSON shapes like `JSON [{done, text}]` (members in alphabetical order; an id nobody writes, like a list item's, isn't listed). A text a plugin writes says what it takes after its type, in brackets: `text (@[Title] mentions)` for a note's `text`, so a value's refusal hint (`text: takes text (@[Title] mentions)`) says it too. Keys a script can't set, like the frame, aren't listed.

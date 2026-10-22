@@ -10959,7 +10959,7 @@ order, and never by id, since titles are the names:
 
 ```json
 {"board": {"id": 2, "name": "Architecture", "shows": "root", "showsPath": ["root"]},
- "changes": [{"line": 2, "did": "created", "kind": "sticky-note", "title": "API", "at": [[620, 350], [200, 200]], "inView": true},
+ "changes": [{"line": 2, "did": "created", "kind": "sticky-note", "title": "API", "at": [[590, 350], [260, 200]], "inView": true},
              {"line": 4, "did": "connected", "kind": "arrow", "from": "Web", "to": "API", "channel": "note-link"}, …],
  "warnings": [{"line": 3, "message": "\"Ship v1\": Blocked: say why in the notes.", "severity": "warning", "attribute": "notes"}]}
 ```
@@ -11466,7 +11466,7 @@ by name):
   named like a word of the language (`edge`, `delete`, `group`, `ungroup`, `style`);
 - `names`: `named` when DrawNames gives its titles a property, else `derived` when DrawNames says
   it works them out, else `none`;
-- `size`, what its tool places (`"200x200"`);
+- `size`, what its tool places (`"260x200"`);
 - `holds`, what its shapes hold for `in "X"` to name: `board`, a board of their own (a subboard's,
   which the shape goes on), or `shapes` on the board they're on (a frame's, which the shape goes
   in); absent for neither;
@@ -11824,11 +11824,11 @@ note.typeRows(drawnIn: { shape, context in NoteLayout(shape, in: context).block 
 if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
 ```
 
-- **The room** is `TypeRows.extent` (`LayoutInputKey<RowsExtent>`: the least width and the height), a layout
+- **The room** is `TypeRows.extent` (`LayoutInputKey<RowsExtent>`: the rows' height; they read at the shape's width and never widen it), a layout
   input Types provides (`RowBook.provide`) only for the kinds that say where their rows go
   (`TypeRowsPlaces`, one contribution a kind, refused for a kind that holds neither `schema` nor `is`). The
-  note is a `LaidOutBox` that reads it: at least 320 wide and as tall as its words and the rows, never
-  shorter than a new note, with no record written: the stored box is the note as it is with no rows.
+  note is a `LaidOutBox` that reads it: as wide as it stores (so a type given to a note moves nothing beside it)
+  and as tall as its words and the rows, never shorter than a new note, with no record written: the stored box is the note as it is with no rows.
   Nothing is stored of the rows, and no change of them is an undo step. A relationship type has no rows: it is a
   pill. Types provides `TypeRows.pill` (`LayoutInputKey<TypePill>`: its name or none, its field count, and the size
   its text measures) for every shape that holds `schema` and the mark, of a kind that says where its rows go, whatever

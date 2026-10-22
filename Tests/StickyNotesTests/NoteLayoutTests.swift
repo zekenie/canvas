@@ -10,9 +10,9 @@ import Titles
 import Types
 
 // A note laid out by its words and what goes under them (`NoteLayout`): the stored box while it has no
-// rows, and, with them (a note that is a type, or is one), wider and taller from the same top-left, its
-// words wrapping at the width it is laid out at. The stored box stays the note as it is with no rows.
-// Types provides the rows (`RowBook`): a type of n text fields stands for them here.
+// rows, and, with them (a note that is a type, or is one), as wide and taller from the same top-left, its
+// words wrapping where they did with none. The stored box stays the note as it is with no rows. Types
+// provides the rows (`RowBook`): a type of n text fields stands for them here.
 
 /// A note's padding all round, and the gap between its words and the rows under them.
 private let padding: CGFloat = 16, gap: CGFloat = 12
@@ -63,8 +63,6 @@ private func lines(_ count: Int) -> String { (1...count).map { "x\($0)" }.joined
     (hasWords ? TypesStyle.rowsLead : 0) + CGFloat(count) * TypesStyle.rowHeight
 }
 
-@MainActor private var minimumWidth: CGFloat { TypesStyle.rowsMinimumWidth }
-
 /// How many lines of `text` a note stored 200 wide wraps to, with the rows of a four-field type if `typed`:
 /// its words' height over the line.
 @MainActor private func wrappedLines(of text: MentionText, typed: Bool) throws -> Int {
@@ -88,21 +86,23 @@ private func lines(_ count: Int) -> String { (1...count).map { "x\($0)" }.joined
         expectEqual(editor.shapeContext.geometry(of: id)?.bounds, editor.stored(id))
         expectEqual(NoteWordsCounts.measured, measured, "and no measure")
     },
-    test("a note of a four-field type: 320 wide, 200 tall, the words at 288 and the rows right under them; the stored frame is as it was") {
+    test("a new note of a four-field type keeps its width: 260 wide, 200 tall, the words at 228 and the rows right under them") {
         let editor = try makeEditor()
         let type = editor.addType(fields: 4)
-        let id = editor.addNote(of: [type], frame: CGRect(x: 40, y: 30, width: 200, height: 200), text: MentionText(plain: lines(3)))
+        let new = CGRect(origin: CGPoint(x: 40, y: 30), size: StickyNote.defaultSize)
+        expectEqual(new.size, CGSize(width: 260, height: 200), "a new note's size")
+        let id = editor.addNote(of: [type], frame: new, text: MentionText(plain: lines(3)))
         let frame = try require(editor.laidOut(id))
-        expectEqual(frame, CGRect(x: 40, y: 30, width: minimumWidth, height: 200))
+        expectEqual(frame, new)
         let words = try require(editor.words(of: id))
         expectEqual(words.minX, 56)
         expectEqual(words.minY, 46)
-        expectEqual(words.width, minimumWidth - 2 * padding)
+        expectEqual(words.width, 260 - 2 * padding)
         expect(abs(words.height - 3 * 19) <= 1.5, "three lines tall: \(words.height)")
         let block = try require(NoteWordsCounts.block(of: id, in: editor))
-        expectEqual(block, CGRect(x: 56, y: words.maxY + gap, width: minimumWidth - 2 * padding, height: rowsHeight(4)))
+        expectEqual(block, CGRect(x: 56, y: words.maxY + gap, width: 260 - 2 * padding, height: rowsHeight(4)))
         expect(frame.maxY >= block.maxY + padding, "the paper holds its rows and the padding")
-        expectEqual(editor.stored(id), CGRect(x: 40, y: 30, width: 200, height: 200), "what is stored is the note with no rows")
+        expectEqual(editor.stored(id), new, "what is stored is the note with no rows")
         expectEqual(editor.shapeContext.geometry(of: id)?.bounds, frame, "its geometry is the paper")
     },
     test("as tall as the padding, the words, the gap, the rows and the padding need; paper left over is under the rows") {
@@ -113,7 +113,7 @@ private func lines(_ count: Int) -> String { (1...count).map { "x\($0)" }.joined
         let words = try require(editor.words(of: tall))
         expect(abs(words.height - 20 * 19) <= 1.5, "twenty lines: \(words.height)")
         expectEqual(editor.laidOut(tall)?.height, padding + words.height + gap + rowsHeight(4) + padding)
-        expectEqual(editor.laidOut(tall)?.width, minimumWidth)
+        expectEqual(editor.laidOut(tall)?.width, 200, "as wide as it stores")
         let block = try require(NoteWordsCounts.block(of: tall, in: editor))
         expectEqual(block.minY, words.maxY + gap, "the rows right under the words")
         expectEqual(editor.laidOut(tall)?.maxY, block.maxY + padding)
@@ -129,30 +129,37 @@ private func lines(_ count: Int) -> String { (1...count).map { "x\($0)" }.joined
         // Ten fields: eight rows and `+2 more`.
         let rows = rowsHeight(9, hasWords: false)
         expectEqual(editor.words(of: id)?.height, 0)
-        expectEqual(NoteWordsCounts.block(of: id, in: editor), CGRect(x: 26, y: 26, width: minimumWidth - 2 * padding, height: rows))
-        expectEqual(editor.laidOut(id), CGRect(x: 10, y: 10, width: minimumWidth, height: padding + rows + padding))
+        expectEqual(NoteWordsCounts.block(of: id, in: editor), CGRect(x: 26, y: 26, width: 200 - 2 * padding, height: rows))
+        expectEqual(editor.laidOut(id), CGRect(x: 10, y: 10, width: 200, height: padding + rows + padding))
     },
-    test("as wide as its rows read at, and no narrower than it stores") {
+    test("as wide as it stores, wide or narrow: rows never widen a note") {
         let editor = try makeEditor()
         let type = editor.addType(fields: 2)
         let wide = editor.addNote(of: [type], frame: CGRect(x: 0, y: 0, width: 500, height: 200))
+        let narrow = editor.addNote(of: [type], frame: CGRect(x: 0, y: 300, width: 120, height: 200))
         expectEqual(editor.laidOut(wide)?.width, 500)
         expectEqual(editor.words(of: wide)?.width, 468)
+        expectEqual(editor.laidOut(narrow)?.width, 120)
+        expectEqual(editor.words(of: narrow)?.width, 88)
     },
-    test("its words wrap at the laid-out width: fewer lines than at the width it stores") {
+    test("its words wrap where they do with no rows: a type moves no word") {
+        let editor = try makeEditor()
+        let type = editor.addType(fields: 4)
         let text = MentionText(plain: "Ask about the cake and the candles and then the plates for the party tomorrow at noon")
-        let narrow = try wrappedLines(of: text, typed: false)
-        let wide = try wrappedLines(of: text, typed: true)
-        expect(wide > 0 && wide < narrow, "\(wide) lines at 320 wide, \(narrow) at 200")
+        let plain = editor.add(StickyNote(frame: CGRect(x: 20, y: 20, width: 200, height: 200), text: text))
+        let typed = editor.addNote(of: [type], frame: CGRect(x: 20, y: 400, width: 200, height: 200), text: text)
+        let plainWords = try require(editor.words(of: plain)), typedWords = try require(editor.words(of: typed))
+        expectEqual(typedWords.width, plainWords.width, "the same width to wrap at")
+        expect(try wrappedLines(of: text, typed: true) > 1, "and it wraps there")
     },
-    test("the editor's lines fall on the render's at 320 wide, at 1× and 2×, zoomed in and out, and its view is laid over the paper") {
+    test("the editor's lines fall on the render's at the width the note stores, at 1× and 2×, zoomed in and out, and its view is laid over the paper") {
         for (scale, zoom) in [(1, 1), (2, 1), (1, 2), (2, 0.6)] as [(CGFloat, CGFloat)] {
             let editor = try makeEditor(zoom: zoom)
             let type = editor.addType(fields: 4)
-            let note = editor.addNote(of: [type], frame: CGRect(x: 20, y: 15, width: 200, height: 200), text: MentionText(plain: multiLineText))
+            let note = editor.addNote(of: [type], frame: CGRect(origin: CGPoint(x: 20, y: 15), size: StickyNote.defaultSize), text: MentionText(plain: multiLineText))
             let paper = try require(editor.laidOut(note))
-            expectEqual(paper.width, minimumWidth)
-            let size = CGSize(width: 360 * zoom, height: 260 * zoom), inView = editor.camera.toView(paper)
+            expectEqual(paper.width, StickyNote.defaultSize.width)
+            let size = CGSize(width: 360 * zoom, height: 300 * zoom), inView = editor.camera.toView(paper)
             let drawn = renderBitmap(editor, size: size, scale: scale)
             expect(editor.beginEditing(note))
             expectEqual(editor.editingFrame, paper, "at \(scale)×, zoom \(zoom): the view lies over the paper")
@@ -180,24 +187,24 @@ private func lines(_ count: Int) -> String { (1...count).map { "x\($0)" }.joined
         // Fourteen lines of 19 points, half a point spare, rounded up, and the padding: 299.
         expectEqual(editor.stored(note), CGRect(x: 20, y: 15, width: 200, height: 14 * 19 + 1 + 32))
         let paper = try require(editor.laidOut(note))
-        expectEqual(paper.width, minimumWidth)
+        expectEqual(paper.width, 200)
         expectEqual(paper.height, padding + (14 * 19 + 1) + gap + rowsHeight(4) + padding, "laid out by the rows beside the words")
         editor.endEditing()
     },
-    test("the type removed, announced: the note that was one is its stored size again, and the type's own note too") {
+    test("the type removed, announced: the note that was one is its stored size again, as wide as it was, and the type's own note too") {
         let editor = try makeEditor()
         let type = editor.addType(fields: 4, words: "A wide type")
         let note = editor.addNote(of: [type], frame: CGRect(x: 0, y: 0, width: 200, height: 100), text: MentionText(plain: "A line of words"))
         let stored = CGRect(x: 0, y: 0, width: 200, height: 100)
-        // Never shorter than a new note while it has rows.
-        expectEqual(editor.laidOut(note), CGRect(x: 0, y: 0, width: minimumWidth, height: 200))
-        expectEqual(editor.laidOut(type)?.width, minimumWidth)
+        // Never shorter than a new note while it has rows, and never wider than it stores.
+        expectEqual(editor.laidOut(note), CGRect(x: 0, y: 0, width: 200, height: 200))
+        expectEqual(editor.laidOut(type)?.width, 200)
         expectEqual(editor.stored(note), stored)
         editor.removeType(type)
         expectEqual(editor.laidOut(note), stored, "its type is no type, so it has no rows")
         expectEqual(editor.laidOut(type)?.size, CGSize(width: 200, height: 200))
         editor.undo()
-        expectEqual(editor.laidOut(note)?.size, CGSize(width: minimumWidth, height: 200), "and back")
+        expectEqual(editor.laidOut(note)?.size, CGSize(width: 200, height: 200), "and back")
     },
     test("zoomed out, the skeleton's paper is the laid-out frame") {
         let editor = try makeEditor(zoom: 0.3)
@@ -205,19 +212,19 @@ private func lines(_ count: Int) -> String { (1...count).map { "x\($0)" }.joined
         let note = editor.addNote(of: [type], frame: CGRect(x: 50, y: 50, width: 200, height: 200))
         let paper = try require(editor.laidOut(note))
         // Ten fields: nine rows, 16 above and below.
-        expectEqual(paper, CGRect(x: 50, y: 50, width: minimumWidth, height: padding + rowsHeight(9, hasWords: false) + padding))
+        expectEqual(paper, CGRect(x: 50, y: 50, width: 200, height: padding + rowsHeight(9, hasWords: false) + padding))
         let drawn = renderBitmap(editor, size: CGSize(width: 200, height: 200))
         let yellow = [255, 222, 115, 255]
         @MainActor func isYellow(_ point: CGPoint) -> Bool { zip(pixel(drawn, at: point), yellow).allSatisfy { abs($0 - $1) <= 3 } }
-        // Past the stored frame (to 75) and inside the paper, and outside it.
-        let inside = editor.camera.toView(CGPoint(x: paper.maxX - 2, y: paper.maxY - 2)), pastStored = editor.camera.toView(CGPoint(x: 330, y: 150))
+        // Past the stored frame (below its 250) and inside the paper, and outside it.
+        let inside = editor.camera.toView(CGPoint(x: paper.maxX - 2, y: paper.maxY - 2)), pastStored = editor.camera.toView(CGPoint(x: 150, y: 265))
         let right = editor.camera.toView(CGPoint(x: paper.maxX + 14, y: 150)), below = editor.camera.toView(CGPoint(x: 150, y: paper.maxY + 14))
         expect(isYellow(pastStored), "paper past the stored frame: \(pixel(drawn, at: pastStored))")
         expect(isYellow(inside), "paper at its far corner")
         expect(!isYellow(right), "none past it")
         expect(!isYellow(below), "none below it")
     },
-    test("a pill lies in the words' box at the laid-out width, and wraps where the render does") {
+    test("a pill lies in the words' box, on the line it has with no rows") {
         let editor = try makeEditor()
         let type = editor.addType(fields: 4)
         var groceries = ShapeRecord(StickyNote(frame: CGRect(x: 600, y: 15, width: 200, height: 200), text: "Milk"))
@@ -231,8 +238,9 @@ private func lines(_ count: Int) -> String { (1...count).map { "x\($0)" }.joined
         let pill = try require(editor.mentionPills(of: typed.id).first)
         let words = try require(editor.words(of: typed.id))
         expect(words.contains(pill.frame), "\(pill.frame) in \(words)")
-        expect(pill.frame.minY - words.minY < before.frame.minY - (editor.words(of: plain.id)?.minY ?? 0),
-               "on a higher line at 288 than at 168: \(pill.frame), \(before.frame)")
+        let plainWords = try require(editor.words(of: plain.id))
+        expect(abs((pill.frame.minY - words.minY) - (before.frame.minY - plainWords.minY)) < 0.5,
+               "on the same line typed as plain: \(pill.frame), \(before.frame)")
     },
     test("a type's highlights fall on its words where the note lays them out") {
         let b = try TypeNoteBench()
@@ -240,7 +248,7 @@ private func lines(_ count: Int) -> String { (1...count).map { "x\($0)" }.joined
         b.frame()
         let after = try b.line(of: "link to it", on: id)
         let words = try require(b.editor.words(of: id))
-        expectEqual(words.width, minimumWidth - 2 * padding, "laid out at the rows' width, not the stored 200")
+        expectEqual(words.width, 200 - 2 * padding, "laid out at the width it stores")
         expect(words.contains(after), "\(after) in \(words)")
     },
     test("the same words at the same width are measured once, whatever the rows say, and again at another width") {

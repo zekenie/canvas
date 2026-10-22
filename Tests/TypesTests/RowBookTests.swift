@@ -61,13 +61,15 @@ private struct Reach {
 }
 
 @MainActor let rowBookTests = Suite("Rows kept", [
-    test("a type of three fields has an extent of 320 and three rows' height, with the lead only when it has words") {
+    test("a type of three fields has an extent of three rows' height, with the lead only when it has words, and keeps its width") {
         let editor = try rowEditor()
         let withWords = editor.addSlipType(wideSchema(3), words: "Three fields", title: "A")
         let without = editor.addSlipType(wideSchema(3), title: "B")
-        expectEqual(try extent(editor, withWords), RowsExtent(minimumWidth: 320, height: rowsHeight(3)))
-        expectEqual(try extent(editor, without), RowsExtent(minimumWidth: 320, height: rowsHeight(3, hasWords: false)))
-        expectEqual(editor.laidOut(withWords)?.width, 320, "laid out as wide as the rows read at")
+        let narrow = editor.addSlipType(wideSchema(3), title: "C", width: 120)
+        expectEqual(try extent(editor, withWords), RowsExtent(height: rowsHeight(3)))
+        expectEqual(try extent(editor, without), RowsExtent(height: rowsHeight(3, hasWords: false)))
+        expectEqual(editor.laidOut(withWords)?.width, editor.document[withWords]?.box?.width, "laid out as wide as it stores")
+        expectEqual(editor.laidOut(narrow)?.width, 120, "rows never widen a shape, however narrow")
         expectEqual(editor.laidOut(withWords)?.height, (editor.document[withWords]?.box?.height ?? 0) + rowsHeight(3))
     },
     test("a plain slip, an instance whose types are gone and an instance of a fieldless type have none") {

@@ -19,7 +19,7 @@ struct RowSlip: BoxShapeProps {
     }
     var frame: CGRect
     var text: MentionText
-    init(frame: CGRect = CGRect(x: 0, y: 0, width: 240, height: 52), text: MentionText = "") {
+    init(frame: CGRect = CGRect(x: 0, y: 0, width: 320, height: 52), text: MentionText = "") {
         self.frame = frame
         self.text = text
     }
@@ -49,11 +49,10 @@ enum RowSlipStyle {
 extension ShapeRecord where Props == RowSlip {
     @MainActor var placement: MentionTextPlacement { MentionTextPlacement(props.text, in: RowSlipStyle.textBox(of: frame), style: RowSlipStyle.text) }
 
-    /// Where the rows go: under the stored box, at the laid-out width less the padding.
+    /// Where the rows go: under the stored box, at its width less the padding.
     @MainActor func rowsBlock(in context: ShapeContext) -> CGRect? {
         guard let extent = context.layoutInput(TypeRows.extent, of: self) else { return nil }
-        let width = max(frame.width, extent.minimumWidth)
-        return CGRect(x: frame.minX + RowSlipStyle.padding, y: frame.maxY, width: width - 2 * RowSlipStyle.padding, height: extent.height)
+        return CGRect(x: frame.minX + RowSlipStyle.padding, y: frame.maxY, width: frame.width - 2 * RowSlipStyle.padding, height: extent.height)
     }
 }
 
@@ -68,10 +67,10 @@ struct RowSlipDefinition: ShapeDefinition, LaidOutBox {
         if let block = shape.rowsBlock(in: context.shapes) { context.drawTypeRows(of: shape, in: block) }
     }
 
-    /// The wider of the stored width and the rows', the stored height and the rows' under it.
+    /// The stored width (rows never widen a shape), the stored height and the rows' under it.
     func laidOutSize(of shape: ShapeRecord<RowSlip>, in context: ShapeContext) -> CGSize {
         guard let extent = context.layoutInput(TypeRows.extent, of: shape) else { return shape.frame.size }
-        return CGSize(width: max(shape.frame.width, extent.minimumWidth), height: shape.frame.height + extent.height)
+        return CGSize(width: shape.frame.width, height: shape.frame.height + extent.height)
     }
 }
 
@@ -108,7 +107,7 @@ struct RowSlipsPlugin: CanvasPlugin {
 
 /// A slip that is a type: `schema`, `words`, titled `title` if given.
 @MainActor func slipTypeRecord(_ schema: String, words: String = "", title: String? = nil, at origin: CGPoint = CGPoint(x: 40, y: 40),
-                               width: CGFloat = 240, id: ShapeID = ShapeID()) -> AnyShapeRecord {
+                               width: CGFloat = 320, id: ShapeID = ShapeID()) -> AnyShapeRecord {
     var props = RowSlip(frame: CGRect(origin: origin, size: CGSize(width: width, height: RowSlipStyle.emptyHeight)), text: MentionText(plain: words))
     RowSlipStyle.fit(&props)
     var record = ShapeRecord(id: id, props)
@@ -118,7 +117,7 @@ struct RowSlipsPlugin: CanvasPlugin {
 }
 
 /// A slip that is each of the types, in that order.
-@MainActor func slipRecord(_ words: String = "", of types: [ShapeID] = [], at origin: CGPoint = CGPoint(x: 40, y: 400), width: CGFloat = 240,
+@MainActor func slipRecord(_ words: String = "", of types: [ShapeID] = [], at origin: CGPoint = CGPoint(x: 40, y: 400), width: CGFloat = 320,
                            id: ShapeID = ShapeID()) -> AnyShapeRecord {
     var props = RowSlip(frame: CGRect(origin: origin, size: CGSize(width: width, height: RowSlipStyle.emptyHeight)), text: MentionText(plain: words))
     RowSlipStyle.fit(&props)
@@ -130,7 +129,7 @@ struct RowSlipsPlugin: CanvasPlugin {
 extension CanvasEditor {
     /// Adds a slip that is a type.
     @discardableResult
-    func addSlipType(_ schema: String, words: String = "", title: String? = nil, at origin: CGPoint = CGPoint(x: 40, y: 40), width: CGFloat = 240,
+    func addSlipType(_ schema: String, words: String = "", title: String? = nil, at origin: CGPoint = CGPoint(x: 40, y: 40), width: CGFloat = 320,
                      id: ShapeID = ShapeID()) -> ShapeID {
         let record = slipTypeRecord(schema, words: words, title: title, at: origin, width: width, id: id)
         transact { $0.insert(record) }
@@ -139,7 +138,7 @@ extension CanvasEditor {
 
     /// Adds a slip that is each of the types, in that order (none: a plain slip).
     @discardableResult
-    func addSlip(_ words: String = "", of types: [ShapeID] = [], at origin: CGPoint = CGPoint(x: 40, y: 400), width: CGFloat = 240) -> ShapeID {
+    func addSlip(_ words: String = "", of types: [ShapeID] = [], at origin: CGPoint = CGPoint(x: 40, y: 400), width: CGFloat = 320) -> ShapeID {
         let record = slipRecord(words, of: types, at: origin, width: width)
         transact { $0.insert(record) }
         return record.id

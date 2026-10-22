@@ -76,7 +76,8 @@ edge "API" -> "Cache" channel: none
         let note = try require(board.editor.document.shapes.first)
         expectEqual(note.typed(as: StickyNote.self)?.props.text, "Hello")
         // No window, so no view: a drawing with nothing to hang on is centered where the camera is.
-        expectEqual(note.box, CGRect(x: -100, y: -100, width: 200, height: 200))
+        let size = StickyNote.defaultSize
+        expectEqual(note.box, CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height))
         expect(board.isDocumentEdited)
         let unknown = try canvas(server, ["draw", "stickynote"])
         expectEqual(unknown.status, 1)

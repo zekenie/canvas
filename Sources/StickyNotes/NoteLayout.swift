@@ -16,8 +16,8 @@ struct NoteLayout {
     let pill: TypePill?
 
     /// With no rows, the stored frame and its words inset by the padding, nothing measured: the note
-    /// as it was drawn before it had any. With rows, the frame `size(of:rows:)` says, its words at the
-    /// width the rows leave them (a line at least while edited), and the rows right under the words. A relationship type
+    /// as it was drawn before it had any. With rows, the frame `size(of:rows:)` says, as wide as the note
+    /// stores, its words at that width (a line at least while edited), and the rows right under the words. A relationship type
     /// (`TypeRows.pill`) is a capsule of the size Types says, centered on the middle of its stored frame, with no words
     /// and no rows (those it keeps are not drawn).
     init(_ shape: ShapeRecord<StickyNote>, in context: ShapeContext) {
@@ -73,13 +73,13 @@ struct NoteLayout {
         return NoteStyle.padding + height + (height > 0 ? NoteStyle.blockGap : 0)
     }
 
-    /// The paper's size: the stored one, no rows. With rows, as wide as they read at and as tall as
-    /// the padding, the words at that width, the gap, the rows and the padding, never under a new
-    /// note's height; and no smaller than it stores either way.
+    /// The paper's size: the stored one, no rows. With rows, as wide as it stores (rows never widen
+    /// a note, so a type given to one moves nothing beside it) and as tall as the padding, the words,
+    /// the gap, the rows and the padding, never under a new note's height nor what it stores.
     static func size(of note: StickyNote, rows: RowsExtent?) -> CGSize {
         guard let rows else { return note.frame.size }
         let p = NoteStyle.padding
-        let width = max(note.frame.width, rows.minimumWidth)
+        let width = note.frame.width
         let words = wordsHeight(of: note.text, width: width - p * 2, rows: rows)
         let needed = max(NoteStyle.size.height, p + words + (words > 0 ? NoteStyle.blockGap : 0) + rows.height + p)
         return CGSize(width: width, height: max(note.frame.height, needed))

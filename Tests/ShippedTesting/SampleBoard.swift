@@ -18,6 +18,10 @@ public enum SampleBoard {
         "Select an arrow and drag its middle handle to bend it.",
     ]
 
+    /// The POC's notes were 200 square, which its arrows were measured between: the board keeps that size
+    /// whatever a new note's is.
+    public static let noteSize = CGSize(width: 200, height: 200)
+
     /// The board, its notes saying `texts` in that order: the first linked to the second, the fourth
     /// to the fifth, and the fifth to the sixth by a bent arrow.
     public static func document(texts: [String] = SampleBoard.texts) -> CanvasDocument {
@@ -25,7 +29,7 @@ public enum SampleBoard {
         let origins = [CGPoint(x: 80, y: 80), CGPoint(x: 460, y: 80), CGPoint(x: 840, y: 80),
                        CGPoint(x: 80, y: 420), CGPoint(x: 460, y: 420), CGPoint(x: 840, y: 420)]
         let notes = zip(origins, texts).map { origin, text in
-            ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: MentionText(plain: text)))
+            ShapeRecord(StickyNote(frame: CGRect(origin: origin, size: noteSize), text: MentionText(plain: text)))
         }
         func bound(_ note: ShapeRecord<StickyNote>) -> ArrowTerminal {
             .bound(ArrowBinding(shapeID: note.id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))

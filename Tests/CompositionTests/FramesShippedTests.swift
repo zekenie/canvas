@@ -43,10 +43,11 @@ extension EditorHarness {
         return frame.id
     }
 
-    /// A note at `origin` (200 × 200), saying `text`, put in `container` (none: on the board).
+    /// A note at `origin` (200 × 200, the size these drags are measured against), saying `text`, put in `container`
+    /// (none: on the board).
     @discardableResult
     fileprivate func note(at origin: CGPoint, _ text: String = "", in container: ShapeID? = nil) -> ShapeID {
-        let id = add(StickyNote(frame: CGRect(origin: origin, size: StickyNote.defaultSize), text: MentionText(plain: text)))
+        let id = add(StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 200, height: 200)), text: MentionText(plain: text)))
         if let container { editor.put([id], in: container) }
         return id
     }

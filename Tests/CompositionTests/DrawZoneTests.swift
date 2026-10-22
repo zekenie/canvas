@@ -4,6 +4,7 @@ import CanvasRPC
 import CanvasUI
 import Foundation
 import Geometry
+import StickyNotes
 import TestKit
 import Titles
 
@@ -122,10 +123,14 @@ private func corner(_ corner: String, of region: CGRect, _ size: CGSize) -> CGRe
     return CGRect(origin: CGPoint(x: x, y: y), size: size)
 }
 
-/// A card is a subboard drawn `size: 240x200`, `cardSize`; one drawn at its own size is `subboardSize`. A
-/// small note is a note drawn `size: 160x100`, `smallSize`, as the frames and boxes of these tests are.
-private let noteSize = CGSize(width: 200, height: 200), cardSize = CGSize(width: 240, height: 200)
+/// A note drawn at its own size is a new note's, `noteSize`. A card is a subboard drawn `size: 240x200`, `cardSize`;
+/// one drawn at its own size is `subboardSize`. A small note is a note drawn `size: 160x100`, `smallSize`, as the frames
+/// and boxes of these tests are.
+private let noteSize = StickyNote.defaultSize, cardSize = CGSize(width: 240, height: 200)
 private let smallSize = CGSize(width: 160, height: 100), subboardSize = CGSize(width: 240, height: 160)
+/// A square note, drawn `size: 200x200`: wholly on an empty frame, it's pushed off sideways, where a new note,
+/// wider than tall, is pushed the way it overlaps less, across the frame's top or bottom, as a subboard is.
+private let squareSize = CGSize(width: 200, height: 200)
 private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
 
 @MainActor let drawZoneTests = Suite("canvas draw's zones", [
@@ -136,8 +141,9 @@ private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
             sticky-note "A" text: "a"
             sticky-note "B" right of "A" text: "b"
             """#)
-        for (kind, at) in [("subboard", CGRect(x: 1000, y: 370, width: 240, height: 160)),
-                           ("sticky-note", CGRect(x: 1000, y: 350, width: 200, height: 200))] {
+        let a = try notes.box("A"), b = try notes.box("B")
+        for (kind, size) in [("subboard", subboardSize), ("sticky-note", noteSize)] {
+            let at = CGRect(x: b.maxX + 40, y: a.midY - size.height / 2, width: size.width, height: size.height)
             let p = try notes.draw("\(kind) \"P\" right of \"A\"", dryRun: true)
             expectEqual(p.at("P"), at, kind)
             expectEqual(p.pushed("P"), ["B"], kind)
@@ -151,7 +157,7 @@ private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
             """#)
         for kind in ["subboard", "sticky-note"] {
             let p = try cards.draw("\(kind) \"P\" right of \"A2\"", dryRun: true)
-            expectEqual(p.at("P")?.minX, 1020, kind)
+            expectEqual(p.at("P")?.minX, try cards.box("C2").maxX + 40, kind)
             expectEqual(p.pushed("P"), ["C2"], kind)
             expectEqual(p.warnings, [pushedRight("P", past: "C2", from: "A2")], kind)
         }
@@ -165,10 +171,10 @@ private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
             subboard "C" right of "B" size: 240x200
             """#)
         let note = try row.start(#"sticky-note "Note on A" right of "A" text: "should not land on B""#)
-        expectEqual(note.at("Note on A"), CGRect(x: 1200, y: 350, width: 200, height: 200))
+        expectEqual(note.at("Note on A"), CGRect(origin: CGPoint(x: 1200, y: 350), size: noteSize))
         expectEqual(note.pushed("Note on A"), ["B", "C"])
         let subboard = try row.start(#"subboard "E" right of "B""#)
-        expectEqual(subboard.at("E"), CGRect(x: 1440, y: 370, width: 240, height: 160))
+        expectEqual(subboard.at("E"), CGRect(x: try row.box("Note on A").maxX + 40, y: 370, width: 240, height: 160))
         expectEqual(subboard.pushed("E"), ["C", "Note on A"])
         expectEqual(row.overlaps(), [])
         // The same neighbors in a frame: the frame holds them, and is a zone; the next note is in the way.
@@ -207,21 +213,23 @@ private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
             edge "Queue" -> "Worker"
             """#)
         for (step, title) in ["Queue", "Worker", "Retry", "Dead letters"].enumerated() {
-            expectEqual(inside.at(title), CGRect(x: backend.minX + 40 + 280 * CGFloat(step), y: backend.minY + 40, width: 200, height: 200), title)
+            let x = backend.minX + 40 + (noteSize.width + 80) * CGFloat(step)
+            expectEqual(inside.at(title), CGRect(origin: CGPoint(x: x, y: backend.minY + 40), size: noteSize), title)
             expectEqual(inside.pushed(title), [], title)
             expect(try b.paints(title) > b.paints("Backend"), "\(title) paints above Backend")
         }
         expectEqual(inside.warnings.filter { !$0.contains("outside the view") },
-                    [#""Dead letters" hangs over the edge of "Backend" — make "Backend" bigger, or place "Dead letters" elsewhere"#])
-        expectEqual(b.overlaps(besides: [["Backend", "Queue"], ["Backend", "Worker"], ["Backend", "Retry"]]), [#""Backend" and "Dead letters""#])
-        // Beside the one over the edge, a card lands clear of the zone; below one in it, a
+                    [#""Retry" hangs over the edge of "Backend" — make "Backend" bigger, or place "Retry" elsewhere"#])
+        expectEqual(b.overlaps(besides: [["Backend", "Queue"], ["Backend", "Worker"]]), [#""Backend" and "Retry""#])
+        // Beside the last, past the zone's edge, a card lands clear of it; below one in it, a
         // note sits on it, over its edge.
         let more = try b.draw(#"""
             subboard "Scheduler" right of "Dead letters" size: 240x200
             sticky-note "Metrics" below "Worker" (gap: tight) size: 160x100
             """#, dryRun: true)
-        expectEqual(more.at("Scheduler"), CGRect(x: 1430, y: 670, width: 240, height: 200))
-        expectEqual(more.at("Metrics"), CGRect(x: 610, y: 910, width: 160, height: 100))
+        let worker = try b.box("Worker"), dead = try b.box("Dead letters")
+        expectEqual(more.at("Scheduler"), CGRect(x: dead.maxX + 80, y: 670, width: 240, height: 200))
+        expectEqual(more.at("Metrics"), CGRect(x: worker.midX - 80, y: worker.maxY + 40, width: 160, height: 100))
         expectEqual(more.pushed("Scheduler") + more.pushed("Metrics"), [])
         expectEqual(more.warnings.filter { !$0.contains("outside the view") },
                     [#""Metrics" hangs over the edge of "Backend" — make "Backend" bigger, or place "Metrics" elsewhere"#])
@@ -306,8 +314,8 @@ private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
         let frame = try b.box("Frame")
         b.look(from: CGPoint(x: frame.minX - 480, y: frame.minY + 300))
         let view = b.view
-        let empty = try b.draw(#"sticky-note "Legend" inside view top-right"#, dryRun: true)
-        expectEqual(empty.at("Legend"), CGRect(x: frame.minX - 40 - 200, y: view.minY + 40, width: 200, height: 200))
+        let empty = try b.draw(#"sticky-note "Legend" inside view top-right size: 200x200"#, dryRun: true)
+        expectEqual(empty.at("Legend"), CGRect(origin: CGPoint(x: frame.minX - 40 - 200, y: view.minY + 40), size: squareSize))
         expectEqual(empty.pushed("Legend"), ["Frame"])
         expectEqual(empty.warnings, [#""Legend" was pushed left past "Frame" to keep clear of it, so it no longer sits against view top-right — place it on another side, or say overlap: allow"#])
         try b.start(#"sticky-note "Contents" inside "Frame" bottom-right text: "far from the view""#)
@@ -355,12 +363,12 @@ private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
             if holds { try b.start(#"sticky-note "Contents" inside "Frame" bottom-center text: "c""#) }
             try b.start(#"sticky-note "Stray" left of "Frame" text: "s""#)
             let frame = try b.box("Frame")
-            let legend = try b.draw(#"sticky-note "Legend" inside board top-right"#, dryRun: true)
+            let legend = try b.draw(#"sticky-note "Legend" inside board top-right size: 200x200"#, dryRun: true)
             if holds {
-                expectEqual(legend.at("Legend"), corner("top-right", of: frame, noteSize))
+                expectEqual(legend.at("Legend"), corner("top-right", of: frame, squareSize))
                 expectEqual(legend.pushed("Legend"), [])
             } else {
-                expectEqual(legend.at("Legend"), CGRect(x: frame.minX - 40 - 200, y: frame.minY + 40, width: 200, height: 200))
+                expectEqual(legend.at("Legend"), CGRect(origin: CGPoint(x: frame.minX - 40 - 200, y: frame.minY + 40), size: squareSize))
                 expectEqual(legend.pushed("Legend"), ["Frame"])
             }
         }
@@ -542,8 +550,9 @@ private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
         expectEqual(over.pushed("Over"), ["Badge"])
         expect(note.contains(try require(over.at("Over"))), "on the note")
         // ...and half off it, the note is in its way too.
-        let wide = try b.draw(#"sticky-note "Wide" right of "A" top level with "B" size: 120x60"#, dryRun: true)
-        expectEqual(wide.at("Wide"), CGRect(x: note.maxX + 40, y: note.minY, width: 120, height: 60))
+        let wide = try b.draw(#"sticky-note "Wide" right of "A" top level with "B" size: 180x60"#, dryRun: true)
+        expect(badge.maxX + 40 + 180 > note.maxX, "it would hang off the note")
+        expectEqual(wide.at("Wide"), CGRect(x: note.maxX + 40, y: note.minY, width: 180, height: 60))
         expectEqual(wide.pushed("Wide"), ["Badge", "B"])
     },
     test("two new shapes can't put each other on an empty note, card, frame or lane: each is on one only for a reason of its own") {
@@ -611,11 +620,11 @@ private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
         framed.look(from: CGPoint(x: frame.minX - 720, y: frame.minY + 500))
         let view = framed.view
         let legends = try framed.draw(#"""
-            sticky-note "L1" inside view top-right text: "1"
-            sticky-note "L2" inside view bottom-right text: "2"
+            sticky-note "L1" inside view top-right size: 200x200 text: "1"
+            sticky-note "L2" inside view bottom-right size: 200x200 text: "2"
             """#, dryRun: true)
-        expectEqual(legends.at("L1"), CGRect(x: frame.minX - 40 - 200, y: view.minY + 40, width: 200, height: 200))
-        expectEqual(legends.at("L2"), CGRect(x: frame.minX - 40 - 200, y: view.maxY - 40 - 200, width: 200, height: 200))
+        expectEqual(legends.at("L1"), CGRect(origin: CGPoint(x: frame.minX - 40 - 200, y: view.minY + 40), size: squareSize))
+        expectEqual(legends.at("L2"), CGRect(origin: CGPoint(x: frame.minX - 40 - 200, y: view.maxY - 40 - 200), size: squareSize))
         expectEqual(legends.pushed("L1"), ["Frame"])
         expectEqual(legends.pushed("L2"), ["Frame"])
         // Two cards lined up with an empty lane: each is held where it would land in it, and the
@@ -685,7 +694,7 @@ private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
         let view = b.view
         expect(frame.contains(view), "the view is in the frame")
         let loose = try b.start(#"sticky-note "Loose" text: "drawn in view""#)
-        expectEqual(loose.at("Loose"), CGRect(x: view.midX - 100, y: view.midY - 100, width: 200, height: 200))
+        expectEqual(loose.at("Loose"), CGRect(origin: CGPoint(x: view.midX - noteSize.width / 2, y: view.midY - noteSize.height / 2), size: noteSize))
         expectEqual(loose.row("Loose")?["inView"], true)
         expectEqual(loose.warnings, [])
         expect(try b.paints("Loose") > b.paints("Frame"), "it paints above the frame")
@@ -694,9 +703,11 @@ private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
             sticky-note "Next" text: "next"
             sticky-note "Tag" below "Next" (gap: tight) size: 160x100
             """#, dryRun: true)
-        let drawn = try require(next.at("Next")).union(try require(next.at("Tag")))
+        let boxes = [try require(next.at("Next")), try require(next.at("Tag"))]
+        let drawn = boxes[0].union(boxes[1])
         expect(view.contains(drawn), "\(drawn) is in view")
-        expect(!drawn.intersects(try b.box("Loose").insetBy(dx: -80, dy: -80)), "\(drawn) is clear of Loose")
+        // Each is clear of it by the anchor's clearance, 80, as the spot is found box by box.
+        for box in boxes { expect(!box.intersects(try b.box("Loose").insetBy(dx: -80, dy: -80)), "\(box) is clear of Loose") }
         expectEqual(next.pushed("Next") + next.pushed("Tag"), [])
         // A frame that holds only part of the view, its middle too, is in the way, as before.
         b.look(from: CGPoint(x: frame.minX - 400, y: frame.minY + 1500))
@@ -733,10 +744,11 @@ private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
         try b.start(#"subboard "Corner" inside view top-right size: 240x200"#)
         let card = try b.box("Corner")
         // Across the card's bottom is the shorter way for a subboard, and past its
-        // left for a note.
+        // left for a square note.
         for (kind, at) in [("subboard", CGRect(x: 1160, y: card.maxY + 64, width: 240, height: 160)),
-                           ("sticky-note", CGRect(x: card.minX - 40 - 200, y: 40, width: 200, height: 200))] {
-            let legend = try b.draw("\(kind) \"Legend\" inside view top-right", dryRun: true)
+                           ("sticky-note", CGRect(origin: CGPoint(x: card.minX - 40 - 200, y: 40), size: squareSize))] {
+            let size = kind == "sticky-note" ? " size: 200x200" : ""
+            let legend = try b.draw("\(kind) \"Legend\" inside view top-right\(size)", dryRun: true)
             expectEqual(legend.at("Legend"), at, kind)
             expectEqual(legend.pushed("Legend"), ["Corner"], kind)
         }

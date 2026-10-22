@@ -474,7 +474,7 @@ let sampleNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x: 
         }
         try step("bring to front") { try require(b.menu(at: sampleNotes[3])).choose("Arrange", "Bring to Front") }
         try step("connect two notes") {
-            let leftDot = CGPoint(x: 588, y: 760)                           // the placed note's
+            let leftDot = CGPoint(x: 700 - StickyNote.defaultSize.width / 2 - 12, y: 760)   // the placed note's, 12 off its left edge
             b.move(to: CGPoint(x: 700, y: 760))
             b.move(to: leftDot)
             b.drag(from: leftDot, to: sampleNotes[3])

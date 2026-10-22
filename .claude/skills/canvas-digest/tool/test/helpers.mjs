@@ -13,8 +13,8 @@ export function estimateMeasure(model) {
     let h = Math.max(200, 40 + lines * 22), w = it.w;
     const n = it.node;
     if (n && (n.schema || n.is.length)) {
-      // a type, or a note of one: 320 wide at least, a row for each field, and one for each end its types have (the app's rows, roughly)
-      w = Math.max(w, 320);
+      // a type, or a note of one: as wide as it is drawn (rows never widen a note), a row for each field, and one for each end
+      // its types have (the app's rows, roughly)
       const types = n.schema ? (n.relationship ? [] : [n]) : n.is.map((t) => model.node(t)).filter(Boolean);
       const fields = new Set(), ends = new Set();
       for (const t of types) {

@@ -32,16 +32,17 @@ private let noFieldsSchema = #"{"type": "object"}"#
 }
 
 @MainActor let rowSpotTests = Suite("A type's rows' spot", [
-    test("a new type is blank: nothing under its words, 200 wide as stored, and the first words typed are blank too until a read has answered") {
+    test("a new type is blank: nothing under its words, as wide as stored, and the first words typed are blank too until a read has answered") {
         let b = try SyncBench(more: [RowSlipsPlugin()])
         let id = placeSlip(b)
+        let stored = try require(b.editor.document[id]?.box)
         expectEqual(try spot(b, id), nil)
         expectEqual(try extentHeight(b, id), nil)
-        expectEqual(b.editor.laidOut(id)?.width, 240)
+        expectEqual(b.editor.laidOut(id), stored)
         typeSlipWords(b, id, "a pet in my household")
         expect(b.sync.isWaiting(id))
-        expectEqual(try spot(b, id), nil, "`No fields` would flash under the caret and widen the note at the first keystroke")
-        expectEqual(b.editor.laidOut(id)?.width, 240)
+        expectEqual(try spot(b, id), nil, "`No fields` would flash under the caret at the first keystroke")
+        expectEqual(b.editor.laidOut(id), b.editor.document[id]?.box, "no rows under the words typed")
     },
     test("reading once the call is out: three bars, the note laid out for them with no commit; rows when it lands") {
         let b = try SyncBench(more: [RowSlipsPlugin()])

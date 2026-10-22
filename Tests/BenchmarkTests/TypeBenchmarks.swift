@@ -523,7 +523,7 @@ extension Budget {
                 switch notes {
                 case .sixFields: type = FieldFixtures.wide(6).schema
                 case .noFields: type = #"{"type": "object"}"#
-                case .plain(let height): frame.size = CGSize(width: TypesStyle.rowsMinimumWidth, height: height)
+                case .plain(let height): frame.size.height = height
                 }
                 var note = ShapeRecord(StickyNote(frame: frame, text: MentionText(plain: words)))
                 if let type { note[TypeSchemaProperty.self] = SchemaText(type) }
@@ -549,7 +549,7 @@ extension Budget {
         let six = try board(150, columns: 15, .sixFields, size: full, zoom: 0.4)
         let first = try require(six.document.shapes.first).id
         let paper = try require(six.shapeContext.frame(of: first))
-        expectEqual(paper.width, TypesStyle.rowsMinimumWidth)
+        expectEqual(paper.width, 200, "rows never widen a note")
         expectEqual(try require(six.rowBook).rows(of: first).count, 6)
         let none = try board(150, columns: 15, .noFields, size: full, zoom: 0.4)
         let withRows = try frames(six, size: full, zoom: 0.4), withNone = try frames(none, size: full, zoom: 0.4)

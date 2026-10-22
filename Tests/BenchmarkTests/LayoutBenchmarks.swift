@@ -241,7 +241,7 @@ private func fit(_ document: CanvasDocument) -> Camera {
                     }.count
                     #endif
                     firsts.append(threadCPUTime { draw(h.editor, into: context, size: viewport) }.milliseconds)
-                    if let first = typed.first { expect(h.editor.shapeContext.frame(of: first)?.width ?? 0 >= TypesStyle.rowsMinimumWidth, "laid out with its rows") }
+                    if let first = typed.first { expect(h.editor.shapeContext.layoutInput(TypeRows.extent, for: first) != nil, "laid out with its rows") }
                     #if DEBUG
                     expectEqual(NoteWordsCounts.measured - measured, withRows, "each note's with rows words measured once, and no other note's")
                     draw(h.editor, into: context, size: viewport)

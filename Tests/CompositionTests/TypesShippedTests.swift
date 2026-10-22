@@ -538,7 +538,7 @@ private let petAnswer = """
         expectEqual(copied.messages, original.messages)
         expectEqual(copied.problems, original.problems)
     },
-    test("a note made a type is 320 wide, with its rows, on the next frame once the read lands; a note that is one has the room for them") {
+    test("a note made a type keeps its width, with its rows under its words once the read lands; a note that is one has the room for them, as wide as it was") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let model = ScriptedLanguageModel(), scheduler = ManualScheduler()
@@ -551,17 +551,18 @@ private let petAnswer = """
         expectEqual(editor.shapeContext.frame(of: note)?.width, 200, "white, with nothing under its words until the read starts")
         scheduler.advance(by: .zero)
         expectEqual(editor.typeSync?.status(of: note), .updating(.schema), "the read starts on the next turn, with no wait")
-        expectEqual(editor.shapeContext.frame(of: note)?.width, 320, "the bars")
+        expectEqual(editor.rowBook?.spot(of: note), .reading, "the bars")
+        expectEqual(editor.shapeContext.frame(of: note)?.width, 200, "at the note's own width")
         spinRunLoop(until: { model.waiting == 1 })
         model.release()
         spinRunLoop(until: { editor.typeSync?.status(of: note) == .idle })
         expectEqual(editor.rowBook?.rows(of: note).map(\.name), ["name"])
         let paper = try require(editor.shapeContext.frame(of: note))
-        expectEqual(paper.width, 320)
+        expectEqual(paper.width, 200)
         _ = renderBitmap(editor, size: CGSize(width: 900, height: 500))
         editor.addTypeLink(note, to: ann)
         let room = try require(editor.shapeContext.frame(of: ann))
-        expectEqual(room.width, 320)
+        expectEqual(room.width, 200, "rows never widen a note")
         expectEqual(editor.rowBook?.rows(of: ann).map(\.name), ["name"])
         expectEqual(editor.document[ann]?.box?.width, 200, "what is stored is as it was")
     },
@@ -620,7 +621,7 @@ private let petAnswer = """
         let ann = try require(editor.document.shapes.first { $0[TitleProperty.self] == "Ann" })
         let laidOut = try require(editor.shapeContext.frame(of: ann.id))
         expectEqual(size[1], [laidOut.width, laidOut.height].map(Double.init), "the size draw reports is the one the note is laid out at")
-        expectEqual(laidOut.width, 320)
+        expectEqual(laidOut.width, StickyNote.defaultSize.width, "a new note's width, which rows never widen")
         expect(laidOut.height > 200 - 1, "room for its words and its rows: \(laidOut)")
     },
     test("a name typed in a Person's row titles the note: the chip and no pill, the table of contents and a mention read the name, and Find counts it once") {

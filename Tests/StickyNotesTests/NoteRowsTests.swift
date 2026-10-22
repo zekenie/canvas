@@ -425,9 +425,10 @@ private let petFields = #"{"type": "object", "properties": {"name": {"type": "st
         for row in rows { expectEqual(ink(drawn, in: view(row.valueRect).insetBy(dx: 1, dy: 0), by: 6), 0, "nothing at the right of \(row.name)") }
         let block = try require(b.book.rowsRect(of: id))
         let last = try require(rows.last)
-        expectEqual(ink(drawn, in: view(CGRect(x: block.minX, y: block.minY, width: block.width, height: TypesStyle.rowsLead - 1)), by: 6), 0, "no hairline zoomed out")
-        expectEqual(ink(drawn, in: view(CGRect(x: block.minX, y: last.rect.maxY + 2, width: block.width, height: 30)), by: 6), 0, "nothing under the last row")
         let paper = try require(b.editor.shapeContext.frame(of: id))
+        expectEqual(ink(drawn, in: view(CGRect(x: block.minX, y: block.minY, width: block.width, height: TypesStyle.rowsLead - 1)), by: 6), 0, "no hairline zoomed out")
+        expectEqual(ink(drawn, in: view(CGRect(x: block.minX, y: last.rect.maxY + 2, width: block.width, height: paper.maxY - last.rect.maxY - 4)), by: 6), 0,
+                    "nothing under the last row")
         expect(ink(drawn, in: view(CGRect(x: paper.minX, y: paper.minY, width: paper.width, height: block.minY - paper.minY)), by: 6) > 0, "the words' bars, above the rows")
         // A fold is three dots from the left edge.
         let wide = b.addWide(20, at: CGPoint(x: 440, y: 40))

@@ -37,7 +37,9 @@ public struct StickyNote: BoxShapeProps {
         self.text = text
     }
     public init() { self.init(frame: .zero) }
-    public static let defaultSize = CGSize(width: 200, height: 200)
+    /// A new note, typed or not: one width, wide enough for a type's rows to read (a field's name and a
+    /// short value), since rows never widen a note.
+    public static let defaultSize = CGSize(width: 260, height: 200)
 }
 
 extension ShapeRecord where Props == StickyNote {
@@ -134,8 +136,8 @@ extension StickyNoteDefinition: ShapeDefinition {
 }
 
 /// A note is laid out by its words and what goes under them (`NoteLayout`): as big as it stores
-/// while it has no rows, and, with them, wide enough to read them and tall enough for the words and
-/// the rows. The size is never stored; the stored box is the note as it is with no rows.
+/// while it has no rows, and, with them, as wide as it stores and tall enough for the words and the
+/// rows. That height is never stored; the stored box is the note as it is with no rows.
 extension StickyNoteDefinition: LaidOutBox {
     func laidOutSize(of shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> CGSize {
         let rows = context.layoutInput(TypeRows.extent, of: shape)

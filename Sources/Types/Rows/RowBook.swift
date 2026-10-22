@@ -514,8 +514,7 @@ public final class RowBook {
     /// `count` rows with their lead or not, and the dashed line when fields and relation rows both are there; `wordsLine`
     /// while the shape is edited.
     private func extent(rows count: Int, hasLead: Bool, wordsLine: Bool = false, hasRule: Bool = false) -> RowsExtent {
-        RowsExtent(minimumWidth: TypesStyle.rowsMinimumWidth,
-                   height: (hasLead ? TypesStyle.rowsLead : 0) + CGFloat(count) * TypesStyle.rowHeight + (hasRule ? TypesStyle.relationRuleHeight : 0),
+        RowsExtent(height: (hasLead ? TypesStyle.rowsLead : 0) + CGFloat(count) * TypesStyle.rowHeight + (hasRule ? TypesStyle.relationRuleHeight : 0),
                    wordsLine: wordsLine)
     }
 
