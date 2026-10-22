@@ -466,7 +466,7 @@ import TestKit
                                                        .command(.pageUp), .command(.pageDown), .command(.scrollToStart), .command(.scrollToEnd),
                                                        .tool(ToolID(placing: Disc.kind)), .tool("zap"), .command("stamp"), .custom("Next")])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+        core          tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         keyboard      service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
         discs         shape disc · tool disc · shortcut D → tool disc · tool zap · shortcut Z → tool zap · command stamp · shortcut ⌘S → command stamp · shortcut ⇥ → Next
         """)
@@ -474,14 +474,14 @@ import TestKit
     test("a command declared with its key in one call: its title, its menu bar item, when it runs and its rule, and the key, which its items show") {
         let log = KeyLog()
         let registry = try Registry(plugins: [KeyboardPlugin(), Contributor(id: "stamps") { r in
-            r.command("stamp", title: "Stamp", menu: "Arrange", order: 100, shortcut: KeyChord("s", [.command, .option]), runs: .whenIdle,
+            r.command("stamp", title: "Stamp", in: StampSection.self, placed: .first, shortcut: KeyChord("s", [.command, .option]), runs: .whenIdle,
                       isEnabled: { !$0.shapes.isEmpty }) { _ in log.events.append("stamp") }
             r.command("wipe", title: "Wipe", answering: .delete, shortcuts: [.delete, .deleteForward]) { _ in }
         }])
         let stamp = try require(registry.menuBarCommands.first { $0.command == "stamp" })
         expectEqual(stamp.title, "Stamp")
         expectEqual(stamp.menu.titles, ["Arrange"])
-        expectEqual(stamp.order, 100)
+        expectEqual(stamp.placement, .first)
         expectEqual(registry.moment(of: "stamp"), .whenIdle)
         expectEqual(stamp.key, MenuKey(key: "s", modifiers: [.command, .option]), "the key the menu keys slot gives: Keyboard's first for it")
         expectEqual(registry.menuKey(of: "wipe"), MenuKey(key: "\u{8}", modifiers: []), "Delete is Backspace's character to a menu")
@@ -528,3 +528,9 @@ import TestKit
         expectEqual(chords.map(\.description), ["V", "⇧⌘G", "⌃⌥⇧⌘A", "⌘.", "⎋", "↩", "⌤", "⌫", "⌦", "⇥", "Space", "↑", "↓", "←", "→"])
     },
 ])
+
+/// Arrange's section a test's command is in.
+private enum StampSection {}
+extension StampSection: MenuBarSection {
+    static var menu: MenuBarMenu { "Arrange" }
+}

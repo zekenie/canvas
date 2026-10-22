@@ -3,9 +3,10 @@ import AppKit
 
 /// The app's menus, built in code (there's no nib): a document app's standard items, sent to the
 /// first responder, so the canvas, a panel's field, the board's window controller, the document,
-/// the document controller or the app answers whichever it is, and the plugins' commands, each where
-/// its declaration says (`registrar.command(… menu:order:…)`, read as `registry.menuBarCommands`), made
-/// in one loop and run by one action (`BoardWindowController.runCommand:`), which knows no command.
+/// the document controller or the app answers whichever it is, and the plugins' commands, each in the
+/// section its declaration names and where it says there (`registrar.command(… in:placed:…)`, read as
+/// `registry.menuBarCommands`), arranged with the window's own items section by section (`MenuLayout`)
+/// and run by one action (`BoardWindowController.runCommand:`), which knows no command.
 /// Edit's Undo, Redo, Cut, Copy, Paste, Delete and Select All are AppKit's own, which text answers
 /// first, and run on the board the command that answers each (`registry.command(answering:)`). Edit ›
 /// Spelling and Grammar's are the text's with the keyboard (dimmed anywhere else): a text that checks
@@ -67,75 +68,97 @@ public enum BoardMenus {
             .separator(),
             item("Quit \(appName)", #selector(NSApplication.terminate(_:)), "q"),
         ])
-        // The window's own items of every menu but the app's, each at its order there (a line between two
-        // whose orders are in different hundreds), among which the commands placed in that menu go
-        // (`registrar.command(… menu: "Edit", order: 140 …)`). AppKit's own items of Edit run on the board
-        // the command that answers each (`registry.command(answering:)`); the window's other own items
-        // (Copy as Image, the inspector's and the minimap's) run none.
+        // The window's own items of every menu but the app's, each in a section, in the order they come
+        // there: the core's sections, where commands go beside them (`EditMenu`, `ViewMenu.Panels` and
+        // `.Zoom`), or the window's alone. AppKit's own items of Edit run on the board the command that answers each
+        // (`registry.command(answering:)`), and a command is placed beside one by naming that command
+        // (`placed: .after(.paste)`); the window's other own items (Copy as Image, the inspector's and the
+        // minimap's) run none, and nothing is placed beside them.
         let standard: (String, StandardAction, String, String, NSEvent.ModifierFlags) -> NSMenuItem = { title, action, selector, key, modifiers in
             let made = item(title, NSSelectorFromString(selector), key, modifiers)
             made.representedObject = registry.command(answering: action)
             return made
         }
-        let own: [String: [Placed]] = [
-            "File": [
-                Placed(0, item("New", #selector(NSDocumentController.newDocument(_:)), "n")),
-                Placed(10, item("Open…", #selector(NSDocumentController.openDocument(_:)), "o")),
-                Placed(20, submenu("Open Recent", menu("Open Recent", [item("Clear Menu", #selector(NSDocumentController.clearRecentDocuments(_:)))]))),
-                Placed(100, item("Close", #selector(NSWindow.performClose(_:)), "w")),
-                Placed(110, item("Save…", NSSelectorFromString("saveDocument:"), "s")),
-                Placed(120, item("Save As…", NSSelectorFromString("saveDocumentAs:"), "s", [.command, .shift])),
-                Placed(130, item("Revert to Saved", NSSelectorFromString("revertDocumentToSaved:"))),
-            ],
-            "Edit": [
-                Placed(0, standard("Undo", .undo, "undo:", "z", .command)),
-                Placed(10, standard("Redo", .redo, "redo:", "z", [.command, .shift])),
-                Placed(100, standard("Cut", .cut, "cut:", "x", .command)),
-                Placed(110, standard("Copy", .copy, "copy:", "c", .command)),
-                Placed(120, item("Copy as Image", #selector(BoardWindowController.copyAsImage(_:)), "c", [.command, .shift])),
-                Placed(130, standard("Paste", .paste, "paste:", "v", .command)),
-                Placed(160, standard("Delete", .delete, "delete:", "", .command)),
-                Placed(170, standard("Select All", .selectAll, "selectAll:", "a", .command)),
-                Placed(290, submenu("Spelling and Grammar", menu("Spelling and Grammar", [
+        let own: [OwnItems] = [
+            OwnItems(FileMenu.Open.self, [
+                item("New", #selector(NSDocumentController.newDocument(_:)), "n"),
+                item("Open…", #selector(NSDocumentController.openDocument(_:)), "o"),
+                submenu("Open Recent", menu("Open Recent", [item("Clear Menu", #selector(NSDocumentController.clearRecentDocuments(_:)))])),
+            ]),
+            OwnItems(FileMenu.Save.self, [
+                item("Close", #selector(NSWindow.performClose(_:)), "w"),
+                item("Save…", NSSelectorFromString("saveDocument:"), "s"),
+                item("Save As…", NSSelectorFromString("saveDocumentAs:"), "s", [.command, .shift]),
+                item("Revert to Saved", NSSelectorFromString("revertDocumentToSaved:")),
+            ]),
+            OwnItems(EditMenu.Undo.self, [
+                standard("Undo", .undo, "undo:", "z", .command),
+                standard("Redo", .redo, "redo:", "z", [.command, .shift]),
+            ]),
+            OwnItems(EditMenu.CutCopyPaste.self, [
+                standard("Cut", .cut, "cut:", "x", .command),
+                standard("Copy", .copy, "copy:", "c", .command),
+                item("Copy as Image", #selector(BoardWindowController.copyAsImage(_:)), "c", [.command, .shift]),
+                standard("Paste", .paste, "paste:", "v", .command),
+                standard("Delete", .delete, "delete:", "", .command),
+                standard("Select All", .selectAll, "selectAll:", "a", .command),
+            ]),
+            OwnItems(EditMenu.FindAndSpelling.self, [
+                submenu("Spelling and Grammar", menu("Spelling and Grammar", [
                     item("Show Spelling and Grammar", NSSelectorFromString("showGuessPanel:"), ":"),
                     item("Check Document Now", NSSelectorFromString("checkSpelling:"), ";"),
                     .separator(),
                     item("Check Spelling While Typing", NSSelectorFromString("toggleContinuousSpellChecking:")),
                     item("Check Grammar With Spelling", NSSelectorFromString("toggleGrammarChecking:")),
                     item("Correct Spelling Automatically", NSSelectorFromString("toggleAutomaticSpellingCorrection:")),
-                ]))),
-            ],
-            "View": [
-                Placed(0, item("Show Toolbar", #selector(NSWindow.toggleToolbarShown(_:)), "t", [.command, .option])),
-                Placed(10, item("Show Inspector", #selector(BoardWindowController.toggleDetails(_:)), "i", [.command, .control])),
-                Placed(20, item("Focus Inspector", #selector(BoardWindowController.focusInspector(_:)), "i", [.command, .option])),
-                Placed(24, item("Focus Next Pane", #selector(BoardWindowController.focusNextPane(_:)), Self.f6, [])),
-                Placed(25, item("Focus Previous Pane", #selector(BoardWindowController.focusPreviousPane(_:)), Self.f6, .shift)),
-                Placed(30, item("Show Minimap", #selector(BoardWindowController.toggleMinimap(_:)), "m", [.command, .control])),
-                Placed(900, item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])),
-            ],
-            "Window": [
-                Placed(0, item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m")),
-                Placed(10, item("Zoom", #selector(NSWindow.performZoom(_:)))),
-                Placed(100, item("Bring All to Front", #selector(NSApplication.arrangeInFront(_:)))),
-            ],
-            "Help": [
-                Placed(0, item("Keyboard Shortcuts", showKeyboardShortcuts, "/", [.command, .option])),
-            ],
+                ])),
+            ]),
+            OwnItems(ViewMenu.Panels.self, [
+                item("Show Toolbar", #selector(NSWindow.toggleToolbarShown(_:)), "t", [.command, .option]),
+                item("Show Inspector", #selector(BoardWindowController.toggleDetails(_:)), "i", [.command, .control]),
+                item("Focus Inspector", #selector(BoardWindowController.focusInspector(_:)), "i", [.command, .option]),
+            ]),
+            // The panes' focus and the minimap close the section, so what a plugin adds there says nothing to
+            // go after the inspector's items (Next and Previous Inspector Tab), or last to go after these.
+            OwnItems(ViewMenu.Panels.self, placed: .last, [
+                item("Focus Next Pane", #selector(BoardWindowController.focusNextPane(_:)), Self.f6, []),
+                item("Focus Previous Pane", #selector(BoardWindowController.focusPreviousPane(_:)), Self.f6, .shift),
+                item("Show Minimap", #selector(BoardWindowController.toggleMinimap(_:)), "m", [.command, .control]),
+            ]),
+            OwnItems(ViewMenu.FullScreen.self, [
+                item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
+            ]),
+            OwnItems(WindowMenu.ThisWindow.self, [
+                item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+                item("Zoom", #selector(NSWindow.performZoom(_:))),
+            ]),
+            OwnItems(WindowMenu.AllWindows.self, [
+                item("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))),
+            ]),
+            OwnItems(HelpMenu.Shortcuts.self, [
+                item("Keyboard Shortcuts", showKeyboardShortcuts, "/", [.command, .option]),
+            ]),
         ]
         // What the selection's context menu offers, less what the menu bar has: its items fill themselves
         // in each time it opens, so it holds none to start with, and it holds no command of its own.
         let shape = ShapeMenu(editor: editor)
-        // Every menu in the Mac's order, then those only commands name, in the order they first do, then
-        // Window and Help; each made in one loop of the window's own items and the commands placed there.
-        let commands = registry.menuBarCommands
+        // The window's own items, then the commands' in plugin order, each in its section.
+        var layout = MenuLayout()
+        for list in own {
+            for item in list.items { layout.add(item, in: list.section, anchor: Self.command(of: item).map(OrderAnchor.init), rule: list.rule) }
+        }
+        for command in registry.menuBarCommands {
+            layout.add(item(for: command), in: command.section, anchor: OrderAnchor(command.command), rule: command.placement)
+        }
         // Shape is the selection's context menu, made as it opens: a command reaches it through a context
         // menu's item that runs it, never by placing itself there, which would put it in no menu at all.
-        precondition(!commands.contains { $0.menu.titles[0] == shape.title },
+        precondition(!layout.titles.contains(shape.title),
                      "Shape holds the selection's context menu: give the command a context-menu item (MenuItem(command:)) instead")
+        // Every menu in the Mac's order, then those only commands name, in the order they first do, then
+        // Window and Help.
         var titles = Self.menuOrder
-        for command in commands where !titles.contains(command.menu.titles[0]) && !Self.lastMenus.contains(command.menu.titles[0]) {
-            titles.append(command.menu.titles[0])
+        for title in layout.titles where !titles.contains(title) && !Self.lastMenus.contains(title) {
+            titles.append(title)
         }
         let main = MenuBar(title: "Main Menu")
         main.addItem(submenu(app.title, app))
@@ -145,10 +168,9 @@ public enum BoardMenus {
                 main.addItem(submenu(title, shape))
                 continue
             }
-            let placed = (own[title] ?? []) + Placed.commands(commands.filter { $0.menu.titles[0] == title }, at: 1)
-            guard !placed.isEmpty else { continue }
-            made[title] = menu(title, Placed.arranged(placed))
-            main.addItem(submenu(title, made[title]!))
+            guard let menu = layout.menu(titled: title) else { continue }
+            made[title] = menu
+            main.addItem(submenu(title, menu))
         }
         shape.omitting = Set(Self.commands(in: main))
         return Menus(main: main, services: services, windows: made["Window"]!, help: made["Help"]!)
@@ -156,6 +178,20 @@ public enum BoardMenus {
 
     /// The menus that come last, after every other, whatever names them.
     static let lastMenus = ["Window", "Help"]
+
+    /// Some of the window's own items of a section, in the order they come, each placed among the
+    /// section's items as `rule` says (by default where it first appears).
+    struct OwnItems {
+        let section: any MenuBarSection.Type
+        let rule: OrderRule
+        let items: [NSMenuItem]
+
+        init(_ section: any MenuBarSection.Type, placed rule: OrderRule = .natural, _ items: [NSMenuItem]) {
+            self.section = section
+            self.rule = rule
+            self.items = items
+        }
+    }
 
     /// Every command an item of `menu` runs, or one of its submenus'.
     static func commands(in menu: NSMenu) -> [CanvasCommand] {
@@ -198,49 +234,139 @@ public enum BoardMenus {
     }
 }
 
-/// An item of a menu at its order there: one of the window's own, or a command's.
+/// The menus as sections of items, gathered as the window's own items and the commands' are added: a
+/// menu's sections in the order first met, a section's items too, and a submenu an item of the section
+/// it's in, met with the first section in it. Made into menus with each section and each item arranged
+/// by its order (`OrderRule.arranged`), a line between two sections.
 @MainActor
-struct Placed {
-    let order: Int
-    let item: NSMenuItem
+struct MenuLayout {
+    /// The menu bar's menus' titles, in the order first met.
+    private(set) var titles: [String] = []
+    private var sections: [ObjectIdentifier: Section] = [:]
+    private var menus: [Menu: [ObjectIdentifier]] = [:]
 
-    init(_ order: Int, _ item: NSMenuItem) {
-        self.order = order
-        self.item = item
+    /// A menu: one of the menu bar's, by title, or a submenu, by the section it's in and its title.
+    private enum Menu: Hashable {
+        case named(String)
+        case submenu(in: ObjectIdentifier, String)
     }
 
-    /// The items by their order (of two at one order, the one that came first), a line between two whose
-    /// orders are in different hundreds (-10 is in the hundred before 0's).
-    static func arranged(_ placed: [Placed]) -> [NSMenuItem] {
-        let sorted = placed.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map(\.element)
-        let hundred: (Int) -> Int = { order in order >= 0 ? order / 100 : (order - 99) / 100 }
-        var items: [NSMenuItem] = []
-        for (index, entry) in sorted.enumerated() {
-            if index > 0, hundred(sorted[index - 1].order) != hundred(entry.order) { items.append(.separator()) }
-            items.append(entry.item)
-        }
-        return items
+    private struct Section {
+        let type: any MenuBarSection.Type
+        var entries: [Entry] = []
     }
 
-    /// The commands' items at a level of a menu, `depth` titles down their paths: a command whose path
-    /// ends here an item at its order, and those in a submenu of it (`"Edit › Find"`) that submenu, at
-    /// the order of its first.
-    static func commands(_ commands: [MenuBarCommand], at depth: Int) -> [Placed] {
-        var placed: [Placed] = []
-        var submenus: [String] = []
-        for command in commands {
-            if command.menu.titles.count == depth {
-                placed.append(Placed(command.order, BoardMenus.item(for: command)))
-            } else if !submenus.contains(command.menu.titles[depth]) {
-                submenus.append(command.menu.titles[depth])
+    /// An item of a section, or a submenu, with how another item names it (the command it runs, if
+    /// any) and its place among the section's.
+    private struct Entry {
+        let anchor: OrderAnchor?
+        let rule: OrderRule
+        let content: Content
+    }
+
+    private enum Content {
+        case item(NSMenuItem)
+        case submenu(Menu, title: String)
+    }
+
+    /// Adds `item` to `section`, named by `anchor` and placed by `rule` among the section's items.
+    mutating func add(_ item: NSMenuItem, in section: any MenuBarSection.Type, anchor: OrderAnchor?, rule: OrderRule = .natural) {
+        enter(section)
+        sections[ObjectIdentifier(section)]!.entries.append(Entry(anchor: anchor, rule: rule, content: .item(item)))
+    }
+
+    /// Makes `section` one of its menu's, the first time it's met; a submenu met for the first time
+    /// becomes an item of the section it's in, at the place it says.
+    private mutating func enter(_ section: any MenuBarSection.Type) {
+        let id = ObjectIdentifier(section)
+        guard sections[id] == nil else { return }
+        sections[id] = Section(type: section)
+        let menu: Menu
+        switch section.menu {
+        case .named(let title):
+            menu = .named(title)
+            if !titles.contains(title) { titles.append(title) }
+        case .submenu(let title, let parent, let placed):
+            menu = .submenu(in: ObjectIdentifier(parent), title)
+            if menus[menu] == nil {
+                enter(parent)
+                sections[ObjectIdentifier(parent)]!.entries.append(Entry(anchor: nil, rule: placed.rule, content: .submenu(menu, title: title)))
             }
         }
-        for title in submenus {
-            let inside = Self.commands(commands.filter { $0.menu.titles.count > depth && $0.menu.titles[depth] == title }, at: depth + 1)
-            placed.append(Placed(inside.map(\.order).min() ?? 0, BoardMenus.submenu(title, BoardMenus.menu(title, arranged(inside)))))
-        }
-        return placed
+        menus[menu, default: []].append(id)
     }
+
+    /// The menu bar's menu titled `title`, made; nil for one nothing is in.
+    func menu(titled title: String) -> NSMenu? {
+        menus[.named(title)] == nil ? nil : make(.named(title), title: title)
+    }
+
+    private func make(_ menu: Menu, title: String) -> NSMenu {
+        let made = NSMenu(title: title)
+        let order = OrderRule.arranged(menus[menu] ?? []) { (sections[$0]!.type.orderAnchor, sections[$0]!.type.orderRule) }
+        for id in order {
+            if !made.items.isEmpty { made.addItem(.separator()) }
+            for entry in OrderRule.arranged(sections[id]!.entries, by: { ($0.anchor, $0.rule) }) {
+                switch entry.content {
+                case .item(let item): made.addItem(item)
+                case .submenu(let inner, let innerTitle): made.addItem(BoardMenus.submenu(innerTitle, make(inner, title: innerTitle)))
+                }
+            }
+        }
+        return made
+    }
+}
+
+// The window's own sections, which only its items are in; those its items share with commands are the
+// core's (`EditMenu`, `ViewMenu.Panels` and `.Zoom`), and come in the order the window lists its items.
+
+enum FileMenu {
+    /// New, Open… and Open Recent.
+    enum Open {}
+    /// Close, Save…, Save As… and Revert to Saved.
+    enum Save {}
+}
+
+extension FileMenu.Open: MenuBarSection {
+    static var menu: MenuBarMenu { "File" }
+}
+
+extension FileMenu.Save: MenuBarSection {
+    static var menu: MenuBarMenu { "File" }
+}
+
+extension ViewMenu {
+    /// Enter Full Screen, the last of View, as the Mac has it, whatever else is there.
+    enum FullScreen {}
+}
+
+extension ViewMenu.FullScreen: MenuBarSection {
+    static var menu: MenuBarMenu { "View" }
+    static var order: Order<Self> { .last }
+}
+
+enum WindowMenu {
+    /// Minimize and Zoom: what's done to the window.
+    enum ThisWindow {}
+    /// Bring All to Front.
+    enum AllWindows {}
+}
+
+extension WindowMenu.ThisWindow: MenuBarSection {
+    static var menu: MenuBarMenu { "Window" }
+}
+
+extension WindowMenu.AllWindows: MenuBarSection {
+    static var menu: MenuBarMenu { "Window" }
+}
+
+enum HelpMenu {
+    /// Keyboard Shortcuts.
+    enum Shortcuts {}
+}
+
+extension HelpMenu.Shortcuts: MenuBarSection {
+    static var menu: MenuBarMenu { "Help" }
 }
 
 /// The Shape menu: what a right-click on the selected shapes would open (the plugin that claims the

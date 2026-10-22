@@ -16,6 +16,13 @@ extension CanvasCommand {
     public static let sendToBack: CanvasCommand = "sendToBack"
 }
 
+/// Arrange's section of Bring to Front, Bring Forward, Send Backward and Send to Back: after Grouping's,
+/// which comes first in plugin order.
+public enum ReorderSection {}
+extension ReorderSection: MenuBarSection {
+    public static var menu: MenuBarMenu { "Arrange" }
+}
+
 /// An Arrange submenu in every shape's context menu, as in Keynote and tldraw: Bring to Front,
 /// Bring Forward, Send Backward and Send to Back. The smallest plugin that adds items for many kinds,
 /// and one that picks them by capability (`restackable`): a kind painted by anchor (an arrow, just
@@ -29,19 +36,19 @@ public struct ReorderingPlugin: ListedPlugin {
     public var id: PluginID { "reordering" }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.command(.bringToFront, title: "Bring to Front", menu: "Arrange", order: 100, shortcut: KeyChord("]"), runs: .whenIdle,
+        registrar.command(.bringToFront, title: "Bring to Front", in: ReorderSection.self, shortcut: KeyChord("]"), runs: .whenIdle,
                           isEnabled: { $0.restackable }) { subject in
             subject.editor.transact("Bring to Front") { $0.bringToFront(subject.shapes) }
         }
-        registrar.command(.bringForward, title: "Bring Forward", menu: "Arrange", order: 110, shortcut: KeyChord("]", .option), runs: .whenIdle,
+        registrar.command(.bringForward, title: "Bring Forward", in: ReorderSection.self, shortcut: KeyChord("]", .option), runs: .whenIdle,
                           isEnabled: { $0.restackable }) { subject in
             subject.editor.transact("Bring Forward") { $0.bringForward(subject.shapes) }
         }
-        registrar.command(.sendBackward, title: "Send Backward", menu: "Arrange", order: 120, shortcut: KeyChord("[", .option), runs: .whenIdle,
+        registrar.command(.sendBackward, title: "Send Backward", in: ReorderSection.self, shortcut: KeyChord("[", .option), runs: .whenIdle,
                           isEnabled: { $0.restackable }) { subject in
             subject.editor.transact("Send Backward") { $0.sendBackward(subject.shapes) }
         }
-        registrar.command(.sendToBack, title: "Send to Back", menu: "Arrange", order: 130, shortcut: KeyChord("["), runs: .whenIdle,
+        registrar.command(.sendToBack, title: "Send to Back", in: ReorderSection.self, shortcut: KeyChord("["), runs: .whenIdle,
                           isEnabled: { $0.restackable }) { subject in
             subject.editor.transact("Send to Back") { $0.sendToBack(subject.shapes) }
         }

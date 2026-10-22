@@ -197,24 +197,26 @@ extension PluginRegistrar {
     /// bar item and a context menu's item that runs it show the key, and while its rule says no, the
     /// items are dimmed and the key goes on as if there were no shortcut.
     ///
-    ///     registrar.command(.group, title: "Group", menu: "Arrange", order: 0, shortcut: KeyChord("g", [.command, .option]),
+    ///     registrar.command(.group, title: "Group", in: GroupingSection.self, shortcut: KeyChord("g", [.command, .option]),
     ///                       runs: .whenIdle, isEnabled: { $0.editor.canGroup($0.shapes) }) { $0.editor.group($0.shapes) }
-    public mutating func command(_ command: CanvasCommand, title: String, menu: MenuPath? = nil, order: Int = 0,
+    public mutating func command(_ command: CanvasCommand, title: String, in section: (any MenuBarSection.Type)? = nil,
+                                 placed placement: Order<CanvasCommand> = .natural,
                                  answering: StandardAction? = nil, shortcut: KeyChord, runs moment: CommandMoment = .anytime,
                                  menuTitle: (@MainActor (CanvasEditor) -> String)? = nil,
                                  isEnabled: @escaping @MainActor (CommandSubject) -> Bool = { _ in true },
                                  _ run: @escaping @MainActor (CommandSubject) -> Void) {
-        self.command(command, title: title, menu: menu, order: order, answering: answering, shortcuts: [shortcut], runs: moment,
+        self.command(command, title: title, in: section, placed: placement, answering: answering, shortcuts: [shortcut], runs: moment,
                      menuTitle: menuTitle, isEnabled: isEnabled, run)
     }
 
     /// The same, with several keys, the first of which the items show (Delete: ⌫ and ⌦).
-    public mutating func command(_ command: CanvasCommand, title: String, menu: MenuPath? = nil, order: Int = 0,
+    public mutating func command(_ command: CanvasCommand, title: String, in section: (any MenuBarSection.Type)? = nil,
+                                 placed placement: Order<CanvasCommand> = .natural,
                                  answering: StandardAction? = nil, shortcuts: [KeyChord], runs moment: CommandMoment = .anytime,
                                  menuTitle: (@MainActor (CanvasEditor) -> String)? = nil,
                                  isEnabled: @escaping @MainActor (CommandSubject) -> Bool = { _ in true },
                                  _ run: @escaping @MainActor (CommandSubject) -> Void) {
-        self.command(command, title: title, menu: menu, order: order, answering: answering, runs: moment, menuTitle: menuTitle,
+        self.command(command, title: title, in: section, placed: placement, answering: answering, runs: moment, menuTitle: menuTitle,
                      isEnabled: isEnabled, run)
         for chord in shortcuts {
             contribute(Shortcut(chord: chord, effect: .commands([command], title: nil, repeats: false)), to: KeyboardShortcuts.self)

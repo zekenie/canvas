@@ -719,8 +719,9 @@ public struct TableOfContentsPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { ContentsState(editor: $0) }
-        // No key: the list's header has its button, and the menu bar its item, for the keyboard.
-        registrar.command(.showAllShapes, title: ContentsStyle.showAllShapes, menu: "View", order: ContentsStyle.showAllOrder,
+        // No key: the list's header has its button, and the menu bar its item, for the keyboard (View,
+        // last among the panels' items: after Show Minimap).
+        registrar.command(.showAllShapes, title: ContentsStyle.showAllShapes, in: ViewMenu.Panels.self, placed: .last,
                           isEnabled: { $0.editor.tableOfContents?.isFiltered == true }) { $0.editor.tableOfContents?.showAll() }
     }
 }
@@ -735,12 +736,11 @@ enum ContentsStyle {
     /// the up button, the heading's symbol and its title; the up button's width.
     static let heading = "Board"
     /// The header of a list of the selection, its button that lists every shape again and that
-    /// button's tooltip; the command it runs, and its place in View, after Show Minimap.
+    /// button's tooltip; the command it runs.
     static let selectionHeading = "Selection"
     static let showAllButton = "Show All"
     static let showAllHelp = "List every shape on the board"
     static let showAllShapes = "Show All Shapes"
-    static let showAllOrder = 40
     /// What ⇧Tab types: the back-tab character, which the list takes as ↑.
     static let backTab = "\u{19}"
     static let headerSpacing: CGFloat = 4

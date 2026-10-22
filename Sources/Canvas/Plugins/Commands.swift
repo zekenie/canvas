@@ -63,9 +63,8 @@ public enum StandardAction: Sendable, Hashable, CaseIterable {
     case smartMagnify
 }
 
-/// Where a command's item is in the menu bar: a menu, by its title, and a submenu of it, written as a
-/// path through menus is: `"Arrange"`, `"Edit › Find"`. The window places a menu the Mac's way (Edit,
-/// Arrange, View, Go, …), and one it doesn't know of before Window.
+/// Where a menu is in the menu bar, written as a path through menus is: `"Arrange"`, `"Edit › Find"`
+/// (a section's menu's, `MenuBarMenu.path`, and so a command's item's, `MenuBarCommand.menu`).
 public struct MenuPath: Hashable, Sendable, ExpressibleByStringLiteral, CustomStringConvertible {
     /// The menu's title, then the submenu's, if it's in one.
     public let titles: [String]
@@ -88,9 +87,9 @@ struct CommandRegistration {
     /// What it's called, as its menu item is ("Delete", "Zoom to Fit"): the name a context menu's item,
     /// a panel's button and the Keyboard Shortcuts window give it.
     let title: String
-    /// Its item in the menu bar, if it has one, and its place among the menu's items.
-    let menu: MenuPath?
-    let order: Int
+    /// The section its item in the menu bar is in, if it has one, and its place among the section's items.
+    let section: (any MenuBarSection.Type)?
+    let placement: OrderRule
     /// The item of AppKit's Edit menu it is on the board, if it is one.
     let answering: StandardAction?
     let moment: CommandMoment
@@ -106,18 +105,20 @@ extension PluginRegistrar {
     ///
     ///     extension CanvasCommand { public static let group: CanvasCommand = "group" }
     ///
-    ///     registrar.command(.group, title: "Group", menu: "Arrange", order: 0, runs: .whenIdle,
+    ///     registrar.command(.group, title: "Group", in: GroupingSection.self, runs: .whenIdle,
     ///                       isEnabled: { $0.editor.canGroup($0.shapes) }) { $0.editor.group($0.shapes) }
     ///
     /// (Keyboard's `command(…shortcut:…)` is this with the command's keys: Grouping's gives ⌥⌘G.)
     ///
     /// - `title`: what it's called, as its menu item is ("Group"), wherever it's listed: its menu bar
     ///   item, a context menu's item that runs it, a panel's button, the Keyboard Shortcuts window.
-    /// - `menu` and `order`: its item in the menu bar, if it has one, in that menu (`"Arrange"`, or a
-    ///   submenu, `"Edit › Find"`), its items sorted by `order` and a line between two whose orders are
-    ///   in different hundreds. The window's own items have their orders too (Edit: Undo and Redo 0
-    ///   and 10; Cut 100, Copy 110, Copy as Image 120, Paste 130, Delete 160, Select All 170; Spelling
-    ///   and Grammar 290. View: Show Toolbar 0 to Show Minimap 30; Enter Full Screen 900).
+    /// - `in` and `placed`: its item in the menu bar, if it has one: the section it's in (a
+    ///   `MenuBarSection`, which says its menu: Grouping's, in Arrange), a line between two sections,
+    ///   and its place among the section's items (`Order`: by default where it first appears, the
+    ///   window's own items first, then the commands' in plugin order; `.after(.paste)` right after the
+    ///   item that runs `.paste`). The window's own items are in sections too: the core's, where commands
+    ///   go beside them (`EditMenu.Undo`, `.CutCopyPaste` and `.FindAndSpelling`; `ViewMenu.Zoom`), and the
+    ///   window's alone (File's, View's panels and, last, Enter Full Screen, Window's, Help's).
     /// - `answering`: the item of AppKit's Edit menu it is on the board (`.cut`), for a command that
     ///   has no item of its own: the window's item runs it when nothing with the keyboard takes it.
     /// - `runs`: when a key or the menu bar may run it, besides `isEnabled` (`CommandMoment`).
@@ -133,13 +134,14 @@ extension PluginRegistrar {
     ///
     /// Its keys are Keyboard's to give: Keyboard's `command(_:title:…shortcut:…)` declares one with them.
     /// At most one plugin may claim each command, and one command each standard action.
-    public mutating func command(_ command: CanvasCommand, title: String, menu: MenuPath? = nil, order: Int = 0,
+    public mutating func command(_ command: CanvasCommand, title: String, in section: (any MenuBarSection.Type)? = nil,
+                                 placed placement: Order<CanvasCommand> = .natural,
                                  answering: StandardAction? = nil, runs moment: CommandMoment = .anytime,
                                  menuTitle: (@MainActor (CanvasEditor) -> String)? = nil,
                                  isEnabled: @escaping @MainActor (CommandSubject) -> Bool = { _ in true },
                                  _ run: @escaping @MainActor (CommandSubject) -> Void) {
-        contribute(CommandRegistration(command: command, title: title, menu: menu, order: order, answering: answering, moment: moment,
-                                       menuTitle: menuTitle, isEnabled: isEnabled, run: run), to: CorePoints.Commands.self)
+        contribute(CommandRegistration(command: command, title: title, section: section, placement: placement.rule, answering: answering,
+                                       moment: moment, menuTitle: menuTitle, isEnabled: isEnabled, run: run), to: CorePoints.Commands.self)
     }
 
     /// What a command run from a key or the menu bar acts on: the selection, for the plugin that keeps
@@ -208,6 +210,82 @@ struct CommandShapesClaim {
 }
 
 private struct CommandTableMemo: Hashable {}
+
+extension CorePoints.Commands: KeyedExtensionPoint {
+    typealias Contribution = CommandRegistration
+    static var owner: PluginID { .core }
+    static func uniqueKeys(of c: CommandRegistration, for _: ShapeTarget) -> [AnyHashable] {
+        [AnyHashable(c.command)] + (c.answering.map { [AnyHashable(StandardActionKey(action: $0))] } ?? [])
+    }
+
+    /// Refuses a menu bar its items' declarations can't make: an item placed in no section, a submenu
+    /// inside itself, a submenu its sections place two ways, sections or items placed beside each other in
+    /// a circle, a section placed beside one in another menu, and an item beside a command whose item is
+    /// in another section. The
+    /// window's own sections and items aren't the registry's to see: one placed beside them goes where it
+    /// says as the window makes the menus, or, where what it names isn't, where one that says nothing would.
+    static func check(_ registry: Registry) throws(RegistryError) {
+        if let stray = registry.commandTable.inOrder.first(where: { $0.section == nil && $0.placement != .natural }) {
+            throw .invalid(point: "Commands", reason: "\(stray.command) is placed \(stray.placement) in no section: name its section (in:)")
+        }
+        let items = registry.commandTable.inOrder.filter { $0.section != nil }
+        // Every section an item is in, and those the submenus they're in are in, each once, in the order met.
+        var sections: [any MenuBarSection.Type] = []
+        var named: [ObjectIdentifier: any MenuBarSection.Type] = [:]
+        for item in items {
+            var chain: [any MenuBarSection.Type] = []
+            var next = item.section
+            while let section = next, named[ObjectIdentifier(section)] == nil {
+                if chain.contains(where: { ObjectIdentifier($0) == ObjectIdentifier(section) }) {
+                    let names = (chain + [section]).map { $0.reportedName }
+                    throw .invalid(point: "Commands", reason: "a submenu inside itself: \(names.joined(separator: " in "))")
+                }
+                chain.append(section)
+                if case .submenu(_, let parent, _) = section.menu { next = parent } else { next = nil }
+            }
+            for section in chain {
+                named[ObjectIdentifier(section)] = section
+                sections.append(section)
+            }
+        }
+        var submenus: [MenuPath: (section: any MenuBarSection.Type, place: OrderRule)] = [:]
+        func said(_ section: any MenuBarSection.Type, _ place: OrderRule) -> String { section.reportedName + (place == .natural ? "" : " \(place)") }
+        for case let (section, .submenu(title, parent, placed)) in sections.map({ ($0, $0.menu) }) {
+            let path = MenuPath(parent.menu.path.titles + [title])
+            if let other = submenus[path], ObjectIdentifier(other.section) != ObjectIdentifier(parent) || other.place != placed.rule {
+                throw .invalid(point: "Commands", reason: "\(section.reportedName) puts submenu \(path) in \(said(parent, placed.rule)), "
+                               + "where another section puts it in \(said(other.section, other.place))")
+            }
+            submenus[path] = (parent, placed.rule)
+        }
+        if let cycle = OrderRule.cycle(from: sections.map { $0.orderAnchor }) {
+            throw .invalid(point: "Commands", reason: "menu bar sections placed beside each other in a circle: \(cycle)")
+        }
+        for section in sections {
+            guard case .type(let id)? = section.orderRule.anchor?.id, let other = named[id], other.menu.path != section.menu.path else { continue }
+            throw .invalid(point: "Commands", reason: "\(section.reportedName) is placed \(section.orderRule), which is in \(other.menu.path), not \(section.menu.path)")
+        }
+        let places = Dictionary(items.map { (OrderAnchor($0.command), $0.placement) }, uniquingKeysWith: { first, _ in first })
+        if let cycle = OrderRule.cycle(from: items.map { OrderAnchor($0.command) }, rule: { places[$0] ?? $0.rule() }) {
+            throw .invalid(point: "Commands", reason: "menu bar items placed beside each other in a circle: \(cycle)")
+        }
+        for item in items {
+            guard let section = item.section, case .command(let other)? = item.placement.anchor?.id,
+                  let elsewhere = registry.command(other)?.section, ObjectIdentifier(elsewhere) != ObjectIdentifier(section) else { continue }
+            throw .invalid(point: "Commands", reason: "\(item.command) is placed \(item.placement), whose item is in \(elsewhere.reportedName), not \(section.reportedName)")
+        }
+    }
+}
+
+extension CommandRegistration {
+    /// Where the registry's report says its item is: its place among its section's items, if it says
+    /// one, then its section, with the section's order if it says one (" after paste in EditMenu.CutCopyPaste").
+    var reportedPlace: String {
+        guard let section else { return "" }
+        return (placement == .natural ? "" : " \(placement)") + " in \(section.reportedName)"
+            + (section.orderRule == .natural ? "" : " \(section.orderRule)")
+    }
+}
 
 extension CanvasEditor {
     /// What a command run from a key or the menu bar acts on: the selection (`registrar.commandShapes`),

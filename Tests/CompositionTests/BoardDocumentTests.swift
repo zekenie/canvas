@@ -386,6 +386,8 @@ let boardType = "com.example.InfiniteCanvas.board"
         try check("File", "Revert to Saved", "revertDocumentToSaved:")
         let recent = try require(item("File", "Open Recent").submenu)
         expectEqual(recent.items.map { $0.action.map(NSStringFromSelector) }, ["clearRecentDocuments:"])
+        let file = try require(menus.main.item(withTitle: "File")?.submenu)
+        expectEqual(file.items.map(\.title), ["New", "Open…", "Open Recent", "", "Close", "Save…", "Save As…", "Revert to Saved"])
         // AppKit's own items, which text answers first, carrying the command that answers each on the board.
         try check("Edit", "Undo", "undo:", "z", runs: .undo)
         try check("Edit", "Redo", "redo:", "z", [.command, .shift], runs: .redo)
@@ -439,7 +441,9 @@ let boardType = "com.example.InfiniteCanvas.board"
         expectEqual(app.items.prefix(4).map(\.title), ["About Infinite Canvas", "", "Settings…", ""], "Settings… follows About")
         try check("Infinite Canvas", "Quit Infinite Canvas", "terminate:", "q")
         expectEqual(menus.windows.title, "Window")
+        expectEqual(menus.windows.items.map(\.title), ["Minimize", "Zoom", "", "Bring All to Front"])
         expectEqual(menus.help.title, "Help")
+        expectEqual(menus.help.items.map(\.title), ["Keyboard Shortcuts"])
     },
     test("Edit › Delete deletes the selection, as the Delete key does") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())

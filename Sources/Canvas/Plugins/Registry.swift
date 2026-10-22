@@ -576,7 +576,7 @@ struct RawContribution {
         case let tool as ToolRegistration: "tool \(tool.descriptor.id)"
         case let service as ServiceRegistration: "service \(service.name)"
         case let overlay as any CanvasOverlay: "overlay \(type(of: overlay))"
-        case let command as CommandRegistration: "command \(command.command)" + (command.menu.map { " in \($0)" } ?? "")
+        case let command as CommandRegistration: "command \(command.command)" + command.reportedPlace
         case let provider as LayoutProvider: "layout input \(provider.name)"
         case let declaration as PropertyDeclaration:
             "property \(declaration.codec.key)" + (declaration.codec.version > 0 ? " v\(declaration.codec.version)" : "")

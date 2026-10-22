@@ -118,10 +118,10 @@ import TestKit
                                        Contributor(id: "y") { $0.command("clip", title: "Clip", answering: .cut) { _ in } }])
         }
     },
-    test("the menu bar's commands: each placed in a menu, in plugin order, with its title, place, order and the key the menu keys slot gives; none without a slot; a second slot a conflict") {
+    test("the menu bar's commands: each in a section of a menu, in plugin order, with its title, its place there and the key the menu keys slot gives; none without a slot; a second slot a conflict") {
         let placed = Contributor(id: "placed") { r in
-            r.command("tidy", title: "Tidy", menu: "Arrange", order: 100, runs: .whenIdle) { _ in }
-            r.command("seek", title: "Seek…", menu: "Edit › Find", order: 200) { _ in }
+            r.command("tidy", title: "Tidy", in: TidySection.self, placed: .first, runs: .whenIdle) { _ in }
+            r.command("seek", title: "Seek…", in: SeekSection.self) { _ in }
             r.command("hidden", title: "Hidden") { _ in }
         }
         let keys = Contributor(id: "keys") { r in
@@ -129,10 +129,10 @@ import TestKit
         }
         let registry = try Registry(plugins: [placed, keys])
         let bar = registry.menuBarCommands.filter { $0.menu.titles[0] != "View" }
-        expectEqual(bar.map(\.command), ["tidy", "seek"], "the core's zooms aside; a command with no menu has no item")
+        expectEqual(bar.map(\.command), ["tidy", "seek"], "the core's zooms aside; a command with no section has no item")
         expectEqual(bar.map(\.title), ["Tidy", "Seek…"])
-        expectEqual(bar.map(\.menu.titles), [["Arrange"], ["Edit", "Find"]])
-        expectEqual(bar.map(\.order), [100, 200])
+        expectEqual(bar.map(\.menu.titles), [["Arrange"], ["Edit", "Find"]], "a section's menu, a submenu's under the menu it's in")
+        expectEqual(bar.map(\.placement), [.first, .natural])
         expectEqual(bar.map(\.key), [nil, MenuKey(key: "f", modifiers: [.command, .option])])
         expectEqual(registry.menuKey(of: "seek")?.modifierFlags, [.command, .option])
         expectEqual(try Registry(plugins: [placed]).menuKey(of: "seek"), nil, "no slot, no key")
@@ -141,13 +141,101 @@ import TestKit
             _ = try Registry(plugins: [keys, Contributor(id: "more") { $0.menuKeys { _, _ in nil } }])
         }
         let report = registry.report
-        expect(report.contains("command tidy in Arrange · command seek in Edit › Find · command hidden"), report)
+        expect(report.contains("command tidy first in TidySection · command seek in SeekSection · command hidden"), report)
+        expect(report.contains("command zoomIn in ViewMenu.Zoom"), report)
         expect(report.contains("keys          menu keys"), report)
+    },
+    test("a menu bar the declarations can't make is refused: a submenu inside itself, a submenu placed two ways, a circle of sections or of items, and one placed beside another menu's or section's") {
+        @MainActor func refused(_ reason: String, _ register: @escaping @MainActor (inout PluginRegistrar) -> Void) {
+            expectThrows(RegistryError.invalid(point: "Commands", reason: reason)) { _ = try Registry(plugins: [Contributor(id: "bar", register)]) }
+        }
+        refused("lone is placed after paste in no section: name its section (in:)") { r in
+            r.command("lone", title: "Lone", placed: .after("paste")) { _ in }
+        }
+        refused("a submenu inside itself: LoopASection in LoopBSection in LoopASection") { r in
+            r.command("loop", title: "Loop", in: LoopASection.self) { _ in }
+        }
+        refused("TwinSeekSection puts submenu Edit › Find in EditMenu.CutCopyPaste, where another section puts it in EditMenu.FindAndSpelling first") { r in
+            r.command("seek", title: "Seek…", in: SeekSection.self) { _ in }
+            r.command("twin", title: "Twin", in: TwinSeekSection.self) { _ in }
+        }
+        refused("menu bar sections placed beside each other in a circle: PingSection after PongSection, PongSection after PingSection") { r in
+            r.command("ping", title: "Ping", in: PingSection.self) { _ in }
+        }
+        refused("StraySection is placed after TidySection, which is in Arrange, not Go") { r in
+            r.command("tidy", title: "Tidy", in: TidySection.self) { _ in }
+            r.command("stray", title: "Stray", in: StraySection.self) { _ in }
+        }
+        refused("menu bar items placed beside each other in a circle: a after b, b after a") { r in
+            r.command("a", title: "A", in: TidySection.self, placed: .after("b")) { _ in }
+            r.command("b", title: "B", in: TidySection.self, placed: .after("a")) { _ in }
+        }
+        refused("c is placed after seek, whose item is in SeekSection, not TidySection") { r in
+            r.command("seek", title: "Seek…", in: SeekSection.self) { _ in }
+            r.command("c", title: "C", in: TidySection.self, placed: .after("seek")) { _ in }
+        }
+        let beside = try Registry(plugins: [Contributor(id: "bar") { r in
+            r.command("c", title: "C", in: TidySection.self, placed: .after("paste")) { _ in }
+        }])
+        expectEqual(beside.menuBarCommands.filter { $0.command == "c" }.map(\.placement), [Order<CanvasCommand>.after("paste").rule],
+                    "beside a command with no item of its own, as the window's Paste runs one: the window's to place")
     },
     test("a menu path is a menu and the submenus under it, written as a path is") {
         let path: MenuPath = "Edit › Find"
         expectEqual(path.titles, ["Edit", "Find"])
         expectEqual(path.description, "Edit › Find")
         expectEqual(MenuPath(["Arrange"]).titles, ["Arrange"])
+        expectEqual(SeekSection.menu.path, "Edit › Find", "a submenu's, under the menu its section is in")
     },
 ])
+
+// Sections the commands above are in (internal, so the report names them as written).
+
+/// Arrange's.
+enum TidySection {}
+extension TidySection: MenuBarSection {
+    static var menu: MenuBarMenu { "Arrange" }
+}
+
+/// Edit › Find's, the submenu first in the section Spelling and Grammar is in.
+enum SeekSection {}
+extension SeekSection: MenuBarSection {
+    static var menu: MenuBarMenu { .submenu("Find", in: EditMenu.FindAndSpelling.self, placed: .first) }
+}
+
+/// Edit › Find again, put somewhere else.
+enum TwinSeekSection {}
+extension TwinSeekSection: MenuBarSection {
+    static var menu: MenuBarMenu { .submenu("Find", in: EditMenu.CutCopyPaste.self) }
+}
+
+/// Two submenus, each in the other.
+enum LoopASection {}
+extension LoopASection: MenuBarSection {
+    static var menu: MenuBarMenu { .submenu("A", in: LoopBSection.self) }
+}
+
+enum LoopBSection {}
+extension LoopBSection: MenuBarSection {
+    static var menu: MenuBarMenu { .submenu("B", in: LoopASection.self) }
+}
+
+/// Two sections, each placed after the other.
+enum PingSection {}
+extension PingSection: MenuBarSection {
+    static var menu: MenuBarMenu { "Arrange" }
+    static var order: Order<Self> { .after(PongSection.self) }
+}
+
+enum PongSection {}
+extension PongSection: MenuBarSection {
+    static var menu: MenuBarMenu { "Arrange" }
+    static var order: Order<Self> { .after(PingSection.self) }
+}
+
+/// Go's, placed beside Arrange's.
+enum StraySection {}
+extension StraySection: MenuBarSection {
+    static var menu: MenuBarMenu { "Go" }
+    static var order: Order<Self> { .after(TidySection.self) }
+}

@@ -22,6 +22,13 @@ extension CanvasCommand {
     public static let findPrevious: CanvasCommand = "findPrevious"
 }
 
+/// Edit › Find's section: Find…, Find Next and Find Previous, in a submenu first in the section
+/// Spelling and Grammar is in.
+public enum FindSection {}
+extension FindSection: MenuBarSection {
+    public static var menu: MenuBarMenu { .submenu("Find", in: EditMenu.FindAndSpelling.self, placed: .first) }
+}
+
 // MARK: The extension point
 
 /// A text a shape shows, as Find searches it: plain text, as it reads (a mention's name where its
@@ -253,12 +260,12 @@ public struct FindPlugin: ListedPlugin {
         // Edit › Find's items, which work wherever the keyboard is, text included. Never mid-gesture.
         // ⌘G and ⇧⌘G while there's something to step to: hits, or, with Find closed, a query to open it
         // on again.
-        registrar.command(.find, title: "Find…", menu: "Edit › Find", order: 200, shortcut: KeyChord("f", .command), runs: .betweenPresses) {
+        registrar.command(.find, title: "Find…", in: FindSection.self, shortcut: KeyChord("f", .command), runs: .betweenPresses) {
             $0.editor.find?.open()
         }
-        registrar.command(.findNext, title: "Find Next", menu: "Edit › Find", order: 210, shortcut: KeyChord("g", .command),
+        registrar.command(.findNext, title: "Find Next", in: FindSection.self, shortcut: KeyChord("g", .command),
                           runs: .betweenPresses, isEnabled: { $0.editor.find?.canStep(in: $0.editor) ?? false }) { $0.editor.find?.step(forward: true) }
-        registrar.command(.findPrevious, title: "Find Previous", menu: "Edit › Find", order: 220, shortcut: KeyChord("g", [.command, .shift]),
+        registrar.command(.findPrevious, title: "Find Previous", in: FindSection.self, shortcut: KeyChord("g", [.command, .shift]),
                           runs: .betweenPresses, isEnabled: { $0.editor.find?.canStep(in: $0.editor) ?? false }) { $0.editor.find?.step(forward: false) }
     }
 }

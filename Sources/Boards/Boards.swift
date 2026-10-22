@@ -28,6 +28,13 @@ extension CanvasCommand {
     public static let boardPath: CanvasCommand = "boardPath"
 }
 
+/// Go's section of going by where shapes are: Board Path, the keyboard to the path's crumbs, and what goes
+/// to a shape by its path (Jump To…, first), after the section of moving between shapes and boards.
+public enum PathSection {}
+extension PathSection: MenuBarSection {
+    public static var menu: MenuBarMenu { "Go" }
+}
+
 /// The extension point: which kinds' shapes open onto their boards, and what a board is called
 /// before its owner is named. At most one per kind. Only a `BoardOwning` kind can open one: a plugin
 /// naming another (`registrar.opensBoard(P.self, …)`) is `RegistryError.invalid` at startup.
@@ -78,7 +85,7 @@ public struct BoardsPlugin: ListedPlugin {
         // (⌘↑ is then the text's): of the group the selection is inside, else of the container its
         // shapes are in (selecting it, Selection's), else up to the board above, off the root. The item
         // is named for the step it takes (Enclosing Group, Enclosing Frame, Enclosing Board).
-        registrar.command(.enclosingBoard, title: BoardsStyle.enclosingBoard, menu: "Go", order: 10,
+        registrar.command(.enclosingBoard, title: BoardsStyle.enclosingBoard, in: NavigationSection.self, placed: .after(.goForward),
                           shortcut: KeyChord(KeyChord.upArrow.key, .command), runs: .whenIdle, menuTitle: { $0.enclosingTitle },
                           isEnabled: { $0.editor.selectionEnclosure != nil || !$0.editor.board.isRoot }) { $0.editor.goToEnclosing() }
         // Up to the board above whatever is selected: the table of contents' header button.
@@ -86,7 +93,7 @@ public struct BoardsPlugin: ListedPlugin {
                           isEnabled: { !$0.editor.board.isRoot }) { $0.editor.goToEnclosingBoard() }
         // Go › Board Path: the keyboard to the path's pill (Left and Right walk the crumbs, Return goes up
         // to one, Down shows its menu, Escape comes back); nothing on the root, where there is no pill.
-        registrar.command(.boardPath, title: BoardsStyle.boardPath, menu: "Go", order: 110,
+        registrar.command(.boardPath, title: BoardsStyle.boardPath, in: PathSection.self,
                           shortcut: KeyChord("p", [.command, .option]), runs: .whenIdle,
                           isEnabled: { !$0.editor.board.isRoot }) { $0.editor.boardCrumbs?.requestKeyboard() }
         // What the window hosts of it: the path over the top of the canvas, which a fit leaves clear

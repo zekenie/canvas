@@ -70,14 +70,9 @@ enum CorePoints {
         static var owner: PluginID { .core }
     }
 
-    /// Each command once, and each standard action answered by one command at most.
-    enum Commands: KeyedExtensionPoint {
-        typealias Contribution = CommandRegistration
-        static var owner: PluginID { .core }
-        static func uniqueKeys(of c: CommandRegistration, for _: ShapeTarget) -> [AnyHashable] {
-            [AnyHashable(c.command)] + (c.answering.map { [AnyHashable(StandardActionKey(action: $0))] } ?? [])
-        }
-    }
+    /// Each command once, and each standard action answered by one command at most; the menu bar their
+    /// items make, as `Commands.swift`'s check holds it.
+    enum Commands {}
 
     /// What a command run from a key or the menu bar acts on (`registrar.commandShapes`): the
     /// selection, and how VoiceOver's press on a shape sets it. One plugin may claim it; otherwise
@@ -257,15 +252,15 @@ struct CorePlugin: CanvasPlugin {
         registrar.tool(ToolDescriptor(id: .hand, label: "Hand", systemImage: "hand.raised")) { _ in HandTool() }
         registrar.command(.undo, title: "Undo", answering: .undo, isEnabled: { $0.editor.canUndo }) { $0.editor.undo() }
         registrar.command(.redo, title: "Redo", answering: .redo, isEnabled: { $0.editor.canRedo }) { $0.editor.redo() }
-        registrar.command(.zoomIn, title: "Zoom In", menu: "View", order: 100, isEnabled: { $0.editor.zoomInStop != nil }) { subject in
+        registrar.command(.zoomIn, title: "Zoom In", in: ViewMenu.Zoom.self, isEnabled: { $0.editor.zoomInStop != nil }) { subject in
             if let stop = subject.editor.zoomInStop { subject.editor.zoom(toPercent: stop) }
         }
-        registrar.command(.zoomOut, title: "Zoom Out", menu: "View", order: 110, isEnabled: { $0.editor.zoomOutStop != nil }) { subject in
+        registrar.command(.zoomOut, title: "Zoom Out", in: ViewMenu.Zoom.self, isEnabled: { $0.editor.zoomOutStop != nil }) { subject in
             if let stop = subject.editor.zoomOutStop { subject.editor.zoom(toPercent: stop) }
         }
-        registrar.command(.zoomToActualSize, title: "Actual Size", menu: "View", order: 120,
+        registrar.command(.zoomToActualSize, title: "Actual Size", in: ViewMenu.Zoom.self,
                           isEnabled: { $0.editor.zoomPercentage != 100 }) { $0.editor.zoom(toPercent: 100) }
-        registrar.command(.zoomToFit, title: "Zoom to Fit", menu: "View", order: 130, isEnabled: { $0.editor.canZoomToFit }) { $0.editor.zoomToFit() }
+        registrar.command(.zoomToFit, title: "Zoom to Fit", in: ViewMenu.Zoom.self, isEnabled: { $0.editor.canZoomToFit }) { $0.editor.zoomToFit() }
         registrar.command(.pageUp, title: "Page Up", isEnabled: { $0.editor.canPan }) { $0.editor.pan(.up, far: true) }
         registrar.command(.pageDown, title: "Page Down", isEnabled: { $0.editor.canPan }) { $0.editor.pan(.down, far: true) }
         registrar.command(.scrollToStart, title: "Start of Board", isEnabled: { $0.editor.canScrollToEnds }) { $0.editor.scrollToStart() }

@@ -2883,7 +2883,7 @@ and the four zooms, and the window and the app name no plugin's command.
 ```swift
 extension CanvasCommand { public static let group: CanvasCommand = "group" }
 
-registrar.command(.group, title: "Group", menu: "Arrange", order: 0, shortcut: KeyChord("g", [.command, .option]),
+registrar.command(.group, title: "Group", in: GroupingSection.self, shortcut: KeyChord("g", [.command, .option]),
                   runs: .whenIdle, isEnabled: { $0.editor.canGroup($0.shapes) }) { $0.editor.group($0.shapes) }
 registrar.contextMenuForCanvas { MenuItem(command: .group, in: StateMenuGroup.self) }
 ```
@@ -2891,7 +2891,7 @@ registrar.contextMenuForCanvas { MenuItem(command: .group, in: StateMenuGroup.se
 | Part | What it says |
 |---|---|
 | `title` | What it's called wherever it's listed: its menu bar item, a context menu's item that runs it, a panel's button, the Keyboard Shortcuts window (`registry.title(of:)`). |
-| `menu`, `order` | Its item in the menu bar, if it has one: a menu by its title, or a submenu (`"Edit › Find"`, a `MenuPath`), sorted among that menu's items by `order`, a line between two whose orders are in different hundreds. |
+| `in`, `placed` | Its item in the menu bar, if it has one: the section it's in (a `MenuBarSection`, which says its menu), a line between two sections, and its place among the section's items (`.first`, `.last`, `.before(.paste)` or `.after(.paste)`, the item that runs a command; by default where it first appears, the window's own items first, then the commands' in plugin order): [the menu bar](#keyboard-shortcuts). |
 | `answering` | The item of AppKit's Edit menu it is on the board (`.cut`, a `StandardAction`), for a command that has no item of its own: text answers the item first, and the window runs the command when nothing nearer took it. A trackpad's smart zoom is one too. |
 | `shortcut:` / `shortcuts:` | Its keys, Keyboard's to give: Keyboard's `command(…)` is the core's with them ([Keyboard shortcuts](#keyboard-shortcuts)). |
 | `runs` | When a key or the menu bar may run it, besides its rule (`CommandMoment`): `.anytime`; `.betweenPresses`, with no press under way; `.whenIdle`, with no press and no shape being edited, whose menu bar item is dimmed while text has the keyboard, so a key it shares with text is the text's. |
@@ -2924,15 +2924,16 @@ registrar.contextMenuForCanvas { MenuItem(command: .group, in: StateMenuGroup.se
 - **One key for two commands** never both possible: `registrar.shortcut(KeyChord("l", .shift), "Lock
   or Unlock", forCommands: [.lock, .unlock])` runs the first that can, and each command's items show
   the key.
-- **The menu bar is made from the declarations** (CanvasUI's `BoardMenus.make(appName:registry:)`,
-  one loop): the window's own items and the commands placed in it ([Keyboard shortcuts](#keyboard-shortcuts),
+- **The menu bar is made from the declarations** (CanvasUI's `BoardMenus.make(appName:registry:)`):
+  the window's own items and the commands placed in it, section by section ([Keyboard shortcuts](#keyboard-shortcuts),
   The menu bar), so a list without Grouping and Reordering has no Arrange. Each item carries its
   command and runs it through one action, `editor.perform`, dimmed as `canPerform` says.
 - **At most one plugin claims a command**, and one command answers each standard action
   (`RegistryError.conflict`); the registry's report says each command and where its item is
-  (`command group in Arrange`). CanvasTests' `commandTests` hold the subject, the moments, the
-  surfaces' forms, the standard actions and the menu bar's commands; CanvasUITests' `menuBarTests` the
-  making of the bar.
+  (`command group in GroupingSection`, `command pasteAtPointer after paste in EditMenu.CutCopyPaste`).
+  CanvasTests' `commandTests` hold the subject, the moments, the surfaces' forms, the standard actions
+  and the menu bar's commands, and what the registry refuses of their sections and places;
+  CanvasUITests' `menuBarTests` the making of the bar.
 
 ## Keyboard shortcuts
 
@@ -2958,7 +2959,7 @@ registrar.shortcut(KeyChord("l", .shift), "Lock or Unlock", forCommands: [.lock,
 | `x.tool(label:systemImage:shortcut:placing:)` | A place tool, and the key that switches to it. |
 | `registrar.tool(descriptor, shortcut:) { ... }` | Any tool, and its key. |
 | `registrar.shortcut(chord, forTool:)` | A key for a tool registered elsewhere: Keyboard gives the core's Hand its H this way. |
-| `registrar.command(command, title:, menu:, order:, shortcut:, runs:, isEnabled:) { subject in ... }` | A [command](#commands), declared once with its keys (`shortcuts: [...]` for several), so the key, its menu items and its other surfaces do one thing. |
+| `registrar.command(command, title:, in:, placed:, shortcut:, runs:, isEnabled:) { subject in ... }` | A [command](#commands), declared once with its keys (`shortcuts: [...]` for several), so the key, its menu items and its other surfaces do one thing. |
 | `registrar.shortcut(chord, forCommand:, repeats:)` | A key for a command claimed elsewhere: Keyboard gives the core's undo and redo ⌘Z and ⇧⌘Z this way. |
 | `registrar.shortcut(chord, "Title", forCommands: [...])` | One key for several commands, never both possible: it runs the first that can (Locking's ⇧L, Lock or Unlock). |
 | `registrar.shortcut(chord, "Title", when:, repeats:) { editor in ... }` | A key that does something of its own. |
@@ -3036,16 +3037,49 @@ What the shipped app's keys do:
   `.enclosingBoard`: Enclosing Group, Enclosing Frame, Enclosing Board), which the window controller
   reads as it validates the item that runs it (`editor.menuTitle(of:)`); `registry.title(of:)` stays
   what the command is called, which the Keyboard Shortcuts window lists. Find's `.find`, `.findNext`
-  and `.findPrevious` (`menu: "Edit › Find"`: Find…, Find Next and Find Previous, ⌘F, ⌘G, ⇧⌘G) and
+  and `.findPrevious` (in `FindSection`, Edit › Find: Find…, Find Next and Find Previous, ⌘F, ⌘G, ⇧⌘G) and
   JumpTo's `.jumpTo` (Go › Jump To…, ⌘K) don't run `.whenIdle`, so they work from a note being
   edited or a panel's field too, through the controller's one action (never AppKit's find actions,
   which a text view takes).
 - **The menu bar** (CanvasUI's `BoardMenus.make(appName:registry:)`, installed by the app with the
-  shipped registry) is the window's own items and the commands placed in it, made in one loop. The
-  window's own items have orders too (Edit: Undo 0, Redo 10, Cut 100, Copy 110, Copy as Image 120,
-  Paste 130, Delete 160, Select All 170, Spelling and Grammar 290; View: Show Toolbar 0 to Show
-  Minimap 30, Enter Full Screen 900), the commands go among them by theirs, a line between two whose
-  orders are in different hundreds, and a submenu is made at its first item's order. The menus come
+  shipped registry) is the window's own items and the commands placed in it, in sections: a line goes
+  between two sections and nowhere else, and no number places anything. A section is a type, as a tab
+  is ([Order](#order-where-things-go-among-each-other)), that says its menu and its place among the
+  menu's sections:
+
+  ```swift
+  public enum GroupingSection {}
+  extension GroupingSection: MenuBarSection {
+      public static var menu: MenuBarMenu { "Arrange" }
+  }
+  public enum FindSection {}
+  extension FindSection: MenuBarSection {         // a submenu, an item of the section it's in
+      public static var menu: MenuBarMenu { .submenu("Find", in: EditMenu.FindAndSpelling.self, placed: .first) }
+  }
+  registrar.command(.pasteAtPointer, title: "Paste at Pointer", in: EditMenu.CutCopyPaste.self,
+                    placed: .after(.paste), shortcut: KeyChord("v", [.command, .shift]), …)
+  ```
+
+  An item is placed among its section's items by the command an item runs: `.after(.paste)` is right
+  after Edit › Paste, which runs the command that answers Paste, so an item of the window's that runs
+  none (Copy as Image) can't be named, and one placed beside a command that isn't there goes where an
+  item that says nothing would. What says nothing goes where it first appears: the window's own items
+  in the order it lists them, then the commands' in plugin order. The window's own items are in the
+  core's sections where commands go beside them (`EditMenu.Undo`, `EditMenu.CutCopyPaste`,
+  `EditMenu.FindAndSpelling`; `ViewMenu.Zoom`, the core's zooms, which Selection's Zoom to Selection
+  joins) and in its own otherwise (File's two, View's panels, Enter Full Screen's, which is last, so a
+  plugin's View section comes before it, Window's two, Help's). The shipped bar's rules:
+  Paste at Pointer after Paste and Duplicate after it, Find's submenu first beside Spelling and
+  Grammar, Remove Mention after Select All, Forward after Back and Enclosing Board after Forward (in
+  Selection's `NavigationSection`), Jump To… first in Boards' `PathSection`, before Board Path, the
+  window's panes' focus and Show Minimap placed last among View's panels, so the inspector's tab
+  commands, which say nothing, come after Focus Inspector, Show All Shapes last after them, and Enter Full Screen
+  last; the rest is the window's listing and plugin order. The registry refuses an item placed in no
+  section, a submenu inside
+  itself, a submenu its sections place two ways, sections or items placed beside each other in a
+  circle, and a section placed beside one of another menu or an item beside a command whose item is
+  in another section; the report says each item's place (`command enclosingBoard after goBack in
+  NavigationSection`). The menus come
   in the Mac's order by title (File, Edit, Shape, Format, Arrange, View, Go), then any only commands
   name, then Window and Help; a menu with nothing in it isn't there. Edit's Undo, Redo, Cut, Copy,
   Paste, Delete and Select All stay AppKit's own items, which text answers first, so every field has
@@ -3090,7 +3124,7 @@ What the shipped app's keys do:
   Shortcuts window drops it) and its keys are shown, not live. Its items dim as their commands do,
   and reach the window they were made for.
 - **Arrange's restacking** (`]`, ⌥], ⌥[, `[`) are Reordering's own commands, placed after Group and
-  Ungroup by their declarations (`menu: "Arrange"`, orders 100 to 130) and `.whenIdle`, so dimmed as
+  Ungroup, in a section of their own (`ReorderSection`, after Grouping's by plugin order), and `.whenIdle`, so dimmed as
   their rule says and while text has the keyboard.
 - **Keys that type stay out of text.** The menu bar never takes a key held without ⌘ from
   text: ⇧1, `]` and `[`, ⌥] (a quote on a US layout), ⌃ keys (emacs bindings). Elsewhere the item that
@@ -4366,7 +4400,7 @@ decide where it's drawn. A line, which has no frame, is in.
 ```swift
 extension CanvasCommand { public static let bringToFront: CanvasCommand = "bringToFront" }   // and the other three
 
-registrar.command(.bringToFront, title: "Bring to Front", menu: "Arrange", order: 100, shortcut: KeyChord("]"), runs: .whenIdle,
+registrar.command(.bringToFront, title: "Bring to Front", in: ReorderSection.self, shortcut: KeyChord("]"), runs: .whenIdle,
                   isEnabled: { $0.restackable }) { subject in
     subject.editor.transact("Bring to Front") { $0.bringToFront(subject.shapes) }
 }                                                              // and Bring Forward ⌥], Send Backward ⌥[, Send to Back [
@@ -5920,9 +5954,9 @@ registrar.declare(GroupsProperty.self)                  // the groups a shape is
 registrar.optInEveryShape(to: GroupsProperty.self)
 registrar.service { GroupIndex(editor: $0) }            // the board shown's groups, kept as commits write paths
 registrar.selectionGroups { $0.service(GroupIndex.self) }
-registrar.command(.group, title: "Group", menu: "Arrange", order: 0, shortcut: KeyChord("g", [.command, .option]), runs: .whenIdle,
+registrar.command(.group, title: "Group", in: GroupingSection.self, shortcut: KeyChord("g", [.command, .option]), runs: .whenIdle,
                   isEnabled: { $0.editor.canGroup($0.shapes) }) { $0.editor.group($0.shapes) }
-registrar.command(.ungroup, title: "Ungroup", menu: "Arrange", order: 10, shortcut: KeyChord("g", [.command, .option, .shift]),
+registrar.command(.ungroup, title: "Ungroup", in: GroupingSection.self, shortcut: KeyChord("g", [.command, .option, .shift]),
                   runs: .whenIdle, isEnabled: { $0.editor.canUngroup($0.shapes) }) { $0.editor.ungroup($0.shapes) }
 registrar.contextMenuForCanvas {                        // shown by the commands' rules, over the menu's shapes
     MenuItem(command: .group, in: StateMenuGroup.self)
@@ -7793,8 +7827,8 @@ a list without Find leaves them out:
 
 ### ⌘F, and closing
 
-`.find` (⌘F, Edit › Find › Find…: one of Find's three [commands](#commands), which `menu: "Edit ›
-Find"` puts in a submenu of Edit) opens Find, or, open, focuses its field with its text selected;
+`.find` (⌘F, Edit › Find › Find…: one of Find's three [commands](#commands), which `FindSection` puts in a submenu of
+Edit) opens Find, or, open, focuses its field with its text selected;
 it ends editing first, and what's selected in the text being edited (`editor.editingSelectedText`),
 one line of it, is what's typed (an attachment in it that adopts `ReadsAsText`, a mention's pill,
 reads as its text, any other attachment is dropped, so a selection across a pill is searched for by
@@ -9007,7 +9041,7 @@ a plugin list with `opensBoard` in it needs Selection and ContextMenus installed
 
 ```swift
 registrar.service { BoardCrumbs(editor: $0) }                   // the path, kept for BoardPath
-registrar.command(.enclosingBoard, title: BoardsStyle.enclosingBoard, menu: "Go", order: 10,
+registrar.command(.enclosingBoard, title: BoardsStyle.enclosingBoard, in: NavigationSection.self, placed: .after(.goBack),
                   shortcut: KeyChord(KeyChord.upArrow.key, .command), runs: .whenIdle, menuTitle: { $0.enclosingTitle },
                   isEnabled: { $0.editor.selectionEnclosure != nil || !$0.editor.board.isRoot }) { $0.editor.goToEnclosing() }
 registrar.command(.goUpBoard, title: BoardsStyle.enclosingBoard, runs: .whenIdle,      // the table of contents' way up
@@ -9716,8 +9750,8 @@ untinted.
 ```
 
 - **`JumpToPlugin`** (id `jump-to`) registers a service, `JumpToState` (`editor.jumpTo`), and
-  `registrar.command(.jumpTo, title: "Jump To…", menu: "Go", order: 100, shortcut: ⌘K, runs: .betweenPresses)`
-  (Go › Jump To…, after Open Selection): it ends editing, then opens the palette,
+  `registrar.command(.jumpTo, title: "Jump To…", in: PathSection.self, placed: .first, shortcut: ⌘K, runs: .betweenPresses)`
+  (Go › Jump To…, first in Boards' section after the one Open Selection is in): it ends editing, then opens the palette,
   or, open, asks its field for the keyboard again with its text selected; never mid-gesture. It
   changes no document, so it leaves no step of undo. The menu item is the same command, so ⌘K
   works from a note being edited and a panel's field too, where it's the menu bar's key.
@@ -13943,9 +13977,9 @@ and a test checks it loads and registers.
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core                 tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+core                 tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
 keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
-selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in Go · shortcut ⌘[ → command goBack · command goForward in Go · shortcut ⌘] → command goForward · command openSelection in Go · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · press focused · command zoomToSelection in View · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
+selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
 topology             service TopologyIndex · edge type stands-for
 arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → Add Note Beside · shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link
@@ -13954,28 +13988,28 @@ framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Dr
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · ContentsRows → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
 adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
-detail-panel         service DetailPanelState · host inspector · command nextInspectorTab in View · shortcut ⌥⌘] → command nextInspectorTab · command previousInspectorTab in View · shortcut ⌥⌘[ → command previousInspectorTab · key hint ⇥ or ⇧⇥ Next or Previous Control · key hint ⌥⇥ Type a Tab · key hint ⎋ Back to the Canvas · key hint ⌘↩ Commit · key hint ⌃Space Complete
+detail-panel         service DetailPanelState · host inspector · command nextInspectorTab in ViewMenu.Panels · shortcut ⌥⌘] → command nextInspectorTab · command previousInspectorTab in ViewMenu.Panels · shortcut ⌥⌘[ → command previousInspectorTab · key hint ⇥ or ⇧⇥ Next or Previous Control · key hint ⌥⇥ Type a Tab · key hint ⎋ Back to the Canvas · key hint ⌘↩ Commit · key hint ⌃Space Complete
 context-menus        service ContextMenuState · secondary-click menu · selection menu · command showContextMenu · shortcut ⌃↩ → command showContextMenu · shortcut Menu → command showContextMenu · CanvasContextMenu in SelectionMenuGroup last
 slash-commands       service SlashCommandState · key hint / at a Line's Start Run a Command
-table-of-contents    service ContentsState · command showAllShapes in View
+table-of-contents    service ContentsState · command showAllShapes last in ViewMenu.Panels
 contents-overview    detail overview
 titles               property title · adornment TitlePill → every shape with a title pill · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title
-mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup · command goToMention in Go · shortcut ⌥⌘↩ → command goToMention · command showWhatMentionsOfPill in Go · command removeMention in Edit · parts mentions → every shape with mention text
-board-navigation     service BoardCrumbs · command enclosingBoard in Go · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · command boardPath in Go · shortcut ⌥⌘P → command boardPath · host overlay · window subtitle
+mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup · command goToMention in NavigationSection · shortcut ⌥⌘↩ → command goToMention · command showWhatMentionsOfPill in NavigationSection · command removeMention after selectAll in EditMenu.CutCopyPaste · parts mentions → every shape with mention text
+board-navigation     service BoardCrumbs · command enclosingBoard after goForward in NavigationSection · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · command boardPath in PathSection · shortcut ⌥⌘P → command boardPath · host overlay · window subtitle
 board-contents       contents heading
-find-in-boards       service FindState · overlay FindOverlay · command find in Edit › Find · shortcut ⌘F → command find · command findNext in Edit › Find · shortcut ⌘G → command findNext · command findPrevious in Edit › Find · shortcut ⇧⌘G → command findPrevious
+find-in-boards       service FindState · overlay FindOverlay · command find in FindSection · shortcut ⌘F → command find · command findNext in FindSection · shortcut ⌘G → command findNext · command findPrevious in FindSection · shortcut ⇧⌘G → command findPrevious
 find-panel           key hint ↩ or ⇧↩ in Find Next or Previous Hit · key hint ↑ or ↓ in Find Previous or Next Result · key hint ⌘↩ in Find Select Hit and Close · detail takeover
 board-find           find heading
 title-find           findable title → every shape with a title
 mention-find         findable mention text → every shape with mention text · findable mention text over the canvas → every shape with mention text
-jump-to              service JumpToState · command jumpTo in Go · shortcut ⌘K → command jumpTo · host overlay
+jump-to              service JumpToState · command jumpTo first in PathSection · shortcut ⌘K → command jumpTo · host overlay
 transform            service TransformState
 validation-details   DetailStatuses in Issues after Style → every shape
 validation-contents  ContentsMarks → every shape
 mention-validation   ValidationRules → every shape naming shapes
 title-validation     service TitleIndex · ValidationRules → every shape with a title
-grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in Arrange · shortcut ⌥⌘G → command group · command ungroup in Arrange · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup
-clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer in Edit · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate in Edit · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
+grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in GroupingSection · shortcut ⌥⌘G → command group · command ungroup in GroupingSection · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup
+clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer after paste in EditMenu.CutCopyPaste · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate after pasteAtPointer in EditMenu.CutCopyPaste · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
 locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip last → every shape holding locked · parts LockChip → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding locked · accessibility → every shape holding locked · /lock → every shape holding locked
 publishing           property public · property public → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu in PublishMenuGroup after StateMenuGroup · adornment PublicChip last → every shape holding public · parts PublicChip → every shape holding public · ContentsMarks → every shape holding public · /public /private → every shape holding public
 types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property autofill · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldFill · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu in ShapeMenuGroup first · DecorationHits · outlines · parts RowFace → every shape holding schema · parts RowFace → every shape holding is · ShapeFaces · parts DefinitionFace → every shape holding relationship · ShapeFaces · command openFields · CanvasContextMenu in ShapeMenuGroup first · command retryTypeSync · CanvasContextMenu in ShapeMenuGroup first → every shape holding schema · accessibility → every shape holding is · accessibility → every shape holding schema · ShapeFaces · parts RelateFace → every shape holding schema · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu in ShapeMenuGroup first · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding is · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup · adornment TypeChips after TitlePill → every shape holding is · parts TypeChips → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · parts RelationshipPill → every shape holding is · adornment RelationshipOfferPill after RelationshipPill → every shape holding is · parts RelationshipOfferPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
@@ -14019,7 +14053,7 @@ mention-lights       neighbor light · neighbor light
 type-lights          neighbor light · neighbor light
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
-reordering           command bringToFront in Arrange · shortcut ] → command bringToFront · command bringForward in Arrange · shortcut ⌥] → command bringForward · command sendBackward in Arrange · shortcut ⌥[ → command sendBackward · command sendToBack in Arrange · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order
+reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order
 ```
 
 A horizontal's opt-in shows as what it contributes: `note.title()` is the opt-in to the property
@@ -14128,8 +14162,8 @@ filters nothing. The report names each scope (`adornment LockChip last → every
 
 ### Order: where things go among each other
 
-A tab among a shape's tabs, a group in a context menu and an adornment in its place each go where
-their type says, beside the others rather than by a number, as an extensible desktop app has a
+A tab among a shape's tabs, a group in a context menu, an adornment in its place and a section of a
+menu in the menu bar each go where their type says, beside the others rather than by a number, as an extensible desktop app has a
 contribution say `first`, `last`, `before X` or `after X` (IntelliJ's), never a priority. The core's
 `Order` is the one way to say it (`Sources/Canvas/Plugins/Order.swift`): a point that orders things
 declares the protocol its things adopt, with the requirement `static var order: Order<Self>`, and the
@@ -14177,9 +14211,12 @@ appear, and so on down. A thing can name only what its module imports, so:
 The report says a thing's order where a contribution names it: `ShapeDetails in Schema after
 Connections → every shape holding schema`, `DetailStatuses in Issues after Style → every shape`,
 `adornment LockChip last → every shape holding locked`, `CanvasContextMenu in StateMenuGroup before
-SelectionMenuGroup → every shape holding locked`; one that says nothing is named alone. The menu bar's
-commands still place themselves by a number (`registrar.command(… menu: "Go", order: 100 …)`,
-[Commands](#commands)), its hundreds the lines between its sections.
+SelectionMenuGroup → every shape holding locked`; one that says nothing is named alone. A menu bar item is placed
+beside the item that runs a command (`placed: .after(.paste)`, an `Order<CanvasCommand>`, [the menu
+bar](#keyboard-shortcuts)): its anchor is a command, not a type, whose own place is its declaration,
+which the registry follows to refuse a circle (`OrderRule.cycle(from:rule:)`), and an item that runs no
+command is an anchor of nothing (`arranged` takes a nil one, a thing of its own). The report says it:
+`command pasteAtPointer after paste in EditMenu.CutCopyPaste`.
 
 ## Testing plugins
 

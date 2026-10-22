@@ -26,12 +26,12 @@ public struct DetailPanelPlugin: ListedPlugin {
                                 keyboardEntry: { $0.detailPanel?.keyboardEntry?() }) { editor, onExit in
             DetailPanelView(editor: editor, onExit: onExit)
         }
-        // Tabs by key: a click on a strip is a mouse's, so the keys have commands (View ▸), which the
-        // keyboard goes on into the tab they show.
-        registrar.command(.nextInspectorTab, title: DetailStyle.nextTab, menu: "View", order: DetailStyle.nextTabOrder,
+        // Tabs by key: a click on a strip is a mouse's, so the keys have commands (View ▸, after Focus
+        // Inspector), which the keyboard goes on into the tab they show.
+        registrar.command(.nextInspectorTab, title: DetailStyle.nextTab, in: ViewMenu.Panels.self,
                           shortcut: KeyChord("]", [.command, .option]),
                           isEnabled: { $0.editor.detailPanel?.canStepTab == true }) { $0.editor.detailPanel?.stepTab(by: 1) }
-        registrar.command(.previousInspectorTab, title: DetailStyle.previousTab, menu: "View", order: DetailStyle.nextTabOrder + 1,
+        registrar.command(.previousInspectorTab, title: DetailStyle.previousTab, in: ViewMenu.Panels.self,
                           shortcut: KeyChord("[", [.command, .option]),
                           isEnabled: { $0.editor.detailPanel?.canStepTab == true }) { $0.editor.detailPanel?.stepTab(by: -1) }
         // What the panel's text answers to, for the Keyboard Shortcuts window.

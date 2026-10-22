@@ -202,7 +202,7 @@ public enum KeyHintPlace: Sendable {
 // MARK: The menu bar
 
 /// The key a menu item shows for a command, from the plugin that keeps the keys (Keyboard: the first
-/// key registered to run it): the menu bar's item for a command (`registrar.command(… menu: …)`), and a
+/// key registered to run it): the menu bar's item for a command (`registrar.command(… in: …)`), and a
 /// context menu's item that runs one. At most one: two are `RegistryError.conflict` at startup.
 /// Without one, no command's item shows a key.
 public enum MenuKeys {}
@@ -227,15 +227,19 @@ public struct MenuKey: Hashable, Sendable {
     }
 }
 
-/// A command the menu bar has an item for: what it's called, where (its menu and its order there) and
-/// the key the item shows. The window makes the item; choosing it runs the command (`editor.perform`),
-/// and its validation asks the command's moment (`registry.moment(of:)`) and rule.
+/// A command the menu bar has an item for: what it's called, where (its section, which says its menu,
+/// and its place among the section's items) and the key the item shows. The window makes the item;
+/// choosing it runs the command (`editor.perform`), and its validation asks the command's moment
+/// (`registry.moment(of:)`) and rule.
 public struct MenuBarCommand: Sendable {
     public let command: CanvasCommand
     public let title: String
-    public let menu: MenuPath
-    public let order: Int
+    public let section: any MenuBarSection.Type
+    public let placement: OrderRule
     public let key: MenuKey?
+
+    /// The menu its item is in (`"Edit › Find"`): its section's.
+    public var menu: MenuPath { section.menu.path }
 }
 
 // MARK: Copy as Image
@@ -437,12 +441,12 @@ extension Registry {
         contributions(to: MenuKeys.self).first?.value(command, self)
     }
 
-    /// Every command with an item in the menu bar (`registrar.command(… menu: …)`), in plugin order: the
-    /// menu bar's part the plugins make, which the window builds in one loop beside its own items.
+    /// Every command with an item in the menu bar (`registrar.command(… in: …)`), in plugin order: the
+    /// menu bar's part the plugins make, which the window arranges with its own items, section by section.
     public var menuBarCommands: [MenuBarCommand] {
         commandTable.inOrder.compactMap { registration in
-            registration.menu.map { menu in
-                MenuBarCommand(command: registration.command, title: registration.title, menu: menu, order: registration.order,
+            registration.section.map { section in
+                MenuBarCommand(command: registration.command, title: registration.title, section: section, placement: registration.placement,
                                key: menuKey(of: registration.command))
             }
         }

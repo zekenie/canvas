@@ -1,4 +1,5 @@
 import AppKit
+import Boards
 import Canvas
 import Keyboard
 import SwiftUI
@@ -28,7 +29,7 @@ public struct JumpToPlugin: ListedPlugin {
         // ⌘K and Go › Jump To…: opens the palette, or, open, asks for its keyboard again; ends editing
         // first (its edit committed), and never mid-press. It changes no document, so it leaves no
         // step of undo.
-        registrar.command(.jumpTo, title: "Jump To…", menu: "Go", order: 100, shortcut: KeyChord("k", .command), runs: .betweenPresses) { subject in
+        registrar.command(.jumpTo, title: "Jump To…", in: PathSection.self, placed: .first, shortcut: KeyChord("k", .command), runs: .betweenPresses) { subject in
             subject.editor.endEditing()
             subject.editor.jumpTo?.open()
         }

@@ -39,6 +39,13 @@ extension CanvasCommand {
     public static let smartMagnify: CanvasCommand = "smartMagnify"
 }
 
+/// Go's section of moving between shapes and boards: Back, Forward right after it, and Open Selection,
+/// with what's placed beside them (a board's way up, after Forward) and after them (where a mention goes).
+public enum NavigationSection {}
+extension NavigationSection: MenuBarSection {
+    public static var menu: MenuBarMenu { "Go" }
+}
+
 /// Whether a kind's shapes can be selected. At most one rule per kind, plus one for every kind
 /// (`.any`), which a kind's own overrides; a kind with neither is always selectable.
 public enum ShapeSelectability: KeyedExtensionPoint {
@@ -237,14 +244,14 @@ public struct SelectionPlugin: ListedPlugin {
         }
         registrar.command(.selectAll, title: "Select All", answering: .selectAll, shortcut: KeyChord("a", .command),
                           isEnabled: { !$0.editor.document.shapes.isEmpty }) { $0.editor.selectAll() }
-        registrar.command(.goBack, title: "Back", menu: "Go", order: 0, shortcut: KeyChord("[", .command), runs: .betweenPresses,
+        registrar.command(.goBack, title: "Back", in: NavigationSection.self, shortcut: KeyChord("[", .command), runs: .betweenPresses,
                           isEnabled: { $0.editor.canGoBack }) { $0.editor.goBack() }
-        registrar.command(.goForward, title: "Forward", menu: "Go", order: 1, shortcut: KeyChord("]", .command), runs: .betweenPresses,
+        registrar.command(.goForward, title: "Forward", in: NavigationSection.self, placed: .after(.goBack), shortcut: KeyChord("]", .command), runs: .betweenPresses,
                           isEnabled: { $0.editor.canGoForward }) { $0.editor.goForward() }
         // Return and Enter are keys of their own that always take the key, called as the command is, so
         // the Keyboard Shortcuts window lists them in its row.
         let openSelection = "Open Selection"
-        registrar.command(.openSelection, title: openSelection, menu: "Go", order: 20, shortcut: KeyChord(KeyChord.downArrow.key, .command),
+        registrar.command(.openSelection, title: openSelection, in: NavigationSection.self, shortcut: KeyChord(KeyChord.downArrow.key, .command),
                           runs: .whenIdle, isEnabled: { $0.editor.canOpenSelection($0.shapes) }) { $0.editor.openSelection($0.shapes) }
         // With a part of the shape focused (⌥Tab), they press it instead, as Space does (`pressFocused`); with a
         // tool picked that places a shape (N, F), they put its shape down at the pointer, or the view's middle, and
@@ -252,7 +259,7 @@ public struct SelectionPlugin: ListedPlugin {
         registrar.shortcut(.return, openSelection) { $0.returnKey() }
         registrar.shortcut(.enter, openSelection) { $0.returnKey() }
         registrar.pressFocused { $0.pressFocusedPart() }
-        registrar.command(.zoomToSelection, title: "Zoom to Selection", menu: "View", order: 140, shortcut: KeyChord("2", .shift),
+        registrar.command(.zoomToSelection, title: "Zoom to Selection", in: ViewMenu.Zoom.self, shortcut: KeyChord("2", .shift),
                           isEnabled: { !$0.shapes.isEmpty && !$0.editor.unobscuredViewport.isEmpty }) { $0.editor.reveal($0.shapes) }
         registrar.command(.smartMagnify, title: "Smart Zoom", answering: .smartMagnify) { $0.editor.smartMagnify() }
         // ← → ↑ ↓ nudge the selection a world unit, and ten with ⇧, again and again while held (one

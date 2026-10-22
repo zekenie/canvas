@@ -1,6 +1,6 @@
 # Type detail panel schema/connections order
 
-Claude Code session `f9df5e12-3d5f-4a66-9375-ea5916956041`, 2026-10-22 03:13 to 2026-10-22 11:19 UTC, on `claude/type-detail-panel-schema-connections-641e4c`, `main`, `relative-order`.
+Claude Code session `f9df5e12-3d5f-4a66-9375-ea5916956041`, 2026-10-22 03:13 to 2026-10-22 16:15 UTC, on `claude/type-detail-panel-schema-connections-641e4c`, `main`, `relative-order`, `menu-bar-sections`.
 
 Condensed: the owner's messages, questions and answers, the assistant's prose, plans, agent briefs and git commands. Tool output is left out.
 
@@ -487,3 +487,376 @@ What the shipped pieces say:
 
 [2026-10-22 11:19] USER:
 Land it on main.
+
+[2026-10-22 11:20] ASSISTANT:
+Status: the session record is written. Squashing into one commit with the record and its trailer now.
+
+[2026-10-22 11:20] GIT:
+python3 - <<'EOF'
+import pathlib
+p = pathlib.Path("/private/tmp/claude-501/-Users-zekenie-code-native-canvas/f9df5e12-3d5f-4a66-9375-ea5916956041/scratchpad/commit_msg.txt")
+s = p.read_text()
+old = "  goes after it: the shipped menu is the old numeric order exactly, whatever order items appear in.\n"
+assert s.count(old) == 1
+s = s.replace(old, "  goes after it: the shipped menu is the old numeric order exactly, whatever order items appear in.\n  Its place rests on being empty, so the registry refuses an item in it (the code review's find).\n")
+s = s.rstrip("\n") + "\n\nSession: history/sessions/2026-10-22-type-detail-panel-schema-connections-order-f9df5e12/\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n"
+p.write_text(s)
+EOF
+git add -A && git reset -q --soft 07db483e && git commit -q -F /private/tmp/claude-501/-Users-zekenie-code-native-canvas/f9df5e12-3d5f-4a66-9375-ea5916956041/scratchpad/commit_msg.txt && git rebase main 2>&1 | tail -1 && git log --oneline -2 && git log -1 --format=%B | tail -4
+
+[2026-10-22 11:20] GIT:
+git status --short | head -5; git rev-parse --abbrev-ref HEAD; git merge --ff-only relative-order 2>&1 | tail -2 && git log --oneline -1
+
+[2026-10-22 11:20] WRAP-UP:
+Relative ordering for tabs, menu groups and adornments is on main as a87caff9, with the session record in its trailer. The worktree and branch are removed. The menu bar's commands still use numbers.
+Ask: Plan the menu bar's switch next?
+
+[2026-10-22 11:20] ASSISTANT:
+It's on main as a87caff9, and the worktree and branch are removed.
+
+The menu bar's commands are the last place that still orders things by number. Moving them onto the same rules needs sections for the separators, so that would be planned first.
+
+[2026-10-22 11:26] USER:
+Plan replacing the menu bar's numeric order (registrar.command menu:order:, the hundreds as separators) with sections and the same Order rules. Show me the plan first.
+
+[2026-10-22 11:31] COMPACTED:
+(the context was summarized here)
+
+[2026-10-22 11:31] ASSISTANT:
+Finishing the read of the menu bar code so I can show you the plan. Nothing will change until you approve it.
+
+[2026-10-22 11:36] ASSISTANT:
+Mapping today's menu bar onto sections. The plan is nearly ready.
+
+[2026-10-22 11:41] WRAP-UP:
+The plan is below: the menu bar gets sections plus the same Order rules. Today's menus come out identical with five rules. Nothing is built yet.
+Ask: Build it as planned?
+
+[2026-10-22 11:41] ASSISTANT:
+Here's the plan. Nothing is built yet.
+
+**The model.** A menu is a list of sections, with a line between two sections and nowhere else. Sections and items say where they go with the rules tabs and context-menu groups already use: `.first`, `.last`, `.before(X)`, `.after(X)`, or nothing (where it first appears). No numbers are left.
+
+- **A section** is a type adopting a new core protocol, `MenuBarSection`. It says which menu it's in and where it goes among that menu's sections. Sections that say nothing go where they first appear: the window's own in the order it lists them, then plugins' in plugin order.
+- **An item** goes `in:` a section and is `placed:` among that section's items. An item is named by the command it runs, so `.after(.paste)` means right after Edit › Paste, since the window's Paste item runs the command that answers Paste. IntelliJ places an action next to another the same way. The window's items come first in the order it lists them, then commands in plugin order.
+- **A submenu** is named by the section inside it. For example, Find's section says its menu is `.submenu("Find", in: EditMenu.FindAndSpelling.self, placed: .first)`. No extra registration is needed.
+- The order of the menus themselves (File, Edit, Shape, Arrange, View, Go, …, Window, Help) is already a list of names, not numbers, so it stays.
+
+```swift
+enum GroupingSection: MenuBarSection { static var menu: MenuBarMenu { "Arrange" } }
+registrar.command(.group, title: "Group", in: GroupingSection.self, shortcut: …)
+registrar.command(.pasteAtPointer, title: "Paste at Pointer", in: EditMenu.Clipboard.self, placed: .after(.paste), shortcut: …)
+```
+
+**Who declares the sections.**
+- **The core:** the sections shared by AppKit's Edit items, the core's zoom commands and plugins: `EditMenu.Undo`, `EditMenu.Clipboard`, `EditMenu.FindAndSpelling` and `ViewMenu.Zoom`.
+- **CanvasUI:** the sections that hold only the window's own items: File's two, View's panels and full screen, Window's two, and Help.
+- **Plugins:** their own sections. That's Selection's in Go, Jump To's, Grouping's and Reordering's in Arrange, and Find's inside its submenu.
+
+**Today's menu bar comes out identical with five rules.** Everything else follows from the window's listing or plugin order.
+
+| Menu | Sections (· marks a line) |
+|---|---|
+| Edit | Undo, Redo · Cut, Copy, Copy as Image, Paste, Paste at Pointer *after Paste*, Duplicate *after Paste at Pointer*, Delete, Select All · Find ▸ *first*, Spelling and Grammar ▸ |
+| View | the panel toggles · Zoom In … Zoom to Fit, Zoom to Selection · Enter Full Screen *(its section is last)* |
+| Go | Back, Enclosing Board *after Back*, Open Selection · Jump To… |
+| Arrange | Group, Ungroup · Bring to Front … Send to Back |
+| File, Window, Help | the window's own items, as now |
+
+**The work**, in a worktree off main:
+1. On main, first pin the menus BoardDocumentTests doesn't yet list in full (File, Arrange, Window, Help). Then every menu is pinned, and the existing Edit, View and Go pins have to pass untouched.
+2. **Core:**
+   - Add `MenuBarSection`, `MenuBarMenu`, shorthand on `Order<CanvasCommand>`, and let an `OrderAnchor` be a command as well as a type.
+   - `registrar.command(…in:placed:…)` replaces `menu:order:`, along with Keyboard's two wrappers.
+   - The registry refuses sections or items placed in a circle, an item placed next to a command in another section, and a submenu placed two different ways.
+   - The report reads `command pasteAtPointer after paste in EditMenu.Clipboard`.
+3. **CanvasUI:** `BoardMenus` builds each menu from its sections. `Placed` and the hundreds go away.
+4. Update the 20 call sites in 8 modules and the test fixtures (MenuBarTests, CommandTests, KeyboardTests). Add tests for the new parts to OrderTests and CommandTests. Update the pinned reports and the docs (keyboard, editor, host slots, plugins and kinds, the guide, and the plugins' topic files).
+5. Build, test and run a code review, then ask you before landing.
+
+Two decisions I made:
+- **Items are named by commands.** So a window item that runs no command (Copy as Image, Spelling and Grammar, the View panel toggles) can't be placed against.
+- **Sections only the window uses belong to CanvasUI,** not the core.
+
+[2026-10-22 11:59] USER:
+Build it as planned.
+
+[2026-10-22 12:00] ASSISTANT:
+Worktree is ready (`menu-bar-sections`). Pinning File, Window and Help on main's current behaviour first; Arrange is already pinned whole.
+
+[2026-10-22 12:04] ASSISTANT:
+Reading the menu code while the pin test builds. Next I'll write the core types.
+
+[2026-10-22 12:09] ASSISTANT:
+Still compiling the worktree's first build. Meanwhile I'm lining up the doc and report updates.
+
+[2026-10-22 12:09] ASSISTANT:
+The pins pass on main's code. Committing them on their own, then writing the core.
+
+[2026-10-22 12:09] GIT:
+git add Tests/CompositionTests/BoardDocumentTests.swift && git commit -q -m "Pin File, Window and Help whole, so the menu bar's move to sections is held item by item" && git log --oneline -1
+
+[2026-10-22 12:09] ASSISTANT:
+Now the `Order` changes: an anchor can name a command's item, an item can have no anchor at all, and the circle check can follow rules the registry holds.
+
+[2026-10-22 12:09] ASSISTANT:
+Now `arranged` (optional anchors) and `cycle` (a rule lookup).
+
+[2026-10-22 12:11] ASSISTANT:
+Core is mostly written (sections, item places, the registry's checks). Now the report line and the `MenuBarCommand` the window reads.
+
+[2026-10-22 12:12] ASSISTANT:
+Now the call sites and each plugin's own section, as one checked script.
+
+[2026-10-22 12:12] ASSISTANT:
+Plugins are moved. Now `BoardMenus`: the window lists its own items by section and the sections arrange themselves.
+
+[2026-10-22 12:13] ASSISTANT:
+Replacing `Placed` with `MenuLayout` and the window's own sections.
+
+[2026-10-22 12:14] ASSISTANT:
+Core and window are written. Now the tests: `Order`'s new cases, then the commands' sections and checks.
+
+[2026-10-22 12:17] ASSISTANT:
+Now the pinned reports. Checking every place the old report wording appears before replacing it.
+
+[2026-10-22 12:18] ASSISTANT:
+Reports updated in 15 files. Building everything now (a filtered run, so compile errors anywhere surface first).
+
+[2026-10-22 12:18] ASSISTANT:
+While that builds, the docs. Finding every place they describe menu orders.
+
+[2026-10-22 12:19] ASSISTANT:
+Docs next. Reading the remaining guide passages that cite menu orders.
+
+[2026-10-22 12:20] ASSISTANT:
+The module audit refused `EditMenu.Clipboard`: a public type may not share a module's name. Renaming it `EditMenu.CutCopyPaste`, named for its items like `Undo` and `FindAndSpelling`.
+
+[2026-10-22 12:21] ASSISTANT:
+Build running. Drafting the rules files' updates meanwhile.
+
+[2026-10-22 12:23] ASSISTANT:
+The compiler crashed on a key path over a metatype existential (`\.reportedName` on `any MenuBarSection.Type`). Replacing those key paths with closures.
+
+[2026-10-22 12:23] ASSISTANT:
+Rebuilding. Writing the guide's updates meanwhile.
+
+[2026-10-22 12:24] ASSISTANT:
+Guide and rules updated. Waiting on the rebuild.
+
+[2026-10-22 12:25] COMMIT MESSAGE FILE commit_msg_menu.txt:
+The menu bar is sections, and each item says where it goes beside another, not by a number
+
+The owner, once tabs, context-menu groups and adornments had moved to Order (a87caff9): "Plan
+replacing the menu bar's numeric order (registrar.command menu:order:, the hundreds as separators)
+with sections and the same Order rules." The plan was approved as shown: a menu is sections with a
+line between two, each section a type placed by Order, each item placed among its section's items by
+the command another item runs (IntelliJ's relative-to-action), and today's bar coming out identical.
+
+- The core's `MenuBarSection` (`Sources/Canvas/Plugins/MenuBarSections.swift`): a type that says its
+  menu (`MenuBarMenu`: a menu by title, `"Arrange"`, or a submenu, an item of another section,
+  `.submenu("Find", in: EditMenu.FindAndSpelling.self, placed: .first)`, which the first section in it
+  makes) and its `Order` among the menu's sections. `registrar.command(… in:placed:…)` (and Keyboard's
+  two wrappers) replace `menu:order:`: `placed:` is an `Order<CanvasCommand>`, `.after(.paste)` right
+  after the item that runs `.paste`, so a window's AppKit item is named by the command that answers it,
+  and one that runs none (Copy as Image) can't be named. What says nothing goes where it first appears:
+  the window's own in the order it lists them, then the commands' in plugin order.
+- Who declares which: the core the sections its standard items share with commands (`EditMenu.Undo`,
+  `.CutCopyPaste`, `.FindAndSpelling`; `ViewMenu.Zoom`, the core's zooms); CanvasUI those only its own
+  items are in (File's two, View's panels and Enter Full Screen's, `.last`, Window's two, Help's);
+  each plugin its own (Selection's `NavigationSection`, which Boards' Enclosing Board joins after Back;
+  `JumpToSection`; `FindSection`, its submenu first beside Spelling and Grammar; `GroupingSection`;
+  `ReorderSection`). `EditMenu.Clipboard` would have shadowed the Clipboard module, which the audit
+  refuses, so it's named for its items as Undo and FindAndSpelling are.
+- The shipped bar is the old numeric one exactly, with five rules (Paste at Pointer after Paste,
+  Duplicate after it, Find's submenu first, Enclosing Board after Back, Enter Full Screen last); the
+  rest is the window's listing and plugin order. BoardDocumentTests now pins every menu whole: File,
+  Window and Help were pinned against main's code first, and the Edit, View, Go and Arrange pins pass
+  untouched.
+- Order: an anchor can be a command as well as a type (`OrderAnchor(command)`, whose own place is its
+  declaration, which an anchor doesn't carry: one placed beside a command that isn't in the section
+  goes where an item that says nothing would); `arranged` takes a nil anchor, an item nothing can name,
+  never joined to another; `cycle(from:rule:)` follows the places the caller has, as the registry has
+  each command's.
+- The registry refuses (`invalid` for Commands) a submenu inside itself, a submenu its sections place
+  two ways, sections or items placed beside each other in a circle, a section placed beside one of
+  another menu, and an item beside a command whose item is in another section; what's placed beside
+  the window's own items, which it doesn't see, is the window's to place. The report says each item's
+  place: `command pasteAtPointer after paste in EditMenu.CutCopyPaste`, `command enclosingBoard after
+  goBack in NavigationSection`, `command zoomIn in ViewMenu.Zoom`.
+- CanvasUI's `MenuLayout` gathers sections and their items and arranges each with
+  `OrderRule.arranged`; `Placed` and its hundreds are gone. A key path over a metatype existential
+  (`\.reportedName` on `any MenuBarSection.Type`) crashed swiftc 6.3's SILGen, so the check maps with
+  closures.
+
+Session: history/sessions/RECORD/
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+[2026-10-22 12:25] ASSISTANT:
+Still compiling after the fix; the commit message is drafted while I wait.
+
+[2026-10-22 12:28] ASSISTANT:
+Everything compiles; the menu bar tests pass. Running the full suite now.
+
+[2026-10-22 12:28] ASSISTANT:
+While the suite runs, the code review (read-only, so it can't disturb the build).
+
+[2026-10-22 12:55] GIT:
+sed -i '' 's/last; the rest is the window'"'"'s listing and plugin order. The registry refuses a submenu inside$/last; the rest is the window'"'"'s listing and plugin order. The registry refuses an item placed in no\n  section, a submenu inside/' docs/plugin-system.md && grep -n "an item placed in no" docs/plugin-system.md && git add -A && git commit -q -m "The menu bar in sections, each item placed beside another (WIP, squashed at landing)" && git log --oneline -3
+
+[2026-10-22 12:55] WRAP-UP:
+The menu bar now uses sections and Order rules on branch menu-bar-sections, and the shipped menus come out item for item as before. Full suite passes except three TypesTests CPU budgets that also fail on main under load. Not landed.
+Ask: Land it on main?
+
+[2026-10-22 12:55] ASSISTANT:
+The menu bar is now built from sections placed by the same Order rules as tabs and context-menu groups, and the shipped menus come out exactly as before. It's committed on branch `menu-bar-sections` in its worktree, not on main.
+
+**What changed**
+- **Sections:** a section is a type that says which menu it's in and where it goes among that menu's sections (`MenuBarSection`). A line goes between sections and nowhere else. A submenu belongs to the section inside it, e.g. Find's section lives in a "Find" submenu placed first beside Spelling and Grammar.
+- **Items:** a command goes `in:` a section and is `placed:` beside the item that runs another command. `registrar.command(… menu:order:)` is gone, along with the hundreds-as-separators code in the window.
+- **Who declares which sections:**
+  - The core: Edit's three sections (Undo, Cut/Copy/Paste, Find and Spelling) and View's zoom section.
+  - The window (CanvasUI): the sections only its own items are in (File, View's panels, Enter Full Screen as last, Window, Help).
+  - Each plugin: its own section.
+- **Five rules reproduce today's bar:** Paste at Pointer after Paste, Duplicate after it, the Find submenu first, Enclosing Board after Back, and Enter Full Screen last. Everything else follows from the window's listing order and plugin order.
+- **The registry refuses mistakes at startup:**
+  - an item placed with no section
+  - a submenu inside itself, or one its sections place in two different spots
+  - sections or items placed beside each other in a circle
+  - a section placed beside one in another menu, or an item beside an item in another section
+- **Report wording:** the report now reads like `command pasteAtPointer after paste in EditMenu.CutCopyPaste`. The pinned reports, the guide and the topic files are updated to match.
+
+**How I checked it's unchanged:** before touching any code, I pinned the File, Window and Help menus whole against main's behaviour (Edit, View, Go and Arrange were already pinned item by item). All of those pins pass untouched after the change.
+
+**Test results:** the full suite passes except three TypesTests timing budgets (relationship landing, far pick, untyped edges). Those same three failed on main under machine load last session and have nothing to do with menus.
+
+**Two things that differ from the plan:**
+- I named the Edit section `EditMenu.CutCopyPaste` rather than `Clipboard`, because the build's module audit refuses a public type with the same name as the Clipboard module.
+- The Swift compiler crashed on one construct in the new registry check (a `\.reportedName` key path), so that check uses ordinary closures instead.
+
+**From the code review:** I fixed one finding: placing a command with `placed:` but no `in:` used to crash at launch, and now the registry refuses it with a clear message like the other mistakes. I left three minor ones as they are:
+- the window and the core each walk submenus, keying them slightly differently
+- the report doesn't show where a submenu itself is placed
+- no test places a section `.before` another
+
+[2026-10-22 15:33] USER:
+So where do we stand? More work? Ready to land?
+
+[2026-10-22 15:35] WRAP-UP:
+The menu bar move to sections is finished and reviewed on branch menu-bar-sections. Nothing is landed yet. The app target itself hasn't been compiled, but its one call into the menu code didn't change.
+Ask: Land it on main?
+
+[2026-10-22 15:35] ASSISTANT:
+It's ready to land; there's no more work I'd do first.
+
+- **Done:** everything in the plan is built on branch `menu-bar-sections`. Menu bar items now go in sections placed by the same rules as tabs and context-menu groups. The numbers and the hundreds-as-separators are gone, and the docs and pinned reports are updated.
+- **Same menus as before:** every menu is now pinned item by item, and the shipped bar comes out the same as before. I pinned File, Window and Help against main's code before changing anything, and the existing Edit, View, Go and Arrange pins pass untouched.
+- **Tests:** the full suite passes except three timing budgets in TypesTests (relationship landing, far pick, untyped edges). Those same three failed on main last session when the machine was busy, and they don't touch menu code. After the review fix I re-ran only the menu tests, and they pass.
+- **Review:** I fixed one finding: a command with `placed:` but no `in:` is now refused by the registry instead of crashing the app at launch. I'd leave the other three minor ones as they are.
+- **Not verified:**
+  - `test.sh` doesn't compile the app target itself, though its one call into this code, `BoardMenus.install`, is unchanged.
+  - I haven't looked at the menus on screen; the tests build the real shipped menu bar, but only off screen.
+
+Landing would squash both commits into one on main, with this session's record attached. Land it now, or hold off?
+
+[2026-10-22 15:54] USER:
+Land
+
+[2026-10-22 15:54] ASSISTANT:
+Landing: writing the session's record first, then checking how this session's last landing reached main.
+
+[2026-10-22 15:55] ASSISTANT:
+Main has moved since I branched (now `d196a0e5`). Checking what landed there before I rebase onto it.
+
+[2026-10-22 15:57] GIT:
+git branch menu-bar-sections-before-rebase && git reset -q --soft 1a8e32ec && git commit -q -m "The menu bar in sections (one commit, before the rebase)" && git log --oneline -2
+
+[2026-10-22 15:57] GIT:
+git rebase main 2>&1 | tail -5; git status --short | grep -E "^(UU|AA|DU|UD|AU|UA)"
+
+[2026-10-22 15:59] ASSISTANT:
+Sources are resolved. Now the pinned reports, docs and rules: taking main's text and re-applying my edits to it.
+
+[2026-10-22 16:02] ASSISTANT:
+Code is migrated. Re-applying my two test edits that lived in files I took from main, then checking the files git merged on its own.
+
+[2026-10-22 16:03] ASSISTANT:
+Tests updated. Now the docs: re-running my rules-file edits against main's text.
+
+[2026-10-22 16:04] ASSISTANT:
+Rebase conflicts are resolved and main's new items have their sections. Now finishing the docs for those items, then rebuilding and testing.
+
+[2026-10-22 16:05] GIT:
+git add -A && GIT_EDITOR=true git rebase --continue 2>&1 | tail -2 && git log --oneline -3 && git status --short | head -3
+
+[2026-10-22 16:05] ASSISTANT:
+Rebased cleanly onto main as one commit. Running the audit and the full suite on the rebased branch, since main's new items are now migrated code that hasn't run.
+
+[2026-10-22 16:05] ASSISTANT:
+While the suite runs, updating the commit message for what the rebase added.
+
+[2026-10-22 16:05] COMMIT MESSAGE FILE commit_msg_menu.txt:
+The menu bar is sections, and each item says where it goes beside another, not by a number
+
+The owner, once tabs, context-menu groups and adornments had moved to Order (a87caff9): "Plan
+replacing the menu bar's numeric order (registrar.command menu:order:, the hundreds as separators)
+with sections and the same Order rules." The plan was approved as shown: a menu is sections with a
+line between two, each section a type placed by Order, each item placed among its section's items by
+the command another item runs (IntelliJ's relative-to-action), and the bar coming out as it was.
+
+- The core's `MenuBarSection` (`Sources/Canvas/Plugins/MenuBarSections.swift`): a type that says its
+  menu (`MenuBarMenu`: a menu by title, `"Arrange"`, or a submenu, an item of another section,
+  `.submenu("Find", in: EditMenu.FindAndSpelling.self, placed: .first)`, which the first section in it
+  makes) and its `Order` among the menu's sections. `registrar.command(… in:placed:…)` (and Keyboard's
+  two wrappers) replace `menu:order:`: `placed:` is an `Order<CanvasCommand>`, `.after(.paste)` right
+  after the item that runs `.paste`, so a window's AppKit item is named by the command that answers it,
+  and one that runs none (Copy as Image, Focus Inspector) can't be named. What says nothing goes where
+  it first appears: the window's own in the order it lists them, then the commands' in plugin order.
+- Who declares which: the core the sections its standard items share with commands (`EditMenu.Undo`,
+  `.CutCopyPaste`, `.FindAndSpelling`; `ViewMenu.Panels`, `.Zoom`); CanvasUI those only its own items
+  are in (File's two, Enter Full Screen's, `.last`, Window's two, Help's); each plugin its own
+  (Selection's `NavigationSection`, Back, Forward and Open Selection, which Boards' Enclosing Board and
+  the mentions' commands join; Boards' `PathSection`, Board Path, with Jump To… placed first, since
+  JumpTo imports Boards and not the other way; `FindSection`, its submenu first beside Spelling and
+  Grammar; `GroupingSection`; `ReorderSection`). `EditMenu.Clipboard` would have shadowed the
+  Clipboard module, which the audit refuses, so it's named for its items as Undo and FindAndSpelling
+  are.
+- The bar is main's exactly. Main took eleven numbered items while this was built (the keyboard
+  navigation landing, efa0cf9f): each is placed now by a rule or by plugin order, and the window's
+  Focus Next Pane, Focus Previous Pane and Show Minimap are placed last among View's panels, so the
+  inspector's tab commands, which say nothing, come after Focus Inspector and Show All Shapes, placed
+  last, after the minimap, as their numbers had them. The rules: Paste at Pointer after Paste and
+  Duplicate after it, Remove Mention after Select All, Find's submenu first, Forward after Back and
+  Enclosing Board after Forward, Jump To… first, those of View's panels, and Enter Full Screen last.
+  BoardDocumentTests pins every menu whole (File, Window and Help pinned against main's code first);
+  the Edit, View, Go and Arrange pins pass as main wrote them.
+- Order: an anchor can be a command as well as a type (`OrderAnchor(command)`, whose own place is its
+  declaration, which an anchor doesn't carry: one placed beside a command that isn't in the section
+  goes where an item that says nothing would); `arranged` takes a nil anchor, an item nothing can name,
+  never joined to another; `cycle(from:rule:)` follows the places the caller has, as the registry has
+  each command's.
+- The registry refuses (`invalid` for Commands) an item placed in no section, a submenu inside itself,
+  a submenu its sections place two ways, sections or items placed beside each other in a circle, a
+  section placed beside one of another menu, and an item beside a command whose item is in another
+  section; what's placed beside the window's own items, which it doesn't see, is the window's to place.
+  The report says each item's place: `command pasteAtPointer after paste in EditMenu.CutCopyPaste`,
+  `command enclosingBoard after goForward in NavigationSection`, `command zoomIn in ViewMenu.Zoom`.
+- CanvasUI's `MenuLayout` gathers sections and their items and arranges each with
+  `OrderRule.arranged`; `Placed` and its hundreds are gone, and so are `DetailStyle.nextTabOrder` and
+  `ContentsStyle.showAllOrder`. A key path over a metatype existential (`\.reportedName` on
+  `any MenuBarSection.Type`) crashed swiftc 6.3's SILGen, so the check maps with closures.
+
+Session: history/sessions/RECORD/
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+[2026-10-22 16:06] ASSISTANT:
+The suite stopped at a compile error in my `OwnItems` initializer: an unlabeled defaulted parameter in the middle can't be skipped. Labeling it `placed:`.
+
+[2026-10-22 16:06] ASSISTANT:
+JumpTo.swift doesn't import Boards itself, though its module does. Adding the import.
+
+[2026-10-22 16:13] GIT:
+git add -A && git commit -q --amend --no-edit && git log --oneline -2 && ./build.sh > /private/tmp/claude-501/-Users-zekenie-code-native-canvas/f9df5e12-3d5f-4a66-9375-ea5916956041/scratchpad/appbuild.txt 2>&1; echo "exit $?"
+
+[2026-10-22 16:15] ASSISTANT:
+The app target builds too. Writing the session's record.

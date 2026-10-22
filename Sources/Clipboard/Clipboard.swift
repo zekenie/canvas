@@ -133,14 +133,14 @@ public struct ClipboardPlugin: OutwardPlugin {
         }
         // ⇧⌘V pastes as ⌘V does, but centered on the pointer while it's over the canvas; text being
         // edited keeps the key.
-        registrar.command(.pasteAtPointer, title: "Paste at Pointer", menu: "Edit", order: 140, shortcut: KeyChord("v", [.command, .shift]),
+        registrar.command(.pasteAtPointer, title: "Paste at Pointer", in: EditMenu.CutCopyPaste.self, placed: .after(.paste), shortcut: KeyChord("v", [.command, .shift]),
                           runs: .whenIdle, isEnabled: { $0.editor.canPaste }) { $0.editor.pasteAtPointer() }
         // What Edit › Copy as Image draws (the window's item, ⇧⌘C): the file a copy would be.
         registrar.imageSource(isAvailable: { $0.canCopyAsImage }) { $0.imageShapes() }
         // ⌘D and Edit › Duplicate copy the shapes beside themselves without the pasteboard, on a board
         // that takes shapes; ⌥ held on a drag of the selection (Selection's `copiesOnDrag`) carries copies
         // in place of the shapes.
-        registrar.command(.duplicate, title: "Duplicate", menu: "Edit", order: 150, shortcut: KeyChord("d", .command), runs: .whenIdle,
+        registrar.command(.duplicate, title: "Duplicate", in: EditMenu.CutCopyPaste.self, placed: .after(.pasteAtPointer), shortcut: KeyChord("d", .command), runs: .whenIdle,
                           isEnabled: { !$0.editor.isBoardReadOnly && $0.editor.canCopy($0.shapes) }) { $0.editor.duplicateBeside($0.shapes) }
         registrar.copiesOnDrag { editor, ids in editor.duplicate(ids) }
         // In every context menu, on shapes and on empty canvas, while the command can act on the menu's

@@ -16,7 +16,7 @@ import TestKit
         }, uniquingKeysWith: { first, _ in first })
         expectEqual(lines["memos"], "shape memo · findable body → memo")
         expectEqual(lines["badges"], "findable badge → every shape that is a box")
-        expectEqual(lines["find-in-boards"], "service FindState · overlay FindOverlay · command find in Edit › Find · shortcut ⌘F → command find · command findNext in Edit › Find · shortcut ⌘G → command findNext · command findPrevious in Edit › Find · shortcut ⇧⌘G → command findPrevious")
+        expectEqual(lines["find-in-boards"], "service FindState · overlay FindOverlay · command find in FindSection · shortcut ⌘F → command find · command findNext in FindSection · shortcut ⌘G → command findNext · command findPrevious in FindSection · shortcut ⇧⌘G → command findPrevious")
     },
     test("two contributions of one name to one kind conflict; a blank name is refused; a list without Find refuses any") {
         let twice = Contributor(id: "twice") { registrar in

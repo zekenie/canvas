@@ -27,6 +27,12 @@ extension CanvasCommand {
     public static let ungroup: CanvasCommand = "ungroup"
 }
 
+/// Arrange's section of Group and Ungroup.
+public enum GroupingSection {}
+extension GroupingSection: MenuBarSection {
+    public static var menu: MenuBarMenu { "Arrange" }
+}
+
 /// The groups a shape is in, outermost first, each by an id no other group has (a UUID's string):
 /// nothing on a shape in none. The plugin's own: no language lists or writes it (`unlisted()`),
 /// since a group has no name an agent could know it by; draw writes it with `group`.
@@ -94,9 +100,9 @@ public struct GroupingPlugin: ListedPlugin {
         // context menu's items, beside Lock (Keynote's Arrange menu has them together): Group for two
         // or more shapes or groups, Ungroup for a group held whole (every kind can be grouped), while
         // nothing is under way or being edited.
-        registrar.command(.group, title: "Group", menu: "Arrange", order: 0, shortcut: KeyChord("g", [.command, .option]), runs: .whenIdle,
+        registrar.command(.group, title: "Group", in: GroupingSection.self, shortcut: KeyChord("g", [.command, .option]), runs: .whenIdle,
                           isEnabled: { $0.editor.canGroup($0.shapes) }) { $0.editor.group($0.shapes) }
-        registrar.command(.ungroup, title: "Ungroup", menu: "Arrange", order: 10, shortcut: KeyChord("g", [.command, .option, .shift]),
+        registrar.command(.ungroup, title: "Ungroup", in: GroupingSection.self, shortcut: KeyChord("g", [.command, .option, .shift]),
                           runs: .whenIdle, isEnabled: { $0.editor.canUngroup($0.shapes) }) { $0.editor.ungroup($0.shapes) }
         registrar.contextMenuForCanvas {
             MenuItem(command: .group, in: StateMenuGroup.self)

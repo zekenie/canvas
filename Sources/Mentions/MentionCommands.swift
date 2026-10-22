@@ -1,8 +1,9 @@
 import Canvas
 import Keyboard
+import Selection
 
 /// The pill's menu, for the keys and the menu bar (keyboard navigation's principles 1 and 10): Go to
-/// Mention (⌥⌘↩) and Show What Mentions in Go, Remove Mention in Edit. Each acts on the pill that is
+/// Mention (⌥⌘↩) and Show What Mentions in Go, after Open Selection, Remove Mention in Edit, right after Select All. Each acts on the pill that is
 /// exactly the selection of the text with the keyboard, else the one the caret touches, a note's
 /// editor or a panel's box (`MentionState.enter`), through the state the pill's right-click menu
 /// goes through: following is scheduled on the next turn, as a double-click's is, since going ends
@@ -12,11 +13,12 @@ import Keyboard
 /// Selection's key.
 @MainActor
 func registerMentionCommands(into registrar: inout PluginRegistrar) {
-    registrar.command(.goToMention, title: MentionStyle.goToMention, menu: "Go", order: 30,
+    registrar.command(.goToMention, title: MentionStyle.goToMention, in: NavigationSection.self,
                       shortcut: KeyChord(KeyChord.return.key, [.command, .option]), runs: .betweenPresses,
                       isEnabled: { $0.editor.mentions?.canFollowPillOnCaret == true }) { $0.editor.mentions?.followPillOnCaret() }
-    registrar.command(.showWhatMentionsOfPill, title: MentionStyle.showWhatMentions, menu: "Go", order: 40, runs: .betweenPresses,
+    registrar.command(.showWhatMentionsOfPill, title: MentionStyle.showWhatMentions, in: NavigationSection.self, runs: .betweenPresses,
                       isEnabled: { $0.editor.mentions?.canShowWhatMentionsOnCaret == true }) { $0.editor.mentions?.showWhatMentionsOnCaret() }
-    registrar.command(.removeMention, title: MentionStyle.removeMention, menu: "Edit", order: 180, runs: .betweenPresses,
+    registrar.command(.removeMention, title: MentionStyle.removeMention, in: EditMenu.CutCopyPaste.self, placed: .after(.selectAll),
+                      runs: .betweenPresses,
                       isEnabled: { $0.editor.mentions?.canRemovePillOnCaret == true }) { $0.editor.mentions?.removePillOnCaret() }
 }

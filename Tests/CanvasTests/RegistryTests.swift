@@ -305,7 +305,7 @@ extension ShapeRegistrar {
                                               Contributor(id: "p") { r in
                                                   r.contribute("x", to: Stamps.self, for: .kind(Card.kind))
                                                   r.outlines { _ in Outlines() }
-                                                  r.command("scrap", title: "Scrap", menu: "Edit") { _ in }
+                                                  r.command("scrap", title: "Scrap", in: EditMenu.CutCopyPaste.self) { _ in }
                                                   r.defaultTool(ToolID(placing: Card.kind))
                                                   r.menuForSecondaryClick { _, _ in nil }
                                                   r.menuForSelection { _, _, _ in nil }
@@ -313,11 +313,11 @@ extension ShapeRegistrar {
                                                   r.contribute("x", to: Described.self)
                                               }])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo · command zoomIn in View · command zoomOut in View · command zoomToActualSize in View · command zoomToFit in View · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+        core          tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         fixtures      shape box · shape disc · shape tag
         cards         shape card · tool card
         stamps        \("")
-        p             Stamps → card · outlines · command scrap in Edit · default tool card · secondary-click menu · selection menu · key strokes · described x
+        p             Stamps → card · outlines · command scrap in EditMenu.CutCopyPaste · default tool card · secondary-click menu · selection menu · key strokes · described x
         """)
     },
     test("a plain point takes any number of contributions for one target, as a list") {

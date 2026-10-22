@@ -103,10 +103,9 @@ public enum DetailStyle {
     static let rowListChrome: CGFloat = 8
     static let rowListMargin: CGFloat = 96
 
-    /// View › Next Inspector Tab and Previous Inspector Tab: their titles, and where they sit in View.
+    /// View › Next Inspector Tab and Previous Inspector Tab: their titles.
     static let nextTab = "Next Inspector Tab"
     static let previousTab = "Previous Inspector Tab"
-    static let nextTabOrder = 22
     /// What the panel's text answers to, for the Keyboard Shortcuts window (Editing Text).
     static let tabKeys = "⇥ or ⇧⇥"
     static let tabHint = "Next or Previous Control"

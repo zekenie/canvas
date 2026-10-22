@@ -4,29 +4,75 @@ import CanvasTesting
 import CanvasUI
 import TestKit
 
-// The menu bar the window makes: its own items, and the plugins' commands, each where its declaration
-// says (`registrar.command(… menu:order:…)`), made in one loop. Fixtures only: the window knows no
-// shipped command.
+// The menu bar the window makes: its own items, and the plugins' commands, each in the section its
+// declaration names and where it says there (`registrar.command(… in:placed:…)`), a line between two
+// sections. Fixtures only: the window knows no shipped command.
 
 /// What the selection's menu was told to leave out, each time it was asked.
 @MainActor private final class Omitted {
     var asked: [Set<CanvasCommand>] = []
 }
 
-/// Commands placed in the window's menus and in menus of their own, a key for one of them, and one that
-/// answers the standard Delete.
+/// Commands in sections of their own and in the window's, a key for one of them, and one that answers
+/// the standard Delete, which the window's Delete runs, so an item placed beside it is placed beside Delete.
 @MainActor private let declared = Contributor(id: "declared") { r in
-    r.command("tidy", title: "Tidy", menu: "Arrange", order: 100, runs: .whenIdle) { _ in }
-    r.command("stack", title: "Stack", menu: "Arrange", order: 0) { _ in }
-    r.command("spin", title: "Spin", menu: "Arrange", order: 110) { _ in }
-    r.command("seek", title: "Seek…", menu: "Edit › Seek", order: 200) { _ in }
-    r.command("seek-next", title: "Seek Next", menu: "Edit › Seek", order: 210) { _ in }
-    r.command("shine", title: "Shine", menu: "Edit", order: 140) { _ in }
-    r.command("wander", title: "Wander", menu: "Go", order: 0) { _ in }
-    r.command("brew", title: "Brew", menu: "Kitchen", order: 0) { _ in }
-    r.command("guide", title: "Guide", menu: "Help", order: 100) { _ in }
+    r.command("tidy", title: "Tidy", in: TidySection.self, runs: .whenIdle) { _ in }
+    r.command("stack", title: "Stack", in: StackSection.self) { _ in }
+    r.command("spin", title: "Spin", in: TidySection.self) { _ in }
+    r.command("seek", title: "Seek…", in: SeekSection.self) { _ in }
+    r.command("seek-next", title: "Seek Next", in: SeekSection.self) { _ in }
+    r.command("shine", title: "Shine", in: EditMenu.CutCopyPaste.self, placed: .before("wipe")) { _ in }
+    r.command("wander", title: "Wander", in: WanderSection.self) { _ in }
+    r.command("brew", title: "Brew", in: BrewSection.self) { _ in }
+    r.command("guide", title: "Guide", in: GuideSection.self) { _ in }
     r.command("wipe", title: "Wipe", answering: .delete) { _ in }
     r.menuKeys { command, _ in command == "tidy" ? MenuKey(key: "t", modifiers: [.command, .option]) : nil }
+}
+
+/// Arrange's two: Tidy's, first met, and Stack's, which says it's first.
+private enum TidySection {}
+extension TidySection: MenuBarSection {
+    static var menu: MenuBarMenu { "Arrange" }
+}
+
+private enum StackSection {}
+extension StackSection: MenuBarSection {
+    static var menu: MenuBarMenu { "Arrange" }
+    static var order: Order<Self> { .first }
+}
+
+/// Edit › Seek, first in the section Spelling and Grammar is in; and a second section in it.
+private enum SeekSection {}
+extension SeekSection: MenuBarSection {
+    static var menu: MenuBarMenu { .submenu("Seek", in: EditMenu.FindAndSpelling.self, placed: .first) }
+}
+
+private enum SeekMoreSection {}
+extension SeekMoreSection: MenuBarSection {
+    static var menu: MenuBarMenu { .submenu("Seek", in: EditMenu.FindAndSpelling.self, placed: .first) }
+}
+
+private enum WanderSection {}
+extension WanderSection: MenuBarSection {
+    static var menu: MenuBarMenu { "Go" }
+}
+
+/// A menu the window doesn't know.
+private enum BrewSection {}
+extension BrewSection: MenuBarSection {
+    static var menu: MenuBarMenu { "Kitchen" }
+}
+
+/// After the window's own in Help.
+private enum GuideSection {}
+extension GuideSection: MenuBarSection {
+    static var menu: MenuBarMenu { "Help" }
+}
+
+/// One of View's, which comes before Enter Full Screen's, last.
+private enum PeekSection {}
+extension PeekSection: MenuBarSection {
+    static var menu: MenuBarMenu { "View" }
 }
 
 @MainActor private func titles(_ menus: BoardMenus.Menus, _ menu: String) throws -> [String] {
@@ -34,7 +80,7 @@ import TestKit
 }
 
 @MainActor let menuBarTests = Suite("The menu bar", [
-    test("a command is an item in the menu it names, at its order among the window's own items, a line between hundreds, run by one action with the command it carries and the key the menu keys slot gives") {
+    test("a command is an item in the section it names, placed among the window's own items, a line between two sections, run by one action with the command it carries and the key the menu keys slot gives") {
         let menus = BoardMenus.make(appName: "Canvas", registry: try Registry(plugins: [declared]))
         expectEqual(try titles(menus, "Arrange"), ["Stack", "", "Tidy", "Spin"])
         let arrange = try require(menus.main.item(withTitle: "Arrange")?.submenu)
@@ -48,12 +94,31 @@ import TestKit
         expectEqual(try require(arrange.item(withTitle: "Spin")).keyEquivalent, "", "no key without one from the slot")
         expectEqual(try titles(menus, "Edit"), ["Undo", "Redo", "", "Cut", "Copy", "Copy as Image", "Paste", "Shine", "Delete", "Select All", "",
                                                "Seek", "Spelling and Grammar"],
-                    "between the window's own, by its order; a submenu at its first item's, beside Spelling with no line between")
+                    "right before the window's Delete, which runs the command it names; a submenu first in its section, beside Spelling with no line between")
         let seek = try require(menus.main.item(withTitle: "Edit")?.submenu?.item(withTitle: "Seek")?.submenu)
         expectEqual(seek.items.map(\.title), ["Seek…", "Seek Next"])
         expectEqual(seek.items.compactMap(BoardMenus.command(of:)), ["seek", "seek-next"])
         expectEqual(try titles(menus, "View"), ["Show Toolbar", "Show Inspector", "Focus Inspector", "Focus Next Pane", "Focus Previous Pane", "Show Minimap", "", "Zoom In", "Zoom Out",
                                                "Actual Size", "Zoom to Fit", "", "Enter Full Screen"], "the core's zooms, among the window's own")
+    },
+    test("sections and items go where they say beside each other: a submenu's sections inside it with a line between, an item first, one beside a command that isn't there where one that says nothing goes, and Enter Full Screen last") {
+        let menus = BoardMenus.make(appName: "Canvas", registry: try Registry(plugins: [declared, Contributor(id: "more") { r in
+            r.command("seek-more", title: "Seek More", in: SeekMoreSection.self) { _ in }
+            r.command("stray", title: "Stray", in: EditMenu.CutCopyPaste.self, placed: .after("gone")) { _ in }
+            r.command("lead", title: "Lead", in: TidySection.self, placed: .first) { _ in }
+            r.command("peek", title: "Peek", in: PeekSection.self) { _ in }
+            r.command("lens", title: "Lens", in: ViewMenu.Panels.self) { _ in }
+            r.command("glass", title: "Glass", in: ViewMenu.Panels.self, placed: .last) { _ in }
+        }]))
+        let seek = try require(menus.main.item(withTitle: "Edit")?.submenu?.item(withTitle: "Seek")?.submenu)
+        expectEqual(seek.items.map(\.title), ["Seek…", "Seek Next", "", "Seek More"], "one submenu, both its sections inside it")
+        expectEqual(try titles(menus, "Edit"), ["Undo", "Redo", "", "Cut", "Copy", "Copy as Image", "Paste", "Shine", "Delete", "Select All", "Stray", "",
+                                               "Seek", "Spelling and Grammar"], "beside a command that isn't there: after the section's own")
+        expectEqual(try titles(menus, "Arrange"), ["Stack", "", "Lead", "Tidy", "Spin"])
+        expectEqual(try titles(menus, "View"), ["Show Toolbar", "Show Inspector", "Focus Inspector", "Lens", "Focus Next Pane", "Focus Previous Pane",
+                                               "Show Minimap", "Glass", "", "Zoom In", "Zoom Out", "Actual Size", "Zoom to Fit", "", "Peek", "",
+                                               "Enter Full Screen"],
+                    "among the panels, one that says nothing after the inspector's items, one placed last after the minimap's; a section of View's before Enter Full Screen")
     },
     test("the menus come in the Mac's order: Arrange after Shape, Go after View, one the window doesn't know before Window; a menu with nothing in it isn't there") {
         let menus = BoardMenus.make(appName: "Canvas", registry: try Registry(plugins: [declared]))

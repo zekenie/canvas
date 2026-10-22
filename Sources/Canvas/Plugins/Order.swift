@@ -1,11 +1,14 @@
 // Order: where one of a set of things goes among the others shown with it (a tab among a shape's tabs,
-// a group in a menu, an adornment in its place), said beside the others rather than by a number. A
-// thing says it goes first, last, or right before or after another it can name; one that says nothing
-// goes where it first appears. Each point that orders things declares the protocol its things adopt
-// and gives `Order` the sugar that names them, so a tab can only be placed beside a tab.
+// a group in a menu, an adornment in its place, a section of a menu in the menu bar and an item in its
+// section), said beside the others rather than by a number. A thing says it goes first, last, or right
+// before or after another it can name; one that says nothing goes where it first appears. Each point
+// that orders things declares the protocol its things adopt and gives `Order` the sugar that names
+// them, so a tab can only be placed beside a tab.
 
 /// Where a thing goes among the others it's shown with: a requirement of the protocol that makes the
-/// things (`DetailTab`, `MenuGroup`, `Adornment`), `Order<Self>`, defaulting to `.natural`.
+/// things (`DetailTab`, `MenuGroup`, `Adornment`, `MenuBarSection`), `Order<Self>`, defaulting to
+/// `.natural`; and a menu bar item's place in its section, an `Order<CanvasCommand>`, which names the
+/// item that runs a command (`.after(.paste)`).
 ///
 ///     extension TypeSchemaTab: DetailTab {
 ///         public static var title: String { "Schema" }
@@ -65,20 +68,36 @@ public enum OrderRule: Hashable, Sendable, CustomStringConvertible {
     }
 }
 
-/// A thing one is placed beside: its type's identity, the name the report gives it, and its own order,
-/// read only when it isn't among the things being ordered (its module's plugin isn't installed, or it
-/// isn't shown here), to put it, and what's beside it, where it would go.
+/// A thing one is placed beside: its identity (a type, or the menu bar's item that runs a command), the
+/// name the report gives it, and its own order, read only when it isn't among the things being ordered
+/// (its module's plugin isn't installed, or it isn't shown here), to put it, and what's beside it, where
+/// it would go.
 public struct OrderAnchor: Hashable, Sendable, CustomStringConvertible {
-    let id: ObjectIdentifier
+    let id: ID
     public let name: String
     let rule: @Sendable () -> OrderRule
+
+    enum ID: Hashable, Sendable {
+        case type(ObjectIdentifier)
+        case command(CanvasCommand)
+    }
 
     /// `rule` is the anchor type's own order, read lazily: two that name each other would otherwise
     /// read each other's forever, and the registry refuses them by following these.
     public init(_ type: Any.Type, name: String, rule: @escaping @Sendable () -> OrderRule) {
-        id = ObjectIdentifier(type)
+        id = .type(ObjectIdentifier(type))
         self.name = name
         self.rule = rule
+    }
+
+    /// The menu bar's item that runs `command`, a command's own or one of the window's (Edit › Paste,
+    /// which runs the command answering `.paste`). Its own place is its command's declaration, which
+    /// an anchor doesn't carry: one placed beside it where it isn't goes where an item that says nothing
+    /// would, and the registry, which has the declarations, follows them to refuse a circle.
+    public init(_ command: CanvasCommand) {
+        id = .command(command)
+        name = command.rawValue
+        rule = { .natural }
     }
 
     public static func == (lhs: OrderAnchor, rhs: OrderAnchor) -> Bool { lhs.id == rhs.id }
@@ -88,23 +107,23 @@ public struct OrderAnchor: Hashable, Sendable, CustomStringConvertible {
 
 extension OrderRule {
     /// `items` (in the order they first appear) arranged by each one's anchor (its own identity, as
-    /// another would name it) and order: the first ones, then those that say nothing, then the last
-    /// ones, each with those placed right before it ahead of it and those placed right after it behind
-    /// it, nearest first in the order they appear, and so on down. One placed beside a thing that isn't
-    /// in `items` goes where that thing's own order puts it, after every thing of its kind that is (it
-    /// has no turn of its own). Every item comes out once (two of one thing together, where the first
-    /// is): those caught in a cycle, which the registry refuses where it can see one, come last, as
-    /// they appear.
-    public static func arranged<Item>(_ items: [Item], by place: (Item) -> (anchor: OrderAnchor, rule: OrderRule)) -> [Item] {
+    /// another would name it; nil for one nothing can name, a menu bar item that runs no command) and
+    /// order: the first ones, then those that say nothing, then the last ones, each with those placed
+    /// right before it ahead of it and those placed right after it behind it, nearest first in the order
+    /// they appear, and so on down. One placed beside a thing that isn't in `items` goes where that
+    /// thing's own order puts it, after every thing of its kind that is (it has no turn of its own).
+    /// Every item comes out once (two of one thing together, where the first is): those caught in a
+    /// cycle, which the registry refuses where it can see one, come last, as they appear.
+    public static func arranged<Item>(_ items: [Item], by place: (Item) -> (anchor: OrderAnchor?, rule: OrderRule)) -> [Item] {
         guard items.count > 1 else { return items }
-        var nodes: [(anchor: OrderAnchor, rule: OrderRule, items: [Int])] = []
+        var nodes: [(anchor: OrderAnchor?, rule: OrderRule, items: [Int])] = []
         var index: [OrderAnchor: Int] = [:]
         for (offset, item) in items.enumerated() {
             let (anchor, rule) = place(item)
-            if let node = index[anchor] {
+            if let anchor, let node = index[anchor] {
                 nodes[node].items.append(offset)
             } else {
-                index[anchor] = nodes.count
+                if let anchor { index[anchor] = nodes.count }
                 nodes.append((anchor, rule, [offset]))
             }
         }
@@ -147,15 +166,16 @@ extension OrderRule {
 
     /// The first cycle of things placed beside each other, following each one's order from `anchors`
     /// through whatever they name, as "A after B, B after A"; nil when there's none. What a point's
-    /// `check` refuses a plugin list with.
-    public static func cycle(from anchors: [OrderAnchor]) -> String? {
+    /// `check` refuses a plugin list with. Each one's order is its anchor's own unless `rule` says it
+    /// (a menu bar item's, which is its command's declaration).
+    public static func cycle(from anchors: [OrderAnchor], rule given: ((OrderAnchor) -> OrderRule)? = nil) -> String? {
         var done = Set<OrderAnchor>()
         for start in anchors where !done.contains(start) {
             var path: [OrderAnchor] = []
             var rules: [OrderRule] = []
             var current = start
             while !done.contains(current) {
-                let rule = current.rule()
+                let rule = given?(current) ?? current.rule()
                 if let loop = path.firstIndex(of: current) {
                     return zip(path[loop...], rules[loop...]).map { "\($0) \($1)" }.joined(separator: ", ")
                 }

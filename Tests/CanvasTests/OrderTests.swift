@@ -84,6 +84,26 @@ extension Tile {
         expectEqual(OrderRule.cycle(from: [A.orderAnchor, IntoLoop.orderAnchor]), "Ping after Pong, Pong after Ping")
         expectEqual(OrderRule.cycle(from: [Itself.orderAnchor]), "Itself after Itself")
     },
+    test("a menu bar item is named by the command it runs: one placed beside it goes there, and one nothing can name is its own") {
+        typealias Entry = (title: String, anchor: OrderAnchor?, rule: OrderRule)
+        let edit: [Entry] = [("Cut", OrderAnchor("cut"), .natural), ("Copy as Image", nil, .natural), ("Paste", OrderAnchor("paste"), .natural),
+                             ("Duplicate", OrderAnchor("duplicate"), Order<CanvasCommand>.after("pasteAtPointer").rule),
+                             ("Paste at Pointer", OrderAnchor("pasteAtPointer"), Order<CanvasCommand>.after("paste").rule),
+                             ("Spare", nil, .natural), ("Select All", OrderAnchor("selectAll"), .natural)]
+        expectEqual(OrderRule.arranged(edit) { ($0.anchor, $0.rule) }.map(\.title),
+                    ["Cut", "Copy as Image", "Paste", "Paste at Pointer", "Duplicate", "Spare", "Select All"], "two unnamed items never one")
+        let away: [Entry] = [("Cut", OrderAnchor("cut"), .natural), ("Stray", nil, Order<CanvasCommand>.after("gone").rule), ("Last", nil, .last)]
+        expectEqual(OrderRule.arranged(away) { ($0.anchor, $0.rule) }.map(\.title), ["Cut", "Stray", "Last"],
+                    "beside a command that isn't there: where an item that says nothing goes")
+        expectEqual(OrderAnchor("paste"), OrderAnchor("paste"))
+        expectEqual(Order<CanvasCommand>.after("paste").description, "after paste")
+        expectEqual(Order<CanvasCommand>.before("cut").description, "before cut")
+    },
+    test("a circle of menu bar items is found through the places the caller has for their commands") {
+        let rules: [OrderAnchor: OrderRule] = [OrderAnchor("a"): Order<CanvasCommand>.after("b").rule, OrderAnchor("b"): Order<CanvasCommand>.after("a").rule]
+        expectEqual(OrderRule.cycle(from: [OrderAnchor("a")]), nil, "an anchor alone doesn't know its command's place")
+        expectEqual(OrderRule.cycle(from: [OrderAnchor("a")], rule: { rules[$0] ?? .natural }), "a after b, b after a")
+    },
     test("an order says itself as the registry's report does") {
         expectEqual(Order<A>.natural.description, "")
         expectEqual(First1.order.description, "first")
